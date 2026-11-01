@@ -20,6 +20,7 @@ Closes #
 - [ ] Co-op off behaves like upstream (nothing new runs without an active session)
 - [ ] New network messages have ids reserved in `docs/coop/PROTOCOL.md`
 - [ ] Findings about the game are in `docs/coop/NOTES.md`; architecture changes have a decision record
-- [ ] `tools/coop/check.sh` passes; C/C++ formatted with `.clang-format`
+- [ ] Built locally with `python tools/coop/build.py` on: Linux / Windows / macOS (docs-only: `check.py` passes)
+- [ ] C/C++ formatted with `.clang-format`, only on lines this PR changes
 - [ ] No ROMs, `.o2r`/`.otr`, extracted assets, tokens or personal info
 - [ ] If an AI agent wrote this: it says so here, and the person running the agent reviewed the diff
