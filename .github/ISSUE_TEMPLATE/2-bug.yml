@@ -1,0 +1,49 @@
+name: Bug
+description: Something in the co-op build crashes or behaves wrong (not a desync between players).
+labels: ["type/bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If it also happens in upstream Starship without co-op, report it at HarbourMasters/Starship instead.
+        Don't attach ROMs, .o2r files or save files from other people. Remove your username from paths.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Level, what each player did, how often it happens. A replay file is best.
+    validations:
+      required: true
+  - type: input
+    id: build
+    attributes:
+      label: Build
+      description: Commit hash or release, and where you got it.
+    validations:
+      required: true
+  - type: dropdown
+    id: rom
+    attributes:
+      label: ROM version
+      options: [US 1.0, US 1.1, unknown]
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: OS, graphics backend, local or online, number of players.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Starship.log from each player, if available.
+      render: text

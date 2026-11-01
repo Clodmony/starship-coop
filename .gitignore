@@ -59,3 +59,5 @@ src/cn/
 
 properties.h
 mods*/
+# Co-op: private per-contributor state (paths, logs, ROM locations, notes about your PC)
+/local/

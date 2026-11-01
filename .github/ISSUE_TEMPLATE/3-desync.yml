@@ -1,0 +1,41 @@
+name: Desync
+description: Players see different things (an enemy alive for one player and dead for the other, different positions, different level state).
+labels: ["type/desync"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What differed between the players
+    validations:
+      required: true
+  - type: input
+    id: frame
+    attributes:
+      label: First diverging frame
+      description: From the desync report or state-hash log, if there is one. "unknown" is fine.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Level, what each player did, network conditions. Replay files from every player are best.
+    validations:
+      required: true
+  - type: input
+    id: build
+    attributes:
+      label: Build on each player's machine
+      description: Commit hash or release per player, and OS per player.
+    validations:
+      required: true
+  - type: dropdown
+    id: rom
+    attributes:
+      label: ROM versions
+      options: [All US 1.0, All US 1.1, Mixed, unknown]
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and hash dumps
+      render: text

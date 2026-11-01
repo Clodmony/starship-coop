@@ -1,0 +1,42 @@
+name: Work package
+description: A piece of planned work from the roadmap, or a new one proposed for it.
+title: "WP-XX: "
+labels: ["type/work-package"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One work package = one branch = one PR. Comment on the issue to claim it before you start.
+        Roadmap: docs/coop/ROADMAP.md.
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What exists when this is done.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: The check that proves it, ideally a scripted one.
+    validations:
+      required: true
+  - type: input
+    id: needs
+    attributes:
+      label: Needs
+      description: Work packages or decisions this depends on (issue numbers).
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options: [engine, render, input, ui, net, sync, test, build, docs]
+    validations:
+      required: true
+  - type: textarea
+    id: pointers
+    attributes:
+      label: Pointers
+      description: Files, functions, notes or decision records to start from.

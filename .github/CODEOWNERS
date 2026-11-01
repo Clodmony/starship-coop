@@ -1,0 +1,7 @@
+# Code owners are asked to review PRs that touch their paths.
+# Later lines win. Add area owners as people take over areas, for example:
+#   /src/port/coop/net/    @someone
+#   /src/port/coop/sync/   @someone-else
+
+*                     @Clodmony
+/docs/coop/decisions/ @Clodmony

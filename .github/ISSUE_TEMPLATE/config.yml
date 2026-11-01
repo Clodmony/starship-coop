@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/Clodmony/starship-coop/discussions
+    about: Ask questions or float ideas that are not yet a work item.
+  - name: Problems with Starship itself (not co-op)
+    url: https://github.com/HarbourMasters/Starship/issues
+    about: Bugs that also happen in upstream Starship belong there.

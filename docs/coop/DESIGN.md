@@ -1,0 +1,105 @@
+# Design
+
+Status: draft. Upstream base: HarbourMasters/Starship `3322643f` (2026-09-15). Everything under "Observed" was read
+in this repo at that commit; line numbers drift with upstream syncs, so search for the symbol if a line is off.
+
+## 1. What we are building
+
+Two players (later up to four) play the Star Fox 64 campaign together:
+
+- **Online:** each player runs Starship on their own PC and sees the level from their own Arwing.
+- **Local:** two players on one PC with split screen, the way versus mode already renders.
+
+Every player sees the same level: the same enemies, bosses, items, wingmen and route. The host's save file holds the
+progress.
+
+## 2. What the decomp tells us
+
+### Observed (with sources)
+
+- **The engine already simulates several players, in versus mode.** `gPlayer` is a pointer to an array of `Player`
+  (`src/engine/fox_context.c:373`). `Player_InitializeAll` clears `gCamCount * sizeof(Player)` bytes
+  (`src/engine/fox_play.c`, `Player_InitializeAll`). `Player_InitVersus` sets up four players in a loop
+  (`src/engine/fox_play.c`, `Player_InitVersus`).
+- **Player count is tied to camera count.** Level init sets `gCamCount = 1`, and `gCamCount = 4` only when
+  `gCurrentLevel == LEVEL_VERSUS` (`src/engine/fox_play.c`, around line 2931). The draw loop sets `gPlayerNum` to the
+  player being drawn before `Display_Update()` (`src/engine/fox_game.c`, around line 289).
+- **Many per-player arrays already have four slots:** `gLifeCount[4]` (`include/sf64context.h:228`), the button maps
+  `gBoostButton[i]`, `gBrakeButton[i]`, `gShootButton[i]` for `i < 4` (`src/engine/fox_game.c`, `GSTATE_INIT`),
+  `gControllerPress[]` indexed by `gPlayerNum` or `gMainController`.
+- **Two level modes matter:** `LEVELMODE_ON_RAILS` and `LEVELMODE_ALL_RANGE` (`include/sf64player.h:62`).
+- **Wingmen are separate from players.** `gTeamShields[6]` (`include/sf64context.h:23`) with ids starting at
+  `TEAM_ID_FALCO` (`include/sf64player.h:18`); level init copies them from `gSavedTeamShields`
+  (`src/engine/fox_play.c`, after the `gCamCount` lines).
+- **World objects live in fixed arrays:** `gScenery[50]`, `gSprites[40]`, `gActors[60]`, `gBosses[4]`,
+  `gEffects[100]`, `gItems[20]`, `gPlayerShots[16]` (`include/sf64context.h:232-238`).
+- **Level memory is a bump allocator:** `Memory_Allocate` advances a pointer into `sMemoryBuffer`, `Memory_FreeAll`
+  resets it (`src/sys/sys_memory.c`).
+- **Randomness:** `Rand_ZeroOne` uses three seeds set by `Rand_Init()` from `osGetTime()` (`src/sys/sys_math.c`),
+  called at boot (`src/engine/fox_game.c:58`). On Linux and Switch, `Rand_ZeroOne` re-runs `Rand_Init()` when a seed
+  is 0 (a workaround marked `LTODO` in the code). That condition checks `sRandSeed2` twice and never `sRandSeed3`.
+  A separate seeded generator exists: `Rand_SetSeed` / `Rand_ZeroOneSeeded`.
+- **The port has an event system** for hooking game code without editing it: `DEFINE_EVENT` / `CALL_EVENT` in
+  `src/port/hooks/impl/EventSystem.h`, events in `src/port/hooks/list/` (`GamePreUpdateEvent`,
+  `PlayerPreUpdateEvent`, `PlayerPostUpdateEvent`, `ObjectInitEvent`, `ObjectDestroyEvent`, `ItemDropEvent`,
+  `PlayerAction*Event`, HUD draw events).
+- **Networking hook in the build:** `CMakeLists.txt` has `set(USE_NETWORKING OFF)` (line 99); when on, it links
+  SDL2_net and defines `USE_NETWORKING` (lines 370-377).
+- **Render rate is separate from game rate:** the interpolation frame count is derived from `gInterpolationFPS` and
+  `gVIsPerFrame` (`src/port/Engine.cpp`, `GetInterpolationFPS` and the function after it).
+
+### Derived (reasoning, not yet tested)
+
+- Running a second `Player` in the campaign is mostly a matter of separating "number of players" from "number of
+  cameras", because versus mode already updates and draws several players.
+- Game logic appears to tick at a fixed rate with interpolated rendering on top, which is what lockstep needs.
+- Because world state is in fixed arrays plus one bump-allocated buffer plus globals, a full state snapshot (for
+  rollback or for a late join) is plausible in size. The arrays contain pointers, so a snapshot is only valid for the
+  same build on the same platform.
+
+### Unknown (each is a research task in the roadmap)
+
+- Whether the simulation is deterministic: same seeds plus same inputs giving the same state, on one machine, across
+  machines with the same build, and across OS/compilers.
+- What else reads time or host state inside the simulation (audio timing, `osGetTime` callers, frame pacing).
+- How on-rails levels place the player relative to the path and camera, and what breaks with two players on rails.
+- Which code assumes `gPlayer[0]` or a single player: cameras, HUD, radio, cutscenes, level-complete logic, warps.
+- How the Landmaster (Titania, Macbeth) and Blue Marine (Aquas) levels handle extra players.
+- Which port enhancements (CVars) change the simulation and must match between players.
+
+## 3. Architecture (proposed)
+
+```
+src/port/coop/
+  session/   lobby, peers, handshake: build id, ROM version, sim-affecting CVars must match
+  net/       transport behind one interface: SDL2_net first (USE_NETWORKING), Steam relay later
+  sync/      the sync model from decision 0002 (input exchange + state hashes, or host snapshots)
+  game/      game glue: player count apart from camera count, player 2+ spawn, input routing, HUD, rules
+  ui/        ImGui menu entries: host, join, status (the menubar is in src/port/ui/ImguiUI.cpp)
+  test/      replay files, state hashing, harness hooks used by tools/coop/
+```
+
+- **Gate:** the co-op session being active (a CVar plus session state). With co-op off, the simulation must be
+  unchanged from upstream.
+- **Layers talk downward only:** `ui` and `session` use `sync`; `sync` uses `net` and `game`; `game` uses the
+  decomp through hooks. Nothing in `src/engine/` includes headers from `net/` or `session/`.
+- **Local co-op first.** Two players in one process, split screen, controller 1 and 2. This needs all of `game/` and
+  none of the network, it is testable with scripted inputs, and online co-op builds on it.
+
+## 4. Game rules to decide
+
+Each needs a decision record before code depends on it. Proposals in brackets.
+
+1. Who player 2 is: a fifth Arwing, or flying in place of a wingman [in place of Falco, keeps radio and story intact;
+   Peppy and Slippy for players 3 and 4].
+2. Lives: shared pool or per player [shared pool, game over when it is empty].
+3. A player goes down: respawn rule [respawn after a delay while any player is alive].
+4. Route choices and warps: who decides [whoever triggers it; the whole team follows].
+5. Hit count and medals: [team total].
+6. Landmaster and Blue Marine levels: [same rules, vehicles per player].
+7. Cutscenes, radio and level intros: [host's timing; clients follow].
+8. Save: [only the host saves; clients run with a throwaway save].
+
+## 5. Sync model
+
+Open, see [decision 0002](decisions/0002-sync-model.md). The determinism spike in the roadmap decides it.

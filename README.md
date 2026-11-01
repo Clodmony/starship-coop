@@ -1,113 +1,70 @@
-[comment]: <> (Todo: Make Light Mode Image)
-[comment]: <> (Todo: Make Dark Mode Image)
- 
-# Starship
+# Starship Co-op
 
-Lead Developers: 
-* [SonicDcer](https://www.github.com/sonicdcer)
-* [Lywx](https://www.github.com/kiritodv)
+**Star Fox 64 campaign co-op for [Starship](https://github.com/HarbourMasters/Starship), the native PC port of the
+Star Fox 64 decompilation.** Fly the Lylat System with friends, each player in their own Arwing, online or on one PC.
 
-## Website & Discord
+> **Status: pre-alpha.** There is no playable build yet. This repository is the shared workspace where the co-op
+> layer is being built. See the [roadmap](docs/coop/ROADMAP.md) for what is planned and what is being worked on.
 
-Official Website: https://www.harbourmasters.org/
+Starship Co-op is a fork of Starship. It contains no copyrighted assets: like Starship, it builds its game data from
+your own US 1.0 or US 1.1 Star Fox 64 ROM on first launch.
 
-If you're having any trouble after reading through this `README`, feel free ask for help in the Starship Support text channels. Please keep in mind that we do not condone piracy.
+## Goal
 
-# Quick Start
+| | Planned |
+|---|---|
+| Players | 2 (later up to 4, the number versus mode already supports) |
+| Modes | Online (each player on their own PC) and local split-screen |
+| What is shared | The whole level: enemies, bosses, items, wingmen, route choices, the story |
+| Save | The host's save file; clients do not touch their own |
 
-Starship does not include any copyrighted assets.  You are required to provide a supported copy of the game.
+None of this works yet. The open design questions are in [docs/coop/DESIGN.md](docs/coop/DESIGN.md), and the choice
+of sync model is still open in [decision 0002](docs/coop/decisions/0002-sync-model.md).
 
-### 1. Verify your ROM dump
-The supported ROMs are US 1.0 and US 1.1 Rev A versions. You can verify you have dumped a supported copy of the game by using the SHA-1 File Checksum Online at https://www.romhacking.net/hash/. 
+## Building
 
-* The SHA-1 hash for a US 1.0 ROM is D8B1088520F7C5F81433292A9258C1184AFA1457.
-* The SHA-1 hash for a US 1.1 ROM is 09F0D105F476B00EFA5303A3EBC42E60A7753B7A.
+Same as upstream Starship, see [docs/BUILDING.md](docs/BUILDING.md). Clone with submodules:
 
-Starship also supports voice language replacement use from both EU (Lylat) and JP (Japanese) when used in conjunction with an US ROM.
+```sh
+git clone --recursive <this repo>
+# or, after a plain clone:
+git submodule update --init --recursive
+```
 
-Note: JP and EU versions of the game are not supported for the base asset O2R creation, a US ROM must be used for it, and you can only use one voice language replacement at a time (Either EU or JP).
+The co-op code builds as part of the normal Starship build; there is no separate project.
 
-### 2. Verify your ROM is in .z64 format
-Your ROM needs to be in .z64 format. If it's in .n64 format, use the following to convert it to a .z64: https://hack64.net/tools/swapper.php
+## Contributing
 
-### 2. Download Starship from [Releases](https://github.com/HarbourMasters/Starship/releases)
+Many people (and their coding agents) work on this at the same time, so the workflow matters:
 
-### 3. Generating the OTR from the ROM and Play!
-#### Windows
-* Extract every file from the zip into a folder of your choosing.
-* Run starship.exe and select your US 1.0 or US 1.1 ROM.
+1. Read [CONTRIBUTING.md](CONTRIBUTING.md). Agents start at [AGENTS.md](AGENTS.md).
+2. Pick an open work package from the [roadmap](docs/coop/ROADMAP.md) or the issue tracker and claim it on its issue.
+3. One issue per branch (`coop/<issue>-<slug>`), one branch per pull request, draft first.
 
-#### Linux
-* Extract every file from the zip into a folder of your choosing.
-* Execute starship.appimage. You may have to chmod +x the appimage via terminal.
+Design documents live in [docs/coop/](docs/coop/):
 
-#### MacOS
-* Extract every file from the zip into a folder of your choosing.
-* Run starship and select your US 1.0 or US 1.1 ROM.
+| Document | What it holds |
+|---|---|
+| [DESIGN.md](docs/coop/DESIGN.md) | Architecture, what the decomp tells us, open questions, where code goes |
+| [ROADMAP.md](docs/coop/ROADMAP.md) | Milestones and work packages (one GitHub issue each) |
+| [PROTOCOL.md](docs/coop/PROTOCOL.md) | Wire protocol rules and the message-id registry |
+| [QA.md](docs/coop/QA.md) | QA levels, test harness plan, how to report results |
+| [NOTES.md](docs/coop/NOTES.md) | Shared lab notebook: findings with sources |
+| [decisions/](docs/coop/decisions/) | Architecture decision records |
+| [MAINTAINING.md](docs/coop/MAINTAINING.md) | Upstream sync, GitHub settings, releases |
 
-#### Nintendo Switch
-* Run one of the PC releases to generate an `sf64.o2r` file. After launching the game on PC, you will be able to find these files in the same directory as `starship.exe` or `starship.appimage`.
-* Copy the files to your sd card
+## Credits
 
-# Configuration
+- [Starship](https://github.com/HarbourMasters/Starship) by the HarbourMasters team (lead developers SonicDcer and
+  Lywx) and its contributors: the PC port this project is built on. The upstream README is at
+  [HarbourMasters/Starship](https://github.com/HarbourMasters/Starship#readme).
+- The [Star Fox 64 decompilation](https://github.com/sonicdcer/sf64) and its contributors.
+- [libultraship](https://github.com/Kenix3/libultraship) and [Torch](https://github.com/HarbourMasters/Torch).
+- [Co-op Anything](https://github.com/cranebeaker/coop-anything): the playbook and agent workflow this project
+  follows (MIT, see [LICENSES/coop-anything-MIT.txt](LICENSES/coop-anything-MIT.txt)).
 
-### Default keyboard configuration
-| N64 | A | B | Z | Start | Analog stick | C buttons | D-Pad |
-| - | - | - | - | - | - | - | - |
-| Keyboard | X | C | Z | Space | WASD | Arrow keys | TFGH |
+## License
 
-### Other shortcuts
-| Keys | Action |
-| - | - |
-| F1 | Toggle menubar |
-| F4 | Reset |
-| F11 | Fullscreen |
-| Tab | Toggle Alternate assets |
-
-### Graphics Backends
-Currently, there are three rendering APIs supported: DirectX11 (Windows), OpenGL (all platforms), and Metal (macOS). You can change which API to use in the `Settings` menu of the menubar, which requires a restart.  If you're having an issue with crashing, you can change the API in the `starship.cfg.json` file by finding the line `"Backend":{`... and changing the `id` value to `3` and set the `Name` to `OpenGL`. `DirectX 11` with id `2` is the default on Windows. `Metal` with id `4` is the default on macOS.
-
-# Custom Assets
-Custom assets are packed in `.o2r` or `.otr` files. To use custom assets, place them in the `mods` folder.
-
-If you're interested in creating and/or packing your own custom asset `.o2r`/`.otr` files, check out the following tools:
-* [**retro - OTR and O2R generator**](https://github.com/HarbourMasters64/retro)
-* [**fast64 - Blender plugin (Note that SF64 is not supported at this time)**](https://github.com/HarbourMasters/fast64)
-
-# Development
-### Building
-
-If you want to manually compile Starship, please consult the [building instructions](https://github.com/HarbourMasters/Starship/blob/main/docs/BUILDING.md).
-
-### Playtesting
-If you want to playtest a continuous integration build, you can find them at the links below. Keep in mind that these are for playtesting only, and you will likely encounter bugs and possibly crashes. 
-
-* [Windows](https://nightly.link/HarbourMasters/Starship/workflows/main/main/starship-windows.zip)
-* [macOS](https://nightly.link/HarbourMasters/Starship/workflows/main/main/Starship-mac.zip)
-* [Linux](https://nightly.link/HarbourMasters/Starship/workflows/main/main/Starship-linux.zip)
-* [Switch](https://nightly.link/HarbourMasters/Starship/workflows/main/main/Starship-switch.zip)
-
-<a href="https://github.com/Kenix3/libultraship/">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./docs/poweredbylus.darkmode.png">
-    <img alt="Powered by libultraship" src="./docs/poweredbylus.lightmode.png">
-  </picture>
-</a>
-
-# Special Thanks:
-
-* [ZeldaRET](https://github.com/zeldaret) : for teaching me the fundamental knowledge of N64 decompilation.
-* [Decompals](https://github.com/decompals) : for helping in the initial disassembly and decompilation of the game.
-* [HM64 Team](https://github.com/harbourMasters) : for creating Libultraship and helping with various issues.
-
-* [DarioSamo](https://github.com/DarioSamo) : for providing important fixes to the renderer and information about the inner workings of the game graphics system.
-* [garrettjoecox](https://github.com/garrettjoecox) : for contributing with interpolation fixes to this port.
-* [inspectredc](https://github.com/inspectredc) : for contributing to the [SF64 decompilation project](https://github.com/sonicdcer/sf64).
-* [Lywx](https://github.com/KiritoDv) : for co-developing this port as a lead and creating [Torch](https://github.com/HarbourMasters/Torch) asset extraction system.
-* [m4xw](https://github.com/m4xw) : for helping with audio issues in this port.
-* [Malkierian](https://github.com/Malkierian) : for contributing with important fixes to this port.
-* [petrie911](https://github.com/petrie911) : for contributing to the [SF64 decompilation project](https://github.com/sonicdcer/sf64) as a lead.
-* [Ryan-Myers](https://github.com/Ryan-Myers) : for contributing to the [SF64 decompilation project](https://github.com/sonicdcer/sf64).
-* [Thar0](https://github.com/Thar0) : for contributing with an improved Starfield that can be interpolated to any framerate.
-* [TheBoy181](https://github.com/TheBoy181) : for contributing to this project with various widescreen enhancements such as level floors, an extended Starfield among other things.
-* [Wiseguy](https://github.com/Mr-Wiseguy) : for providing important information about the inner workings of the N64 platform, as well as helping with the decompilation process.
+Code in this repository is released under CC0 1.0, the same as upstream Starship ([LICENSE.md](LICENSE.md)), so co-op
+fixes can flow back upstream. Star Fox 64 is a trademark of Nintendo; this project is not affiliated with Nintendo.
+Please don't ask for or share ROMs.

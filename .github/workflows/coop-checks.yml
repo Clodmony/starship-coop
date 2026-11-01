@@ -1,0 +1,16 @@
+name: Co-op checks
+
+on:
+  pull_request:
+    branches: [ "*" ]
+  push:
+    branches: [ main ]
+
+jobs:
+  checks:
+    name: Co-op checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Repository checks
+        run: tools/coop/check.sh
