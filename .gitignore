@@ -61,3 +61,5 @@ properties.h
 mods*/
 # Co-op: private per-contributor state (paths, logs, ROM locations, notes about your PC)
 /local/
+# build* above would hide the co-op build script
+!/tools/coop/build.py

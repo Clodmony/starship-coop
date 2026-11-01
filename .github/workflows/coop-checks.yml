@@ -13,4 +13,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Repository checks
-        run: tools/coop/check.sh
+        run: python3 tools/coop/check.py

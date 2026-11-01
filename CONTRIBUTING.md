@@ -53,7 +53,7 @@ Don't let `gh repo fork --remote` rename your remotes; it would call this repo `
 1. Branch from the latest `main`: `coop/<issue number>-<short-slug>`, for example `coop/12-p2-input-routing`.
    Upstream syncs use `sync/upstream-YYYY-MM-DD`. Docs-only changes can use `docs/<slug>`.
 2. Recommended: one git worktree per issue, so several branches (and several agents) can build side by side:
-   `tools/coop/new-worktree.sh 12 p2-input-routing`.
+   `python tools/coop/new_worktree.py 12 p2-input-routing`.
 3. Follow the code rules in [AGENTS.md](AGENTS.md#code-rules): co-op code in `src/port/coop/`, upstream files
    touched only where needed and marked `// COOP:`, everything gated on an active co-op session, message ids from
    [PROTOCOL.md](docs/coop/PROTOCOL.md).
@@ -63,21 +63,42 @@ Don't let `gh repo fork --remote` rename your remotes; it would call this repo `
    [docs/coop/decisions/](docs/coop/decisions/). Open it as its own PR so it gets discussed before code depends on
    it.
 
+## Build locally before you push
+
+Your own machine is the development loop; CI is only the final check. One command, the same on Windows, Linux and
+macOS, and the same one CI runs:
+
+```sh
+python tools/coop/build.py            # configure, build (Debug), repo checks; add --quiet for a summary only
+python tools/coop/build.py --assets   # first time: also builds sf64.o2r from your ROM, saved as baserom.z64
+```
+
+- **Windows:** Visual Studio 2022 with "Desktop development with C++" (MSVC v143), CMake, Python 3 and Git, as in
+  [docs/BUILDING.md](docs/BUILDING.md). Run the script from PowerShell; it uses the Visual Studio generator and builds
+  into `build/x64`. Dependencies come through vcpkg during configure.
+- **Linux and macOS:** CMake, Ninja, a C++20 compiler and the libraries listed in
+  [.github/workflows/coop-build.yml](.github/workflows/coop-build.yml) (Linux) or `Brewfile` (macOS). Builds into
+  `build-cmake`.
+- Push only when the build is green. Say in the PR which OS you built on.
+
+CI on pull requests: `Co-op checks` (seconds) always; `Co-op build` (Linux and Windows, about 30 to 40 minutes) when
+the PR touches code, CMake files or submodules. Docs-only PRs skip the build.
+
 ## Commits
 
 - Small and focused. Message format: `<area>: <what changed>`, for example `coop/net: add message framing`,
   `engine: COOP hook for player 2 spawn`, `docs: notes on on-rails camera`.
 - Format C and C++ with the repo's `.clang-format` (`clang-format -i <files>`). Do not reformat code you did not
   change; it makes upstream merges painful.
-- Run `tools/coop/check.sh` before pushing. CI runs it too.
+- Run `python tools/coop/build.py` (or at least `python tools/coop/check.py` for docs-only changes) before pushing.
 
 ## Pull requests
 
 1. Open the PR as a **draft** early, with the template filled in and `Closes #<issue>`.
-2. Mark it ready when the checklist is done. It needs green `Co-op checks` and one approving review from a code
-   owner (`.github/CODEOWNERS`). Upstream's Linux, Windows and macOS build jobs also run on every PR; a PR that
-   breaks them is not merged. Maintainers can merge their own PRs without a second review while the project has a
-   single maintainer; direct pushes to `main` are blocked for everyone.
+2. Mark it ready when the checklist is done. It needs green `Co-op checks`, a green `Co-op build` when it ran, and
+   one approving review from a code owner (`.github/CODEOWNERS`). Maintainers can merge their own PRs without a
+   second review while the project has a single maintainer; direct pushes to `main` are blocked for everyone once
+   the branch ruleset is active (see docs/coop/MAINTAINING.md).
 3. Say which QA level the change reached and how it was tested ([docs/coop/QA.md](docs/coop/QA.md)). "Compiles" is
    a valid answer; claiming more than you ran is not.
 4. If an AI agent wrote the change, say so, and have the human who runs the agent review the diff before marking the

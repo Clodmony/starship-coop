@@ -13,7 +13,7 @@ The repository is **private** for now. Applied (re-apply if it is ever recreated
 - Features: Issues and Discussions on; Wiki and Projects off.
 - Merging: squash (default for work branches) and merge commits (for upstream syncs) allowed, rebase merging off,
   head branches deleted after merge.
-- Labels: `tools/coop/setup-labels.sh Clodmony/starship-coop`.
+- Labels: `python tools/coop/setup_labels.py Clodmony/starship-coop`.
 - Milestones `M0` to `M3` and one issue per work package, linked from `docs/coop/ROADMAP.md`.
 
 **Not applied yet: the branch ruleset.** GitHub only allows rulesets on private repositories with a paid plan, so
@@ -27,22 +27,38 @@ gh repo edit Clodmony/starship-coop --visibility public --accept-visibility-chan
 gh api -X POST repos/Clodmony/starship-coop/rulesets --input .github/rulesets/main.json
 ```
 
-**Actions minutes while private:** private repositories have a monthly quota of free Actions minutes, and macOS
-runners count ten times. Upstream's `GenerateBuilds` builds four platforms on every push to any branch, and the
-four validation workflows (Linux, Windows, macOS, Switch) build on every PR. Public repositories have no quota for
-standard runners.
+## CI
 
-Upstream's build workflows (`.github/workflows/main.yml`, `linux.yml`, `windows.yml`, `mac.yml`, `switch.yml`) need
-no secrets. `main.yml` builds every platform on every push to any branch; the validation workflows build on every
-PR. Their jobs are all named `build`, so they cannot be told apart as required checks; reviewers check them by hand.
-Making them required would need a change to upstream files, which we avoid.
+Local builds are the development loop (`python tools/coop/build.py`); CI is the final check on pull requests.
+
+| Workflow | File | Runs | Jobs |
+|---|---|---|---|
+| `Co-op checks` | `coop-checks.yml` | every PR, every push to `main` | repo checks, seconds |
+| `Co-op build` | `coop-build.yml` | PRs and pushes to `main` that touch code, CMake files or submodules; manual | Linux and Windows, both through `tools/coop/build.py` |
+
+Upstream's workflows (`GenerateBuilds` in `main.yml`, and the `Linux`, `Windows`, `MacOS`, `Switch` validation
+workflows) are **disabled in the repository settings**, not deleted, so their files stay identical to upstream and
+upstream syncs do not conflict. `GenerateBuilds` built four platforms on every push to any branch, which is too much
+for a project with many contributors. Re-enable one for a release build with `gh workflow enable <name>`; release
+builds are WP-30. As of 2026-11-01 upstream's macOS jobs target the `macos-14` runner image, which GitHub retires on
+2026-11-02, so they need an upstream fix (or our own release workflow) before macOS builds work again.
+
+```sh
+for w in GenerateBuilds "Linux Validation" "Windows Validation" "MacOS Validation" "Switch Validation"; do
+  gh workflow disable "$w" --repo Clodmony/starship-coop
+done
+```
+
+**Actions minutes while private:** private repositories have a monthly quota of free Actions minutes; Windows
+minutes count twice and macOS minutes ten times. A code PR costs about 40 Linux minutes plus 35 Windows minutes
+(counted as 70). Public repositories have no quota for standard runners.
 
 When more people help maintain: add them as collaborators (Write for contributors, Maintain or Admin for
 maintainers) and give them areas in `.github/CODEOWNERS`.
 
 ## Labels
 
-`tools/coop/setup-labels.sh` creates them. Meaning:
+`python tools/coop/setup_labels.py` creates them. Meaning:
 
 | Label | Use |
 |---|---|

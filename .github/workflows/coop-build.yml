@@ -1,0 +1,79 @@
+name: Co-op build
+
+# Final check for code changes; the development loop is a local `python tools/coop/build.py`.
+# Both jobs run that same script, so a green local build means the same steps as here.
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'port/**'
+      - 'assets/**'
+      - 'yamls/**'
+      - 'cmake/**'
+      - 'linker_scripts/**'
+      - 'CMakeLists.txt'
+      - 'config.yml'
+      - '*.h.in'
+      - 'libultraship'
+      - 'tools/Torch'
+      - 'tools/coop/build.py'
+      - '.github/workflows/coop-build.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'port/**'
+      - 'assets/**'
+      - 'yamls/**'
+      - 'cmake/**'
+      - 'linker_scripts/**'
+      - 'CMakeLists.txt'
+      - 'config.yml'
+      - '*.h.in'
+      - 'libultraship'
+      - 'tools/Torch'
+      - 'tools/coop/build.py'
+      - '.github/workflows/coop-build.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: coop-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Co-op build (Linux)
+    runs-on: ubuntu-24.04
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc g++ git cmake ninja-build lsb-release libsdl2-dev libpng-dev libsdl2-net-dev \
+            libzip-dev zipcmp zipmerge ziptool nlohmann-json3-dev libtinyxml2-dev libspdlog-dev \
+            libopengl-dev libglew-dev libogg-dev libvorbis-dev
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: coop-linux
+      - name: Build
+        run: python3 tools/coop/build.py --config Release --no-check --quiet
+
+  windows:
+    name: Co-op build (Windows)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Build
+        run: python tools/coop/build.py --config Release --no-check --quiet

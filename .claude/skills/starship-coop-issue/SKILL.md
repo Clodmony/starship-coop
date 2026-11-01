@@ -10,15 +10,16 @@ description: Work one Starship Co-op issue end to end in one session - read the 
    `docs/coop/decisions/`, the issue's pointers, and `local/` for your owner's private setup.
 2. **Pick and claim.** If the owner did not name an issue, propose one whose "Needs" are done and that nobody holds.
    Ask the owner before posting the claim comment (it publishes under their account).
-3. **Branch.** `tools/coop/new-worktree.sh <issue> <slug>` (branch `coop/<issue>-<slug>` from `origin/main`), or a
+3. **Branch.** `python tools/coop/new_worktree.py <issue> <slug>` (branch `coop/<issue>-<slug>` from `origin/main`), or a
    plain branch with the same name. One issue per branch.
 4. **Understand before changing.** Read the decomp code involved. Write findings to `docs/coop/NOTES.md` as you go:
    date, issue, Observed (file:line), Derived, Guess, Unknown.
 5. **Build.** Follow the code rules in `AGENTS.md`: code in `src/port/coop/`, hooks before edits, `// COOP:` on every
    upstream edit, everything gated on an active co-op session, message ids reserved in `docs/coop/PROTOCOL.md`. If
    the work needs an architecture choice that no accepted record covers, stop and write a decision record instead.
-6. **Verify.** Run the check from the issue's "Done when" as a script, unattended, and read only its summary. Run
-   `tools/coop/check.sh`. Record the QA level and the test identity (commit, ROM version, OS, compiler, backend).
+6. **Verify.** `python tools/coop/build.py --quiet` must end in `build: OK` before anything is pushed. Run the check
+   from the issue's "Done when" as a script, unattended, and read only its summary. Record the QA level and the test
+   identity (commit, ROM version, OS, compiler, backend).
    Never use the owner's own config, saves or running game for tests.
 7. **PR.** Show the owner the diff. Then push and open a draft: `gh pr create --draft`, template filled in,
    `Closes #<issue>`, AI use disclosed.

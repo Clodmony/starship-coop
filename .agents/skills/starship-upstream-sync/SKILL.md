@@ -12,7 +12,7 @@ description: Merge the latest HarbourMasters/Starship into the Starship Co-op fo
    - In code marked `// COOP:`: keep upstream's new code and re-apply the co-op change on top. Keep the marker.
    - `README.md`: keep ours. `.gitignore`: keep both sides.
    - Anything else: prefer upstream unless a co-op change is clearly involved; ask the owner if unsure.
-5. `git submodule update --init --recursive`, build, run `tools/coop/check.sh` and the single-player replay checks in
+5. `git submodule update --init --recursive`, build, run `python tools/coop/check.py` and the single-player replay checks in
    `docs/coop/QA.md` when they exist.
 6. Compare markers: `git grep -n "COOP:"` against `local/coop-markers-before.txt`. Every marker must still exist
    (line numbers may move). Explain any that changed in the PR.

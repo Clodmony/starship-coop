@@ -7,21 +7,23 @@ description: Build, run and change Starship Co-op (the Star Fox 64 PC port with 
 
 ## Build
 
-Same as upstream; full steps in `docs/BUILDING.md`.
+One script, the same on Linux, macOS and Windows, and the same one CI runs:
 
 ```sh
-git submodule update --init --recursive
-cmake -H. -Bbuild-cmake -GNinja -DCMAKE_BUILD_TYPE=Debug   # Linux/macOS; Windows: see docs/BUILDING.md
-cmake --build build-cmake --target ExtractAssets            # needs the owner's US 1.0 or 1.1 ROM (path in local/)
-cmake --build build-cmake --target GeneratePortO2R
-cmake --build build-cmake -j
+python tools/coop/build.py --quiet           # submodules if missing, configure, build, repo checks; prints a summary
+python tools/coop/build.py --assets --quiet  # also sf64.o2r from baserom.z64 (the owner's ROM) and starship.o2r
 ```
 
-- Ask the owner before installing build dependencies. Linux packages are listed in `.github/workflows/linux.yml`.
-- The ROM and the generated `sf64.o2r` / `starship.o2r` never go into git (`.gitignore` covers them; `tools/coop/check.sh`
-  fails if one is tracked).
-- Networking code needs `USE_NETWORKING` (SDL2_net), which `CMakeLists.txt` sets `OFF` today. Turning it on for co-op
-  builds is part of WP-20.
+Run it unattended and read only the summary line (`build: OK ...` or `build: FAILED at <step>` with the log tail).
+The full log is `<build dir>/coop-build.log`. Build dirs: `build-cmake` (Ninja) on Linux/macOS, `build/x64` (Visual
+Studio 2022) on Windows. Upstream's manual steps are in `docs/BUILDING.md`.
+
+- Build locally before every push; CI repeats the build on Linux and Windows for PRs that touch code.
+- Ask the owner before installing build dependencies. Linux packages are listed in `.github/workflows/coop-build.yml`.
+- The ROM (`baserom.z64`) and the generated `sf64.o2r` / `starship.o2r` never go into git (`.gitignore` covers them;
+  `python tools/coop/check.py` fails if one is tracked).
+- Networking code needs `USE_NETWORKING` (SDL2_net). `CMakeLists.txt` hard-sets it with `set(USE_NETWORKING OFF)`, so a
+  `-D` on the command line does not turn it on; changing that is part of WP-20.
 - Several worktrees can build at once; each has its own `build-cmake/`. Builds are heavy; avoid running more than the
   machine has memory for.
 
