@@ -8,24 +8,24 @@ For maintainers: GitHub setup, upstream syncs, releases.
 would default every new pull request to target HarbourMasters, which is easy to get wrong with many contributors.
 Remote names are fixed in CONTRIBUTING.md ("Remotes"): `origin` is this repo, `starship` is HarbourMasters.
 
-The repository is **private** for now. Applied (re-apply if it is ever recreated):
+The repository is **public**. Applied (re-apply if it is ever recreated):
 
 - Features: Issues and Discussions on; Wiki and Projects off.
 - Merging: squash (default for work branches) and merge commits (for upstream syncs) allowed, rebase merging off,
   head branches deleted after merge.
 - Labels: `python tools/coop/setup_labels.py Clodmony/starship-coop`.
-- Milestones `M0` to `M3` and one issue per work package, linked from `docs/coop/ROADMAP.md`.
-
-**Not applied yet: the branch ruleset.** GitHub only allows rulesets on private repositories with a paid plan, so
-`main` is unprotected until the repository is public (or the account has Pro). The ruleset is stored in
-`.github/rulesets/main.json`: no deletion, no force push, changes only through pull requests with 1 approval from a
-code owner and stale approvals dismissed, required status check `Co-op checks`. Repository admins may bypass it for
-pull requests only, so a sole maintainer can merge their own PRs; direct pushes stay blocked. Apply it with:
+- Milestones `M0` to `M3` plus `Later`, and one issue per work package, linked from `docs/coop/ROADMAP.md`.
+- Branch ruleset `main` (applied 2026-11-01), stored in `.github/rulesets/main.json`: no deletion, no force push,
+  changes only through pull requests with 1 approval from a code owner and stale approvals dismissed, required
+  status check `Co-op checks`. Repository admins may bypass it for pull requests only, so a sole maintainer can
+  merge their own PRs; direct pushes stay blocked. To recreate it:
 
 ```sh
-gh repo edit Clodmony/starship-coop --visibility public --accept-visibility-change-consequences
 gh api -X POST repos/Clodmony/starship-coop/rulesets --input .github/rulesets/main.json
 ```
+
+GitHub only allows rulesets on private repositories with a paid plan; if the repository ever goes private again,
+`main` loses this protection.
 
 ## CI
 
