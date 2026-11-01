@@ -2,6 +2,37 @@
 
 Humans and agents follow the same flow. Agents also read [AGENTS.md](AGENTS.md).
 
+## Get the code
+
+You need your own US 1.0 or US 1.1 Star Fox 64 ROM to run the game (see [docs/BUILDING.md](docs/BUILDING.md)).
+
+```sh
+git clone --recursive https://github.com/Clodmony/starship-coop.git
+cd starship-coop
+```
+
+Remotes, the same for everyone so docs and scripts work everywhere:
+
+| Remote | Points at | Who needs it |
+|---|---|---|
+| `origin` | `Clodmony/starship-coop`, the co-op repo. `origin/main` is what you branch from. | Everyone |
+| `fork` | Your own fork of starship-coop, to push branches when you have no write access | Contributors without write access |
+| `starship` | `HarbourMasters/Starship`, the upstream port. Never push to it. | Whoever syncs upstream |
+
+```sh
+# No write access: fork on GitHub without touching your remotes, then add it as "fork".
+gh repo fork Clodmony/starship-coop --remote=false
+git remote add fork https://github.com/<you>/starship-coop.git
+git push -u fork coop/12-p2-input-routing
+gh pr create --repo Clodmony/starship-coop --head <you>:coop/12-p2-input-routing --draft
+
+# Upstream syncs only:
+git remote add starship https://github.com/HarbourMasters/Starship.git
+git remote set-url --push starship DISABLED
+```
+
+Don't let `gh repo fork --remote` rename your remotes; it would call this repo `upstream` and break the convention.
+
 ## Find something to work on
 
 - Work packages are listed in [docs/coop/ROADMAP.md](docs/coop/ROADMAP.md); each one has a GitHub issue with the
@@ -43,7 +74,10 @@ Humans and agents follow the same flow. Agents also read [AGENTS.md](AGENTS.md).
 ## Pull requests
 
 1. Open the PR as a **draft** early, with the template filled in and `Closes #<issue>`.
-2. Mark it ready when the checklist is done. It needs one approving review and green CI to merge.
+2. Mark it ready when the checklist is done. It needs green `Co-op checks` and one approving review from a code
+   owner (`.github/CODEOWNERS`). Upstream's Linux, Windows and macOS build jobs also run on every PR; a PR that
+   breaks them is not merged. Maintainers can merge their own PRs without a second review while the project has a
+   single maintainer; direct pushes to `main` are blocked for everyone.
 3. Say which QA level the change reached and how it was tested ([docs/coop/QA.md](docs/coop/QA.md)). "Compiles" is
    a valid answer; claiming more than you ran is not.
 4. If an AI agent wrote the change, say so, and have the human who runs the agent review the diff before marking the

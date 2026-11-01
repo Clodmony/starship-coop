@@ -26,7 +26,7 @@ of sync model is still open in [decision 0002](docs/coop/decisions/0002-sync-mod
 Same as upstream Starship, see [docs/BUILDING.md](docs/BUILDING.md). Clone with submodules:
 
 ```sh
-git clone --recursive <this repo>
+git clone --recursive https://github.com/Clodmony/starship-coop.git
 # or, after a plain clone:
 git submodule update --init --recursive
 ```

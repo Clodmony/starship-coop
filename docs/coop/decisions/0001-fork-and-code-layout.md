@@ -22,7 +22,7 @@ has no code-mod loader for the kind of engine changes co-op needs (more than one
 
 ## Decision
 
-A full fork (option 1), with full upstream history and `upstream` pointing at HarbourMasters/Starship. Co-op code
+A full fork (option 1), with full upstream history; HarbourMasters/Starship is the git remote `starship`. Co-op code
 lives in `src/port/coop/`; upstream files are changed only where needed, each change marked `// COOP:`; port event
 hooks are preferred over direct edits. The fork's own `main` is the integration branch.
 

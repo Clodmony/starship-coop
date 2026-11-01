@@ -5,7 +5,7 @@ description: Work one Starship Co-op issue end to end in one session - read the 
 
 # One issue, one session
 
-1. **Orient.** `git fetch upstream origin`. Read `gh issue list --state open`, `gh pr list`, then the chosen issue and
+1. **Orient.** `git fetch origin`. Read `gh issue list --state open`, `gh pr list`, then the chosen issue and
    all its comments: the last hand-off is there. Read `docs/coop/DESIGN.md`, accepted records in
    `docs/coop/decisions/`, the issue's pointers, and `local/` for your owner's private setup.
 2. **Pick and claim.** If the owner did not name an issue, propose one whose "Needs" are done and that nobody holds.

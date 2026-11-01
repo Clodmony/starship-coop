@@ -5,9 +5,9 @@ description: Merge the latest HarbourMasters/Starship into the Starship Co-op fo
 
 # Sync with upstream Starship
 
-1. `git fetch upstream origin`; list what is new: `git log --oneline origin/main..upstream/main`.
+1. `git fetch --multiple origin starship` (add the remote once if missing: `git remote add starship https://github.com/HarbourMasters/Starship.git`); list what is new: `git log --oneline origin/main..starship/main`.
 2. Record the co-op markers before: `git grep -n "COOP:" > local/coop-markers-before.txt`.
-3. `git switch -c sync/upstream-$(date +%F) origin/main` and `git merge --no-ff upstream/main`.
+3. `git switch -c sync/upstream-$(date +%F) origin/main` and `git merge --no-ff starship/main`.
 4. Resolve conflicts:
    - In code marked `// COOP:`: keep upstream's new code and re-apply the co-op change on top. Keep the marker.
    - `README.md`: keep ours. `.gitignore`: keep both sides.
@@ -19,4 +19,4 @@ description: Merge the latest HarbourMasters/Starship into the Starship Co-op fo
 7. Show the owner the diff summary, then open a PR titled `Sync upstream Starship <date>` listing the upstream range,
    conflicts and how each was resolved. It must be merged with a merge commit, not squashed.
 
-Never push to `upstream`; its push URL is disabled on purpose.
+Never push to the `starship` remote (HarbourMasters); set its push URL to something invalid: `git remote set-url --push starship DISABLED`.

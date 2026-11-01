@@ -2,34 +2,30 @@
 
 For maintainers: GitHub setup, upstream syncs, releases.
 
-## First publish (not done yet)
+## GitHub setup
 
-The local repository has full Starship history, `main` as the co-op integration branch, and a remote `upstream`
-(HarbourMasters/Starship) whose push URL is disabled.
+`Clodmony/starship-coop` is a **standalone repository, not a GitHub fork** of HarbourMasters/Starship: a GitHub fork
+would default every new pull request to target HarbourMasters, which is easy to get wrong with many contributors.
+Remote names are fixed in CONTRIBUTING.md ("Remotes"): `origin` is this repo, `starship` is HarbourMasters.
 
-Create the GitHub repository as a **standalone repository, not a GitHub fork**. A GitHub fork defaults every new pull
-request to target HarbourMasters/Starship, which is easy to get wrong with many contributors, and forks start with
-Issues turned off.
+Applied when the repo was published (re-apply if it is ever recreated):
 
-```sh
-gh repo create <owner>/starship-coop --public --source . --remote origin
-git push -u origin main
-tools/coop/setup-labels.sh <owner>/starship-coop
-```
+- Features: Issues and Discussions on; Wiki and Projects off.
+- Merging: squash (default for work branches) and merge commits (for upstream syncs) allowed, rebase merging off,
+  head branches deleted after merge.
+- Ruleset `main` on the default branch: no deletion, no force push, changes only through pull requests with 1
+  approval from a code owner and stale approvals dismissed, required status check `Co-op checks`. Repository admins
+  may bypass it for pull requests only, so a sole maintainer can merge their own PRs; direct pushes stay blocked.
+- Labels: `tools/coop/setup-labels.sh Clodmony/starship-coop`.
+- Milestones `M0` to `M3` and one issue per work package from `docs/coop/ROADMAP.md`.
 
-Then in the repository settings:
+Upstream's build workflows (`.github/workflows/main.yml`, `linux.yml`, `windows.yml`, `mac.yml`, `switch.yml`) need
+no secrets. `main.yml` builds every platform on every push to any branch; the validation workflows build on every
+PR. Their jobs are all named `build`, so they cannot be told apart as required checks; reviewers check them by hand.
+Making them required would need a change to upstream files, which we avoid.
 
-- Features: Issues on, Discussions on (questions and ideas that are not work items).
-- Pull requests: allow squash merging (default), turn off merge commits for feature branches, delete head branches
-  automatically.
-- Branch protection (ruleset) on `main`: require a pull request with 1 approval, require review from code owners,
-  dismiss stale approvals, require status checks `Co-op checks` and `Linux Validation`, block force pushes.
-- Actions: allow GitHub Actions. Upstream's build workflows (`.github/workflows/main.yml`, `linux.yml`,
-  `windows.yml`, `mac.yml`, `switch.yml`) need no secrets and run as they are.
-- Add contributors as collaborators with Write access, or let them work from their own forks.
-- Edit `.github/CODEOWNERS` when someone takes ownership of an area.
-
-Finally, open one issue per work package in `docs/coop/ROADMAP.md` with the work-package form.
+When more people help maintain: add them as collaborators (Write for contributors, Maintain or Admin for
+maintainers) and give them areas in `.github/CODEOWNERS`.
 
 ## Labels
 
@@ -52,9 +48,9 @@ Do it regularly (at least after every upstream release) so the gap stays small. 
 has the same steps for agents.
 
 ```sh
-git fetch upstream
+git fetch --multiple origin starship
 git switch -c sync/upstream-$(date +%F) origin/main
-git merge --no-ff upstream/main
+git merge --no-ff starship/main
 git submodule update --init --recursive
 ```
 
@@ -68,8 +64,8 @@ git submodule update --init --recursive
 ## Sending fixes upstream
 
 Generic fixes (port bugs, build fixes, new hook events that are not co-op specific) belong upstream as well. Branch
-from `upstream/main`, cherry-pick, and open the PR against HarbourMasters/Starship from a personal fork. Follow their
-contribution rules, and disclose AI use.
+from `starship/main`, cherry-pick, and open the PR against HarbourMasters/Starship from a personal fork of
+HarbourMasters/Starship. Follow their contribution rules, and disclose AI use.
 
 ## Releases
 

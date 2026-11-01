@@ -19,7 +19,7 @@ For `data/directory.yaml` in the hub. Fill in the URL and dates when publishing;
   year: 1997
   engine: N64 decompilation port (Starship, libultraship)
   project: Starship Co-op
-  url: https://github.com/<owner>/starship-coop
+  url: https://github.com/Clodmony/starship-coop
   other_urls:
   - https://github.com/HarbourMasters/Starship
   kind: fork
@@ -37,7 +37,7 @@ For `data/directory.yaml` in the hub. Fill in the URL and dates when publishing;
   qa: none
   notes: Campaign co-op on the Starship PC port. Pre-alpha; sync model chosen after a determinism test.
   sources:
-  - https://github.com/<owner>/starship-coop
+  - https://github.com/Clodmony/starship-coop
   checked: YYYY-MM-DD
   made_with_coop_anything: true
 ```

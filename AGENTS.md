@@ -11,7 +11,7 @@ playbook pages are linked below where they apply.
 
 ## First, every session
 
-1. `git fetch upstream origin`, then update your branch from `origin/main`.
+1. `git fetch origin`, then update your branch from `origin/main` (the co-op repo; see "Remotes" in CONTRIBUTING.md).
 2. Read the tracker before anything else: `gh issue list --state open`, `gh pr list`, and the latest comments on the
    issue you are working on. The hand-off from the previous session is there, not in a file.
 3. Read `docs/coop/DESIGN.md`, the accepted records in `docs/coop/decisions/`, and recent entries in
