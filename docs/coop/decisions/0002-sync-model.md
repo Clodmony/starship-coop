@@ -26,7 +26,8 @@ Every client runs the full simulation of all players; only controller inputs tra
 detect desyncs. This is how emulator netplay of local multiplayer games works.
 
 - Every enemy, boss, projectile and item is in sync for free, with no per-actor code.
-- Bandwidth is tiny. Local co-op (M1) and online co-op run the same code path.
+- Bandwidth is tiny. A replay file and the network are interchangeable input sources, so the engine work is testable
+  in one process before the netcode exists, and local split screen later needs no sync code at all.
 - Needs determinism: synced RNG seeds, no clock reads in the simulation, the Linux re-seed workaround fixed or
   disabled in co-op, the same build on every client, simulation-affecting CVars identical. Floating point may differ
   between compilers and CPUs, so cross-platform play may not hold.

@@ -5,13 +5,12 @@ in this repo at that commit; line numbers drift with upstream syncs, so search f
 
 ## 1. What we are building
 
-Two players (later up to four) play the Star Fox 64 campaign together:
+Two players (later up to four) play the Star Fox 64 campaign together **online**: each player runs Starship on their
+own PC and sees the level from their own Arwing. Every player sees the same level: the same enemies, bosses, items,
+wingmen and route. The host's save file holds the progress.
 
-- **Online:** each player runs Starship on their own PC and sees the level from their own Arwing.
-- **Local:** two players on one PC with split screen, the way versus mode already renders.
-
-Every player sees the same level: the same enemies, bosses, items, wingmen and route. The host's save file holds the
-progress.
+Local split screen (two players on one PC, the way versus mode renders) is deferred until after the first release.
+Nothing in the online design may rule it out.
 
 ## 2. What the decomp tells us
 
@@ -83,8 +82,14 @@ src/port/coop/
   unchanged from upstream.
 - **Layers talk downward only:** `ui` and `session` use `sync`; `sync` uses `net` and `game`; `game` uses the
   decomp through hooks. Nothing in `src/engine/` includes headers from `net/` or `session/`.
-- **Local co-op first.** Two players in one process, split screen, controller 1 and 2. This needs all of `game/` and
-  none of the network, it is testable with scripted inputs, and online co-op builds on it.
+- **Online first, one camera per client.** Each client simulates the level with several `Player` structs but renders
+  one camera, following its own player. So the number of players must be separate from `gCamCount` (WP-10), and the
+  camera, HUD and sound must follow the client's own player index, for example 0 on the host and 1 on the first
+  client (WP-28). Code that hard-codes `gPlayer[0]` as "the player looking at the screen" is the main thing to find (WP-05).
+- **Engine work does not wait for the network.** In one process, a second player driven by a replay file (WP-03,
+  WP-14) exercises all of `game/` before the transport exists. The network then replaces the replay file as that
+  player's input source (lockstep) or state source (host authority).
+- Local split screen later reuses the same player code and adds viewports (WP-13, WP-15).
 
 ## 4. Game rules to decide
 

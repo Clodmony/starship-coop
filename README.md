@@ -1,7 +1,8 @@
 # Starship Co-op
 
 **Star Fox 64 campaign co-op for [Starship](https://github.com/HarbourMasters/Starship), the native PC port of the
-Star Fox 64 decompilation.** Fly the Lylat System with friends, each player in their own Arwing, online or on one PC.
+Star Fox 64 decompilation.** Fly the Lylat System online with friends, each player in their own Arwing on their own
+PC.
 
 > **Status: pre-alpha.** There is no playable build yet. This repository is the shared workspace where the co-op
 > layer is being built. See the [roadmap](docs/coop/ROADMAP.md) for what is planned and what is being worked on.
@@ -14,7 +15,7 @@ your own US 1.0 or US 1.1 Star Fox 64 ROM on first launch.
 | | Planned |
 |---|---|
 | Players | 2 (later up to 4, the number versus mode already supports) |
-| Modes | Online (each player on their own PC) and local split-screen |
+| Modes | Online: each player on their own PC. Local split screen comes later |
 | What is shared | The whole level: enemies, bosses, items, wingmen, route choices, the story |
 | Save | The host's save file; clients do not touch their own |
 
