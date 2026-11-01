@@ -20,7 +20,7 @@ on:
       - 'tools/coop/build.py'
       - '.github/workflows/coop-build.yml'
   push:
-    branches: [ main ]
+    branches: [ coop ]
     paths:
       - 'src/**'
       - 'include/**'

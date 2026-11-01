@@ -10,5 +10,6 @@ One file per architecture decision: `NNNN-short-title.md`, numbered in order. Co
 
 | # | Title | Status |
 |---|---|---|
-| [0001](0001-fork-and-code-layout.md) | Fork of Starship, co-op code isolated in `src/port/coop/` | Accepted |
+| [0001](0001-fork-and-code-layout.md) | Fork of Starship, co-op code isolated in `src/port/coop/` | Accepted (branch layout superseded by 0003) |
 | [0002](0002-sync-model.md) | Sync model: lockstep or host authority | Proposed |
+| [0003](0003-branch-layout.md) | Branch layout: `coop` integrates, `main` mirrors upstream | Accepted |

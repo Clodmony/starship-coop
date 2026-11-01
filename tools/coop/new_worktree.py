@@ -3,7 +3,7 @@
 
     python tools/coop/new_worktree.py <issue-number> <short-slug>
 
-Creates branch coop/<issue>-<slug> from origin/main (or local main if there is no origin) in
+Creates branch issue/<issue>-<slug> from origin/coop (or local coop if there is no origin) in
 $COOP_WORKTREE_ROOT/<issue>-<slug>, default a "<repo>-worktrees" folder next to the repository, and initialises the
 submodules there. Remove the worktree after the PR is merged: git worktree remove <path>
 """
@@ -25,13 +25,13 @@ def main():
         return 2
     issue, slug = sys.argv[1], sys.argv[2]
     root = Path(os.environ.get("COOP_WORKTREE_ROOT") or ROOT.parent / f"{ROOT.name}-worktrees")
-    branch = f"coop/{issue}-{slug}"
+    branch = f"issue/{issue}-{slug}"
     path = root / f"{issue}-{slug}"
 
-    base = "main"
-    if git("rev-parse", "--verify", "--quiet", "origin/main", check=False).returncode == 0:
-        git("fetch", "origin", "main")
-        base = "origin/main"
+    base = "coop"
+    if git("rev-parse", "--verify", "--quiet", "origin/coop", check=False).returncode == 0:
+        git("fetch", "origin", "coop")
+        base = "origin/coop"
 
     root.mkdir(parents=True, exist_ok=True)
     git("worktree", "add", "-b", branch, str(path), base)

@@ -1,6 +1,6 @@
 # 0001: Fork of Starship, co-op code isolated in `src/port/coop/`
 
-- Status: Accepted
+- Status: Accepted; the branch layout ("the fork's own `main` is the integration branch") is superseded by 0003
 - Date: 2026-11-01
 - Issue: (none, project setup)
 
