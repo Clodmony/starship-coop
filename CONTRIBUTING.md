@@ -90,7 +90,8 @@ python tools/coop/build.py --assets   # first time: also builds sf64.o2r from yo
   into `build/x64`. Dependencies come through vcpkg during configure.
 - **Linux and macOS:** CMake, Ninja, a C++20 compiler and the libraries listed in
   [.github/workflows/coop-build.yml](.github/workflows/coop-build.yml) (Linux) or `Brewfile` (macOS). Builds into
-  `build-cmake`.
+  `build-cmake`. SDL2_net is required; the package lists in `docs/BUILDING.md` for Fedora and openSUSE do not have it
+  yet.
 - Push only when the build is green. Say in the PR which OS you built on.
 
 CI on pull requests: `Co-op checks` (seconds) always; `Co-op build` (Linux and Windows, about 30 to 40 minutes) when

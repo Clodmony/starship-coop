@@ -22,8 +22,10 @@ Studio 2022) on Windows. Upstream's manual steps are in `docs/BUILDING.md`.
 - Ask the owner before installing build dependencies. Linux packages are listed in `.github/workflows/coop-build.yml`.
 - The ROM (`baserom.z64`) and the generated `sf64.o2r` / `starship.o2r` never go into git (`.gitignore` covers them;
   `python tools/coop/check.py` fails if one is tracked).
-- Networking code needs `USE_NETWORKING` (SDL2_net). `CMakeLists.txt` hard-sets it with `set(USE_NETWORKING OFF)`, so a
-  `-D` on the command line does not turn it on; changing that is part of WP-20.
+- Networking code needs `USE_NETWORKING` (SDL2_net), on by default on desktop builds. `-DUSE_NETWORKING=OFF` builds
+  without it. Code in `src/port/coop/net/` sits inside `#ifdef USE_NETWORKING`.
+- `python tools/coop/net_test.py` tests the transport: a virtual network, then two real processes through the chaos
+  relay. It needs a configured build directory but no ROM.
 - Several worktrees can build at once; each has its own `build-cmake/`. Builds are heavy; avoid running more than the
   machine has memory for.
 
