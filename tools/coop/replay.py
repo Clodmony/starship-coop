@@ -11,6 +11,7 @@ SF64_COOP_REPLAY_* environment variables (src/port/coop/test/replay.h). Playback
 A replay file holds raw structs: it only plays back on the same build and platform it was recorded on.
 """
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -69,23 +70,30 @@ def read_report(path):
     return values if "result" in values else None
 
 
-def run_game(mode, replay, exe, timeout, hash_log=False, poke=None, tag=None):
+def run_game(mode, replay, exe, timeout, hash_log=False, poke=None, tag=None, env_extra=None, config=None):
     """Start one game in a fresh run folder and wait for the replay report.
 
     Returns (report values or None, run folder, seconds). With hash_log the run also writes state-hash.txt into the
-    run folder (src/port/coop/sync/state_hash.h); poke flips one byte of game state at that frame.
+    run folder (src/port/coop/sync/state_hash.h); poke flips one byte of game state at that frame. env_extra adds
+    environment variables (for example the test switches in src/port/coop/test/switches.h); config is a dict written
+    as the run folder's starship.cfg.json before the game starts (graphics backend, window size, CVars).
     """
     run = make_run_dir(exe, mode if tag is None else f"{mode}-{tag}")
+    if config is not None:
+        (run / "starship.cfg.json").write_text(json.dumps(config, indent=4), encoding="utf-8")
     report = run / "replay-report.txt"
     env = dict(os.environ)
     for key in ("SF64_COOP_REPLAY_RECORD", "SF64_COOP_REPLAY_PLAY", "SF64_COOP_HASH_LOG", "SF64_COOP_HASH_POKE"):
         env.pop(key, None)
+    for key in [k for k in env if k.startswith("SF64_COOP_TEST_")]:
+        env.pop(key)
     env["SF64_COOP_REPLAY_RECORD" if mode == "record" else "SF64_COOP_REPLAY_PLAY"] = str(replay)
     env["SF64_COOP_REPLAY_REPORT"] = str(report)
     if hash_log:
         env["SF64_COOP_HASH_LOG"] = str(run / "state-hash.txt")
         if poke is not None:
             env["SF64_COOP_HASH_POKE"] = str(poke)
+    env.update(env_extra or {})
 
     print(f"replay: {mode} {replay}")
     print(f"replay: exe {exe}")

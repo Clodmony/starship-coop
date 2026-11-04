@@ -297,9 +297,9 @@ static void CoopStateHash_OnGamePreUpdate(IEvent* event) {
         fprintf(sLog, " %016llx", (unsigned long long) hash.region[i]);
     }
     fputc('\n', sLog);
-    if ((sFrame % 60) == 0) {
-        fflush(sLog);
-    }
+    // Every frame: the test tools stop the game as soon as the replay report exists, which on Windows ends the
+    // process without running atexit, so anything still buffered would be lost (seen in WP-02).
+    fflush(sLog);
     sFrame++;
 }
 
