@@ -65,6 +65,56 @@ Unknown:
 - Whether a replay recorded on one PC plays back on another with the same build (WP-02).
 - Whether audio or other wall-clock sources affect other levels.
 
+### 2026-11-04, #4 (WP-04), state hash
+
+Identity: ROM US 1.0, branch `issue/4-state-hash` on top of `070256bd` (#37), Windows 11, MSVC 19.44 (VS 2022 Build
+Tools), Debug, DirectX 11.
+
+Observed:
+
+- The simulation state is: `gPlayer` (`gCamCount` entries, allocated per level, `src/engine/fox_play.c:2948`), the
+  fixed arrays `gScenery[50]`, `gSprites[40]`, `gActors[60]`, `gBosses[4]`, `gEffects[100]`, `gItems[20]`,
+  `gPlayerShots[16]`, `gTexturedLines[100]`, `gRadarMarks[65]`, `gBonusText[10]` (`include/sf64context.h:232-241`),
+  `gScenery360` (200 entries, all-range levels only, `src/engine/fox_play.c:2957-2958`), the six RNG seeds
+  (`src/sys/sys_math.c:4-9`) and globals in `src/engine/fox_context.c`.
+- Pointer fields: `ObjectInfo.draw/dList`, `.action`, `.hitbox` in every object (`include/sf64object.h:145-160`),
+  `Effect.unk_74` (`include/sf64object.h:229`), `Player.sfx.srcPos/srcVel` (`include/sf64player.h:159-160`).
+  `Actor.iwork[25]` is `uintptr_t` and some actors keep pointers to other actors in it
+  (`src/overlays/ovl_i5/fox_ti.c:694-697`, `:1733-1734`).
+- Every object and the players are cleared byte by byte before use (`src/engine/fox_enmy.c:156-210`,
+  `src/engine/fox_play.c:2605-2612`), so struct padding holds zeros unless the game writes it.
+- `GamePostUpdateEvent` does not fire every frame: `Game_Update` returns early on standby (`src/engine/fox_game.c:355-358`)
+  and the event sits inside a branch (`:614`). `GamePreUpdateEvent` fires every frame (`:352`).
+- **Listener order:** listeners of one event are sorted by ascending priority (`src/port/hooks/impl/EventSystem.cpp:27-29`),
+  so `EVENT_PRIORITY_LOW` runs first and `HIGH` last; equal priorities have no defined order (`std::sort` is not
+  stable). The replay listener is now `LOW` so the hash (`NORMAL`) sees the restored seeds on frame 0.
+- `python tools/coop/hash_check.py run local/replays/corneria.sfcr` (the 13545-frame Corneria run from WP-03), three
+  games at once: runs A and B gave equal hashes on all 13545 frames; run C, with one bit of
+  `gActors[59].fwork[29]` flipped at frame 6772, first differed at frame 6772 (region `actors`), then on 2847 frames up
+  to 9618, and only in region `actors`. All three replays: `PASS`. 467 s.
+- The total hash took 13536 distinct values over 13545 frames.
+
+Derived:
+
+- On one machine and one build, the whole hashed state (not just the WP-03 checkpoint) of a full Corneria run is
+  reproduced exactly by inputs plus seeds. This is the "one machine" half of WP-02.
+- The poke stopped showing at frame 9619, most likely because the game reused and cleared actor slot 59 (guess, not
+  checked). The simulation itself did not change, since only `actors` differed.
+- The pointer handling is enough to hide address randomisation between two processes of the same build.
+
+Guess:
+
+- Values in `Actor.iwork` below 2^32 are numbers, values above are pointers. True for 64-bit Windows and Linux with
+  ASLR (images and heaps above 4 GiB), not checked on macOS or 32-bit builds.
+
+Unknown:
+
+- Whether the hash holds across two PCs, other compilers or Release builds (WP-02).
+- State outside the hashed set that still affects the game (for example overlay statics, `gLevelObjects` progress
+  beyond `gObjectLoadIndex`, audio). A desync that the hash misses would show up as equal hashes with different play.
+- `gScenery360` is only hashed in `LEVELMODE_ALL_RANGE`; Andross allocates it mid-level
+  (`src/overlays/ovl_i6/fox_andross.c:4055`), where it may not be hashed.
+
 ## Networking
 
 _Nothing yet._

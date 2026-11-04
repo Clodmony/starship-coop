@@ -69,32 +69,28 @@ def read_report(path):
     return values if "result" in values else None
 
 
-def main():
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("mode", choices=["record", "play"])
-    p.add_argument("file", help="replay file (keep it under local/, it is made from your game)")
-    p.add_argument("--exe", help="Starship executable (default: newest build found)")
-    p.add_argument("--timeout", type=float, default=1800, help="playback: give up after this many seconds")
-    args = p.parse_args()
+def run_game(mode, replay, exe, timeout, hash_log=False, poke=None, tag=None):
+    """Start one game in a fresh run folder and wait for the replay report.
 
-    exe = find_exe(args.exe)
-    replay = Path(args.file).resolve()
-    if args.mode == "play" and not replay.exists():
-        sys.exit(f"replay: {replay} does not exist")
-    replay.parent.mkdir(parents=True, exist_ok=True)
-
-    run = make_run_dir(exe, args.mode)
+    Returns (report values or None, run folder, seconds). With hash_log the run also writes state-hash.txt into the
+    run folder (src/port/coop/sync/state_hash.h); poke flips one byte of game state at that frame.
+    """
+    run = make_run_dir(exe, mode if tag is None else f"{mode}-{tag}")
     report = run / "replay-report.txt"
     env = dict(os.environ)
-    for key in ("SF64_COOP_REPLAY_RECORD", "SF64_COOP_REPLAY_PLAY"):
+    for key in ("SF64_COOP_REPLAY_RECORD", "SF64_COOP_REPLAY_PLAY", "SF64_COOP_HASH_LOG", "SF64_COOP_HASH_POKE"):
         env.pop(key, None)
-    env["SF64_COOP_REPLAY_RECORD" if args.mode == "record" else "SF64_COOP_REPLAY_PLAY"] = str(replay)
+    env["SF64_COOP_REPLAY_RECORD" if mode == "record" else "SF64_COOP_REPLAY_PLAY"] = str(replay)
     env["SF64_COOP_REPLAY_REPORT"] = str(report)
+    if hash_log:
+        env["SF64_COOP_HASH_LOG"] = str(run / "state-hash.txt")
+        if poke is not None:
+            env["SF64_COOP_HASH_POKE"] = str(poke)
 
-    print(f"replay: {args.mode} {replay}")
+    print(f"replay: {mode} {replay}")
     print(f"replay: exe {exe}")
     print(f"replay: run folder {run}")
-    if args.mode == "record":
+    if mode == "record":
         print("replay: play now; close the game window to stop recording")
     start = time.monotonic()
     proc = subprocess.Popen([str(exe)], cwd=run, env=env)
@@ -102,11 +98,11 @@ def main():
     values = None
     try:
         while True:
-            if args.mode == "play":
+            if mode == "play":
                 values = read_report(report)
                 if values is not None:
                     break
-                if time.monotonic() - start > args.timeout:
+                if time.monotonic() - start > timeout:
                     print("replay: timeout")
                     break
             if proc.poll() is not None:
@@ -124,9 +120,29 @@ def main():
     if values is None:
         time.sleep(1)
         values = read_report(report)
-    elapsed = time.monotonic() - start
     if values is None:
-        print(f"replay: FAILED, no report written (exit code {proc.returncode}, {elapsed:.0f}s); see {run / 'logs'}")
+        print(f"replay: no report written (exit code {proc.returncode}); see {run / 'logs'}")
+    return values, run, time.monotonic() - start
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("mode", choices=["record", "play"])
+    p.add_argument("file", help="replay file (keep it under local/, it is made from your game)")
+    p.add_argument("--exe", help="Starship executable (default: newest build found)")
+    p.add_argument("--timeout", type=float, default=1800, help="playback: give up after this many seconds")
+    p.add_argument("--hash-log", action="store_true", help="also write state-hash.txt into the run folder (WP-04)")
+    args = p.parse_args()
+
+    exe = find_exe(args.exe)
+    replay = Path(args.file).resolve()
+    if args.mode == "play" and not replay.exists():
+        sys.exit(f"replay: {replay} does not exist")
+    replay.parent.mkdir(parents=True, exist_ok=True)
+
+    values, run, elapsed = run_game(args.mode, replay, exe, args.timeout, hash_log=args.hash_log)
+    if values is None:
+        print(f"replay: FAILED ({elapsed:.0f}s)")
         return 1
 
     for key in ("frames", "recorded_frames", "first_mismatch", "mismatch_want", "mismatch_got",
