@@ -10,7 +10,7 @@ description: Work one Starship Co-op issue end to end in one session - read the 
    `docs/coop/decisions/`, the issue's pointers, and `local/` for your owner's private setup.
 2. **Pick and claim.** If the owner did not name an issue, propose one whose "Needs" are done and that nobody holds.
    Ask the owner before posting the claim comment (it publishes under their account).
-3. **Branch.** `python tools/coop/new_worktree.py <issue> <slug>` (branch `coop/<issue>-<slug>` from `origin/main`), or a
+3. **Branch.** `python tools/coop/new_worktree.py <issue> <slug>` (branch `issue/<issue>-<slug>` from `origin/coop`), or a
    plain branch with the same name. One issue per branch.
 4. **Understand before changing.** Read the decomp code involved. Write findings to `docs/coop/NOTES.md` as you go:
    date, issue, Observed (file:line), Derived, Guess, Unknown.

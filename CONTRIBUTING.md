@@ -11,22 +11,34 @@ git clone --recursive https://github.com/Clodmony/starship-coop.git
 cd starship-coop
 ```
 
-Remotes, the same for everyone so docs and scripts work everywhere:
+### Branches
+
+| Branch | What it is |
+|---|---|
+| `coop` | **Default branch.** All co-op work; protected, changes only through reviewed pull requests. Branch from it, target your PR at it. |
+| `main` | An unchanged mirror of upstream Starship (`HarbourMasters/Starship` `main`). Never commit to it; maintainers fast-forward it, then bring it into `coop` with a sync PR. `git diff origin/main...origin/coop` shows everything co-op changed. |
+| `issue/<number>-<slug>` | Your work on one issue, for example `issue/12-p2-input-routing`. |
+| `sync/upstream-YYYY-MM-DD` | An upstream sync (maintainers). |
+| `docs/<slug>` | Docs-only changes. |
+
+### Remotes and branches
+
+The same for everyone, so docs and scripts work everywhere:
 
 | Remote | Points at | Who needs it |
 |---|---|---|
-| `origin` | `Clodmony/starship-coop`, the co-op repo. `origin/main` is what you branch from. | Everyone |
+| `origin` | `Clodmony/starship-coop`. `origin/coop` is what you branch from; `origin/main` is the upstream mirror. | Everyone |
 | `fork` | Your own fork of starship-coop, to push branches when you have no write access | Contributors without write access |
-| `starship` | `HarbourMasters/Starship`, the upstream port. Never push to it. | Whoever syncs upstream |
+| `starship` | `HarbourMasters/Starship`, the upstream port. Never push to it. | Maintainers updating the `main` mirror |
 
 ```sh
 # No write access: fork on GitHub without touching your remotes, then add it as "fork".
 gh repo fork Clodmony/starship-coop --remote=false
 git remote add fork https://github.com/<you>/starship-coop.git
-git push -u fork coop/12-p2-input-routing
-gh pr create --repo Clodmony/starship-coop --head <you>:coop/12-p2-input-routing --draft
+git push -u fork issue/12-p2-input-routing
+gh pr create --repo Clodmony/starship-coop --base coop --head <you>:issue/12-p2-input-routing --draft
 
-# Upstream syncs only:
+# Maintainers updating the mirror only:
 git remote add starship https://github.com/HarbourMasters/Starship.git
 git remote set-url --push starship DISABLED
 ```
@@ -50,8 +62,8 @@ Don't let `gh repo fork --remote` rename your remotes; it would call this repo `
 
 ## Work on it
 
-1. Branch from the latest `main`: `coop/<issue number>-<short-slug>`, for example `coop/12-p2-input-routing`.
-   Upstream syncs use `sync/upstream-YYYY-MM-DD`. Docs-only changes can use `docs/<slug>`.
+1. Branch from the latest `coop`: `issue/<issue number>-<short-slug>`, for example `issue/12-p2-input-routing`.
+   Docs-only changes can use `docs/<slug>`. Never branch from `main`; it is the upstream mirror without co-op code.
 2. Recommended: one git worktree per issue, so several branches (and several agents) can build side by side:
    `python tools/coop/new_worktree.py 12 p2-input-routing`.
 3. Follow the code rules in [AGENTS.md](AGENTS.md#code-rules): co-op code in `src/port/coop/`, upstream files
@@ -97,8 +109,8 @@ the PR touches code, CMake files or submodules. Docs-only PRs skip the build.
 1. Open the PR as a **draft** early, with the template filled in and `Closes #<issue>`.
 2. Mark it ready when the checklist is done. It needs green `Co-op checks`, a green `Co-op build` when it ran, and
    one approving review from a code owner (`.github/CODEOWNERS`). Maintainers can merge their own PRs without a
-   second review while the project has a single maintainer; direct pushes to `main` are blocked for everyone once
-   the branch ruleset is active (see docs/coop/MAINTAINING.md).
+   second review while the project has a single maintainer; direct pushes to `coop` are blocked for everyone (see
+   docs/coop/MAINTAINING.md).
 3. Say which QA level the change reached and how it was tested ([docs/coop/QA.md](docs/coop/QA.md)). "Compiles" is
    a valid answer; claiming more than you ran is not.
 4. If an AI agent wrote the change, say so, and have the human who runs the agent review the diff before marking the
