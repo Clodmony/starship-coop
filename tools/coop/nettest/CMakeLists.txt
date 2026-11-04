@@ -1,5 +1,7 @@
 # Test program for the co-op transport, driven by tools/coop/net_test.py. Not part of the default build.
-add_executable(coop_net_test
+# EXCLUDE_FROM_ALL goes here, not on add_subdirectory: Visual Studio leaves the targets of an excluded directory out of
+# the solution, and cmake --build --target then cannot find them.
+add_executable(coop_net_test EXCLUDE_FROM_ALL
     coop_net_test.c
     ${CMAKE_SOURCE_DIR}/src/port/coop/net/net_core.c
     ${CMAKE_SOURCE_DIR}/src/port/coop/net/transport_sdlnet.c

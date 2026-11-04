@@ -383,7 +383,7 @@ if(USE_NETWORKING)
     target_link_libraries(${PROJECT_NAME} PRIVATE ${COOP_SDL2_NET})
     target_compile_definitions(${PROJECT_NAME} PRIVATE USE_NETWORKING)
     # COOP: test program for the transport, built on demand by tools/coop/net_test.py.
-    add_subdirectory(tools/coop/nettest EXCLUDE_FROM_ALL)
+    add_subdirectory(tools/coop/nettest)
 endif()
 
 option(USE_STANDALONE "Build as a standalone executable" OFF)
