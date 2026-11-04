@@ -9,7 +9,7 @@ Every PR states the QA level it reached and how. Levels follow Co-op Anything:
 | `automated` | A scripted harness drove real game clients and checked shared state. Paste the summary. |
 | `verified-playthrough` | A full campaign was finished in co-op, written up with known issues. |
 
-Current project level: `none` (no co-op code yet).
+Current project level: `none` (no co-op play yet; the transport has its own tests).
 
 ## Test identity
 
@@ -26,6 +26,8 @@ number of clients, transport.
    owner's), connected over loopback, both fed replays.
 4. **Network conditions (WP-27).** Lag, loss and reordering between the clients with a chaos relay, as in the hub's
    [network chaos testing](https://github.com/cranebeaker/coop-anything/blob/main/playbook/network-chaos-testing.md).
+   The transport on its own already runs through that relay: `python tools/coop/net_test.py` (WP-20), which needs a
+   configured build directory but no ROM. WP-27 does the same with real game clients.
 5. **Regression per bug.** Every desync fix comes with the replay that triggered it.
 
 Running tests must never use or modify the owner's own `starship.cfg.json`, saves, `mods/` folder or running game.
@@ -33,6 +35,15 @@ Running tests must never use or modify the owner's own `starship.cfg.json`, save
 ## Results
 
 Newest first. One block per run that matters (a milestone, a release, a QA level change).
+
+```
+date:       2026-11-05
+commit:     12329623
+identity:   no game, no ROM; Linux, GCC, Debug; 2 or 3 processes on one machine, UDP over loopback, chaos relay
+what ran:   python tools/coop/net_test.py
+result:     17/17 scenarios: virtual network with 200 seeds, every relay profile, corruption, outages, timeouts,
+            killed client, full host, two clients, junk datagrams. Transport only, not co-op play.
+```
 
 ```
 date:       YYYY-MM-DD

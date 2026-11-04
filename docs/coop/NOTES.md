@@ -94,7 +94,37 @@ _Nothing yet._
 
 ## Networking
 
-_Nothing yet._
+### 2026-11-05, #18 (WP-20), UDP transport
+
+Identity: commit `12329623`, Linux, GCC, Debug, no game and no ROM involved. Two or three processes on one machine,
+UDP over loopback.
+
+**Observed**
+
+- All 17 scenarios of `tools/coop/net_test.py` pass, including the `hell` profile: the relay dropped 710 of 3042
+  datagrams and duplicated 120, and all 300 reliable messages per direction still arrived in order, in about 10 s.
+- A 2 s outage, in either or both directions, loses no reliable message and does not end the connection.
+- Timeouts fire before the limit you would expect from the outage: with a 2000 ms timeout, both sides reported it
+  1.8 s after the link died, because the clock runs from the last datagram heard, up to one ping (250 ms) earlier.
+- Two-way traffic hides a missing ack-only datagram. A build that never sent `ACK` passed the `lan` scenario, because
+  acks ride on data and pings. Only one-way traffic shows it, so the virtual network now has that case.
+- SDL2_net's shared CMake target does not pass SDL2 on to whatever links it: linking `coop_net_test` against
+  `SDL2_net::SDL2_net` alone failed with `undefined reference to symbol 'SDL_GetTicks'`
+  (`tools/coop/nettest/CMakeLists.txt`).
+- `SDLNet_UDP_GetPeerAddress(socket, -1)` returns the port picked for `SDLNet_UDP_Open(0)`
+  (`src/port/coop/net/transport_sdlnet.c`).
+
+**Derived**
+
+- A goodbye that gets through ends a connection at once. Without one, a dead peer costs the full timeout.
+- Under a long one-way outage the resend count grows quickly (about 1200 resends in the 2 s outage tests, with 120
+  messages sent per second in all). The backoff bounds it, but a bigger reliable lane would need real congestion control.
+
+**Unknown**
+
+- Anything between two real PCs: NAT, firewalls, real loss. Every run so far is loopback through the relay.
+- The longest stall of the game loop, which `timeoutMs` (5000 by default) has to outlast. Level loads may matter.
+- macOS: `Brewfile` and `.github/macports.yml` list SDL2_net, but nothing was built or run there.
 
 ## Prior work
 
