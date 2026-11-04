@@ -39,7 +39,8 @@ Datagrams carry whole messages. We add sequence numbers, acks, resends, keep-ali
 - The same message shape as the Steam relay, so one interface covers both.
 - Has an unreliable lane, so a late input does not block newer ones.
 - The chaos relay can test it directly.
-- Costs a few hundred lines of our own code. Reliability bugs are subtle, so it needs testing under loss.
+- Costs about 1,000 lines of our own code, going by the first version. Reliability bugs are subtle, so it needs
+  testing under loss.
 - No fragmentation unless we write it.
 
 ### B. TCP on SDL2_net
