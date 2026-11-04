@@ -20,6 +20,11 @@ number of clients, transport.
 
 1. **Replays (WP-03).** Controller input recorded per game frame and played back. Single-player replays guard the rule
    that co-op off changes nothing: a replay recorded on upstream must give the same per-frame hashes on this fork.
+   `python tools/coop/replay.py record <file>` (someone plays, closes the window to stop) and
+   `python tools/coop/replay.py play <file>` (unattended, exit code 0 on `PASS`). Each run gets a fresh folder under
+   `local/`. Recording starts at `GSTATE_START`, after the boot logo; each frame stores a checkpoint (game state, level,
+   player 0 state and position, RNG seeds) and playback reports the first frame that differs. Replay files hold raw
+   structs: same build and platform only, and they stay in `local/` (made from game play, not shared).
 2. **State hashes (WP-04).** One hash per game frame over players, object arrays, RNG seeds and key globals. Two
    clients compare hashes; the first different frame is the desync.
 3. **Two clients on one machine.** Two Starship processes with their own config, save and log folders (never the
