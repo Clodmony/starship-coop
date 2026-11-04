@@ -38,6 +38,14 @@ Newest first. One block per run that matters (a milestone, a release, a QA level
 
 ```
 date:       2026-11-05
+commit:     fdd01ee1
+identity:   no game, no ROM; CI on Linux (GCC) and Windows (MSVC), Release; 2 or 3 processes, UDP over loopback, chaos relay
+what ran:   python tools/coop/net_test.py --config Release
+result:     17/17 scenarios on both. Transport only, not co-op play.
+```
+
+```
+date:       2026-11-05
 commit:     12329623
 identity:   no game, no ROM; Linux, GCC, Debug; 2 or 3 processes on one machine, UDP over loopback, chaos relay
 what ran:   python tools/coop/net_test.py

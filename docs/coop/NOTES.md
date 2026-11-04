@@ -96,8 +96,8 @@ _Nothing yet._
 
 ### 2026-11-05, #18 (WP-20), UDP transport
 
-Identity: commit `12329623`, Linux, GCC, Debug, no game and no ROM involved. Two or three processes on one machine,
-UDP over loopback.
+Identity: no game and no ROM involved, two or three processes on one machine, UDP over loopback. Commit `12329623` on
+Linux, GCC, Debug. Commit `fdd01ee1` in CI on Linux (GCC) and Windows (MSVC), both Release.
 
 **Observed**
 
@@ -113,6 +113,13 @@ UDP over loopback.
   (`tools/coop/nettest/CMakeLists.txt`).
 - `SDLNet_UDP_GetPeerAddress(socket, -1)` returns the port picked for `SDLNet_UDP_Open(0)`
   (`src/port/coop/net/transport_sdlnet.c`).
+- All 17 scenarios pass on Windows too. The virtual network gives the same counts on GCC Debug, GCC Release and MSVC
+  Release: dropped 113877, duplicated 21597, corrupted 10131.
+- On Windows `stray_datagrams` counted 1954 of 2257 junk datagrams as rejected; on Linux all 3000. In the Windows run
+  301 of the 2257 were larger than the 1201-byte receive buffer, which leaves 1956.
+- CMake's Visual Studio generator leaves the targets of an `EXCLUDE_FROM_ALL` directory out of the solution, so
+  `cmake --build --target` fails with `MSB1009: Project file does not exist`. Ninja does not mind. Put
+  `EXCLUDE_FROM_ALL` on the target instead (`tools/coop/nettest/CMakeLists.txt`).
 
 **Derived**
 
@@ -120,8 +127,14 @@ UDP over loopback.
 - Under a long one-way outage the resend count grows quickly (about 1200 resends in the 2 s outage tests, with 120
   messages sent per second in all). The backoff bounds it, but a bigger reliable lane would need real congestion control.
 
+**Guess**
+
+- Windows drops a datagram larger than the receive buffer inside `recvfrom`, so it never reaches the core and is not
+  counted. Linux cuts it to the buffer size, and the core rejects it. Harmless either way: traffic was unaffected.
+
 **Unknown**
 
+- The other 2 of the 1956 junk datagrams that Windows did not count.
 - Anything between two real PCs: NAT, firewalls, real loss. Every run so far is loopback through the relay.
 - The longest stall of the game loop, which `timeoutMs` (5000 by default) has to outlast. Level loads may matter.
 - macOS: `Brewfile` and `.github/macports.yml` list SDL2_net, but nothing was built or run there.
