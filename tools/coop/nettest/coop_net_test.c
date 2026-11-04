@@ -591,7 +591,8 @@ static int Sim_Main(uint32_t seeds) {
             link.blackoutStart = startTime + 1000 + Sim_Random() % 1000;
             link.blackoutEnd = link.blackoutStart + 500 + Sim_Random() % 3000;
         }
-        Sim_Exchange(seed, &link, startTime, 300, 300, 2, 1 + seed % 8);
+        // Every other run polls once per game frame, as the game will. The rest poll far more often than that.
+        Sim_Exchange(seed, &link, startTime, 300, 300, (seed % 2 == 0) ? 33 : 2, 1 + seed % 8);
         totalDropped += sNet.dropped;
         totalDuplicated += sNet.duplicated;
         totalCorrupted += sNet.corrupted;
