@@ -144,6 +144,16 @@ Unknown:
 - Whether `Camera_Update` for player 2 writes globals that the local camera reads (WP-28).
 - `gCoopDebugPlayerCount` changes the simulation, so it belongs in the sim CVar list of WP-21 once both are merged.
 
+Found later (2026-11-06, while testing WP-11 by watching a 2-player Corneria run):
+
+- Over water the graphics broke, and the run later ended in an MSVC debug assertion (`back() called on empty
+  vector`, in `<vector>`). Cause: in `Display_Update` the loop that draws reflected player features over water pushes
+  the matrix once before the loop but popped once per player inside it (`src/engine/fox_display.c`, the
+  `gGroundSurface == SURFACE_WATER` block after `Effect_Draw`). With one player that balances; with two the matrix
+  stack underflowed every frame over water. Versus never reaches it (no water). Fix: one pop after the loop.
+  Verified: the owner watched a 2-player run over Corneria's water, graphics normal, no assertion; 1-player replay
+  still PASS. That the assertion came from this underflow is a guess; it did not come back after the fix.
+
 ## Determinism
 
 _Nothing yet._
