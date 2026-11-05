@@ -7034,6 +7034,9 @@ void Play_Update(void) {
     }
 
     for (i = 0; i < CoopPlayers_Count(); i++) { // COOP: was gCamCount
+        if (CoopPlayers_SkipUpdate(i)) {        // COOP: parked co-op player, or joining this frame (WP-11)
+            continue;
+        }
         gPlayer[i].num = gPlayerNum = i;
         Player_Update(&gPlayer[i]);
     }
@@ -7046,6 +7049,9 @@ void Play_Update(void) {
     BonusText_Update();
 
     for (i = 0; i < CoopPlayers_Count(); i++) { // COOP: was gCamCount
+        if (CoopPlayers_IsParked(i)) {          // COOP: no camera for a parked co-op player (WP-11)
+            continue;
+        }
         gPlayer[i].num = gPlayerNum = i;
         Camera_Update(&gPlayer[i]);
     }

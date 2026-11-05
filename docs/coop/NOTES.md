@@ -154,6 +154,65 @@ Found later (2026-11-06, while testing WP-11 by watching a 2-player Corneria run
   Verified: the owner watched a 2-player run over Corneria's water, graphics normal, no assertion; 1-player replay
   still PASS. That the assertion came from this underflow is a guess; it did not come back after the fix.
 
+### 2026-11-05, #9 (WP-11), player 2 in Corneria's all-range section
+
+Observed:
+
+- Corneria's only all-range section is the Granga fight on the normal route. `Corneria_Granga_Init` switches player 0
+  alone: `gPlayer[0].state = PLAYERSTATE_START_360` (`src/overlays/ovl_i1/fox_co.c:102-110`). The cutscene
+  `Cutscene_AllRangeMode` sets `gChangeTo360` on its frame 37 (`src/engine/fox_demo.c:771-788`), and `Play_Update`
+  then sets `gLevelMode = LEVELMODE_ALL_RANGE` (`src/engine/fox_play.c`, `if (gChangeTo360)`).
+- In the recorded Corneria run (`local/replays/corneria.sfcr`, normal route), the trace shows: rails until frame
+  6454, `START_360` from 6454, mode all-range from 6493, player 0 `ACTIVE` from 6696, `LEVEL_COMPLETE` at 8621
+  (trace frames are `gGameFrameCount`, not replay frames).
+- `Player_Setup` resets level-wide state besides the player: radio (`gRadioState`, `gRadioMsgRadioId`), the start
+  screen timer, the intro flag `D_ctx_8017782C`, the music, `gPlayCamAt`/`gPlayCamEye`
+  (`src/engine/fox_play.c`, `Player_Setup`). Running it for a player who joins mid-level would disturb player 0.
+- `PLAYERSTATE_STANDBY` is not a quiet state: each frame it sets `gShowHud = false` and `gPauseEnabled = false`
+  (`src/engine/fox_play.c`, `Player_Update`, `case PLAYERSTATE_STANDBY`), so it cannot park a second player.
+- `Player` holds no pointers (`include/sf64player.h`, `struct Player`); `sfxSource` is an array inside the struct.
+  Copying one `Player` into another is safe.
+- The all-range camera code (`Camera_UpdateArwing360` to `Camera_Update360`) writes no globals except the starfield
+  (`gStarfieldX`, `gStarfieldY`, scroll), which only space levels draw.
+
+What changed (`src/port/coop/game/players.c`, two `// COOP:` checks in `Play_Update`):
+
+- In co-op, players 1 and up start parked: allocated but not updated, no camera update, not drawn (their `draw` flag
+  stays 0 from `Player_InitializeAll`).
+- When the level is in all-range mode and player 0 is `ACTIVE`, each parked player joins as a copy of player 0,
+  250 units to the side and 80 up per index, with the per-player arrays `Player_Setup` fills (wing health,
+  timers, laser, bombs, lives) copied from index 0. It updates from the next frame on.
+- `tools/coop/player_trace.py` and `src/port/coop/test/player_trace.c` (`SF64_COOP_TRACE`) log and check each
+  player's state and position per frame.
+
+Tested (Windows 11 Home 10.0.26200, MSVC 14.44.35207, Debug, US 1.0 ROM, default graphics backend from a fresh
+config; this branch on top of WP-10 8b78fbf5, merged locally with the WP-03 replay code 070256bd for the test only):
+
+- Co-op off (count 1): Corneria replay PASS, `first_mismatch=-1`, level complete at replay frame 11747.
+- Count 2, same replay, `player_trace.py check`: PASS. Player 1 parked for all 6493 rail frames, active in all-range
+  on frame 6696 (the same frame as player 0), 3819 active frames, 41.9 units per frame on average, distance to
+  player 0 between 159 and 4347. It turned at the arena edge on its own (`U_TURN`, like player 0).
+- In the same run the replay stops matching at replay frame 9887, player 0 goes down at trace frame 11145 and the
+  level restarts from the checkpoint; player 1 is parked again after the restart.
+
+Derived:
+
+- Player 1 copies player 0's controller (both read `gMainController`), but from another position, so it flies a
+  different path. Its update draws random numbers, so the enemies act differently and the recorded inputs no longer
+  fit; that is why player 0 goes down. Expected until each player has its own input (WP-14) and the run is recorded
+  with two players.
+
+Unknown:
+
+- How player 1 looks on screen. Nobody watched the run; the check is from the trace only.
+- Whether enemies target or hit player 1: enemy and shot loops still use `gCamCount` or `gPlayer[0]`, so probably
+  not (guess). Friendly fire and targeting are game rules (WP-07, WP-16).
+- Player 1 has no engine noise: `Audio_StartPlayerNoise(gPlayerNum)` is called in `Player_Setup`
+  (`src/engine/fox_play.c:4954`), which a joining player skips. Whether it should get one is for WP-28 (sound follows
+  the local player).
+- Other all-range levels (Fortuna, Katina, Bolse, Sector Z, Venom 2) start in all-range; there player 1 would join
+  once player 0 is active after the intro. Not run.
+
 ## Determinism
 
 _Nothing yet._

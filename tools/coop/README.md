@@ -7,6 +7,7 @@ Starship. Run them from the repository root.
 |---|---|
 | `python tools/coop/build.py` | Configure, build and run the checks; prints `build: OK` or `build: FAILED at <step>`. `--quiet` for a summary only, `--config Release`, `--assets` (needs `baserom.z64`), `--clean`. CI runs the same script. |
 | `python tools/coop/net_test.py` | Transport tests: a virtual network, then two real processes through the chaos relay. `--only a,b`, `--list`, `--no-build`. Needs a configured build directory, no ROM. Logs in `local/test-net/`. |
+| `python tools/coop/player_trace.py run <replay> --players 2` | Plays a replay with several co-op players in a fresh `local/test-trace-*` folder and checks the per-frame player trace (parked on rails, joins in all-range, moves). `check <trace.txt>` checks an existing trace. Needs the replay code from WP-03 in the build. |
 | `python tools/coop/check.py` | Repository checks, also run by CI: no ROMs or asset archives tracked, no file over 5 MB, skills mirrored, unique protocol ids. Prints `ALL OK`. |
 | `python tools/coop/new_worktree.py <issue> <slug>` | Worktree plus branch `issue/<issue>-<slug>` from `origin/coop`, with submodules. |
 | `python tools/coop/sync_skills.py` | Copies `.agents/skills` to `.claude/skills`. Edit skills in `.agents/skills` only. |

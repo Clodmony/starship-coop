@@ -40,6 +40,7 @@
 #include "audio/GameAudio.h"
 #include "port/patches/DisplayListPatch.h"
 #include "port/mods/PortEnhancements.h"
+#include "port/coop/test/player_trace.h" // COOP: per-frame player log for tests (WP-11)
 
 #include <Fast3D/interpreter.h>
 #include <filesystem>
@@ -302,6 +303,7 @@ void GameEngine::Create() {
     osSetTime(0);
 #endif
     PortEnhancements_Init();
+    CoopTrace_Init(); // COOP: no-op unless SF64_COOP_TRACE is set (WP-11)
 }
 
 void GameEngine::Destroy() {
