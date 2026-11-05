@@ -1,4 +1,5 @@
 #include "object_ram.h"
+#include "port/coop/game/players.h" // COOP: player count apart from camera count (WP-10)
 #include "libc/math.h"
 
 static RamEntry oRamEntries[7] = {
@@ -319,7 +320,7 @@ void ObjectRam_Update(void) {
     s32 i;
     objArrays[ORAM_Player].ptr = gPlayer;
     objArrays[ORAM_Scenery360].ptr = gScenery360;
-    objArrays[ORAM_Player].count = gCamCount;
+    objArrays[ORAM_Player].count = CoopPlayers_Count(); // COOP: was gCamCount
 
     if (contPress->button & L_TRIG) {
         editing ^= 1;

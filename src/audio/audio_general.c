@@ -4,6 +4,7 @@
 #include "audiothread_cmd.h"
 #include "audioseq_cmd.h"
 #include "port/Engine.h"
+#include "port/coop/game/players.h" // COOP: player count apart from camera count (WP-10)
 
 void Audio_SetModulationAndPlaySfx(f32* sfxSource, u32 sfxId, f32 freqMod);
 s32 Audio_GetCurrentVoice(void);
@@ -2133,7 +2134,7 @@ void Audio_UpdatePlayerFreqMod(void) {
     u8 playerId;
 
 #ifdef AVOID_UB
-    for (playerId = 0; playerId < gCamCount; playerId++) {
+    for (playerId = 0; playerId < CoopPlayers_Count(); playerId++) { // COOP: was gCamCount
 #else
     for (playerId = 0; playerId < 4; playerId++) {
 #endif
