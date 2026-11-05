@@ -5676,6 +5676,9 @@ void Play_dummy_800B41E0(Player* player) {
 }
 
 void Player_Down(Player* player) {
+    if (CoopPlayers_OnPlayerDown(player)) { // COOP: a co-op player 2+ leaves quietly, no level restart (WP-11)
+        return;
+    }
     player->state = PLAYERSTATE_DOWN;
 
     if (!gVersusMode) {

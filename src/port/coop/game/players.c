@@ -6,10 +6,17 @@
 // Set once per level by CoopPlayers_LevelInit, so the count cannot change while gPlayer is allocated for it.
 static s32 sCoopPlayerCount = 1;
 
-// A parked player is allocated but not updated, not given a camera update and not drawn (its draw flag stays 0 from
-// Player_InitializeAll). Players 1 and up start parked in co-op and join when the level reaches a section that
-// supports them (WP-11: all-range; rails are WP-12).
-static s32 sParked[COOP_PLAYERS_MAX];
+// Players 1 and up in co-op. A player that is not JOINED is parked: allocated but not updated, not given a camera
+// update and not drawn (its draw flag is 0). They start WAITING and join when the level reaches a section that
+// supports them (WP-11: all-range; rails are WP-12). A joined player that goes down, or whose section ends, is OUT
+// until the next Play_Init; when and how it comes back is a game rule (WP-07, WP-16).
+typedef enum {
+    COOP_SLOT_JOINED, // also every player outside co-op, and player 0
+    COOP_SLOT_WAITING,
+    COOP_SLOT_OUT,
+} CoopSlot;
+
+static CoopSlot sSlot[COOP_PLAYERS_MAX];
 
 // How far a joining player is placed from player 0, per player index (x to the side, y up), in world units.
 #define COOP_JOIN_OFFSET_X 250.0f
@@ -31,7 +38,7 @@ void CoopPlayers_LevelInit(void) {
     sCoopPlayerCount = count;
 
     for (i = 0; i < COOP_PLAYERS_MAX; i++) {
-        sParked[i] = (gCamCount == 1) && (i > 0) && (i < count);
+        sSlot[i] = ((gCamCount == 1) && (i > 0) && (i < count)) ? COOP_SLOT_WAITING : COOP_SLOT_JOINED;
     }
 }
 
@@ -54,7 +61,7 @@ int32_t CoopPlayers_IsParked(int32_t index) {
     if ((index < 0) || (index >= COOP_PLAYERS_MAX) || !CoopPlayers_IsCoop()) {
         return 0;
     }
-    return sParked[index];
+    return sSlot[index] != COOP_SLOT_JOINED;
 }
 
 // Player i joins as a copy of player 0, set beside it. Player_Setup is not run for it: besides the player struct it
@@ -96,13 +103,43 @@ static void CoopPlayers_JoinFromPlayer0(s32 i) {
 #undef COPY_FROM_0
 }
 
+static void CoopPlayers_SetOut(s32 i) {
+    sSlot[i] = COOP_SLOT_OUT;
+    gPlayer[i].draw = false;
+}
+
 int32_t CoopPlayers_SkipUpdate(int32_t index) {
-    if (!CoopPlayers_IsParked(index)) {
+    if ((index <= 0) || !CoopPlayers_IsCoop() || (index >= COOP_PLAYERS_MAX)) {
         return 0;
     }
-    if ((gLevelMode == LEVELMODE_ALL_RANGE) && (gPlayer[0].state == PLAYERSTATE_ACTIVE)) {
-        CoopPlayers_JoinFromPlayer0(index);
-        sParked[index] = 0;
+    switch (sSlot[index]) {
+        case COOP_SLOT_JOINED:
+            // Leave with player 0: once it is no longer flying (level complete, down), this player's section is over.
+            if ((gPlayer[0].state != PLAYERSTATE_ACTIVE) && (gPlayer[0].state != PLAYERSTATE_U_TURN)) {
+                CoopPlayers_SetOut(index);
+                return 1;
+            }
+            return 0;
+
+        case COOP_SLOT_WAITING:
+            if ((gLevelMode == LEVELMODE_ALL_RANGE) && (gPlayer[0].state == PLAYERSTATE_ACTIVE)) {
+                CoopPlayers_JoinFromPlayer0(index);
+                sSlot[index] = COOP_SLOT_JOINED;
+            }
+            return 1; // a player that joined this frame starts updating on the next one
+
+        case COOP_SLOT_OUT:
+        default:
+            return 1;
     }
-    return 1; // a player that joined this frame starts updating on the next one
+}
+
+int32_t CoopPlayers_OnPlayerDown(Player* player) {
+    s32 i = player->num;
+
+    if ((i <= 0) || (i >= COOP_PLAYERS_MAX) || !CoopPlayers_IsCoop()) {
+        return 0;
+    }
+    CoopPlayers_SetOut(i);
+    return 1;
 }

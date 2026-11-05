@@ -41,6 +41,12 @@ int32_t CoopPlayers_IsParked(int32_t index);
 // placed beside it (WP-11). Players on rails stay parked (WP-12).
 int32_t CoopPlayers_SkipUpdate(int32_t index);
 
+// Call at the start of Player_Down. Nonzero means a co-op player other than player 0 went down: it is taken out of
+// the level and Player_Down must return, because it also stops the music, plays the "player down" theme and starts
+// the fade to a level restart for everyone. Respawn rules are WP-16.
+struct Player;
+int32_t CoopPlayers_OnPlayerDown(struct Player* player);
+
 #define COOP_PLAYERS_DEBUG_CVAR "gCoopDebugPlayerCount"
 
 #ifdef __cplusplus
