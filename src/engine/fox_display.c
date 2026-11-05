@@ -2018,8 +2018,10 @@ void Display_Update(void) {
                 Display_PlayerFeatures(player);
                 Display_ArwingWingTrail_Update(player);
             }
-            Matrix_Pop(&gGfxMatrix);
+            // COOP: one pop for the one push above. Upstream pops once per player, which only balances with one
+            // player; with two it underflowed the matrix stack every frame over water.
         }
+        Matrix_Pop(&gGfxMatrix); // COOP: moved out of the loop
     }
 
     if (gCurrentLevel == LEVEL_AQUAS) {
