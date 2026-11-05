@@ -38,6 +38,16 @@ Newest first. One block per run that matters (a milestone, a release, a QA level
 
 ```
 date:       2026-11-05
+commit:     326b4572
+identity:   ROM US 1.0 (SHA-1 d8b1088520f7c5f81433292a9258c1184afa1457), Linux, GCC 16.2.1, Debug, OpenGL,
+            USE_NETWORKING on
+what ran:   boot with a private SHIP_HOME and no input, game state read through gdb every 7 s, one screenshot
+result:     title screen at frame 3131, still running at frame 3762, no crash. Boot only: nothing calls the
+            transport yet, so no socket was opened inside the game.
+```
+
+```
+date:       2026-11-05
 commit:     fdd01ee1
 identity:   no game, no ROM; CI on Linux (GCC) and Windows (MSVC), Release; 2 or 3 processes, UDP over loopback, chaos relay
 what ran:   python tools/coop/net_test.py --config Release

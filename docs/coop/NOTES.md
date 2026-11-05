@@ -139,6 +139,39 @@ Linux, GCC, Debug. Commit `fdd01ee1` in CI on Linux (GCC) and Windows (MSVC), bo
 - The longest stall of the game loop, which `timeoutMs` (5000 by default) has to outlast. Level loads may matter.
 - macOS: `Brewfile` and `.github/macports.yml` list SDL2_net, but nothing was built or run there.
 
+### 2026-11-05, #18 (WP-20), boot with networking on
+
+Identity: ROM US 1.0 (SHA-1 `d8b1088520f7c5f81433292a9258c1184afa1457`, `config.yml:34`), commit `326b4572`, Linux,
+GCC 16.2.1, Debug, graphics backend OpenGL, `USE_NETWORKING` on, `SDL_VIDEODRIVER=x11`, `SDL_AUDIODRIVER=dummy`.
+
+**Observed**
+
+- The game reached the title screen with no input. Sampled every 7 s: `gGameState` 2, `gTitleState` 2,
+  `sCutsceneState` 1, 2, 3, 4, 5, then 0 (`TITLE_SCREEN`) in the sample at system frame 3131. It was still running at
+  frame 3762, when the probe ended it. No signal stopped it except the probe's own.
+- A screenshot of the game window (title "Starship (OpenGL)") showed the title screen.
+- The binary has 13 `CoopNet` symbols and links SDL2_net (`ldd`). The game log has no error or critical lines.
+- With `SHIP_HOME` set, no file named `starship*` or `default.sav` appeared in `$HOME/.local/share` or `$HOME/.config`.
+- `gSysFrameCount` rose by about 210 every 7 s, so 30 system frames per second on the title sequence.
+- SDL is the only audio backend on Linux (`libultraship/src/audio/Audio.cpp:35-39`), so `SDL_AUDIODRIVER=dummy` keeps
+  a test run silent.
+- With `kernel.yama.ptrace_scope` at 1, gdb cannot attach to a game started by something else. Start the game from
+  gdb instead. To stop it for a sample, use `handle SIGINT stop print nopass`: `noprint` implies `nostop`, and the
+  first run of this check sat in `continue` until its timeout because of that.
+- EU 1.0 does not work as a base ROM. `config.yml` sends its output to `./mods/sf64eu.o2r`, so no `sf64.o2r` comes
+  out and the asset step fails.
+
+**Derived**
+
+- Building the transport in and linking SDL2_net does not stop the game from booting on Linux.
+
+**Unknown**
+
+- The transport inside the running game. Nothing calls it, so this run opened no socket and never called
+  `SDLNet_Init`. WP-21 is the first code to do that.
+- A boot with networking on under Windows or macOS. CI builds the game on Windows but does not start it.
+- Anything past the title screen.
+
 ## Prior work
 
 ### 2026-11-01, triage
