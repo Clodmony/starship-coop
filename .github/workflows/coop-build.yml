@@ -20,6 +20,9 @@ on:
       - 'tools/coop/build.py'
       - 'tools/coop/net_test.py'
       - 'tools/coop/nettest/**'
+      - 'tools/coop/session_test.py'
+      - 'tools/coop/sessiontest/**'
+      - 'tools/coop/cmake/**'
       - 'tools/coop/chaos/**'
       - '.github/workflows/coop-build.yml'
   push:
@@ -40,6 +43,9 @@ on:
       - 'tools/coop/build.py'
       - 'tools/coop/net_test.py'
       - 'tools/coop/nettest/**'
+      - 'tools/coop/session_test.py'
+      - 'tools/coop/sessiontest/**'
+      - 'tools/coop/cmake/**'
       - 'tools/coop/chaos/**'
       - '.github/workflows/coop-build.yml'
   workflow_dispatch:
@@ -75,6 +81,8 @@ jobs:
         run: python3 tools/coop/build.py --config Release --no-check --quiet
       - name: Transport tests
         run: python3 tools/coop/net_test.py --config Release
+      - name: Session tests
+        run: python3 tools/coop/session_test.py --config Release
 
   windows:
     name: Co-op build (Windows)
@@ -87,3 +95,5 @@ jobs:
         run: python tools/coop/build.py --config Release --no-check --quiet
       - name: Transport tests
         run: python tools/coop/net_test.py --config Release
+      - name: Session tests
+        run: python tools/coop/session_test.py --config Release

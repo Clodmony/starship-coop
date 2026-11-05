@@ -38,6 +38,17 @@ Newest first. One block per run that matters (a milestone, a release, a QA level
 
 ```
 date:       2026-11-05
+commit:     issue/19-session (WP-21), on 1ec6c677
+identity:   no game, no ROM; Windows 11, MSVC 19.44, Debug; 2 or 3 processes, UDP over loopback, chaos relay
+what ran:   python tools/coop/session_test.py
+result:     9/9 scenarios: virtual network (identity wire form and fuzz, transport endings, 10 mismatch cases, two
+            clients, broken and silent peers, 80 lossy runs), then real processes: match, build, ROM, CVar,
+            platform warning, two clients, a match through bad_wifi and a refusal through hell. Handshake only;
+            the game glue (CoopIdentity_FromGame) compiles but has not run.
+```
+
+```
+date:       2026-11-05
 commit:     326b4572
 identity:   ROM US 1.0 (SHA-1 d8b1088520f7c5f81433292a9258c1184afa1457), Linux, GCC 16.2.1, Debug, OpenGL,
             USE_NETWORKING on
