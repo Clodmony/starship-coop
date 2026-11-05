@@ -184,6 +184,9 @@ What changed (`src/port/coop/game/players.c`, two `// COOP:` checks in `Play_Upd
   timers, laser, bombs, lives) copied from index 0. It updates from the next frame on.
 - `tools/coop/player_trace.py` and `src/port/coop/test/player_trace.c` (`SF64_COOP_TRACE`) log and check each
   player's state and position per frame.
+- A joined player goes out (parked and hidden, `draw = 0`) as soon as player 0 is no longer `ACTIVE` or `U_TURN`
+  (level complete, down), and `Player_Down` returns early for co-op players 2+ (one `// COOP:` check), so they go
+  out instead. Out players stay out until the next `Play_Init`; respawn is a game rule (WP-16).
 
 Tested (Windows 11 Home 10.0.26200, MSVC 14.44.35207, Debug, US 1.0 ROM, default graphics backend from a fresh
 config; this branch on top of WP-10 8b78fbf5, merged locally with the WP-03 replay code 070256bd for the test only):
@@ -194,6 +197,17 @@ config; this branch on top of WP-10 8b78fbf5, merged locally with the WP-03 repl
   player 0 between 159 and 4347. It turned at the arena edge on its own (`U_TURN`, like player 0).
 - In the same run the replay stops matching at replay frame 9887, player 0 goes down at trace frame 11145 and the
   level restarts from the checkpoint; player 1 is parked again after the restart.
+- Watched by the owner, 2026-11-06 (no replay, owner playing, `gCoopDebugPlayerCount = 2`), first build: player 2
+  appeared at Granga, but graphics broke over water (WP-10 bug, fixed there) and after Granga player 2 kept flying
+  during player 0's level-complete cutscene, crashed at trace frame 9941, and `Player_Down` started the fade to a
+  level restart (stopped music, "player down" theme) for everyone; the run then hit the debug assertion.
+  `Player_Down` (`src/engine/fox_play.c`) stops the BGM and plays `NA_BGM_PLAYER_DOWN` for any player outside versus.
+- Watched again with both fixes: graphics over water normal; player 2 looked normal at Granga and flew along; at
+  level complete (trace frame 8279) player 2 went out on the same frame and the cutscene ran to the end (player 0
+  `NEXT` at 9612, level left normally). No assertion. Owner's report: "Wasser ok, Spieler zwei hat normal ausgesehen
+  und ist verschwunden am Schluss."
+- Replay with the fixes: 1 player PASS (unchanged); 2 players `player_trace.py check` PASS; when player 0 went down
+  (trace frame 11145) player 1 went out on the same frame.
 
 Derived:
 
@@ -205,6 +219,7 @@ Derived:
 Unknown:
 
 - How player 1 looks on screen. Nobody watched the run; the check is from the trace only.
+- The level-complete path is covered by the owner's watched run only; the replay diverges before it with 2 players.
 - Whether enemies target or hit player 1: enemy and shot loops still use `gCamCount` or `gPlayer[0]`, so probably
   not (guess). Friendly fire and targeting are game rules (WP-07, WP-16).
 - Player 1 has no engine noise: `Audio_StartPlayerNoise(gPlayerNum)` is called in `Player_Setup`
