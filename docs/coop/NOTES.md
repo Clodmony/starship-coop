@@ -94,7 +94,83 @@ _Nothing yet._
 
 ## Networking
 
-_Nothing yet._
+### 2026-11-05, #18 (WP-20), UDP transport
+
+Identity: no game and no ROM involved, two or three processes on one machine, UDP over loopback. Commit `12329623` on
+Linux, GCC, Debug. Commit `fdd01ee1` in CI on Linux (GCC) and Windows (MSVC), both Release.
+
+**Observed**
+
+- All 17 scenarios of `tools/coop/net_test.py` pass, including the `hell` profile: the relay dropped 710 of 3042
+  datagrams and duplicated 120, and all 300 reliable messages per direction still arrived in order, in about 10 s.
+- A 2 s outage, in either or both directions, loses no reliable message and does not end the connection.
+- Timeouts fire before the limit you would expect from the outage: with a 2000 ms timeout, both sides reported it
+  1.8 s after the link died, because the clock runs from the last datagram heard, up to one ping (250 ms) earlier.
+- Two-way traffic hides a missing ack-only datagram. A build that never sent `ACK` passed the `lan` scenario, because
+  acks ride on data and pings. Only one-way traffic shows it, so the virtual network now has that case.
+- SDL2_net's shared CMake target does not pass SDL2 on to whatever links it: linking `coop_net_test` against
+  `SDL2_net::SDL2_net` alone failed with `undefined reference to symbol 'SDL_GetTicks'`
+  (`tools/coop/nettest/CMakeLists.txt`).
+- `SDLNet_UDP_GetPeerAddress(socket, -1)` returns the port picked for `SDLNet_UDP_Open(0)`
+  (`src/port/coop/net/transport_sdlnet.c`).
+- All 17 scenarios pass on Windows too. The virtual network gives the same counts on GCC Debug, GCC Release and MSVC
+  Release: dropped 113877, duplicated 21597, corrupted 10131.
+- On Windows `stray_datagrams` counted 1954 of 2257 junk datagrams as rejected; on Linux all 3000. In the Windows run
+  301 of the 2257 were larger than the 1201-byte receive buffer, which leaves 1956.
+- CMake's Visual Studio generator leaves the targets of an `EXCLUDE_FROM_ALL` directory out of the solution, so
+  `cmake --build --target` fails with `MSB1009: Project file does not exist`. Ninja does not mind. Put
+  `EXCLUDE_FROM_ALL` on the target instead (`tools/coop/nettest/CMakeLists.txt`).
+
+**Derived**
+
+- A goodbye that gets through ends a connection at once. Without one, a dead peer costs the full timeout.
+- Under a long one-way outage the resend count grows quickly (about 1200 resends in the 2 s outage tests, with 120
+  messages sent per second in all). The backoff bounds it, but a bigger reliable lane would need real congestion control.
+
+**Guess**
+
+- Windows drops a datagram larger than the receive buffer inside `recvfrom`, so it never reaches the core and is not
+  counted. Linux cuts it to the buffer size, and the core rejects it. Harmless either way: traffic was unaffected.
+
+**Unknown**
+
+- The other 2 of the 1956 junk datagrams that Windows did not count.
+- Anything between two real PCs: NAT, firewalls, real loss. Every run so far is loopback through the relay.
+- The longest stall of the game loop, which `timeoutMs` (5000 by default) has to outlast. Level loads may matter.
+- macOS: `Brewfile` and `.github/macports.yml` list SDL2_net, but nothing was built or run there.
+
+### 2026-11-05, #18 (WP-20), boot with networking on
+
+Identity: ROM US 1.0 (SHA-1 `d8b1088520f7c5f81433292a9258c1184afa1457`, `config.yml:34`), commit `326b4572`, Linux,
+GCC 16.2.1, Debug, graphics backend OpenGL, `USE_NETWORKING` on, `SDL_VIDEODRIVER=x11`, `SDL_AUDIODRIVER=dummy`.
+
+**Observed**
+
+- The game reached the title screen with no input. Sampled every 7 s: `gGameState` 2, `gTitleState` 2,
+  `sCutsceneState` 1, 2, 3, 4, 5, then 0 (`TITLE_SCREEN`) in the sample at system frame 3131. It was still running at
+  frame 3762, when the probe ended it. No signal stopped it except the probe's own.
+- A screenshot of the game window (title "Starship (OpenGL)") showed the title screen.
+- The binary has 13 `CoopNet` symbols and links SDL2_net (`ldd`). The game log has no error or critical lines.
+- With `SHIP_HOME` set, no file named `starship*` or `default.sav` appeared in `$HOME/.local/share` or `$HOME/.config`.
+- `gSysFrameCount` rose by about 210 every 7 s, so 30 system frames per second on the title sequence.
+- SDL is the only audio backend on Linux (`libultraship/src/audio/Audio.cpp:35-39`), so `SDL_AUDIODRIVER=dummy` keeps
+  a test run silent.
+- With `kernel.yama.ptrace_scope` at 1, gdb cannot attach to a game started by something else. Start the game from
+  gdb instead. To stop it for a sample, use `handle SIGINT stop print nopass`: `noprint` implies `nostop`, and the
+  first run of this check sat in `continue` until its timeout because of that.
+- EU 1.0 does not work as a base ROM. `config.yml` sends its output to `./mods/sf64eu.o2r`, so no `sf64.o2r` comes
+  out and the asset step fails.
+
+**Derived**
+
+- Building the transport in and linking SDL2_net does not stop the game from booting on Linux.
+
+**Unknown**
+
+- The transport inside the running game. Nothing calls it, so this run opened no socket and never called
+  `SDLNet_Init`. WP-21 is the first code to do that.
+- A boot with networking on under Windows or macOS. CI builds the game on Windows but does not start it.
+- Anything past the title screen.
 
 ## Prior work
 
