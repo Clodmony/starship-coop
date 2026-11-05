@@ -82,6 +82,91 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-05, #6 (WP-06), on-rails: player position, path progress, camera
+
+Read from the source only; nothing was run. Line numbers are for `origin/coop` at 1ec6c677.
+
+**Observed**
+
+- *Two z values per player.* `Player.pos.z` is the player's z in level space; `trueZpos` is `pos.z + camDist`, the
+  value collision and shots use (`include/sf64player.h:190`, `:227`; set in `Player_UpdatePath`,
+  `src/engine/fox_play.c:3649`; shot hit test `src/engine/fox_beam.c:857`). `camDist` is 0 in normal flight and only
+  changes in cutscenes such as the warp exit (`src/engine/fox_demo.c:469-490`).
+- *Path progress is per player, then copied into one global.* `Player_UpdatePath` (`src/engine/fox_play.c:3627`)
+  adds `-vel.z` to `player->zPath` and writes `gPathVelZ`, `gPathProgress` and `gPathTexScroll` from that player
+  (`:3632-3637`). Every caller of it overwrites the globals: `Player_UpdateOnRails` for the Arwing (`:5716`) and the
+  Blue Marine (`:5746`), the Landmaster (`src/engine/fox_tank.c:1159`), cutscenes (`src/engine/fox_demo.c:1886`,
+  `src/overlays/ovl_i5/fox_ti_cs.c:358`) and Macbeth (`src/overlays/ovl_i5/fox_ma.c:5544`, `:7043`, `:7679`,
+  `:7709`, `:7751`).
+- *Forward speed is the player's own.* `Player_MoveArwingOnRails` (`src/engine/fox_play.c:3981`) builds `vel` from
+  `baseSpeed`, `boostSpeed` and the stick, then adds `vel.z` to `pos.z` (`:4173`). Boost and brake therefore change
+  how fast that player's `zPath`, and with it `gPathProgress`, grows.
+- *The flight box follows the path centre.* `pos.x` is clamped to `xPath ± pathWidth`, `pos.y` to
+  `yPath + pathFloor … yPath + pathHeight` (`src/engine/fox_play.c:4148-4170`). The box sizes come from
+  `Player_Setup` (`:4566`, sizes at `:4621-4659`; Arwing 700 wide, Landmaster 500).
+- *Path turns.* `xPath`/`yPath` ease towards `xPathTarget`/`yPathTarget` in `Player_UpdatePath`
+  (`src/engine/fox_play.c:3671-3674`); the step taken this frame goes into the globals `gPathVelX`/`gPathVelY`,
+  which effects add to their own velocity (`src/engine/fox_effect.c:2459-2460`, `:2513-2514`, `:3038-3039`).
+  `pathChangeTimer` turns the view with `yRot_114`/`xRot_120` (`fox_play.c:3676-3683`). The path-turn and
+  path-split items set all of this on **`gPlayer[0]` only** (`src/engine/fox_enmy.c:2550-2591`); Macbeth sets it in
+  its own code (`src/overlays/ovl_i5/fox_ma.c:6613-6775`).
+- *Level objects load by the global progress.* `Object_LoadLevelObjects` (`src/engine/fox_enmy.c:548`) loads the
+  next entries of the level's object list whose `zPos1` lies in `[gPathProgress, gPathProgress + 200]` (`:630`),
+  and checks `gPlayer[0]`'s path turn and `xPath` (`:592-595`, `:631-633`). It runs only while `gPlayer[0]` is not
+  in the level intro, and culling is switched on by `gPlayer[0].state` (`:3146-3155`).
+- *Culling uses player 0's camera.* Objects are removed or skipped when they are behind
+  `gPlayer[0].cam.eye.z` in path space (`src/engine/fox_enmy.c:2694-2695`, `:2798`).
+- *Drawing.* Objects are drawn at `obj.pos.z + gPathProgress` (`src/engine/fox_edisplay.c:983` and many more).
+  An Arwing is drawn at `trueZpos + zPath` with **its own** `zPath` (`src/engine/fox_display.c:1417`, `:1466`,
+  `:1500`). Ground height also adds `gPathProgress` (`src/engine/fox_play.c:1194-1237`).
+- *Camera.* `Camera_Update` (`src/engine/fox_play.c:6664`) picks `Camera_UpdateArwingOnRails` (`:6211`) for the
+  Arwing. Eye and look-at x/y follow the player's offset from `xPath`/`yPath`, scaled by `unk_148`/`unk_14C`
+  (0.777, set in `Player_Setup`); eye z is a constant 400 (`:6258`), look-at z is `trueZpos + gPathProgress - 1`
+  (`:6257`). The camera also reads the stick through `gInputPress` (`:6222-6223`). The frame's view is built from
+  `gPlayer[gPlayerNum]`: its camera offset, rotated by its `yRot_114`/`xRot_120`, plus its `trueZpos + zPath`
+  (`src/engine/fox_display.c:1833`, `:1866-1888`).
+- *Update order.* `Play_Update` runs `Player_Update` for every player, then `Object_Update`, then `Camera_Update` for
+  every player, all in loops over `gCamCount` (`src/engine/fox_play.c:7033-7045`). Outside versus mode,
+  `Player_Update` points `gInputPress`/`gInputHold` at `gMainController` for every player (`:5881-5889`).
+- *Wrap.* When `zPath` passes 500000 without a boss, `zPath`, `pos.z` and the object list index are reset
+  (`src/engine/fox_play.c:3643-3648`).
+
+**Derived (reasoning, not tested)**
+
+- On rails the world is drawn in "path space": level z plus progress. In flight `pos.z` falls by `vel.z` and `zPath`
+  rises by the same amount, so `pos.z + zPath` stays the same and the Arwing stays at a fixed depth in front of a
+  camera whose eye sits at z = 400. Wherever else `pos.z` is written on rails (knockback, cutscenes) this can drift.
+- With two players the global progress is whatever the last player in the loop wrote, so player 1 would drive object
+  loading, ground scroll and every object's draw position, while path turns and culling still follow player 0.
+- If the two players fly at different speeds (one boosts, one brakes), their `zPath` values drift apart. Each Arwing
+  is still drawn at its own fixed depth, but objects are drawn with the shared progress, so the other player would
+  look closer than it is and its shots would not line up with where it is drawn. Collision uses level z and would
+  stay correct.
+- Player 2 has its own `xPath`/`yPath`. Since path items only turn `gPlayer[0]`, player 2's flight box and camera
+  would stay on the old path centre after a turn.
+- `Camera_Update` does not set `gInputPress` again, so each player's on-rails camera sways with whatever controller
+  the last `Player_Update` used.
+- Simplest model for WP-12: one shared path. Player 0 (the host or a fixed slot) owns `zPath`, `xPath`, `yPath`,
+  the turn state and the speed along the path; the other players copy them each frame and only move freely in x/y
+  inside the box. Boost and brake would then either be shared, or become a per-player z offset from the shared
+  progress (a field like `camDist`). That is a design choice for WP-07/WP-12, not decided here.
+
+**Guess**
+
+- The 0.777 factor in the camera is why the camera lags the Arwing towards the box edges; with two players, a camera
+  that frames both would need a different factor or a different centre.
+- Landmaster and Blue Marine use the same path fields (they call `Player_UpdatePath`), so the shared-path model would
+  carry over to Titania, Macbeth and Aquas. Their cameras are separate functions and were not read.
+
+**Unknown**
+
+- Whether boost/brake speed must stay per player for the game to feel right, or can be shared.
+- Which other code writes `pos.z` on rails (knockback, damage, somersault `Player_PerformLoop`); not traced.
+- How the level intro and the switch from rails to all-range (`PLAYERSTATE_START_360`) set `zPath` and `pos.z` for
+  more than one player.
+- Cockpit view (`Camera_UpdateCockpitOnRails`, `src/engine/fox_play.c:6287`), tank and Blue Marine cameras: not read.
+- Whether the 500000 wrap is ever reached in a normal campaign.
+
 ### 2026-11-01, project setup
 
 Observed: see DESIGN.md section 2 (player array, `gCamCount`, object arrays, RNG, event hooks, `USE_NETWORKING`).
