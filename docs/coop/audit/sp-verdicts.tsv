@@ -1,0 +1,288 @@
+# Verdicts for tools/coop/sp_audit.py (WP-05). Columns: path, function[@pattern], verdict, basis, note. Tab-separated.
+# Verdicts and bases are defined in the docstring of tools/coop/sp_audit.py. Keep notes short; details go in NOTES.md.
+#
+# --- declarations
+include/sf64context.h	<file scope>	ok	read	extern declarations
+src/engine/fox_context.c	<file scope>	ok	read	definitions
+#
+# --- engine core: player setup, play loop, display
+src/engine/fox_play.c	Play_Init	setup	read	sets gCamCount 1 (4 in versus), allocates gCamCount players, inits each; WP-10 entry point
+src/engine/fox_play.c	Player_InitializeAll	setup	read	clears gCamCount players
+src/engine/fox_play.c	Play_Update	setup	site	loops over gCamCount players for update; becomes player count
+src/engine/fox_play.c	Player_CanLockOn	setup	site	loops gCamCount players
+src/engine/fox_play.c	Player_UpdateLockOn	setup	site	loops gCamCount players
+src/engine/fox_play.c	Player_UpdateEffects	setup	site	loops gCamCount players
+src/engine/fox_play.c	Player_CollisionCheck@gCamCount	setup	site	gCamCount != 1 and == 4 mean versus (mercy rules, player-vs-player hits); a co-op gCamCount of 2 would turn half of this on
+src/engine/fox_play.c	Player_CollisionCheck@gPlayer[0]	view	site	warp ring sound played on player 0 source
+src/engine/fox_play.c	Player_FloorCheck	setup	site	gCamCount == 1 / != 1 as versus flag
+src/engine/fox_play.c	Player_CheckBounds360	setup	read	gCamCount != 1 as versus flag: wraps the arena at 12000
+src/engine/fox_play.c	Player_Setup	setup	site	gCamCount == gPlayerNum + 1: HUD and hit counters reset only when the last player is set up
+src/engine/fox_play.c	Player_UpdateTankJets	setup	site	gCamCount == 1 as "not versus" for jet effects
+src/engine/fox_play.c	Player_Update@gMainController	input	read	gInputHold/gInputPress/gControllerRumble taken from gMainController for every player; WP-14 replaces this
+src/engine/fox_play.c	Player_Update@gCamCount	setup	site	gCamCount == 4: down in versus goes to VS_STANDBY, else fade out and restart level
+src/engine/fox_play.c	Player_Update@gPlayer[0]	flow	site	death restart resets gPlayer[0].zPath and path progress; boost check reads player 0 state for every player
+src/engine/fox_play.c	Play_InitEnvironment	view	site	kills a sound on player 0 source
+src/engine/fox_play.c	Camera_SetStarfieldPos	view	site	starfield from player 0 camera
+src/engine/fox_play.c	Camera_SetupLights	view	site	lights depend on player 0 state
+src/engine/fox_play.c	Play_UpdateLevel	flow	site	per-level triggers on player 0: level complete, warp zone, Solar heat damage to player 0 only, Venom 2 / Aquas checks
+src/engine/fox_play.c	Play_Main@gPlayer[0]	flow	site	all-range z setup for player 0 only
+src/engine/fox_play.c	Play_Main@gMainController	input	site	pause, skip intro and R-button radio are read from gMainController only
+src/engine/fox_play.c	Play_Main@gCamCount	setup	site	exit loops over players, resets gCamCount to 1
+src/engine/fox_game.c	Game_Update	setup	site	viewports from gCamCount (1, 2, 4); GSTATE_INIT resets to 1; player loop for draw
+src/engine/fox_display.c	Display_Update@gCamCount	setup	site	draw loops over gCamCount players; gCamCount != 1 draws the versus HUD
+src/engine/fox_display.c	Display_Update@gPlayer->	ok	read	debug numbers (csTimer, csState)
+src/engine/fox_display.c	Display_Update@gPlayer[0]	view	site	water, turret, Aquas lighting, starfield roll and face drawing keyed to player 0
+src/engine/fox_display.c	Display_Player_Update	setup	site	loops gCamCount players
+src/engine/fox_display.c	Display_LockOnIndicator	setup	site	loops gCamCount players
+src/engine/fox_display.c	Display_DrawHelpAlert	view	read	help arrow from player 0 camera to the wingman in trouble
+src/engine/fox_display.c	Display_ArwingWingsOverrideLimbDraw	view	site	wing damage effect of player 0
+src/engine/fox_display.c	Display_ArwingWings	sim	site	draws wings with player 0 joint table for every Arwing drawn this way; wrong for player 2
+src/engine/camera_interp_skip.c	should_interpolate_perspective	view	read	port interpolation skip keyed to player 0 state
+src/engine/fox_radio.c	Radio_Draw@gCamCount	setup	site	no radio when gCamCount != 1
+src/engine/fox_radio.c	Radio_Draw@gPlayer[0]	view	site	radio shown only while player 0 is active
+src/engine/fox_radio.c	func_radio_800BC040	setup	site	no radio when gCamCount != 1
+src/engine/fox_versus.c	*	ok	site	versus mode only
+src/engine/fox_boss.c	Boss_CompleteLevel	flow	site	stops player 0 when a boss is beaten
+src/engine/fox_tank.c	func_tank_800438E0	view	site	tank dust effect velocity from player 0
+src/engine/fox_tank.c	func_tank_80045678	setup	site	gCamCount == 1 as "not versus" for tank effects
+src/engine/fox_tank.c	func_tank_80047FBC	flow	site	skips while player 0 is in level complete
+src/engine/fox_bg.c	Background_DrawBackdrop	view	site	backdrop from player 0 camera and state
+src/engine/fox_bg.c	Background_DrawSun	view	site	sun keyed to player 0 state
+src/engine/fox_bg.c	AllRangeGround_Draw	view	site	ground tiles chosen by player 0 position
+src/engine/fox_bg.c	Background_DrawGround	view	site	ground drawing by player 0 camera and state
+#
+# --- engine: all-range AI (fox_360.c)
+src/engine/fox_360.c	AllRange_PlayMessage	flow	site	radio only when player 0 not in standby
+src/engine/fox_360.c	ActorAllRange_PlayMessage	flow	site	radio only when player 0 not in standby
+src/engine/fox_360.c	ActorAllRange_UpdateStarWolfEvents	flow	read	Star Wolf intro cutscene puts player 0 in standby and moves its camera
+src/engine/fox_360.c	ActorAllRange_SpawnSupplies@gMainController	input	site	call for supplies with C-right on gMainController
+src/engine/fox_360.c	ActorAllRange_SpawnSupplies@gPlayer[0]	sim	site	supplies sent when player 0 shields are low
+src/engine/fox_360.c	ActorAllRange_UpdateEvents	flow	site	events paused while player 0 is down
+src/engine/fox_360.c	ActorAllRange_CheckObjectNearby	flow	site	checks player 0 intro state
+src/engine/fox_360.c	ActorAllRange_CheckPlayerNearby	sim	site	AI avoids player 0 only
+src/engine/fox_360.c	ActorAllRange_Update	sim	site	wingmen and Star Wolf follow, chase and react to player 0 (position, speed, somersault, shields)
+src/engine/fox_360.c	ActorAllRange_DrawBarrelRoll	view	site	billboard to player 0 camera
+#
+# --- engine: player shots (fox_beam.c)
+src/engine/fox_beam.c	PlayerShot_CheckActorHitbox	sim	site	hit test uses player 0 camera position
+src/engine/fox_beam.c	PlayerShot_CollisionCheck@gCamCount	setup	site	loops players; gCamCount != 1 as versus flag
+src/engine/fox_beam.c	PlayerShot_CollisionCheck@gPlayer[0]	sim	site	on-foot check uses player 0 form for every shot
+src/engine/fox_beam.c	PlayerShot_DrawLaser@gCamCount	setup	site	gCamCount < 4 as "not versus" for laser look
+src/engine/fox_beam.c	PlayerShot_DrawLaser@gPlayer[0]	view	site	laser drawing keyed to player 0 intro state
+src/engine/fox_beam.c	PlayerShot_UpdateBeam	setup	site	gCamCount != 4 as "not versus"; also player 0 form (Landmaster) for every shot
+src/engine/fox_beam.c	PlayerShot_FindLockTarget	ok	read	versus branch, loops all players
+src/engine/fox_beam.c	PlayerShot_SearchLockOnTarget	input	site	charge shot release read from gMainController, not from the shot owner
+src/engine/fox_beam.c	PlayerShot_ApplyExplosionDamage	setup	site	loops gCamCount players
+src/engine/fox_beam.c	PlayerShot_UpdateBomb@gMainController	input	site	bomb detonation read from gMainController (button map already per sourceId)
+src/engine/fox_beam.c	PlayerShot_UpdateBomb@gPlayer[0]	sim	site	bomb blast pushes player 0 only
+src/engine/fox_beam.c	PlayerShot_UpdateLockOnShot	setup	site	loops gCamCount players
+src/engine/fox_beam.c	PlayerShot_Update	view	site	shots not drawn or updated while player 0 is in the intro
+#
+# --- engine: objects and enemies (fox_enmy.c)
+src/engine/fox_enmy.c	func_enmy_80060FE4	flow	site	player 0 intro state
+src/engine/fox_enmy.c	func_enmy_80061148	flow	site	player 0 level complete
+src/engine/fox_enmy.c	func_enmy_80061A4C	sim	site	target point around player 0
+src/engine/fox_enmy.c	func_enmy_80061B68	sim	site	target point around player 0
+src/engine/fox_enmy.c	Object_Load	sim	site	level objects spawn relative to player 0 path position
+src/engine/fox_enmy.c	Object_LoadLevelObjects	sim	site	spawning on path splits follows player 0 path change
+src/engine/fox_enmy.c	Object_Init	sim	site	init depends on player 0 z
+src/engine/fox_enmy.c	ActorMissileSeek_Update	sim	site	homing missile seeks player 0
+src/engine/fox_enmy.c	SceneryRotateTowardsCamera	view	site	billboard to player 0 camera
+src/engine/fox_enmy.c	Item_CheckBounds	sim	site	items kept inside player 0 path bounds
+src/engine/fox_enmy.c	ActorSupplies_Update	sim	site	supply drop for player 0
+src/engine/fox_enmy.c	func_enmy_80067A40	sim	site	wing repair applied to player 0
+src/engine/fox_enmy.c	ItemLasers_Update	sim	site	laser item checks player 0 wings
+src/engine/fox_enmy.c	ItemSupplyRing_Update	view	site	player 0 alternate (cockpit) view
+src/engine/fox_enmy.c	ItemMeteoWarp_Update	flow	site	warp ring sends player 0 into the warp zone
+src/engine/fox_enmy.c	ItemCheckpoint_Update	view	site	player 0 alternate (cockpit) view
+src/engine/fox_enmy.c	ItemPathChange_Update	flow	read	path split and level end gate: changes player 0 path, state and flags
+src/engine/fox_enmy.c	Sprite_UpdateDoodad	view	site	billboard to player 0 camera
+src/engine/fox_enmy.c	Actor_Move	sim	read	actors are killed (Object_Kill) when outside player 0 camera and path bounds
+src/engine/fox_enmy.c	Boss_Move	sim	site	bosses culled by player 0 camera
+src/engine/fox_enmy.c	Scenery_Move	sim	site	scenery culled by player 0 camera
+src/engine/fox_enmy.c	Sprite_Move	sim	site	sprites culled by player 0 camera
+src/engine/fox_enmy.c	Effect_Move	sim	read	effects killed (Object_Kill) outside player 0 camera range
+src/engine/fox_enmy.c	Item_Move	sim	site	items culled by player 0 camera
+src/engine/fox_enmy.c	Actor_Update	input	read	campaign lock-on release reads gMainController for TEAM_ID_FOX; versus branch already per player
+src/engine/fox_enmy.c	TexturedLine_Update	sim	site	damages player 0 only
+src/engine/fox_enmy.c	Object_Update	flow	site	objects update and load only in certain player 0 states
+#
+# --- engine: scripted events (fox_enmy2.c)
+src/engine/fox_enmy2.c	MeteoBall_IsCloseToPlayer	sim	site	distance to player 0
+src/engine/fox_enmy2.c	MeteoBall_Update	view	site	faces player 0 camera
+src/engine/fox_enmy2.c	CoMoleMissile_Update	sim	site	distance to player 0
+src/engine/fox_enmy2.c	ActorDebris_Update	sim	site	debris placed relative to player 0
+src/engine/fox_enmy2.c	func_enmy2_8006D0F4	sim	site	scenery search ahead of player 0
+src/engine/fox_enmy2.c	ActorEvent_ProcessScript	sim	site	event scripts check player 0 state and position; radio only when player 0 active
+src/engine/fox_enmy2.c	ActorEvent_ProcessActions	sim	read	event actors aim at player 0 (temporarily jitters player 0 position to aim off)
+src/engine/fox_enmy2.c	ActorEvent_8006FE28	sim	site	contact with player 0
+src/engine/fox_enmy2.c	ActorEvent_ProcessTriggers@gPlayer[0]	sim	read	event conditions read player 0 position, shields, speed and laser level
+src/engine/fox_enmy2.c	ActorEvent_ProcessTriggers@gMainController	input	site	C-right condition read from gMainController
+src/engine/fox_enmy2.c	ActorEvent_80072474	sim	site	angle to player 0
+src/engine/fox_enmy2.c	ActorEvent_Update	sim	site	event actors aim at player 0 and set player 0 damage type; killed on player 0 level complete
+#
+# --- engine: cutscene actors (fox_demo.c)
+src/engine/fox_demo.c	func_demo_80048AC0	flow	site	cutscene branch on player 0 shields
+src/engine/fox_demo.c	Cutscene_LandmasterDown	setup	site	gCamCount == 1 as "not versus" for the down cutscene
+src/engine/fox_demo.c	Cutscene_ArwingDown360	setup	site	gCamCount == 1 / != 4 as versus flag for the down cutscene
+src/engine/fox_demo.c	ActorCutscene_Draw	view	site	cutscene actors drawn by player 0 state and camera
+src/engine/fox_demo.c	Cutscene_DrawGreatFox	view	site	Great Fox drawn by player 0 state
+src/engine/fox_demo.c	ActorCutscene_SyShip_Setup	flow	site	cutscene ship placed from player 0 camera
+src/engine/fox_demo.c	*	flow	name	cutscene actors placed around player 0 (intro, level complete, team flyby)
+#
+# --- engine: object drawing and sound sources (fox_edisplay.c)
+src/engine/fox_edisplay.c	ActorTeamArwing_Draw	view	site	team Arwing look copies player 0 wing state and state
+src/engine/fox_edisplay.c	Object_SetShadowDL	view	site	player 0 state
+src/engine/fox_edisplay.c	Object_SetMatrix	view	site	billboard to player 0 camera
+src/engine/fox_edisplay.c	Actor_DrawAllRange@gPlayer[0]	view	site	all-range markers by player 0 state
+src/engine/fox_edisplay.c	Actor_DrawAllRange@gCamCount	setup	site	loops players for markers
+src/engine/fox_edisplay.c	Item_Draw	setup	site	gCamCount == 1 as "not versus" for all-range item marker
+src/engine/fox_edisplay.c	Object_SetSfxSourceToPos	view	site	object sounds placed relative to player 0 camera (gCamCount != 1 skips: versus has no positional sound)
+src/engine/fox_edisplay.c	Object_UpdateSfxSource	view	site	gCamCount != 1 skips positional sound
+src/engine/fox_edisplay.c	Object_SetSfxSourceToView	view	site	gCamCount != 1 skips positional sound
+src/engine/fox_edisplay.c	Display_SetSecondLight	view	site	player 0 state
+src/engine/fox_edisplay.c	Object_DrawAll	view	site	player 0 state
+src/engine/fox_edisplay.c	Object_Draw	view	site	water reflection by player 0 state
+src/engine/fox_edisplay.c	Effect_Draw	view	site	water reflection by player 0 state
+#
+# --- engine: effects (fox_effect.c); enemy projectiles aim at and hit player 0
+src/engine/fox_effect.c	BonusText_Update	view	site	bonus text follows player 0
+src/engine/fox_effect.c	Effect_Effect384_Draw	view	site	player 0 state
+src/engine/fox_effect.c	Effect_Effect357_Draw	view	site	player 0 state
+src/engine/fox_effect.c	Effect_Effect362_Update	view	site	faces player 0 camera
+src/engine/fox_effect.c	Effect_Effect345_Update	setup	site	gCamCount != 1 as versus flag
+src/engine/fox_effect.c	func_effect_8007E6B8	sim	site	enemy shot aimed at player 0
+src/engine/fox_effect.c	func_effect_8007E93C	sim	site	enemy shot aimed at player 0 camera
+src/engine/fox_effect.c	Effect_EnemyLaser	sim	site	enemy laser only spawned near player 0
+src/engine/fox_effect.c	func_effect_8007F20C	sim	site	only spawned near player 0 camera
+src/engine/fox_effect.c	Effect_Effect353_354_Update	sim	read	enemy projectile hits, deflects and knocks back player 0 only
+src/engine/fox_effect.c	Effect_Effect398_Update	sim	read	aims at, hits and knocks back player 0 only
+src/engine/fox_effect.c	Effect_Effect395_Update	sim	site	hits player 0 only; boss faces player 0 camera
+src/engine/fox_effect.c	Effect_Effect374_Update	sim	site	hits player 0 only
+src/engine/fox_effect.c	Effect_Effect391_Update	view	site	faces player 0 camera
+src/engine/fox_effect.c	func_effect_80083D2C	sim	site	aims at player 0
+src/engine/fox_effect.c	Effect_Effect399_Update	view	site	faces player 0 camera
+src/engine/fox_effect.c	*	view	name	effect moves with or faces player 0 (velocity, camera), or keys on player 0 state
+#
+# --- engine: HUD, pause, team AI (fox_hud.c)
+src/engine/fox_hud.c	HUD_LivesCount1_Draw	view	site	lives of player 0
+src/engine/fox_hud.c	HUD_LivesCount2_Draw	view	site	lives of player 0
+src/engine/fox_hud.c	HUD_TeamDownWrench_Draw	view	site	player 0 state
+src/engine/fox_hud.c	HUD_TeamShields_Draw	view	site	player 0 state
+src/engine/fox_hud.c	HUD_PauseScreen_Update	flow	site	pause menu retry and quit set player 0 state only
+src/engine/fox_hud.c	HUD_RadarMark_Arwing_Draw	setup	site	gCamCount != 1 as versus flag
+src/engine/fox_hud.c	HUD_RadarMark_Draw	setup	site	gCamCount != 1 as versus flag
+src/engine/fox_hud.c	HUD_RadarWindow_Draw	setup	site	gCamCount != 1 as versus flag
+src/engine/fox_hud.c	HUD_RadarMarks_Setup	setup	site	loops players for radar marks
+src/engine/fox_hud.c	HUD_PlayerShieldGauge_Update	view	site	shield gauge shows player 0 and adds heal to player 0
+src/engine/fox_hud.c	HUD_RadioDamage_Type	view	site	player 0 radio damage
+src/engine/fox_hud.c	HUD_EdgeArrows_Draw	view	site	player 0 camera
+src/engine/fox_hud.c	HUD_Draw	setup	site	gCamCount != 1 draws the versus HUD
+src/engine/fox_hud.c	FoBase_ExplodeCs	flow	site	Fortuna base explosion cutscene on player 0
+src/engine/fox_hud.c	ActorTeamBoss_SlippyEscapeFromTiBoss	sim	site	wingman AI flies relative to player 0
+src/engine/fox_hud.c	ActorTeamBoss_FlyAlongPlayer	sim	site	wingmen fly alongside player 0
+src/engine/fox_hud.c	ActorTeamBoss_SetAction	flow	site	player 0 level complete
+src/engine/fox_hud.c	ActorTeamBoss_DmgEffect	flow	site	player 0 level complete
+src/engine/fox_hud.c	ActorTeamBoss_UTurn	sim	site	player 0 path height
+src/engine/fox_hud.c	ActorTeamBoss_Update	flow	site	player 0 level complete
+src/engine/fox_hud.c	Aquas_CsIntroActors_Update	flow	site	Aquas intro on player 0
+src/engine/fox_hud.c	Aquas_Effect363_Update	view	site	bubbles around player 0
+src/engine/fox_hud.c	Aquas_Effect363_Draw	view	site	player 0 intro state
+src/engine/fox_hud.c	Venom1_LevelStart2	flow	site	level start sets player 0 speed
+#
+# --- menus, map, ending: run before or after a level; who drives them in co-op is WP-24
+src/overlays/ovl_menu/fox_title.c	Title_Setup	input	site	gMainController = the controller that pressed Start (Title_CheckControllers); every later read uses it
+src/overlays/ovl_menu/fox_title.c	Title_UpdateEntry	input	site	gMainController chosen again
+src/overlays/ovl_menu/*	*	ok	site	menu input from gMainController
+src/overlays/ovl_ending/fox_end2.c	Ending_801926D4	ok	site	ending copies player 0 Arwing look
+#
+# --- small level files
+src/overlays/ovl_i1/fox_tr.c	Training_ItemRing_Update	sim	site	training ring passed by player 0
+src/overlays/ovl_i1/fox_tr360.c	Training_SpawnEnemies@gPlayer[0]	sim	site	spawns while player 0 active
+src/overlays/ovl_i1/fox_tr360.c	Training_SpawnEnemies@gMainController	input	site	C-right call read from gMainController
+src/overlays/ovl_i1/fox_ve1.c	Venom1_80198414	flow	read	saves player 0 shields and wings before the Venom 1 to Venom 2 switch
+src/overlays/ovl_i1/fox_ve1.c	*	sim	site	Venom 1 enemies and boss move relative to player 0
+src/overlays/ovl_i3/fox_a6.c	Area6_A6Gorgon_Update	sim	read	boss moves to and aims at player 0 camera; its death sets player 0 level complete
+src/overlays/ovl_i3/fox_a6.c	*	flow	name	Area 6 cutscene helpers on player 0
+src/overlays/ovl_i4/fox_fo.c	Fortuna_UpdateEvents	flow	read	Fortuna timer and level end drive player 0 state
+src/overlays/ovl_i4/fox_fo.c	Fortuna_LevelComplete_CsSpawnTeam	flow	site	level complete cutscene around player 0
+src/overlays/ovl_i5/fox_ti_cs.c	*	flow	site	Titania intro cutscene on player 0
+src/overlays/ovl_i6/fox_ve2.c	Venom2_UpdateEvents	flow	site	Venom 2 events on player 0
+#
+# --- level overlays (ovl_i1..ovl_i6): enemies and bosses target player 0; boss deaths and level ends drive player 0
+# Rumble in levels: D_ctx_801779A8 and gControllerRumble* are indexed by gMainController here but by player->num in
+# the engine (src/engine/fox_play.c, Player_Update). Same value only while the controller index equals the player.
+src/overlays/ovl_i*	*@gMainController	view	site	rumble on gMainController (controller index used as player index)
+src/overlays/ovl_i6/fox_andross.c	Andross_8018C390@gMainController	input	site	any button on gMainController shortens a cutscene timer
+src/overlays/ovl_i*	*	sim	name	level enemies, bosses and hazards move to, aim at, hit or check distance to player 0
+src/overlays/ovl_i1/fox_co.c	Corneria_CsTeamSetup	flow	name	team cutscene around player 0
+src/overlays/ovl_i1/fox_co.c	Corneria_LevelStart	flow	site	intro on player 0
+src/overlays/ovl_i1/fox_co.c	Corneria_CsLevelComplete1_TeamSetup	flow	name	level complete cutscene
+src/overlays/ovl_i1/fox_co.c	Corneria_SetupClouds	view	name	clouds around player 0 camera
+src/overlays/ovl_i1/fox_co.c	Corneria_SpawnClouds	view	name	clouds around player 0 camera
+src/overlays/ovl_i2/fox_me.c	Meteo_LevelStart_SetupTeam	flow	name	intro team around player 0
+src/overlays/ovl_i2/fox_me.c	Meteo_LevelComplete_SetupTeam	flow	name	level complete team around player 0
+src/overlays/ovl_i2/fox_sx.c	SectorX_8018F030	flow	site	Slippy placed at player 0 camera for a cutscene
+src/overlays/ovl_i2/fox_sx.c	SectorX_LevelStart_SetupTeam	flow	name	intro team around player 0
+src/overlays/ovl_i2/fox_sx.c	SectorX_LevelComplete_SetupTeam	flow	name	level complete team
+src/overlays/ovl_i3/fox_aq.c	Aquas_801A95C8	flow	site	cutscene moves player 0 camera
+src/overlays/ovl_i3/fox_aq.c	Aquas_CsAqFishGroup_Update	flow	name	cutscene fish
+src/overlays/ovl_i3/fox_aq.c	Aquas_801ABA40	sim	site	Blue Marine torpedoes culled by player 0 camera, aimed with player 0 rotation
+src/overlays/ovl_i3/fox_so.c	Solar_LevelStart	flow	name	intro on player 0
+src/overlays/ovl_i3/fox_so.c	Solar_801A3C4C	flow	site	Vulkain death: rumble and player 0 to level complete
+src/overlays/ovl_i4/fox_bo.c	Bolse_UpdateEventHandler	flow	read	Bolse events: level complete and standby cutscene on player 0
+src/overlays/ovl_i4/fox_bo.c	Bolse_LevelComplete	flow	name	level complete on player 0
+src/overlays/ovl_i4/fox_ka.c	Katina_KaSaucerer_Update	sim	site	boss; its death puts player 0 in standby and moves player 0 camera (flow mixed in)
+src/overlays/ovl_i4/fox_ka.c	Katina_SFTeamMissionAccomUpdate	flow	name	mission accomplished cutscene
+src/overlays/ovl_i4/fox_ka.c	Katina_SFTeam_LevelComplete_Update	flow	name	level complete cutscene
+src/overlays/ovl_i4/fox_ka.c	Katina_UpdateEvents	flow	name	level events on player 0
+src/overlays/ovl_i4/fox_ka.c	Katina_EnemyDraw	view	name	drawing by player 0
+src/overlays/ovl_i4/fox_sz.c	SectorZ_KattCutscene	flow	name	Katt cutscene
+src/overlays/ovl_i4/fox_sz.c	SectorZ_UpdateEvents	flow	name	level events on player 0
+src/overlays/ovl_i4/fox_sz.c	SectorZ_CsEnemies	flow	name	cutscene enemies
+src/overlays/ovl_i4/fox_sz.c	SectorZ_TeamSetup	flow	name	team around player 0
+src/overlays/ovl_i4/fox_sz.c	SectorZ_CsLevelCompleteTeamInit	flow	name	level complete team
+src/overlays/ovl_i4/fox_sz.c	SectorZ_LevelComplete	flow	name	level complete
+src/overlays/ovl_i5/fox_ma.c	Macbeth_Train_Draw	view	name	drawing by player 0
+src/overlays/ovl_i5/fox_ma.c	Macbeth_TrainTrack_Draw	view	name	drawing by player 0
+src/overlays/ovl_i5/fox_ma.c	Macbeth_IndicatorSign_Draw	view	name	drawing by player 0
+src/overlays/ovl_i5/fox_ma.c	Macbeth_MaProximityLight_Draw	view	name	drawing by player 0
+src/overlays/ovl_i5/fox_ma.c	Macbeth_Actor207_Draw	view	name	drawing by player 0
+src/overlays/ovl_i5/fox_ma.c	Macbeth_EffectClouds_Setup	view	name	clouds around player 0
+src/overlays/ovl_i5/fox_ma.c	Macbeth_LevelComplete1_TeamSetup	flow	name	level complete team
+src/overlays/ovl_i5/fox_ma.c	Macbeth_801AF44C	flow	site	cutscene actor placed at player 0
+src/overlays/ovl_i5/fox_ma.c	Macbeth_801B3718	flow	site	cutscene actor placed at player 0
+src/overlays/ovl_i5/fox_ma.c	Macbeth_8019A2F4	sim	site	train speed and position follow player 0 z
+src/overlays/ovl_i5/fox_ti.c	Titania_80193DF0	sim	site	enemy follows player 0 and changes player 0 state fields
+src/overlays/ovl_i5/fox_ti.c	Titania_80192118	sim	site	enemy follows player 0 and changes player 0 state fields
+src/overlays/ovl_i5/fox_ti.c	Titania_TiGoras_Dying	flow	name	boss death cutscene
+src/overlays/ovl_i6/fox_andross.c	Andross_AndJamesTrigger_Update	flow	site	James appears when player 0 is near
+src/overlays/ovl_i6/fox_andross.c	Andross_AndBrain_Draw	view	name	drawing by player 0
+src/overlays/ovl_i6/fox_andross.c	Andross_AndBossTimer_Update	flow	name	boss timer on player 0
+src/overlays/ovl_i6/fox_sy.c	SectorY_80197B30	flow	site	actor copies player 0 position, speed and rotation (cutscene double)
+src/overlays/ovl_i6/fox_sy.c	SectorY_8019AEEC	flow	site	cutscene moves player 0 camera
+src/overlays/ovl_i6/fox_sy.c	SectorY_801A0AC0	flow	site	cutscene moves player 0 to the centre
+src/overlays/ovl_i6/fox_sy.c	SectorY_SyShogun_Draw	view	name	drawing by player 0
+src/overlays/ovl_i6/fox_sy.c	SectorY_LevelComplete	flow	name	level complete
+src/overlays/ovl_i3/fox_zo.c	Zoness_LevelStart@gMainController	flow	read	intro fakes a boost press on gMainController
+src/engine/fox_enmy.c	Actor_Update@gCamCount	ok	read	versus branch, loops all players
+#
+# --- boss and enemy functions that also switch the level phase by writing player 0 state or camera (checked by site)
+src/overlays/ovl_i1/fox_co.c	Corneria_Granga_Init	sim	site	boss; sets player 0 to START_360 (switch to all-range)
+src/overlays/ovl_i1/fox_co.c	Corneria_CoGranga_HandleDamage	sim	site	boss; on death sets player 0 state for the level end
+src/overlays/ovl_i2/fox_me.c	Meteo_MeCrusher_Update	sim	site	boss; on death sets player 0 to LEVEL_COMPLETE
+src/overlays/ovl_i2/fox_sx.c	SectorX_SxSlippy_Update	sim	site	Slippy rescue; moves player 0 camera for the cutscene
+src/overlays/ovl_i2/fox_sx.c	SectorX_SxSpyborg_Update	sim	site	boss; on death sets player 0 state
+src/overlays/ovl_i3/fox_aq.c	Aquas_AqBacoon_Update	sim	site	boss; changes player 0 camera distance and state
+src/overlays/ovl_i3/fox_zo.c	Zoness_ZoSarumarine_Update	sim	site	boss; on death sets player 0 to LEVEL_COMPLETE
+src/overlays/ovl_i4/fox_sz.c	SectorZ_MissileExplode	sim	site	missile reaching Great Fox sets player 0 to LEVEL_COMPLETE (mission failed path)
+src/overlays/ovl_i4/fox_sz.c	SectorZ_Missile_Update	sim	site	missiles; set player 0 state and camera
+src/overlays/ovl_i4/fox_sz.c	SectorZ_EnemyUpdate	sim	site	sets player 0 to STANDBY and moves its camera
+src/overlays/ovl_i5/fox_ma.c	Macbeth_MaLocomotive_Update	sim	site	train; sets player 0 to LEVEL_COMPLETE
+src/overlays/ovl_i5/fox_ma.c	Macbeth_MaRailwaySignal_Update	sim	site	sets player 0 to LEVEL_COMPLETE
+src/overlays/ovl_i6/fox_andross.c	Andross_80188A4C	sim	site	boss part; sets player 0 to STANDBY after the bonus
+src/overlays/ovl_i6/fox_andross.c	Andross_AndBrain_Update	sim	site	boss; sets player 0 to START_360 and moves its camera
+src/overlays/ovl_i6/fox_andross.c	Andross_8018D2B0	sim	site	sets player 0 state
+src/overlays/ovl_i6/fox_sy.c	SectorY_SyShogun_Init	sim	site	boss; sets player 0 to START_360
+src/overlays/ovl_i6/fox_sy.c	SectorY_80198F5C	sim	site	boss; sets player 0 state and camera
+src/overlays/ovl_i6/fox_sy.c	SectorY_80199438	sim	site	boss cutscene; moves player 0 camera

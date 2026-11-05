@@ -82,6 +82,79 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-05, #5 (WP-05), single-player assumptions audit
+
+Read at `d653ee21` (branch `coop`). Full list with a verdict per site: `docs/coop/audit/single-player.md`, generated
+by `python tools/coop/sp_audit.py` from `docs/coop/audit/sp-verdicts.tsv` (`--check` fails when it is stale or a site
+has no verdict). Rerun it after an upstream sync: line numbers move, and new sites show up as missing verdicts.
+
+Counts: 1799 sites in 409 functions in 43 files. `gPlayer[0]` 1577, `gMainController` 146, `gCamCount` 73,
+`gPlayer->` 3. By verdict: sim 1074, flow 326, view 223, ok 93, setup 64, input 19.
+
+Observed:
+
+- **`gCamCount` doubles as the "versus mode" flag.** Code tests `gCamCount != 1` or `gCamCount == 4` to switch on
+  versus rules: player-vs-player hits and mercy rules (`src/engine/fox_play.c`, `Player_CollisionCheck`), floor
+  handling (`Player_FloorCheck`), arena wrap at 12000 (`Player_CheckBounds360`), no radio (`src/engine/fox_radio.c`,
+  `Radio_Draw`), versus HUD and radar (`src/engine/fox_hud.c`, `HUD_Draw`, `HUD_RadarWindow_Draw`), no positional
+  sound (`src/engine/fox_edisplay.c`, `Object_SetSfxSourceToPos`), and the down state going to `PLAYERSTATE_VS_STANDBY`
+  instead of a level restart (`fox_play.c`, `Player_Update`). There is a separate `gVersusMode` flag, but these sites
+  do not use it.
+- **Objects are deleted by player 0's camera.** `Actor_Move` calls `Object_Kill` when an actor is behind player 0's
+  `cam.eye.z` plus its cull distance or outside player 0's path bounds (`src/engine/fox_enmy.c`, `Actor_Move`);
+  `Effect_Move`, `Scenery_Move`, `Sprite_Move`, `Boss_Move` and `Item_Move` do the same. Level objects are loaded
+  relative to player 0's path position (`Object_Load`, `Object_LoadLevelObjects`).
+- **Level phases are switched by writing `gPlayer[0].state`.** Bosses and level triggers set player 0 to
+  `PLAYERSTATE_LEVEL_COMPLETE`, `PLAYERSTATE_START_360` or `PLAYERSTATE_STANDBY` and move player 0's camera, for
+  example `src/overlays/ovl_i1/fox_co.c:109` (Granga), `src/overlays/ovl_i2/fox_me.c:1049` (Crusher),
+  `src/overlays/ovl_i4/fox_ka.c:919` (Saucerer), `src/engine/fox_enmy.c`, `ItemPathChange_Update` (path split and level
+  end gate) and `src/engine/fox_play.c`, `Play_UpdateLevel`. The audit list marks 18 such boss and enemy functions.
+- **Enemy fire targets and hits player 0 only.** Projectile effects aim at, collide with and knock back
+  `gPlayer[0]` (`src/engine/fox_effect.c`, `Effect_Effect353_354_Update`, `Effect_Effect398_Update`); homing missiles
+  seek player 0 (`fox_enmy.c`, `ActorMissileSeek_Update`); event actors read player 0 position, shields and laser
+  level as script conditions (`src/engine/fox_enmy2.c`, `ActorEvent_ProcessTriggers`).
+- **Wingmen fly with player 0.** `src/engine/fox_360.c`, `ActorAllRange_Update` and `src/engine/fox_hud.c`,
+  `ActorTeamBoss_FlyAlongPlayer`.
+- **One controller drives the game.** `gMainController` is set at the title screen to the controller that pressed
+  Start (`src/overlays/ovl_menu/fox_title.c:171`, `Title_CheckControllers`). `Player_Update` then reads
+  `gInputHold`/`gInputPress`/`gControllerRumble` from it for every player (`src/engine/fox_play.c:5886-5888`). Pause,
+  intro skip and the R-button radio (`Play_Main`), bomb detonation and charge-shot release (`src/engine/fox_beam.c`)
+  read it directly too.
+- **Controller index used as player index.** Level code sets rumble with `D_ctx_801779A8[gMainController]` and
+  `gControllerRumbleTimers[gMainController]` (for example `src/overlays/ovl_i3/fox_so.c:1652`), while the engine
+  reads those arrays by `player->num` (`src/engine/fox_play.c:5891-5897`).
+- **One wing animation for all Arwings.** `Display_ArwingWings` draws with `gPlayer[0].jointTable`
+  (`src/engine/fox_display.c:633`).
+- **Solar heat damages player 0 only** (`fox_play.c`, `Play_UpdateLevel`, the `gPlayer[0].shields--` block).
+
+Derived:
+
+- Setting `gCamCount = 2` for co-op (WP-10) would switch on half of versus mode. WP-10 needs a separate player count
+  and must replace the `gCamCount` versus tests with `gVersusMode` or the level id, each one checked.
+- Culling and loading are simulation, not drawing: with two players they must use a rule that every client computes
+  the same way (for example the leading player, or path progress alone on rails), or clients will delete different
+  objects and desync.
+- Level phase changes need one place that applies them to all players, which suggests a hook where the game writes
+  player 0's state (WP-16, WP-19).
+- In co-op the sites marked `view` must use the local player of this client (WP-28), and `input` must use the input
+  source of the player concerned (WP-14).
+
+Guess:
+
+- 642 sites have basis `name`: the verdict comes from the function name and file, not from reading the code (mostly
+  level enemies and bosses, marked `sim`). A check of those sites for writes to player 0 state or camera found 18
+  boss and enemy functions that also switch the level phase; they are now recorded with basis `site`. Other mixed
+  functions may remain.
+- Most `sim` sites only need "which player" to be chosen (nearest, or a fixed owner); that choice is a game rule
+  (WP-07) and the same helper could serve most of them.
+
+Unknown:
+
+- Uses of the player that do not go through these four patterns: `gPlayerNum` outside loops, `Player* player =
+  gPlayer` (without `[0]`), `gPlayer[i]` with a fixed `i`, and arrays indexed `[0]` that mean player 0 (`gLaserStrength[0]`,
+  `gLifeCount[0]`, `D_ctx_801779A8[0]`). Not counted here.
+- `src/port/` (enhancements, cheats, hooks) was out of scope.
+
 ### 2026-11-01, project setup
 
 Observed: see DESIGN.md section 2 (player array, `gCamCount`, object arrays, RNG, event hooks, `USE_NETWORKING`).
