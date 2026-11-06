@@ -50,6 +50,44 @@ Unknown:
 - Windows and macOS: none of this ran there. `SHIP_HOME` is read on Linux and macOS only
   (`libultraship/src/Context.cpp:471-486`).
 
+### 2026-11-06, #104, run folders of the test tools
+
+Identity: before the change `797c678b`, ROM US 1.0, Linux, GCC, Debug, OpenGL in software, no window. The games ran on a
+build of that commit, the transport tests on the same source.
+
+Observed, before the change, with the real clock and runs started just after a second began:
+
+- `exit_test.py`, two at once: one `PASS`, one `FileExistsError` on `local/test-exit-<stamp>`.
+- `player_trace.py run`, two at once: the second stopped with `FileExistsError`. `rails --players 1` did the same
+  between the two threads of one process.
+- `net_test.py --only lan`, two at once, four times: both printed the same `logs:` line, and in every pair at least one
+  run failed, five of the eight: `ran out of time: host False, client True` (three), `8 resends on a clean link` (one)
+  and one whose line was not kept. Alone the scenario passed five of five.
+- `session_test.py --only sim`, two at once: the same `logs:` line, both passed.
+- `net_mutants.py` twice, one after the other, with a build folder that does not exist: the same `logs:` line.
+
+Observed, after the change: the same runs each print a folder of their own, the later one with `-2`. `lan` two at once,
+four times: all eight passed. `exit_test.py`, two at once: both `PASS`.
+
+Derived:
+
+- A shared folder is more than overwritten logs: `net_test.py` reads and writes `host.port`, `host.json` and
+  `client.json` by name in the scenario's folder (`tools/coop/net_test.py:67-68`, `:80`), so two runs use the same
+  files.
+- `mutants.py` takes a lock before it names the folder (`tools/coop/mutants.py:237`), so of its runs only one that
+  starts after another has ended can land in that folder, and that takes a run that ends within the second.
+- `mutants.py` starts the test script with `python -I` (`tools/coop/mutants.py:141`), and `check.py` does so too. `-I`
+  keeps the script's own folder off `sys.path`, so a tool started that way has to add `tools/coop` itself to import
+  `run_folder`. Removing that line from `net_test.py` turned `run_folder_test.py` red.
+
+Guess:
+
+- `ran out of time` comes from the two runs mixing up those files. No run looked at which file went where.
+
+Unknown:
+
+- Windows and macOS: none of this ran there.
+
 ### 2026-11-06, #70, which test variables reach the game
 
 Identity: ROM US 1.0, on commit `95962d04`, Linux, GCC, Debug, OpenGL in software, no window.
