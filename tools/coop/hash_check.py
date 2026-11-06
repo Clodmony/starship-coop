@@ -192,8 +192,8 @@ def cmd_run(args):
     poke_env = None if args.poke_player is None else {"SF64_COOP_HASH_POKE_PLAYER": str(args.poke_player)}
     print(f"hash: runs A, B and C (poke at frame {poke}) in parallel")
 
-    # The three runs are independent (own folders, same replay), so they run at the same time: the game runs at a
-    # fixed 30 logic frames per second, and running them in a row would take three times as long.
+    # The three runs are independent (own folders, same replay), so they run at the same time: running them in a row
+    # would take three times as long.
     with ThreadPoolExecutor(max_workers=3) as pool:
         a_job = pool.submit(play, replay, exe, args.timeout, "hash-a", config=config)
         b_job = pool.submit(play, replay, exe, args.timeout, "hash-b", config=config)

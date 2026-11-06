@@ -63,6 +63,7 @@ def start_game(exe, run, scenario, replay):
         env["SF64_COOP_REPLAY_RECORD" if scenario.mode == "record" else "SF64_COOP_REPLAY_PLAY"] = str(replay)
         env["SF64_COOP_REPLAY_REPORT"] = str(run / "replay-report.txt")
     if scenario.mode != "plain":
+        env["SF64_COOP_TEST_SPEED"] = replay_tool.TEST_SPEED
         env["SF64_COOP_HASH_LOG"] = str(run / "state-hash.txt")
     return subprocess.Popen([str(exe)], cwd=run, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
