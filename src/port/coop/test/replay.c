@@ -135,15 +135,17 @@ static void CoopReplay_WriteReport(const char* mode, const char* result) {
     fclose(f);
 }
 
-static void CoopReplay_FinishPlayback(bool complete) {
+// failure is the result of a playback that did not reach a clean end of the file, NULL for one that did. It wins over a
+// mismatch: player_trace.py accepts FAIL_MISMATCH with two or more players, and that must not hide a damaged file.
+static void CoopReplay_FinishPlayback(const char* failure) {
     const char* result;
 
     if (sFile != NULL) {
         fclose(sFile);
         sFile = NULL;
     }
-    if (!complete) {
-        result = "FAIL_INCOMPLETE";
+    if (failure != NULL) {
+        result = failure;
     } else if (sFirstMismatch >= 0) {
         result = "FAIL_MISMATCH";
     } else {
@@ -163,7 +165,7 @@ static void CoopReplay_OnExit(void) {
         CoopReplay_WriteReport("record", "RECORDED");
     } else if (sMode == REPLAY_PLAY) {
         // Window closed before the replay ended.
-        CoopReplay_FinishPlayback(false);
+        CoopReplay_FinishPlayback("FAIL_INCOMPLETE");
     }
 }
 
@@ -201,9 +203,19 @@ static bool CoopReplay_StartPlay(void) {
     return true;
 }
 
+// The read that found no whole frame got lastRead bytes. A file that ends inside a frame (a recording killed mid-write
+// leaves one) or holds no frames at all proves nothing, however well the frames before it matched.
+static const char* CoopReplay_FileEndFailure(size_t lastRead) {
+    if ((lastRead != 0) || ferror(sFile)) {
+        return "FAIL_TRUNCATED";
+    }
+    return (sFrame == 0) ? "FAIL_NO_FRAMES" : NULL;
+}
+
 static void CoopReplay_OnGamePreUpdate(IEvent* event) {
     ReplayFrame frame;
     ReplayCheckpoint cp;
+    size_t lastRead;
 
     (void) event;
     if ((sMode != REPLAY_RECORD) && (sMode != REPLAY_PLAY)) {
@@ -251,8 +263,9 @@ static void CoopReplay_OnGamePreUpdate(IEvent* event) {
         return;
     }
 
-    if (fread(&frame, sizeof(frame), 1, sFile) != 1) {
-        CoopReplay_FinishPlayback(true);
+    lastRead = fread(&frame, 1, sizeof(frame), sFile);
+    if (lastRead != sizeof(frame)) {
+        CoopReplay_FinishPlayback(CoopReplay_FileEndFailure(lastRead));
         return;
     }
     sRecordedFrames = frame.frame + 1;
