@@ -9,6 +9,9 @@ Every PR states the QA level it reached and how. Levels follow Co-op Anything:
 | `automated` | A scripted harness drove real game clients and checked shared state. Paste the summary. |
 | `verified-playthrough` | A full campaign was finished in co-op, written up with known issues. |
 
+`automated` needs at least two game clients sharing state. A run of one game is `none`, even when a script drove it and
+checked its state: the PR says what ran.
+
 Current project level: `none` (no co-op play yet; the transport has its own tests).
 
 ## Test identity
