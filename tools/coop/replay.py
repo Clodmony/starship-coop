@@ -3,10 +3,13 @@
 
     python tools/coop/replay.py record local/replays/corneria.sfcr   # you play; close the window to stop
     python tools/coop/replay.py play   local/replays/corneria.sfcr   # unattended; prints the result
+    python tools/coop/replay.py record local/replays/idle.sfcr --frames 300   # unattended; nobody plays, stops itself
 
-Every run gets a fresh folder under local/ (config, save and logs start empty), so a recording and its playback start
-from the same state and the owner's own setup is never touched. The game is told what to do through the
-SF64_COOP_REPLAY_* environment variables (src/port/coop/test/replay.h). Playback exits 0 on PASS, 1 otherwise.
+Every run gets a fresh folder under local/ (config, save and logs start empty) and SHIP_HOME set to that folder, so a
+recording and its playback start from the same state and the owner's own setup is never touched, even when SHIP_HOME
+is set in the shell. The game is told what to do through the SF64_COOP_REPLAY_* environment variables
+(src/port/coop/test/replay.h). Playback exits 0 on PASS, 1 otherwise: only a whole file can pass, so a file with no
+frames or a cut last frame fails. python tools/coop/replay_test.py tests all this.
 
 A replay file holds raw structs: it only plays back on the same build and platform it was recorded on.
 """
@@ -14,6 +17,7 @@ import argparse
 import json
 import os
 import shutil
+import struct
 import subprocess
 import sys
 import time
@@ -28,6 +32,7 @@ EXE_CANDIDATES = [
     "build-cmake/Starship.app/Contents/MacOS/Starship",
 ]
 DATA_FILES = ["sf64.o2r", "starship.o2r", "gamecontrollerdb.txt"]
+HEADER_SIZE = 40  # ReplayHeader in src/port/coop/test/replay.c
 
 
 def find_exe(given):
@@ -59,6 +64,17 @@ def make_run_dir(exe, mode):
     return run
 
 
+def replay_frame_count(replay):
+    """Whole frames in a replay file: a header holding the frame size at byte 12, then one record per frame. A file
+    too short to hold that header has none."""
+    path = Path(replay)
+    data = path.read_bytes() if path.exists() else b""
+    if len(data) < HEADER_SIZE:
+        return 0
+    frame_size = struct.unpack_from("<I", data, 12)[0]
+    return (len(data) - HEADER_SIZE) // frame_size if frame_size else 0
+
+
 def read_report(path):
     if not path.exists():
         return None
@@ -70,19 +86,22 @@ def read_report(path):
     return values if "result" in values else None
 
 
-def run_game(mode, replay, exe, timeout, hash_log=False, poke=None, tag=None, env_extra=None, config=None):
+def run_game(mode, replay, exe, timeout, hash_log=False, poke=None, tag=None, env_extra=None, config=None, frames=None):
     """Start one game in a fresh run folder and wait for the replay report.
 
     Returns (report values or None, run folder, seconds). With hash_log the run also writes state-hash.txt into the
     run folder (src/port/coop/sync/state_hash.h); poke flips one byte of game state at that frame. env_extra adds
     environment variables (for example the test switches in src/port/coop/test/switches.h); config is a dict written
-    as the run folder's starship.cfg.json before the game starts (graphics backend, window size, CVars).
+    as the run folder's starship.cfg.json before the game starts (graphics backend, window size, CVars). With frames a
+    recording stops once the file holds that many; it can hold more, as the game writes in blocks and this looks once a
+    second.
     """
     run = make_run_dir(exe, mode if tag is None else f"{mode}-{tag}")
     if config is not None:
         (run / "starship.cfg.json").write_text(json.dumps(config, indent=4), encoding="utf-8")
     report = run / "replay-report.txt"
     env = dict(os.environ)
+    env["SHIP_HOME"] = str(run)
     for key in ("SF64_COOP_REPLAY_RECORD", "SF64_COOP_REPLAY_PLAY", "SF64_COOP_HASH_LOG", "SF64_COOP_HASH_POKE"):
         env.pop(key, None)
     for key in [k for k in env if k.startswith("SF64_COOP_TEST_")]:
@@ -98,7 +117,7 @@ def run_game(mode, replay, exe, timeout, hash_log=False, poke=None, tag=None, en
     print(f"replay: {mode} {replay}")
     print(f"replay: exe {exe}")
     print(f"replay: run folder {run}")
-    if mode == "record":
+    if mode == "record" and frames is None:
         print("replay: play now; close the game window to stop recording")
     start = time.monotonic()
     proc = subprocess.Popen([str(exe)], cwd=run, env=env)
@@ -110,9 +129,11 @@ def run_game(mode, replay, exe, timeout, hash_log=False, poke=None, tag=None, en
                 values = read_report(report)
                 if values is not None:
                     break
-                if time.monotonic() - start > timeout:
-                    print("replay: timeout")
-                    break
+            elif frames is not None and replay_frame_count(replay) >= frames:
+                break
+            if (mode == "play" or frames is not None) and time.monotonic() - start > timeout:
+                print("replay: timeout")
+                break
             if proc.poll() is not None:
                 break
             time.sleep(1)
@@ -138,7 +159,9 @@ def main():
     p.add_argument("mode", choices=["record", "play"])
     p.add_argument("file", help="replay file (keep it under local/, it is made from your game)")
     p.add_argument("--exe", help="Starship executable (default: newest build found)")
-    p.add_argument("--timeout", type=float, default=1800, help="playback: give up after this many seconds")
+    p.add_argument("--timeout", type=float, default=1800,
+                   help="playback and record --frames: give up after this many seconds")
+    p.add_argument("--frames", type=int, help="record: stop after this many frames, so nobody has to close the window")
     p.add_argument("--hash-log", action="store_true", help="also write state-hash.txt into the run folder (WP-04)")
     args = p.parse_args()
 
@@ -148,7 +171,7 @@ def main():
         sys.exit(f"replay: {replay} does not exist")
     replay.parent.mkdir(parents=True, exist_ok=True)
 
-    values, run, elapsed = run_game(args.mode, replay, exe, args.timeout, hash_log=args.hash_log)
+    values, run, elapsed = run_game(args.mode, replay, exe, args.timeout, hash_log=args.hash_log, frames=args.frames)
     if values is None:
         print(f"replay: FAILED ({elapsed:.0f}s)")
         return 1

@@ -9,6 +9,47 @@ Private notes (your paths, your PC, your logs) go in `local/`, not here.
 
 ## Build and run
 
+### 2026-11-06, #54, what SHIP_HOME reaches, and how a replay file can end
+
+Identity: ROM US 1.0, on commit `a69c811a`, Linux, GCC, Debug, OpenGL in software, no window.
+
+Observed:
+
+- `sf64.o2r` is looked up in the app directory only (`src/port/Engine.cpp:78`); `starship.o2r` also falls back to the
+  working directory (`src/port/Engine.cpp:79`, `libultraship/src/Context.cpp:511-526`). With `SHIP_HOME` at a folder
+  without `sf64.o2r`, and no window, the game exited with code 1 within 2 s and wrote nothing in either folder.
+- With `SHIP_HOME` at a folder holding `sf64.o2r`, and the tools passing it through, `default.sav`, `logs/`, `mods/` and
+  `starship.cfg.json` landed in that folder, plus `imgui.ini` on the runs of 100 frames or more (not on those of 0 or
+  30). Besides the data files copied in, the run folder got only the report and the hash log. Seen through `replay.py`,
+  `hash_check.py` and `determinism.py`; the three runs of `hash_check.py` shared that one folder.
+- A header-only replay reported `PASS` with 0 frames, and `determinism.py` then printed `det: PASS`, "equal to base on
+  all 0 frames". `hash_check.py` failed it only because its poke changed nothing, while all three replays said `PASS`.
+- A file cut inside a frame also reported `PASS`, with the whole frames before the cut as `frames`.
+- A recording stopped with SIGKILL ended inside a frame in 2 of 3 tries (16 and 32 bytes left over, the third on a frame
+  edge). The file is flushed every 60 frames (`src/port/coop/test/replay.c:260`) and in blocks in between. No report is
+  written then.
+- After SIGTERM a recording game ran its `atexit` handler (report `RECORDED`, whole frames only), yet it had not exited
+  40 s later and needed SIGKILL. One run measured this.
+- A replay with no frames to play took 17 to 21 s in `replay.py`.
+
+Derived:
+
+- A folder without `sf64.o2r` fails loudly; the dangerous `SHIP_HOME` is one that looks like a real install. A test of
+  this bug needs a decoy holding that archive, or it shows nothing.
+- With `SHIP_HOME` passed through, the game reads its config from there (`libultraship/src/Context.cpp:181`) and its
+  mods too (`src/port/Engine.cpp:110`), so a config a tool writes into the run folder is ignored. Not run for that
+  case: `determinism.py`'s `opengl` and `window` variants write one.
+
+Guess:
+
+- Most of those 17 to 21 s is `run_game` waiting 15 s for the game to exit after SIGTERM, before it uses SIGKILL.
+
+Unknown:
+
+- Why the game does not exit after SIGTERM.
+- Windows and macOS: none of this ran there. `SHIP_HOME` is read on Linux and macOS only
+  (`libultraship/src/Context.cpp:471-486`).
+
 ### 2026-11-04, #1 (WP-01), Windows build
 
 Identity: ROM US 1.0 (SHA-1 `d8b1088520f7c5f81433292a9258c1184afa1457`, `config.yml:34`), commit `ba0781d7`,
@@ -81,6 +122,63 @@ Unknown:
 - Release config and macOS: not tried in this session.
 
 ## Engine and players
+
+### 2026-11-06, #56, audit regenerated after WP-10 and WP-11
+
+Read at `a69c811a`. `python tools/coop/sp_audit.py --check` passes again. This moved line numbers and corrected the
+notes below; it is not a recheck. The verdicts stay a starting list: a sample of 45 found 5 wrong, and the `flow` group
+is not usable as a checklist yet.
+
+Counts now: 1788 sites in 407 functions in 43 files. By verdict: sim 1074, flow 326, view 223, ok 93, setup 53,
+input 19.
+
+Observed:
+
+- **Why two verdict rows matched no site.** WP-10 replaced the last `gCamCount` in `Player_InitializeAll`
+  (`src/engine/fox_play.c:2610`) and `Play_Update` (`fox_play.c:7039`, `:7054`) with `CoopPlayers_Count()`, and neither
+  function has any other pattern. The `// COOP: was gCamCount` comments are skipped. No site moved to another audited
+  function: the code stayed, and the choice of count went to `src/port/coop/game/players.c:45-50`, outside the audit's
+  scope. So both rows are gone; what `Player_InitializeAll`'s row said now stands in the `Play_Init` row. All game code
+  changes since the audit (`d653ee21`) are in `fox_play.c` and `fox_display.c`: 11 `gCamCount` sites went away (5 in
+  `Display_Update`, 2 in `Play_Init`, 2 in `Play_Update`, 1 in `Player_InitializeAll`, 1 in `Play_Main`), none came in.
+  The notes of the `Play_Init`, `Play_Main` and `Display_Update` rows still described those loops and were corrected.
+- **`gMainController` is not the controller that pressed Start.** It is written in two places only:
+  `Title_Setup` (`src/overlays/ovl_menu/fox_title.c:171`) and `Title_UpdateEntry` (`:240`, every title frame). Both
+  call `Title_CheckControllers` (`:388-400`), which returns the lowest index with `gControllerPlugged[i] == 1`, or -1.
+  It reads no button. All controller reads in `fox_title.c` use that index (`:884`, `:3374`, `:3405-3406`,
+  `:3446-3464`), so the title reads no other controller.
+- **On this port that index is always 0.** `Controller_UpdateInput` sets `gControllerPlugged[i] = osContGetStatus(i)`
+  for all four (`src/sys/sys_joybus.c:69`), and `osContGetStatus(x)` is defined as `true` (`:63`, `// LTODO: Fix this`).
+  It runs before `Game_Update` each frame (`src/sys/sys_main.c:241`, `:248`), so `Title_CheckControllers` returns 0
+  and its -1 is not reached. Read, not run.
+- `Title_Setup`'s old note also said every later read uses `gMainController`. Versus does not: `Player_Update` takes
+  `gInputHold`, `gInputPress` and `gControllerRumble` from `player->num` when `gVersusMode` is set
+  (`fox_play.c:5887-5895`), and pause reads R per controller (`fox_play.c:7234`).
+- **`Play_Main` has no radio input.** Its `gMainController` reads are Start (intro skip on a cleared level, `:7191`;
+  pause, `:7214`; unpause, `:7244`) and R while paused (`:7224`), which toggles `gShowReticles[0]`
+  (`fox_play.c:7226`; drawn at `src/engine/fox_display.c:2072`). The radio answer is C-right, in
+  `ActorAllRange_SpawnSupplies` (`src/engine/fox_360.c:667`) and the `EVC_PRESS_CRIGHT` event condition
+  (`src/engine/fox_enmy2.c:2695`); their rows were already right. The same mistake was in the `Play_Main` verdict row.
+- **A new site only shows as missing when no row covers it.** Tried with temporary sites, reverted afterwards.
+  Shown as missing (`--check` names it, `--todo` lists it, and it stays red after a rerun): a new function in
+  `fox_play.c`, `gPlayer->` in `Player_Update` (its rows are per pattern), a new tracked file. Not shown as missing:
+  a new function in `fox_co.c` (took `sim`, basis `name`, from the `ovl_i*` row) or `fox_demo.c` (took `flow`), and
+  `gPlayer[0]` added to `Player_CheckBounds360` (took that row's `setup` and a note that does not describe it). For
+  those, `--check` only calls the file stale and passes after a rerun. A file git does not track yet is not scanned:
+  `--check` stays green. 678 of the 1788 sites sit under a `*` row, in 21 files.
+
+Derived:
+
+- WP-14 cannot use `gMainController` to find who pressed Start, and on this port neither it nor
+  `gControllerPlugged` says which controllers exist.
+- After a rerun, the diff of `single-player.md` is the only place new sites show up. The generated header says so now.
+
+Unknown:
+
+- Which 5 verdicts the sample found wrong, beyond the notes #56 names, and how the verdicts outside the sample stand.
+  Nothing here rechecked them.
+- Why the `flow` group is not usable as a checklist yet: #56 does not say. 113 of its 326 sites have basis `name`.
+- Which physical pad lands on index 0: that is libultraship's mapping, not read here.
 
 ### 2026-11-05, #6 (WP-06), on-rails: player position, path progress, camera
 
@@ -195,7 +293,8 @@ Read from the source only; nothing was run. Line numbers are for `origin/coop` a
 
 Read at `d653ee21` (branch `coop`). Full list with a verdict per site: `docs/coop/audit/single-player.md`, generated
 by `python tools/coop/sp_audit.py` from `docs/coop/audit/sp-verdicts.tsv` (`--check` fails when it is stale or a site
-has no verdict). Rerun it after an upstream sync: line numbers move, and new sites show up as missing verdicts.
+has no verdict). Rerun it after an upstream sync: line numbers move, and new sites show up as missing verdicts
+[wrong, see 2026-11-06, #56].
 
 Counts: 1799 sites in 409 functions in 43 files. `gPlayer[0]` 1577, `gMainController` 146, `gCamCount` 73,
 `gPlayer->` 3. By verdict: sim 1074, flow 326, view 223, ok 93, setup 64, input 19.
@@ -225,9 +324,11 @@ Observed:
 - **Wingmen fly with player 0.** `src/engine/fox_360.c`, `ActorAllRange_Update` and `src/engine/fox_hud.c`,
   `ActorTeamBoss_FlyAlongPlayer`.
 - **One controller drives the game.** `gMainController` is set at the title screen to the controller that pressed
-  Start (`src/overlays/ovl_menu/fox_title.c:171`, `Title_CheckControllers`). `Player_Update` then reads
-  `gInputHold`/`gInputPress`/`gControllerRumble` from it for every player (`src/engine/fox_play.c:5886-5888`). Pause,
-  intro skip and the R-button radio (`Play_Main`), bomb detonation and charge-shot release (`src/engine/fox_beam.c`)
+  Start [wrong, see 2026-11-06, #56] (`src/overlays/ovl_menu/fox_title.c:171`, `Title_CheckControllers`).
+  `Player_Update` then reads `gInputHold`/`gInputPress`/`gControllerRumble` from it for every player
+  (`src/engine/fox_play.c:5886-5888`). Pause,
+  intro skip and the R-button radio [wrong, see 2026-11-06, #56] (`Play_Main`), bomb detonation and charge-shot
+  release (`src/engine/fox_beam.c`)
   read it directly too.
 - **Controller index used as player index.** Level code sets rumble with `D_ctx_801779A8[gMainController]` and
   `gControllerRumbleTimers[gMainController]` (for example `src/overlays/ovl_i3/fox_so.c:1652`), while the engine
@@ -325,6 +426,7 @@ Unknown:
   run with 2 players did not reach level complete. That is WP-11 (all-range) and WP-12 (on-rails).
 - Whether `Camera_Update` for player 2 writes globals that the local camera reads (WP-28).
 - `gCoopDebugPlayerCount` changes the simulation, so it belongs in the sim CVar list of WP-21 once both are merged.
+  (Done in #55.)
 
 Found later (2026-11-06, while testing WP-11 by watching a 2-player Corneria run):
 
@@ -768,6 +870,43 @@ GCC 16.2.1, Debug, graphics backend OpenGL, `USE_NETWORKING` on, `SDL_VIDEODRIVE
   `SDLNet_Init`. WP-21 is the first code to do that.
 - A boot with networking on under Windows or macOS. CI builds the game on Windows but does not start it.
 - Anything past the title screen.
+
+### 2026-11-06, #55, what the session tests can and cannot see
+
+Read at `a69c811a` (origin/coop).
+
+**Observed**
+
+- Nothing could fail the hold-back checks. `Check_Refused` and `check_refused` assert that no game message crossed a
+  refused handshake, but both ends only sent one after JOINED, and `CoopSession_Send` refuses before that. Both ends
+  now push game messages straight into the transport (`--eager` for real processes), and a clean run must have
+  dropped some.
+- `CoopIdentity_Read` returns 0 on failure, and the callers compared that with the size, so an empty identity passed
+  (`session.c:193, 309, 325` at `a69c811a`). The result: an empty hello got an ordinary refusal for every field instead
+  of the malformed one, a one-byte welcome let the client in with an empty host identity, and a four-byte refusal
+  read as a valid refusal. `Identity_ReadAll` now checks for 0 first.
+- Two CVars that change game flow were not in the table. With the level selector, `gSkipBriefing` starts the level
+  straight from the map instead of through the briefing (`src/mods/levelselect.c:115`; the menu entry is
+  `src/port/ui/ImguiUI.cpp:816`). `gCoopDebugPlayerCount` sets how many players the level has
+  (`src/port/coop/game/players.c:30`, default 1).
+- On a bad link a refused client can miss the refusal. In the virtual network (35 percent loss, seed 25 of
+  `Sim_Lossy`) all five copies of `SESSION_REFUSE` within the 3000 ms linger time were lost, at 180, 380, 780, 1580 and
+  2580 ms into the run. The host then dropped the client, which read "The other player closed the connection."
+  Nothing got through, so the rule holds, but the player gets a worse text.
+
+**Derived**
+
+- A check that no input can make fail looks like coverage. The mutation table (`tools/coop/session_mutants.py`) is
+  there to find those, and it found a gap in `check_joined` too: the Python check did not compare the two texts of a
+  warning, only the C one did.
+- Eight changes to `session.c` cannot be seen from outside, in the plain or the sanitizer build; they are listed at
+  the top of `session_mutants.py` with the reason. Three more only show in the sanitizer build (`--asan`): a leak, a
+  read past the end of a short refusal, and an out-of-range peer index that stays inside the session struct.
+
+**Unknown**
+
+- Whether a player on such a link is better served by a longer linger time. It is a trade against a slot held by a
+  client that already gave up.
 
 ### 2026-11-05, #19 (WP-21), session handshake: build, ROM, CVars
 

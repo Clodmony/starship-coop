@@ -20,11 +20,18 @@ number of clients, transport.
 
 1. **Replays (WP-03).** Controller input recorded per game frame and played back. Single-player replays guard the rule
    that co-op off changes nothing: a replay recorded on upstream must give the same per-frame hashes on this fork.
-   `python tools/coop/replay.py record <file>` (someone plays, closes the window to stop) and
-   `python tools/coop/replay.py play <file>` (unattended, exit code 0 on `PASS`). Each run gets a fresh folder under
-   `local/`. Recording starts at `GSTATE_START`, after the boot logo; each frame stores a checkpoint (game state, level,
+   `python tools/coop/replay.py record <file>` (someone plays, closes the window to stop; with `--frames <n>` it stops
+   by itself and nobody has to play) and `python tools/coop/replay.py play <file>` (unattended, exit code 0 on `PASS`).
+   Each run gets a fresh folder under `local/`, and `SHIP_HOME` is set to that folder whatever your shell says.
+   Recording starts at `GSTATE_START`, after the boot logo; each frame stores a checkpoint (game state, level,
    player 0 state and position, RNG seeds) and playback reports the first frame that differs. Replay files hold raw
    structs: same build and platform only, and they stay in `local/` (made from game play, not shared).
+   Only a whole file can pass: `FAIL_NO_FRAMES` is a file with a header and nothing else, `FAIL_TRUNCATED` one that
+   ends inside a frame (a recording that was killed can), `ERROR_BAD_FILE` one without a valid header. These win over
+   `FAIL_MISMATCH`, and `src/port/coop/test/replay.h` lists every result.
+   `python tools/coop/replay_test.py` (unattended, exit code 0 on `PASS`, needs a build with assets) tests the tools
+   themselves: it records a short replay nobody plays and plays it whole and damaged through `replay.py`,
+   `hash_check.py` and `determinism.py`, with a decoy `SHIP_HOME` that must stay untouched.
 2. **State hashes (WP-04).** One hash per game frame over players, object arrays, RNG seeds and key globals. Two
    clients compare hashes; the first different frame is the desync. `SF64_COOP_HASH_LOG=<file>` makes the game write
    one line per frame (`src/port/coop/sync/state_hash.h`): frame, game state, level, total hash and one hash per
@@ -59,8 +66,11 @@ number of clients, transport.
    configured build directory but no ROM. WP-27 does the same with real game clients.
    Whether those scenarios can fail at all is checked by `python tools/coop/net_mutants.py`: it breaks one behaviour
    of `net_core.c` at a time and requires the named scenario to fail (#44). Run it after changing `net_core.c`.
+   `python tools/coop/session_mutants.py` does the same for `session.c` and `session_test.py` (#55), and
+   `python tools/coop/session_test.py --asan` runs the session tests under AddressSanitizer and UBSan (CI does, on
+   Linux); `session_mutants.py --asan` shows that run can fail.
 5. **Regression per bug.** Every desync fix comes with the replay that triggered it; every transport fix adds a
-   break to `tools/coop/net_mutants.py`.
+   break to `tools/coop/net_mutants.py`, every session fix one to `tools/coop/session_mutants.py`.
 
 Running tests must never use or modify the owner's own `starship.cfg.json`, saves, `mods/` folder or running game.
 
@@ -79,6 +89,17 @@ result:     PASS on all four. Probes 2 players: player 1 14/14 (10 parked, 4 fly
             scenery360 5/5 twice. A = B on 5800/5800 frames with 1 and with 2 players; poke in player 2 at 5400 first
             seen at 5400 (players); poke in an actor at 5400 first seen at 5400 (actors). Co-op off: 5801/5801 log rows
             equal to a69c811a, every region. Same checks on the test commit 54837e0e: FAIL, quoted in the PR.
+```
+
+```
+date:       2026-11-06
+commit:     issue/55-session-tests, on a69c811a
+identity:   no game, no ROM; Linux, GCC, Debug; 2 or 3 processes, UDP over loopback, chaos relay
+what ran:   python tools/coop/session_test.py, then with --asan; python tools/coop/session_mutants.py, then with --asan;
+            python tools/coop/net_mutants.py
+result:     9/9 scenarios, plain and under AddressSanitizer and UBSan. All 129 session breaks caught (139 break-and-test
+            pairs), all 3 sanitizer breaks caught, all 16 transport breaks caught (20 pairs). Handshake and transport
+            only, not co-op play.
 ```
 
 ```

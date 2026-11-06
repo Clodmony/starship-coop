@@ -120,14 +120,6 @@ def write_generated_replay(path, frames=GENERATED_FRAMES, l_frame=GENERATED_L_FR
     temp.replace(path)
 
 
-def replay_frame_count(replay):
-    """Frames in a replay file: a 40-byte header (src/port/coop/test/replay.c, ReplayHeader) holding the frame size
-    at byte 12, then one record per frame."""
-    data = Path(replay).read_bytes()
-    frame_size = struct.unpack_from("<I", data, 12)[0]
-    return (len(data) - 40) // frame_size if frame_size else 0
-
-
 def play(replay, exe, timeout, tag, poke=None, env_extra=None, config=None):
     values, run, elapsed = replay_tool.run_game("play", replay, exe, timeout, hash_log=True, poke=poke, tag=tag,
                                                 env_extra=env_extra, config=config)
@@ -174,7 +166,7 @@ def cmd_run(args):
     if poke is None:
         # Default: the middle of the replay. Any frame works, because the poked bytes (gActors) are hashed in every
         # game state.
-        poke = replay_frame_count(replay) // 2
+        poke = replay_tool.replay_frame_count(replay) // 2
     poke_env = None if args.poke_player is None else {"SF64_COOP_HASH_POKE_PLAYER": str(args.poke_player)}
     print(f"hash: runs A, B and C (poke at frame {poke}) in parallel")
 
