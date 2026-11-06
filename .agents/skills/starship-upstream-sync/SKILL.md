@@ -20,7 +20,8 @@ Branches: `main` is an unchanged mirror of upstream Starship; `coop` is the co-o
    - `README.md`: keep ours. `.gitignore`: keep both sides.
    - Anything else: prefer upstream unless a co-op change is clearly involved; ask the owner if unsure.
 6. `git submodule update --init --recursive`, then `python tools/coop/build.py --quiet` (must end in `build: OK`) and
-   the single-player replay checks in `docs/coop/QA.md` when they exist.
+   the single-player replay checks in `docs/coop/QA.md` when they exist. Rerun `python tools/coop/sp_audit.py` and read
+   the diff: CI fails while the audit is stale, and a new site takes the verdict of its row without a warning.
 7. Compare markers: `git grep -n "COOP:"` against `local/coop-markers-before.txt`. Every marker must still exist
    (line numbers may move). Explain any that changed in the PR.
 8. Show the owner the diff summary, then open a PR into `coop` titled `Sync upstream Starship <date>` listing the

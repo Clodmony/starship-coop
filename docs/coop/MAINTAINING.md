@@ -104,7 +104,8 @@ git submodule update --init --recursive
   code. `git grep -n "COOP:"` before and after must list the same places (plus any new ones you had to add).
 - `README.md`: keep ours. Upstream's README is linked from it.
 - `.gitignore`: keep both.
-- Build, run the single-player replay checks from `docs/coop/QA.md` once they exist, then open the PR into `coop`.
+- Build, run the single-player replay checks from `docs/coop/QA.md` once they exist, rerun
+  `python tools/coop/sp_audit.py` and read its diff (CI fails while the audit is stale), then open the PR into `coop`.
 - Merge sync PRs with a **merge commit**, not squash, so upstream history stays intact and the next sync is clean.
 
 ## Sending fixes upstream
