@@ -380,7 +380,7 @@ def play_section(section, exe, args):
     """Play one section with each local index. Returns a list of failures."""
     frames, l_frame = SECTIONS[section]
     replay = replay_tool.ROOT / "local" / f"test-view-{section}.sfcr"
-    player_trace.write_rail_replay(replay, frames, l_frame, extra_buttons if section == "rails" else None)
+    player_trace.write_rail_replay(replay, frames, l_frame, extra=extra_buttons if section == "rails" else None)
     cvars = {"gCoopDebugPlayerCount": 2, "gInvincible": 1}
     if l_frame is not None:
         cvars["gDebugJumpToAllRange"] = 1
