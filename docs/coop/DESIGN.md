@@ -64,7 +64,8 @@ Nothing in the online design may rule it out.
 - How on-rails levels place the player relative to the path and camera, and what breaks with two players on rails.
 - Which code assumes `gPlayer[0]` or a single player: cameras, HUD, radio, cutscenes, level-complete logic, warps.
 - How the Landmaster (Titania, Macbeth) and Blue Marine (Aquas) levels handle extra players.
-- Which port enhancements (CVars) change the simulation and must match between players.
+- Which port enhancements (CVars) change the simulation and must match between players. A first list from reading
+  the code is in NOTES.md (WP-21) and in the handshake; nothing has tested it against state hashes yet.
 
 ## 3. Architecture (proposed)
 
