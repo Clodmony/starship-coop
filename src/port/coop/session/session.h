@@ -107,6 +107,8 @@ bool CoopSession_Pick(CoopSession* s, CoopCharacter character);
 // nothing opens that again yet. False, and nothing changes, while a client that joined holds no character or a client
 // is in the handshake, for a level that cannot be started, on a client, and once a level has started.
 bool CoopSession_StartLevel(CoopSession* s, const CoopLevelStart* start);
+// True if CoopSession_StartLevel would take a level that can be started, right now: what a start button shows.
+bool CoopSession_CanStart(const CoopSession* s);
 // The current roster, valid until the next Poll. NULL on a client before the first ROSTER event and after the end.
 const CoopRoster* CoopSession_Roster(const CoopSession* s);
 // The transport's counters for a peer that has joined, rttMs among them. False for anyone else.

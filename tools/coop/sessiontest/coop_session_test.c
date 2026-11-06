@@ -2586,10 +2586,12 @@ static void Script_HostStartGuards(void) {
     // Each client that holds nothing holds the start up, whichever slot it has.
     s = Script_HostWith(&t, sides, &a, 3);
     sent = t.sentCount;
+    EXPECT(!CoopSession_CanStart(s), name, "start offered with three clients without a character");
     EXPECT(!CoopSession_StartLevel(s, &want), name, "started with three clients without a character");
     Script_Pick(&t, 0, FALCO);
     Script_Pick(&t, 1, SLIPPY);
     Drain(s, SCRIPT_T0, sides);
+    EXPECT(!CoopSession_CanStart(s), name, "start offered with the last client without a character");
     EXPECT(!CoopSession_StartLevel(s, &want), name, "started with the last client without a character");
     Script_Pick(&t, 2, PEPPY);
     Script_Gone(&t, 0, COOP_NET_END_CLOSED);
@@ -2599,6 +2601,7 @@ static void Script_HostStartGuards(void) {
     Script_Connected(&t, 0);
     Script_Hello(&t, 0, &a);
     Drain(s, SCRIPT_T0, sides);
+    EXPECT(!CoopSession_CanStart(s), name, "start offered with the first client without a character");
     EXPECT(!CoopSession_StartLevel(s, &want), name, "started with the first client without a character");
     CoopSession_Close(s);
 
@@ -2607,13 +2610,16 @@ static void Script_HostStartGuards(void) {
     Script_Pick(&t, 0, FALCO);
     Script_Connected(&t, 1);
     Drain(s, SCRIPT_T0, sides);
+    EXPECT(!CoopSession_CanStart(s), name, "start offered while a client was in the handshake");
     EXPECT(!CoopSession_StartLevel(s, &want), name, "started while a client was in the handshake");
     t.pending = 1;
     Script_Hello(&t, 1, &other);
     Drain(s, SCRIPT_T0, sides);
     EXPECT(sides[1].refused == 1, name, "the other build was not refused");
     sent = t.sentCount;
+    EXPECT(CoopSession_CanStart(s), name, "a refused client held the offer up");
     EXPECT(CoopSession_StartLevel(s, &want), name, "a refused client held the start up");
+    EXPECT(!CoopSession_CanStart(s), name, "start offered once a level has started");
     Drain(s, SCRIPT_T0, sides);
     Level_Bytes(bytes, TEST_LEVEL, TEST_PHASE, FOX, FALCO, NO_PLAYER, NO_PLAYER);
     Expect_LevelTo(name, &t, sent, 0, bytes);
@@ -2623,6 +2629,7 @@ static void Script_HostStartGuards(void) {
     // The level has to be one that can be started: the last one is, the next one is not.
     s = Script_Host(&t, sides, &a);
     Level_Fill(&want, COOP_LEVEL_START_LEVELS, 0);
+    EXPECT(CoopSession_CanStart(s), name, "no start offered to a host alone");
     EXPECT(!CoopSession_StartLevel(s, &want), name, "started a level that cannot be started");
     Level_Fill(&want, COOP_LEVEL_START_LEVELS - 1, 0);
     EXPECT(CoopSession_StartLevel(s, &want), name, "the last level did not start, or a host alone cannot start");
@@ -2635,6 +2642,7 @@ static void Script_HostStartGuards(void) {
     Script_RosterMsg(&t, FOX, FALCO, NO_PLAYER, NO_PLAYER);
     Drain(s, SCRIPT_T0 + 2, &clientSide);
     sent = t.sentCount;
+    EXPECT(!CoopSession_CanStart(s), name, "start offered to a client");
     EXPECT(!CoopSession_StartLevel(s, &want), name, "a client started a level");
     Drain(s, SCRIPT_T0 + 2, &clientSide);
     EXPECT(t.sentCount == sent && clientSide.levelStarts == 0, name, "a client's start did something");
