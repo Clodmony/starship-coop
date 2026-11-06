@@ -222,11 +222,12 @@ def scenario_packaged(exe, build_id):
     if label_start(bar_rows(frame), frame[0], text) is None:
         return False, f"the package started, but shows no \"{text}\""
 
+    files = sum(1 for path in folder.rglob("*") if path.is_file())
     archive.unlink()
     frame, log = start_packaged(packaged, "packaged-without", rom_archive)
     if frame is not None or NO_SHADER not in log:
         return False, f"the package started without {archive.name}, so that file is not what it needs"
-    return True, f"started from {len(list(folder.rglob('*')))} packaged files and sf64.o2r, read {archive.name} from the " \
+    return True, f"started from {files} packaged files and sf64.o2r, read {archive.name} from the " \
                  f"package, shows \"{text}\"; without that file it stops at its first shader"
 
 

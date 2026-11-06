@@ -116,6 +116,9 @@ window. No CI run: nothing here was built by Actions, and nothing was run on Win
   found that folder's `starship.o2r` with none in its run folder, so a test of "without it" needs the game copied away.
 - The menu bar is opaque and everything right of the last menu is one colour; the menu font has 7-pixel cells, and a
   character looks the same in every cell. `tools/coop/version_test.py` relies on both, and needs no OCR.
+- A CI-built Linux binary (run 42267003729) does not start on a machine with newer libraries: it is linked against
+  Ubuntu 24.04's, and `libzip.so.4`, `libtinyxml2.so.10`, `libspdlog.so.1.12` and `libfmt.so.9` are not found. So a
+  packaged game has been started from a local Debug build only, and the Linux artifact needs those versions.
 - Inside the game binary: of 360,788 windows of 32 bytes, taken every 64 bytes from the ROM and from every entry of
   `sf64.o2r` (zero runs and padding left out), 92 are found. All 92 are in the binary of `797c678b` too. They are in
   named symbols of compiled C: `devstr*` strings, audio tables, `D_Tex_800DB4B8` (`src/engine/fox_wheels.c:93`, 1024
@@ -130,7 +133,6 @@ window. No CI run: nothing here was built by Actions, and nothing was run on Win
 
 **Unknown**
 
-- Whether a CI build starts on a Linux other than the runner's: it is linked against Ubuntu 24.04's libraries.
 - Whether the Windows artifact starts. Windows is linked statically (`CMakeLists.txt`, `x64-windows-static`) and upstream
   ships the executable alone, so no DLLs are packaged; not run.
 
