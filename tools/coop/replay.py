@@ -86,6 +86,15 @@ def read_report(path):
     return values if "result" in values else None
 
 
+def game_env(run):
+    """The environment for a game in folder run: this one with SHIP_HOME at that folder and without any SF64_COOP_*
+    variable, as one left in the shell would change a test with no sign in its result. The caller adds what the run
+    needs."""
+    env = {key: value for key, value in os.environ.items() if not key.startswith("SF64_COOP_")}
+    env["SHIP_HOME"] = str(run)
+    return env
+
+
 def run_game(mode, replay, exe, timeout, hash_log=False, poke=None, tag=None, env_extra=None, config=None, frames=None):
     """Start one game in a fresh run folder and wait for the replay report.
 
@@ -100,12 +109,7 @@ def run_game(mode, replay, exe, timeout, hash_log=False, poke=None, tag=None, en
     if config is not None:
         (run / "starship.cfg.json").write_text(json.dumps(config, indent=4), encoding="utf-8")
     report = run / "replay-report.txt"
-    env = dict(os.environ)
-    env["SHIP_HOME"] = str(run)
-    for key in ("SF64_COOP_REPLAY_RECORD", "SF64_COOP_REPLAY_PLAY", "SF64_COOP_HASH_LOG", "SF64_COOP_HASH_POKE"):
-        env.pop(key, None)
-    for key in [k for k in env if k.startswith("SF64_COOP_TEST_")]:
-        env.pop(key)
+    env = game_env(run)
     env["SF64_COOP_REPLAY_RECORD" if mode == "record" else "SF64_COOP_REPLAY_PLAY"] = str(replay)
     env["SF64_COOP_REPLAY_REPORT"] = str(report)
     if hash_log:

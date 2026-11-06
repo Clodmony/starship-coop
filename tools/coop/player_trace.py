@@ -29,7 +29,6 @@ Stopping the game can cut the last line of the trace; only that line may be cut.
 import argparse
 import json
 import math
-import os
 import shutil
 import subprocess
 import sys
@@ -39,7 +38,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools" / "coop"))
-from replay import read_report  # noqa: E402
+from replay import game_env, read_report  # noqa: E402
 EXE_CANDIDATES = [
     "build/x64/Release/Starship.exe",
     "build/x64/RelWithDebInfo/Starship.exe",
@@ -85,10 +84,7 @@ def run(args):
     (run_dir / "starship.cfg.json").write_text(json.dumps({"CVars": {"gCoopDebugPlayerCount": args.players}}))
 
     report_path = run_dir / "replay-report.txt"
-    env = dict(os.environ)
-    for key in ("SF64_COOP_REPLAY_RECORD", "SF64_COOP_HASH_LOG", "SF64_COOP_HASH_POKE"):
-        env.pop(key, None)
-    env["SHIP_HOME"] = str(run_dir)
+    env = game_env(run_dir)
     env["SF64_COOP_REPLAY_PLAY"] = str(replay)
     env["SF64_COOP_REPLAY_REPORT"] = str(report_path)
     env["SF64_COOP_TRACE"] = str(run_dir / "trace.txt")
