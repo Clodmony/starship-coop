@@ -1015,7 +1015,7 @@ void Player_ApplyDamage(Player* player, s32 direction, s32 damage) {
         gShieldAlpha[player->num] = 2.0f;
         player->damage = 0;
     } else {
-        if (player->shields != 0) {
+        if ((player->shields != 0) && CoopPlayers_IsViewed(player->num)) { // COOP: an alarm for the player hit (#30)
             if (player->shields < 50) {
                 AUDIO_PLAY_SFX(NA_SE_SHIELD_WARNING1, gDefaultSfxSource, 4);
             } else if (player->shields < 100) {
@@ -2188,7 +2188,7 @@ void Player_CollisionCheck(Player* player) {
                             } else {
                                 Player_ApplyDamage(player, temp_v0, actor->info.damage);
                                 actor->dmgType = DMG_COLLISION;
-                                actor->dmgSource = player->num + 1;
+                                actor->dmgSource = CoopPlayers_DmgSource(player->num); // COOP: was num + 1 (#86)
                             }
                         }
                     }
@@ -5559,10 +5559,11 @@ void Player_UpdateEffects(Player* player) {
 
     player->dmgEffect = player->dmgEffectTimer & 1;
 
-    if (player->dmgEffectTimer != 0) {
+    // COOP: the fill is one fade every client shares, so in co-op a hit leaves it alone (CoopView_DrawHitFlash) (#30)
+    if ((player->dmgEffectTimer != 0) && !CoopPlayers_IsCoop()) {
         gFillScreenAlphaStep = 8;
     }
-    if (player->dmgEffectTimer == 19) {
+    if ((player->dmgEffectTimer == 19) && !CoopPlayers_IsCoop()) { // COOP
         gFillScreenAlpha = 128;
         gFillScreenRed = 255;
         gFillScreenGreen = gFillScreenBlue = 0;
@@ -5838,6 +5839,10 @@ void Player_Update360(Player* player) {
 void Player_LowHealthMsg(Player* player) {
     s32 teamId;
 
+    if (CoopPlayers_SkipLowHealthMsg(player)) { // COOP: one timer, so only player 0 steps it (#87)
+        return;
+    }
+
     if ((player->state == PLAYERSTATE_ACTIVE) && (gTeamLowHealthMsgTimer >= 0)) {
         gTeamLowHealthMsgTimer++;
         if (gTeamLowHealthMsgTimer > 32 * 30) {
@@ -5966,9 +5971,13 @@ void Player_Update(Player* player) {
             if ((!gVersusMode || gVsMatchStart) && !player->somersault && (gInputPress->button & U_CBUTTONS) &&
                 ((player->form == FORM_ARWING) || (gVersusMode && (player->form == FORM_LANDMASTER)))) {
                 if (player->alternateView = 1 - player->alternateView) {
-                    AUDIO_PLAY_SFX(NA_SE_VIEW_MOVE_IN, gDefaultSfxSource, 4);
+                    if (CoopPlayers_IsViewed(player->num)) { // COOP: heard by the player who changed view (#30)
+                        AUDIO_PLAY_SFX(NA_SE_VIEW_MOVE_IN, gDefaultSfxSource, 4);
+                    }
                 } else {
-                    AUDIO_PLAY_SFX(NA_SE_VIEW_MOVE_OUT, gDefaultSfxSource, 4);
+                    if (CoopPlayers_IsViewed(player->num)) { // COOP
+                        AUDIO_PLAY_SFX(NA_SE_VIEW_MOVE_OUT, gDefaultSfxSource, 4);
+                    }
                     if (gLevelMode == LEVELMODE_ON_RAILS) {
                         player->camRoll = 0.0f;
                     }
@@ -7048,8 +7057,8 @@ void Play_Update(void) {
         gPlayer[i].num = gPlayerNum = i;
         Player_Update(&gPlayer[i]);
     }
-    if (CoopPlayers_IsCoop()) { // COOP: the loop leaves gPlayerNum at the last player; point it at the local one
-        gPlayerNum = CoopPlayers_LocalIndex();
+    if (CoopPlayers_IsCoop()) { // COOP: the loop leaves gPlayerNum at the last player. Player 0 on every client (#96)
+        gPlayerNum = 0;
         CoopPlayers_SelectInput(gPlayerNum); // COOP: the same for the controller (WP-12)
     }
 
@@ -7066,7 +7075,7 @@ void Play_Update(void) {
         Camera_Update(&gPlayer[i]);
     }
     if (CoopPlayers_IsCoop()) { // COOP: as above
-        gPlayerNum = CoopPlayers_LocalIndex();
+        gPlayerNum = 0;
         CoopPlayers_SelectInput(gPlayerNum);
     }
 

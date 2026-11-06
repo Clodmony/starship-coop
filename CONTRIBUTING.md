@@ -95,7 +95,9 @@ python tools/coop/build.py --assets   # first time: also builds sf64.o2r from yo
 - Push only when the build is green. Say in the PR which OS you built on.
 
 CI on pull requests: `Co-op checks` (seconds) always; `Co-op build` (Linux and Windows, about 30 to 40 minutes) when
-the PR touches code, CMake files or submodules. Docs-only PRs skip the build.
+the PR touches code, CMake files or submodules. Docs-only PRs skip the build. A `Co-op build` run leaves its builds
+on the run's page under Artifacts, named `starship-coop-<id>-<os>-x64`; the game shows the same `<id>` at the right end
+of the menu bar (F1).
 
 ## Commits
 
