@@ -44,6 +44,8 @@
 #include "port/coop/sync/state_hash.h" // COOP: state hash log for tests (WP-04)
 #include "port/coop/test/player_trace.h" // COOP: per-frame player log for tests (WP-11)
 #include "port/coop/test/stop_signal.h"  // COOP: clean exit on SIGTERM in test runs (#71)
+#include "port/coop/test/join_driver.h" // COOP: scripted join flow for tests (WP-24)
+#include "port/coop/ui/menu_window.h"     // COOP: the co-op menu starts levels (#126)
 
 #include <Fast3D/interpreter.h>
 #include <filesystem>
@@ -310,6 +312,8 @@ void GameEngine::Create() {
     CoopReplay_Init();    // COOP: no-op unless SF64_COOP_REPLAY_* is set (WP-03)
     CoopStateHash_Init(); // COOP: no-op unless SF64_COOP_HASH_LOG is set (WP-04)
     CoopTrace_Init(); // COOP: no-op unless SF64_COOP_TRACE is set (WP-11)
+    CoopJoinDriver_Init(); // COOP: no-op unless SF64_COOP_JOIN_* is set (WP-24)
+    CoopUi::Listen();      // COOP: does nothing on a frame without a co-op session (#126)
 }
 
 void GameEngine::Destroy() {
