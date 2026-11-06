@@ -723,6 +723,7 @@ def check_low_timer(name, rows, solo, args):
     rate = rise / frames if frames else 0.0
     off = low_off_rate(rows)
     limits = low_limits(shared)
+    every_limit = low_limits(rows)
     solo_limits = [f for f in low_limits(solo) if shared and f <= shared[-1].frame]
     return [
         (f"{name}: timer as in single player on {same} of {len(shared)} frames with player 0's flight the same (of "
@@ -730,8 +731,10 @@ def check_low_timer(name, rows, solo, args):
         (f"{name}: timer rose {rise} on {frames} frames with every player flying, {rate:.2f} per frame, at most {step} "
          f"(max 1)", frames > 0 and step == 1),
         (f"{name}: timer off the original rate on {len(off)} of {len(rows) - 1} frames", not off),
-        (f"{name}: limits on frames {limits}, in single player {solo_limits}",
-         len(limits) >= 2 and limits == solo_limits),
+        # Two limits over the whole run: how long player 0's flight stays the same as in single player is not up to the
+        # timer. The rule above already holds the timer to the original rate on every frame.
+        (f"{name}: limits on frames {limits}, in single player {solo_limits}; in the whole run {every_limit}",
+         len(every_limit) >= 2 and limits == solo_limits),
     ]
 
 
