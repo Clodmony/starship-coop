@@ -180,6 +180,184 @@ Unknown:
 - Why the `flow` group is not usable as a checklist yet: #56 does not say. 113 of its 326 sites have basis `name`.
 - Which physical pad lands on index 0: that is libultraship's mapping, not read here.
 
+### 2026-11-06, #60, which radio lines a wingman says on its own
+
+Read at `95962d04`; nothing was run. "Wingman" means Falco, Slippy and Peppy, the three a player can take (decision
+0005); Katt and Bill are left out. Lines are named by message id or described, not quoted. Paths in the tables drop
+`src/engine/` and `src/overlays/`.
+
+Scripted lines are ROM data, not source, so they are cited as level, script index and command index (`aiIndex / 2`),
+for example Corneria 17.8. The tables are the `SF64:SCRIPT` assets (`assets/yaml/us/rev0/ast_corneria.yaml:445` for
+Corneria), picked per level in `ActorEvent_ProcessScript` (`src/engine/fox_enmy2.c:1075-1122`). They were decoded from
+a US 1.0 `sf64.o2r` with a throwaway script, not kept. Its command format is `EVENT_CMD` (`include/sf64event.h:92`).
+Script counts come from walking each script's branches, so they say what can run, not what a given run plays.
+
+**Observed: how a line reaches the radio**
+
+- *One door.* Everything in play ends in `Radio_PlayMessage(msg, character)` (`src/engine/fox_radio.c:58-130`). Four
+  routes add their own conditions. `AllRange_PlayMessage` needs an idle radio and player 0 not in standby
+  (`src/engine/fox_360.c:89-96`). `ActorAllRange_PlayMessage` needs `!gHideRadio`, `gActors[0].state == STATE360_2` and
+  player 0 not in standby (`:479-483`). `ActorEvent_SetMessage` needs an idle radio or another speaker
+  (`src/engine/fox_enmy2.c:29-34`). The script op `EVOP_PLAY_MSG` needs `gPlayer[0].state == PLAYERSTATE_ACTIVE`, reads
+  the speaker from the low 9 bits, and moves on either way, so a skipped line is lost (`:1333-1339`).
+- *No queue.* A message starts with a priority character (`src/engine/fox_radio.c:64-78`). While the radio is busy, a
+  lower priority is dropped and an equal or higher one replaces the current line (`:43-56`, `:97-99`). Of the 363
+  message ids wingmen use, 304 are priority 1, 50 priority 2, the 6 low-shield comfort lines priority 0 and the 3 lines
+  for Fox's death priority 3.
+- *The radio is game state.* `Radio_Draw` advances `gRadioState` in the draw path (`src/engine/fox_game.c:569`), 31
+  lines outside `fox_radio.c` read it, and it is hashed with `gRadioMsgId` (`src/port/coop/sync/state_hash.c:246-247`).
+  The 2026-11-04 determinism note covers its link to audio.
+- *No wingman on the map.* The planet briefing has its own path without `Radio_PlayMessage`
+  (`src/overlays/ovl_menu/fox_map.c:5954`). Its 14 message pairs (`:203-213`) read as the General and Fox.
+
+**Observed: how a line picks its speaker**
+
+| Way | Where |
+|---|---|
+| Named in the call | Most level, boss and cutscene lines |
+| Named in the script | Every `EVOP_PLAY_MSG` |
+| The reacting actor | `this->aiType` in `ActorAllRange_*` and `ActorTeamBoss_*`, `this->iwork[12]` in `ActorEvent_*` |
+| The target of a chasing enemy | `this->aiIndex`, `engine/fox_360.c:1710-1752` |
+| Random living wingman: `RAND_INT(2.9f) + 1` until `gTeamShields[id] > 0`, after checking one is up | `engine/fox_play.c:5844-5848`, `engine/fox_beam.c:2287-2289`, `engine/fox_demo.c:1612-1614`, `ovl_i1/fox_co.c:565-567` |
+| First living in a fixed order | `engine/fox_enmy.c:1803-1809` (Peppy, Slippy, Falco), `ovl_i3/fox_a6.c:1031-1036` and Meteo 82 (Falco, Slippy, Peppy) |
+| Rotating slots, a slot is skipped if its speaker is down | `D_ctx_80177A10[8]`, `ovl_i6/fox_sy.c:348-370`, `:1305-1325` |
+| One-in-four roll, Falco or Bill | `ovl_i4/fox_ka.c:2342-2358` |
+| Three calls in one frame | `ovl_i6/fox_ve2.c:467-469`, see Derived |
+
+**Observed: what happens when the speaker is down**
+
+- *The gate.* In `GSTATE_PLAY`, a line for Falco, Slippy or Peppy returns silently when `gTeamShields[id] <= 0` and
+  `!= -2` (`src/engine/fox_radio.c:80-95`). No stand-in, no delay. Other speakers are not gated, and neither are the
+  `RCID_*_RED` wingman ids, which no call or script uses.
+- *-2 means away, not down.* It is only ever written for Slippy: Titania start (`src/engine/fox_play.c:2691`), Sector X
+  boss (`src/overlays/ovl_i2/fox_sx.c:113`). The gate lets it speak and the portrait shows no DOWN. What -1 and 0 mean
+  is #61.
+- *Stand-in lines.* Level-complete cutscenes test `gTeamShields` first and let ROB speak instead: 86 sites in 12
+  functions, usually one line for -1 (ship in for repairs or in the docking bay) and one for 0 (repairs complete), for
+  example `src/overlays/ovl_i6/fox_sy.c:2353-2370`. `Andross_80193C4C` (`src/overlays/ovl_i6/fox_andross.c:4303-4342`),
+  `Katina_LevelComplete` (`src/overlays/ovl_i4/fox_ka.c:2046`) and Slippy in `Titania_LevelComplete`
+  (`src/overlays/ovl_i5/fox_ti_cs.c:439`) have none, so the gate just drops the line.
+- *Skipped scenes.* `EVC_FALCO_ACTIVE`, `EVC_PEPPY_ACTIVE` and `EVC_SLIPPY_ACTIVE` branch only when `gTeamShields > 0`
+  (`src/engine/fox_enmy2.c:2408-2424`). 216 of the 245 reachable scripted lines sit behind one, usually with the whole
+  scene: no branch, no teammate actor (Corneria 17). The other 29 rely on the gate; 16 of them are in Aquas, whose init
+  sets all three to 255 (`src/overlays/ovl_i3/fox_aq.c:437`).
+- *Forced past the gate.* Some code writes `gTeamShields[id] = 1` around the call. Each retreat does this, then writes
+  -1 (`src/engine/fox_360.c:1448-1466`, `src/engine/fox_hud.c:4247-4262`, `src/engine/fox_enmy2.c:2077-2090`). So does
+  `Aquas_CsLevelComplete`, restoring the old value (`src/engine/fox_hud.c:6064-6088`), and Slippy in the Titania boss
+  (`src/overlays/ovl_i5/fox_ti.c:5053-5134`).
+- *The portrait.* A wingman speaking with `gTeamShields <= 0`, not -2, flashes DOWN with the wrench, and the box always
+  shows a shield bar from `gTeamShields` (`src/engine/fox_radio.c:729-760`). Only a line already playing or forced gets
+  that far.
+
+**Observed: story lines.** Nothing here reads how the wingman is flying, only whether it is up.
+
+| Trigger | Where | Reads | Count |
+|---|---|---|---|
+| Level-start cutscene | `Corneria_LevelStart` (`ovl_i1/fox_co.c:3135`, `:3190`, `:3221`), `Meteo_LevelStart` (`ovl_i2/fox_me.c:2293`, `:2299`), `Area6_LevelStart` (`ovl_i3/fox_a6.c:2565`) | `csTimer`, `gCsFrameCount` | 6 |
+| Level-complete cutscene | every `*_LevelComplete*`, `Cutscene_CoComplete2` (`engine/fox_demo.c:1203-1219`), `Aquas_CsLevelComplete`, `Andross_80193C4C`, `func_demo_80048AC0` (`engine/fox_demo.c:25-75`) | `gCsFrameCount` | 59 |
+| All-range event clock | `Bolse_UpdateEventHandler` (`ovl_i4/fox_bo.c:241-259`, `:382`), `Fortuna_UpdateEvents` (`ovl_i4/fox_fo.c:126`), `Katina_UpdateEvents` (`ovl_i4/fox_ka.c:2332`, `:2356`), `SectorZ_UpdateEvents` (`ovl_i4/fox_sz.c:578`), `SectorZ_EnemyUpdate` (`:365`), `Venom2_UpdateEvents` (`ovl_i6/fox_ve2.c:176`) | `gAllRangeEventTimer`, `gStarWolfMsgTimer`, actor timers | 14 |
+| Boss clock or boss state | 34 functions in `src/overlays/`, for example `Corneria_CoGranga_Update` (`ovl_i1/fox_co.c:691-704`), `SectorY_SyShogun_Update` (`ovl_i6/fox_sy.c:1698-1724`), `Titania_TiGoras_Update` (`ovl_i5/fox_ti.c:4994-5138`) | `gBossFrameCount`, boss `state` and `swork`, hits on a boss part | 86 |
+| Level script, no teammate on screen | 10 levels, for example Corneria 33, Zoness 0, Venom 1 39 | spawn position, then script order and `EVC_*` | 143 |
+
+- Script actors spawn when `gPathProgress` reaches their entry in the level's object list
+  (`src/engine/fox_enmy.c:630-638`, `:412`); Venom 1 also compares `gPlayer[0].xPath` (`:631-633`). Fortuna, Bolse,
+  Katina, Sector Z and Venom 2 place no event actors, so their lines are all in code.
+- This group holds the hints too, mostly Peppy's: controls in scripts (Corneria 27, Meteo 133), boss weak points in
+  code (`src/overlays/ovl_i1/fox_co.c:700`). All are addressed to Fox.
+- `func_demo_80048AC0` is a story slot whose wording reads shields: Slippy and Peppy by their own (above 160, above
+  64, else), Falco by his own under 64, then by Fox's (`src/engine/fox_demo.c:25-75`). 19 calls from six levels.
+- Slippy's own story in Sector X and Titania runs on boss state in this group (`src/overlays/ovl_i2/fox_sx.c:35`,
+  `:109`, `src/overlays/ovl_i5/fox_ti.c:5005-5134`). The route is #59.
+
+**Observed: scripted teammate scenes on rails.** 102 scripted lines are in scripts that bring a wingman's Arwing on
+screen as an event actor (`EVID_TEAMMATE`, `EVOP_SET_TEAM_ID`, `src/engine/fox_enmy2.c:1262-1271`).
+
+- 79 are fixed steps of the scene. **The on-rails calls for help are among them**: they play at their step, whatever
+  has happened, for example Corneria 17.8, Macbeth 26.8 and 26.25, Area 6 12.8, Zoness 46.7. Beyond the check that the
+  wingman is up, nothing reads its state to choose them.
+- 23 sit behind a condition that reads how the scene went: `EVC_NO_TARGET` 11 (`src/engine/fox_enmy2.c:2377-2382`),
+  `EVC_NOT_CHASED` 9 (`:2788-2792`, fed by the chaser at `:3235-3239`), `EVC_NO_FOLLOWER` 2 (`:2637-2645`),
+  `EVC_ATTACK_GROUP_CLEARED` 1 (`:2685-2692`). These are the on-rails thanks and "that was my target" lines, for example
+  Corneria 17.33, Macbeth 28.35, Corneria 9.51.
+- Levels: Corneria 15, Macbeth 16, Zoness 14, Area 6 12, Titania 11, Solar 10, Sector X 8, Sector Y 6, Meteo 5, Venom 1
+  5. The damage steps between the lines (`EVOP_DAMAGE_TEAM`, `src/engine/fox_enmy2.c:1384-1394`) are #59 and #61.
+
+**Observed: lines that react to the wingman's own state.** 63 sites, in the code of the actor that carries the wingman:
+`ActorAllRange` in all-range (`src/engine/fox_360.c:375`), `ActorTeamBoss` at bosses (`src/engine/fox_demo.c:861-873`,
+`src/engine/fox_enmy.c:465`), `ActorEvent` with a team id on rails.
+
+| Reaction | All-range `engine/fox_360.c` | Boss `engine/fox_hud.c` | On rails `engine/fox_enmy2.c` | Count |
+|---|---|---|---|---|
+| Shields ran out, leaves the fight | `:1444-1469` | `ActorTeamBoss_Retreat` `:4243-4262` | `ActorEvent_800700A4` `:2071-2094` | 9 |
+| Hit by an enemy | `:1185-1224`, only after a chase; wording by shields, 90 and up or below | `:4569-4580`, `dmgSource` 2 or 100 only | scripted | 9 |
+| Hit by Fox's shot, or ran into something | `:1129-1140`, `:1172-1184` | `:4541-4567` | `:2257-2285` | 18 |
+| Enemy on its tail, the call for help | `:1705-1752`, also sets the help marker `gTeamHelpActor` (`engine/fox_display.c:47`) | none | scripted | 9 |
+| Rescued by Fox, thanks | `:530-552`, `:625-643` | none | scripted | 6 |
+| Fox shot the enemy it called | `:1042-1053` | none | scripted | 3 |
+| Near Fox for 200 frames, small talk; wording reads Fox's shields | `:1395-1433` | none | none | 9 |
+
+**Observed: lines about the wingman's own action.** 19 sites, all-range only: attack call
+(`src/engine/fox_360.c:1781-1806`), enemy shot down (`:2204-2219`, armed at `:1074`, `:1077`), last Star Wolf
+(`:1060-1072`), missile down (`:928-937`), and leaving for a missile in Sector Z
+(`src/overlays/ovl_i4/fox_sz.c:309-352`).
+
+**Observed: lines that react to Fox, spoken by a wingman.** 21 sites, plus script conditions.
+
+| Trigger | Where | Count |
+|---|---|---|
+| Player shields under 64, at most every 960 frames | `Player_LowHealthMsg`, `engine/fox_play.c:5834-5875` | 6 |
+| Player died | `Cutscene_KillPlayer`, `engine/fox_demo.c:1609-1630` | 3 |
+| Lock-on shot worth 7 hits or more, on rails, no boss | `PlayerShot_UpdateShot`, `engine/fox_beam.c:2284-2301` | 3 |
+| Enemy dropping `DROP_TEAM_MESG` killed | `Actor_Despawn`, `engine/fox_enmy.c:1802-1809` | 3 |
+| Granga one-up check passed | `Corneria_CoGranga_1UpCheck`, `ovl_i1/fox_co.c:561-578` | 3 |
+| Enemy on Fox's tail | `engine/fox_360.c:1696`, `:1819` | 2 |
+| Third warp ring | `Player_CollisionCheck`, `engine/fox_play.c:2175` | 1 |
+
+Scripted lines reach the same kind of trigger through `EVC_CLOSE_*`, `EVC_HEALTH_0p`, `EVC_30_HITS` and `EVC_80_HITS`
+(`src/engine/fox_enmy2.c:2546-2550`, `:2806-2816`), all on `gPlayer[0]` or `gHitCount`.
+
+Counts: 268 code sites name a wingman (165 story, 63 own state, 19 own action, 21 about Fox); 261 script commands do.
+
+**Derived (read, not run)**
+
+- *The owner's split does not follow the code on rails.* In all-range a call for help is an AI reaction. On rails it is
+  a script step in the same scene as the story around it, and the scene needs a teammate actor. So what a later record
+  says about each scene (#59) decides these lines too.
+- *Reaction and action lines depend on the wingman's slot in `gActors`.* They run in its actor's code, or read that slot
+  (chase, rescue, Sector Z). With no actor in the slot they should not fire. Story lines and lines about Fox need no
+  actor, only `gTeamShields`.
+- *Every down check reads `gTeamShields`, not a `Player`.* Whatever co-op keeps there decides whether a human-flown
+  character's story lines play and which ROB stand-in appears. Also, `Radio_Draw`'s shield bar shows that value.
+- *Dropping a line changes game state.* `gRadioState == 0` gates AI code, including whether the chase block draws
+  random numbers (`src/engine/fox_360.c:1705`) and damage lines (`src/engine/fox_hud.c:4537`). A line dropped on one
+  client only would change `gRadioState`, the hash and then the simulation.
+- *Friendly-fire lines only know player 0.* They test `dmgSource == AI360_FOX + 1`, and `dmgSource` is `sourceId + 1`
+  with `sourceId = player->num` (`src/engine/fox_beam.c:696`, `src/engine/fox_play.c:3091`). A shot from player index 1
+  gives 2, which is `DMG_SRC_2`, so `ActorTeamBoss_HandleDamage` takes it as an enemy hit (`src/engine/fox_hud.c:4569`).
+  Indexes 2 and 3 give 3 and 4, which none of these lines test.
+- *Lines about Fox are not limited to Fox.* `Player_LowHealthMsg` runs for every active player
+  (`src/engine/fox_play.c:5957`, loop at `:7039-7045`) and its timer is one global, so two active players count it
+  twice per frame. `Cutscene_KillPlayer` has no player 0 check. The random pick does not know who is human: a character
+  can comfort itself.
+- *Scripted lines follow player 0.* While `gPlayer[0]` is not active they are skipped and lost, and `EVC_CLOSE_*`
+  measures to `gPlayer[0]`.
+- `Venom2_LevelComplete` makes three equal-priority calls in one frame, so the last living of Falco, Peppy, Slippy
+  ends up on the radio.
+
+**Guess**
+
+- The `gTeamShields[TEAM_ID_SLIPPY] = 1` writes in the Titania boss look unneeded, since -2 passes the gate anyway.
+
+**Unknown**
+
+- Which lines a real run reaches: counts cover every script a level places, whatever route or branch that needs. 15
+  commands sit in scripts no object list places or links to (Corneria 81, Meteo 10, Sector X 60, Solar 27, Venom 1 42,
+  63, 91, 106) and 1 is unreachable (Meteo 140.10). These are left out of the 245.
+- Whether US 1.1 scripts differ: only US 1.0 was decoded.
+- Whether a line can be hidden without moving `gRadioState`: the state machine waits on the voice
+  (`src/engine/fox_radio.c:628`), and nothing here tried it.
+- How enemies choose a target when a wingman's slot is empty, which the chase lines depend on. Not read.
+
 ### 2026-11-05, #6 (WP-06), on-rails: player position, path progress, camera
 
 Read from the source only; nothing was run. Line numbers are for `origin/coop` at 1ec6c677.
