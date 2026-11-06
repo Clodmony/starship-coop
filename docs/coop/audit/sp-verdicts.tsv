@@ -6,9 +6,8 @@ include/sf64context.h	<file scope>	ok	read	extern declarations
 src/engine/fox_context.c	<file scope>	ok	read	definitions
 #
 # --- engine core: player setup, play loop, display
-src/engine/fox_play.c	Play_Init	setup	read	sets gCamCount 1 (4 in versus), allocates gCamCount players, inits each; WP-10 entry point
-src/engine/fox_play.c	Player_InitializeAll	setup	read	clears gCamCount players
-src/engine/fox_play.c	Play_Update	setup	site	loops over gCamCount players for update; becomes player count
+src/engine/fox_play.c	Play_Init	setup	read	sets gCamCount 1 (4 in versus), then CoopPlayers_LevelInit; since WP-10 CoopPlayers_Count() sizes the player allocation, the clear (Player_InitializeAll) and the init loop
+# Player_InitializeAll and Play_Update have no site left: WP-10 moved their loops to CoopPlayers_Count() (#56).
 src/engine/fox_play.c	Player_CanLockOn	setup	site	loops gCamCount players
 src/engine/fox_play.c	Player_UpdateLockOn	setup	site	loops gCamCount players
 src/engine/fox_play.c	Player_UpdateEffects	setup	site	loops gCamCount players
@@ -26,10 +25,10 @@ src/engine/fox_play.c	Camera_SetStarfieldPos	view	site	starfield from player 0 c
 src/engine/fox_play.c	Camera_SetupLights	view	site	lights depend on player 0 state
 src/engine/fox_play.c	Play_UpdateLevel	flow	site	per-level triggers on player 0: level complete, warp zone, Solar heat damage to player 0 only, Venom 2 / Aquas checks
 src/engine/fox_play.c	Play_Main@gPlayer[0]	flow	site	all-range z setup for player 0 only
-src/engine/fox_play.c	Play_Main@gMainController	input	site	pause, skip intro and R-button radio are read from gMainController only
-src/engine/fox_play.c	Play_Main@gCamCount	setup	site	exit loops over players, resets gCamCount to 1
+src/engine/fox_play.c	Play_Main@gMainController	input	site	Start (intro skip, pause, unpause) and R while paused (toggles gShowReticles[0], no radio here) are read from gMainController only; versus reads R per controller
+src/engine/fox_play.c	Play_Main@gCamCount	setup	site	intro skip resets gCamCount to 1; its sound cleanup loop is on CoopPlayers_Count() since WP-10
 src/engine/fox_game.c	Game_Update	setup	site	viewports from gCamCount (1, 2, 4); GSTATE_INIT resets to 1; player loop for draw
-src/engine/fox_display.c	Display_Update@gCamCount	setup	site	draw loops over gCamCount players; gCamCount != 1 draws the versus HUD
+src/engine/fox_display.c	Display_Update@gCamCount	setup	site	gCamCount != 1 draws the versus HUD; the five player draw loops are on CoopPlayers_Count() since WP-10
 src/engine/fox_display.c	Display_Update@gPlayer->	ok	read	debug numbers (csTimer, csState)
 src/engine/fox_display.c	Display_Update@gPlayer[0]	view	site	water, turret, Aquas lighting, starfield roll and face drawing keyed to player 0
 src/engine/fox_display.c	Display_Player_Update	setup	site	loops gCamCount players
@@ -191,8 +190,8 @@ src/engine/fox_hud.c	Aquas_Effect363_Draw	view	site	player 0 intro state
 src/engine/fox_hud.c	Venom1_LevelStart2	flow	site	level start sets player 0 speed
 #
 # --- menus, map, ending: run before or after a level; who drives them in co-op is WP-24
-src/overlays/ovl_menu/fox_title.c	Title_Setup	input	site	gMainController = the controller that pressed Start (Title_CheckControllers); every later read uses it
-src/overlays/ovl_menu/fox_title.c	Title_UpdateEntry	input	site	gMainController chosen again
+src/overlays/ovl_menu/fox_title.c	Title_Setup	input	site	gMainController = lowest index with gControllerPlugged[i] == 1, -1 if none (Title_CheckControllers); no button is read, and this port marks all four plugged (src/sys/sys_joybus.c:63, 69), so it is 0. Campaign input reads it; versus reads per controller
+src/overlays/ovl_menu/fox_title.c	Title_UpdateEntry	input	site	Title_CheckControllers again, on every title frame
 src/overlays/ovl_menu/*	*	ok	site	menu input from gMainController
 src/overlays/ovl_ending/fox_end2.c	Ending_801926D4	ok	site	ending copies player 0 Arwing look
 #
