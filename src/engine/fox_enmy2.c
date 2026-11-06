@@ -12,6 +12,7 @@
 #include "assets/ast_venom_1.h"
 #include "assets/ast_venom_2.h"
 #include "assets/ast_titania.h"
+#include "port/coop/game/view.h" // COOP
 #include "assets/ast_7_ti_1.h"
 #include "assets/ast_andross.h"
 #include "assets/ast_area_6.h"
@@ -316,7 +317,8 @@ void Memora_DrawParts(MeMora* this, f32 xTrans, f32 yTrans, f32 zTrans, f32 xRot
         if ((partIdx == 0) && (this->lockOnTimers[TEAM_ID_FOX] != 0)) {
             src.y += this->info.targetOffset;
             Matrix_MultVec3f(gGfxMatrix, &src, &gLockOnTargetViewPos[TEAM_ID_FOX]);
-            if (gLockOnTargetViewPos[TEAM_ID_FOX].z > -500.0f) {
+            // COOP: judged from the view of player 0 on every client (#96)
+            if (CoopView_LockOnZ(&this->obj.pos, gLockOnTargetViewPos[TEAM_ID_FOX].z) > -500.0f) {
                 this->lockOnTimers[TEAM_ID_FOX] = 0;
             }
         }

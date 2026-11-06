@@ -51,13 +51,16 @@ Nothing in the online design may rule it out.
   Upstream hard-sets it off; this fork turns it on for desktop builds (WP-20).
 - **Render rate is separate from game rate:** the interpolation frame count is derived from `gInterpolationFPS` and
   `gVIsPerFrame` (`src/port/Engine.cpp`, `GetInterpolationFPS` and the function after it).
+- **Draw code is part of the simulation.** It frees objects, runs game logic and feeds boss AI, and two clients of one
+  replay that drew different cameras split one frame after Corneria starts (NOTES.md, 2026-11-06, #96).
 
 ### Derived (reasoning, not yet tested)
 
 - Running a second `Player` in the campaign starts with separating "number of players" from "number of cameras",
   because versus mode already updates and draws several players. On rails it also needs one shared path, owned by
   player 0 (NOTES.md, 2026-11-05, WP-06, and 2026-11-06, WP-12).
-- Game logic appears to tick at a fixed rate with interpolated rendering on top, which is what lockstep needs.
+- Lockstep still holds with one camera per client, because in co-op every client runs all draw code and the camera
+  drawn feeds nothing (`src/port/coop/game/view.h`). Shown on Corneria only; other levels are #129.
 - Because world state is in fixed arrays plus one bump-allocated buffer plus globals, a full state snapshot (for
   rollback or for a late join) is plausible in size. The arrays contain pointers, so a snapshot is only valid for the
   same build on the same platform.

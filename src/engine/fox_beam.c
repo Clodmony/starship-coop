@@ -4,6 +4,7 @@
 #include "assets/ast_great_fox.h"
 #include "assets/ast_versus.h"
 #include "port/interpolation/FrameInterpolation.h"
+#include "port/coop/game/players.h" // COOP: a shot answers to the pad of its owner (WP-14), who fired (#86)
 
 Vec3f sShotViewPos;
 
@@ -693,7 +694,7 @@ void PlayerShot_ApplyDamageToActor(PlayerShot* shot, Actor* actor, s32 hitIndex)
             actor->lockOnTimers[shot->sourceId] = 0;
         }
     }
-    actor->dmgSource = shot->sourceId + 1;
+    actor->dmgSource = CoopPlayers_DmgSource(shot->sourceId); // COOP: was sourceId + 1 (#86)
     actor->hitPos.x = shot->obj.pos.x;
     actor->hitPos.y = shot->obj.pos.y;
     actor->hitPos.z = shot->obj.pos.z;
@@ -1062,7 +1063,8 @@ void PlayerShot_DrawHitmark(PlayerShot* shot) {
         }
     }
     if (!isDrawn) {
-        if (!gVersusMode) {
+        // COOP: like versus, a shot is not freed for being out of view (#96)
+        if (!gVersusMode && !CoopPlayers_IsCoop()) {
             Object_Kill(&shot->obj, shot->sfxSource);
             return;
         }
@@ -1249,7 +1251,8 @@ void PlayerShot_DrawShot(PlayerShot* shot) {
         }
     }
     if (!isDrawn) {
-        if ((shot->obj.id != PLAYERSHOT_BOMB) && (shot->timer < 10) && !gVersusMode) {
+        // COOP: as above
+        if ((shot->obj.id != PLAYERSHOT_BOMB) && (shot->timer < 10) && !gVersusMode && !CoopPlayers_IsCoop()) {
             Object_Kill(&shot->obj, shot->sfxSource);
         }
     } else {
@@ -1650,8 +1653,9 @@ void PlayerShot_UpdateBeam(PlayerShot* shot, s32 index) {
             Effect_SpawnTimedSfxAtPos(&shot->obj.pos, NA_SE_EN_REFLECT);
         }
         if ((gCamCount != 4) && (gCurrentLevel != LEVEL_AQUAS)) {
-            if ((shot->sourceId == TEAM_ID_FOX) && (gLaserStrength[0] != LASERS_SINGLE) &&
-                (gPlayer[0].form != FORM_LANDMASTER)) {
+            // COOP: each player's own lasers and form (#86). Co-op off the count is 1: player 0 alone.
+            if ((shot->sourceId < CoopPlayers_Count()) && (gLaserStrength[shot->sourceId] != LASERS_SINGLE) &&
+                (gPlayer[shot->sourceId].form != FORM_LANDMASTER)) {
                 Matrix_RotateY(gCalcMatrix, shot->obj.rot.y * M_DTOR, MTXF_NEW);
                 Matrix_RotateX(gCalcMatrix, shot->obj.rot.x * M_DTOR, MTXF_APPLY);
                 Matrix_RotateZ(gCalcMatrix, shot->obj.rot.z * M_DTOR, MTXF_APPLY);
@@ -1787,8 +1791,9 @@ void PlayerShot_SearchLockOnTarget(PlayerShot* shot) {
         }
     } else {
         bool rapidFire = CVarGetInteger("gRapidFire", 0) == 1;
+        s32 pad = CoopPlayers_PadOf(shot->sourceId); // COOP: was gMainController, the owner's A in co-op (WP-14)
         if ((shot->obj.pos.y < gGroundHeight) || PlayerShot_FindLockTarget(shot) ||
-            (!(gControllerHold[gMainController].button & A_BUTTON) ^ rapidFire) || (shot->timer == 0)) {
+            (!(gControllerHold[pad].button & A_BUTTON) ^ rapidFire) || (shot->timer == 0)) {
             Object_Kill(&shot->obj, shot->sfxSource);
         }
     }
@@ -1949,14 +1954,14 @@ void PlayerShot_ApplyExplosionDamage(PlayerShot* shot, s32 damage) {
                     (actor->obj.id == OBJ_ACTOR_CO_MOLE_MISSILE)) {
                     actor->dmgType = DMG_EXPLOSION;
                     actor->dmgPart = 0;
-                    actor->dmgSource = shot->sourceId + 1;
+                    actor->dmgSource = CoopPlayers_DmgSource(shot->sourceId); // COOP: was sourceId + 1 (#86)
                     actor->damage = damage;
 
                     if (actor->info.bonus != 0) {
                         shot->bonus++;
                     }
                 } else if ((actor->obj.id == OBJ_ACTOR_EVENT) && (actor->scale >= 0.5f) && (damage > 30)) {
-                    actor->dmgSource = shot->sourceId + 1;
+                    actor->dmgSource = CoopPlayers_DmgSource(shot->sourceId); // COOP: was sourceId + 1 (#86)
                     actor->vel.x = dx * 0.03f;
                     actor->vel.y = dy * 0.03f;
                     actor->vel.z = dz * 0.03f;
@@ -1971,7 +1976,7 @@ void PlayerShot_ApplyExplosionDamage(PlayerShot* shot, s32 damage) {
                 } else {
                     actor->dmgType = DMG_EXPLOSION;
                     actor->dmgPart = 0;
-                    actor->dmgSource = shot->sourceId + 1;
+                    actor->dmgSource = CoopPlayers_DmgSource(shot->sourceId); // COOP: was sourceId + 1 (#86)
                     actor->damage = damage;
                     if (actor->info.bonus != 0) {
                         shot->bonus++;
@@ -2071,7 +2076,8 @@ void PlayerShot_UpdateBomb(PlayerShot* shot) {
                         break;
                     }
                 } else {
-                    if (gControllerPress[gMainController].button & gBombButton[shot->sourceId]) {
+                    // COOP: was gMainController, the owner's button in co-op (WP-14)
+                    if (gControllerPress[CoopPlayers_PadOf(shot->sourceId)].button & gBombButton[shot->sourceId]) {
                         PlayerShot_ExplodeBomb(shot);
                         break;
                     }
@@ -2368,9 +2374,14 @@ void PlayerShot_DrawAll(void) {
         gPlayerShots[i].index = i;
         if (gPlayerShots[i].obj.status != SHOT_FREE) {
             if (!((gReflectY < 0) && (gPlayerShots[i].obj.rot.x < -10.0f))) {
+                Vec3f coopRot = gPlayerShots[i].obj.rot; // COOP: facing this camera lasts for this draw only (#96)
+
                 Matrix_Push(&gGfxMatrix);
                 PlayerShot_Draw(&gPlayerShots[i]);
                 Matrix_Pop(&gGfxMatrix);
+                if (CoopPlayers_IsCoop()) { // COOP
+                    gPlayerShots[i].obj.rot = coopRot;
+                }
             }
             if (gReflectY > 0) {
                 Object_SetSfxSourceToView(gPlayerShots[i].sfxSource, &sShotViewPos);

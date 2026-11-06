@@ -18,10 +18,18 @@ extern "C" {
 #define COOP_PLAYERS_MAX 4 // the per-player arrays in sf64context.h have 4 slots
 
 // Fixes the player count for the level being started. Call it in Play_Init, after gCamCount is set and before
-// gPlayer is allocated. Until the co-op session exists (WP-21, WP-24), the count comes from the debug CVar
-// COOP_PLAYERS_DEBUG_CVAR (default 1, clamped to 1..COOP_PLAYERS_MAX); outside the campaign (gCamCount != 1) it is
+// gPlayer is allocated. The count comes from the roster of the co-op session; without one, from the debug CVar
+// COOP_PLAYERS_DEBUG_CVAR (default 1, clamped to 1..COOP_PLAYERS_MAX). Outside the campaign (gCamCount != 1) it is
 // always gCamCount.
 void CoopPlayers_LevelInit(void);
+
+// Who is in the levels from the next Play_Init on: one CoopCharacter per player, 0 for nobody. The count goes up to the
+// last player there, and a slot below that with nobody in it stays out of the level. NULL goes back to the debug CVar:
+// call it when the session ends.
+void CoopPlayers_SetRoster(const uint8_t* roster);
+
+// What player `index` flies in that roster, as a CoopCharacter; 0 without a roster. Until WP-17 nothing reads it.
+int32_t CoopPlayers_Character(int32_t index);
 
 // Number of Player structs in gPlayer for the current level.
 int32_t CoopPlayers_Count(void);
@@ -29,8 +37,28 @@ int32_t CoopPlayers_Count(void);
 // Nonzero when more players are simulated than cameras rendered, which only co-op does.
 int32_t CoopPlayers_IsCoop(void);
 
-// Index of the player this client controls and looks through. 0 for now; WP-28 makes it per client.
+// Index of this client's own player, parked or not: who it is, so who its controller steers. Always 0 outside co-op,
+// and when the index asked for is not a player of this level. For what a client sees and hears use
+// CoopPlayers_ViewIndex.
 int32_t CoopPlayers_LocalIndex(void);
+
+// Index of the player this client looks through: what Game_Draw draws, and what its camera, HUD and sound follow. The
+// local player while it flies; while that is parked, before it joins, in a cut or after it went down, player 0. The
+// simulation reads it only to pick the sounds a client plays, through CoopPlayers_IsViewed; what it hashes never depends
+// on it: outside Game_Draw gPlayerNum is 0 or the player being updated (src/port/coop/game/view.h).
+int32_t CoopPlayers_ViewIndex(void);
+
+// Nonzero when what player `index` does is for this client's eyes and ears: the player it looks through in co-op,
+// always outside it.
+int32_t CoopPlayers_IsViewed(int32_t index);
+
+// The player whose numbers the HUD shows. gPlayerNum stays 0 for the HUD in co-op, because the HUD also writes the
+// simulation (lives, the bomb limit, the pause menu), so what it only shows comes from here. gPlayerNum outside co-op.
+int32_t CoopPlayers_HudIndex(void);
+
+// Asks for a local player. 0 until something calls this: SF64_COOP_TEST_LOCAL_INDEX (src/port/coop/test/switches.h)
+// for now. The join flow (WP-24) passes the playerIndex the session gives a client.
+void CoopPlayers_SetLocalIndex(int32_t index);
 
 // Nonzero while player `index` is parked: allocated, but not updated, not given a camera update and not drawn.
 // In co-op, players 1 and up start parked and join when the level reaches a section that supports them.
@@ -50,15 +78,40 @@ struct Player;
 // and brake move it ahead of and behind player 0 without changing the speed along the path.
 int32_t CoopPlayers_FollowPath(struct Player* player);
 
-// Points gInputHold, gInputPress and gControllerRumble at the controller of player `index`, in co-op only: player 0 has
-// gMainController, the others the controller with their index. Replays hold all four, so a replay can fly any player.
-// WP-14 replaces this with a real input source per player.
+// Points gInputHold, gInputPress and gControllerRumble at player `index`, in co-op only: its pad slot, which holds that
+// player's input for this frame whoever steers it (input.h), and its rumble flag.
 void CoopPlayers_SelectInput(int32_t index);
+
+// The pad slot to read for something that belongs to player `index`, such as a shot of that player: its own slot in
+// co-op, gMainController otherwise, as upstream.
+int32_t CoopPlayers_PadOf(int32_t index);
+
+struct Actor;
+
+// Call in Actor_Update where the campaign runs down its lock-on. Nonzero means co-op, and the lock-ons of every player
+// on `actor` were handled here: each player's runs down on its own A. Upstream only looks at player 0's.
+int32_t CoopPlayers_ReleaseLockOns(struct Actor* actor);
 
 // Call at the start of Player_Down. Nonzero means a co-op player other than player 0 went down: it is taken out of
 // the level and Player_Down must return, because it also stops the music, plays the "player down" theme and starts
 // the fade to a level restart for everyone. Respawn rules are WP-16.
 int32_t CoopPlayers_OnPlayerDown(struct Player* player);
+
+// What Actor.dmgSource holds after a hit by `sourceId`: a player index, or an NPC's shot id. Upstream writes
+// sourceId + 1, which for player index 1 is DMG_SRC_2, the value an enemy's hit on a wingman has. So in co-op, players
+// 1 and up get COOP_DMG_SRC_PLAYER + index instead, a value no game code writes or tests: rules that test for player 0
+// (AI360_FOX + 1) or for an enemy (DMG_SRC_2) do not fire for them. Co-op off, player 0 and NPCs stay sourceId + 1.
+// Whether a rule should count them is up to the work package that owns it, see the shooter rows of sp-verdicts.tsv.
+int32_t CoopPlayers_DmgSource(int32_t sourceId);
+
+#define COOP_DMG_SRC_PLAYER 10 // 5 to 99 are free: 1 to 4 are versus players, 100 and up enemies and NPCs
+
+// Call at the start of Player_LowHealthMsg. Nonzero means `player` is a co-op player other than player 0 and
+// Player_LowHealthMsg must return: gTeamLowHealthMsgTimer is one timer, so it would step once per player. It stays on
+// player->num, never on CoopPlayers_LocalIndex: the line it leads to draws from the RNG, so every client has to take
+// this branch for the same player. That player 0's shields decide is a neutral pick, not a rule (NOTES.md, 2026-11-06,
+// #87); a later record can change it here.
+int32_t CoopPlayers_SkipLowHealthMsg(struct Player* player);
 
 #define COOP_PLAYERS_DEBUG_CVAR "gCoopDebugPlayerCount"
 

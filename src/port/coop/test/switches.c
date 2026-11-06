@@ -1,12 +1,15 @@
 // Test switches for the determinism spike (WP-02). See switches.h.
 
 #include "switches.h"
+#include "team_trace.h"
 
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include <libultraship/luslog.h>
+
+#include "port/coop/game/players.h"
 
 // Sample counts per audio update, chosen each update from the output device's fill level
 // (src/port/Engine.cpp:363-364, :387-388).
@@ -20,6 +23,7 @@ static int CoopTestSwitches_IsSet(const char* value) {
 void CoopTestSwitches_Init(void) {
     const char* noFma3 = getenv("SF64_COOP_TEST_NO_FMA3");
     const char* audioSamples = getenv("SF64_COOP_TEST_AUDIO_SAMPLES");
+    const char* localIndex = getenv("SF64_COOP_TEST_LOCAL_INDEX");
 
     if (CoopTestSwitches_IsSet(noFma3)) {
 #if defined(_MSC_VER) && defined(_M_X64)
@@ -41,4 +45,11 @@ void CoopTestSwitches_Init(void) {
         }
         LUSLOG_INFO("coop: test switch: audio samples per update high %u, low %u", samples_high, samples_low);
     }
+
+    if (CoopTestSwitches_IsSet(localIndex)) {
+        CoopPlayers_SetLocalIndex(atoi(localIndex));
+        LUSLOG_INFO("coop: test switch: local player index %d", atoi(localIndex));
+    }
+
+    CoopTeamTrace_Init(); // no-op unless SF64_COOP_TEAM_* is set (#89)
 }
