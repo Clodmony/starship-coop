@@ -1997,6 +1997,48 @@ GCC 16.2.1, Debug, graphics backend OpenGL, `USE_NETWORKING` on, `SDL_VIDEODRIVE
 - A boot with networking on under Windows or macOS. CI builds the game on Windows but does not start it.
 - Anything past the title screen.
 
+### 2026-11-06, #92, what the sanitizer runs can fail on, and why the session tests need no log scan
+
+Read at `797c678b` (origin/coop).
+
+**Observed**
+
+- `net_mutants.py --asan` has four breaks, all caught in Debug and in Release: a leak (`sim`, `lan`), a signed shift
+  (`sim`, `lan`), a stack overflow by one byte in `Core_Write` (`sim`, `lan`), and a heap overflow in `Sdl_Tx`,
+  `transport_sdlnet.c:34`, after the host's refusal (`host_full`).
+- All four still pass every named scenario in the build without sanitizers, so no ordinary check sees them.
+- With `sanitizer_report` switched off, `refuse_overruns_tx_packet` passes `net_test.py --asan` too. So that break also
+  guards the scan: remove the scan and it survives.
+- Every program's exit in `session_test.py` is read. Each of the 37 programs of the 11 scenarios with real processes
+  was made to end with exit code 77 after its normal end, one at a time, and every run failed with that code. The
+  same probe on `net_test.py` reports the host and the first client of `host_full` as not read, so it can tell. The
+  only program in the session tests that nobody waits for is the relay, which is Python and has no sanitizer.
+- `session_mutants.py --asan` now has `host_close_leaks` and `client_close_leaks`, which fire at the very end of one
+  side, after its result file is written, and `refuse_reads_past_session`, the session's version of the `host_full`
+  break. All are caught, through `run.wait` (`net_test.py:99`), with no scan.
+- With `run.wait` not reading the host's exit, `host_close_leaks` passes all 11 scenarios; the same for the clients and
+  `client_close_leaks`. So the exit is the only thing that fails them, and those two breaks guard it.
+- Such a failure reads `host exited with 1`. What the sanitizer found is only in `host.log`, and CI keeps no logs.
+- The report of `refuse_hell` is in `try0/host.log`: `damaged_runs` gives each try a subfolder
+  (`session_test.py:56`), and `sanitizer_report` reads only the top of a folder (`net_test.py:359`).
+- `s->text[sizeof(s->text)] = 0` in `session.c` is seen by no sanitizer, and no log held a report. In the 64-bit Linux
+  build `CoopSession` is 5400 bytes and `text`, its last field, ends at 5396, so the write stays in the allocation.
+- `roster_read_past_end` in `SANITIZER_BREAKS` also fails `sim` without sanitizers (`roster_trailing`), so it is not
+  one that only a sanitizer can see.
+
+**Derived**
+
+- `session_test.py` does not need the scan to catch a finding: a finding ends its program with a code other than 0, and
+  every program's exit is read. The scan would only add what was found to the summary line.
+- A scan copied into `session_test.py` would have to search subfolders, or it misses every scenario with a relay.
+- A new scenario that leaves a host or all clients running is caught by the two close breaks. One that leaves only some
+  of several clients running is not: a break fires in all clients of a scenario, and the others still fail it.
+
+**Unknown**
+
+- Why UBSan's bounds check says nothing about `s->text[sizeof(s->text)]`. Guess: it treats a last array like a flexible
+  one.
+
 ### 2026-11-06, #75, transport tests under sanitizers, and the audit in CI
 
 Read at `95962d04` (origin/coop).
