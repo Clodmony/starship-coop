@@ -1,8 +1,9 @@
 // State hash per game frame (WP-04). See state_hash.h for how to switch the log on.
 //
 // The hash is FNV-1a (64 bit) over the raw bytes of the simulation state, one hash per region plus a total over all
-// regions. Regions: the players, the fixed object arrays (src/engine/fox_context.c), the all-range scenery buffer,
-// the RNG seeds (src/sys/sys_math.c) and a list of key globals.
+// regions. Regions: the players (all of them: CoopPlayers_Count(), gCamCount stays 1 in co-op), the fixed object arrays
+// (src/engine/fox_context.c), the all-range scenery buffer, the RNG seeds (src/sys/sys_math.c) and a list of key
+// globals.
 //
 // Pointers differ from run to run (address space layout randomisation) and from build to build, so they are never
 // hashed as they are:
@@ -87,7 +88,8 @@ static void Fnv(uint64_t* h, const void* data, size_t size) {
 #define HASH_VAR(h, var) Fnv((h), &(var), sizeof(var))
 
 static bool PlayersValid(void) {
-    return (gGameState == GSTATE_PLAY) && (gPlayer != NULL) && (gCamCount >= 1) && (gCamCount <= 4);
+    return (gGameState == GSTATE_PLAY) && (gPlayer != NULL) && (CoopPlayers_Count() >= 1) &&
+           (CoopPlayers_Count() <= COOP_PLAYERS_MAX);
 }
 
 static bool Scenery360Valid(void) {
@@ -100,7 +102,7 @@ static void SetRange(s32 index, const void* base, size_t size) {
 }
 
 static void UpdateRanges(void) {
-    SetRange(RANGE_PLAYERS, PlayersValid() ? gPlayer : NULL, gCamCount * sizeof(Player));
+    SetRange(RANGE_PLAYERS, PlayersValid() ? gPlayer : NULL, CoopPlayers_Count() * sizeof(Player));
     SetRange(RANGE_ACTORS, gActors, sizeof(gActors));
     SetRange(RANGE_BOSSES, gBosses, sizeof(gBosses));
     SetRange(RANGE_EFFECTS, gEffects, sizeof(gEffects));
@@ -142,7 +144,7 @@ static void HashPlayers(uint64_t* h) {
     if (!PlayersValid()) {
         return;
     }
-    for (i = 0; i < gCamCount; i++) {
+    for (i = 0; i < CoopPlayers_Count(); i++) {
         copy = gPlayer[i];
         copy.sfx.srcPos = NULL;
         copy.sfx.srcVel = NULL;
