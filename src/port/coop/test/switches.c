@@ -1,6 +1,7 @@
 // Test switches for the determinism spike (WP-02). See switches.h.
 
 #include "switches.h"
+#include "team_trace.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -49,4 +50,6 @@ void CoopTestSwitches_Init(void) {
         CoopPlayers_SetLocalIndex(atoi(localIndex));
         LUSLOG_INFO("coop: test switch: local player index %d", atoi(localIndex));
     }
+
+    CoopTeamTrace_Init(); // no-op unless SF64_COOP_TEAM_* is set (#89)
 }

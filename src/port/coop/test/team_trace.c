@@ -1,0 +1,137 @@
+#include "team_trace.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "global.h"
+#include "port/hooks/Events.h"
+
+#define TEAM_TRACE_HEARTBEAT 300
+
+// What a line shows, compared as a whole to find out whether there is a new line to write.
+typedef struct {
+    s32 gameState;
+    s32 level;
+    s32 phase;
+    s32 playState;
+    s32 playerState;
+    s32 mission;
+    s32 team[3];
+    s32 saved[3];
+    s32 prev[3];
+    s32 map[3];
+    s32 ships[3];
+} TeamTraceLine;
+
+static FILE* sTraceFile = NULL;
+static TeamTraceLine sLast;
+static bool sWroteLine = false;
+static bool sStarted = false;
+static u32 sFrame = 0;
+
+static bool sPokeWaiting = false;
+static s32 sPokeLevel;
+static s32 sPokeFrames;
+static s32 sPokeId;
+static s32 sPokeValue;
+static s32 sPokeActiveFrames = 0;
+
+static void CoopTeamTrace_Read(TeamTraceLine* line) {
+    s32 i;
+
+    memset(line, 0, sizeof(*line));
+    line->gameState = gGameState;
+    line->level = gCurrentLevel;
+    line->phase = gLevelPhase;
+    line->playState = gPlayState;
+    line->playerState = ((gGameState == GSTATE_PLAY) && (gPlayer != NULL)) ? (s32) gPlayer[0].state : -1;
+    line->mission = gMissionStatus;
+    for (i = 0; i < 3; i++) {
+        line->team[i] = gTeamShields[TEAM_ID_FALCO + i];
+        line->saved[i] = gSavedTeamShields[TEAM_ID_FALCO + i];
+        line->prev[i] = gPrevPlanetTeamShields[TEAM_ID_FALCO + i];
+        line->map[i] = D_ctx_80177C58[TEAM_ID_FALCO + i];
+    }
+    if (gGameState != GSTATE_PLAY) {
+        return;
+    }
+    for (i = 0; i < ARRAY_COUNT(gActors); i++) {
+        const Actor* actor = &gActors[i];
+
+        if ((actor->obj.status == OBJ_ACTIVE) && (actor->obj.id == OBJ_ACTOR_EVENT) &&
+            (actor->iwork[12] >= TEAM_ID_FALCO) && (actor->iwork[12] <= TEAM_ID_PEPPY)) {
+            line->ships[actor->iwork[12] - TEAM_ID_FALCO]++;
+        }
+    }
+}
+
+static void CoopTeamTrace_Write(const TeamTraceLine* l) {
+    fprintf(sTraceFile,
+            "frame=%u gs=%d level=%d phase=%d ps=%d p0=%d mission=%d path=%.1f team=%d,%d,%d saved=%d,%d,%d "
+            "prev=%d,%d,%d map=%d,%d,%d ships=%d,%d,%d\n",
+            sFrame, l->gameState, l->level, l->phase, l->playState, l->playerState, l->mission, gPathProgress,
+            l->team[0], l->team[1], l->team[2], l->saved[0], l->saved[1], l->saved[2], l->prev[0], l->prev[1],
+            l->prev[2], l->map[0], l->map[1], l->map[2], l->ships[0], l->ships[1], l->ships[2]);
+    fflush(sTraceFile); // tests stop the game from outside, and there are few lines
+}
+
+static void CoopTeamTrace_UpdatePoke(void) {
+    if (!sPokeWaiting || (gGameState != GSTATE_PLAY) || (gCurrentLevel != sPokeLevel) || (gPlayer == NULL) ||
+        (gPlayer[0].state != PLAYERSTATE_ACTIVE)) {
+        return;
+    }
+    if (sPokeActiveFrames++ < sPokeFrames) {
+        return;
+    }
+    gTeamShields[sPokeId] = sPokeValue;
+    sPokeWaiting = false;
+    if (sTraceFile != NULL) {
+        fprintf(sTraceFile, "# poke frame=%u id=%d value=%d\n", sFrame, sPokeId, sPokeValue);
+    }
+}
+
+// Counts as a replay does: on this event, from GSTATE_START (src/port/coop/test/replay.c). GamePostUpdateEvent cannot
+// count, the game skips it on some frames.
+static void CoopTeamTrace_OnGamePreUpdate(IEvent* event) {
+    if (sStarted) {
+        sFrame++;
+    } else if (gGameState == GSTATE_START) {
+        sStarted = true;
+    }
+}
+
+static void CoopTeamTrace_OnGamePostUpdate(IEvent* event) {
+    TeamTraceLine line;
+
+    if (!sStarted) {
+        return;
+    }
+    CoopTeamTrace_UpdatePoke();
+    if (sTraceFile == NULL) {
+        return;
+    }
+    CoopTeamTrace_Read(&line);
+    if (!sWroteLine || (memcmp(&line, &sLast, sizeof(line)) != 0) || ((sFrame % TEAM_TRACE_HEARTBEAT) == 0)) {
+        CoopTeamTrace_Write(&line);
+        sLast = line;
+        sWroteLine = true;
+    }
+}
+
+void CoopTeamTrace_Init(void) {
+    const char* path = getenv("SF64_COOP_TEAM_TRACE");
+    const char* poke = getenv("SF64_COOP_TEAM_POKE");
+
+    if ((poke != NULL) && (sscanf(poke, "%d,%d,%d,%d", &sPokeLevel, &sPokeFrames, &sPokeId, &sPokeValue) == 4) &&
+        (sPokeId >= TEAM_ID_FALCO) && (sPokeId <= TEAM_ID_PEPPY)) {
+        sPokeWaiting = true;
+    }
+    if ((path != NULL) && (path[0] != '\0')) {
+        sTraceFile = fopen(path, "w");
+    }
+    if (sPokeWaiting || (sTraceFile != NULL)) {
+        REGISTER_LISTENER(GamePreUpdateEvent, CoopTeamTrace_OnGamePreUpdate, EVENT_PRIORITY_NORMAL);
+        REGISTER_LISTENER(GamePostUpdateEvent, CoopTeamTrace_OnGamePostUpdate, EVENT_PRIORITY_NORMAL);
+    }
+}
