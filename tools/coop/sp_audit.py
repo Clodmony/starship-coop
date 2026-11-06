@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Single-player assumptions audit (WP-05): every use of gPlayer[0], gPlayer->, gMainController and gCamCount in the
-game code, with the function it sits in and a verdict for co-op.
+"""Single-player assumptions audit (WP-05): every use of gPlayer[0], gPlayer->, a bare gPlayer as an argument,
+gMainController and gCamCount in the game code, with the function it sits in and a verdict for co-op.
 
     python tools/coop/sp_audit.py            # rewrite docs/coop/audit/single-player.md; stops at a new site
     python tools/coop/sp_audit.py --accept   # the same, and takes new sites into the list
@@ -55,10 +55,12 @@ SUFFIXES = (".c", ".h", ".cpp", ".inc.c")
 PATTERNS = {
     "gPlayer[0]": re.compile(r"\bgPlayer\[0\]"),
     "gPlayer->": re.compile(r"\bgPlayer->"),
+    # A bare gPlayer means player 0. if (gPlayer) is not an argument.
+    "gPlayer arg": re.compile(r"(?<!if \()\bgPlayer\b(?=\s*[,)])"),
     "gMainController": re.compile(r"\bgMainController\b"),
     "gCamCount": re.compile(r"\bgCamCount\b"),
 }
-SHORT = {"gPlayer[0]": "P0", "gPlayer->": "P->", "gMainController": "MC", "gCamCount": "CC"}
+SHORT = {"gPlayer[0]": "P0", "gPlayer->": "P->", "gPlayer arg": "PA", "gMainController": "MC", "gCamCount": "CC"}
 VERDICT_NAMES = ["sim", "view", "input", "flow", "setup", "ok", "unknown"]
 BASES = ["read", "site", "name"]
 # A function definition in decomp style starts in column 0 and its body closes with "}" in column 0.
@@ -264,7 +266,8 @@ def render(all_sites, entries):
         note = (e["note"] if e else "").replace("|", "\\|")
         L.append(f"| `{func}` | {lines} | {v} | {b} | {note} |")
     L.append("")
-    L.append("Pattern keys: P0 `gPlayer[0]`, P-> `gPlayer->`, MC `gMainController`, CC `gCamCount`.")
+    L.append("Pattern keys: P0 `gPlayer[0]`, P-> `gPlayer->`, PA `gPlayer` as an argument, MC `gMainController`, "
+             "CC `gCamCount`.")
     L.append("")
     return "\n".join(L), rows
 

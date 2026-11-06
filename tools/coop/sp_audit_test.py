@@ -162,6 +162,18 @@ def pattern_row(r):
     r.stopped(f"new site: {ENGINE} Beta_Update gMainController: 1 listed, 2 now, lines 7, 9", PATTERN_ROW)
 
 
+def bare_argument(r):
+    r.edit(ENGINE, "    gPlayer[0].csTimer = 0;\n", "    gPlayer[0].csTimer = 0;\n    Foo(gPlayer, 1);\n    Bar(1, gPlayer);\n")
+    r.stopped(f"new site: {ENGINE} Alpha_Update gPlayer arg: 0 listed, 2 now, lines 4, 5", ALPHA_ROW)
+
+
+def bare_not_argument(r):
+    # A fake match in the decomp, an alias and the other names that start the same are not arguments.
+    r.edit(ENGINE, "    gPlayer[0].csTimer = 0;\n", "    gPlayer[0].csTimer = 0;\n    if (gPlayer) {}\n    p = gPlayer;\n"
+           "    Foo(gPlayerNum, gPlayerShots);\n")
+    r.rerun_is_enough()
+
+
 def star_row(r):
     r.write(OVERLAY, r.read(OVERLAY) + NEW_FUNCTION)
     r.stopped(f"new site: {OVERLAY} Epsilon_Update gPlayer[0]: 0 listed, 1 now, lines 10", STAR_ROW)
@@ -238,6 +250,8 @@ SCENARIOS = {
     "function-row-new-pattern": function_row_new_pattern,
     "function-row-one-more": function_row_one_more,
     "pattern-row": pattern_row,
+    "bare-argument": bare_argument,
+    "bare-not-argument": bare_not_argument,
     "star-row": star_row,
     "star-row-new-file": star_row_new_file,
     "star-row-site-moved": star_row_site_moved,

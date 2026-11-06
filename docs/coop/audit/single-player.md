@@ -13,7 +13,7 @@ a pattern in a function than this file has, so a site that replaces another of t
 does not show.
 
 Scope: `src/engine`, `src/overlays`, `include`.
-Patterns: `gPlayer[0]`, `gPlayer->`, `gMainController`, `gCamCount`. Matches inside `//` comments are skipped.
+Patterns: `gPlayer[0]`, `gPlayer->`, `gPlayer arg`, `gMainController`, `gCamCount`. Matches inside `//` comments are skipped.
 One site is one pattern on one line. Verdicts are given per function (or per pattern within a function);
 their meaning is in the docstring of `tools/coop/sp_audit.py`. Basis `read`: the whole function was read;
 `site`: the matched lines and their surroundings were read; `name`: inferred from the function name, file and
@@ -21,19 +21,19 @@ pattern without reading the code, so treat it as a guess.
 
 ## Summary
 
-1788 sites in 407 functions in 43 files.
+1809 sites in 411 functions in 43 files.
 A function whose sites have more than one verdict counts once per verdict in the functions column.
 
-| verdict | sites | functions | `gPlayer[0]` | `gPlayer->` | `gMainController` | `gCamCount` |
-|---|---:|---:|---:|---:|---:|---:|
-| sim | 1074 | 192 | 1073 | 1 | 0 | 0 |
-| view | 223 | 89 | 178 | 0 | 42 | 3 |
-| input | 19 | 11 | 0 | 0 | 19 | 0 |
-| flow | 326 | 76 | 323 | 0 | 3 | 0 |
-| setup | 53 | 33 | 2 | 0 | 0 | 51 |
-| ok | 93 | 37 | 1 | 2 | 82 | 8 |
+| verdict | sites | functions | `gPlayer[0]` | `gPlayer->` | `gPlayer arg` | `gMainController` | `gCamCount` |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| sim | 1077 | 195 | 1073 | 1 | 3 | 0 | 0 |
+| view | 223 | 89 | 178 | 0 | 0 | 42 | 3 |
+| input | 19 | 11 | 0 | 0 | 0 | 19 | 0 |
+| flow | 329 | 79 | 323 | 0 | 3 | 3 | 0 |
+| setup | 54 | 34 | 2 | 0 | 1 | 0 | 51 |
+| ok | 107 | 49 | 1 | 2 | 14 | 82 | 8 |
 
-Basis per site: read 193, site 953, name 642.
+Basis per site: read 208, site 959, name 642.
 
 ## Sites
 
@@ -133,6 +133,7 @@ Basis per site: read 193, site 953, name 642.
 | `Display_Player_Update` | 1469:CC, 1522:CC | setup | site | loops gCamCount players |
 | `Display_LockOnIndicator` | 1709:CC, 1742:CC | setup | site | loops gCamCount players |
 | `Display_Update` | 1839:P0, 1853:P0, 1939:P0, 1953:P0, 1969:P0, 1980:P0, 1985:P0, 2003:P0, 2013:P0, 2016:P0, 2038:P0, 2044:P0, 2052:P0, 2057:P0, 2070:P0, 2083:P0 | view | site | water, turret, Aquas lighting, starfield roll and face drawing keyed to player 0 |
+| `Display_Update` | 2084:PA | ok | site | Turret_Draw(gPlayer) in LEVELMODE_TURRET, which nothing sets (include/sf64player.h: unused scrapped mode) |
 | `Display_Update` | 2089:CC | setup | site | gCamCount != 1 draws the versus HUD; the five player draw loops are on CoopPlayers_Count() since WP-10 |
 | `Display_Update` | 2126:P->, 2128:P-> | ok | read | debug numbers (csTimer, csState) |
 
@@ -158,31 +159,38 @@ Basis per site: read 193, site 953, name 642.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `BonusText_Update` | 65:P0, 66:P0, 67:P0 | view | site | bonus text follows player 0 |
-| `Effect_Effect384_Draw` | 246:P0 | view | site | player 0 state |
-| `Effect_Effect393_Update` | 564:P0, 565:P0, 566:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect357_Setup` | 624:P0, 625:P0, 626:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect357_Update` | 720:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect357_Draw` | 747:P0 | view | site | player 0 state |
-| `Effect_Effect372_Setup1` | 1125:P0, 1126:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect362_Setup` | 1497:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect362_Update` | 1514:P0, 1515:P0, 1516:P0, 1518:P0 | view | site | faces player 0 camera |
-| `Effect_Effect360_Update` | 1550:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect343_Setup` | 1751:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect387_Update` | 1789:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect339_Update` | 2025:P0, 2038:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect374_Update` | 2271:P0, 2272:P0, 2273:P0, 2274:P0 | sim | site | hits player 0 only |
-| `Effect_Effect345_Update` | 2338:CC | setup | site | gCamCount != 1 as versus flag |
-| `func_effect_8007E6B8` | 2446:P0, 2447:P0, 2448:P0 | sim | site | enemy shot aimed at player 0 |
-| `func_effect_8007E93C` | 2500:P0, 2501:P0, 2502:P0 | sim | site | enemy shot aimed at player 0 camera |
-| `Effect_EnemyLaser` | 2647:P0 | sim | site | enemy laser only spawned near player 0 |
-| `func_effect_8007F20C` | 2662:P0 | sim | site | only spawned near player 0 camera |
-| `Effect_Effect353_354_Update` | 2922:P0, 2926:P0, 2927:P0, 2928:P0, 2929:P0, 2941:P0, 2945:P0, 2947:P0, 2949:P0, 2952:P0, 2954:P0 | sim | read | enemy projectile hits, deflects and knocks back player 0 only |
-| `Effect_Effect398_Update` | 3029:P0, 3030:P0, 3031:P0, 3056:P0, 3060:P0, 3061:P0, 3062:P0, 3063:P0, 3075:P0, 3079:P0, 3081:P0, 3083:P0, 3085:P0, 3087:P0 | sim | read | aims at, hits and knocks back player 0 only |
-| `Effect_Effect395_Update` | 3644:P0, 3834:P0, 3835:P0, 3838:P0, 3839:P0, 3840:P0, 3881:P0, 3886:P0, 3887:P0, 3888:P0 | sim | site | hits player 0 only; boss faces player 0 camera |
-| `Effect_Effect391_Update` | 4127:P0 | view | site | faces player 0 camera |
-| `func_effect_80083D2C` | 4189:P0, 4190:P0, 4191:P0 | sim | site | aims at player 0 |
-| `Effect_Effect399_Update` | 4228:P0, 4229:P0 | view | site | faces player 0 camera |
+| `BonusText_Update` | 66:P0, 67:P0, 68:P0 | view | site | bonus text follows player 0 |
+| `Effect_Effect384_Draw` | 247:P0 | view | site | player 0 state |
+| `Effect_Effect393_Update` | 565:P0, 566:P0, 567:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect357_Setup` | 625:P0, 626:P0, 627:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect357_Update` | 721:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect357_Draw` | 748:P0 | view | site | player 0 state |
+| `Effect_Effect372_Setup1` | 1128:P0, 1129:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect347_Update` | 1399:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
+| `Effect_Effect362_Setup` | 1500:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect362_Update` | 1517:P0, 1518:P0, 1519:P0, 1521:P0 | view | site | faces player 0 camera |
+| `Effect_Effect360_Update` | 1553:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect343_Setup` | 1754:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect387_Update` | 1792:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect339_Update` | 2028:P0, 2041:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect374_Update` | 2274:P0, 2275:P0, 2276:P0, 2277:P0 | sim | site | tests player 0, CoopEffects_ColumnHit does the others (#100) |
+| `Effect_Effect374_Update` | 2278:PA | ok | read | Player_ApplyDamage for player 0; CoopEffects_ColumnHit right after it does the others (#100) |
+| `Effect_Effect345_Update` | 2342:CC | setup | site | gCamCount != 1 as versus flag |
+| `func_effect_8007E6B8` | 2450:P0, 2451:P0, 2452:P0 | sim | site | enemy shot aimed at player 0 |
+| `func_effect_8007E93C` | 2504:P0, 2505:P0, 2506:P0 | sim | site | enemy shot aimed at player 0 camera |
+| `Effect_EnemyLaser` | 2651:P0 | sim | site | enemy laser only spawned near player 0 |
+| `func_effect_8007F20C` | 2666:P0 | sim | site | only spawned near player 0 camera |
+| `Effect_Effect353_354_Update` | 2926:P0, 2930:P0, 2931:P0, 2932:P0, 2933:P0, 2945:P0, 2949:P0, 2951:P0, 2953:P0, 2956:P0, 2958:P0 | sim | read | enemy projectile hits, deflects and knocks back player 0; CoopEffects_ShotHit does the others (#100); wingman and roll reach still read player 0 |
+| `Effect_Effect353_354_Update` | 2950:PA | ok | read | Player_ApplyDamage for player 0; CoopEffects_ShotHit right after it does the others (#100) |
+| `Effect_Effect376_Update` | 3021:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
+| `Effect_Effect398_Update` | 3035:P0, 3036:P0, 3037:P0, 3062:P0, 3066:P0, 3067:P0, 3068:P0, 3069:P0, 3081:P0, 3085:P0, 3087:P0, 3089:P0, 3091:P0, 3093:P0 | sim | read | aims at player 0; hits and knocks back player 0, CoopEffects_ShotHit does the others (#100) |
+| `Effect_Effect398_Update` | 3086:PA, 3124:PA | ok | read | Player_ApplyDamage for player 0, CoopEffects_ShotHit after it does the others; func_effect_8007A774 tests them too (#100) |
+| `Effect_Effect395_Update` | 3651:P0, 3841:P0, 3842:P0, 3845:P0, 3846:P0, 3847:P0, 3890:P0, 3895:P0, 3896:P0, 3897:P0 | sim | site | tests player 0, CoopEffects_BeamHit does the others (#100); boss faces player 0 camera |
+| `Effect_Effect395_Update` | 3898:PA, 3925:PA | ok | site | beam: Player_ApplyDamage for player 0, CoopEffects_BeamHit just before it does the others; func_effect_8007A774 tests them too (#100) |
+| `Effect_Effect391_Update` | 4136:P0 | view | site | faces player 0 camera |
+| `func_effect_80083D2C` | 4198:P0, 4199:P0, 4200:P0 | sim | site | aims at player 0 |
+| `Effect_Effect399_Update` | 4237:P0, 4238:P0 | view | site | faces player 0 camera |
+| `Effect_Effect399_Update` | 4267:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
 
 ### `src/engine/fox_enmy.c`
 
@@ -278,6 +286,7 @@ Basis per site: read 193, site 953, name 642.
 | `Player_CollisionCheck` | 2177:P0 | view | site | warp ring sound played on player 0 source |
 | `Player_FloorCheck` | 2398:CC, 2413:CC | setup | site | gCamCount == 1 / != 1 as versus flag |
 | `Play_Init` | 2929:CC, 2932:CC | setup | read | sets gCamCount 1 (4 in versus), then CoopPlayers_LevelInit; since WP-10 CoopPlayers_Count() sizes the player allocation, the clear (Player_InitializeAll) and the init loop |
+| `Play_Init` | 2951:PA | setup | read | MEM_ARRAY_ALLOCATE(gPlayer, CoopPlayers_Count()): allocates every player, nothing to do |
 | `Player_CanLockOn` | 3319:CC | setup | site | loops gCamCount players |
 | `Player_UpdateLockOn` | 3432:CC | setup | site | loops gCamCount players |
 | `Player_CheckBounds360` | 3697:CC | setup | read | gCamCount != 1 as versus flag: wraps the arena at 12000 |
@@ -290,6 +299,7 @@ Basis per site: read 193, site 953, name 642.
 | `Camera_SetStarfieldPos` | 6638:P0, 6650:P0 | view | site | starfield from player 0 camera |
 | `Camera_SetupLights` | 6733:P0 | view | site | lights depend on player 0 state |
 | `Play_UpdateLevel` | 6863:P0, 6864:P0, 6865:P0, 6866:P0, 6867:P0, 6880:P0, 6881:P0, 6896:P0, 6905:P0, 6906:P0, 6931:P0, 6936:P0, 6939:P0, 6942:P0, 6945:P0, 6948:P0, 6951:P0, 6961:P0, 6963:P0, 6965:P0, 6966:P0, 6968:P0, 6969:P0, 6971:P0, 6977:P0, 6981:P0, 6983:P0, 6989:P0, 6999:P0, 7005:P0, 7006:P0 | flow | site | per-level triggers on player 0: level complete, warp zone, Solar heat damage to player 0 only, Venom 2 / Aquas checks |
+| `Play_UpdateLevel` | 6868:PA | flow | site | Camera_Update360 for player 0 as Venom 2 ends: level complete is one player's (WP-16) |
 | `Play_Main` | 7159:P0, 7160:P0, 7162:P0, 7163:P0, 7164:P0, 7200:P0, 7232:P0, 7233:P0 | flow | site | all-range z setup for player 0 only |
 | `Play_Main` | 7199:MC, 7222:MC, 7232:MC, 7252:MC | input | site | Start (intro skip, pause, unpause) and R while paused (toggles gShowReticles[0], no radio here) are read from gMainController only; versus reads R per controller |
 | `Play_Main` | 7212:CC | setup | site | intro skip resets gCamCount to 1; its sound cleanup loop is on CoopPlayers_Count() since WP-10 |
@@ -335,6 +345,7 @@ Basis per site: read 193, site 953, name 642.
 | `Corneria_CoGarudaDestroy_Update` | 1542:P0, 1543:P0, 1544:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 | `Corneria_CoCarrier_Init` | 1673:P0, 1675:P0, 1682:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 | `Corneria_CoCarrier_Update` | 1799:P0, 1847:P0, 1919:P0, 1938:P0, 2070:P0, 2099:P0, 2202:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Corneria_CoCarrier_Update` | 2203:PA | flow | site | Boss_CompleteLevel for player 0: level complete is one player's (WP-16) |
 | `Corneria_SpawnTerrainBumps` | 2790:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 | `Corneria_SetupClouds` | 2810:P0, 2811:P0 | view | name | clouds around player 0 camera |
 | `Corneria_SpawnClouds` | 2829:P0 | view | name | clouds around player 0 camera |
@@ -370,7 +381,10 @@ Basis per site: read 193, site 953, name 642.
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
 | `Meteo_MeLaserCannon2_Update` | 257:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Meteo_Effect369_Update` | 727:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
+| `Meteo_Effect370_Update` | 791:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
 | `Meteo_Effect371_Update` | 795:P0, 805:P0, 812:P0, 819:P0, 826:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Meteo_Effect371_Update` | 833:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
 | `Meteo_MeCrusher_Update` | 1048:P0, 1049:P0, 1050:P0, 1377:P0 | sim | site | boss; on death sets player 0 to LEVEL_COMPLETE |
 | `Meteo_LevelStart_SetupTeam` | 1907:P0, 1908:P0, 1909:P0 | flow | name | intro team around player 0 |
 | `Meteo_LevelComplete_SetupTeam` | 2390:P0, 2391:P0, 2392:P0 | flow | name | level complete team around player 0 |
@@ -468,14 +482,16 @@ Basis per site: read 193, site 953, name 642.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Bolse_UpdateEventHandler` | 207:P0, 270:P0, 271:P0, 272:P0, 273:P0, 274:P0, 294:P0, 297:P0, 298:P0, 299:P0, 300:P0, 301:P0, 302:P0, 377:P0 | flow | read | Bolse events: level complete and standby cutscene on player 0 |
-| `Bolse_8018CCE8` | 487:P0, 488:P0, 506:P0, 507:P0, 521:P0, 522:P0, 523:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Bolse_BoLaserCannon_Update` | 650:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Bolse_8018E05C` | 864:P0, 865:P0, 866:P0, 871:P0, 875:P0, 877:P0, 881:P0, 882:P0, 883:P0, 884:P0, 885:P0, 888:P0, 889:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Bolse_8018EAEC` | 1045:P0, 1046:P0, 1047:P0, 1050:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Bolse_8018F83C` | 1367:P0, 1368:P0, 1369:P0, 1372:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Bolse_LevelComplete` | 1471:P0, 1472:P0, 1473:P0, 1491:P0, 1492:P0, 1493:P0, 1583:P0, 1590:P0, 1608:P0, 1609:P0, 1610:P0, 1611:P0, 1612:P0, 1613:P0, 1639:P0, 1640:P0, 1641:P0 | flow | name | level complete on player 0 |
-| `Bolse_Effect397_Update` | 1830:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Bolse_UpdateEventHandler` | 208:P0, 271:P0, 272:P0, 273:P0, 274:P0, 275:P0, 295:P0, 298:P0, 299:P0, 300:P0, 301:P0, 302:P0, 303:P0, 378:P0 | flow | read | Bolse events: level complete and standby cutscene on player 0 |
+| `Bolse_8018CCE8` | 488:P0, 489:P0, 507:P0, 508:P0, 522:P0, 523:P0, 524:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Bolse_BoLaserCannon_Update` | 651:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Bolse_8018E05C` | 865:P0, 866:P0, 867:P0, 872:P0, 876:P0, 878:P0, 882:P0, 883:P0, 884:P0, 885:P0, 886:P0, 889:P0, 890:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Bolse_8018E05C` | 873:PA | sim | read | a beam of the base, not an effect: hits player 0 only, so player 2 flies through it. Open, not changed in #100 |
+| `Bolse_8018EAEC` | 1046:P0, 1047:P0, 1048:P0, 1051:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Bolse_8018F83C` | 1368:P0, 1369:P0, 1370:P0, 1373:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Bolse_LevelComplete` | 1472:P0, 1473:P0, 1474:P0, 1492:P0, 1493:P0, 1494:P0, 1584:P0, 1591:P0, 1609:P0, 1610:P0, 1611:P0, 1612:P0, 1613:P0, 1614:P0, 1640:P0, 1641:P0, 1642:P0 | flow | name | level complete on player 0 |
+| `Bolse_Effect397_Update` | 1831:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Bolse_Effect397_Update` | 1832:PA | ok | read | func_effect_8007A774 tests the others; each player's own roll counts, and player 0's roll no longer covers them (#100) |
 
 ### `src/overlays/ovl_i4/fox_fo.c`
 
@@ -534,6 +550,7 @@ Basis per site: read 193, site 953, name 642.
 | `Macbeth_MaRailwaySignal_Update` | 3345:P0, 3366:P0, 3408:P0, 3409:P0, 3413:P0, 3414:P0 | sim | site | sets player 0 to LEVEL_COMPLETE |
 | `Macbeth_Effect378_Update` | 3545:P0, 3559:P0, 3560:P0, 3561:P0, 3571:P0, 3572:P0, 3573:P0, 3575:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 | `Macbeth_Effect380_Update` | 3606:P0, 3618:P0, 3619:P0, 3620:P0, 3622:P0, 3624:P0, 3626:P0, 3628:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_Effect380_Update` | 3621:PA | sim | read | right for now: Macbeth is rails in a Landmaster, where co-op players stay parked (CoopPlayers_SectionSupported); WP-18 |
 | `Macbeth_MaHorizontalLockBar_Update` | 3659:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 | `Macbeth_MaVerticalLockBar_Update` | 3685:P0, 3688:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 | `Macbeth_MaBarrier_Update` | 3713:P0, 3728:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
@@ -572,6 +589,7 @@ Basis per site: read 193, site 953, name 642.
 | `Titania_TiLandmine_Update` | 643:P0, 644:P0, 645:P0, 646:P0, 647:P0, 648:P0, 649:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 | `Titania_TiRasco_Update` | 792:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 | `Titania_TiBomb_Update` | 951:P0, 952:P0, 953:P0, 981:P0, 982:P0, 983:P0, 984:P0, 985:P0, 987:P0, 988:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiBomb_Update` | 979:PA | sim | read | right for now: an actor on Titania, rails in a Landmaster, where co-op players stay parked (CoopPlayers_SectionSupported); WP-18 |
 | `Titania_TiDesertCrawler_Update` | 1290:P0, 1294:P0, 1354:P->, 1362:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 | `Titania_TiDelphorHead_Update` | 1792:P0, 1793:P0, 1794:P0, 1873:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 | `Titania_Cactus_Update` | 2031:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
@@ -603,6 +621,7 @@ Basis per site: read 193, site 953, name 642.
 | `Andross_AndExplosion_Update` | 719:P0, 720:P0, 741:P0, 742:P0, 743:P0, 744:P0, 746:P0, 747:P0, 749:P0, 753:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 | `Andross_AndBrain_Update` | 814:P0, 815:P0, 816:P0, 847:P0, 852:P0, 853:P0, 855:P0, 860:P0, 889:P0, 890:P0, 894:P0, 895:P0, 899:P0, 900:P0, 901:P0, 902:P0, 910:P0, 918:P0, 919:P0, 939:P0, 940:P0, 941:P0, 986:P0, 1011:P0, 1012:P0, 1013:P0, 1015:P0, 1016:P0, 1017:P0, 1019:P0, 1026:P0, 1060:P0, 1082:P0, 1083:P0, 1084:P0, 1085:P0, 1086:P0, 1087:P0, 1088:P0, 1089:P0, 1090:P0, 1091:P0, 1092:P0, 1093:P0, 1094:P0, 1099:P0, 1130:P0, 1131:P0, 1136:P0, 1138:P0, 1139:P0, 1166:P0, 1167:P0, 1187:P0, 1189:P0 | sim | site | boss; sets player 0 to START_360 and moves its camera |
 | `Andross_AndBrain_Update` | 892:MC, 1053:MC, 1126:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Andross_AndBrain_Update` | 1100:PA | flow | site | Camera_Update360 for player 0 as the brain dies: level complete is one player's (WP-16) |
 | `Andross_AndBrain_Draw` | 1335:P0 | view | name | drawing by player 0 |
 | `Andross_8018C390` | 1438:MC | input | site | any button on gMainController shortens a cutscene timer |
 | `Andross_Effect396_Update` | 1609:P0, 1621:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
@@ -690,4 +709,4 @@ Basis per site: read 193, site 953, name 642.
 | `Title_NextState_OptionMenu` | 3405:MC, 3406:MC | ok | site | menu input from gMainController |
 | `Title_Screen_Input` | 3446:MC, 3451:MC, 3452:MC, 3463:MC, 3464:MC | ok | site | menu input from gMainController |
 
-Pattern keys: P0 `gPlayer[0]`, P-> `gPlayer->`, MC `gMainController`, CC `gCamCount`.
+Pattern keys: P0 `gPlayer[0]`, P-> `gPlayer->`, PA `gPlayer` as an argument, MC `gMainController`, CC `gCamCount`.
