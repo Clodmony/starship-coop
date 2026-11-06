@@ -83,9 +83,9 @@ number of clients, transport.
 5. **The co-op menu (WP-25).** `python tools/coop/menu_test.py` checks the menu layer with no game: `sim` on the real
    session in a virtual network, `udp` over real sockets. `python tools/coop/menu_test.py --game` starts three real
    games with `SF64_COOP_TEST_MENU=<folder>` (`src/port/coop/test/menu_driver.h`), clicks the real ImGui widgets through
-   ImGui's input queue and reads back what each window holds, so it needs nobody at the screen. Its `game_level` scenario
-   (#126) goes on to the Start button and compares the state hash logs from the first frame after `Play_Init`, as
-   `join_test.py` does. Neither says how the window looks.
+   ImGui's input queue and reads back what each window holds, so it needs nobody at the screen. Its `game_level` and
+   `game_level_map` scenarios (#126) go on to the Start button and compare the state hash logs from the first frame after
+   `Play_Init`, as `join_test.py` does. Neither says how the window looks.
 6. **Regression per bug.** Every desync fix comes with the replay that triggered it; every transport fix adds a
    break to `tools/coop/net_mutants.py`, every session fix one to `tools/coop/session_mutants.py`.
 
