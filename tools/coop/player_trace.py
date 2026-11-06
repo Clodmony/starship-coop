@@ -19,7 +19,8 @@ rules and exits 0 when all hold:
   - each of them becomes active in all-range mode, on the frame player 0 does,
   - and then flies: at least --min-active frames, always drawn, on average more than --min-move per frame, and never
     still for more than --max-still frames in a row while player 0 moves,
-  - it goes out on the frame player 0 stops flying (level complete, down),
+  - it goes out within a frame of player 0 no longer flying (level complete, down). A frame, because player 0's state
+    can change after the player loop (objects, hooks), and this player only sees that on the next loop,
   - a parked player is hidden. One frame is allowed: Player_Update draws a player again on the frame it goes down,
   - it is parked again after every restart.
 
@@ -241,7 +242,7 @@ def check_trace(path, args):
             (f"player {i} moves {avg:.1f} per active frame (min {args.min_move})", avg > args.min_move),
             (f"player {i} still for at most {freeze} frames while player 0 moved (max {args.max_still})",
              freeze <= args.max_still),
-            (f"player {i} out: {left}", not flown_on),
+            (f"player {i} out: {left} (max 1)", (flown_on or 0) <= 1),
             (f"player {i} drawn while parked for at most {shown} frame(s) in a row (max 1)", shown <= 1),
             (f"player {i} parked after {len(restarts)} restart(s)", all(r[3][i].parked for r in restarts)),
         ]

@@ -293,6 +293,23 @@ config; this branch on top of WP-10 8b78fbf5, merged locally with the WP-03 repl
 - Replay with the fixes: 1 player PASS (unchanged); 2 players `player_trace.py check` PASS; when player 0 went down
   (trace frame 11145) player 1 went out on the same frame.
 
+Tested on Linux (GCC, Debug, OpenGL software rendered, no window, US 1.0 ROM, this branch on `coop`). This is not a
+recording and not the normal route: a generated replay presses A every 30 frames until Corneria starts (replay frame
+3101), then L with `gDebugJumpToAllRange` starts the all-range section.
+
+- Count 2, `player_trace.py run`: PASS. Player 1 parked for all 1779 rail frames, active on frame 1982 (the same frame
+  as player 0), 901 flying frames, 41.7 units per frame on average, never still.
+- Player 1 forced down through gdb (`shields = 0`): `check` PASS, drawn for at most one frame after going out. With the
+  `draw` line in `CoopPlayers_SkipUpdate` removed the check fails: drawn for 621 frames while parked.
+- Level complete while player 1 flies (`gDebugLevelComplete`): `check` PASS, out one frame after player 0. With the
+  leave check in `CoopPlayers_SkipUpdate` removed the check fails: flying on for 203 frames.
+- `gClearPlayerInfo` read through gdb when player 1 joins: 0. With `CoopPlayers_Count()` back in `Player_Setup`: 1.
+- Co-op off: a recording made before WP-10 (title and attract only, 4331 frames) PASS, no mismatch.
+- `tools/coop/player_trace.py` against bad traces and a fake game (crash, hang, early exit, freeze, wrong player count,
+  player flying on, hidden while flying, not parked after a restart): every case gives the expected exit code.
+
+Not covered by these runs: a level restart, enemy contact with player 1, and Windows with these fixes (build only).
+
 Derived:
 
 - Player 1 copies player 0's controller (both read `gMainController`), but from another position, so it flies a
@@ -302,7 +319,8 @@ Derived:
 
 Unknown:
 
-- The level-complete path is covered by the owner's watched run only; the replay diverges before it with 2 players.
+- The normal level-complete path is covered by the owner's watched run only; the replay diverges before it with 2
+  players, and the Linux run above reaches it through `gDebugLevelComplete`.
 - Whether enemies target or hit player 1: enemy and shot loops still use `gCamCount` or `gPlayer[0]`, so probably
   not (guess). Friendly fire and targeting are game rules (WP-07, WP-16).
 - Player 1 has no engine noise: `Audio_StartPlayerNoise(gPlayerNum)` is called in `Player_Setup`
