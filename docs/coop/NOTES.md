@@ -293,7 +293,7 @@ Observed, runs, after:
 - `unit`: 16882 of 16882 checks, every local index from 0 to 3 with every player count. 15 of 15 hand-made breaks of
   `input.c` were caught. Press edges taken from the slot pass at index 0 and fail at index 1: that case cannot show in
   the game yet.
-- The rail replay on 797c678b and on this branch, `hash_check.py diff`: no difference on 7502 common rows with co-op off
+- The rail replay on 797c678b and on this branch, `hash_check.py diff`: no difference on 7506 common rows with co-op off
   and on 7501 with two players, every column. So routing changes nothing a replay already did.
 - A stick pushed to 80 reads 78 after libultraship.
 
