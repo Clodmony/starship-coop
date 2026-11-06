@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Tests tools/coop/package.py: game data must not get into a package (#26).
 
-    python tools/coop/package_test.py    # unattended; prints PASS or FAIL. No build, no ROM, under a second.
+    python tools/coop/package_test.py    # unattended; prints PASS or FAIL. No build, no ROM, a few seconds.
 
 Works on a made-up build folder under local/test-package/: the decoys and the ROM header are invented bytes, nothing from
 the game. Run it after changing package.py. Exit code 0 when every scenario holds, 1 otherwise. The folder is deleted when
@@ -12,6 +12,7 @@ import os
 import shutil
 import subprocess
 import sys
+import warnings
 import zipfile
 from pathlib import Path
 
@@ -22,7 +23,8 @@ ROOT = package_tool.ROOT
 WORK = ROOT / "local" / "test-package"
 BUILD_ID = "0123456789ab"
 SYSTEM = {"win32": "windows", "linux": "linux"}.get(sys.platform)
-DECOYS = ["sf64.o2r", "starship.o2r", "baserom.z64", "mods/pack.otr"]
+DECOYS = ["sf64.o2r", "starship.o2r", "baserom.z64", "mods/pack.otr"]  # a build folder's starship.o2r is a decoy too
+ARCHIVE = "starship.o2r"
 
 
 def fake_build(name, header=True):
@@ -81,11 +83,13 @@ def clean():
         return f"no OK line: {result.stdout}"
     if outputs.read_text(encoding="utf-8") != f"name={name}\npath={folder}\n":
         return f"step outputs wrong: {outputs.read_text(encoding='utf-8')}"
-    if any(Path(n).name in {Path(d).name for d in DECOYS} for n in names):
+    if any(Path(n).name in {Path(d).name for d in DECOYS} - {ARCHIVE} for n in names):
         return f"a decoy went in: {names}"
-    missing = {"config.yml", "README.txt", "gamecontrollerdb.txt"} - set(names)
+    missing = {"config.yml", "README.txt", "gamecontrollerdb.txt", ARCHIVE} - set(names)
     if missing or not any(n.startswith("assets/") for n in names):
         return f"missing from the package: {sorted(missing)}, {len(names)} files"
+    if (folder / ARCHIVE).read_bytes() == b"decoy":
+        return "the build folder's starship.o2r went in"
     return None
 
 
@@ -108,10 +112,95 @@ def scan_clean():
     return f"a clean package has problems: {problems}" if problems else None
 
 
+def tracked_port():
+    """The tracked files, read here and not through package.py, so that a wrong list there fails."""
+    names = subprocess.run(["git", "ls-tree", "-r", "--name-only", "HEAD", "port"], cwd=ROOT, capture_output=True,
+                           text=True, encoding="utf-8", check=True).stdout.split()
+    return {n[len("port/"):]: subprocess.run(["git", "cat-file", "blob", f"HEAD:{n}"], cwd=ROOT, capture_output=True,
+                                             check=True).stdout for n in names}
+
+
+def archive_holds_port():
+    with zipfile.ZipFile(packaged() / ARCHIVE) as archive:
+        held = {name: archive.read(name) for name in archive.namelist()}
+        count = len(archive.namelist())
+    expected = tracked_port()
+    if count != 13 or held != expected:
+        return f"archive holds {count} files, {len(set(held) ^ set(expected))} names differ from the tracked ones"
+    return None
+
+
+def archive_repeats():
+    first = (packaged() / ARCHIVE).read_bytes()
+    second = (packaged() / ARCHIVE).read_bytes()
+    return None if first == second else "two packages of one commit hold different archives"
+
+
+def repacked(extra=None, drop=None, change=None, compression=zipfile.ZIP_STORED):
+    """A zip of the tracked files, changed as asked."""
+    files = tracked_port()
+    files.update(extra or {})
+    files.pop(drop, None)
+    if change:
+        files[change] = files[change] + b"\n"
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", compression) as archive:
+        for name, data in sorted(files.items()):
+            archive.writestr(zipfile.ZipInfo(name), data, compress_type=compression)
+    return out.getvalue()
+
+
+def good_archive():
+    return (packaged() / ARCHIVE).read_bytes()
+
+
+def repeated_entry():
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as archive, warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        for name, data in sorted(tracked_port().items()):
+            archive.writestr(zipfile.ZipInfo(name), data)
+        archive.writestr(zipfile.ZipInfo(name), data)
+    return out.getvalue()
+
+
+def other_port_files():
+    """A file under port/ that nobody accepted must stop the package, not join it."""
+    names = package_tool.PORT_FILES
+    package_tool.PORT_FILES = names[:-1]
+    try:
+        package_tool.port_archive()
+    except SystemExit as stopped:
+        return None if "port/" in str(stopped) else f"stopped for another reason: {stopped}"
+    finally:
+        package_tool.PORT_FILES = names
+    return "packed although port/ does not hold the accepted files"
+
+
 SCENARIOS = {
     "clean": clean,
     "no-id": no_id,
     "scan-clean": scan_clean,
+    "archive-holds-port": archive_holds_port,
+    "archive-repeats": archive_repeats,
+    "port-not-accepted": other_port_files,
+    # A different .o2r, under any name or place but the one.
+    "other-o2r-with-good-bytes": lambda: caught("other.o2r", good_archive(), "by name"),
+    "good-bytes-wrong-folder": lambda: caught("assets/starship.o2r", good_archive(), "by name"),
+    "good-bytes-wrong-case": lambda: caught("STARSHIP.O2R", good_archive(), "by name"),
+    "different-archive": lambda: caught(ARCHIVE, zip_bytes(), "not the archive"),
+    "archive-not-a-zip": lambda: caught(ARCHIVE, b"made up", "not the archive"),
+    "archive-empty": lambda: caught(ARCHIVE, b"", "not the archive"),
+    # The right archive with something in it.
+    "archive-extra-file": lambda: caught(ARCHIVE, repacked(extra={"extra": b"made up"}), "not the archive"),
+    "archive-extra-rom": lambda: caught(ARCHIVE, repacked(extra={"baserom.z64": rom_header(1)}), "not the archive"),
+    "archive-file-missing": lambda: caught(ARCHIVE, repacked(drop="shaders/opengl/default.shader.fs"), "not the archive"),
+    "archive-file-changed": lambda: caught(ARCHIVE, repacked(change="shaders/opengl/default.shader.fs"), "not the archive"),
+    "archive-file-twice": lambda: caught(ARCHIVE, repeated_entry(), "not the archive"),
+    "archive-compressed": lambda: caught(ARCHIVE, repacked(compression=zipfile.ZIP_DEFLATED), "not the archive"),
+    # A zip reader does not see these, so a list of its entries would pass them.
+    "archive-data-before": lambda: caught(ARCHIVE, rom_header(1) + good_archive(), "not the archive"),
+    "archive-data-after": lambda: caught(ARCHIVE, good_archive() + rom_header(1), "not the archive"),
     "name-o2r": lambda: caught("sf64.o2r", b"made up", "by name"),
     "name-otr-in-assets": lambda: caught("assets/pack.OTR", b"made up", "by name"),
     "name-z64": lambda: caught("baserom.z64", b"made up", "by name"),
@@ -134,7 +223,10 @@ def main():
     WORK.mkdir(parents=True)
     failed = 0
     for name, scenario in SCENARIOS.items():
-        problem = scenario()
+        try:
+            problem = scenario()
+        except Exception as error:  # one broken scenario must not hide the others
+            problem = f"{type(error).__name__}: {error}"
         failed += problem is not None
         print(f"package test: {name}: {'ok' if problem is None else 'FAIL: ' + problem}")
     if failed:

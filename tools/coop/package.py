@@ -13,6 +13,13 @@ here are copied, never a whole build folder (a developer's holds sf64.o2r and st
 before anything is uploaded: it fails on a file outside the list, a ROM or asset archive by name, a file that starts like
 one whatever its name, or a ROM header anywhere inside a file. python tools/coop/package_test.py tests this.
 
+One archive is allowed, because the game cannot start without it: starship.o2r, the port's shaders and HUD textures.
+This script packs it from the tracked files under port/, with no Torch build, as a zip without compression and with
+fixed dates, so that the same files always give the same bytes. The scan then asks for exactly those bytes, which also
+catches what a list of its entries would miss, such as data before or after the zip. The owner accepted these files
+knowing the source of the textures is unknown (docs/coop/NOTES.md, 2026-11-06, #26): their names are pinned below, so a
+new file under port/ stops the package until someone has looked at it.
+
 Exit code 0 on OK, 1 otherwise.
 """
 import argparse
@@ -20,13 +27,24 @@ import os
 import platform
 import re
 import shutil
+import subprocess
 import sys
+import zipfile
+from io import BytesIO
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check import GAME_DATA  # noqa: E402
 
+PORT_ARCHIVE = "starship.o2r"
+PORT_FILES = (
+    *(f"assets/textures/hud/sBoostGaugeArrow{frame}" for frame in range(9)),
+    "shaders/directx/default.shader.hlsl",
+    "shaders/metal/default.shader.metal",
+    "shaders/opengl/default.shader.fs",
+    "shaders/opengl/default.shader.vs",
+)
 ALLOWED_NAMES = {"Starship", "Starship.exe", "config.yml", "gamecontrollerdb.txt", "README.txt"}
 ALLOWED_IN_ASSETS = re.compile(r"\.ya?ml$", re.IGNORECASE)
 
@@ -50,11 +68,10 @@ README = """Starship Co-op, build {build_id}, {system} x64
 A test build from the project's CI, not a release. The game shows this id at the right end of the menu bar (press F1).
 To play together, everyone needs the same id.
 
-There is nothing from the game in this folder: no ROM, no sf64.o2r, no starship.o2r. You need:
+There is no ROM and no sf64.o2r in this folder. starship.o2r holds the port's shaders and HUD textures, packed from the
+repository's port/ folder; keep it next to the game, which does not start without it. You need:
 
 - Your own Star Fox 64 ROM, US 1.0 or 1.1. On the first start the game asks for it and makes sf64.o2r from it.
-- starship.o2r next to the game. The game stops at start without it (it holds the shaders). See docs/BUILDING.md in
-  the repository for how to make it.
 {extra}"""
 EXTRA = {
     "linux": """- chmod +x Starship: a download from Actions loses the executable flag.
@@ -74,6 +91,29 @@ def read_build_id(build_dir):
     return found.group(1)
 
 
+def git(*args):
+    done = subprocess.run(["git", *args], cwd=ROOT, capture_output=True)
+    if done.returncode != 0:
+        sys.exit(f"package: git {args[0]} failed; packing {PORT_ARCHIVE} needs a git checkout")
+    return done.stdout
+
+
+def port_archive():
+    """The bytes of starship.o2r. Files come from git, not the working tree: a Windows checkout changes line endings."""
+    tracked = git("ls-tree", "-r", "--name-only", "HEAD", "port").decode("utf-8").split()
+    tracked = sorted(name[len("port/"):] for name in tracked)
+    if tracked != sorted(PORT_FILES):
+        different = sorted(set(tracked) ^ set(PORT_FILES))
+        sys.exit(f"package: port/ is not the accepted list of files, see PORT_FILES: {', '.join(different)}")
+    out = BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_STORED) as archive:
+        for name in tracked:
+            info = zipfile.ZipInfo(name)  # dated 1980, whatever the clock says
+            info.create_system = 0  # otherwise it says which OS made it
+            archive.writestr(info, git("cat-file", "blob", f"HEAD:port/{name}"))
+    return out.getvalue()
+
+
 def scan(folder):
     """Returns one line for every file that must not leave in an artifact."""
     problems = []
@@ -81,6 +121,10 @@ def scan(folder):
         name = path.relative_to(folder).as_posix()
         if path.is_symlink():
             problems.append(f"{name}: symbolic link")
+            continue
+        if name == PORT_ARCHIVE:
+            if path.read_bytes() != port_archive():
+                problems.append(f"{name}: not the archive of the tracked port/ files")
             continue
         listed = name in ALLOWED_NAMES or (name.startswith("assets/") and ALLOWED_IN_ASSETS.search(name))
         if not listed:
@@ -99,6 +143,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--config", default="Debug", choices=["Debug", "Release", "RelWithDebInfo"])
     p.add_argument("--build-dir", type=Path, help="default: build/x64 on Windows, build-cmake elsewhere")
+    p.add_argument("--out", type=Path, help="make the package in this folder (default: <build dir>/package)")
     p.add_argument("--scan", type=Path, metavar="FOLDER", help="scan this folder and stop")
     args = p.parse_args()
 
@@ -121,8 +166,9 @@ def main():
 
     build_id = read_build_id(build_dir)
     name = f"starship-coop-{build_id}-{system}-x64"
-    folder = build_dir / "package" / name
-    shutil.rmtree(build_dir / "package", ignore_errors=True)
+    out = args.out or build_dir / "package"
+    folder = out / name
+    shutil.rmtree(out, ignore_errors=True)
     (folder / "assets").mkdir(parents=True)
 
     shutil.copy2(exe, folder / exe.name)
@@ -135,6 +181,7 @@ def main():
     # Fetched while configuring (CMakeLists.txt); controllers work without it, with fewer known mappings.
     if (build_dir / "gamecontrollerdb.txt").exists():
         shutil.copy2(build_dir / "gamecontrollerdb.txt", folder / "gamecontrollerdb.txt")
+    (folder / PORT_ARCHIVE).write_bytes(port_archive())
     text = README.format(build_id=build_id, system=platform.system(), extra=EXTRA[system])
     (folder / "README.txt").write_text(text, encoding="utf-8")
 

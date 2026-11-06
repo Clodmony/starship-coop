@@ -14,15 +14,20 @@ one shown frame with versiontest/frame_shot.c. The check reads the pixels of tha
           OCR: it tells a right id from a wrong one, it does not spell one out.
   narrow  In a window with no room for the label, the menu bar shows only the menus: up to where label starts it equals
           the bar of label, pixel for pixel, and after that it is empty.
+  packaged  A package from package.py starts as a player would start it: from its own folder, with only sf64.o2r in a
+          fresh config folder. It must read the starship.o2r next to it and show the label. The same package without
+          that file must stop at its first shader, which shows the file is what lets it start.
 
 Needs a build with assets (python tools/coop/build.py --assets) or --exe, and a C compiler. Exit code 0 when every
 scenario holds, 1 otherwise. Everything lands under local/test-*: deleted when all hold, kept for reading when one fails.
 """
 import argparse
+import json
 import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -39,23 +44,34 @@ CELL = 7            # width of a character of the menu font
 LABEL_PREFIX = "Co-op "  # src/port/coop/ui/version_label.cpp
 WIDE = 640
 NARROW = 500        # the menus end before this and the label does not fit after them
+NO_SHADER = "Failed to load default fragment shader"  # libultraship, gfx_opengl.cpp
+
+
+def shot_env(shot):
+    return {
+        "SDL_VIDEODRIVER": "offscreen", "SDL_AUDIODRIVER": "dummy", "LIBGL_ALWAYS_SOFTWARE": "1",
+        "GALLIUM_DRIVER": "llvmpipe", "LD_PRELOAD": str(WORK / "frame_shot.so"),
+        "SF64_COOP_SHOT_FRAME": str(SHOT_SWAP), "SF64_COOP_SHOT_FILE": str(shot),
+    }
+
+
+def game_config(width):
+    return {"CVars": {"gOpenMenuBar": 1}, "Window": {"Width": width, "Height": 480}}
 
 
 def game_frame(exe, name, width):
     """Runs one game and returns (width, height, rgb bytes) of the captured frame, or None."""
     shot = WORK / f"{name}.ppm"
     shot.unlink(missing_ok=True)
-    env = {
-        "SDL_VIDEODRIVER": "offscreen", "SDL_AUDIODRIVER": "dummy", "LIBGL_ALWAYS_SOFTWARE": "1",
-        "GALLIUM_DRIVER": "llvmpipe", "LD_PRELOAD": str(WORK / "frame_shot.so"),
-        "SF64_COOP_SHOT_FRAME": str(SHOT_SWAP), "SF64_COOP_SHOT_FILE": str(shot),
-    }
-    config = {"CVars": {"gOpenMenuBar": 1}, "Window": {"Width": width, "Height": 480}}
     replay = WORK / f"{name}.sfcr"
     replay.unlink(missing_ok=True)
-    _, run, _ = replay_tool.run_game("record", replay, exe, TIMEOUT, tag=f"version-{name}", env_extra=env, config=config,
-                                     frames=RECORD_FRAMES)
+    _, run, _ = replay_tool.run_game("record", replay, exe, TIMEOUT, tag=f"version-{name}", env_extra=shot_env(shot),
+                                     config=game_config(width), frames=RECORD_FRAMES)
     runs.append(run)
+    return read_frame(shot)
+
+
+def read_frame(shot):
     if not shot.exists():
         return None
     data = shot.read_bytes()
@@ -150,6 +166,70 @@ def scenario_narrow(exe, wide, label_x):
     return True, f"{BAR_ROWS} rows equal to the wide bar up to x={menus}, empty after that"
 
 
+def start_packaged(exe, name, rom_archive):
+    """Starts a packaged game with only sf64.o2r in a fresh config folder, until it shows a frame or stops at a shader.
+    Returns (frame or None, what it logged)."""
+    run = WORK / f"run-{name}"
+    shutil.rmtree(run, ignore_errors=True)
+    run.mkdir()
+    shutil.copy2(rom_archive, run / "sf64.o2r")
+    (run / "starship.cfg.json").write_text(json.dumps(game_config(WIDE)), encoding="utf-8")
+    shot = WORK / f"{name}.ppm"
+    shot.unlink(missing_ok=True)
+    env = replay_tool.game_env(run)
+    env.update(shot_env(shot))
+    env["SF64_COOP_HASH_LOG"] = str(run / "state-hash.txt")  # a test run: a stop signal ends it (#71)
+    log_path = run / "game-output.txt"
+    print(f"version: starting {exe}")
+    with open(log_path, "wb") as log:
+        proc = subprocess.Popen([str(exe)], cwd=run, env=env, stdout=log, stderr=subprocess.STDOUT)
+        start = time.monotonic()
+        while time.monotonic() - start < TIMEOUT and proc.poll() is None and not shot.exists():
+            if NO_SHADER in log_path.read_text(encoding="utf-8", errors="replace"):
+                break
+            time.sleep(0.5)
+        time.sleep(1)  # let a capture finish writing
+        # Only the process this script started. After a failed shader it hangs and does not answer a stop signal.
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+    return read_frame(shot), log_path.read_text(encoding="utf-8", errors="replace")
+
+
+def scenario_packaged(exe, build_id):
+    rom_archive = replay_tool.find_data(exe, "sf64.o2r")
+    if rom_archive is None:
+        return False, "sf64.o2r not found; run python tools/coop/build.py --assets first"
+    out = WORK / "package"
+    made = subprocess.run([sys.executable, str(Path(__file__).resolve().parent / "package.py"), "--build-dir", str(exe.parent),
+                           "--out", str(out)], capture_output=True, text=True, encoding="utf-8")
+    if made.returncode != 0:
+        return False, f"package.py failed: {(made.stdout + made.stderr).strip().splitlines()[-1]}"
+    folder = next(out.iterdir())
+    packaged = folder / exe.name
+
+    frame, log = start_packaged(packaged, "packaged", rom_archive)
+    if frame is None:
+        reason = NO_SHADER if NO_SHADER in log else "no frame captured"
+        return False, f"the package did not start: {reason}"
+    archive = folder / package_tool.PORT_ARCHIVE
+    if f"Reading archive: {archive}" not in log:
+        return False, f"the game did not read {archive.name} from the package"
+    text = LABEL_PREFIX + build_id
+    if label_start(bar_rows(frame), frame[0], text) is None:
+        return False, f"the package started, but shows no \"{text}\""
+
+    archive.unlink()
+    frame, log = start_packaged(packaged, "packaged-without", rom_archive)
+    if frame is not None or NO_SHADER not in log:
+        return False, f"the package started without {archive.name}, so that file is not what it needs"
+    return True, f"started from {len(list(folder.rglob('*')))} packaged files and sf64.o2r, read {archive.name} from the " \
+                 f"package, shows \"{text}\"; without that file it stops at its first shader"
+
+
 runs = []
 
 
@@ -159,7 +239,7 @@ def main():
     p.add_argument("--list", action="store_true", help="print the scenarios and stop")
     args = p.parse_args()
     if args.list:
-        print("label\nnarrow")
+        print("label\nnarrow\npackaged")
         return 0
     if sys.platform != "linux":
         sys.exit("version: Linux only")
@@ -179,6 +259,7 @@ def main():
         results.append(("narrow", False, "needs the frame of label"))
     else:
         results.append(("narrow", *scenario_narrow(exe, wide, label_x)))
+    results.append(("packaged", *scenario_packaged(exe, build_id)))
 
     for name, passed, detail in results:
         print(f"version: {name}: {'ok' if passed else 'FAIL'}: {detail}")
