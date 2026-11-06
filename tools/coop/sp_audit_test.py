@@ -12,6 +12,7 @@ as in CI, which checks out one commit. No build, no ROM, a few seconds. Exit cod
 otherwise. Everything lands under local/test-spaudit-*: deleted when all scenarios hold, kept for reading when one fails.
 """
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -62,6 +63,8 @@ PATTERN_ROW = "takes input (site) from sp-verdicts.tsv:4"
 STAR_ROW = "takes flow (name) from sp-verdicts.tsv:5"
 NEW_FUNCTION = "\nvoid Epsilon_Update(void) {\n    gPlayer[0].csState = 0;\n}\n"
 UNTRACKED = "src/engine/copy of fox_a.c"  # a space, so the tool has to split git's output properly
+# A git hook exports GIT_DIR and GIT_INDEX_FILE. Left in, git add here would write to the real repository's index.
+ENV = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
 
 
 class Repo:
@@ -77,7 +80,7 @@ class Repo:
         self.audit(*FIRST_RUN)
 
     def git(self, *args):
-        subprocess.run(["git", *args], cwd=self.folder, check=True, capture_output=True)
+        subprocess.run(["git", *args], cwd=self.folder, env=ENV, check=True, capture_output=True)
 
     def read(self, path):
         p = self.folder / path
@@ -94,7 +97,7 @@ class Repo:
         self.write(path, text.replace(old, new, 1))
 
     def audit(self, *args):
-        r = subprocess.run([sys.executable, "-I", "tools/coop/sp_audit.py", *args], cwd=self.folder,
+        r = subprocess.run([sys.executable, "-I", "tools/coop/sp_audit.py", *args], cwd=self.folder, env=ENV,
                            capture_output=True, text=True, encoding="utf-8")
         return r.returncode, r.stdout + r.stderr
 

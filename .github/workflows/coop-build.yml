@@ -24,8 +24,6 @@ on:
       - 'tools/coop/sessiontest/**'
       - 'tools/coop/session_mutants.py'
       - 'tools/coop/mutants.py'
-      - 'tools/coop/sp_audit.py'
-      - 'docs/coop/audit/**'
       - 'tools/coop/cmake/**'
       - 'tools/coop/chaos/**'
       - '.github/workflows/coop-build.yml'
@@ -51,8 +49,6 @@ on:
       - 'tools/coop/sessiontest/**'
       - 'tools/coop/session_mutants.py'
       - 'tools/coop/mutants.py'
-      - 'tools/coop/sp_audit.py'
-      - 'docs/coop/audit/**'
       - 'tools/coop/cmake/**'
       - 'tools/coop/chaos/**'
       - '.github/workflows/coop-build.yml'
@@ -97,10 +93,6 @@ jobs:
         run: python3 tools/coop/session_test.py --config Release --asan
       - name: Session mutation check
         run: python3 tools/coop/session_mutants.py --config Release
-      # Last, and whatever the tests did: a stale audit says nothing about them, and it should not hide their results.
-      - name: Single-player audit
-        if: ${{ !cancelled() }}
-        run: python3 tools/coop/sp_audit.py --check
 
   windows:
     name: Co-op build (Windows)
