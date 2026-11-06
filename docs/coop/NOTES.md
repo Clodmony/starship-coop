@@ -1042,6 +1042,49 @@ Unknown:
   `gLifeCount[0]`, `D_ctx_801779A8[0]`). Not counted here.
 - `src/port/` (enhancements, cheats, hooks) was out of scope.
 
+### 2026-11-06, #114, --check compares sites, not line numbers
+
+Read at `797c678b`. Python only: no ROM, no game run. The results on real code come from a scratch clone, the rest from
+`python tools/coop/sp_audit_test.py`.
+
+Observed:
+
+- **Before.** One added line above the sites of `src/engine/fox_demo.c` gave `is stale`, exit 1. Two branches that each
+  added a comment above that file's first site, each rerun and green alone, merged with no conflict, and the merge
+  failed `--check`. A docs-only commit on top failed the same way. This is the failure #114 derived from the code.
+- **Not every such pair merges.** Two branches that added a line at lines 85 and 1575 of the same file conflicted in the
+  list instead of merging.
+- **After.** On that merged tree `--check` exits 0 and prints a note that a rerun would change the list. A plain rerun
+  writes it, and the note goes. A site added or removed in `fox_demo.c` still exits 1, and the last line names the command
+  to run: `--accept` for a new site, the plain rerun for a lost one.
+- **The key.** Sites are counted per file, function and pattern, so a site that moves to another function is not a moved
+  line: it is lost there and new here, also under one verdict row with the row's count unchanged
+  (`star-row-site-moved`). A renamed function goes the same way (`star-row-function-renamed`). Both stop the rerun until
+  `--accept`, as they did since #73 for the new half.
+- **What `--check` no longer sees.** Everything in the list but those counts. A changed verdict row (`row-changed`) and
+  a new row after `--accept` (`no-row`) pass with the note, and the list shows the old verdict until a rerun. Errors in
+  the verdict file still fail: a site with no row, a row that matches no site, a bad verdict or basis. They do not
+  compare the list.
+- **A tracked file that is deleted but not committed.** `FileNotFoundError` before, from `--check`, `--todo` and the plain
+  rerun. Now it is skipped. If the list has sites of it, a warning names the file and the sites count as lost; if not,
+  nothing is said. A plain rerun then writes the list without them. Restoring the file afterwards shows them as new, so
+  they need `--accept` (`file-deleted`).
+- **A list with conflict markers.** In the conflicted merge above both sides' rows counted, so `--check` said `lost site`
+  for each doubled function (`6 listed, 3 now`) and failed. A plain rerun wrote the list and passed.
+
+Derived:
+
+- The line in the #75 entry that any change moving a site needs a rerun no longer holds.
+- Two branches merge cleanly into a stale list only when both shift the same rows alike, so both edits sit in one gap
+  between sites of a file. Otherwise the list conflicts. A branch that only moves lines can now leave the list alone, and
+  then it has nothing to conflict with.
+- A hand edit of the list, or conflict markers outside the rows, passes `--check` with the note: nothing compares the
+  text any more.
+
+Unknown:
+
+- How far the line numbers will drift in practice. Nothing reruns the audit on its own.
+
 ### 2026-11-06, #73, a new site under an existing audit row
 
 Read at `95962d04`. Python only: no build, no ROM, no game run. The tool behaviour below comes from temporary sites in
