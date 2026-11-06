@@ -17,9 +17,11 @@
 // in src/engine/fox_enmy.c:156-210, Player_InitializeAll in src/engine/fox_play.c:2605), so padding is 0 unless
 // the game wrote it.
 //
-// Co-op hashes two things more strictly than single player: negative numbers in Actor.iwork[] (NormalizeWord) and free
-// gScenery360 slots (HashScenery360). With co-op off the hash stays as it was, so a single-player log still lines up
-// with one from an older build (docs/coop/QA.md, test plan item 1).
+// Co-op hashes differently from single player: negative numbers in Actor.iwork[] (NormalizeWord), free gScenery360
+// slots (HashScenery360), the per-player arrays and the co-op slots (HashPlayerArrays), the team member arrays
+// (HashTeamArrays), and it leaves out the per-player values of players who are not in the level (HashPerPlayer). With
+// co-op off the hash stays as it was, so a single-player log still lines up with one from an older build
+// (docs/coop/QA.md, test plan item 1).
 //
 // The listener runs on GamePreUpdateEvent, before any game logic of the frame, so the hash of frame N is the state
 // after frame N-1. It runs after the input replay listener (EVENT_PRIORITY_LOW runs first, see
@@ -138,7 +140,9 @@ static bool PlayersValid(void) {
 }
 
 // With co-op off every slot of a per-player array counts, used or not. In co-op a slot counts only while its player is
-// in the level.
+// in the level. A waiting player's values are what an earlier level or versus match left, which clients need not
+// share, and joining overwrites them (CoopPlayers_JoinFromPlayer0). An out player's stop changing, and were hashed
+// until then.
 static bool PlayerValuesCount(s32 i) {
     if (!CoopPlayers_IsCoop()) {
         return true;
@@ -196,6 +200,19 @@ static void ClearInfoPointers(ObjectInfo* info) {
     info->hitbox = NULL;
 }
 
+// A per-player array, slot by slot. With co-op off that is the same bytes in the same order as hashing the array whole.
+static void HashPerPlayer(uint64_t* h, const void* array, size_t size) {
+    static const u8 sEmpty[sizeof(s32)] = { 0 };
+    const u8* value = (const u8*) array;
+    s32 i;
+
+    for (i = 0; i < COOP_PLAYERS_MAX; i++, value += size) {
+        Fnv(h, PlayerValuesCount(i) ? value : sEmpty, size);
+    }
+}
+
+#define HASH_PER_PLAYER(h, array) HashPerPlayer((h), (array), sizeof((array)[0]))
+
 static void HashPlayers(uint64_t* h) {
     Player copy;
     s32 i;
@@ -208,6 +225,29 @@ static void HashPlayers(uint64_t* h) {
         copy.sfx.srcPos = NULL;
         copy.sfx.srcVel = NULL;
         HASH_VAR(h, copy);
+    }
+}
+
+static void HashPlayerArrays(uint64_t* h) {
+    s32 slot;
+    s32 i;
+
+    for (i = 0; i < ARRAY_COUNT(sPlayerArrays); i++) {
+        HashPerPlayer(h, sPlayerArrays[i].array, sPlayerArrays[i].size);
+    }
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        slot = CoopPlayers_SlotState(i);
+        HASH_VAR(h, slot);
+    }
+}
+
+static void HashTeamArrays(uint64_t* h) {
+    const TeamArray* team;
+    s32 i;
+
+    for (i = 0; i < ARRAY_COUNT(sTeamArrays); i++) {
+        team = &sTeamArrays[i];
+        Fnv(h, &team->array[team->first], (team->end - team->first) * sizeof(s32));
     }
 }
 
@@ -288,10 +328,10 @@ static void HashGlobals(uint64_t* h) {
     HASH_VAR(h, gHitCount);
     HASH_VAR(h, gRingPassCount);
     HASH_VAR(h, gTeamShields);
-    HASH_VAR(h, gLifeCount);
-    HASH_VAR(h, gBombCount);
-    HASH_VAR(h, gGoldRingCount);
-    HASH_VAR(h, gPlayerScores);
+    HASH_PER_PLAYER(h, gLifeCount);
+    HASH_PER_PLAYER(h, gBombCount);
+    HASH_VAR(h, gGoldRingCount); // four slots, but not per player: [0] is the count, [1] what the HUD shows of it
+    HASH_PER_PLAYER(h, gPlayerScores);
     HASH_VAR(h, gRadioState);
     HASH_VAR(h, gRadioMsgId);
 }
@@ -306,6 +346,9 @@ void CoopStateHash_Compute(CoopStateHash* out) {
     }
 
     HashPlayers(&r[COOP_HASH_PLAYERS]);
+    if (CoopPlayers_IsCoop()) {
+        HashPlayerArrays(&r[COOP_HASH_PLAYERS]);
+    }
     HashActors(&r[COOP_HASH_ACTORS]);
     HASH_INFO_ARRAY(&r[COOP_HASH_BOSSES], Boss, gBosses, ARRAY_COUNT(gBosses));
     HashEffects(&r[COOP_HASH_EFFECTS]);
@@ -328,6 +371,9 @@ void CoopStateHash_Compute(CoopStateHash* out) {
     HASH_VAR(&r[COOP_HASH_RNG], sSeededRandSeed3);
 
     HashGlobals(&r[COOP_HASH_GLOBALS]);
+    if (CoopPlayers_IsCoop()) {
+        HashTeamArrays(&r[COOP_HASH_GLOBALS]);
+    }
 
     out->total = FNV_OFFSET;
     Fnv(&out->total, r, sizeof(out->region));
