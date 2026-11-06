@@ -284,15 +284,15 @@ Basis per site: read 193, site 953, name 642.
 | `Player_Setup` | 4937:CC | setup | site | gCamCount == gPlayerNum + 1: HUD and hit counters reset only when the last player is set up |
 | `Player_UpdateTankJets` | 5477:CC, 5481:CC | setup | site | gCamCount == 1 as "not versus" for jet effects |
 | `Player_UpdateEffects` | 5523:CC | setup | site | loops gCamCount players |
-| `Player_Update` | 5896:MC, 5897:MC, 5898:MC | input | read | gInputHold/gInputPress/gControllerRumble taken from gMainController for every player; WP-14 replaces this |
-| `Player_Update` | 6130:CC | setup | site | gCamCount == 4: down in versus goes to VS_STANDBY, else fade out and restart level |
-| `Player_Update` | 6140:P0, 6209:P0 | flow | site | death restart resets gPlayer[0].zPath and path progress; boost check reads player 0 state for every player |
-| `Camera_SetStarfieldPos` | 6638:P0, 6650:P0 | view | site | starfield from player 0 camera |
-| `Camera_SetupLights` | 6733:P0 | view | site | lights depend on player 0 state |
-| `Play_UpdateLevel` | 6863:P0, 6864:P0, 6865:P0, 6866:P0, 6867:P0, 6880:P0, 6881:P0, 6896:P0, 6905:P0, 6906:P0, 6931:P0, 6936:P0, 6939:P0, 6942:P0, 6945:P0, 6948:P0, 6951:P0, 6961:P0, 6963:P0, 6965:P0, 6966:P0, 6968:P0, 6969:P0, 6971:P0, 6977:P0, 6981:P0, 6983:P0, 6989:P0, 6999:P0, 7005:P0, 7006:P0 | flow | site | per-level triggers on player 0: level complete, warp zone, Solar heat damage to player 0 only, Venom 2 / Aquas checks |
-| `Play_Main` | 7159:P0, 7160:P0, 7162:P0, 7163:P0, 7164:P0, 7200:P0, 7232:P0, 7233:P0 | flow | site | all-range z setup for player 0 only |
-| `Play_Main` | 7199:MC, 7222:MC, 7232:MC, 7252:MC | input | site | Start (intro skip, pause, unpause) and R while paused (toggles gShowReticles[0], no radio here) are read from gMainController only; versus reads R per controller |
-| `Play_Main` | 7212:CC | setup | site | intro skip resets gCamCount to 1; its sound cleanup loop is on CoopPlayers_Count() since WP-10 |
+| `Player_Update` | 5900:MC, 5901:MC, 5902:MC | input | read | gInputHold/gInputPress/gControllerRumble taken from gMainController for every player; WP-14 replaces this |
+| `Player_Update` | 6134:CC | setup | site | gCamCount == 4: down in versus goes to VS_STANDBY, else fade out and restart level |
+| `Player_Update` | 6144:P0, 6213:P0 | flow | site | death restart resets gPlayer[0].zPath and path progress; boost check reads player 0 state for every player |
+| `Camera_SetStarfieldPos` | 6642:P0, 6654:P0 | view | site | starfield from player 0 camera |
+| `Camera_SetupLights` | 6737:P0 | view | site | lights depend on player 0 state |
+| `Play_UpdateLevel` | 6867:P0, 6868:P0, 6869:P0, 6870:P0, 6871:P0, 6884:P0, 6885:P0, 6900:P0, 6909:P0, 6910:P0, 6935:P0, 6940:P0, 6943:P0, 6946:P0, 6949:P0, 6952:P0, 6955:P0, 6965:P0, 6967:P0, 6969:P0, 6970:P0, 6972:P0, 6973:P0, 6975:P0, 6981:P0, 6985:P0, 6987:P0, 6993:P0, 7003:P0, 7009:P0, 7010:P0 | flow | site | per-level triggers on player 0: level complete, warp zone, Solar heat damage to player 0 only, Venom 2 / Aquas checks |
+| `Play_Main` | 7163:P0, 7164:P0, 7166:P0, 7167:P0, 7168:P0, 7204:P0, 7236:P0, 7237:P0 | flow | site | all-range z setup for player 0 only |
+| `Play_Main` | 7203:MC, 7226:MC, 7236:MC, 7256:MC | input | site | Start (intro skip, pause, unpause) and R while paused (toggles gShowReticles[0], no radio here) are read from gMainController only; versus reads R per controller |
+| `Play_Main` | 7216:CC | setup | site | intro skip resets gCamCount to 1; its sound cleanup loop is on CoopPlayers_Count() since WP-10 |
 
 ### `src/engine/fox_radio.c`
 

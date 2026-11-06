@@ -5838,6 +5838,10 @@ void Player_Update360(Player* player) {
 void Player_LowHealthMsg(Player* player) {
     s32 teamId;
 
+    if (CoopPlayers_SkipLowHealthMsg(player)) { // COOP: one timer, so only player 0 steps it (#87)
+        return;
+    }
+
     if ((player->state == PLAYERSTATE_ACTIVE) && (gTeamLowHealthMsgTimer >= 0)) {
         gTeamLowHealthMsgTimer++;
         if (gTeamLowHealthMsgTimer > 32 * 30) {
