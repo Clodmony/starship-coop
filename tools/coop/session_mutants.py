@@ -107,6 +107,11 @@ BREAKS = [
     ("identity_client_any_peer", CLIENT_IDENTITY, "return s->client == CLIENT_ACTIVE ? &s->peers[0].identity : NULL;",
      SIM),
 
+    # Counters: only for a joined peer, and the transport's own.
+    ("stats_any_peer", "if (CoopSession_PeerIdentity(s, peer) == NULL) {\n        return false;\n    }\n"
+     "    return s->t->ops->stats(s->t, peer, out);", "return s->t->ops->stats(s->t, peer, out);", SIM),
+    ("stats_not_passed_on", "return s->t->ops->stats(s->t, peer, out);", "return true;", SIM),
+
     # Sending: only game ids, only to a joined peer.
     ("send_session_ids", SEND_GUARD, "if (CoopSession_PeerIdentity(s, peer) == NULL) {", SIM),
     ("send_id_boundary", SEND_GUARD, SEND_GUARD.replace("<", "<="), SIM),
