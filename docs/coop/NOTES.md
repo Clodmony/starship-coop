@@ -714,7 +714,7 @@ Read at `a69c811a` (origin/coop).
   (`src/port/coop/game/players.c:30`, default 1).
 - On a bad link a refused client can miss the refusal. In the virtual network (35 percent loss, seed 25 of
   `Sim_Lossy`) all five copies of `SESSION_REFUSE` within the 3000 ms linger time were lost, at 180, 380, 780, 1580 and
-  2580 ms after the connection. The host then dropped the client, which read "The other player closed the connection."
+  2580 ms into the run. The host then dropped the client, which read "The other player closed the connection."
   Nothing got through, so the rule holds, but the player gets a worse text.
 
 **Derived**
