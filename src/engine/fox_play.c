@@ -4930,7 +4930,7 @@ void Player_Setup(Player* playerx) {
         gLifeCount[gPlayerNum] = 2;
         gBombCount[gPlayerNum] = 3;
         gGreatFoxIntact = true;
-        if (CoopPlayers_Count() == (gPlayerNum + 1)) { // COOP: last player, was gCamCount
+        if (gCamCount == (gPlayerNum + 1)) {
             D_hud_80161720[0] = 0.0f;
             D_hud_80161720[1] = 0.0f;
             D_hud_80161720[2] = 0.0f;

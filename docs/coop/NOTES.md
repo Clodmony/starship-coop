@@ -184,8 +184,8 @@ What changed (`src/port/coop/game/players.c`, every game-side site marked `// CO
   that count comes from the debug CVar `gCoopDebugPlayerCount` (default 1, clamped to 1..4). `gCamCount` stays 1.
 - Switched to the player count, because they run once per player: allocation and init in `Play_Init`
   (`fox_play.c:2950-2953`), `Player_InitializeAll` (`fox_play.c:2610`), the "last player set up" check in
-  `Player_Setup` (`fox_play.c:4933`), the update and camera loops in `Play_Update` (`fox_play.c:7036, 7048`), the
-  sound cleanup when a level is quit (`fox_play.c:7188`), the five player draw loops in `Display_Update`
+  `Player_Setup` (`fox_play.c:4933`; back on `gCamCount` since WP-11), the update and camera loops in `Play_Update`
+  (`fox_play.c:7036, 7048`), the sound cleanup when a level is quit (`fox_play.c:7188`), the five player draw loops in `Display_Update`
   (`fox_display.c:1969-2068`), the engine noise loop (`audio_general.c:2137`) and the object RAM viewer
   (`src/mods/object_ram.c:323`).
 - After each loop in `Play_Update`, with co-op on, `gPlayerNum` is set back to `CoopPlayers_LocalIndex()` (0 for
@@ -243,8 +243,15 @@ Observed:
   (`src/engine/fox_play.c`, `Player_Setup`). Running it for a player who joins mid-level would disturb player 0.
 - `PLAYERSTATE_STANDBY` is not a quiet state: each frame it sets `gShowHud = false` and `gPauseEnabled = false`
   (`src/engine/fox_play.c`, `Player_Update`, `case PLAYERSTATE_STANDBY`), so it cannot park a second player.
-- `Player` holds no pointers (`include/sf64player.h`, `struct Player`); `sfxSource` is an array inside the struct.
-  Copying one `Player` into another is safe.
+- `Player` holds two pointers, `sfx.srcPos` and `sfx.srcVel` (`include/sf64player.h:159-160`). A copy of player 0
+  starts with them pointing into player 0; `Display_SetupPlayerSfxPos` (`src/engine/fox_display.c:1748`) points them
+  back at the player's own `sfxSource` and `sfxVel` on every draw (`:1977`). `gPlayer` lives for the whole level, so
+  copying one `Player` into another is safe.
+- Shots from player 1 can hit player 0. The all-range hit loop walks `gCamCount` players and only skips the shot's
+  own source (`src/engine/fox_beam.c:837`, `:855`), so a shot with `sourceId` 1 is tested against player 0, while
+  player 0's shots are never tested against player 1. Friendly fire is a game rule (#7); this does not change it.
+- `Player_Update` sets `draw = true` after `Player_Update360` (`src/engine/fox_play.c:5981`), so hiding a player from
+  inside `Player_Down` lasts only until that line.
 - The all-range camera code (`Camera_UpdateArwing360` to `Camera_Update360`) writes no globals except the starfield
   (`gStarfieldX`, `gStarfieldY`, scroll), which only space levels draw.
 
@@ -259,7 +266,11 @@ What changed (`src/port/coop/game/players.c`, two `// COOP:` checks in `Play_Upd
   player's state and position per frame.
 - A joined player goes out (parked and hidden, `draw = 0`) as soon as player 0 is no longer `ACTIVE` or `U_TURN`
   (level complete, down), and `Player_Down` returns early for co-op players 2+ (one `// COOP:` check), so they go
-  out instead. Out players stay out until the next `Play_Init`; respawn is a game rule (WP-16).
+  out instead. Out players stay out until the next `Play_Init`; respawn is a game rule (WP-16). `draw` is cleared
+  again on every frame while out, so a player that goes down is drawn for that one frame only.
+- The "last player set up" check in `Player_Setup` is back to upstream's `gCamCount` (`src/engine/fox_play.c:4933`).
+  Only player 0 runs `Player_Setup` now, so with `CoopPlayers_Count()` the check never fired, `gClearPlayerInfo`
+  stayed set, and every level start reset lives, bombs, laser and team shields: game over could not be reached.
 
 Tested (Windows 11 Home 10.0.26200, MSVC 14.44.35207, Debug, US 1.0 ROM, default graphics backend from a fresh
 config; this branch on top of WP-10 8b78fbf5, merged locally with the WP-03 replay code 070256bd for the test only):

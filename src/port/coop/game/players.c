@@ -130,6 +130,8 @@ int32_t CoopPlayers_SkipUpdate(int32_t index) {
 
         case COOP_SLOT_OUT:
         default:
+            // Player_Update turns draw back on after a Player_Down in the same frame, so hide it again here.
+            gPlayer[index].draw = false;
             return 1;
     }
 }

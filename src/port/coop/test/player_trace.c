@@ -18,8 +18,8 @@ static void CoopTrace_OnGamePostUpdate(IEvent* event) {
     fprintf(sTraceFile, "frame=%d level=%d mode=%d players=%d", gGameFrameCount, gCurrentLevel, gLevelMode,
             CoopPlayers_Count());
     for (i = 0; i < CoopPlayers_Count(); i++) {
-        fprintf(sTraceFile, " p%d=%d,%d,%.1f,%.1f,%.1f", i, gPlayer[i].state, gPlayer[i].csState, gPlayer[i].pos.x,
-                gPlayer[i].pos.y, gPlayer[i].trueZpos);
+        fprintf(sTraceFile, " p%d=%d,%d,%.1f,%.1f,%.1f,%d,%d", i, gPlayer[i].state, gPlayer[i].csState, gPlayer[i].pos.x,
+                gPlayer[i].pos.y, gPlayer[i].trueZpos, CoopPlayers_IsParked(i), gPlayer[i].draw);
     }
     fputc('\n', sTraceFile);
     if ((gGameFrameCount % 60) == 0) {
