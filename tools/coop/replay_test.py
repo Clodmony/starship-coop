@@ -2,13 +2,15 @@
 """Tests for the replay tools themselves (#54): a run stays in its own folder, and a damaged replay never passes.
 
     python tools/coop/replay_test.py                                # unattended; prints PASS or FAIL
+    python tools/coop/replay_test.py --jobs 2                       # two scenarios at a time
     python tools/coop/replay_test.py --only header-only,cut-frame
     python tools/coop/replay_test.py --list
     python tools/coop/replay_test.py --exe <build>/Starship         # default: the newest build found
 
 Records a short replay nobody plays, then plays it whole and damaged through the command lines of replay.py,
 hash_check.py and determinism.py, and checks each exit code and result line. Needs a build with assets
-(python tools/coop/build.py --assets). Exit code 0 when every scenario holds, 1 otherwise.
+(python tools/coop/build.py --assets). Exit code 0 when every scenario holds, 1 otherwise. same-second starts three
+tools at once: each must play in a run folder of its own (#69).
 
 Every tool starts with SHIP_HOME set to a decoy folder, never the value from your shell, so a tool that lets it through
 can only write into the decoy. That fails the scenario, and so does a run folder the game did not write its config
@@ -25,6 +27,7 @@ import subprocess
 import sys
 import time
 from collections import namedtuple
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -35,6 +38,7 @@ ARCHIVE = "sf64.o2r"  # the one file a decoy starts with
 HEADER_SIZE = 40  # ReplayHeader in src/port/coop/test/replay.c
 FRAMES = 120  # whole frames in the test replay: 4 seconds of game
 CUT_FRAMES = 30  # whole frames left before the cut in cut-frame
+TOGETHER = 3  # tools in same-second: three starts within a second cover at most two clock seconds, so two share one
 CHANGED_FRAME = 20  # frame whose checkpoint is changed in mismatch and cut-mismatch
 TIMEOUT = "120"  # per game run; a run takes about 20 s
 RUN_FOLDER = re.compile(r"test-(?:replay|trace)-[a-z0-9-]*?\d{8}-\d{6}(?:-\d+)?")  # as the tools name them
@@ -56,6 +60,7 @@ SCENARIOS = {
     "cut-mismatch": Scenario("cut-mismatch", "replay", 1, "FAIL_TRUNCATED", CUT_FRAMES),
     "short-header": Scenario("short-header", "replay", 1, "ERROR_BAD_FILE", 0),
     "empty-file": Scenario("empty-file", "replay", 1, "ERROR_BAD_FILE", 0),
+    "same-second": Scenario("whole", "replay", 0, None, None),
     "hash-whole": Scenario("whole", "hash", 0, None, None),
     "hash-header-only": Scenario("header-only", "hash", 1, None, None),
     "hash-short-header": Scenario("short-header", "hash", 1, None, None),
@@ -168,8 +173,23 @@ def check(bench, name, scenario, files):
     return failures
 
 
+def check_together(bench, name, files):
+    """Start TOGETHER tools at the same moment. Returns their failures."""
+    command = COMMANDS["replay"](str(files["whole"]))
+    with ThreadPoolExecutor(max_workers=TOGETHER) as pool:
+        results = list(pool.map(lambda i: bench.tool(f"{name}-{i}", command), range(TOGETHER)))
+    failures = [failure for _, _, found in results for failure in found]
+    failures += [f"exit code {code}, want 0" for code, _, _ in results if code != 0]
+    folders = {folder for _, output, _ in results for folder in RUN_FOLDER.findall(output)}
+    if len(folders) != TOGETHER:
+        failures.append(f"{TOGETHER} tools played in {len(folders)} run folders")
+    return failures
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--jobs", type=int, default=1,
+                   help="scenarios at a time (default 1); a hash or same-second scenario is three games by itself")
     p.add_argument("--only", help="comma-separated scenarios (default: all)")
     p.add_argument("--list", action="store_true", help="print the scenarios and stop")
     p.add_argument("--exe", help="Starship executable (default: newest build found)")
@@ -193,13 +213,20 @@ def main():
         print("replay_test: FAIL")
         return 1
 
-    failed = 0
-    for name in chosen:
+    def run(name):
         began = time.monotonic()
-        failures = check(bench, name, SCENARIOS[name], files)
-        failed += bool(failures)
-        print(f"replay_test: {name}: " + (f"FAIL: {'; '.join(failures)}" if failures else "ok")
-              + f" ({time.monotonic() - began:.0f}s)", flush=True)
+        if name == "same-second":
+            failures = check_together(bench, name, files)
+        else:
+            failures = check(bench, name, SCENARIOS[name], files)
+        return failures, time.monotonic() - began
+
+    failed = 0
+    with ThreadPoolExecutor(max_workers=args.jobs) as pool:
+        for name, (failures, seconds) in zip(chosen, pool.map(run, chosen)):
+            failed += bool(failures)
+            print(f"replay_test: {name}: " + (f"FAIL: {'; '.join(failures)}" if failures else "ok")
+                  + f" ({seconds:.0f}s)", flush=True)
 
     print(f"replay_test: {len(chosen) - failed}/{len(chosen)} scenarios OK, {time.monotonic() - start:.0f}s")
     if failed:

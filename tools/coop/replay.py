@@ -14,6 +14,7 @@ frames or a cut last frame fails. python tools/coop/replay_test.py tests all thi
 A replay file holds raw structs: it only plays back on the same build and platform it was recorded on.
 """
 import argparse
+import itertools
 import json
 import os
 import shutil
@@ -52,8 +53,16 @@ def find_data(exe, name):
 
 
 def make_run_dir(exe, mode):
-    run = ROOT / "local" / f"test-replay-{mode}-{time.strftime('%Y%m%d-%H%M%S')}"
-    run.mkdir(parents=True)
+    # Runs can start in the same second, in two processes or in two threads of one, and with the same tag. mkdir either
+    # makes the folder or says it is taken, so no two runs get one folder and the later one adds a number.
+    stamped = ROOT / "local" / f"test-replay-{mode}-{time.strftime('%Y%m%d-%H%M%S')}"
+    for number in itertools.count(1):
+        run = stamped if number == 1 else stamped.with_name(f"{stamped.name}-{number}")
+        try:
+            run.mkdir(parents=True)
+            break
+        except FileExistsError:
+            pass
     for name in DATA_FILES:
         src = find_data(exe, name)
         if src is None:
