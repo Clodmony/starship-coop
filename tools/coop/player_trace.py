@@ -43,7 +43,7 @@ upgraded lasers, and with SF64_COOP_TRACE_STEER, because a replay cannot aim at 
 
   - at least --min-hits shots of players 1 and up hit a wingman while the radio was free; none of those hits holds an
     enemy's dmgSource or starts an enemy-hit line,
-  - hits on wingmen by Granga's missiles are the control: at least --min-enemy of them start their enemy-hit line. A
+  - hits on wingmen by a boss's missiles are the control: at least --min-enemy of them start their enemy-hit line. A
     script line can take the radio on the same frame, so not every one does,
   - a ground hit of upgraded lasers leaves two marks: at least --min-ground frames have two while a player 1 and up
     has them, and none has two once those players are back on single lasers. Player 0 keeps gHyperLaser and does not
