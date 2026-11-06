@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
-"""Tests that the game stops soon after a stop signal and leaves its files whole (#71). Linux only.
+"""Tests that a test run stops soon after a stop signal and leaves its files whole (#71). Linux only.
 
     python tools/coop/exit_test.py                       # unattended; prints PASS or FAIL
     python tools/coop/exit_test.py --only record,play --repeat 10
     python tools/coop/exit_test.py --list
 
 Each run starts one game in its own folder, waits until it draws frames, sends the signal at a random moment and gives
-the game EXIT_LIMIT seconds to end with exit code 0. A game still running then gets SIGKILL and fails the run. The
-replay and hash scenarios also check what the game wrote on the way out: the report, a replay of whole frames with
-nothing missing at the end, and the closing line of the hash log. Needs a build with assets (python tools/coop/build.py
---assets) or --exe. Exit code 0 when every run holds, 1 otherwise.
+the game EXIT_LIMIT seconds to end with exit code 0. A game still running then gets SIGKILL and fails the run. Each
+scenario also checks what the game wrote on the way out: the closing line of the hash log and, with a replay, the
+report and a replay file of whole frames with nothing missing at the end.
+
+The game only takes this path in a test run, which it knows by the variables in src/port/coop/test/stop_signal.h. A run
+without a replay asks for it with SF64_COOP_HASH_LOG. The scenario plain sets none of them and shows the other side: the
+game keeps upstream's handler, which never ends it with exit code 0. It waits PLAIN_WAIT seconds for that, then SIGKILL.
+
+Needs a build with assets (python tools/coop/build.py --assets) or --exe. Exit code 0 when every run holds, 1 otherwise.
 
 On Linux the game runs without a window and off the GPU. Everything lands under local/test-*: the folders are deleted
 when all runs hold and kept for reading when one fails.
@@ -33,16 +38,18 @@ import replay as replay_tool  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 EXIT_LIMIT = 10  # seconds; run_game in replay.py allows 15 before it uses SIGKILL
+PLAIN_WAIT = 3  # seconds; ten times what the slowest test run took to end
 READY_LIMIT = 120  # seconds until the game must have drawn frames
 READY_FILE = "imgui.ini"  # ImGui writes it a few seconds after it starts to draw
 MAX_DELAY = 1.5  # seconds after READY_FILE, so the signal does not land on the same point of a frame each time
 
-# name: signal to send, mode (None, "record" or "play"), result line wanted in the report
+# name: signal to send, mode ("plain", "hash", "record" or "play"), result line wanted in the report
 Scenario = namedtuple("Scenario", "signal mode result")
 SCENARIOS = {
-    "idle": Scenario(signal.SIGTERM, None, None),
-    "sigint": Scenario(signal.SIGINT, None, None),
-    "sigquit": Scenario(signal.SIGQUIT, None, None),
+    "plain": Scenario(signal.SIGTERM, "plain", None),
+    "idle": Scenario(signal.SIGTERM, "hash", None),
+    "sigint": Scenario(signal.SIGINT, "hash", None),
+    "sigquit": Scenario(signal.SIGQUIT, "hash", None),
     "record": Scenario(signal.SIGTERM, "record", "RECORDED"),
     "play": Scenario(signal.SIGTERM, "play", "FAIL_INCOMPLETE"),
 }
@@ -52,9 +59,10 @@ def start_game(exe, run, scenario, replay):
     env = {k: v for k, v in os.environ.items() if not k.startswith("SF64_COOP_")}
     env.update(SHIP_HOME=str(run), SDL_VIDEODRIVER="offscreen", SDL_AUDIODRIVER="dummy", LIBGL_ALWAYS_SOFTWARE="1",
                GALLIUM_DRIVER="llvmpipe")
-    if scenario.mode is not None:
+    if scenario.mode in ("record", "play"):
         env["SF64_COOP_REPLAY_RECORD" if scenario.mode == "record" else "SF64_COOP_REPLAY_PLAY"] = str(replay)
         env["SF64_COOP_REPLAY_REPORT"] = str(run / "replay-report.txt")
+    if scenario.mode != "plain":
         env["SF64_COOP_HASH_LOG"] = str(run / "state-hash.txt")
     return subprocess.Popen([str(exe)], cwd=run, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -82,6 +90,19 @@ def stop(proc, sig):
     return elapsed, [] if proc.returncode == 0 else [f"exit code {proc.returncode}, want 0"]
 
 
+def stop_plain(proc, sig):
+    """Send sig to a game with no test variable. Only the handler of a test run ends it with exit code 0, so that is the
+    failure; a game still hanging after PLAIN_WAIT seconds is what upstream's handler does. Same return as stop()."""
+    start = time.monotonic()
+    proc.send_signal(sig)
+    try:
+        proc.wait(timeout=PLAIN_WAIT)
+    except subprocess.TimeoutExpired:
+        return None, []
+    elapsed = time.monotonic() - start
+    return elapsed, ["exit code 0: a plain game lost upstream's handler"] if proc.returncode == 0 else []
+
+
 def check_replay_file(replay, report_frames):
     data = replay.read_bytes() if replay.exists() else b""
     if len(data) < replay_tool.HEADER_SIZE:
@@ -101,24 +122,28 @@ def check_replay_file(replay, report_frames):
 
 def check_files(run, scenario, replay):
     """What the game must have written on its way out. Returns (failures, frames in the report or None)."""
-    if scenario.mode is None:
+    if scenario.mode == "plain":
         return [], None
-    report = replay_tool.read_report(run / "replay-report.txt")
-    if report is None:
-        return ["no report, or a report without its result line"], None
     failures = []
-    if report["result"] != scenario.result:
-        failures.append(f"result {report['result']}, want {scenario.result}")
-    frames = int(report.get("frames", -1))
-    if frames <= 0:
-        failures.append("report says no frames ran")
-    if scenario.mode == "record":
-        failures += check_replay_file(replay, frames)
+    frames = None
+    if scenario.mode != "hash":
+        report = replay_tool.read_report(run / "replay-report.txt")
+        if report is None:
+            return ["no report, or a report without its result line"], None
+        if report["result"] != scenario.result:
+            failures.append(f"result {report['result']}, want {scenario.result}")
+        frames = int(report.get("frames", -1))
+        if frames <= 0:
+            failures.append("report says no frames ran")
+        if scenario.mode == "record":
+            failures += check_replay_file(replay, frames)
     log = run / "state-hash.txt"
     lines = log.read_text(encoding="utf-8", errors="replace").splitlines() if log.exists() else []
     end = re.fullmatch(r"# end frames=(\d+)", lines[-1]) if lines else None
     if end is None:
         failures.append("hash log has lost its closing line")
+    elif frames is None:
+        frames = int(end.group(1))
     elif int(end.group(1)) != frames:
         failures.append(f"hash log says {end.group(1)} frames, the report {frames}")
     return failures, frames
@@ -135,7 +160,7 @@ def run_once(exe, folder, name, scenario, number):
         if not wait_ready(proc, run):
             return None, f"game did not get to draw (exit code {proc.poll()})", ["game did not start"], run
         time.sleep(random.uniform(0, MAX_DELAY))
-        elapsed, failures = stop(proc, scenario.signal)
+        elapsed, failures = (stop_plain if scenario.mode == "plain" else stop)(proc, scenario.signal)
     finally:
         if proc.poll() is None:
             # Only the process this script started.
@@ -158,7 +183,7 @@ def main():
 
     if args.list:
         for name, s in SCENARIOS.items():
-            print(f"{name}: {s.signal.name}, {s.mode or 'no replay'}")
+            print(f"{name}: {s.signal.name}, {s.mode}")
         return 0
     if not sys.platform.startswith("linux"):
         sys.exit("exit_test: Linux only; only there does libultraship catch these signals")
