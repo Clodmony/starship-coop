@@ -106,6 +106,18 @@ result:     9/9 scenarios, plain and under AddressSanitizer and UBSan. All 129 s
 ```
 
 ```
+date:       2026-11-06
+commit:     issue/58-session-characters (WP-34), on 95962d04
+identity:   no game, no ROM; Linux, GCC, Debug; 2 to 4 processes, UDP over loopback, chaos relay
+what ran:   python tools/coop/session_test.py, then with --asan; python tools/coop/session_mutants.py, then with --asan;
+            python tools/coop/net_test.py
+result:     12/12 scenarios, plain and under AddressSanitizer and UBSan, with three clients in characters, taken and
+            taken_bad_wifi. All 225 session breaks caught (238 break-and-test pairs), all 4 sanitizer breaks caught,
+            17/17 transport scenarios. Session only: nothing in the game calls it yet, and until WP-17 a character
+            changes nothing in a level.
+```
+
+```
 date:       2026-11-05
 commit:     issue/19-session (WP-21), on 1ec6c677
 identity:   no game, no ROM; Windows 11, MSVC 19.44, Debug; 2 or 3 processes, UDP over loopback, chaos relay
