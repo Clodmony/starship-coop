@@ -13,6 +13,7 @@
 #include "port/Engine.h"
 #include "port/notification/notification.h"
 #include "port/coop/ui/menu_window.h" // COOP: the co-op menu (WP-25)
+#include "port/coop/ui/version_label.h" // COOP: build id in the menu bar (#26)
 #include "utils/StringHelper.h"
 
 #ifdef __SWITCH__
@@ -941,6 +942,8 @@ void GameMenuBar::DrawElement() {
         ImGui::SetCursorPosY(0.0f);
 
         DrawDebugMenu();
+
+        CoopUi_DrawVersionLabel(); // COOP: which co-op build this is (#26)
 
         ImGui::EndMenuBar();
     }
