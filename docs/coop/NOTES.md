@@ -101,7 +101,7 @@ Unknown:
 ### 2026-11-06, #26, what a co-op build needs to start, and what game data it holds
 
 Run on the game code at `e2cb9f1d` and on `797c678b`. ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no
-window. No CI run: nothing here was built by Actions, and nothing was run on Windows.
+window. All runs were local, except where a CI run is named, and no game was started on Windows.
 
 **Observed**
 
