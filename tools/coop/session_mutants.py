@@ -64,8 +64,23 @@ CLIENT_ANSWER_GATE = ("if (s->client == CLIENT_WAIT_ANSWER &&\n"
 CLIENT_GAME_GATE = "if (s->client == CLIENT_ACTIVE && net.msgId >= COOP_MSG_SESSION_END) {"
 CLIENT_MESSAGE = ("Event_Init(ev, COOP_SESSION_EV_MESSAGE, 0);\n                    ev->msgId = net.msgId;\n"
                   "                    ev->size = net.size;\n                    ev->data = net.data;")
-PICK_GUARD = "if (s->client != CLIENT_ACTIVE || character <= COOP_CHARACTER_FOX || character >= COOP_CHARACTER_COUNT) {"
+PICK_GUARD = ("if (s->client != CLIENT_ACTIVE || s->started || character <= COOP_CHARACTER_FOX ||\n"
+              "        character >= COOP_CHARACTER_COUNT) {")
 PICK_SEND = "return s->t->ops->send(s->t, 0, COOP_MSG_SESSION_PICK, &wire, 1, COOP_NET_RELIABLE);"
+START_GUARD = "if (!s->isHost || s->started || start->level >= COOP_LEVEL_START_LEVELS) {"
+START_WAIT = ("if (s->peers[i].state == PEER_WAIT_HELLO || s->roster.character[i + 1] == "
+              "COOP_CHARACTER_UNPICKED) {")
+START_LOOP = "for (i = 0; i < COOP_NET_MAX_PEERS; i++) {\n        " + START_WAIT
+LEVEL_SEND = ("if (s->t->ops->send(s->t, i, COOP_MSG_SESSION_LEVEL_START, s->buffer, LEVEL_START_SIZE,\n"
+              "                                COOP_NET_RELIABLE)) {")
+LEVEL_HEAD = ("if (size != LEVEL_START_SIZE || data[0] >= COOP_LEVEL_START_LEVELS ||\n"
+              "        !Roster_Valid(roster, COOP_SESSION_PLAYERS, self)) {")
+LEVEL_UNPICKED = ("for (i = 1; i < COOP_SESSION_PLAYERS; i++) {\n        if (roster[i] == COOP_CHARACTER_UNPICKED) {")
+LEVEL_GATE = "if (s->client == CLIENT_ACTIVE && !s->started && net.msgId == COOP_MSG_SESSION_LEVEL_START) {"
+WRITE_VALUE = ("*out++ = (uint8_t) value;\n        *out++ = (uint8_t) (value >> 8);\n"
+               "        *out++ = (uint8_t) (value >> 16);\n        *out++ = (uint8_t) (value >> 24);")
+READ_VALUE = ("uint32_t value =\n            (uint32_t) data[0] | ((uint32_t) data[1] << 8) | "
+              "((uint32_t) data[2] << 16) | ((uint32_t) data[3] << 24);")
 CLIENT_ROSTER = ("return (s->client == CLIENT_ACTIVE && s->roster.character[0] == COOP_CHARACTER_FOX) ? "
                  "&s->roster : NULL;")
 CHARACTER_READ = "return net->size == 1 && net->data[0] >= COOP_CHARACTER_FOX && net->data[0] < COOP_CHARACTER_COUNT;"
@@ -75,7 +90,7 @@ OWED_REFUSAL = ("if (p->refusedPick != 0 &&\n"
 OWED_ROSTER = ("if (p->rosterDue && s->t->ops->send(s->t, i, COOP_MSG_SESSION_ROSTER, s->roster.character,\n"
                "                                            sizeof(s->roster.character), COOP_NET_RELIABLE)) {\n"
                "            p->rosterDue = false;\n        }")
-HOST_PICK_GATE = "if (p->state == PEER_JOINED && net.msgId == COOP_MSG_SESSION_PICK) {"
+HOST_PICK_GATE = "if (p->state == PEER_JOINED && !s->started && net.msgId == COOP_MSG_SESSION_PICK) {"
 BAD_PICK = ("s->t->ops->disconnect(s->t, peer);\n        p->state = PEER_FREE;\n"
             "        Host_Left(s, peer, COOP_SESSION_END_BAD_MESSAGE, ev);\n        return true;")
 TAKEN_LOOP = "for (i = 0; i < COOP_SESSION_PLAYERS; i++) {\n        if (s->roster.character[i] == net->data[0]) {"
@@ -306,9 +321,10 @@ BREAKS = [
      "s->roster.character[0] = COOP_CHARACTER_FOX;", SIM),
     ("pick_before_welcome", PICK_GUARD, PICK_GUARD.replace("s->client != CLIENT_ACTIVE || ", ""), SIM),
     ("pick_fox", PICK_GUARD, PICK_GUARD.replace("character <= COOP", "character < COOP"), SIM),
-    ("pick_no_low_bound", PICK_GUARD, PICK_GUARD.replace("character <= COOP_CHARACTER_FOX || ", ""), SIM),
-    ("pick_no_high_bound", PICK_GUARD, PICK_GUARD.replace(" || character >= COOP_CHARACTER_COUNT", ""), SIM),
+    ("pick_no_low_bound", PICK_GUARD, PICK_GUARD.replace("character <= COOP_CHARACTER_FOX ||\n        ", ""), SIM),
+    ("pick_no_high_bound", PICK_GUARD, PICK_GUARD.replace(" ||\n        character >= COOP_CHARACTER_COUNT", ""), SIM),
     ("pick_high_off_by_one", PICK_GUARD, PICK_GUARD.replace("character >= COOP", "character > COOP"), SIM),
+    ("pick_after_level_start", PICK_GUARD, PICK_GUARD.replace("s->started || ", ""), SIM),
     ("pick_ignores_result", PICK_SEND, PICK_SEND.replace("return ", "") + "\n    return true;", SIM),
     ("pick_unreliable", PICK_SEND, PICK_SEND.replace("COOP_NET_RELIABLE", "COOP_NET_UNRELIABLE"), SIM),
     ("pick_wrong_id", PICK_SEND, PICK_SEND.replace("COOP_MSG_SESSION_PICK", "COOP_MSG_SESSION_ROSTER"), SIM),
@@ -382,7 +398,7 @@ BREAKS = [
      "p->state = PEER_WAIT_HELLO;", SIM),
 
     # Characters: the host decides a pick.
-    ("host_pick_any_state", HOST_PICK_GATE, "if (net.msgId == COOP_MSG_SESSION_PICK) {", SIM),
+    ("host_pick_any_state", HOST_PICK_GATE, "if (!s->started && net.msgId == COOP_MSG_SESSION_PICK) {", SIM),
     ("host_pick_off", HOST_PICK_GATE, "if (0) {", SIM),
     ("host_pick_event_lost", "if (Host_Pick(s, net.peer, &net, ev)) {\n                        return true;\n"
      "                    }\n", "Host_Pick(s, net.peer, &net, ev);\n", SIM),
@@ -447,6 +463,93 @@ BREAKS = [
     ("client_pick_refuse_off", PICK_REFUSE_GATE, "if (0) {", SIM),
     ("client_pick_refuse_lost", "Client_PickRefused(s, &net, ev);\n                    return true;",
      "Client_PickRefused(s, &net, ev);\n                    break;", SIM),
+
+    # Level start: who may start, and when.
+    ("start_on_a_client", START_GUARD, START_GUARD.replace("!s->isHost || ", ""), SIM),
+    ("start_twice", START_GUARD, START_GUARD.replace("s->started || ", ""), SIM),
+    ("start_any_level", START_GUARD, START_GUARD.replace(" || start->level >= COOP_LEVEL_START_LEVELS", ""), SIM),
+    ("start_level_off_by_one", START_GUARD, START_GUARD.replace("start->level >= COOP", "start->level > COOP"), SIM),
+    ("start_level_too_low", START_GUARD, START_GUARD.replace("LEVELS)", "LEVELS - 1)"), SIM),
+    ("start_past_the_handshake", START_WAIT,
+     "if (s->roster.character[i + 1] == COOP_CHARACTER_UNPICKED) {", SIM),
+    ("start_past_the_unpicked", START_WAIT, "if (s->peers[i].state == PEER_WAIT_HELLO) {",
+     ["sim", "unpicked_holds_start"]),
+    ("start_wrong_slot", START_WAIT, START_WAIT.replace("character[i + 1]", "character[i]"), SIM),
+    ("start_skips_first", START_LOOP, START_LOOP.replace("i = 0", "i = 1"), SIM),
+    ("start_skips_last", START_LOOP, START_LOOP.replace("i < COOP_NET_MAX_PEERS", "i < COOP_NET_MAX_PEERS - 1"), SIM),
+    ("start_not_kept", "s->level = *start;\n", "", ["sim", "level_start"]),
+    ("start_roster_not_taken", "memcpy(s->level.roster, s->roster.character, sizeof(s->level.roster));\n", "", SIM),
+    ("start_stays_open", "s->started = true;\n    s->levelEvent = true;", "s->levelEvent = true;", SIM),
+    ("start_no_host_event", "s->started = true;\n    s->levelEvent = true;", "s->started = true;", SIM),
+    ("start_nobody_told", "s->peers[i].levelDue = true;\n", "", ["sim", "level_start"]),
+
+    # Level start: on the wire, out and in.
+    ("level_write_wrong_level", "*out++ = start->level;", "*out++ = start->phase;", SIM),
+    ("level_write_wrong_phase", "*out++ = start->phase;", "*out++ = start->level;", SIM),
+    ("level_write_no_roster", "memcpy(out, start->roster, COOP_SESSION_PLAYERS);\n", "", SIM),
+    ("level_write_byte_0", WRITE_VALUE, WRITE_VALUE.replace("(uint8_t) value;", "0;"), SIM),
+    ("level_write_byte_1", WRITE_VALUE, WRITE_VALUE.replace("(value >> 8)", "0"), SIM),
+    ("level_write_byte_2", WRITE_VALUE, WRITE_VALUE.replace("(value >> 16)", "0"), SIM),
+    ("level_write_byte_3", WRITE_VALUE, WRITE_VALUE.replace("(value >> 24)", "0"), SIM),
+    ("level_write_last_lost", "for (i = 0; i < COOP_LEVEL_START_VALUES; i++) {\n        uint32_t value = (uint32_t) "
+     "start->values[i];", "for (i = 0; i < COOP_LEVEL_START_VALUES - 1; i++) {\n        uint32_t value = (uint32_t) "
+     "start->values[i];", SIM),
+    ("level_read_wrong_level", "start->level = *data++;", "start->level = 0; data++;", SIM),
+    ("level_read_wrong_phase", "start->phase = *data++;", "start->phase = 0; data++;", SIM),
+    ("level_read_no_roster", "memcpy(start->roster, data, COOP_SESSION_PLAYERS);\n", "", SIM),
+    ("level_read_byte_0", READ_VALUE, READ_VALUE.replace("(uint32_t) data[0] | ", ""), SIM),
+    ("level_read_byte_1", READ_VALUE, READ_VALUE.replace("((uint32_t) data[1] << 8) | ", ""), SIM),
+    ("level_read_byte_2", READ_VALUE, READ_VALUE.replace("((uint32_t) data[2] << 16) |", "0 |"), SIM),
+    ("level_read_byte_3", READ_VALUE, READ_VALUE.replace("((uint32_t) data[3] << 24)", "0"), SIM),
+    ("level_read_values_lost", "start->values[i] = (int32_t) value;\n", "", SIM),
+    ("level_size_short", "#define LEVEL_START_SIZE (2 + COOP_SESSION_PLAYERS + 4 * COOP_LEVEL_START_VALUES)",
+     "#define LEVEL_START_SIZE (2 + COOP_SESSION_PLAYERS + 4 * COOP_LEVEL_START_VALUES - 1)", SIM),
+
+    # Level start: what the host owes.
+    ("level_stale_buffer", "LevelStart_Write(&s->level, s->buffer);\n", "", SIM),
+    ("level_unreliable", LEVEL_SEND, LEVEL_SEND.replace("COOP_NET_RELIABLE", "COOP_NET_UNRELIABLE"), SIM),
+    ("level_wrong_id", LEVEL_SEND, LEVEL_SEND.replace("COOP_MSG_SESSION_LEVEL_START", "COOP_MSG_SESSION_ROSTER"), SIM),
+    ("level_sent_for_good", LEVEL_SEND + "\n                p->levelDue = false;\n            }",
+     LEVEL_SEND + "\n            }\n            p->levelDue = false;", SIM),
+    ("level_sent_forever", "                p->levelDue = false;\n", "", SIM),
+    ("level_event_forever", "s->levelEvent = false;\n", "", SIM),
+    ("level_event_off", "if (Host_RosterEvent(s, ev) || Host_LevelEvent(s, ev) || Host_Tick(s, nowMs, ev)) {",
+     "if (Host_RosterEvent(s, ev) || Host_Tick(s, nowMs, ev)) {", SIM),
+    ("level_event_no_start", "ev->levelStart = &s->level;\n", "", SIM),
+    ("late_client_let_in", "if (s->started) {\n        Host_Refuse(s, peer, COOP_SESSION_REFUSE_STARTED, nowMs, ev);\n"
+     "        return;\n    }\n", "", ["sim", "late_client"]),
+    ("late_client_no_reason", "Host_Refuse(s, peer, COOP_SESSION_REFUSE_STARTED, nowMs, ev);",
+     "Host_Refuse(s, peer, 0, nowMs, ev);", ["sim", "late_client"]),
+    ("late_client_host_text", 'if (reasons & COOP_SESSION_REFUSE_MALFORMED) {\n        snprintf(s->text, sizeof(s->text), '
+     '"%s", CoopSession_EndText(COOP_SESSION_END_BAD_MESSAGE));\n    } else if (reasons & COOP_SESSION_REFUSE_STARTED) {',
+     'if (reasons & COOP_SESSION_REFUSE_MALFORMED) {\n        snprintf(s->text, sizeof(s->text), "%s", CoopSession_EndText('
+     'COOP_SESSION_END_BAD_MESSAGE));\n    } else if (0) {', SIM),
+    ("late_client_client_text", "} else if (ev->diff & COOP_SESSION_REFUSE_STARTED) {", "} else if (0) {",
+     ["sim", "late_client"]),
+    ("pick_open_after_level_start", HOST_PICK_GATE, HOST_PICK_GATE.replace("!s->started && ", ""), SIM),
+
+    # Level start: what a client takes.
+    ("client_level_any_state", LEVEL_GATE, LEVEL_GATE.replace("s->client == CLIENT_ACTIVE && ", ""), SIM),
+    ("client_level_twice", LEVEL_GATE, LEVEL_GATE.replace("!s->started && ", ""), SIM),
+    ("client_level_off", LEVEL_GATE, "if (0) {", ["sim", "level_start"]),
+    ("client_level_lost", "Client_LevelStart(s, &net, ev);\n                    return true;",
+     "Client_LevelStart(s, &net, ev);\n                    break;", SIM),
+    ("client_level_not_read", "if (!LevelStart_Valid(net->data, net->size, s->player)) {", "if (0) {", SIM),
+    ("client_level_stays_open", "LevelStart_Read(&s->level, net->data);\n    s->started = true;",
+     "LevelStart_Read(&s->level, net->data);", SIM),
+    ("client_level_no_values", "LevelStart_Read(&s->level, net->data);\n", "", SIM),
+    ("level_trailing_accepted", LEVEL_HEAD, LEVEL_HEAD.replace("size != LEVEL_START_SIZE", "size < LEVEL_START_SIZE"),
+     SIM),
+    ("level_any_level", LEVEL_HEAD, LEVEL_HEAD.replace(" || data[0] >= COOP_LEVEL_START_LEVELS", ""), SIM),
+    ("level_level_off_by_one", LEVEL_HEAD, LEVEL_HEAD.replace("data[0] >= COOP", "data[0] > COOP"), SIM),
+    ("level_level_too_low", LEVEL_HEAD, LEVEL_HEAD.replace("LEVELS ||", "LEVELS - 1 ||"), SIM),
+    ("level_any_roster", LEVEL_HEAD, LEVEL_HEAD.replace(" ||\n        !Roster_Valid(roster, COOP_SESSION_PLAYERS, self)",
+                                                       ""), SIM),
+    ("level_wrong_roster_bytes", "const uint8_t* roster = data + 2;", "const uint8_t* roster = data + 1;", SIM),
+    ("level_unpicked_taken", "if (roster[i] == COOP_CHARACTER_UNPICKED) {", "if (0) {", SIM),
+    ("level_unpicked_skips_first", LEVEL_UNPICKED, LEVEL_UNPICKED.replace("i = 1", "i = 2"), SIM),
+    ("level_unpicked_skips_last", LEVEL_UNPICKED,
+     LEVEL_UNPICKED.replace("i < COOP_SESSION_PLAYERS", "i < COOP_SESSION_PLAYERS - 1"), SIM),
 ]
 
 # Texts the sanitizer breaks use more than once.
@@ -463,6 +566,7 @@ SANITIZER_BREAKS = [
     ("identity_peer_unchecked", "if (peer < 0 || peer >= COOP_NET_MAX_PEERS) {\n        return NULL;\n    }\n", "",
      SIM),
     ("roster_read_past_end", ROSTER_HEAD, ROSTER_HEAD.replace("size != COOP_SESSION_PLAYERS", "size < 1"), SIM),
+    ("level_read_past_end", LEVEL_HEAD, LEVEL_HEAD.replace("size != LEVEL_START_SIZE", "size < 1"), SIM),
     # One side alone, at its very end: its result file is written and looks right, so only its exit code can tell.
     # session_test.py has no log scan like net_test.py --asan because it reads every exit (#92). A scenario that stops
     # reading its host's exit, or that of all its clients, lets one of these two survive.
