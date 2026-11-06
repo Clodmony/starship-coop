@@ -44,6 +44,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import hash_check  # noqa: E402
 import replay as replay_tool  # noqa: E402
+from run_folder import make_run_folder  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 EXIT_LIMIT = 10  # seconds; run_game in replay.py allows 15 before it uses SIGKILL
@@ -311,8 +312,7 @@ def main():
         sys.exit("exit_test: the fault-* scenarios need gdb; leave them out with --only")
 
     exe = replay_tool.find_exe(args.exe)
-    folder = ROOT / "local" / f"test-exit-{time.strftime('%Y%m%d-%H%M%S')}"
-    folder.mkdir(parents=True)
+    folder = make_run_folder(ROOT / "local", "test-exit-")
     hash_check.write_generated_replay(folder / "play.sfcr")
     print(f"exit_test: exe {exe}")
 
