@@ -7,6 +7,8 @@ namespace CoopUi {
 
 // Once the gui exists: adds the window, closed unless the player left it open.
 void Setup();
+// Once the game's events exist, which is after Setup: from here on the session runs with the game's frames.
+void Listen();
 // Inside the menu bar.
 void DrawMenuEntry();
 // Closes the session, if there is one.

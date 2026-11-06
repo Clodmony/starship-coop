@@ -42,6 +42,8 @@ static void Menu_EndSession(CoopMenu* m) {
     m->session = NULL;
     m->phase = COOP_MENU_IDLE;
     m->pendingPick = 0;
+    m->levelStarted = false;
+    m->backend->sessionEnded();
 }
 
 void CoopMenu_Init(CoopMenu* m, const CoopMenuBackend* backend) {
@@ -138,8 +140,8 @@ static bool Choice_Is(uint8_t character) {
 
 // This is the one rule for what can be chosen: the view shows it, and CoopMenu_Pick holds to it.
 static bool Menu_CanPick(const CoopMenu* m, const CoopRoster* roster, uint8_t character) {
-    return m->phase == COOP_MENU_JOINED && roster != NULL && m->pendingPick == 0 && Choice_Is(character) &&
-           Roster_Holder(roster, character) < 0;
+    return m->phase == COOP_MENU_JOINED && !m->levelStarted && roster != NULL && m->pendingPick == 0 &&
+           Choice_Is(character) && Roster_Holder(roster, character) < 0;
 }
 
 bool CoopMenu_Pick(CoopMenu* m, uint8_t character) {
@@ -152,6 +154,26 @@ bool CoopMenu_Pick(CoopMenu* m, uint8_t character) {
         return false;
     }
     m->pendingPick = character;
+    return true;
+}
+
+// This is the one rule for the start button: the view shows it, and CoopMenu_Start holds to it. The session decides.
+static bool Menu_CanStart(const CoopMenu* m) {
+    return m->phase == COOP_MENU_HOSTING && CoopSession_CanStart(m->session);
+}
+
+bool CoopMenu_Start(CoopMenu* m) {
+    CoopLevelStart start;
+
+    if (!Menu_CanStart(m)) {
+        return false;
+    }
+    m->message[0] = '\0';
+    m->backend->levelStart(&start);
+    if (!CoopSession_StartLevel(m->session, &start)) {
+        Menu_Say(m, "Could not start the level.");
+        return false;
+    }
     return true;
 }
 
@@ -206,9 +228,15 @@ static void Menu_OnEvent(CoopMenu* m, const CoopSessionEvent* ev) {
                 Menu_Say(m, "%s", ev->text);
             }
             break;
+        case COOP_SESSION_EV_LEVEL_START:
+            // A pick still on its way is dropped, and no answer comes. What this player holds is in the level start.
+            m->pendingPick = 0;
+            m->levelStarted = true;
+            m->backend->enterLevel(ev->levelStart);
+            break;
         case COOP_SESSION_EV_MESSAGE:
-            // Nothing above the session range is for the menu yet. WP-24 (#22): the level start's events go in this
-            // switch. It has no default, so the compiler names a new event.
+            // Nothing above the session range is for the menu yet. This switch has no default, so the compiler names a
+            // new event.
             break;
     }
 }
@@ -287,11 +315,20 @@ void CoopMenu_View(const CoopMenu* m, CoopMenuView* out) {
             players += out->players[i].present;
         }
     }
-    if (m->phase == COOP_MENU_JOINED && roster != NULL) {
+    if (m->phase == COOP_MENU_JOINED && !m->levelStarted && roster != NULL) {
         out->showChoices = true;
         for (i = 0; i < COOP_MENU_CHOICES; i++) {
             View_Choice(m, roster, sChoices[i], &out->choices[i]);
         }
+    }
+    out->showStart = m->phase == COOP_MENU_HOSTING && !m->levelStarted;
+    out->canStart = Menu_CanStart(m);
+    snprintf(out->startLabel, sizeof(out->startLabel), "%s",
+             out->canStart ? "Start the level" : "Start the level (every player has to choose first)");
+    if (m->levelStarted) {
+        snprintf(out->level, sizeof(out->level), "The level has started.");
+    } else if (m->phase == COOP_MENU_JOINED) {
+        snprintf(out->level, sizeof(out->level), "Waiting for the host to start the level.");
     }
 
     switch (m->phase) {

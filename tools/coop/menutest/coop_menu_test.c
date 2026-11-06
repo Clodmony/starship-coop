@@ -4,8 +4,8 @@
 //       The menu layer of src/port/coop/ui/menu.c on the real session and the real transport core, in a virtual
 //       network with a fake clock: no sockets, no window, no game. Prints one line, exits 0 on PASS.
 //   coop_menu_test udp
-//       One host and two clients in this process, over real UDP on loopback, through the same transport the game uses.
-//       Prints one line, exits 0 on PASS.
+//       One host and two clients in this process, over real UDP on loopback, through the same transport the game uses,
+//       up to the level start. Prints one line, exits 0 on PASS.
 
 #define SDL_MAIN_HANDLED
 #include <SDL2/SDL.h>
@@ -87,6 +87,52 @@ static void Id_Test(CoopIdentity* id) {
     id->cvarCount = CoopSimCvars_Count();
     CoopSimCvars_Read(id->cvars, Default_Int, Default_Float);
     sIdentityReads++;
+}
+
+// ---- The game, as far as the menu sees it ----
+
+// The host and three clients. A fifth menu is for a player the host has no room for.
+#define MENUS 5
+#define NOT_TICKING (-1)
+
+#define TEST_LEVEL 3
+#define TEST_PHASE 1
+#define TEST_VALUE_FIRST 7001
+#define TEST_VALUE_LAST (-7002)
+
+static int sTicking = NOT_TICKING; // the menu in CoopMenu_Tick
+static bool sLevelTooHigh;         // the game names a level the session will not start
+static int sLevelReads;
+static int sEnters[MENUS];
+static CoopLevelStart sEntered[MENUS];
+static int sSessionsEnded;
+
+static void Level_FromGame(CoopLevelStart* out) {
+    memset(out, 0, sizeof(*out));
+    out->level = sLevelTooHigh ? COOP_LEVEL_START_LEVELS : TEST_LEVEL;
+    out->phase = TEST_PHASE;
+    out->values[0] = TEST_VALUE_FIRST;
+    out->values[COOP_LEVEL_START_VALUES - 1] = TEST_VALUE_LAST;
+    sLevelReads++;
+}
+
+// A game can only enter a level from where it calls CoopMenu_Tick.
+static void Level_Enter(const CoopLevelStart* start) {
+    EXPECT(sTicking != NOT_TICKING, "a game entered a level outside CoopMenu_Tick");
+    sEntered[sTicking] = *start;
+    sEnters[sTicking]++;
+}
+
+static void Session_Ended(void) {
+    sSessionsEnded++;
+}
+
+static void Level_Reset(void) {
+    sLevelTooHigh = false;
+    sLevelReads = 0;
+    sSessionsEnded = 0;
+    memset(sEnters, 0, sizeof(sEnters));
+    memset(sEntered, 0, sizeof(sEntered));
 }
 
 // ---- Virtual network: the real transport core, a fake clock, a fixed delay ----
@@ -227,7 +273,8 @@ static uint16_t Sim_Port(CoopTransport* t) {
     return sNet.lastPort != 0 ? sNet.lastPort : SIM_PORT;
 }
 
-static const CoopMenuBackend sSimBackend = { Sim_Host, Sim_Connect, Sim_Port, Id_Test };
+static const CoopMenuBackend sSimBackend = { Sim_Host,       Sim_Connect, Sim_Port,     Id_Test,
+                                             Level_FromGame, Level_Enter, Session_Ended };
 
 static void Sim_Reset(uint32_t latencyMs) {
     int n;
@@ -252,6 +299,7 @@ static void Sim_Reset(uint32_t latencyMs) {
     memset(sNet.extraMs, 0, sizeof(sNet.extraMs));
     sIdentityReads = 0;
     sBuild = "test-build";
+    Level_Reset();
 }
 
 static void Sim_Step(void) {
@@ -280,8 +328,6 @@ static void Sim_Step(void) {
 
 // ---- Menus on the virtual network ----
 
-// The host and three clients. A fifth menu is for a player the host has no room for.
-#define MENUS 5
 static CoopMenu sMenus[MENUS];
 #define HOST (&sMenus[0])
 #define A (&sMenus[1])
@@ -313,7 +359,9 @@ static void Run(uint32_t ms) {
     for (t = 0; t < ms; t += SIM_STEP_MS) {
         Sim_Step();
         for (i = 0; i < MENUS; i++) {
+            sTicking = i;
             CoopMenu_Tick(&sMenus[i], sNet.now);
+            sTicking = NOT_TICKING;
         }
     }
 }
@@ -384,6 +432,9 @@ static void Test_Idle(void) {
     CoopMenu_Leave(A);
     EXPECT(sNet.hostCalls == 0 && sNet.connectCalls == 0 && sIdentityReads == 0,
            "without a session the menu opened a transport or read the identity");
+    EXPECT(!v->showStart && !v->canStart && v->level[0] == '\0', "a new menu speaks of a level");
+    EXPECT(!CoopMenu_Start(A), "a level started without a session");
+    EXPECT(sLevelReads == 0 && sSessionsEnded == 0, "without a session the menu touched the game");
 }
 
 static void Bad_Join(const char* address, const char* port, const char* needle) {
@@ -853,7 +904,7 @@ static void Test_Ping(void) {
     Menus_Close();
 }
 
-// A game message reaches the menu's poll. Until WP-24 reads them it must pass by and change nothing.
+// A game message reaches the menu's poll. Nothing reads them yet, so it must pass by and change nothing.
 static void Test_GameMessage(void) {
     static const uint8_t data[4] = { 1, 2, 3, 4 };
     const CoopMenuView* v;
@@ -871,6 +922,189 @@ static void Test_GameMessage(void) {
     EXPECT(v->phase == COOP_MENU_JOINED && v->message[0] == '\0', "a game message changed the client's menu");
     v = View(HOST);
     EXPECT(v->phase == COOP_MENU_HOSTING, "a game message changed the host's menu");
+    Menus_Close();
+}
+
+static void Expect_NoEntry(void) {
+    int i;
+
+    EXPECT(sLevelReads == 0, "the game was asked for a level no one can start");
+    for (i = 0; i < MENUS; i++) {
+        EXPECT(sEnters[i] == 0, "a game entered a level no one started");
+    }
+}
+
+// Start is the host's, and it stays grey while the session would turn it down.
+static void Test_StartButton(void) {
+    const CoopMenuView* v;
+
+    sScenario = "start_button";
+    Menus_Init(20);
+    Start_Host();
+    v = View(HOST);
+    EXPECT(v->showStart && v->canStart, "a host alone cannot start");
+    EXPECT(v->level[0] == '\0', "a host that can start is told to wait");
+    Expect_Lacks(v->startLabel, "choose", "the button says to wait while it can be pressed");
+    EXPECT(v->startLabel[0] != '\0', "the button has no label");
+
+    Join(A);
+    v = View(HOST);
+    EXPECT(v->showStart && !v->canStart, "Start is lit with a client that holds nothing");
+    Expect_Has(v->startLabel, "choose", "the grey button does not say what it waits for");
+    EXPECT(!CoopMenu_Start(HOST), "a click went through with a client that holds nothing");
+    v = View(A);
+    EXPECT(!v->showStart && !v->canStart, "a client has a Start button");
+    Expect_Has(v->level, "Waiting for the host", "a client is not told who starts");
+    EXPECT(!CoopMenu_Start(A), "a client started the level");
+
+    Pick(A, FALCO);
+    EXPECT(View(HOST)->canStart, "Start stays grey with everyone holding a character");
+    Join(B);
+    EXPECT(!View(HOST)->canStart, "Start stays lit with a new client that holds nothing");
+    EXPECT(!CoopMenu_Start(HOST), "a click went through with the last client holding nothing");
+    CoopMenu_Leave(B);
+    Run(500);
+    EXPECT(View(HOST)->canStart, "a client who left holding nothing holds the start up");
+
+    // A client on its way in may not be seen in the roster yet, and it holds nothing either.
+    EXPECT(CoopMenu_Join(B, SIM_ADDRESS, "45000", sNet.now), "joining did not start");
+    while (View(HOST)->canStart) {
+        Run(SIM_STEP_MS);
+        EXPECT(View(B)->phase == COOP_MENU_CONNECTING, "the host never saw the client coming");
+    }
+    EXPECT(!View(HOST)->players[2].present, "this client is in the roster, so this proves nothing");
+    EXPECT(!CoopMenu_Start(HOST), "a click went through with a client in the handshake");
+    Run(500);
+    Pick(B, SLIPPY);
+    EXPECT(View(HOST)->canStart, "Start stays grey with everyone holding a character");
+    Expect_NoEntry();
+
+    // The session has the last word, and a start it turns down leaves the lobby open.
+    sLevelTooHigh = true;
+    EXPECT(!CoopMenu_Start(HOST), "a level that cannot be started went through");
+    Expect_Has(View(HOST)->message, "Could not start", "the host is not told");
+    EXPECT(View(HOST)->canStart && View(HOST)->showStart, "a start that was turned down closed the lobby");
+    Menus_Close();
+}
+
+static void Expect_Entered(int menu, const uint8_t* roster) {
+    const CoopLevelStart* start = &sEntered[menu];
+
+    EXPECT(sEnters[menu] == 1, "a game did not enter the level, or did twice");
+    EXPECT(start->level == TEST_LEVEL && start->phase == TEST_PHASE, "a game entered another level");
+    EXPECT(start->values[0] == TEST_VALUE_FIRST, "a game entered with other values");
+    EXPECT(start->values[COOP_LEVEL_START_VALUES - 1] == TEST_VALUE_LAST, "a game entered with other values");
+    EXPECT(memcmp(start->roster, roster, COOP_SESSION_PLAYERS) == 0, "a game entered with another roster");
+}
+
+// The host and two clients, each with a character.
+static void Start_Three(void) {
+    Start_Host();
+    Join(A);
+    Join(B);
+    Pick(A, FALCO);
+    Pick(B, SLIPPY);
+}
+
+// One click: every game enters the level once, from the session and not from the click, and that closes the lobby.
+static void Test_LevelStart(void) {
+    static const uint8_t roster[COOP_SESSION_PLAYERS] = { FOX, FALCO, SLIPPY, NO_PLAYER };
+    const CoopMenuView* v;
+    uint32_t picks;
+    int i;
+
+    sScenario = "level_start";
+    Menus_Init(20);
+    Start_Three();
+    picks = sNet.picksSent;
+    Expect_Has(View(HOST)->message, "joined", "this test needs an old message to see it go");
+    EXPECT(CoopMenu_Start(HOST), "Start did nothing");
+    EXPECT(View(HOST)->message[0] == '\0', "the old message stayed");
+    EXPECT(sLevelReads == 1, "the game was not asked what to start, or twice");
+    EXPECT(!CoopMenu_Start(HOST), "a second click went through");
+    EXPECT(sLevelReads == 1, "a second click asked the game");
+    EXPECT(sEnters[0] == 0, "the host entered from the click, ahead of the session");
+    Run(500);
+    for (i = 0; i < 3; i++) {
+        Expect_Entered(i, roster);
+    }
+    EXPECT(sEnters[3] == 0 && sEnters[4] == 0, "a menu with no session entered the level");
+    EXPECT(sSessionsEnded == 0, "the level start ended a session");
+
+    v = View(HOST);
+    EXPECT(v->phase == COOP_MENU_HOSTING && !v->showStart && !v->canStart, "the host can still start");
+    Expect_Has(v->level, "The level has started", "the host is not told");
+    Expect_Has(v->players[1].text, "Falco", "the level start changed the host's list");
+    for (i = 1; i < 3; i++) {
+        v = View(&sMenus[i]);
+        EXPECT(v->phase == COOP_MENU_JOINED && !v->showStart, "the level start changed a client's session");
+        EXPECT(!v->showChoices, "a client is offered characters in the level");
+        Expect_Has(v->level, "The level has started", "a client is not told");
+        EXPECT(!CoopMenu_Pick(&sMenus[i], PEPPY), "a pick went through in the level");
+        EXPECT(View(&sMenus[i])->message[0] == '\0', "a pick in the level left an error to read");
+    }
+    EXPECT(sNet.picksSent == picks, "a pick reached the host in the level");
+    Run(1000);
+    EXPECT(sEnters[0] == 1 && sEnters[1] == 1 && sEnters[2] == 1, "a game entered the level again");
+    Menus_Close();
+    EXPECT(sSessionsEnded == 3, "not every session end reached the game");
+}
+
+// A pick still on its way when the host starts is dropped; the level start says what the client holds.
+static void Test_LevelPickInFlight(void) {
+    static const uint8_t roster[COOP_SESSION_PLAYERS] = { FOX, FALCO, SLIPPY, NO_PLAYER };
+    const CoopMenuView* v;
+
+    sScenario = "level_pick_in_flight";
+    Menus_Init(50);
+    Start_Three();
+    EXPECT(CoopMenu_Pick(B, PEPPY), "a free character could not be picked");
+    EXPECT(CoopMenu_Start(HOST), "Start did nothing");
+    Run(1000);
+    Expect_Entered(2, roster);
+    Expect_Entered(1, roster);
+    Expect_Entered(0, roster);
+    v = View(B);
+    EXPECT(B->pendingPick == 0, "a dropped pick is still waited for");
+    EXPECT(v->message[0] == '\0', "a dropped pick reads as an error");
+    Expect_Has(v->players[2].text, "Slippy", "the client shows what it asked for, not what it holds");
+    Menus_Close();
+}
+
+// Whoever ends a session, the game hears it once, and the next session starts from nothing.
+static void Test_LevelEnds(void) {
+    const CoopMenuView* v;
+
+    sScenario = "level_ends";
+    Menus_Init(20);
+    Start_Host();
+    Join(A);
+    CoopMenu_Leave(A);
+    EXPECT(sSessionsEnded == 1, "a client that left before a level did not end its session");
+    Run(500);
+    Join(A);
+    Pick(A, FALCO);
+    EXPECT(CoopMenu_Start(HOST), "Start did nothing");
+    Run(500);
+    EXPECT(sSessionsEnded == 1, "the level start ended a session");
+
+    CoopMenu_Leave(HOST);
+    EXPECT(sSessionsEnded == 2, "the host's own end did not reach its game");
+    Run(500);
+    EXPECT(sSessionsEnded == 3, "the host's end did not reach the client's game");
+    v = View(A);
+    EXPECT(v->phase == COOP_MENU_IDLE && v->level[0] == '\0', "a level outlives its session in the menu");
+    Expect_Has(v->message, "closed the connection", "the client is not told why");
+    v = View(HOST);
+    EXPECT(!v->showStart && v->level[0] == '\0', "a level outlives its session in the menu");
+
+    // A new session has a Start button again and enters its own level.
+    Start_Host();
+    v = View(HOST);
+    EXPECT(v->showStart && v->canStart && v->level[0] == '\0', "the last level shows in a new session");
+    EXPECT(CoopMenu_Start(HOST), "a new session could not start");
+    Run(500);
+    EXPECT(sEnters[0] == 2, "a new session did not enter its level");
     Menus_Close();
 }
 
@@ -893,13 +1127,18 @@ static int Run_Sim(void) {
     Test_OneTick();
     Test_Ping();
     Test_GameMessage();
-    printf("PASS: 18 scenarios\n");
+    Test_StartButton();
+    Test_LevelStart();
+    Test_LevelPickInFlight();
+    Test_LevelEnds();
+    printf("PASS: 22 scenarios\n");
     return 0;
 }
 
 // ---- Real UDP ----
 
-static const CoopMenuBackend sUdpBackend = { CoopNetSdl_Host, CoopNetSdl_Connect, CoopNetSdl_Port, Id_Test };
+static const CoopMenuBackend sUdpBackend = { CoopNetSdl_Host, CoopNetSdl_Connect, CoopNetSdl_Port, Id_Test,
+                                             Level_FromGame,  Level_Enter,        Session_Ended };
 
 typedef bool (*Until)(void);
 
@@ -913,7 +1152,9 @@ static void Udp_Run(Until until, const char* what) {
             Fail(what);
         }
         for (i = 0; i < 3; i++) {
+            sTicking = i;
             CoopMenu_Tick(&sMenus[i], SDL_GetTicks());
+            sTicking = NOT_TICKING;
         }
         SDL_Delay(2);
     }
@@ -934,6 +1175,14 @@ static bool Udp_PingSeen(void) {
 
 static bool Udp_Gone(void) {
     return !View(HOST)->players[1].present && !View(B)->players[1].present;
+}
+
+static bool Udp_CanStart(void) {
+    return View(HOST)->canStart;
+}
+
+static bool Udp_BothEntered(void) {
+    return sEnters[0] == 1 && sEnters[2] == 1;
 }
 
 static bool Udp_Ended(void) {
@@ -965,10 +1214,17 @@ static int Run_Udp(void) {
     CoopMenu_Leave(A);
     Udp_Run(Udp_Gone, "a client that left is still listed");
     EXPECT(Choice(View(B), FALCO)->enabled, "the character of a player who left is still taken");
+    EXPECT(!View(HOST)->canStart, "Start is lit with a client that holds nothing");
+    EXPECT(CoopMenu_Pick(B, SLIPPY), "a free character could not be picked");
+    Udp_Run(Udp_CanStart, "Start stayed grey with everyone holding a character");
+    EXPECT(CoopMenu_Start(HOST), "Start did nothing");
+    Udp_Run(Udp_BothEntered, "the host and the client did not both enter the level");
+    EXPECT(memcmp(&sEntered[0], &sEntered[2], sizeof(sEntered[0])) == 0, "the two games entered different levels");
+    EXPECT(sEntered[2].values[COOP_LEVEL_START_VALUES - 1] == TEST_VALUE_LAST, "the values did not cross");
     CoopMenu_Leave(HOST);
     Udp_Run(Udp_Ended, "the client did not end with the host");
     Expect_Has(View(B)->message, "closed the connection", "the client is not told why");
-    printf("PASS: host, two clients, pick, ping, leave over UDP\n");
+    printf("PASS: host, two clients, pick, ping, leave, level start over UDP\n");
     return 0;
 }
 
