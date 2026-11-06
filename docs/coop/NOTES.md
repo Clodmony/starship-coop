@@ -50,6 +50,44 @@ Unknown:
 - Windows and macOS: none of this ran there. `SHIP_HOME` is read on Linux and macOS only
   (`libultraship/src/Context.cpp:471-486`).
 
+### 2026-11-06, #104, run folders of the test tools
+
+Identity: before the change `797c678b`, ROM US 1.0, Linux, GCC, Debug, OpenGL in software, no window. The games ran on a
+build of that commit, the transport tests on the same source.
+
+Observed, before the change, with the real clock and runs started just after a second began:
+
+- `exit_test.py`, two at once: one `PASS`, one `FileExistsError` on `local/test-exit-<stamp>`.
+- `player_trace.py run`, two at once: the second stopped with `FileExistsError`. `rails --players 1` did the same
+  between the two threads of one process.
+- `net_test.py --only lan`, two at once, four times: both printed the same `logs:` line, and in every pair at least one
+  run failed, five of the eight: `ran out of time: host False, client True` (three), `8 resends on a clean link` (one)
+  and one whose line was not kept. Alone the scenario passed five of five.
+- `session_test.py --only sim`, two at once: the same `logs:` line, both passed.
+- `net_mutants.py` twice, one after the other, with a build folder that does not exist: the same `logs:` line.
+
+Observed, after the change: the same runs each print a folder of their own, the later one with `-2`. `lan` two at once,
+four times: all eight passed. `exit_test.py`, two at once: both `PASS`.
+
+Derived:
+
+- A shared folder is more than overwritten logs: `net_test.py` reads and writes `host.port`, `host.json` and
+  `client.json` by name in the scenario's folder (`tools/coop/net_test.py:67-68`, `:80`), so two runs use the same
+  files.
+- `mutants.py` takes a lock before it names the folder (`tools/coop/mutants.py:237`), so of its runs only one that
+  starts after another has ended can land in that folder, and that takes a run that ends within the second.
+- `mutants.py` starts the test script with `python -I` (`tools/coop/mutants.py:141`), and `check.py` does so too. `-I`
+  keeps the script's own folder off `sys.path`, so a tool started that way has to add `tools/coop` itself to import
+  `run_folder`. Removing that line from `net_test.py` turned `run_folder_test.py` red.
+
+Guess:
+
+- `ran out of time` comes from the two runs mixing up those files. No run looked at which file went where.
+
+Unknown:
+
+- Windows and macOS: none of this ran there.
+
 ### 2026-11-06, #70, which test variables reach the game
 
 Identity: ROM US 1.0, on commit `95962d04`, Linux, GCC, Debug, OpenGL in software, no window.
@@ -204,6 +242,70 @@ Unknown:
 - Release builds, Windows and macOS: not run. libultraship installs these handlers on Linux only
   (`libultraship/src/debug/CrashHandler.cpp:416`), so `stop_signal.c` does nothing elsewhere.
 
+### 2026-11-06, #98, why a crash did not end a test run
+
+Identity: ROM US 1.0, on commit `797c678b`, Linux, GCC, Debug, OpenGL in software, no window, one game at a time.
+
+Observed:
+
+- On `797c678b`, 12 of 12 test runs were still running 10 s after a crash signal, in `exit_test.py`: SIGSEGV 6 times
+  (without a replay, recording, playing), SIGABRT, SIGFPE and SIGILL twice each. All 12 had their crash log, and their
+  report and closing hash line where the run writes them.
+- So were real faults, 1 of 1 each: gdb sent the program counter to address 0 on the main thread (`fault-main`) and in
+  `AudioPlayerBuffered` on the audio thread (`fault-audio`, thread 49 in gdb, `src/port/Engine.cpp:391`). Both left a
+  crash log with `Signal: 11`. The stack of these hangs was not taken: that it is the destructor rests on the #71 entry.
+- A crash handler made to stop for good before it writes anything (`fault-stuck`, gdb jumps from `backtrace_symbols`
+  to `pause`) was still running 10 s later, 1 of 1.
+- The fix (`src/port/coop/test/stop_signal.c`) uses the gate of the stop handler. In a test run it puts a handler in
+  front of libultraship's for SIGILL, SIGABRT, SIGFPE and SIGSEGV. That one sets a flag and calls libultraship's, which
+  writes the log as before. An atexit handler (`stop_signal.c:55`) sees the flag and leaves with `_exit(1)`.
+- With the fix, 18 of 18 crash signals ended with exit code 1, the slowest 0.37 s after the signal, with crash log,
+  report, closing hash line and, recording, whole frames. `fault-main` did the same in 4 of 4, slowest 0.47 s, and
+  `fault-audio` in 14 of 14, slowest 1.59 s, both under gdb.
+- `fault-stuck` ended by SIGALRM in 4 of 4, 5.14 to 5.39 s after the fault, from an alarm of 5 s
+  (`stop_signal.c:69`), and left no crash log entry for that crash.
+- Stop signals kept their path: 15 of 15 test runs ended with exit code 0, the slowest 0.22 s after the signal.
+- A plain game was still running 3 s after SIGSEGV in 8 of 8 tries, with its crash log, and after SIGTERM in 3 of 3.
+  `797c678b` did the same after SIGSEGV in 2 of 2. The check behind that fails when it should: run against a test run,
+  it gave `exit code 1: a plain game lost upstream's handler` in 3 of 3.
+- With `SDL_VIDEODRIVER=offscreen` the crash handler tried no message box: a listener on the socket of a made-up X
+  display saw 0 connections and fake `zenity` and `kdialog` were not called, 1 of 1, on `797c678b`. The same listener
+  saw 3 connections and the fake dialogs 3 calls in a game with no driver set, which failed while starting up. That
+  game ended with exit code 1 and a crash log.
+- The system's SDL here is sdl2-compat on SDL3.
+- A crashed recording reports `RECORDED` and a crashed playback `FAIL_INCOMPLETE`, as a closed window does. Only the
+  exit code and the crash log tell them apart, and `tools/coop/replay.py:166` prints the exit code only when there is
+  no report.
+
+Derived:
+
+- The order is what makes this work. atexit handlers run last registered first. The destructor of the static `audio`
+  was registered before `main`, `CoopStopSignal_Init` runs at `src/port/Engine.cpp:301`, and `CoopReplay_Init` and
+  `CoopStateHash_Init` at `:310` and `:311`. So the test output is written first and `_exit` comes before the destructor.
+- `_exit(1)` keeps the exit code of upstream's `exit(1)` (`libultraship/src/debug/CrashHandler.cpp:202`), so a tool can
+  tell a crash from a stop.
+- The alarm is there for the other hang, the 62nd run of the #71 entry: `Ship::ErrorHandler` calls `backtrace_symbols`
+  (`libultraship/src/debug/CrashHandler.cpp:148`), which allocates, so a crash inside `malloc` or `free` can stop on a
+  lock the crashed code holds. That happens before the log is written (`:198`), so such a run has no crash log, and
+  nothing in this repo can change that without replacing libultraship's handler.
+- The alarm is off with a window. `SDL_ShowSimpleMessageBox` (`:192`) also comes before the log, so a limit there could
+  kill the game while someone reads the box, and the log would be lost.
+- The issue's candidate, never destroying `audio`, would change a plain game too, which the owner's rule from #71 does
+  not allow, and would not reach a crash handler that hangs before `exit`.
+
+Guess:
+
+- A real lock hang ends through the alarm the way `fault-stuck` does. `fault-stuck` stands in for it with `pause`; a real
+  crash inside `malloc` was not produced.
+
+Unknown:
+
+- A test run with a window: not run. The message box waits there as upstream's does, and the `_exit(1)` should follow
+  once it is closed.
+- Release builds, Windows and macOS: not run. The handlers exist on Linux only, as in the #71 entry.
+- A crash before `src/port/Engine.cpp:301` keeps upstream's path. The run with no driver above is the only such crash
+  seen, and it ended by itself.
+
 ### 2026-11-04, #1 (WP-01), Linux build
 
 Identity: ROM US 1.0 (SHA-1 `d8b1088520f7c5f81433292a9258c1184afa1457`, `config.yml:34`), commit `ba0781d7`, Linux,
@@ -259,6 +361,7 @@ throwaway decoder that follows `tools/Torch/src/factories/sf64/ScriptFactory.cpp
 script 59, command 34. The tables are the `SF64:SCRIPT` rows of `assets/yaml/us/rev0/ast_*.yaml` (Corneria:
 `ast_corneria.yaml:445`), and `ActorEvent_ProcessScript` picks one per level (`src/engine/fox_enmy2.c:1067-1120`).
 `z` is the `zPos1` of the object that starts a script. Conditions are in `ActorEvent_ProcessTriggers` (`:2354`).
+To look a reference up: `python tools/coop/script_reader.py CO S59:34`, see the #90 entry.
 
 Short version, derived from the lists below: two routes read a wingman directly (Corneria needs Falco to open
 Sector Y; Sector X loses its choice when Slippy is shot down), Titania always takes Slippy away, and every medal needs
@@ -515,6 +618,7 @@ for example Corneria 17.8. The tables are the `SF64:SCRIPT` assets (`assets/yaml
 Corneria), picked per level in `ActorEvent_ProcessScript` (`src/engine/fox_enmy2.c:1075-1122`). They were decoded from
 a US 1.0 `sf64.o2r` with a throwaway script, not kept. Its command format is `EVENT_CMD` (`include/sf64event.h:92`).
 Script counts come from walking each script's branches, so they say what can run, not what a given run plays.
+To look a reference up: `python tools/coop/script_reader.py Corneria 17.8`, see the #90 entry.
 
 **Observed: how a line reaches the radio**
 
@@ -965,6 +1069,65 @@ Open questions for the record that settles this, with lives and respawn (nothing
 10. Do humans and computer wingmen follow one rule, or can a run mix two?
 11. Which stores join the state hash or the host's snapshot: `gSavedTeamShields`, `gPrevPlanetTeamShields`,
     `D_ctx_80177C58`, `gTeamDamage`?
+
+### 2026-11-06, #90, how to look up a level script reference
+
+Read at `797c678b`. The tool ran on an `sf64.o2r` built from ROM US 1.0, version `76924CA9`. No game ran.
+
+Level scripts are ROM data, so the notes cite them by level, script and command. `tools/coop/script_reader.py` reads
+them from your own `sf64.o2r`. Both ways the notes write a reference work:
+
+```sh
+python tools/coop/script_reader.py CO S59:34       # the #59 entry: level prefix, script, command
+python tools/coop/script_reader.py Corneria 17.8   # the #60 entry: level name, script, command
+```
+
+It prints the whole script and marks the command with `>`. A script without a command marks nothing, a level alone
+lists its scripts, and no argument lists the levels. Prefixes are the ones in `include/sf64event.h`. In the #59 table
+the first column is the level, so `S4` in the Corneria row is `CO S4`, and `S141-143` is three lookups. It finds
+`sf64.o2r` in `build-cmake/`, `build/x64/` or the repo root; `--o2r <file>` names another. It reads that one file and
+writes nothing. What it prints is game data: keep it out of git, issues and PRs. A reference holds for the ROM it was
+read on, so the first line of the output shows the archive's version.
+
+Observed, how a reference maps to the game:
+
+- The script is the slot in the level's table. An object's id minus `ACTOR_EVENT_ID` gives `aiType`
+  (`src/engine/fox_enmy.c:412`), and `levelScripts[this->aiType]` is the script (`src/engine/fox_enmy2.c:1122`).
+- The command is `aiIndex / 2`. A command is two 16-bit words (`EVENT_CMD`, `include/sf64event.h:92`), and branches
+  land on `n * 2` (`fox_enmy2.c:1492`, `:2341`).
+- The level picks the table in `ActorEvent_ProcessScript` (`fox_enmy2.c:1075-1121`). Levels with no case use Corneria's
+  (`:1118-1120`); the tool refuses those instead of showing Corneria.
+- A table entry is a 0x40-byte header, a count, then one 64-bit hash per slot (`ScriptBinaryExporter`,
+  `tools/Torch/src/factories/sf64/ScriptFactory.cpp:330-335`, read at `src/port/resource/importers/ScriptFactory.cpp:16-19`).
+  The hash is `CRC64()` of the entry's path (`ScriptFactory.cpp:325`). That function returns the value uninverted
+  (`tools/Torch/lib/strhash64/StrHash64.cpp:249`), unlike `update_crc64` (`:234`).
+- `<table>_cmd_<n>` counts in sorted address order, not table order (`ScriptFactory.cpp:296`, `:302`), so `n` is not
+  defined to be the script number. The tool follows the hash, as the game does.
+- Some macro parameters read the other way round from the interpreter. `EVENT_F4_PLUS_X(rot, rotVel)` puts `rotVel * 10`
+  in arg1 (`include/sf64event.h:106`), while the interpreter takes arg1 as the angle and arg2 / 10 as the step
+  (`fox_enmy2.c:1546-1547`, `:3277-3283`). The tool prints what the interpreter reads.
+
+Observed, run on all 14 tables:
+
+- 1700 scripts and 19100 commands decode. Every opcode and enum value has a name in the headers, and in every table
+  `n` equals the slot.
+- The #59 entry holds up: `CO S59:34`, `CO S59:10` and `CO S60:12` show what it says, all 176 scripts its level table
+  names exist, and all 98 fly-ins it lists set that wingman's team id. Only `SX S94` uses `EVOP_RESTORE_TEAM`, the
+  largest `EVOP_DAMAGE_TEAM` values are 255 and 70, and no script uses `EVC_TEAM_COUNT_*` or `EVC_CHASED`.
+- The references in the #60 entry resolve with their commands in range: 29, found by pattern.
+- Two branches land one past the last command of their script: `A6 S26:53` and `VE1 S40:6`.
+
+Derived:
+
+- On the N64 those two targets are the first command of the next script: a script's size is the distance to the next
+  pointer (`ScriptFactory.cpp:562`), and the table is in address order. In the port each script is a buffer of its own
+  (`src/port/resource/type/Script.cpp:13`), so taking either branch reads past the end of it.
+
+Unknown:
+
+- Whether either branch can fire in play. Nothing was run.
+- Whether US 1.1 scripts differ: only US 1.0 was read. `aVe1EventScript` has another offset in rev1
+  (`assets/yaml/us/rev1/ast_venom_1.yaml:122`).
 
 ### 2026-11-05, #5 (WP-05), single-player assumptions audit
 
@@ -2049,6 +2212,48 @@ GCC 16.2.1, Debug, graphics backend OpenGL, `USE_NETWORKING` on, `SDL_VIDEODRIVE
   `SDLNet_Init`. WP-21 is the first code to do that.
 - A boot with networking on under Windows or macOS. CI builds the game on Windows but does not start it.
 - Anything past the title screen.
+
+### 2026-11-06, #92, what the sanitizer runs can fail on, and why the session tests need no log scan
+
+Read at `797c678b` (origin/coop).
+
+**Observed**
+
+- `net_mutants.py --asan` has four breaks, all caught in Debug and in Release: a leak (`sim`, `lan`), a signed shift
+  (`sim`, `lan`), a stack overflow by one byte in `Core_Write` (`sim`, `lan`), and a heap overflow in `Sdl_Tx`,
+  `transport_sdlnet.c:34`, after the host's refusal (`host_full`).
+- All four still pass every named scenario in the build without sanitizers, so no ordinary check sees them.
+- With `sanitizer_report` switched off, `refuse_overruns_tx_packet` passes `net_test.py --asan` too. So that break also
+  guards the scan: remove the scan and it survives.
+- Every program's exit in `session_test.py` is read. Each of the 37 programs of the 11 scenarios with real processes
+  was made to end with exit code 77 after its normal end, one at a time, and every run failed with that code. The
+  same probe on `net_test.py` reports the host and the first client of `host_full` as not read, so it can tell. The
+  only program in the session tests that nobody waits for is the relay, which is Python and has no sanitizer.
+- `session_mutants.py --asan` now has `host_close_leaks` and `client_close_leaks`, which fire at the very end of one
+  side, after its result file is written, and `refuse_reads_past_session`, the session's version of the `host_full`
+  break. All are caught, through `run.wait` (`net_test.py:99`), with no scan.
+- With `run.wait` not reading the host's exit, `host_close_leaks` passes all 11 scenarios; the same for the clients and
+  `client_close_leaks`. So the exit is the only thing that fails them, and those two breaks guard it.
+- Such a failure reads `host exited with 1`. What the sanitizer found is only in `host.log`, and CI keeps no logs.
+- The report of `refuse_hell` is in `try0/host.log`: `damaged_runs` gives each try a subfolder
+  (`session_test.py:56`), and `sanitizer_report` reads only the top of a folder (`net_test.py:359`).
+- `s->text[sizeof(s->text)] = 0` in `session.c` is seen by no sanitizer, and no log held a report. In the 64-bit Linux
+  build `CoopSession` is 5400 bytes and `text`, its last field, ends at 5396, so the write stays in the allocation.
+- `roster_read_past_end` in `SANITIZER_BREAKS` also fails `sim` without sanitizers (`roster_trailing`), so it is not
+  one that only a sanitizer can see.
+
+**Derived**
+
+- `session_test.py` does not need the scan to catch a finding: a finding ends its program with a code other than 0, and
+  every program's exit is read. The scan would only add what was found to the summary line.
+- A scan copied into `session_test.py` would have to search subfolders, or it misses every scenario with a relay.
+- A new scenario that leaves a host or all clients running is caught by the two close breaks. One that leaves only some
+  of several clients running is not: a break fires in all clients of a scenario, and the others still fail it.
+
+**Unknown**
+
+- Why UBSan's bounds check says nothing about `s->text[sizeof(s->text)]`. Guess: it treats a last array like a flexible
+  one.
 
 ### 2026-11-06, #75, transport tests under sanitizers, and the audit in CI
 
