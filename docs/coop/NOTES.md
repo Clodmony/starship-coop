@@ -126,6 +126,84 @@ Unknown:
 - Whether the `audio_setup` error affects sound in game (not listened to), and whether upstream builds show it too.
 - Release config, Ninja (`--ninja`), Linux and macOS: not tried in this session.
 
+### 2026-11-06, #71, why the game did not exit after SIGTERM
+
+Identity: ROM US 1.0, on commit `95962d04`, Linux, GCC, Debug, OpenGL in software, no window.
+
+Observed:
+
+- None of 72 games on `95962d04` exited after a stop signal, and all needed SIGKILL. 15 were given 45 s (5 recording,
+  5 without a replay, 5 playing), one 180 s, 46 between 5 and 6 s, 10 through `exit_test.py` 10 s. The signal was
+  SIGTERM, except for 2 SIGINT and 2 SIGQUIT among those 10.
+- gdb at the end of 62 of those runs: in 61 the main thread is in `pthread_cond_destroy`, from the destructor of the
+  static `audio` (`src/port/audio/GameAudio.h:4`), from `exit`, from `Ship::ShutdownHandler`
+  (`libultraship/src/debug/CrashHandler.cpp:205-207`), on top of the signal frame. The signal had landed in the frame
+  limiter's `nanosleep`, in the display list interpreter and in a vector growing in the frame interpolation; the hang
+  was the same.
+- In 60 of those 61 it destroys `cv_to_thread`, with the audio thread waiting on it (`src/port/Engine.cpp:378`):
+  `cv_to_thread.__wrefs` is 12, `cv_from_thread.__wrefs` 4. In the other one it destroys `cv_from_thread`, and the
+  waiter is the main thread itself, caught by the signal in `EndAudioFrame` (`src/port/Engine.cpp:436`): 8 and 12.
+- In the 16 runs sampled for 45 s or more, the main thread's CPU time did not change after the first 1.5 s.
+- The 62nd stood somewhere else. `free` aborted inside `Path::~Path`
+  (`src/port/interpolation/FrameInterpolation.cpp:156`), and `Ship::ErrorHandler` then blocked on a libc lock in
+  `backtrace_symbols` (`libultraship/src/debug/CrashHandler.cpp:148`). The stack was cut at 40 frames, so its outer end
+  was not seen.
+- One of the 60 runs with a replay lost its end: no report, and a hash log without its closing line. No stack was taken
+  of that run. In the other 59 the report was there, a recording held whole frames and the hash log had its closing
+  line. Timed in 56 of them, the report took at most 0.08 s.
+- SIGSEGV sent by hand to a running game hung the same way in 2 of 2 tries, through the `exit(1)` of
+  `Ship::ErrorHandler` (`libultraship/src/debug/CrashHandler.cpp:202`).
+- The fix (`src/port/coop/test/stop_signal.c`) replaces the handler only in a test run: when `SF64_COOP_REPLAY_RECORD`,
+  `SF64_COOP_REPLAY_PLAY`, `SF64_COOP_HASH_LOG` or `SF64_COOP_TRACE` is set and not empty. These are read as the code
+  that uses them reads them (`src/port/coop/test/replay.c:283-284`, `src/port/coop/sync/state_hash.c:434`,
+  `src/port/coop/test/player_trace.c:31`).
+- With the fix, in `exit_test.py`, 25 of 25 test runs ended with exit code 0, the slowest 0.06 s after the signal: 5 each
+  without a replay, on SIGINT, on SIGQUIT, recording and playing. An earlier version without the gate did the same in
+  60 of 60, the slowest 0.32 s. All with a replay kept their report, their closing hash line and, recording, whole
+  frames.
+- The variables nine games really received, logged by a wrapper in place of the game: `replay.py`, `hash_check.py run`
+  and `probe`, `determinism.py` and `player_trace.py` each gave `SF64_COOP_REPLAY_RECORD` or `SF64_COOP_REPLAY_PLAY` and
+  `SF64_COOP_REPLAY_REPORT`, plus their own. None of those tools waited out its 15 s: each game took 6 or 7 s.
+- A plain game, with none of those variables, was still running 3 s after SIGTERM in 5 of 5 tries, as on `95962d04`
+  in 2 of 2. The version without the gate ended it with exit code 0 within 0.03 s, in 2 of 2.
+- `replay.py record --frames 60` took 20 s on `95962d04` and 5 s with the fix, in 3 of 3 tries each, which bears out the
+  guess in the #54 entry. `replay_test.py` took 58 s with the fix; its row in `tools/coop/README.md` says about 5
+  minutes.
+- A replay with co-op off, 3406 frames into Corneria, gave a hash log with the same 3406 lines on `95962d04` and on the
+  version without the gate.
+
+Derived:
+
+- It is a hang, not a delay. `exit` runs on the interrupted main thread with the audio thread still waiting, and
+  glibc's `pthread_cond_destroy` waits for the waiters to leave (`__wrefs` 12 above is one waiter plus the destroy
+  request, [nptl/pthread_cond_destroy.c](https://sourceware.org/git/?p=glibc.git;a=blob;f=nptl/pthread_cond_destroy.c)).
+  Only `StartAudioFrame` and `AudioExit` wake that thread (`src/port/Engine.cpp:424-430`, `:448-456`), and both run on
+  the main thread, which is the one stuck. The 40 s in the #54 entry was just how long someone waited.
+- The atexit handlers run first because they were registered during `GameEngine::Create`, after the static destructors
+  of file-scope objects. That is why the report was there and the game still hung.
+- Stopping the audio thread from an atexit handler would not be enough: the run caught in `EndAudioFrame` waits for
+  itself, whatever the audio thread does. The main thread can also be interrupted while it holds `audio.mutex`. Not
+  run. And only waking the thread would be worse: the members go in reverse order, so after the two condition variables
+  comes a joinable `audio.thread`, which is `std::terminate`.
+- `exit` in a signal handler also destroys objects the interrupted main thread was changing. `current_recording` and
+  `previous_recording` are file-scope and rebuilt each frame (`src/port/interpolation/FrameInterpolation.cpp:170-171`),
+  which fits the 62nd run. So the fix leaves the handler with nothing to do but set a flag, and the game ends at the
+  next frame through the path of a closed window (`src/port/Game.cpp:47-51`).
+- A plain game keeps all of this, as upstream does, so #71 is closed for the tools, not for a player who kills the game.
+  The real fix belongs in libultraship's handler.
+- A test run whose main loop is stuck no longer writes its report on SIGTERM: only the main loop reads the flag, where
+  the old `exit` ran the atexit handlers from the signal. Such a run ends through SIGKILL without a report. Not run.
+
+Guess:
+
+- The run that lost its report stopped in the same kind of place, before the atexit handlers were done.
+
+Unknown:
+
+- Where that run stood.
+- Release builds, Windows and macOS: not run. libultraship installs these handlers on Linux only
+  (`libultraship/src/debug/CrashHandler.cpp:416`), so `stop_signal.c` does nothing elsewhere.
+
 ### 2026-11-04, #1 (WP-01), Linux build
 
 Identity: ROM US 1.0 (SHA-1 `d8b1088520f7c5f81433292a9258c1184afa1457`, `config.yml:34`), commit `ba0781d7`, Linux,

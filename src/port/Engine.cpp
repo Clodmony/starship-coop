@@ -43,6 +43,7 @@
 #include "port/coop/test/replay.h" // COOP: input replay for tests (WP-03)
 #include "port/coop/sync/state_hash.h" // COOP: state hash log for tests (WP-04)
 #include "port/coop/test/player_trace.h" // COOP: per-frame player log for tests (WP-11)
+#include "port/coop/test/stop_signal.h"  // COOP: clean exit on SIGTERM in test runs (#71)
 
 #include <Fast3D/interpreter.h>
 #include <filesystem>
@@ -297,6 +298,7 @@ bool GameEngine::GenAssetFile(bool exitOnFail) {
 
 void GameEngine::Create() {
     const auto instance = Instance = new GameEngine();
+    CoopStopSignal_Init(); // COOP: no-op outside test runs; before the audio thread exists, see stop_signal.h (#71)
     instance->AudioInit();
     DisplayListPatch::Run();
     GameUI::SetupGuiElements();
