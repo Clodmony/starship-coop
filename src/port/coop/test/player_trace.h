@@ -5,10 +5,11 @@
 // Off unless the environment variable SF64_COOP_TRACE names a file. Then, after each game frame in GSTATE_PLAY, one
 // line is appended:
 //
-//   frame=<gGameFrameCount> level=<gCurrentLevel> mode=<gLevelMode> players=<n> p0=<state>,<csState>,<x>,<y>,<z> ...
+//   frame=<gGameFrameCount> level=<gCurrentLevel> mode=<gLevelMode> players=<n>
+//   p0=<state>,<csState>,<x>,<y>,<z>,<parked>,<draw> ...
 //
-// where x and y are pos.x and pos.y and z is trueZpos. tools read it to check what each player did without looking at
-// the screen.
+// (all on one line) where x and y are pos.x and pos.y, z is trueZpos, parked is CoopPlayers_IsParked and draw is the
+// player's draw flag. tools read it to check what each player did without looking at the screen.
 
 #ifdef __cplusplus
 extern "C" {

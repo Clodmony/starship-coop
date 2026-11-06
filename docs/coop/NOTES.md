@@ -233,7 +233,7 @@ Observed:
 
 - Corneria's only all-range section is the Granga fight on the normal route. `Corneria_Granga_Init` switches player 0
   alone: `gPlayer[0].state = PLAYERSTATE_START_360` (`src/overlays/ovl_i1/fox_co.c:102-110`). The cutscene
-  `Cutscene_AllRangeMode` sets `gChangeTo360` on its frame 37 (`src/engine/fox_demo.c:771-788`), and `Play_Update`
+  `Cutscene_AllRangeMode` sets `gChangeTo360` on its frame 37 (`src/engine/fox_demo.c:771-788`), and `Play_Main`
   then sets `gLevelMode = LEVELMODE_ALL_RANGE` (`src/engine/fox_play.c`, `if (gChangeTo360)`).
 - In the recorded Corneria run (`local/replays/corneria.sfcr`, normal route), the trace shows: rails until frame
   6454, `START_360` from 6454, mode all-range from 6493, player 0 `ACTIVE` from 6696, `LEVEL_COMPLETE` at 8621
@@ -252,8 +252,8 @@ Observed:
   player 0's shots are never tested against player 1. Friendly fire is a game rule (#7); this does not change it.
 - `Player_Update` sets `draw = true` after `Player_Update360` (`src/engine/fox_play.c:5981`), so hiding a player from
   inside `Player_Down` lasts only until that line.
-- The all-range camera code (`Camera_UpdateArwing360` to `Camera_Update360`) writes no globals except the starfield
-  (`gStarfieldX`, `gStarfieldY`, scroll), which only space levels draw.
+- The all-range camera code (`Camera_UpdateArwing360` to `Camera_Update360`) writes no globals. The starfield is set
+  from the draw code (`Camera_SetStarfieldPos`, `src/engine/fox_display.c:1940`).
 
 What changed (`src/port/coop/game/players.c`, two `// COOP:` checks in `Play_Update`):
 
@@ -297,12 +297,11 @@ Derived:
 
 - Player 1 copies player 0's controller (both read `gMainController`), but from another position, so it flies a
   different path. Its update draws random numbers, so the enemies act differently and the recorded inputs no longer
-  fit; that is why player 0 goes down. Expected until each player has its own input (WP-14) and the run is recorded
-  with two players.
+  fit. Expected until each player has its own input (WP-14) and the run is recorded with two players. That this is
+  why player 0 goes down is a guess; shots from player 1 hitting it (above) could also play a part.
 
 Unknown:
 
-- How player 1 looks on screen. Nobody watched the run; the check is from the trace only.
 - The level-complete path is covered by the owner's watched run only; the replay diverges before it with 2 players.
 - Whether enemies target or hit player 1: enemy and shot loops still use `gCamCount` or `gPlayer[0]`, so probably
   not (guess). Friendly fire and targeting are game rules (WP-07, WP-16).

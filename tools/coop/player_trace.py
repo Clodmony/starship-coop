@@ -17,9 +17,13 @@ rules and exits 0 when all hold:
   - the trace holds --players players (nothing more is checked with one),
   - players 1 and up stay parked (PLAYERSTATE_INIT) while the level is on rails,
   - each of them becomes active in all-range mode, on the frame player 0 does,
-  - and then flies: at least --min-active frames, on average more than --min-move per frame, and never still for more
-    than --max-still frames in a row while player 0 moves,
-  - a parked player is hidden. One frame is allowed: Player_Update draws a player again on the frame it goes down.
+  - and then flies: at least --min-active frames, always drawn, on average more than --min-move per frame, and never
+    still for more than --max-still frames in a row while player 0 moves,
+  - it goes out on the frame player 0 stops flying (level complete, down),
+  - a parked player is hidden. One frame is allowed: Player_Update draws a player again on the frame it goes down,
+  - it is parked again after every restart.
+
+Stopping the game can cut the last line of the trace; only that line may be cut.
 """
 import argparse
 import json
@@ -48,7 +52,8 @@ DATA_FILES = ["sf64.o2r", "starship.o2r", "gamecontrollerdb.txt"]
 STATES = {0: "STANDBY", 1: "INIT", 2: "LEVEL_INTRO", 3: "ACTIVE", 4: "DOWN", 5: "U_TURN", 6: "NEXT",
           7: "LEVEL_COMPLETE", 8: "ENTER_WARP_ZONE", 9: "START_360", 10: "GFOX_REPAIR", 11: "ANDROSS_MOUTH",
           12: "UNK_12", 13: "VS_STANDBY"}
-INIT, ACTIVE = 1, 3
+INIT, ACTIVE, U_TURN = 1, 3, 5
+FLYING = (ACTIVE, U_TURN)
 ON_RAILS, ALL_RANGE = 0, 1
 
 Slot = namedtuple("Slot", "state cs x y z parked draw")  # one player on one frame, as player_trace.c writes it
@@ -121,15 +126,25 @@ def run(args):
     return check_trace(trace, args)
 
 
+def parse_row(line):
+    f = dict(kv.split("=", 1) for kv in line.split())
+    players = []
+    for i in range(int(f["players"])):
+        s = f[f"p{i}"].split(",")
+        players.append(Slot(int(s[0]), int(s[1]), float(s[2]), float(s[3]), float(s[4]), int(s[5]), int(s[6])))
+    return int(f["frame"]), int(f["level"]), int(f["mode"]), players
+
+
 def parse(path):
+    lines = path.read_text().splitlines()
     rows = []
-    for line in path.read_text().splitlines():
-        f = dict(kv.split("=", 1) for kv in line.split())
-        players = []
-        for i in range(int(f["players"])):
-            s = f[f"p{i}"].split(",")
-            players.append(Slot(int(s[0]), int(s[1]), float(s[2]), float(s[3]), float(s[4]), int(s[5]), int(s[6])))
-        rows.append((int(f["frame"]), int(f["level"]), int(f["mode"]), players))
+    for n, line in enumerate(lines):
+        try:
+            rows.append(parse_row(line))
+        except (KeyError, ValueError, IndexError):
+            if n != len(lines) - 1:
+                raise
+            print(f"player_trace: dropped a cut-off last line: {line[:60]}")
     return rows
 
 
@@ -142,7 +157,7 @@ def longest_freeze(rows, i):
     longest = current = 0
     for a, b in zip(rows, rows[1:]):
         p, q = a[3][i], b[3][i]
-        flying = all(s.state == ACTIVE and not s.parked for s in (p, q))
+        flying = all(s.state in FLYING and not s.parked for s in (p, q))
         if flying and position(p) == position(q) and position(a[3][0]) != position(b[3][0]):
             current += 1
             longest = max(longest, current)
@@ -159,6 +174,16 @@ def longest_shown_parked(rows, i):
         current = current + 1 if slot.parked and slot.draw else 0
         longest = max(longest, current)
     return longest
+
+
+def frames_flown_on(rows, i):
+    """Frames player i stayed in after player 0 stopped flying. None when player 0 did not stop after the join."""
+    joined = False
+    for n, row in enumerate(rows):
+        joined = joined or (row[3][i].state == ACTIVE and not row[3][i].parked)
+        if joined and row[3][0].state not in FLYING:
+            return sum(1 for r in rows[n:] if not r[3][i].parked)
+    return None
 
 
 def check_trace(path, args):
@@ -192,6 +217,7 @@ def check_trace(path, args):
             break
         first.append(r)
     rails = [r for r in first if r[2] == ON_RAILS]
+    restarts = [b for a, b in zip(rows, rows[1:]) if b[0] < a[0]]  # the frame count starts over
 
     ok = True
     for i in range(1, count):
@@ -204,15 +230,20 @@ def check_trace(path, args):
         avg = sum(moves) / len(moves) if moves else 0.0
         freeze = longest_freeze(first, i)
         shown = longest_shown_parked(first, i)
+        flown_on = frames_flown_on(first, i)
+        left = "player 0 did not stop" if flown_on is None else f"{flown_on} frames after player 0 stopped"
         results = [
             (f"player {i} parked on rails ({len(rails)} frames)", parked_on_rails),
             (f"player {i} active in all-range on frame {pi_active}, player 0 on {p0_active}",
              pi_active is not None and pi_active == p0_active),
             (f"player {i} flew {len(active)} frames (min {args.min_active})", len(active) >= args.min_active),
+            (f"player {i} hidden on {sum(not s.draw for s in active)} of them", all(s.draw for s in active)),
             (f"player {i} moves {avg:.1f} per active frame (min {args.min_move})", avg > args.min_move),
             (f"player {i} still for at most {freeze} frames while player 0 moved (max {args.max_still})",
              freeze <= args.max_still),
+            (f"player {i} out: {left}", not flown_on),
             (f"player {i} drawn while parked for at most {shown} frame(s) in a row (max 1)", shown <= 1),
+            (f"player {i} parked after {len(restarts)} restart(s)", all(r[3][i].parked for r in restarts)),
         ]
         for text, good in results:
             print(f"  {'PASS' if good else 'FAIL'}  {text}")
