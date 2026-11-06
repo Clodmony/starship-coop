@@ -122,6 +122,13 @@ const CoopIdentity* CoopSession_PeerIdentity(const CoopSession* s, int peer) {
     return (peer == 0 && s->client == CLIENT_ACTIVE) ? &s->peers[0].identity : NULL;
 }
 
+bool CoopSession_Stats(const CoopSession* s, int peer, CoopNetStats* out) {
+    if (CoopSession_PeerIdentity(s, peer) == NULL) {
+        return false;
+    }
+    return s->t->ops->stats(s->t, peer, out);
+}
+
 bool CoopSession_Send(CoopSession* s, int peer, uint16_t msgId, const void* data, uint16_t size, CoopNetLane lane) {
     if (msgId < COOP_MSG_SESSION_END || CoopSession_PeerIdentity(s, peer) == NULL) {
         return false;
