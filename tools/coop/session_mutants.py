@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Mutation check for the co-op session: break one behaviour of session.c, rebuild, require its tests to fail.
 
-    python tools/coop/session_mutants.py                 # every break; under a minute
+    python tools/coop/session_mutants.py                 # every break; about three minutes
     python tools/coop/session_mutants.py --only host_hold_back_off,linger_clock_wrap
     python tools/coop/session_mutants.py --list
     python tools/coop/session_mutants.py --check         # only check that every pattern still matches; no build
@@ -20,9 +20,8 @@ Left out, because no test can tell them from the original (a test for one would 
   (read only in WAIT_ANSWER, and the switch to that state sets it again).
 - Host_Hello: dropping `size == 0 ||` before the welcome. The hello matched this identity, so its counts are in range,
   and the largest identity fits a message (Sim_Identity checks that), so Write cannot fail there.
-- Host_Tick: dropping `memset(&p->identity, ...)` before a time-out's refusal, and Host_Poll: dropping
-  `memset(p, 0, sizeof(*p))` on CONNECTED. The identity of a peer is only read in JOINED, and that state comes after
-  CoopIdentity_Read has written all of it; the other fields are set right after the memset.
+- Host_Tick: dropping `memset(&p->identity, ...)` before a time-out's refusal. The identity of a peer is only read in
+  JOINED, and that state comes after CoopIdentity_Read has written all of it.
 - Client_Answer: dropping `s->client = CLIENT_ENDED` before a refusal's ENDED. Poll returns the pending end first,
   and Client_End sets the same state.
 - Host_Refuse: writing 0 instead of `reasons >> 16` and `reasons >> 24`. No reason bit above 8 exists yet. Dropping
@@ -65,6 +64,30 @@ CLIENT_ANSWER_GATE = ("if (s->client == CLIENT_WAIT_ANSWER &&\n"
 CLIENT_GAME_GATE = "if (s->client == CLIENT_ACTIVE && net.msgId >= COOP_MSG_SESSION_END) {"
 CLIENT_MESSAGE = ("Event_Init(ev, COOP_SESSION_EV_MESSAGE, 0);\n                    ev->msgId = net.msgId;\n"
                   "                    ev->size = net.size;\n                    ev->data = net.data;")
+PICK_GUARD = "if (s->client != CLIENT_ACTIVE || character <= COOP_CHARACTER_FOX || character >= COOP_CHARACTER_COUNT) {"
+PICK_SEND = "return s->t->ops->send(s->t, 0, COOP_MSG_SESSION_PICK, &wire, 1, COOP_NET_RELIABLE);"
+CLIENT_ROSTER = ("return (s->client == CLIENT_ACTIVE && s->roster.character[0] == COOP_CHARACTER_FOX) ? "
+                 "&s->roster : NULL;")
+CHARACTER_READ = "return net->size == 1 && net->data[0] >= COOP_CHARACTER_FOX && net->data[0] < COOP_CHARACTER_COUNT;"
+OWED_REFUSAL = ("if (p->refusedPick != 0 &&\n"
+                "            s->t->ops->send(s->t, i, COOP_MSG_SESSION_PICK_REFUSE, &p->refusedPick, 1, "
+                "COOP_NET_RELIABLE)) {\n            p->refusedPick = 0;\n        }")
+OWED_ROSTER = ("if (p->rosterDue && s->t->ops->send(s->t, i, COOP_MSG_SESSION_ROSTER, s->roster.character,\n"
+               "                                            sizeof(s->roster.character), COOP_NET_RELIABLE)) {\n"
+               "            p->rosterDue = false;\n        }")
+HOST_PICK_GATE = "if (p->state == PEER_JOINED && net.msgId == COOP_MSG_SESSION_PICK) {"
+BAD_PICK = ("s->t->ops->disconnect(s->t, peer);\n        p->state = PEER_FREE;\n"
+            "        Host_Left(s, peer, COOP_SESSION_END_BAD_MESSAGE, ev);\n        return true;")
+TAKEN_LOOP = "for (i = 0; i < COOP_SESSION_PLAYERS; i++) {\n        if (s->roster.character[i] == net->data[0]) {"
+PICK_TAKEN = "Host_RosterChanged(s);\n    return Host_RosterEvent(s, ev);"
+OWN_PICK = "if (s->roster.character[peer + 1] == net->data[0]) {\n        return false;\n    }\n"
+CLIENT_BROKEN = "s->t->ops->disconnect(s->t, 0);\n    Client_End(s, COOP_SESSION_END_BAD_MESSAGE, ev);\n}"
+ROSTER_HEAD = ("if (size != COOP_SESSION_PLAYERS || data[0] != COOP_CHARACTER_FOX || "
+               "data[self] == COOP_CHARACTER_NO_PLAYER) {")
+ROSTER_VALUE = "if (data[i] == COOP_CHARACTER_FOX || data[i] >= COOP_CHARACTER_COUNT) {"
+ROSTER_TWICE = "if (data[i] > COOP_CHARACTER_FOX && data[i] == data[j]) {"
+ROSTER_GATE = "if (s->client == CLIENT_ACTIVE && net.msgId == COOP_MSG_SESSION_ROSTER) {"
+PICK_REFUSE_GATE = "if (s->client == CLIENT_ACTIVE && net.msgId == COOP_MSG_SESSION_PICK_REFUSE) {"
 HOST_MESSAGE_ID = "                    ev->msgId = net.msgId;\n"
 MESSAGE_SIZE = "                    ev->size = net.size;\n"
 MESSAGE_DATA = "                    ev->data = net.data;"
@@ -174,9 +197,9 @@ BREAKS = [
     ("left_for_anyone", PEER_JOINED_FLAG, "bool joined = true;", SIM),
     ("left_never", PEER_JOINED_FLAG, "bool joined = false;", SIM),
     ("left_keeps_state", "p->state = PEER_FREE;\n                if (joined) {", "if (joined) {", SIM),
-    ("left_wrong_peer", "Event_Init(ev, COOP_SESSION_EV_LEFT, net.peer);", "Event_Init(ev, COOP_SESSION_EV_LEFT, 0);",
-     SIM),
-    ("left_wrong_end", "ev->end = End_FromNet(net.end);", "ev->end = COOP_SESSION_END_CLOSED;", SIM),
+    ("left_wrong_peer", "Event_Init(ev, COOP_SESSION_EV_LEFT, peer);", "Event_Init(ev, COOP_SESSION_EV_LEFT, 0);", SIM),
+    ("left_wrong_end", "Host_Left(s, net.peer, End_FromNet(net.end), ev);",
+     "Host_Left(s, net.peer, COOP_SESSION_END_CLOSED, ev);", SIM),
     ("left_no_text", "ev->text = CoopSession_EndText(ev->end);\n", "", SIM),
     ("second_hello_taken", HOST_HELLO_GATE, "if (net.msgId == COOP_MSG_SESSION_HELLO) {", SIM),
     ("any_message_is_hello", HOST_HELLO_GATE, "if (p->state == PEER_WAIT_HELLO) {", SIM),
@@ -275,6 +298,155 @@ BREAKS = [
      "        }\n    }\n    return false;\n}\n\nbool CoopSession_Poll",
      "break;\n            default:\n                break;\n        }\n    }\n    return false;\n}\n\n"
      "bool CoopSession_Poll", SIM),
+
+    # Characters: who may ask, and for what.
+    ("host_is_not_fox", "s->roster.character[0] = COOP_CHARACTER_FOX;",
+     "s->roster.character[0] = COOP_CHARACTER_FALCO;", SIM),
+    ("host_null_unchecked", "if (s != NULL) {\n        s->roster.character[0] = COOP_CHARACTER_FOX;\n    }",
+     "s->roster.character[0] = COOP_CHARACTER_FOX;", SIM),
+    ("pick_before_welcome", PICK_GUARD, PICK_GUARD.replace("s->client != CLIENT_ACTIVE || ", ""), SIM),
+    ("pick_fox", PICK_GUARD, PICK_GUARD.replace("character <= COOP", "character < COOP"), SIM),
+    ("pick_no_low_bound", PICK_GUARD, PICK_GUARD.replace("character <= COOP_CHARACTER_FOX || ", ""), SIM),
+    ("pick_no_high_bound", PICK_GUARD, PICK_GUARD.replace(" || character >= COOP_CHARACTER_COUNT", ""), SIM),
+    ("pick_high_off_by_one", PICK_GUARD, PICK_GUARD.replace("character >= COOP", "character > COOP"), SIM),
+    ("pick_ignores_result", PICK_SEND, PICK_SEND.replace("return ", "") + "\n    return true;", SIM),
+    ("pick_unreliable", PICK_SEND, PICK_SEND.replace("COOP_NET_RELIABLE", "COOP_NET_UNRELIABLE"), SIM),
+    ("pick_wrong_id", PICK_SEND, PICK_SEND.replace("COOP_MSG_SESSION_PICK", "COOP_MSG_SESSION_ROSTER"), SIM),
+
+    # Characters: what can be asked of the session.
+    ("roster_host_none", "if (s->isHost) {\n        return &s->roster;\n    }\n", "", SIM),
+    ("roster_after_the_end", CLIENT_ROSTER, CLIENT_ROSTER.replace("s->client == CLIENT_ACTIVE && ", ""), SIM),
+    ("roster_before_the_first", CLIENT_ROSTER,
+     CLIENT_ROSTER.replace(" && s->roster.character[0] == COOP_CHARACTER_FOX", ""), SIM),
+    ("name_fox_lost", 'return "Fox";', 'return "";', SIM),
+    ("name_falco_lost", 'return "Falco";', 'return "";', SIM),
+    ("name_slippy_lost", 'return "Slippy";', 'return "";', SIM),
+    ("name_peppy_lost", 'return "Peppy";', 'return "";', SIM),
+    ("name_of_nothing", 'return "Peppy";\n        default:\n            return "";',
+     'return "Peppy";\n        default:\n            return "Fox";', SIM),
+
+    # Characters: reading a pick or a refusal, on either side.
+    ("character_size_unchecked", CHARACTER_READ, CHARACTER_READ.replace("net->size == 1 && ", ""), SIM),
+    ("character_trailing_accepted", CHARACTER_READ, CHARACTER_READ.replace("net->size == 1", "net->size >= 1"), SIM),
+    ("character_no_low_bound", CHARACTER_READ, CHARACTER_READ.replace("net->data[0] >= COOP_CHARACTER_FOX && ", ""),
+     SIM),
+    ("character_low_off_by_one", CHARACTER_READ, CHARACTER_READ.replace("net->data[0] >= COOP", "net->data[0] > COOP"),
+     SIM),
+    ("character_no_high_bound", CHARACTER_READ, CHARACTER_READ.replace(" && net->data[0] < COOP_CHARACTER_COUNT", ""),
+     SIM),
+    ("character_high_off_by_one", CHARACTER_READ, CHARACTER_READ.replace("net->data[0] < COOP", "net->data[0] <= COOP"),
+     SIM),
+    ("refused_event_wrong_type", "Event_Init(ev, COOP_SESSION_EV_PICK_REFUSED, peer);",
+     "Event_Init(ev, COOP_SESSION_EV_REFUSED, peer);", SIM),
+    ("pick_refused_wrong_peer", "Event_Init(ev, COOP_SESSION_EV_PICK_REFUSED, peer);",
+     "Event_Init(ev, COOP_SESSION_EV_PICK_REFUSED, 0);", SIM),
+    ("pick_refused_no_character", "ev->character = character;\n", "", SIM),
+    ("pick_refused_no_text", 'CoopSession_CharacterName(character));\n    ev->text = s->text;',
+     "CoopSession_CharacterName(character));", SIM),
+    ("pick_refused_no_name", 'snprintf(s->text, sizeof(s->text), "%s is already taken.", '
+     "CoopSession_CharacterName(character));", 'snprintf(s->text, sizeof(s->text), "%s is already taken.", "Falco");',
+     SIM),
+
+    # Characters: the host's roster, and who hears of it.
+    ("change_tells_one_peer", "s->peers[i].rosterDue = true;", "s->peers[0].rosterDue = true;", SIM),
+    ("change_no_event", "s->rosterEvent = true;\n", "", SIM),
+    ("roster_event_repeats", "s->rosterEvent = false;\n", "", SIM),
+    ("owed_not_sent", "Host_SendOwed(s);\n    if (", "if (", SIM),
+    ("owed_any_state", "if (p->state != PEER_JOINED) {\n            continue;\n        }\n", "", SIM),
+    ("owed_refusal_repeats", OWED_REFUSAL, OWED_REFUSAL.replace("p->refusedPick = 0;\n", "\n"), SIM),
+    ("owed_refusal_lost", OWED_REFUSAL,
+     "if (p->refusedPick != 0) {\n            s->t->ops->send(s->t, i, COOP_MSG_SESSION_PICK_REFUSE, "
+     "&p->refusedPick, 1, COOP_NET_RELIABLE);\n            p->refusedPick = 0;\n        }", SIM),
+    ("owed_refusal_unreliable", OWED_REFUSAL, OWED_REFUSAL.replace("COOP_NET_RELIABLE", "COOP_NET_UNRELIABLE"), SIM),
+    ("owed_refusal_wrong_peer", OWED_REFUSAL, OWED_REFUSAL.replace("(s->t, i,", "(s->t, 0,"), SIM),
+    ("owed_roster_repeats", OWED_ROSTER, OWED_ROSTER.replace("p->rosterDue = false;\n", "\n"), SIM),
+    ("owed_roster_lost", OWED_ROSTER,
+     "if (p->rosterDue) {\n            s->t->ops->send(s->t, i, COOP_MSG_SESSION_ROSTER, s->roster.character, "
+     "sizeof(s->roster.character), COOP_NET_RELIABLE);\n            p->rosterDue = false;\n        }", SIM),
+    ("owed_roster_unreliable", OWED_ROSTER, OWED_ROSTER.replace("COOP_NET_RELIABLE", "COOP_NET_UNRELIABLE"), SIM),
+    ("owed_roster_wrong_peer", OWED_ROSTER, OWED_ROSTER.replace("(s->t, i,", "(s->t, 0,"), SIM),
+    ("owed_roster_cut", OWED_ROSTER, OWED_ROSTER.replace("sizeof(s->roster.character),", "3,"), SIM),
+    ("left_keeps_character", "s->roster.character[peer + 1] = COOP_CHARACTER_NO_PLAYER;\n", "", SIM),
+    ("left_wrong_slot", "s->roster.character[peer + 1] = COOP_CHARACTER_NO_PLAYER;",
+     "s->roster.character[peer] = COOP_CHARACTER_NO_PLAYER;", SIM),
+    ("left_no_roster", "Host_RosterChanged(s);\n    Event_Init(ev, COOP_SESSION_EV_LEFT, peer);",
+     "Event_Init(ev, COOP_SESSION_EV_LEFT, peer);", SIM),
+    ("joined_not_in_roster", "s->roster.character[peer + 1] = COOP_CHARACTER_UNPICKED;\n", "", SIM),
+    ("joined_wrong_slot", "s->roster.character[peer + 1] = COOP_CHARACTER_UNPICKED;",
+     "s->roster.character[peer] = COOP_CHARACTER_UNPICKED;", SIM),
+    ("joined_holds_a_wingman", "s->roster.character[peer + 1] = COOP_CHARACTER_UNPICKED;",
+     "s->roster.character[peer + 1] = COOP_CHARACTER_FALCO;", ["sim", "characters"]),
+    ("joined_no_roster", "Host_RosterChanged(s);\n    Event_Init(ev, COOP_SESSION_EV_JOINED, peer);",
+     "Event_Init(ev, COOP_SESSION_EV_JOINED, peer);", SIM),
+    ("connected_keeps_owed", "memset(p, 0, sizeof(*p));\n                p->state = PEER_WAIT_HELLO;",
+     "p->state = PEER_WAIT_HELLO;", SIM),
+
+    # Characters: the host decides a pick.
+    ("host_pick_any_state", HOST_PICK_GATE, "if (net.msgId == COOP_MSG_SESSION_PICK) {", SIM),
+    ("host_pick_off", HOST_PICK_GATE, "if (0) {", SIM),
+    ("host_pick_event_lost", "if (Host_Pick(s, net.peer, &net, ev)) {\n                        return true;\n"
+     "                    }\n", "Host_Pick(s, net.peer, &net, ev);\n", SIM),
+    ("bad_pick_taken_for_a_pick", "if (!Character_Read(net)) {\n        s->t->ops->disconnect(s->t, peer);",
+     "if (0) {\n        s->t->ops->disconnect(s->t, peer);", SIM),
+    ("bad_pick_stays", BAD_PICK, BAD_PICK.replace("s->t->ops->disconnect(s->t, peer);\n        ", ""), SIM),
+    ("bad_pick_keeps_state", BAD_PICK, BAD_PICK.replace("p->state = PEER_FREE;\n        ", ""), SIM),
+    ("bad_pick_wrong_end", BAD_PICK, BAD_PICK.replace("COOP_SESSION_END_BAD_MESSAGE", "COOP_SESSION_END_CLOSED"), SIM),
+    ("bad_pick_event_lost", BAD_PICK, BAD_PICK.replace("return true;", "return false;"), SIM),
+    ("own_pick_refused", OWN_PICK, "", SIM),
+    ("own_pick_told", OWN_PICK,
+     "if (s->roster.character[peer + 1] == net->data[0]) {\n        Host_RosterChanged(s);\n"
+     "        return Host_RosterEvent(s, ev);\n    }\n", SIM),
+    ("taken_not_checked", "if (s->roster.character[i] == net->data[0]) {", "if (0) {",
+     ["sim", "taken", "taken_bad_wifi"]),
+    ("taken_skips_fox", TAKEN_LOOP, TAKEN_LOOP.replace("i = 0", "i = 1"), SIM),
+    ("taken_skips_last", TAKEN_LOOP, TAKEN_LOOP.replace("i < COOP_SESSION_PLAYERS", "i < COOP_SESSION_PLAYERS - 1"),
+     SIM),
+    ("taken_not_told", "p->refusedPick = net->data[0];\n", "", SIM),
+    ("taken_event_lost", "Event_PickRefused(s, peer, net->data[0], ev);\n            return true;",
+     "Event_PickRefused(s, peer, net->data[0], ev);\n            return false;", SIM),
+    ("taken_ends_client", "p->refusedPick = net->data[0];\n            Event_PickRefused(s, peer, net->data[0], ev);",
+     "s->t->ops->disconnect(s->t, peer);\n            p->state = PEER_FREE;\n"
+     "            Host_Left(s, peer, COOP_SESSION_END_CLOSED, ev);", SIM),
+    ("taken_pick_goes_through", "Event_PickRefused(s, peer, net->data[0], ev);\n            return true;",
+     "s->roster.character[peer + 1] = net->data[0];\n            Event_PickRefused(s, peer, net->data[0], ev);\n"
+     "            return true;", SIM),
+    ("pick_not_held", "s->roster.character[peer + 1] = net->data[0];\n    Host_RosterChanged(s);",
+     "Host_RosterChanged(s);", SIM),
+    ("pick_wrong_slot", "s->roster.character[peer + 1] = net->data[0];\n    Host_RosterChanged(s);",
+     "s->roster.character[peer] = net->data[0];\n    Host_RosterChanged(s);", SIM),
+    ("pick_no_roster", PICK_TAKEN, "return false;", SIM),
+    ("pick_no_event", PICK_TAKEN, "Host_RosterChanged(s);\n    return false;", SIM),
+
+    # Characters: what a client takes from the host.
+    ("client_slot_unset", "s->player = net->data[0];\n", "", SIM),
+    ("roster_trailing_accepted", ROSTER_HEAD, ROSTER_HEAD.replace("size != COOP", "size < COOP"), SIM),
+    ("roster_no_fox", ROSTER_HEAD, ROSTER_HEAD.replace("data[0] != COOP_CHARACTER_FOX || ", ""), SIM),
+    ("roster_without_us", ROSTER_HEAD, ROSTER_HEAD.replace(" || data[self] == COOP_CHARACTER_NO_PLAYER", ""), SIM),
+    ("roster_second_fox", ROSTER_VALUE, ROSTER_VALUE.replace("data[i] == COOP_CHARACTER_FOX || ", ""), SIM),
+    ("roster_no_high_bound", ROSTER_VALUE, ROSTER_VALUE.replace(" || data[i] >= COOP_CHARACTER_COUNT", ""), SIM),
+    ("roster_high_off_by_one", ROSTER_VALUE, ROSTER_VALUE.replace("data[i] >= COOP", "data[i] > COOP"), SIM),
+    ("roster_last_unchecked", "for (i = 1; i < COOP_SESSION_PLAYERS; i++) {\n        if (data[i] == COOP_CHARACTER_FOX",
+     "for (i = 1; i < COOP_SESSION_PLAYERS - 1; i++) {\n        if (data[i] == COOP_CHARACTER_FOX", SIM),
+    ("roster_twice_accepted", ROSTER_TWICE, "if (0) {", SIM),
+    ("roster_unpicked_twice", ROSTER_TWICE, ROSTER_TWICE.replace("data[i] > COOP_CHARACTER_FOX && ", ""), SIM),
+    ("roster_twice_from_second", "for (j = 1; j < i; j++) {", "for (j = 2; j < i; j++) {", SIM),
+    ("roster_twice_not_next", "for (j = 1; j < i; j++) {", "for (j = 1; j < i - 1; j++) {", SIM),
+    ("roster_not_read", "if (!Roster_Valid(net->data, net->size, s->player)) {", "if (0) {", SIM),
+    ("roster_not_kept", "memcpy(s->roster.character, net->data, sizeof(s->roster.character));\n", "", SIM),
+    ("roster_wrong_event", "Event_Init(ev, COOP_SESSION_EV_ROSTER, 0);\n}",
+     "Event_Init(ev, COOP_SESSION_EV_LEFT, 0);\n}", SIM),
+    ("broken_roster_stays", CLIENT_BROKEN, CLIENT_BROKEN.replace("s->t->ops->disconnect(s->t, 0);\n    ", ""), SIM),
+    ("broken_roster_wrong_end", CLIENT_BROKEN, CLIENT_BROKEN.replace("END_BAD_MESSAGE", "END_CLOSED"), SIM),
+    ("pick_refuse_not_read", "if (!Character_Read(net)) {\n        Client_Broken(s, ev);",
+     "if (0) {\n        Client_Broken(s, ev);", SIM),
+    ("client_roster_any_state", ROSTER_GATE, "if (net.msgId == COOP_MSG_SESSION_ROSTER) {", SIM),
+    ("client_roster_off", ROSTER_GATE, "if (0) {", SIM),
+    ("client_roster_lost", "Client_Roster(s, &net, ev);\n                    return true;",
+     "Client_Roster(s, &net, ev);\n                    break;", SIM),
+    ("client_pick_refuse_any_state", PICK_REFUSE_GATE, "if (net.msgId == COOP_MSG_SESSION_PICK_REFUSE) {", SIM),
+    ("client_pick_refuse_off", PICK_REFUSE_GATE, "if (0) {", SIM),
+    ("client_pick_refuse_lost", "Client_PickRefused(s, &net, ev);\n                    return true;",
+     "Client_PickRefused(s, &net, ev);\n                    break;", SIM),
 ]
 
 # Breaks that only a sanitizer can see: the program still behaves, it just touches memory it should not. These prove
@@ -284,6 +456,7 @@ SANITIZER_BREAKS = [
     ("refuse_read_past_end", REFUSE_READ, REFUSE_READ.replace("net->size < 4", "net->size < 2"), SIM),
     ("identity_peer_unchecked", "if (peer < 0 || peer >= COOP_NET_MAX_PEERS) {\n        return NULL;\n    }\n", "",
      SIM),
+    ("roster_read_past_end", ROSTER_HEAD, ROSTER_HEAD.replace("size != COOP_SESSION_PLAYERS", "size < 1"), SIM),
 ]
 
 

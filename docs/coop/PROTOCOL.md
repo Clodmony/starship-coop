@@ -1,7 +1,7 @@
 # Wire protocol
 
-Status: the transport (WP-20) and the session handshake (WP-21) exist; `COOP_PROTOCOL_VERSION` is 2. Sync and game
-messages come with their work packages. This
+Status: the transport (WP-20), the session handshake (WP-21) and the characters (WP-34) exist;
+`COOP_PROTOCOL_VERSION` is 3. Sync and game messages come with their work packages. This
 page sets the rules so parallel work does not collide.
 
 ## Rules
@@ -78,6 +78,54 @@ The code is in `src/port/coop/session/`. All three messages go on the reliable l
 
 The CVar table is `src/port/coop/session/sim_cvars.c`; why each CVar is there is in NOTES.md (WP-21).
 
+## Characters
+
+Who flies what, from [decision 0005](decisions/0005-players-and-characters.md). The code is in
+`src/port/coop/session/session.c`. All three messages go on the reliable lane, after the welcome. The host holds the
+roster and is the only one that changes it; a client's copy is what the host last sent.
+
+**Roster**, four bytes, one per player: player 0 is the host, player n the client at transport peer n - 1. So the slot
+is the player index in `SESSION_WELCOME`.
+
+| Value | Slot |
+|---|---|
+| 0 | Free |
+| 1 | A client that joined and holds no character yet |
+| 2 | Fox: player 0, and only player 0 |
+| 3 | Falco |
+| 4 | Slippy |
+| 5 | Peppy |
+
+Values 2 to 5 follow the order of `TeamId` (`include/sf64player.h`).
+
+1. The host sends `SESSION_ROSTER` to every client that has joined, whenever the roster changes: a client joined, a
+   pick was taken, a client left. A new client's first one follows its welcome. Until then a client has no roster.
+2. A client sends `SESSION_PICK` with the character it wants, in place of what it holds. A client that has joined holds
+   nothing (value 1) until then; the host gives out nothing by itself.
+3. A character someone else holds, Fox included, gets `SESSION_PICK_REFUSE` to that client only. The roster stays as it
+   was, the client stays connected and may pick again. A free character goes to the client, its old one is free, and
+   the roster goes out. A client that picks what it already holds gets no answer, because nothing changed.
+4. A client that leaves, for whatever reason, frees its slot and its character at once. Nothing is kept for it: if it
+   comes back it is a new client, which may find the character taken.
+5. The host orders picks by arrival, so of two picks of one character the first one wins.
+6. If the transport refuses a send because its window is full, the host tries again on the next poll, with the roster
+   of that moment and the last refusal. A client can miss a roster or a refusal that way, never the last one.
+
+What does not fit, as in the handshake:
+
+- A message out of place is dropped and counted (`CoopSession_Ignored`): a pick before the welcome or from a refused
+  client, a roster or a refusal before the welcome, any of the three in the wrong direction.
+- `SESSION_PICK` that cannot be read (size other than 1, or a value other than 2 to 5) ends that client as a hello
+  that cannot be read would: the host says goodbye and tells its game the client left with `BAD_MESSAGE`. The other
+  clients see a roster without it. Its side only sees the host close, because a joined client takes no
+  `SESSION_REFUSE`.
+- A client ends with `BAD_MESSAGE` on a `SESSION_PICK_REFUSE` of a size other than 1 or a value other than 2 to 5, and
+  on a `SESSION_ROSTER` of a size other than 4, without Fox at player 0, with Fox or a value above 5 anywhere else,
+  with a wingman twice, or with its own slot free.
+
+Nothing here reads or writes game state. Until WP-17 the character changes nothing in the level, and nothing stops a
+pick once a level runs; that belongs to WP-24.
+
 ## Id ranges
 
 | Range | Area |
@@ -103,6 +151,9 @@ The CVar table is `src/port/coop/session/sim_cvars.c`; why each CVar is there is
 | 0x0010 | `SESSION_HELLO` | client to host | identity | WP-21 |
 | 0x0011 | `SESSION_WELCOME` | host to client | u8 player index (1 to 3), then the host's identity | WP-21 |
 | 0x0012 | `SESSION_REFUSE` | host to client | u32 reasons: bit 0 build, 1 ROM, 2 CVars, 3 platform (never alone), 8 the hello could not be read; 0 means no hello in time. Then the host's identity. | WP-21 |
+| 0x0013 | `SESSION_PICK` | client to host | u8 character asked for (3 to 5; 2 is refused as taken) | WP-34 |
+| 0x0014 | `SESSION_PICK_REFUSE` | host to client | u8 character asked for (2 to 5). The only reason is that someone else holds it. | WP-34 |
+| 0x0015 | `SESSION_ROSTER` | host to client | u8 for each of the 4 players, see Characters | WP-34 |
 | 0x00C0 | `TEST_RELIABLE` | both | test pattern, only sent by `coop_net_test` | WP-20 |
 | 0x00C1 | `TEST_UNRELIABLE` | both | test pattern, only sent by `coop_net_test` | WP-20 |
 | 0x00C2 | `TEST_DONE` | both | none, only sent by `coop_net_test` | WP-20 |
