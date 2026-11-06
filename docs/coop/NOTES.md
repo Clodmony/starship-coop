@@ -50,6 +50,44 @@ Unknown:
 - Windows and macOS: none of this ran there. `SHIP_HOME` is read on Linux and macOS only
   (`libultraship/src/Context.cpp:471-486`).
 
+### 2026-11-06, #104, run folders of the test tools
+
+Identity: before the change `797c678b`, ROM US 1.0, Linux, GCC, Debug, OpenGL in software, no window. The games ran on a
+build of that commit, the transport tests on the same source.
+
+Observed, before the change, with the real clock and runs started just after a second began:
+
+- `exit_test.py`, two at once: one `PASS`, one `FileExistsError` on `local/test-exit-<stamp>`.
+- `player_trace.py run`, two at once: the second stopped with `FileExistsError`. `rails --players 1` did the same
+  between the two threads of one process.
+- `net_test.py --only lan`, two at once, four times: both printed the same `logs:` line, and in every pair at least one
+  run failed, five of the eight: `ran out of time: host False, client True` (three), `8 resends on a clean link` (one)
+  and one whose line was not kept. Alone the scenario passed five of five.
+- `session_test.py --only sim`, two at once: the same `logs:` line, both passed.
+- `net_mutants.py` twice, one after the other, with a build folder that does not exist: the same `logs:` line.
+
+Observed, after the change: the same runs each print a folder of their own, the later one with `-2`. `lan` two at once,
+four times: all eight passed. `exit_test.py`, two at once: both `PASS`.
+
+Derived:
+
+- A shared folder is more than overwritten logs: `net_test.py` reads and writes `host.port`, `host.json` and
+  `client.json` by name in the scenario's folder (`tools/coop/net_test.py:67-68`, `:80`), so two runs use the same
+  files.
+- `mutants.py` takes a lock before it names the folder (`tools/coop/mutants.py:237`), so of its runs only one that
+  starts after another has ended can land in that folder, and that takes a run that ends within the second.
+- `mutants.py` starts the test script with `python -I` (`tools/coop/mutants.py:141`), and `check.py` does so too. `-I`
+  keeps the script's own folder off `sys.path`, so a tool started that way has to add `tools/coop` itself to import
+  `run_folder`. Removing that line from `net_test.py` turned `run_folder_test.py` red.
+
+Guess:
+
+- `ran out of time` comes from the two runs mixing up those files. No run looked at which file went where.
+
+Unknown:
+
+- Windows and macOS: none of this ran there.
+
 ### 2026-11-06, #70, which test variables reach the game
 
 Identity: ROM US 1.0, on commit `95962d04`, Linux, GCC, Debug, OpenGL in software, no window.
@@ -204,6 +242,70 @@ Unknown:
 - Release builds, Windows and macOS: not run. libultraship installs these handlers on Linux only
   (`libultraship/src/debug/CrashHandler.cpp:416`), so `stop_signal.c` does nothing elsewhere.
 
+### 2026-11-06, #98, why a crash did not end a test run
+
+Identity: ROM US 1.0, on commit `797c678b`, Linux, GCC, Debug, OpenGL in software, no window, one game at a time.
+
+Observed:
+
+- On `797c678b`, 12 of 12 test runs were still running 10 s after a crash signal, in `exit_test.py`: SIGSEGV 6 times
+  (without a replay, recording, playing), SIGABRT, SIGFPE and SIGILL twice each. All 12 had their crash log, and their
+  report and closing hash line where the run writes them.
+- So were real faults, 1 of 1 each: gdb sent the program counter to address 0 on the main thread (`fault-main`) and in
+  `AudioPlayerBuffered` on the audio thread (`fault-audio`, thread 49 in gdb, `src/port/Engine.cpp:391`). Both left a
+  crash log with `Signal: 11`. The stack of these hangs was not taken: that it is the destructor rests on the #71 entry.
+- A crash handler made to stop for good before it writes anything (`fault-stuck`, gdb jumps from `backtrace_symbols`
+  to `pause`) was still running 10 s later, 1 of 1.
+- The fix (`src/port/coop/test/stop_signal.c`) uses the gate of the stop handler. In a test run it puts a handler in
+  front of libultraship's for SIGILL, SIGABRT, SIGFPE and SIGSEGV. That one sets a flag and calls libultraship's, which
+  writes the log as before. An atexit handler (`stop_signal.c:55`) sees the flag and leaves with `_exit(1)`.
+- With the fix, 18 of 18 crash signals ended with exit code 1, the slowest 0.37 s after the signal, with crash log,
+  report, closing hash line and, recording, whole frames. `fault-main` did the same in 4 of 4, slowest 0.47 s, and
+  `fault-audio` in 14 of 14, slowest 1.59 s, both under gdb.
+- `fault-stuck` ended by SIGALRM in 4 of 4, 5.14 to 5.39 s after the fault, from an alarm of 5 s
+  (`stop_signal.c:69`), and left no crash log entry for that crash.
+- Stop signals kept their path: 15 of 15 test runs ended with exit code 0, the slowest 0.22 s after the signal.
+- A plain game was still running 3 s after SIGSEGV in 8 of 8 tries, with its crash log, and after SIGTERM in 3 of 3.
+  `797c678b` did the same after SIGSEGV in 2 of 2. The check behind that fails when it should: run against a test run,
+  it gave `exit code 1: a plain game lost upstream's handler` in 3 of 3.
+- With `SDL_VIDEODRIVER=offscreen` the crash handler tried no message box: a listener on the socket of a made-up X
+  display saw 0 connections and fake `zenity` and `kdialog` were not called, 1 of 1, on `797c678b`. The same listener
+  saw 3 connections and the fake dialogs 3 calls in a game with no driver set, which failed while starting up. That
+  game ended with exit code 1 and a crash log.
+- The system's SDL here is sdl2-compat on SDL3.
+- A crashed recording reports `RECORDED` and a crashed playback `FAIL_INCOMPLETE`, as a closed window does. Only the
+  exit code and the crash log tell them apart, and `tools/coop/replay.py:166` prints the exit code only when there is
+  no report.
+
+Derived:
+
+- The order is what makes this work. atexit handlers run last registered first. The destructor of the static `audio`
+  was registered before `main`, `CoopStopSignal_Init` runs at `src/port/Engine.cpp:301`, and `CoopReplay_Init` and
+  `CoopStateHash_Init` at `:310` and `:311`. So the test output is written first and `_exit` comes before the destructor.
+- `_exit(1)` keeps the exit code of upstream's `exit(1)` (`libultraship/src/debug/CrashHandler.cpp:202`), so a tool can
+  tell a crash from a stop.
+- The alarm is there for the other hang, the 62nd run of the #71 entry: `Ship::ErrorHandler` calls `backtrace_symbols`
+  (`libultraship/src/debug/CrashHandler.cpp:148`), which allocates, so a crash inside `malloc` or `free` can stop on a
+  lock the crashed code holds. That happens before the log is written (`:198`), so such a run has no crash log, and
+  nothing in this repo can change that without replacing libultraship's handler.
+- The alarm is off with a window. `SDL_ShowSimpleMessageBox` (`:192`) also comes before the log, so a limit there could
+  kill the game while someone reads the box, and the log would be lost.
+- The issue's candidate, never destroying `audio`, would change a plain game too, which the owner's rule from #71 does
+  not allow, and would not reach a crash handler that hangs before `exit`.
+
+Guess:
+
+- A real lock hang ends through the alarm the way `fault-stuck` does. `fault-stuck` stands in for it with `pause`; a real
+  crash inside `malloc` was not produced.
+
+Unknown:
+
+- A test run with a window: not run. The message box waits there as upstream's does, and the `_exit(1)` should follow
+  once it is closed.
+- Release builds, Windows and macOS: not run. The handlers exist on Linux only, as in the #71 entry.
+- A crash before `src/port/Engine.cpp:301` keeps upstream's path. The run with no driver above is the only such crash
+  seen, and it ended by itself.
+
 ### 2026-11-04, #1 (WP-01), Linux build
 
 Identity: ROM US 1.0 (SHA-1 `d8b1088520f7c5f81433292a9258c1184afa1457`, `config.yml:34`), commit `ba0781d7`, Linux,
@@ -259,6 +361,7 @@ throwaway decoder that follows `tools/Torch/src/factories/sf64/ScriptFactory.cpp
 script 59, command 34. The tables are the `SF64:SCRIPT` rows of `assets/yaml/us/rev0/ast_*.yaml` (Corneria:
 `ast_corneria.yaml:445`), and `ActorEvent_ProcessScript` picks one per level (`src/engine/fox_enmy2.c:1067-1120`).
 `z` is the `zPos1` of the object that starts a script. Conditions are in `ActorEvent_ProcessTriggers` (`:2354`).
+To look a reference up: `python tools/coop/script_reader.py CO S59:34`, see the #90 entry.
 
 Short version, derived from the lists below: two routes read a wingman directly (Corneria needs Falco to open
 Sector Y; Sector X loses its choice when Slippy is shot down), Titania always takes Slippy away, and every medal needs
@@ -515,6 +618,7 @@ for example Corneria 17.8. The tables are the `SF64:SCRIPT` assets (`assets/yaml
 Corneria), picked per level in `ActorEvent_ProcessScript` (`src/engine/fox_enmy2.c:1075-1122`). They were decoded from
 a US 1.0 `sf64.o2r` with a throwaway script, not kept. Its command format is `EVENT_CMD` (`include/sf64event.h:92`).
 Script counts come from walking each script's branches, so they say what can run, not what a given run plays.
+To look a reference up: `python tools/coop/script_reader.py Corneria 17.8`, see the #90 entry.
 
 **Observed: how a line reaches the radio**
 
@@ -966,6 +1070,65 @@ Open questions for the record that settles this, with lives and respawn (nothing
 11. Which stores join the state hash or the host's snapshot: `gSavedTeamShields`, `gPrevPlanetTeamShields`,
     `D_ctx_80177C58`, `gTeamDamage`?
 
+### 2026-11-06, #90, how to look up a level script reference
+
+Read at `797c678b`. The tool ran on an `sf64.o2r` built from ROM US 1.0, version `76924CA9`. No game ran.
+
+Level scripts are ROM data, so the notes cite them by level, script and command. `tools/coop/script_reader.py` reads
+them from your own `sf64.o2r`. Both ways the notes write a reference work:
+
+```sh
+python tools/coop/script_reader.py CO S59:34       # the #59 entry: level prefix, script, command
+python tools/coop/script_reader.py Corneria 17.8   # the #60 entry: level name, script, command
+```
+
+It prints the whole script and marks the command with `>`. A script without a command marks nothing, a level alone
+lists its scripts, and no argument lists the levels. Prefixes are the ones in `include/sf64event.h`. In the #59 table
+the first column is the level, so `S4` in the Corneria row is `CO S4`, and `S141-143` is three lookups. It finds
+`sf64.o2r` in `build-cmake/`, `build/x64/` or the repo root; `--o2r <file>` names another. It reads that one file and
+writes nothing. What it prints is game data: keep it out of git, issues and PRs. A reference holds for the ROM it was
+read on, so the first line of the output shows the archive's version.
+
+Observed, how a reference maps to the game:
+
+- The script is the slot in the level's table. An object's id minus `ACTOR_EVENT_ID` gives `aiType`
+  (`src/engine/fox_enmy.c:412`), and `levelScripts[this->aiType]` is the script (`src/engine/fox_enmy2.c:1122`).
+- The command is `aiIndex / 2`. A command is two 16-bit words (`EVENT_CMD`, `include/sf64event.h:92`), and branches
+  land on `n * 2` (`fox_enmy2.c:1492`, `:2341`).
+- The level picks the table in `ActorEvent_ProcessScript` (`fox_enmy2.c:1075-1121`). Levels with no case use Corneria's
+  (`:1118-1120`); the tool refuses those instead of showing Corneria.
+- A table entry is a 0x40-byte header, a count, then one 64-bit hash per slot (`ScriptBinaryExporter`,
+  `tools/Torch/src/factories/sf64/ScriptFactory.cpp:330-335`, read at `src/port/resource/importers/ScriptFactory.cpp:16-19`).
+  The hash is `CRC64()` of the entry's path (`ScriptFactory.cpp:325`). That function returns the value uninverted
+  (`tools/Torch/lib/strhash64/StrHash64.cpp:249`), unlike `update_crc64` (`:234`).
+- `<table>_cmd_<n>` counts in sorted address order, not table order (`ScriptFactory.cpp:296`, `:302`), so `n` is not
+  defined to be the script number. The tool follows the hash, as the game does.
+- Some macro parameters read the other way round from the interpreter. `EVENT_F4_PLUS_X(rot, rotVel)` puts `rotVel * 10`
+  in arg1 (`include/sf64event.h:106`), while the interpreter takes arg1 as the angle and arg2 / 10 as the step
+  (`fox_enmy2.c:1546-1547`, `:3277-3283`). The tool prints what the interpreter reads.
+
+Observed, run on all 14 tables:
+
+- 1700 scripts and 19100 commands decode. Every opcode and enum value has a name in the headers, and in every table
+  `n` equals the slot.
+- The #59 entry holds up: `CO S59:34`, `CO S59:10` and `CO S60:12` show what it says, all 176 scripts its level table
+  names exist, and all 98 fly-ins it lists set that wingman's team id. Only `SX S94` uses `EVOP_RESTORE_TEAM`, the
+  largest `EVOP_DAMAGE_TEAM` values are 255 and 70, and no script uses `EVC_TEAM_COUNT_*` or `EVC_CHASED`.
+- The references in the #60 entry resolve with their commands in range: 29, found by pattern.
+- Two branches land one past the last command of their script: `A6 S26:53` and `VE1 S40:6`.
+
+Derived:
+
+- On the N64 those two targets are the first command of the next script: a script's size is the distance to the next
+  pointer (`ScriptFactory.cpp:562`), and the table is in address order. In the port each script is a buffer of its own
+  (`src/port/resource/type/Script.cpp:13`), so taking either branch reads past the end of it.
+
+Unknown:
+
+- Whether either branch can fire in play. Nothing was run.
+- Whether US 1.1 scripts differ: only US 1.0 was read. `aVe1EventScript` has another offset in rev1
+  (`assets/yaml/us/rev1/ast_venom_1.yaml:122`).
+
 ### 2026-11-05, #5 (WP-05), single-player assumptions audit
 
 Read at `d653ee21` (branch `coop`). Full list with a verdict per site: `docs/coop/audit/single-player.md`, generated
@@ -1041,6 +1204,59 @@ Unknown:
   gPlayer` (without `[0]`), `gPlayer[i]` with a fixed `i`, and arrays indexed `[0]` that mean player 0 (`gLaserStrength[0]`,
   `gLifeCount[0]`, `D_ctx_801779A8[0]`). Not counted here.
 - `src/port/` (enhancements, cheats, hooks) was out of scope.
+
+### 2026-11-06, #114, --check ignores only line numbers
+
+Read at `797c678b`. Python only: no ROM, no game run. The results on real code come from a scratch clone, the rest from
+`python tools/coop/sp_audit_test.py`.
+
+Observed:
+
+- **Before.** One added line above the sites of `src/engine/fox_demo.c` gave `is stale`, exit 1. Two branches that each
+  added a comment above that file's first site, each rerun and green alone, merged with no conflict, and the merge
+  failed `--check`. A docs-only commit on top failed the same way. This is the failure #114 derived from the code.
+- **Not every such pair merges.** Two branches that added a line at lines 85 and 1575 of the same file conflicted in the
+  list instead of merging.
+- **After.** On such a merged tree `--check` exits 0 and prints a note that only line numbers differ. A plain rerun
+  writes the list, and the note goes. A site added or removed in `fox_demo.c` still exits 1, and the last line names the
+  command to run: `--accept` for a new site, the plain rerun for a lost one.
+- **The key.** Sites are counted per file, function and pattern, so a site that moves to another function is not a moved
+  line: it is lost there and new here, also under one verdict row with the row's count unchanged
+  (`star-row-site-moved`). A renamed function goes the same way (`star-row-function-renamed`). Both stop the rerun until
+  `--accept`, as they did since #73 for the new half.
+- **What `--check` compares (owner decision on #114).** The list against what a rerun would write, both read by the same
+  parser: site counts, each site's verdict, basis and note, and every line outside the rows. A verdict and a note changed
+  in `sp-verdicts.tsv` for `fox_demo.c` each exited 1, named the site as `changed site: ... listed ..., now ...` and the
+  plain rerun, and a rerun cleared them. A new row after `--accept` does the same (`no-row`). Errors in the verdict file
+  still fail on their own: a site with no row, a row that matches no site, a bad verdict or basis.
+- **Hand edits and conflict markers.** Comparing verdicts alone would not close this: a marker in the summary touches no
+  verdict. The lines outside the rows close it. A hand edit of a row, the header or a summary count, and markers outside
+  the rows, each exit 1 (`hand-edit-*`, `conflict-markers-*`). On the real list: `changed text: listed '<<<<<<< HEAD'`.
+- **What `--check` still ignores.** Line numbers, and the order of rows and of sites in a row that follows from them. So a
+  wrong line number typed by hand passes with the note (`hand-edit-line-numbers`). A site that replaces another of the
+  same pattern in the same function passes without one (`known-gap-swap`).
+- **Two branches that each accept a site can still leave `coop` red.** Two green branches, one new `sim` site of
+  `gPlayer[0]` each, in `fox_360.c` and `fox_effect.c`, merged with no conflict. Both had written `1789 sites`, so `--check`
+  on the merge exits 1 with `changed text: listed '1789 sites in 407 functions in 43 files.', now '1790 sites ...`, until
+  a plain rerun. With only the sites compared, the same merge passed with the note. Moved lines cannot do this.
+- **A tracked file that is deleted but not committed.** `FileNotFoundError` before, from `--check`, `--todo` and the plain
+  rerun. Now it is skipped. If the list has sites of it, a warning names the file and the sites count as lost; if not,
+  nothing is said. A plain rerun then writes the list without them. Restoring the file afterwards shows them as new, so
+  they need `--accept` (`file-deleted`).
+- **A list with conflict markers.** In the conflicted merge above both sides' rows counted, so `--check` said `lost site`
+  for each doubled function (`6 listed, 3 now`) and failed. A plain rerun wrote the list and passed.
+
+Derived:
+
+- The line in the #75 entry that any change moving a site needs a rerun no longer holds.
+- Two branches merge cleanly into a stale list only when both shift the same rows alike, so both edits sit in one gap
+  between sites of a file. Otherwise the list conflicts. A branch that only moves lines can now leave the list alone, and
+  then it has nothing to conflict with.
+- Two branches that change verdicts can leave `coop` red the same way, if their list changes merge cleanly. Not run.
+
+Unknown:
+
+- How far the line numbers will drift in practice. Nothing reruns the audit on its own.
 
 ### 2026-11-06, #73, a new site under an existing audit row
 
@@ -1997,6 +2213,48 @@ GCC 16.2.1, Debug, graphics backend OpenGL, `USE_NETWORKING` on, `SDL_VIDEODRIVE
 - A boot with networking on under Windows or macOS. CI builds the game on Windows but does not start it.
 - Anything past the title screen.
 
+### 2026-11-06, #92, what the sanitizer runs can fail on, and why the session tests need no log scan
+
+Read at `797c678b` (origin/coop).
+
+**Observed**
+
+- `net_mutants.py --asan` has four breaks, all caught in Debug and in Release: a leak (`sim`, `lan`), a signed shift
+  (`sim`, `lan`), a stack overflow by one byte in `Core_Write` (`sim`, `lan`), and a heap overflow in `Sdl_Tx`,
+  `transport_sdlnet.c:34`, after the host's refusal (`host_full`).
+- All four still pass every named scenario in the build without sanitizers, so no ordinary check sees them.
+- With `sanitizer_report` switched off, `refuse_overruns_tx_packet` passes `net_test.py --asan` too. So that break also
+  guards the scan: remove the scan and it survives.
+- Every program's exit in `session_test.py` is read. Each of the 37 programs of the 11 scenarios with real processes
+  was made to end with exit code 77 after its normal end, one at a time, and every run failed with that code. The
+  same probe on `net_test.py` reports the host and the first client of `host_full` as not read, so it can tell. The
+  only program in the session tests that nobody waits for is the relay, which is Python and has no sanitizer.
+- `session_mutants.py --asan` now has `host_close_leaks` and `client_close_leaks`, which fire at the very end of one
+  side, after its result file is written, and `refuse_reads_past_session`, the session's version of the `host_full`
+  break. All are caught, through `run.wait` (`net_test.py:99`), with no scan.
+- With `run.wait` not reading the host's exit, `host_close_leaks` passes all 11 scenarios; the same for the clients and
+  `client_close_leaks`. So the exit is the only thing that fails them, and those two breaks guard it.
+- Such a failure reads `host exited with 1`. What the sanitizer found is only in `host.log`, and CI keeps no logs.
+- The report of `refuse_hell` is in `try0/host.log`: `damaged_runs` gives each try a subfolder
+  (`session_test.py:56`), and `sanitizer_report` reads only the top of a folder (`net_test.py:359`).
+- `s->text[sizeof(s->text)] = 0` in `session.c` is seen by no sanitizer, and no log held a report. In the 64-bit Linux
+  build `CoopSession` is 5400 bytes and `text`, its last field, ends at 5396, so the write stays in the allocation.
+- `roster_read_past_end` in `SANITIZER_BREAKS` also fails `sim` without sanitizers (`roster_trailing`), so it is not
+  one that only a sanitizer can see.
+
+**Derived**
+
+- `session_test.py` does not need the scan to catch a finding: a finding ends its program with a code other than 0, and
+  every program's exit is read. The scan would only add what was found to the summary line.
+- A scan copied into `session_test.py` would have to search subfolders, or it misses every scenario with a relay.
+- A new scenario that leaves a host or all clients running is caught by the two close breaks. One that leaves only some
+  of several clients running is not: a break fires in all clients of a scenario, and the others still fail it.
+
+**Unknown**
+
+- Why UBSan's bounds check says nothing about `s->text[sizeof(s->text)]`. Guess: it treats a last array like a flexible
+  one.
+
 ### 2026-11-06, #75, transport tests under sanitizers, and the audit in CI
 
 Read at `95962d04` (origin/coop).
@@ -2058,6 +2316,73 @@ Read at `a69c811a` (origin/coop).
 
 - Whether a player on such a link is better served by a longer linger time. It is a trade against a slot held by a
   client that already gave up.
+
+### 2026-11-06, #22, join flow: from the lobby into a level
+
+Identity: ROM US 1.0, on commit `d71979bf`, Linux, GCC, Debug, OpenGL on a software renderer, no window, 2 or 3 game
+clients, UDP over loopback, no input after the level start. The rules and the wire form are in PROTOCOL.md, section
+Level start. `python tools/coop/join_test.py` runs all of this.
+
+**Observed**
+
+- Real games ran the session for the first time here, and `CoopIdentity_FromGame` (`src/port/coop/session/identity_game.c`)
+  with it: two and three games of one build passed the handshake.
+- Two games that start from other seeds reach Corneria with the same seeds, the same team values and the same
+  characters, and their state hash is equal in every region on every compared frame: 1995 frames from the title
+  screen, 2001 with the host coming from the map, 2001 with three games. A client that keeps its own values differs on
+  level frame 0, in `rng` and `globals`, so the check can fail.
+- `gNextGameState = GSTATE_PLAY` goes to a level from any game state, as `src/overlays/ovl_i3/fox_a6.c:2927` does:
+  `Game_SetGameState` (`src/engine/fox_game.c:86`) runs right after `GamePreUpdateEvent` (`:352`, `:354`). It ran from
+  the title screen and from the map. `CoopLevelStart_Enter` uses it, so the host and a client take one path.
+- On the frames between that and `Play_Init` the game is in `GSTATE_PLAY` but `gGameFrameCount` still counts the screen
+  it came from: `Play_Init` clears it (`src/engine/fox_play.c:2879`), and `PLAY_STANDBY` then `PLAY_INIT` come first
+  (`:7173`, `:7179`). In the run looked at, five rows differ in `globals` there and nothing else. The first frame in
+  `PLAY_UPDATE` is where games can agree, so `join_test.py` compares from there.
+- `gRadioMsgId` is set by a radio line (`src/engine/fox_radio.c:128`, `src/overlays/ovl_menu/fox_title.c:3654`), read at
+  `src/engine/fox_radio.c:660`, and no level start clears it. With a host coming through the map's briefing, `globals`
+  differed from a client on the title screen on level frames 0 to 331 and was equal from 332 on. With the value in the
+  table the same run was equal on 2014 frames.
+- A level reads the save: Start in a level intro skips the intro only if `normalClear` is set for that planet
+  (`src/engine/fox_play.c:7198-7200`). No run here pressed Start, and every game had a fresh save.
+- `session_mutants.py` showed that `p->state == PEER_JOINED` could not be seen in the start guard: a roster slot only
+  holds value 1 for a joined peer, as `Host_Hello` sets it and `Host_Left` clears it. It is gone.
+- Bit 9 of the refusal reasons was in the test constant `0x04030204`, which stood for bits nobody uses. It is
+  `0x04030404` now.
+
+**Derived**
+
+- Every game entering from the message, the host's too, means no game's history counts. The host's own values go
+  through the same path as everyone else's, so a difference cannot hide on one side.
+- The values are what a level reads and level init does not set: the seeds (`Rand_Init` reads the clock at boot,
+  `src/engine/fox_game.c:58`), `gTeamDamage` and `gTeamEventActorIndex` (#67), the team and Star Wolf arrays, lives,
+  bombs, lasers, gold rings, `gExpertMode`, `gClearPlayerInfo` (`src/engine/fox_play.c:4925`), `gGreatFoxIntact`,
+  `gVenomHardClear` and `gRadioMsgId`. The list comes from reading and from the hash, so it covers what those two can
+  see.
+- The roster has to be taken with the level. If it went out as it is when the send happens, a client leaving in between
+  would give the host one player count and the others another.
+- `Rand_ZeroOne` re-seeds from the clock when a seed is 0 (`src/sys/sys_math.c:25`), which would part two games. No guard
+  is needed: 30269, 30307 and 30323 are prime, so a seed that is not 0 never becomes 0.
+- Picks race the start harmlessly: the host decides by arrival, and the level start says what each client holds.
+
+**Choices the owner can reverse** (from the coordinator's guidance and this code; not decided in a record)
+
+- The host does not start while a client that joined holds nothing. So nobody flies with nothing, and decision 0005 does
+  not have to say what such a client flies.
+- A client in the handshake holds the start up too, for 10000 ms at most.
+- Nobody joins once a level has started, and a client that leaves cannot come back. Late join has no design.
+- There is one level start per session, and nothing opens picks again.
+- A host's lives, bombs, team shields and the rest overwrite what a client has. That says nothing about lives or saves
+  as game rules, only that the games start equal.
+
+**Unknown**
+
+- Every level but Corneria. Levels with a phase and all-range levels have not run from a level start.
+- A client coming from anywhere but the title screen, for example the map, a level it plays alone or the pause menu.
+- What the next level does. The session takes one level start, and how a campaign goes on is open.
+- What happens in a level when a player leaves. It stays in the player count, and whether a computer wingman takes over
+  is open.
+- Whether a game state exists that neither the hash nor reading found, for example a `static` in an overlay.
+- Windows and macOS: none of this ran there.
 
 ### 2026-11-06, #58, characters through the session
 

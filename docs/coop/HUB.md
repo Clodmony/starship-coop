@@ -6,38 +6,32 @@ a phase finishes (hub AGENTS.md, "Sending what you learned back").
 
 ## Not done yet
 
+Both steps go out under the owner's account, so only the owner sends them.
+
 1. Open a "claim a game" issue on the hub for Star Fox 64 so others can find this project.
-2. Once this repository is public, add a directory entry and a write-up (`games/star-fox-64/README.md` from the
-   hub's `templates/game.md`) in a draft PR from a fork of the hub, branch `game/star-fox-64`.
+2. Send the directory entry and the write-up in a draft PR from a fork of the hub, branch `game/star-fox-64`.
 
-## Draft directory entry
+## Drafts
 
-For `data/directory.yaml` in the hub. Fill in the URL and dates when publishing; keep the scope honest.
+| File here | Where it goes in the hub |
+|---|---|
+| [hub/star-fox-64.md](hub/star-fox-64.md) | `games/star-fox-64/README.md`, in the form of the hub's `templates/game.md` |
+| [hub/directory-entry.yaml](hub/directory-entry.yaml) | Appended to `data/directory.yaml`, then run `python tools/build_directory.py` |
 
-```yaml
-- game: Star Fox 64
-  year: 1997
-  engine: N64 decompilation port (Starship, libultraship)
-  project: Starship Co-op
-  url: https://github.com/Clodmony/starship-coop
-  other_urls:
-  - https://github.com/HarbourMasters/Starship
-  kind: fork
-  status: prototype
-  coop_scope:
-    players_visible: unknown
-    story: unknown
-    enemies: unknown
-    world_state: unknown
-    items: unknown
-  players: "2"
-  networking: unknown
-  open_source: true
-  last_activity: YYYY-MM
-  qa: none
-  notes: Campaign co-op on the Starship PC port. Pre-alpha; sync model chosen after a determinism test.
-  sources:
-  - https://github.com/Clodmony/starship-coop
-  checked: YYYY-MM-DD
-  made_with_coop_anything: true
-```
+Before sending:
+
+- Search the hub again for Star Fox 64: issues, PRs and `data/directory.yaml`.
+- Check the status, the QA level and the results in the write-up against `docs/coop/QA.md`, and update `Last updated`,
+  `last_activity` and `checked`. Keep the scope honest.
+- The file references in the write-up are to one commit, named there. Recheck them if you move that commit.
+
+### Why the entry says what it says
+
+| Field | Value | Source |
+|---|---|---|
+| `coop_scope` | `no` for all five: nothing is shared between clients yet | `docs/coop/QA.md`, "Current project level"; no call into `src/port/coop/session/` or `net/` from outside `src/port/coop/` |
+| `players` | 2 planned, later up to 4 | `README.md`, "Goal" |
+| `networking` | `direct-ip`: a client connects to a host and port. Loopback only so far | `src/port/coop/net/transport.h:92`, decision 0004 |
+| `status`, `qa` | `prototype`, `none` | `README.md`, `docs/coop/QA.md` |
+| `open_source` | `yes`, CC0 1.0 | `LICENSE.md` |
+| `made_with_coop_anything` | `true` | `AGENTS.md` |

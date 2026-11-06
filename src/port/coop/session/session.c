@@ -1,5 +1,5 @@
-// Co-op session: handshake (WP-21) and characters (WP-34). Messages and their layout: docs/coop/PROTOCOL.md, ids
-// 0x0010-0x0015.
+// Co-op session: handshake (WP-21), characters (WP-34) and level start (WP-24). Messages and their layout:
+// docs/coop/PROTOCOL.md, ids 0x0010-0x0016.
 //
 // Host, per peer: WAIT_HELLO from the transport's CONNECTED, then JOINED or REFUSED. A refused peer stays until the
 // refusal is acknowledged, the client goes, or COOP_SESSION_REFUSE_LINGER_MS pass; the transport's disconnect drops
@@ -7,6 +7,9 @@
 //
 // The host holds the roster. Whatever a joined peer is owed goes out at the start of a poll, and stays owed while the
 // transport's window is full: a client may miss a roster that way, but not the last one.
+//
+// A level start is taken once: the host's values and the roster of that moment, so that a client leaving afterwards
+// cannot make two games come to different player counts. Picks and joins stop there.
 
 #ifdef USE_NETWORKING
 
@@ -38,6 +41,7 @@ typedef struct {
     CoopIdentity identity;
     bool rosterDue;      // owed the current roster
     uint8_t refusedPick; // owed a refusal for this character, 0 if none
+    bool levelDue;       // owed the level start
 } Peer;
 
 struct CoopSession {
@@ -47,6 +51,9 @@ struct CoopSession {
     Peer peers[COOP_NET_MAX_PEERS];
     CoopRoster roster; // client: what the host last sent, all NO_PLAYER before that
     bool rosterEvent;  // host: a ROSTER event is owed after the JOINED or LEFT one
+    CoopLevelStart level;
+    bool started;    // a level started: level holds it, and picks and joins are closed
+    bool levelEvent; // host: a LEVEL_START event is owed
     ClientState client;
     uint32_t clientSince;
     uint8_t player;  // client: our slot, from the welcome
@@ -133,10 +140,32 @@ bool CoopSession_Send(CoopSession* s, int peer, uint16_t msgId, const void* data
 bool CoopSession_Pick(CoopSession* s, CoopCharacter character) {
     uint8_t wire = (uint8_t) character;
 
-    if (s->client != CLIENT_ACTIVE || character <= COOP_CHARACTER_FOX || character >= COOP_CHARACTER_COUNT) {
+    if (s->client != CLIENT_ACTIVE || s->started || character <= COOP_CHARACTER_FOX ||
+        character >= COOP_CHARACTER_COUNT) {
         return false;
     }
     return s->t->ops->send(s->t, 0, COOP_MSG_SESSION_PICK, &wire, 1, COOP_NET_RELIABLE);
+}
+
+bool CoopSession_StartLevel(CoopSession* s, const CoopLevelStart* start) {
+    int i;
+
+    if (!s->isHost || s->started || start->level >= COOP_LEVEL_START_LEVELS) {
+        return false;
+    }
+    for (i = 0; i < COOP_NET_MAX_PEERS; i++) {
+        if (s->peers[i].state == PEER_WAIT_HELLO || s->roster.character[i + 1] == COOP_CHARACTER_UNPICKED) {
+            return false;
+        }
+    }
+    s->level = *start;
+    memcpy(s->level.roster, s->roster.character, sizeof(s->level.roster));
+    s->started = true;
+    s->levelEvent = true;
+    for (i = 0; i < COOP_NET_MAX_PEERS; i++) {
+        s->peers[i].levelDue = true;
+    }
+    return true;
 }
 
 const CoopRoster* CoopSession_Roster(const CoopSession* s) {
@@ -205,6 +234,42 @@ static bool Identity_ReadAll(CoopIdentity* id, const uint8_t* data, uint16_t siz
     return read != 0 && read == size;
 }
 
+// Level start on the wire: level, phase, roster, then the values little-endian.
+#define LEVEL_START_SIZE (2 + COOP_SESSION_PLAYERS + 4 * COOP_LEVEL_START_VALUES)
+
+static void LevelStart_Write(const CoopLevelStart* start, uint8_t* out) {
+    int i;
+
+    *out++ = start->level;
+    *out++ = start->phase;
+    memcpy(out, start->roster, COOP_SESSION_PLAYERS);
+    out += COOP_SESSION_PLAYERS;
+    for (i = 0; i < COOP_LEVEL_START_VALUES; i++) {
+        uint32_t value = (uint32_t) start->values[i];
+
+        *out++ = (uint8_t) value;
+        *out++ = (uint8_t) (value >> 8);
+        *out++ = (uint8_t) (value >> 16);
+        *out++ = (uint8_t) (value >> 24);
+    }
+}
+
+static void LevelStart_Read(CoopLevelStart* start, const uint8_t* data) {
+    int i;
+
+    start->level = *data++;
+    start->phase = *data++;
+    memcpy(start->roster, data, COOP_SESSION_PLAYERS);
+    data += COOP_SESSION_PLAYERS;
+    for (i = 0; i < COOP_LEVEL_START_VALUES; i++) {
+        uint32_t value =
+            (uint32_t) data[0] | ((uint32_t) data[1] << 8) | ((uint32_t) data[2] << 16) | ((uint32_t) data[3] << 24);
+
+        start->values[i] = (int32_t) value;
+        data += 4;
+    }
+}
+
 static void Event_Init(CoopSessionEvent* ev, CoopSessionEventType type, int peer) {
     memset(ev, 0, sizeof(*ev));
     ev->type = type;
@@ -213,6 +278,11 @@ static void Event_Init(CoopSessionEvent* ev, CoopSessionEventType type, int peer
 }
 
 // The same event and text on the host and on the client that asked.
+static void Event_LevelStart(CoopSession* s, CoopSessionEvent* ev) {
+    Event_Init(ev, COOP_SESSION_EV_LEVEL_START, 0);
+    ev->levelStart = &s->level;
+}
+
 static void Event_PickRefused(CoopSession* s, int peer, uint8_t character, CoopSessionEvent* ev) {
     Event_Init(ev, COOP_SESSION_EV_PICK_REFUSED, peer);
     ev->character = character;
@@ -245,6 +315,15 @@ static bool Host_RosterEvent(CoopSession* s, CoopSessionEvent* ev) {
     return true;
 }
 
+static bool Host_LevelEvent(CoopSession* s, CoopSessionEvent* ev) {
+    if (!s->levelEvent) {
+        return false;
+    }
+    s->levelEvent = false;
+    Event_LevelStart(s, ev);
+    return true;
+}
+
 // What a full window held back stays owed. A later change needs no queue: the roster that goes out is the current one.
 static void Host_SendOwed(CoopSession* s) {
     int i;
@@ -263,6 +342,13 @@ static void Host_SendOwed(CoopSession* s) {
                                             sizeof(s->roster.character), COOP_NET_RELIABLE)) {
             p->rosterDue = false;
         }
+        if (p->levelDue) {
+            LevelStart_Write(&s->level, s->buffer);
+            if (s->t->ops->send(s->t, i, COOP_MSG_SESSION_LEVEL_START, s->buffer, LEVEL_START_SIZE,
+                                COOP_NET_RELIABLE)) {
+                p->levelDue = false;
+            }
+        }
     }
 }
 
@@ -274,6 +360,8 @@ static void Host_Left(CoopSession* s, int peer, CoopSessionEnd end, CoopSessionE
     ev->end = end;
     ev->text = CoopSession_EndText(ev->end);
 }
+
+#define STARTED_TEXT "The level has already started, so nobody can join this game now."
 
 static void Host_Refuse(CoopSession* s, int peer, uint32_t reasons, uint32_t nowMs, CoopSessionEvent* ev) {
     Peer* p = &s->peers[peer];
@@ -299,6 +387,8 @@ static void Host_Refuse(CoopSession* s, int peer, uint32_t reasons, uint32_t now
     ev->end = COOP_SESSION_END_REFUSED;
     if (reasons & COOP_SESSION_REFUSE_MALFORMED) {
         snprintf(s->text, sizeof(s->text), "%s", CoopSession_EndText(COOP_SESSION_END_BAD_MESSAGE));
+    } else if (reasons & COOP_SESSION_REFUSE_STARTED) {
+        snprintf(s->text, sizeof(s->text), "%s", STARTED_TEXT);
     } else if (reasons == 0) {
         snprintf(s->text, sizeof(s->text), "%s", CoopSession_EndText(COOP_SESSION_END_NO_HANDSHAKE));
     } else {
@@ -314,6 +404,10 @@ static void Host_Hello(CoopSession* s, int peer, const CoopNetEvent* net, uint32
 
     if (!Identity_ReadAll(&p->identity, net->data, net->size)) {
         Host_Refuse(s, peer, COOP_SESSION_REFUSE_MALFORMED, nowMs, ev);
+        return;
+    }
+    if (s->started) {
+        Host_Refuse(s, peer, COOP_SESSION_REFUSE_STARTED, nowMs, ev);
         return;
     }
     diff = CoopIdentity_Compare(&s->local, &p->identity);
@@ -395,7 +489,7 @@ static bool Host_Poll(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) {
     CoopNetEvent net;
 
     Host_SendOwed(s);
-    if (Host_RosterEvent(s, ev) || Host_Tick(s, nowMs, ev)) {
+    if (Host_RosterEvent(s, ev) || Host_LevelEvent(s, ev) || Host_Tick(s, nowMs, ev)) {
         return true;
     }
     while (s->t->ops->poll(s->t, &net)) {
@@ -426,7 +520,7 @@ static bool Host_Poll(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) {
                     Host_Hello(s, net.peer, &net, nowMs, ev);
                     return true;
                 }
-                if (p->state == PEER_JOINED && net.msgId == COOP_MSG_SESSION_PICK) {
+                if (p->state == PEER_JOINED && !s->started && net.msgId == COOP_MSG_SESSION_PICK) {
                     if (Host_Pick(s, net.peer, &net, ev)) {
                         return true;
                     }
@@ -484,6 +578,34 @@ static bool Roster_Valid(const uint8_t* data, uint16_t size, uint8_t self) {
     return true;
 }
 
+// True if data is a level start this client can enter: a level there is, and a roster as above in which everyone holds
+// a character, as the host starts no other way.
+static bool LevelStart_Valid(const uint8_t* data, uint16_t size, uint8_t self) {
+    const uint8_t* roster = data + 2;
+    int i;
+
+    if (size != LEVEL_START_SIZE || data[0] >= COOP_LEVEL_START_LEVELS ||
+        !Roster_Valid(roster, COOP_SESSION_PLAYERS, self)) {
+        return false;
+    }
+    for (i = 1; i < COOP_SESSION_PLAYERS; i++) {
+        if (roster[i] == COOP_CHARACTER_UNPICKED) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void Client_LevelStart(CoopSession* s, const CoopNetEvent* net, CoopSessionEvent* ev) {
+    if (!LevelStart_Valid(net->data, net->size, s->player)) {
+        Client_Broken(s, ev);
+        return;
+    }
+    LevelStart_Read(&s->level, net->data);
+    s->started = true;
+    Event_LevelStart(s, ev);
+}
+
 static void Client_Roster(CoopSession* s, const CoopNetEvent* net, CoopSessionEvent* ev) {
     if (!Roster_Valid(net->data, net->size, s->player)) {
         Client_Broken(s, ev);
@@ -538,6 +660,8 @@ static void Client_Answer(CoopSession* s, const CoopNetEvent* net, CoopSessionEv
         snprintf(s->text, sizeof(s->text),
                  "The host could not read this game's handshake. Both players need the "
                  "same Starship Co-op build.");
+    } else if (ev->diff & COOP_SESSION_REFUSE_STARTED) {
+        snprintf(s->text, sizeof(s->text), "%s", STARTED_TEXT);
     } else if ((ev->diff & COOP_ID_DIFF_REFUSE) == 0) {
         snprintf(s->text, sizeof(s->text), "%s", CoopSession_EndText(COOP_SESSION_END_NO_HANDSHAKE));
     } else {
@@ -589,6 +713,10 @@ static bool Client_Poll(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) {
                 }
                 if (s->client == CLIENT_ACTIVE && net.msgId == COOP_MSG_SESSION_ROSTER) {
                     Client_Roster(s, &net, ev);
+                    return true;
+                }
+                if (s->client == CLIENT_ACTIVE && !s->started && net.msgId == COOP_MSG_SESSION_LEVEL_START) {
+                    Client_LevelStart(s, &net, ev);
                     return true;
                 }
                 if (s->client == CLIENT_ACTIVE && net.msgId == COOP_MSG_SESSION_PICK_REFUSE) {

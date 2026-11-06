@@ -3,17 +3,19 @@
 //   coop_session_test sim
 //       The session over the real transport core in a seeded virtual network: no sockets, no real time. Every
 //       mismatch, a match, lossy links, two clients, broken and silent peers, raw peers that push game messages
-//       before the welcome, three clients picking characters. Then the session on a scripted transport: every
-//       failure and time-out on demand, to the millisecond. Prints one line, exits 0 on PASS.
+//       before the welcome, three clients picking characters and starting a level. Then the session on a scripted
+//       transport: every failure and time-out on demand, to the millisecond. Prints one line, exits 0 on PASS.
 //   coop_session_test host --port-file F [--clients N] [--players N] [identity options] [--out FILE] [--max-seconds S]
-//                          [--eager N]
+//                          [--eager N] [--start-level N] [--start-with N]
 //   coop_session_test client --connect HOST:PORT [--pick NAME]... [--players N] [identity options] [--out FILE]
-//                            [--max-seconds S] [--eager N]
+//                            [--max-seconds S] [--eager N] [--pick-delay-ms N] [--wait-level 1]
 //       Real processes over UDP. Each writes what happened as JSON. --eager sends N game messages straight into the
 //       transport, past CoopSession_Send, as soon as it has a connection; the session on the other side must drop
 //       them. --pick names a character (falco, slippy, peppy, fox) to ask for after the welcome; several go in order,
 //       the next one after each refusal. With --players a client stays until the first N players all hold a
-//       character, and the JSON has that roster.
+//       character, and the JSON has that roster. --pick-delay-ms waits that long before each pick. --start-level has
+//       the host try to start that level on every loop once --start-with clients (default: all of them) have joined,
+//       and count the tries that fail. --wait-level has a client stay until a level has started.
 //
 // Identity options: --build TEXT --platform TEXT --rom HEX (repeat for several archives) --cvar NAME=VALUE (repeat).
 // Defaults: build "test-build", this machine's platform, ROM US 1.0, every CVar at its default.
@@ -247,6 +249,8 @@ typedef struct {
     uint32_t rosters;       // ROSTER events. Not in `events`: they come along with JOINED and LEFT.
     uint32_t pickRefused;
     uint8_t refusedCharacter;
+    uint32_t levelStarts;
+    CoopLevelStart levelStart; // of the last LEVEL_START
     char text[COOP_SESSION_TEXT];
     char endText[COOP_SESSION_TEXT]; // of the last LEFT or ENDED
     // Of the last PICK_REFUSED.
@@ -259,6 +263,8 @@ static void Side_Record(Side* side, const CoopSessionEvent* ev) {
     EXPECT(ev->type == COOP_SESSION_EV_MESSAGE || (ev->msgId == 0 && ev->size == 0 && ev->data == NULL), "events",
            "a stale field in an event");
     EXPECT(ev->type == COOP_SESSION_EV_PICK_REFUSED || ev->character == 0, "events", "a stale field in an event");
+    EXPECT((ev->type == COOP_SESSION_EV_LEVEL_START) == (ev->levelStart != NULL), "events",
+           "a level start without its level, or a stale field in an event");
     if (ev->type == COOP_SESSION_EV_ROSTER) {
         side->rosters++;
         return;
@@ -303,6 +309,10 @@ static void Side_Record(Side* side, const CoopSessionEvent* ev) {
             side->pickRefused++;
             side->refusedCharacter = ev->character;
             snprintf(side->pickText, sizeof(side->pickText), "%s", ev->text);
+            break;
+        case COOP_SESSION_EV_LEVEL_START:
+            side->levelStarts++;
+            side->levelStart = *ev->levelStart;
             break;
         case COOP_SESSION_EV_ROSTER:
             break;
@@ -1678,7 +1688,7 @@ static void Script_ClientRefused(void) {
         { COOP_SESSION_REFUSE_MALFORMED, "could not read this game's handshake" },
         { 0, "did not finish in time" },
         // All four bytes count: bit 2 is a reason, and the others are not ours to drop.
-        { 0x04030204u, "These settings change the game" },
+        { 0x04030404u, "These settings change the game" },
     };
     const char* name = "client_refused";
     CoopIdentity a, other;
@@ -2482,6 +2492,483 @@ static void Script_ClientPickRefused(void) {
     }
 }
 
+// ---- Level start on a scripted transport ----
+
+#define LEVEL_BYTES (2 + COOP_SESSION_PLAYERS + 4 * COOP_LEVEL_START_VALUES)
+#define TEST_LEVEL 5
+#define TEST_PHASE 1
+
+// One value for each position, with all four bytes in use and negative ones among them, so that a lost or a swapped
+// byte shows. session_test.py computes the same.
+static int32_t Level_Value(int i) {
+    return (int32_t) (0x9E3779B1u * (uint32_t) (i + 1));
+}
+
+static void Level_Fill(CoopLevelStart* start, uint8_t level, uint8_t phase) {
+    int i;
+
+    memset(start, 0xEE, sizeof(*start)); // the roster is the session's to fill in
+    start->level = level;
+    start->phase = phase;
+    for (i = 0; i < COOP_LEVEL_START_VALUES; i++) {
+        start->values[i] = Level_Value(i);
+    }
+}
+
+// The message as PROTOCOL.md gives it, written apart from the session's own code.
+static void Level_Bytes(uint8_t* out, uint8_t level, uint8_t phase, uint8_t p0, uint8_t p1, uint8_t p2, uint8_t p3) {
+    int i;
+
+    out[0] = level;
+    out[1] = phase;
+    out[2] = p0;
+    out[3] = p1;
+    out[4] = p2;
+    out[5] = p3;
+    for (i = 0; i < COOP_LEVEL_START_VALUES; i++) {
+        uint32_t v = (uint32_t) Level_Value(i);
+
+        out[6 + 4 * i] = (uint8_t) v;
+        out[7 + 4 * i] = (uint8_t) (v >> 8);
+        out[8 + 4 * i] = (uint8_t) (v >> 16);
+        out[9 + 4 * i] = (uint8_t) (v >> 24);
+    }
+}
+
+static void Expect_Level(const char* name, const Side* side, uint8_t level, uint8_t phase, uint8_t p0, uint8_t p1,
+                         uint8_t p2, uint8_t p3) {
+    const CoopLevelStart* got = &side->levelStart;
+    int i;
+
+    EXPECT(side->levelStarts == 1, name, "not exactly one level start");
+    EXPECT(got->level == level && got->phase == phase, name, "the wrong level or phase");
+    EXPECT(got->roster[0] == p0 && got->roster[1] == p1 && got->roster[2] == p2 && got->roster[3] == p3, name,
+           "the level start holds the wrong roster");
+    for (i = 0; i < COOP_LEVEL_START_VALUES; i++) {
+        EXPECT(got->values[i] == Level_Value(i), name, "a value did not arrive as it was");
+    }
+}
+
+// Since from, peer got the level start exactly once, on the reliable lane, with these bytes.
+static void Expect_LevelTo(const char* name, const Script* t, uint32_t from, int peer, const uint8_t* want) {
+    uint32_t n = 0;
+
+    for (; from < t->sentCount; from++) {
+        const ScriptSent* m = &t->sent[from];
+
+        if (m->peer == peer && m->msgId == COOP_MSG_SESSION_LEVEL_START) {
+            n++;
+            EXPECT(m->lane == COOP_NET_RELIABLE, name, "a level start on the unreliable lane");
+            EXPECT(m->size == LEVEL_BYTES && memcmp(m->data, want, LEVEL_BYTES) == 0, name,
+                   "the level start sent is not what PROTOCOL.md says");
+        }
+    }
+    EXPECT(n == 1, name, "a peer did not get the level start exactly once");
+}
+
+// Who may start, and when: everyone who joined has to hold a character.
+static void Script_HostStartGuards(void) {
+    const char* name = "host_start_guards";
+    uint8_t bytes[LEVEL_BYTES];
+    CoopIdentity a;
+    CoopIdentity other;
+    CoopLevelStart want;
+    Script t;
+    Side sides[COOP_NET_MAX_PEERS];
+    Side clientSide;
+    CoopSession* s;
+    uint32_t sent;
+
+    Id_Default(&a);
+    Id_Other(&other);
+    Level_Fill(&want, TEST_LEVEL, TEST_PHASE);
+
+    // Each client that holds nothing holds the start up, whichever slot it has.
+    s = Script_HostWith(&t, sides, &a, 3);
+    sent = t.sentCount;
+    EXPECT(!CoopSession_StartLevel(s, &want), name, "started with three clients without a character");
+    Script_Pick(&t, 0, FALCO);
+    Script_Pick(&t, 1, SLIPPY);
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(!CoopSession_StartLevel(s, &want), name, "started with the last client without a character");
+    Script_Pick(&t, 2, PEPPY);
+    Script_Gone(&t, 0, COOP_NET_END_CLOSED);
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_LEVEL_START) == 0 && sides[0].levelStarts == 0, name,
+           "a start that was turned down went out");
+    Script_Connected(&t, 0);
+    Script_Hello(&t, 0, &a);
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(!CoopSession_StartLevel(s, &want), name, "started with the first client without a character");
+    CoopSession_Close(s);
+
+    // A client in the handshake waits for it to end; one that was refused does not count.
+    s = Script_HostWith(&t, sides, &a, 1);
+    Script_Pick(&t, 0, FALCO);
+    Script_Connected(&t, 1);
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(!CoopSession_StartLevel(s, &want), name, "started while a client was in the handshake");
+    t.pending = 1;
+    Script_Hello(&t, 1, &other);
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(sides[1].refused == 1, name, "the other build was not refused");
+    sent = t.sentCount;
+    EXPECT(CoopSession_StartLevel(s, &want), name, "a refused client held the start up");
+    Drain(s, SCRIPT_T0, sides);
+    Level_Bytes(bytes, TEST_LEVEL, TEST_PHASE, FOX, FALCO, NO_PLAYER, NO_PLAYER);
+    Expect_LevelTo(name, &t, sent, 0, bytes);
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_LEVEL_START) == 1, name, "a refused client got the level start");
+    CoopSession_Close(s);
+
+    // The level has to be one that can be started: the last one is, the next one is not.
+    s = Script_Host(&t, sides, &a);
+    Level_Fill(&want, COOP_LEVEL_START_LEVELS, 0);
+    EXPECT(!CoopSession_StartLevel(s, &want), name, "started a level that cannot be started");
+    Level_Fill(&want, COOP_LEVEL_START_LEVELS - 1, 0);
+    EXPECT(CoopSession_StartLevel(s, &want), name, "the last level did not start, or a host alone cannot start");
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(sides[0].levelStarts == 1 && t.sentCount == 0, name, "a host alone did not start cleanly");
+    CoopSession_Close(s);
+
+    // Only a host starts.
+    s = Script_Joined(&t, &clientSide, &a, 1);
+    Script_RosterMsg(&t, FOX, FALCO, NO_PLAYER, NO_PLAYER);
+    Drain(s, SCRIPT_T0 + 2, &clientSide);
+    sent = t.sentCount;
+    EXPECT(!CoopSession_StartLevel(s, &want), name, "a client started a level");
+    Drain(s, SCRIPT_T0 + 2, &clientSide);
+    EXPECT(t.sentCount == sent && clientSide.levelStarts == 0, name, "a client's start did something");
+    CoopSession_Close(s);
+}
+
+// What goes out, once, and what is over after it.
+static void Script_HostStart(void) {
+    const char* name = "host_start";
+    const uint8_t two[2] = { PEPPY, PEPPY };
+    uint8_t bytes[LEVEL_BYTES];
+    CoopIdentity a;
+    CoopIdentity other;
+    CoopLevelStart want;
+    Script t;
+    Side sides[COOP_NET_MAX_PEERS];
+    CoopSession* s;
+    const CoopRoster* r;
+    uint32_t sent;
+    uint32_t ignored;
+    uint32_t rosters;
+
+    Id_Default(&a);
+    Id_Other(&other);
+    Level_Fill(&want, TEST_LEVEL, TEST_PHASE);
+    Level_Bytes(bytes, TEST_LEVEL, TEST_PHASE, FOX, FALCO, SLIPPY, NO_PLAYER);
+    s = Script_HostWith(&t, sides, &a, 2);
+    r = CoopSession_Roster(s);
+    Script_Pick(&t, 0, FALCO);
+    Script_Pick(&t, 1, SLIPPY);
+    Drain(s, SCRIPT_T0, sides);
+    sent = t.sentCount;
+    EXPECT(CoopSession_StartLevel(s, &want), name, "everyone holds a character, and still no start");
+
+    // The session keeps its own copy.
+    memset(&want, 0, sizeof(want));
+    Drain(s, SCRIPT_T0, sides);
+    Expect_LevelTo(name, &t, sent, 0, bytes);
+    Expect_LevelTo(name, &t, sent, 1, bytes);
+    Expect_Level(name, &sides[0], TEST_LEVEL, TEST_PHASE, FOX, FALCO, SLIPPY, NO_PLAYER);
+    EXPECT(sides[1].levelStarts == 0 && sides[2].levelStarts == 0, name, "the host's event has the wrong peer");
+
+    // Once is once.
+    Level_Fill(&want, TEST_LEVEL, TEST_PHASE);
+    EXPECT(!CoopSession_StartLevel(s, &want), name, "a second level start was taken");
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_LEVEL_START) == 2 && sides[0].levelStarts == 1, name,
+           "the level start went out again");
+
+    // Picks are closed: free, taken or broken, the pick is dropped and counted, and the roster stays.
+    sent = t.sentCount;
+    ignored = CoopSession_Ignored(s);
+    rosters = sides[0].rosters;
+    Script_Pick(&t, 0, PEPPY);
+    Script_Pick(&t, 1, FALCO);
+    Script_Message(&t, 1, COOP_MSG_SESSION_PICK, two, sizeof(two));
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(CoopSession_Ignored(s) == ignored + 3, name, "a pick after the level start was not dropped");
+    Expect_Roster(name, r, FOX, FALCO, SLIPPY, NO_PLAYER);
+    EXPECT(t.sentCount == sent && sides[0].rosters == rosters && sides[0].pickRefused == 0 && sides[1].pickRefused == 0,
+           name, "a pick after the level start was answered");
+    EXPECT(sides[1].left == 0 && t.disconnects[1] == 0, name, "a pick after the level start ended a client");
+
+    // Someone who goes still goes, and the others hear of it.
+    sent = t.sentCount;
+    Script_Gone(&t, 0, COOP_NET_END_CLOSED);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Roster(name, r, FOX, NO_PLAYER, SLIPPY, NO_PLAYER);
+    Expect_RosterTo(name, &t, sent, 1, r);
+    EXPECT(sides[0].left == 1, name, "a client that left after the level start was not reported");
+
+    // The level goes on, so the slot stays empty: a new client is told why, even one the identity would refuse.
+    sent = t.sentCount;
+    Script_Connected(&t, 0);
+    Script_Hello(&t, 0, &other);
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(sides[0].diff == COOP_SESSION_REFUSE_STARTED, name, "the build came before the level start");
+    Script_Gone(&t, 0, COOP_NET_END_CLOSED);
+    Drain(s, SCRIPT_T0, sides);
+    sides[0].refused = 0;
+    Script_Connected(&t, 0);
+    Script_Hello(&t, 0, &a);
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(sides[0].refused == 1 && sides[0].joined == 1, name, "a client got in after the level start");
+    EXPECT(sides[0].diff == COOP_SESSION_REFUSE_STARTED, name, "the wrong reason for a client after the level start");
+    EXPECT(strstr(sides[0].text, "already started") != NULL, name, "the text does not say that the level started");
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_WELCOME) == 0, name, "a welcome after the level start");
+    Expect_Sent(name, &t, 0, COOP_MSG_SESSION_REFUSE, 4, &a);
+    {
+        const ScriptSent* m = Last_Sent(&t, COOP_MSG_SESSION_REFUSE);
+
+        EXPECT(m->data[0] == 0 && m->data[1] == 2 && m->data[2] == 0 && m->data[3] == 0, name,
+               "the refusal does not carry bit 9");
+    }
+    Expect_Roster(name, r, FOX, NO_PLAYER, SLIPPY, NO_PLAYER);
+    CoopSession_Close(s);
+}
+
+// What a full window holds back stays owed, and the level start keeps the roster of the moment it was taken.
+static void Script_HostStartOwed(void) {
+    const char* name = "host_start_owed";
+    uint8_t bytes[LEVEL_BYTES];
+    CoopIdentity a;
+    CoopLevelStart want;
+    CoopSessionEvent ev;
+    Script t;
+    Side sides[COOP_NET_MAX_PEERS];
+    CoopSession* s;
+    uint32_t sent;
+
+    Id_Default(&a);
+    Level_Fill(&want, TEST_LEVEL, TEST_PHASE);
+    Level_Bytes(bytes, TEST_LEVEL, TEST_PHASE, FOX, FALCO, SLIPPY, NO_PLAYER);
+
+    // One peer's send fails: that one goes on the next poll, the other one does not go twice.
+    s = Script_HostWith(&t, sides, &a, 2);
+    Script_Pick(&t, 0, FALCO);
+    Script_Pick(&t, 1, SLIPPY);
+    Drain(s, SCRIPT_T0, sides);
+    sent = t.sentCount;
+    EXPECT(CoopSession_StartLevel(s, &want), name, "no start");
+    t.failSends = 1;
+    EXPECT(CoopSession_Poll(s, SCRIPT_T0, &ev) && ev.type == COOP_SESSION_EV_LEVEL_START, name,
+           "the host waited for the window");
+    Side_Record(&sides[0], &ev);
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_LEVEL_START) == 1, name, "the peer with room did not get the level");
+    Drain(s, SCRIPT_T0, sides);
+    Expect_LevelTo(name, &t, sent, 0, bytes);
+    Expect_LevelTo(name, &t, sent, 1, bytes);
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_LEVEL_START) == 2, name, "a level start was sent again");
+    EXPECT(sides[0].levelStarts == 1, name, "the host's game heard of the level twice");
+    CoopSession_Close(s);
+
+    // Behind a full window a roster and the level start both stay owed.
+    s = Script_HostWith(&t, sides, &a, 2);
+    Script_Pick(&t, 0, FALCO);
+    Script_Pick(&t, 1, SLIPPY);
+    t.failSends = 100;
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(CoopSession_StartLevel(s, &want), name, "no start behind a full window");
+    Drain(s, SCRIPT_T0, sides);
+    sent = t.sentCount;
+    t.failSends = 0;
+    Drain(s, SCRIPT_T0, sides);
+    Expect_RosterTo(name, &t, sent, 0, CoopSession_Roster(s));
+    Expect_LevelTo(name, &t, sent, 0, bytes);
+    Expect_LevelTo(name, &t, sent, 1, bytes);
+    CoopSession_Close(s);
+
+    // Whoever goes before it could be told gets nothing, but the others still start from the roster the host took:
+    // everyone has to come to the same player count.
+    s = Script_HostWith(&t, sides, &a, 2);
+    Script_Pick(&t, 0, FALCO);
+    Script_Pick(&t, 1, SLIPPY);
+    Drain(s, SCRIPT_T0, sides);
+    sent = t.sentCount;
+    EXPECT(CoopSession_StartLevel(s, &want), name, "no start");
+    Script_Gone(&t, 1, COOP_NET_END_CLOSED);
+    t.failSends = 100;
+    Drain(s, SCRIPT_T0, sides);
+    Drain(s, SCRIPT_T0, sides);
+    t.failSends = 0;
+    Drain(s, SCRIPT_T0, sides);
+    Expect_LevelTo(name, &t, sent, 0, bytes);
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_LEVEL_START) == 1, name, "a client that left got the level start");
+    Expect_Level(name, &sides[0], TEST_LEVEL, TEST_PHASE, FOX, FALCO, SLIPPY, NO_PLAYER);
+    Expect_Roster(name, CoopSession_Roster(s), FOX, FALCO, NO_PLAYER, NO_PLAYER);
+    CoopSession_Close(s);
+}
+
+// The wrong side, and the wrong moment.
+static void Script_LevelOutOfPlace(void) {
+    const char* name = "level_out_of_place";
+    uint8_t bytes[LEVEL_BYTES];
+    CoopIdentity a;
+    Script t;
+    Side sides[COOP_NET_MAX_PEERS];
+    Side side;
+    CoopSession* s;
+    uint32_t sent;
+
+    Id_Default(&a);
+    Level_Bytes(bytes, TEST_LEVEL, TEST_PHASE, FOX, FALCO, NO_PLAYER, NO_PLAYER);
+
+    // Clients do not tell a host to start: the first one that tries is a joined client, the second one is not.
+    s = Script_HostWith(&t, sides, &a, 1);
+    Script_Pick(&t, 0, FALCO);
+    Drain(s, SCRIPT_T0, sides);
+    sent = t.sentCount;
+    Script_Message(&t, 0, COOP_MSG_SESSION_LEVEL_START, bytes, sizeof(bytes));
+    Script_Connected(&t, 1);
+    Script_Message(&t, 1, COOP_MSG_SESSION_LEVEL_START, bytes, sizeof(bytes));
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(CoopSession_Ignored(s) == 2, name, "a level start from a client was not dropped and counted");
+    EXPECT(sides[0].levelStarts == 0 && sides[1].levelStarts == 0 && t.sentCount == sent, name,
+           "a client started a level");
+    CoopSession_Close(s);
+
+    // Before the welcome nothing is real.
+    s = Script_Client(&t, &side, &a);
+    Script_Message(&t, 0, COOP_MSG_SESSION_LEVEL_START, bytes, sizeof(bytes));
+    Drain(s, SCRIPT_T0, &side);
+    EXPECT(CoopSession_Ignored(s) == 1 && side.levelStarts == 0 && side.ended == 0, name,
+           "a level start before the welcome was not dropped and counted");
+    CoopSession_Close(s);
+}
+
+static void Expect_BadLevel(const char* name, const uint8_t* data, uint16_t size, uint8_t self) {
+    CoopIdentity a;
+    Script t;
+    Side side;
+    CoopSession* s;
+
+    Id_Default(&a);
+    s = Script_Joined(&t, &side, &a, self);
+    Script_Message(&t, 0, COOP_MSG_SESSION_LEVEL_START, data, size);
+    Drain(s, SCRIPT_T0 + 2, &side);
+    EXPECT(side.ended == 1 && side.end == COOP_SESSION_END_BAD_MESSAGE, name,
+           "a bad level start did not end the client");
+    EXPECT(side.levelStarts == 0, name, "a bad level start reached the game");
+    EXPECT(t.disconnects[0] == 1, name, "a bad level start left the connection up");
+    CoopSession_Close(s);
+}
+
+static void Expect_GoodLevel(const char* name, const uint8_t* data, uint8_t self) {
+    CoopIdentity a;
+    Script t;
+    Side side;
+    CoopSession* s;
+
+    Id_Default(&a);
+    s = Script_Joined(&t, &side, &a, self);
+    Script_Message(&t, 0, COOP_MSG_SESSION_LEVEL_START, data, LEVEL_BYTES);
+    Drain(s, SCRIPT_T0 + 2, &side);
+    EXPECT(side.levelStarts == 1 && side.ended == 0, name, "a good level start was not taken");
+    CoopSession_Close(s);
+}
+
+static void Script_ClientStart(void) {
+    const char* name = "client_start";
+    uint8_t bytes[LEVEL_BYTES];
+    uint8_t longer[LEVEL_BYTES + 1];
+    CoopIdentity a;
+    Script t;
+    Side side;
+    CoopSession* s;
+    uint32_t sent;
+
+    Id_Default(&a);
+    Level_Bytes(bytes, TEST_LEVEL, TEST_PHASE, FOX, FALCO, SLIPPY, NO_PLAYER);
+    s = Script_Joined(&t, &side, &a, 2);
+    Script_RosterMsg(&t, FOX, FALCO, SLIPPY, NO_PLAYER);
+    Drain(s, SCRIPT_T0 + 2, &side);
+    EXPECT(CoopSession_Pick(s, PEPPY), name, "a pick before the level start did not go out");
+    sent = t.sentCount;
+
+    Script_Message(&t, 0, COOP_MSG_SESSION_LEVEL_START, bytes, sizeof(bytes));
+    Drain(s, SCRIPT_T0 + 2, &side);
+    Expect_Level(name, &side, TEST_LEVEL, TEST_PHASE, FOX, FALCO, SLIPPY, NO_PLAYER);
+    EXPECT(side.ended == 0 && t.disconnects[0] == 0 && Session_CanSend(s, 0), name, "a level start ended the session");
+    sent = t.sentCount;
+    EXPECT(!CoopSession_Pick(s, PEPPY), name, "a pick went out after the level start");
+    EXPECT(t.sentCount == sent, name, "a pick after the level start was sent");
+
+    // One level start per session: another one is out of place, not a new level.
+    Script_Message(&t, 0, COOP_MSG_SESSION_LEVEL_START, bytes, sizeof(bytes));
+    Drain(s, SCRIPT_T0 + 2, &side);
+    EXPECT(side.levelStarts == 1 && CoopSession_Ignored(s) == 1 && side.ended == 0, name,
+           "a second level start was not dropped and counted");
+
+    // The roster lives on; what the level started from does not change with it.
+    Script_RosterMsg(&t, FOX, NO_PLAYER, SLIPPY, NO_PLAYER);
+    Drain(s, SCRIPT_T0 + 2, &side);
+    Expect_Roster(name, CoopSession_Roster(s), FOX, NO_PLAYER, SLIPPY, NO_PLAYER);
+    Expect_Level(name, &side, TEST_LEVEL, TEST_PHASE, FOX, FALCO, SLIPPY, NO_PLAYER);
+    CoopSession_Close(s);
+
+    // The refusal for a client that came too late: the same words on both sides.
+    {
+        Side hostSides[COOP_NET_MAX_PEERS];
+        CoopLevelStart want;
+        const ScriptSent* m;
+        Script ht;
+        CoopSession* host = Script_Host(&ht, hostSides, &a);
+
+        Level_Fill(&want, TEST_LEVEL, TEST_PHASE);
+        EXPECT(CoopSession_StartLevel(host, &want), name, "no start");
+        Drain(host, SCRIPT_T0, hostSides);
+        Script_Connected(&ht, 0);
+        Script_Hello(&ht, 0, &a);
+        Drain(host, SCRIPT_T0, hostSides);
+        m = Last_Sent(&ht, COOP_MSG_SESSION_REFUSE);
+        EXPECT(m != NULL, name, "no refusal");
+        s = Script_Client(&t, &side, &a);
+        Script_Message(&t, 0, COOP_MSG_SESSION_REFUSE, m->data, m->size);
+        Drain(s, SCRIPT_T0, &side);
+        Drain(s, SCRIPT_T0, &side);
+        EXPECT(side.refused == 1 && side.ended == 1 && side.diff == COOP_SESSION_REFUSE_STARTED, name,
+               "the client did not read the refusal");
+        EXPECT(strcmp(side.text, hostSides[0].text) == 0, name, "host and client got different texts");
+        CoopSession_Close(s);
+        CoopSession_Close(host);
+    }
+
+    // What can be read: the last level, a free slot next to ours, and every wingman.
+    Level_Bytes(bytes, COOP_LEVEL_START_LEVELS - 1, 0, FOX, NO_PLAYER, PEPPY, NO_PLAYER);
+    Expect_GoodLevel(name, bytes, 2);
+    Level_Bytes(bytes, 0, 255, FOX, FALCO, SLIPPY, PEPPY);
+    Expect_GoodLevel(name, bytes, 3);
+
+    // What cannot.
+    Level_Bytes(bytes, TEST_LEVEL, TEST_PHASE, FOX, FALCO, NO_PLAYER, NO_PLAYER);
+    Expect_BadLevel("level_empty", NULL, 0, 1);
+    Expect_BadLevel("level_short", bytes, LEVEL_BYTES - 1, 1);
+    memcpy(longer, bytes, LEVEL_BYTES);
+    longer[LEVEL_BYTES] = 0;
+    Expect_BadLevel("level_trailing", longer, sizeof(longer), 1);
+    Level_Bytes(bytes, COOP_LEVEL_START_LEVELS, 0, FOX, FALCO, NO_PLAYER, NO_PLAYER);
+    Expect_BadLevel("level_too_high", bytes, LEVEL_BYTES, 1);
+    Level_Bytes(bytes, TEST_LEVEL, TEST_PHASE, FALCO, FALCO, NO_PLAYER, NO_PLAYER);
+    Expect_BadLevel("level_no_fox", bytes, LEVEL_BYTES, 1);
+    Level_Bytes(bytes, TEST_LEVEL, TEST_PHASE, FOX, FALCO, FALCO, NO_PLAYER);
+    Expect_BadLevel("level_wingman_twice", bytes, LEVEL_BYTES, 1);
+    Level_Bytes(bytes, TEST_LEVEL, TEST_PHASE, FOX, NO_PLAYER, FALCO, NO_PLAYER);
+    Expect_BadLevel("level_own_slot_free", bytes, LEVEL_BYTES, 1);
+    Level_Bytes(bytes, TEST_LEVEL, TEST_PHASE, FOX, UNPICKED, FALCO, NO_PLAYER);
+    Expect_BadLevel("level_we_hold_nothing", bytes, LEVEL_BYTES, 1);
+    Level_Bytes(bytes, TEST_LEVEL, TEST_PHASE, FOX, FALCO, NO_PLAYER, UNPICKED);
+    Expect_BadLevel("level_last_holds_nothing", bytes, LEVEL_BYTES, 1);
+    Level_Bytes(bytes, TEST_LEVEL, TEST_PHASE, FOX, FALCO, UNPICKED, NO_PLAYER);
+    Expect_BadLevel("level_other_holds_nothing", bytes, LEVEL_BYTES, 1);
+}
+
 // ---- Characters over the real transport core: three clients, each going down its list on every refusal ----
 
 #define PARTY_CLIENTS (MAX_CLIENTS + 1) // one more than fit at once, for a client that comes after another left
@@ -2602,6 +3089,7 @@ static const uint8_t sJustFalco[] = { FALCO, NO_PLAYER };
 static const uint8_t sJustSlippy[] = { SLIPPY, NO_PLAYER };
 static const uint8_t sJustPeppy[] = { PEPPY, NO_PLAYER };
 static const uint8_t sAllWingmen[] = { FALCO, SLIPPY, PEPPY, NO_PLAYER };
+static const uint8_t sNobody[] = { NO_PLAYER };
 
 static void Sim_Characters(void) {
     const char* name = "characters";
@@ -2684,6 +3172,135 @@ static uint32_t Sim_CharactersLossy(uint32_t seeds) {
         Party_Settle(&p, name, 3);
         Expect_Full(name, CoopSession_Roster(p.host));
         EXPECT(Party_Refused(&p, name) == 3, name, "not one refusal for each pick of a taken character");
+        dropped += sNet.dropped;
+        Party_Close(&p);
+    }
+    EXPECT(dropped > 0, name, "the virtual network dropped nothing, so this run proves nothing");
+    return dropped;
+}
+
+// Every client there saw exactly one level start, the host's. A level start is reliable, so a bad link only takes
+// longer.
+static void Party_LevelArrives(Party* p, const char* name, uint8_t p1, uint8_t p2, uint8_t p3) {
+    uint32_t start = sNet.now;
+    int i;
+
+    for (;;) {
+        bool all = p->hostSides[0].levelStarts == 1;
+
+        for (i = 0; i < PARTY_CLIENTS; i++) {
+            all = all && (p->clients[i] == NULL || p->sides[i].levelStarts == 1);
+        }
+        if (all) {
+            break;
+        }
+        EXPECT(sNet.now - start < 30000, name, "the level start did not reach everyone");
+        Party_Step(p, name);
+    }
+    start = sNet.now;
+    while (sNet.now - start < 1000) {
+        Party_Step(p, name);
+    }
+    Expect_Level(name, &p->hostSides[0], TEST_LEVEL, TEST_PHASE, FOX, p1, p2, p3);
+    for (i = 0; i < PARTY_CLIENTS; i++) {
+        if (p->clients[i] != NULL) {
+            Expect_Level(name, &p->sides[i], TEST_LEVEL, TEST_PHASE, FOX, p1, p2, p3);
+            EXPECT(p->sides[i].ended == 0, name, "a level start ended a client");
+        }
+    }
+}
+
+static void Sim_LevelStart(void) {
+    const char* name = "level_start";
+    const CoopRoster* r;
+    CoopIdentity a;
+    CoopLevelStart want;
+    Party p;
+    int i;
+
+    Id_Default(&a);
+    Level_Fill(&want, TEST_LEVEL, TEST_PHASE);
+
+    // Three clients walk down one list, and the level starts from what came of it.
+    Party_Start(&p, 23, 0, 5, &a);
+    for (i = 0; i < MAX_CLIENTS; i++) {
+        Party_Join(&p, i, &a, sAllWingmen);
+    }
+    Party_Settle(&p, name, 3);
+    r = CoopSession_Roster(p.host);
+    EXPECT(CoopSession_StartLevel(p.host, &want), name, "no start with everyone holding a character");
+    Party_LevelArrives(&p, name, r->character[1], r->character[2], r->character[3]);
+    Party_Close(&p);
+
+    // A client changes its mind while the host starts: the host has the last word, and the client hears it.
+    Party_Start(&p, 24, 0, 5, &a);
+    Party_Join(&p, 0, &a, sJustFalco);
+    Party_Settle(&p, name, 1);
+    EXPECT(CoopSession_Pick(p.clients[0], PEPPY), name, "a pick could not be sent");
+    EXPECT(CoopSession_StartLevel(p.host, &want), name, "no start");
+    Party_LevelArrives(&p, name, FALCO, NO_PLAYER, NO_PLAYER);
+    EXPECT(CoopSession_Ignored(p.host) == 1, name, "the late pick was not dropped and counted");
+    Expect_Roster(name, CoopSession_Roster(p.host), FOX, FALCO, NO_PLAYER, NO_PLAYER);
+    Expect_Roster(name, CoopSession_Roster(p.clients[0]), FOX, FALCO, NO_PLAYER, NO_PLAYER);
+    Party_Close(&p);
+
+    // Nobody starts past a client that holds nothing, and it can still pick and go on.
+    Party_Start(&p, 25, 0, 5, &a);
+    Party_Join(&p, 0, &a, sJustFalco);
+    Party_Join(&p, 1, &a, sNobody);
+    Party_Settle(&p, name, 1);
+    EXPECT(!CoopSession_StartLevel(p.host, &want), name, "started with a client that holds nothing");
+    EXPECT(CoopSession_Pick(p.clients[1], FALCO), name, "a pick could not be sent");
+    while (p.sides[1].pickRefused == 0) {
+        Party_Step(&p, name);
+    }
+    EXPECT(!CoopSession_StartLevel(p.host, &want), name, "a refused pick opened the start");
+    EXPECT(CoopSession_Pick(p.clients[1], SLIPPY), name, "a pick could not be sent");
+    Party_Settle(&p, name, 2);
+    EXPECT(CoopSession_StartLevel(p.host, &want), name, "no start with everyone holding a character");
+    Party_LevelArrives(&p, name, CoopSession_Roster(p.host)->character[1], CoopSession_Roster(p.host)->character[2],
+                       NO_PLAYER);
+    Party_Close(&p);
+
+    // A client that comes late hears why on both ends, over the real transport.
+    Party_Start(&p, 26, 0, 5, &a);
+    Party_Join(&p, 0, &a, sJustFalco);
+    Party_Settle(&p, name, 1);
+    EXPECT(CoopSession_StartLevel(p.host, &want), name, "no start");
+    Party_LevelArrives(&p, name, FALCO, NO_PLAYER, NO_PLAYER);
+    Party_Join(&p, 1, &a, sNobody);
+    while (p.sides[1].ended == 0) {
+        Party_Step(&p, name);
+    }
+    EXPECT(p.sides[1].refused == 1 && p.sides[1].joined == 0, name, "a client got in after the level start");
+    EXPECT(p.sides[1].diff == COOP_SESSION_REFUSE_STARTED, name, "the wrong reason on the client");
+    EXPECT(p.hostSides[1].refused == 1 && strcmp(p.hostSides[1].text, p.sides[1].text) == 0, name,
+           "the host's text is not the client's");
+    Party_Close(&p);
+}
+
+static uint32_t Sim_LevelStartLossy(uint32_t seeds) {
+    const char* name = "level_start_lossy";
+    CoopIdentity a;
+    CoopLevelStart want;
+    Party p;
+    uint32_t seed;
+    uint32_t dropped = 0;
+    int i;
+
+    Id_Default(&a);
+    Level_Fill(&want, TEST_LEVEL, TEST_PHASE);
+    for (seed = 1; seed <= seeds; seed++) {
+        const CoopRoster* r;
+
+        Party_Start(&p, 4000 + seed, 10 + seed % 31, 40, &a);
+        for (i = 0; i < MAX_CLIENTS; i++) {
+            Party_Join(&p, i, &a, sAllWingmen);
+        }
+        Party_Settle(&p, name, 3);
+        r = CoopSession_Roster(p.host);
+        EXPECT(CoopSession_StartLevel(p.host, &want), name, "no start with everyone holding a character");
+        Party_LevelArrives(&p, name, r->character[1], r->character[2], r->character[3]);
         dropped += sNet.dropped;
         Party_Close(&p);
     }
@@ -2788,11 +3405,18 @@ static int Sim_Main(void) {
     Script_ClientRoster();
     Script_ClientBadRosters();
     Script_ClientPickRefused();
+    Script_HostStartGuards();
+    Script_HostStart();
+    Script_HostStartOwed();
+    Script_LevelOutOfPlace();
+    Script_ClientStart();
     Sim_Characters();
+    Sim_LevelStart();
     dropped = Sim_Lossy(40);
     dropped += Sim_CharactersLossy(20);
+    dropped += Sim_LevelStartLossy(20);
     printf("sim: PASS identity, 12 mismatch cases, two clients, broken, silent and raw peers, scripted transport, "
-           "characters, 100 lossy runs (dropped %u datagrams)\n",
+           "characters, level start, 120 lossy runs (dropped %u datagrams)\n",
            (unsigned) dropped);
     return 0;
 }
@@ -2809,6 +3433,10 @@ typedef struct {
     uint32_t players;                    // stay until this many players hold a character; 0: do not wait for that
     uint8_t picks[COOP_CHARACTER_COUNT]; // what to ask for after the welcome, the next one after each refusal
     uint32_t pickCount;
+    uint32_t pickDelayMs;
+    int32_t startLevel; // host: the level to start, -1 for none
+    uint32_t startWith; // host: try once this many clients have joined; 0 means all of them
+    bool waitLevel;     // client: stay until a level has started
     CoopIdentity id;
 } BotOptions;
 
@@ -2834,6 +3462,8 @@ static const char* Event_Name(CoopSessionEventType type) {
             return "ended";
         case COOP_SESSION_EV_PICK_REFUSED:
             return "pick_refused";
+        case COOP_SESSION_EV_LEVEL_START:
+            return "level_start";
         default:
             return "message";
     }
@@ -2893,7 +3523,14 @@ static int Bot_Main(const BotOptions* o) {
     uint32_t finishedAt = 0;
     uint32_t eager = o->eager;
     uint32_t nextPick = 0;
+    uint32_t pickAt = 0;
+    bool pickDue = false;
     uint32_t rosters = 0;
+    uint32_t startRefused = 0;
+    uint32_t startWith = o->startWith != 0 ? o->startWith : o->clients;
+    bool startTaken = false;
+    CoopLevelStart level;
+    bool levelSeen = false;
     CoopRoster complete = { { 0 } };
     bool isComplete = false;
     bool joined = false;
@@ -2974,7 +3611,12 @@ static int Bot_Main(const BotOptions* o) {
             fflush(stdout);
             if (!isHost && (ev.type == COOP_SESSION_EV_JOINED || ev.type == COOP_SESSION_EV_PICK_REFUSED) &&
                 nextPick < o->pickCount) {
-                CoopSession_Pick(s, (CoopCharacter) o->picks[nextPick++]);
+                pickDue = true;
+                pickAt = now + o->pickDelayMs;
+            }
+            if (ev.type == COOP_SESSION_EV_LEVEL_START) {
+                level = *ev.levelStart;
+                levelSeen = true;
             }
             if (ev.type == COOP_SESSION_EV_JOINED) {
                 joined = true;
@@ -2992,6 +3634,17 @@ static int Bot_Main(const BotOptions* o) {
                 finished = true;
             }
         }
+        if (pickDue && (int32_t) (now - pickAt) >= 0) {
+            pickDue = false;
+            CoopSession_Pick(s, (CoopCharacter) o->picks[nextPick++]);
+        }
+        if (isHost && o->startLevel >= 0 && !startTaken && joinedLive >= startWith) {
+            CoopLevelStart want;
+
+            Level_Fill(&want, (uint8_t) o->startLevel, TEST_PHASE);
+            startTaken = CoopSession_StartLevel(s, &want);
+            startRefused += !startTaken;
+        }
         if (isHost) {
             // Done when every client got its answer and the joined ones have left again; then a moment for the
             // refused ones to be dropped.
@@ -3002,7 +3655,7 @@ static int Bot_Main(const BotOptions* o) {
                     finished = true;
                 }
             }
-        } else if (joined && received > 0 && (o->players == 0 || isComplete)) {
+        } else if (joined && received > 0 && (o->players == 0 || isComplete) && (!o->waitLevel || levelSeen)) {
             CoopNetStats stats;
 
             if (t->ops->stats(t, 0, &stats) && stats.pending == 0) {
@@ -3022,7 +3675,21 @@ static int Bot_Main(const BotOptions* o) {
     for (i = 0; isComplete && i < COOP_SESSION_PLAYERS; i++) {
         fprintf(f, "%s\"%s\"", i ? ", " : "", CoopSession_CharacterName(complete.character[i]));
     }
-    fprintf(f, "], \"events\": [");
+    fprintf(f, "], \"start_refused\": %u, \"level_start\": ", (unsigned) startRefused);
+    if (levelSeen) {
+        fprintf(f, "{\"level\": %u, \"phase\": %u, \"roster\": [", level.level, level.phase);
+        for (i = 0; i < COOP_SESSION_PLAYERS; i++) {
+            fprintf(f, "%s\"%s\"", i ? ", " : "", CoopSession_CharacterName(level.roster[i]));
+        }
+        fprintf(f, "], \"values\": [");
+        for (i = 0; i < COOP_LEVEL_START_VALUES; i++) {
+            fprintf(f, "%s%d", i ? ", " : "", (int) level.values[i]);
+        }
+        fprintf(f, "]}");
+    } else {
+        fprintf(f, "null");
+    }
+    fprintf(f, ", \"events\": [");
     for (i = 0; i < eventCount; i++) {
         const BotEvent* e = &events[i];
 
@@ -3050,6 +3717,7 @@ int main(int argc, char** argv) {
     memset(&o, 0, sizeof(o));
     o.clients = 1;
     o.maxSeconds = 60;
+    o.startLevel = -1;
     Id_Default(&o.id);
 
     if (argc < 2) {
@@ -3074,6 +3742,14 @@ int main(int argc, char** argv) {
             o.eager = (uint32_t) atoi(value);
         } else if (strcmp(key, "--players") == 0) {
             o.players = (uint32_t) atoi(value);
+        } else if (strcmp(key, "--pick-delay-ms") == 0) {
+            o.pickDelayMs = (uint32_t) atoi(value);
+        } else if (strcmp(key, "--start-level") == 0) {
+            o.startLevel = atoi(value);
+        } else if (strcmp(key, "--start-with") == 0) {
+            o.startWith = (uint32_t) atoi(value);
+        } else if (strcmp(key, "--wait-level") == 0) {
+            o.waitLevel = atoi(value) != 0;
         } else if (strcmp(key, "--pick") == 0) {
             uint8_t character = Character_FromName(value);
 

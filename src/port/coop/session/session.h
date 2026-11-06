@@ -4,12 +4,13 @@
 // SESSION_HELLO with its identity; the host compares it with its own and answers SESSION_WELCOME or SESSION_REFUSE.
 // Both sides get the same readable text for every difference. Only after the welcome do other messages pass.
 // After the welcome a client picks a character and the host keeps the roster of who flies what (decision 0005): see
-// CoopSession_Pick and CoopSession_Roster.
+// CoopSession_Pick and CoopSession_Roster. The host then starts a level for everyone: see CoopSession_StartLevel.
 // Nothing here blocks or reads a clock: call Poll once per frame with the time in ms, until it returns false.
 
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "port/coop/game/level_start.h"
 #include "port/coop/net/transport.h"
 #include "identity.h"
 
@@ -52,6 +53,8 @@ typedef enum {
     COOP_SESSION_EV_ROSTER,  // the roster changed, see CoopSession_Roster
     // Host: client `peer` asked for a taken character. Client: we did. Nothing changes.
     COOP_SESSION_EV_PICK_REFUSED,
+    // Host and client alike: enter the level in levelStart. It comes once per session.
+    COOP_SESSION_EV_LEVEL_START,
 } CoopSessionEventType;
 
 typedef enum {
@@ -67,6 +70,8 @@ typedef enum {
 
 // Reason bit in a refusal next to the CoopIdentityDiff bits: the hello could not be read.
 #define COOP_SESSION_REFUSE_MALFORMED (1u << 8)
+// The same: a level has started, and nobody joins after that.
+#define COOP_SESSION_REFUSE_STARTED (1u << 9)
 
 typedef struct {
     CoopSessionEventType type;
@@ -79,6 +84,7 @@ typedef struct {
     uint16_t msgId;      // MESSAGE
     uint16_t size;       // MESSAGE
     const uint8_t* data; // MESSAGE, valid until the next Poll
+    const CoopLevelStart* levelStart; // LEVEL_START, valid until the session is closed
 } CoopSessionEvent;
 
 typedef struct CoopSession CoopSession;
@@ -93,8 +99,14 @@ bool CoopSession_Send(CoopSession* s, int peer, uint16_t msgId, const void* data
 const CoopIdentity* CoopSession_PeerIdentity(const CoopSession* s, int peer);
 // Client: ask the host for Falco, Slippy or Peppy, in place of what we hold. The answer is a ROSTER event with the
 // character in our slot, or PICK_REFUSED, which leaves us connected and free to pick again. Picking what we already
-// hold has no answer. False if it could not be sent, on a host, before the welcome, or for any other character.
+// hold has no answer. False if it could not be sent, on a host, before the welcome, for any other character, or once a
+// level has started. A pick still on its way when the host starts the level is dropped: LEVEL_START says what we hold.
 bool CoopSession_Pick(CoopSession* s, CoopCharacter character);
+// Host: start a level for everyone, from start's level, phase and values. The roster goes along as it is now. Polls
+// then give a LEVEL_START event on the host and on every client, and from here on nobody picks and nobody joins;
+// nothing opens that again yet. False, and nothing changes, while a client that joined holds no character or a client
+// is in the handshake, for a level that cannot be started, on a client, and once a level has started.
+bool CoopSession_StartLevel(CoopSession* s, const CoopLevelStart* start);
 // The current roster, valid until the next Poll. NULL on a client before the first ROSTER event and after the end.
 const CoopRoster* CoopSession_Roster(const CoopSession* s);
 // The transport's counters for a peer that has joined, rttMs among them. False for anyone else.

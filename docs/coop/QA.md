@@ -66,7 +66,10 @@ number of clients, transport.
    (`SF64_COOP_TEST_NO_FMA3`, `src/port/coop/test/switches.h`). Every run's hash must equal the first run's on every
    recorded frame. `--only opengl,no-fma3` picks variants.
 3. **Two clients on one machine.** Two Starship processes with their own config, save and log folders (never the
-   owner's), connected over loopback, both fed replays.
+   owner's), connected over loopback, both fed replays. `python tools/coop/join_test.py` (WP-24, unattended, exit code
+   0 only when everything passed) takes two or three games from the lobby into a level through the scripted flow in
+   `src/port/coop/test/join_driver.h`. Each game starts from other seeds, and its hash log must then equal the host's
+   on every frame from the first frame in the level. `control` lets a client keep its own values and must differ.
 4. **Network conditions (WP-27).** Lag, loss and reordering between the clients with a chaos relay, as in the hub's
    [network chaos testing](https://github.com/cranebeaker/coop-anything/blob/main/playbook/network-chaos-testing.md).
    The transport on its own already runs through that relay: `python tools/coop/net_test.py` (WP-20), which needs a
@@ -76,7 +79,8 @@ number of clients, transport.
    `python tools/coop/session_mutants.py` does the same for `session.c` and `session_test.py` (#55; CI runs it on
    Linux), and `python tools/coop/session_test.py --asan` runs the session tests under AddressSanitizer and UBSan (CI
    does, on Linux); `session_mutants.py --asan` shows that run can fail. `python tools/coop/net_test.py --asan` does
-   the same for the transport tests (#75; CI does, on Linux).
+   the same for the transport tests (#75; CI does, on Linux), and `net_mutants.py --asan` shows that run can fail
+   (#92).
 5. **The co-op menu (WP-25).** `python tools/coop/menu_test.py` checks the menu layer with no game: `sim` on the real
    session in a virtual network, `udp` over real sockets. `python tools/coop/menu_test.py --game` starts three real
    games with `SF64_COOP_TEST_MENU=<folder>` (`src/port/coop/test/menu_driver.h`), clicks the real ImGui widgets through
