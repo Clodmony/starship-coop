@@ -4,6 +4,7 @@
 #include "assets/ast_great_fox.h"
 #include "assets/ast_versus.h"
 #include "port/interpolation/FrameInterpolation.h"
+#include "port/coop/game/players.h" // COOP: a shot answers to the pad of its owner (WP-14)
 
 Vec3f sShotViewPos;
 
@@ -1787,8 +1788,9 @@ void PlayerShot_SearchLockOnTarget(PlayerShot* shot) {
         }
     } else {
         bool rapidFire = CVarGetInteger("gRapidFire", 0) == 1;
+        s32 pad = CoopPlayers_PadOf(shot->sourceId); // COOP: was gMainController, the owner's A in co-op (WP-14)
         if ((shot->obj.pos.y < gGroundHeight) || PlayerShot_FindLockTarget(shot) ||
-            (!(gControllerHold[gMainController].button & A_BUTTON) ^ rapidFire) || (shot->timer == 0)) {
+            (!(gControllerHold[pad].button & A_BUTTON) ^ rapidFire) || (shot->timer == 0)) {
             Object_Kill(&shot->obj, shot->sfxSource);
         }
     }
@@ -2071,7 +2073,8 @@ void PlayerShot_UpdateBomb(PlayerShot* shot) {
                         break;
                     }
                 } else {
-                    if (gControllerPress[gMainController].button & gBombButton[shot->sourceId]) {
+                    // COOP: was gMainController, the owner's button in co-op (WP-14)
+                    if (gControllerPress[CoopPlayers_PadOf(shot->sourceId)].button & gBombButton[shot->sourceId]) {
                         PlayerShot_ExplodeBomb(shot);
                         break;
                     }

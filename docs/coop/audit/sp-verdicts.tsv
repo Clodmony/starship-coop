@@ -17,7 +17,7 @@ src/engine/fox_play.c	Player_FloorCheck	setup	site	gCamCount == 1 / != 1 as vers
 src/engine/fox_play.c	Player_CheckBounds360	setup	read	gCamCount != 1 as versus flag: wraps the arena at 12000
 src/engine/fox_play.c	Player_Setup	setup	site	gCamCount == gPlayerNum + 1: HUD and hit counters reset only when the last player is set up
 src/engine/fox_play.c	Player_UpdateTankJets	setup	site	gCamCount == 1 as "not versus" for jet effects
-src/engine/fox_play.c	Player_Update@gMainController	input	read	gInputHold/gInputPress/gControllerRumble taken from gMainController for every player; WP-14 replaces this
+src/engine/fox_play.c	Player_Update@gMainController	ok	read	with co-op off; in co-op CoopPlayers_SelectInput points at the player's own slot right after (WP-14)
 src/engine/fox_play.c	Player_Update@gCamCount	setup	site	gCamCount == 4: down in versus goes to VS_STANDBY, else fade out and restart level
 src/engine/fox_play.c	Player_Update@gPlayer[0]	flow	site	death restart resets gPlayer[0].zPath and path progress; boost check reads player 0 state for every player
 src/engine/fox_play.c	Play_InitEnvironment	view	site	kills a sound on player 0 source
@@ -70,9 +70,8 @@ src/engine/fox_beam.c	PlayerShot_DrawLaser@gCamCount	setup	site	gCamCount < 4 as
 src/engine/fox_beam.c	PlayerShot_DrawLaser@gPlayer[0]	view	site	laser drawing keyed to player 0 intro state
 src/engine/fox_beam.c	PlayerShot_UpdateBeam	setup	site	gCamCount != 4 as "not versus"; also player 0 form (Landmaster) for every shot
 src/engine/fox_beam.c	PlayerShot_FindLockTarget	ok	read	versus branch, loops all players
-src/engine/fox_beam.c	PlayerShot_SearchLockOnTarget	input	site	charge shot release read from gMainController, not from the shot owner
 src/engine/fox_beam.c	PlayerShot_ApplyExplosionDamage	setup	site	loops gCamCount players
-src/engine/fox_beam.c	PlayerShot_UpdateBomb@gMainController	input	site	bomb detonation read from gMainController (button map already per sourceId)
+src/engine/fox_beam.c	PlayerShot_UpdateBomb@gMainController	view	site	rumble strength from player 0's distance to the blast; detonation reads the owner's pad since WP-14
 src/engine/fox_beam.c	PlayerShot_UpdateBomb@gPlayer[0]	sim	site	bomb blast pushes player 0 only
 src/engine/fox_beam.c	PlayerShot_UpdateLockOnShot	setup	site	loops gCamCount players
 src/engine/fox_beam.c	PlayerShot_Update	view	site	shots not drawn or updated while player 0 is in the intro
@@ -102,7 +101,7 @@ src/engine/fox_enmy.c	Scenery_Move	sim	site	scenery culled by player 0 camera
 src/engine/fox_enmy.c	Sprite_Move	sim	site	sprites culled by player 0 camera
 src/engine/fox_enmy.c	Effect_Move	sim	read	effects killed (Object_Kill) outside player 0 camera range
 src/engine/fox_enmy.c	Item_Move	sim	site	items culled by player 0 camera
-src/engine/fox_enmy.c	Actor_Update	input	read	campaign lock-on release reads gMainController for TEAM_ID_FOX; versus branch already per player
+src/engine/fox_enmy.c	Actor_Update	ok	read	campaign lock-on release with co-op off; in co-op CoopPlayers_ReleaseLockOns runs each player's down on its own A (WP-14)
 src/engine/fox_enmy.c	TexturedLine_Update	sim	site	damages player 0 only
 src/engine/fox_enmy.c	Object_Update	flow	site	objects update and load only in certain player 0 states
 #

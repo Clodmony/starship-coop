@@ -19,6 +19,7 @@
 #include "assets/ast_versus.h"
 #include "assets/ast_zoness.h"
 #include "port/hooks/Events.h"
+#include "port/coop/game/players.h" // COOP: lock-ons run down per player (WP-14)
 
 s32 D_enmy_Timer_80161670[4];
 s32 gLastPathChange;
@@ -2845,6 +2846,7 @@ void Actor_Update(Actor* this) {
                 gChargeTimers[i] = 0;
             }
         }
+    } else if (CoopPlayers_ReleaseLockOns(this)) { // COOP: each player's lock-on runs down on its own A (WP-14)
     } else if (this->lockOnTimers[TEAM_ID_FOX] != 0) {
         bool rapidFire = CVarGetInteger("gRapidFire", 0) == 1;
         if (!(gControllerHold[gMainController].button & A_BUTTON) ||

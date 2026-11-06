@@ -3,7 +3,8 @@
 // The port reads the controllers once per game frame in Graphics_ThreadUpdate (src/sys/sys_main.c):
 // Controller_UpdateInput fills gControllerHold and gControllerPress, then Game_Update runs and fires
 // GamePreUpdateEvent before any game logic. This module listens to that event: when recording it stores
-// both arrays, when playing it overwrites them with the stored values. The RNG seeds are stored on the
+// both arrays, when playing it overwrites them with the stored values. In co-op it leaves that to the input
+// layer and is the input source of the players (src/port/coop/game/input.h). The RNG seeds are stored on the
 // first frame and restored on playback, because Rand_Init seeds them from the clock at boot.
 //
 // Each frame also stores a small checkpoint (game state, level, player 0 state and position, RNG seeds).
@@ -19,6 +20,8 @@
 #include <string.h>
 
 #include "global.h"
+#include "port/coop/game/input.h"
+#include "port/coop/game/players.h"
 #include "port/hooks/Events.h"
 
 // src/sys/sys_math.c
@@ -75,6 +78,8 @@ static ReplayCheckpoint sMismatchWant;
 static ReplayCheckpoint sMismatchGot;
 static s64 sLevelCompleteFrame = -1;
 static s32 sLevelCompleteLevel = -1;
+static bool sLiveLocal = false;
+static ReplayFrame sPlaying; // the frame being played, for the input source below
 
 static void CoopReplay_TakeCheckpoint(ReplayCheckpoint* cp) {
     memset(cp, 0, sizeof(*cp));
@@ -91,6 +96,27 @@ static void CoopReplay_TakeCheckpoint(ReplayCheckpoint* cp) {
     cp->seeds[0] = sRandSeed1;
     cp->seeds[1] = sRandSeed2;
     cp->seeds[2] = sRandSeed3;
+}
+
+static int32_t CoopReplay_ReadPlayer(void* user, int32_t player, CoopInputFrame* out) {
+    (void) user;
+    out->hold = sPlaying.hold[player];
+    out->press = sPlaying.press[player];
+    return 1;
+}
+
+static const CoopInputSource sReplaySource = { CoopReplay_ReadPlayer, NULL };
+
+// A replay flies every player, unless the local one stays on the live controller.
+static void CoopReplay_TakeInput(void) {
+    s32 i;
+
+    for (i = 0; i < REPLAY_PADS; i++) {
+        CoopInput_SetSource(i, &sReplaySource);
+    }
+    if (!sLiveLocal) {
+        CoopInput_SetLocalSource(&sReplaySource);
+    }
 }
 
 static void CoopReplay_NoteLevelComplete(const ReplayCheckpoint* cp) {
@@ -145,6 +171,7 @@ static void CoopReplay_FinishPlayback(const char* failure) {
         fclose(sFile);
         sFile = NULL;
     }
+    CoopInput_ClearSources();
     if (failure != NULL) {
         result = failure;
     } else if (sFirstMismatch >= 0) {
@@ -245,6 +272,9 @@ static void CoopReplay_OnGamePreUpdate(IEvent* event) {
             sMode = REPLAY_DONE;
             return;
         }
+        if (sMode == REPLAY_PLAY) {
+            CoopReplay_TakeInput();
+        }
     }
 
     CoopReplay_TakeCheckpoint(&cp);
@@ -275,8 +305,11 @@ static void CoopReplay_OnGamePreUpdate(IEvent* event) {
         sMismatchWant = frame.cp;
         sMismatchGot = cp;
     }
-    memcpy(gControllerHold, frame.hold, sizeof(frame.hold));
-    memcpy(gControllerPress, frame.press, sizeof(frame.press));
+    sPlaying = frame;
+    if (!CoopPlayers_IsCoop()) {
+        memcpy(gControllerHold, frame.hold, sizeof(frame.hold));
+        memcpy(gControllerPress, frame.press, sizeof(frame.press));
+    }
     sFrame++;
 }
 
@@ -284,6 +317,7 @@ void CoopReplay_Init(void) {
     const char* recordPath = getenv("SF64_COOP_REPLAY_RECORD");
     const char* playPath = getenv("SF64_COOP_REPLAY_PLAY");
     const char* reportPath = getenv("SF64_COOP_REPLAY_REPORT");
+    const char* liveLocal = getenv("SF64_COOP_REPLAY_LIVE_LOCAL");
 
     // Test switches (WP-02) apply before the first game frame, with or without a replay.
     CoopTestSwitches_Init();
@@ -292,6 +326,7 @@ void CoopReplay_Init(void) {
     if ((reportPath != NULL) && (reportPath[0] != '\0')) {
         sReportPath = reportPath;
     }
+    sLiveLocal = (liveLocal != NULL) && (liveLocal[0] != '\0');
     if ((recordPath != NULL) && (recordPath[0] != '\0')) {
         sFile = fopen(recordPath, "wb");
         sMode = REPLAY_RECORD;
@@ -308,7 +343,8 @@ void CoopReplay_Init(void) {
         return;
     }
     // Listeners run in ascending priority (src/port/hooks/impl/EventSystem.cpp:27-29), so LOW runs first: the input
-    // and the restored seeds are in place before any other listener, such as the state hash (WP-04), looks at them.
+    // and the restored seeds are in place before any other listener, such as the input layer (WP-14) and the state hash
+    // (WP-04), looks at them.
     REGISTER_LISTENER(GamePreUpdateEvent, CoopReplay_OnGamePreUpdate, EVENT_PRIORITY_LOW);
     atexit(CoopReplay_OnExit);
 }

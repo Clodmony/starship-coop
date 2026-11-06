@@ -53,6 +53,7 @@ MENU_START = 60
 INPUT_START = 4800
 CYCLE = 240
 FRAMES = 6000
+MIN_FLOWN = FRAMES - INPUT_START - 100
 STICK = 80
 PRESS_FRAMES = 5  # a press has to outlast the two frames a gamepad takes to reach the game
 MAX_LAG = 6  # frames from a gamepad step to gControllerHold[0]; two on the runs in NOTES.md (#68)
@@ -97,8 +98,10 @@ CHARGE_END = 5500
 BOMB_LAUNCH = 5600
 BOMB_DECOY = 5610
 BOMB_OWNER = 5618
-MIN_SEARCH_FRAMES = 100  # frames with a search shot of player 1 in flight
-LOCK_RELEASE = 40  # frames a lock-on may outlast its owner's A: lockOnTimers starts at 20
+# Frames with a search shot of player 1 in flight. No shot leaves while a lock-on holds (Player_CanLockOn), so this depends
+# on what there is to lock on to. Before WP-14 it was 0: the shot died on the frame it left unless player 0 held A.
+MIN_SEARCH_FRAMES = 20
+LOCK_RELEASE = 25  # frames a lock-on may outlast its owner's A: lockOnTimers starts at 20 and runs down once a frame
 
 
 def shots_lead(frame):
@@ -224,8 +227,8 @@ def run_plain_game(s, players, pad_script):
 
 
 def flown(frames, count):
-    """Frames from INPUT_START on with every player flying."""
-    return [f for f in frames if f.tframe >= INPUT_START and
+    """Frames from INPUT_START to the end of the replay with every player flying."""
+    return [f for f in frames if INPUT_START <= f.tframe < FRAMES and
             all(p.state == ACTIVE and not p.parked for p in f.row.players[:count])]
 
 
@@ -234,6 +237,13 @@ def same_as_rule(pad, frame, rule):
     button, x, y = rule(frame)
     return (pad.button, pad.x, pad.y) == (button, x, y) and \
         (pad.press_button, pad.press_x, pad.press_y) == (button & ~rule(frame - 1)[0], x, y)
+
+
+def same_stick(seen, pushed):
+    """libultraship scales a stick, so a push shows as about the same in the same direction."""
+    if pushed == 0:
+        return seen == 0
+    return (seen > 0) == (pushed > 0) and abs(seen) >= STICK_MIN
 
 
 def measure_lag(rows, port=0):
@@ -247,8 +257,7 @@ def check_follows_gamepad(s, rows, player):
     """Player `player` has what the gamepad pressed, some frames later, and none of what the replay's pad 0 says."""
     lag = measure_lag(rows, player)
     wrong_button = [f.tframe for f in rows if f.pads[player].button != pad_rule(f.tframe - lag)[0]]
-    wrong_stick = [f.tframe for f in rows if (pad_rule(f.tframe - lag)[1] > 0) != (f.pads[player].x > 0) or
-                   abs(f.pads[player].x) < STICK_MIN]
+    wrong_stick = [f.tframe for f in rows if not same_stick(f.pads[player].x, pad_rule(f.tframe - lag)[1])]
     s.check(f"player {player} buttons are the gamepad's, {lag} frames later, on {len(rows) - len(wrong_button)} of "
             f"{len(rows)} frames", bool(rows) and not wrong_button)
     s.check(f"player {player} stick is the gamepad's on {len(rows) - len(wrong_stick)} of {len(rows)} frames",
@@ -344,8 +353,7 @@ def scenario_unit(s):
 def scenario_live(s):
     frames, _ = run_replay_game(s, 2, s.args.replay, s.args.pad_script, live_local=True)
     rows = flown(frames, 2)
-    s.check(f"{len(rows)} frames with both players flying (min {FRAMES - INPUT_START - 100})",
-            len(rows) >= FRAMES - INPUT_START - 100)
+    s.check(f"{len(rows)} frames with both players flying (min {MIN_FLOWN})", len(rows) >= MIN_FLOWN)
     lag = check_follows_gamepad(s, rows, 0)
     check_press_edges(s, rows, 0)
     check_flies_right_way(s, rows, 0, lag)
@@ -358,8 +366,7 @@ def scenario_live(s):
 def scenario_alone(s):
     frames, _ = run_plain_game(s, 2, s.args.pad_script)
     rows = flown(frames, 2)
-    s.check(f"{len(rows)} frames with both players flying (min {FRAMES - INPUT_START - 100})",
-            len(rows) >= FRAMES - INPUT_START - 100)
+    s.check(f"{len(rows)} frames with both players flying (min {MIN_FLOWN})", len(rows) >= MIN_FLOWN)
     lag = check_follows_gamepad(s, rows, 0)
     check_press_edges(s, rows, 0)
     check_flies_right_way(s, rows, 0, lag)
@@ -371,8 +378,7 @@ def scenario_alone(s):
 def scenario_whole(s):
     frames, _ = run_replay_game(s, 2, s.args.replay, s.args.pad_script, live_local=False)
     rows = flown(frames, 2)
-    s.check(f"{len(rows)} frames with both players flying (min {FRAMES - INPUT_START - 100})",
-            len(rows) >= FRAMES - INPUT_START - 100)
+    s.check(f"{len(rows)} frames with both players flying (min {MIN_FLOWN})", len(rows) >= MIN_FLOWN)
     check_stream(s, rows, 0, replay_rule(0))
     check_stream(s, rows, 1, replay_rule(1))
 
@@ -380,12 +386,13 @@ def scenario_whole(s):
 def scenario_shots(s):
     frames, _ = run_replay_game(s, 2, s.args.shots_replay, s.args.pad_script_empty, live_local=False)
     rows = flown(frames, 2)
-    s.check(f"{len(rows)} frames with both players flying (min {FRAMES - INPUT_START - 100})",
-            len(rows) >= FRAMES - INPUT_START - 100)
+    s.check(f"{len(rows)} frames with both players flying (min {MIN_FLOWN})", len(rows) >= MIN_FLOWN)
 
     search = [f for f in rows if any(shot.id == SHOT_LOCK_SEARCH and shot.owner == 1 for shot in f.shots)]
     s.check(f"a lock-search shot of player 1 flew on {len(search)} frames with only its owner holding A "
             f"(min {MIN_SEARCH_FRAMES})", len(search) >= MIN_SEARCH_FRAMES)
+    alive = sum(1 for f in search if not f.pads[1].button & BUTTON_A)
+    s.check(f"a lock-search shot of player 1 outlived its owner's A on {alive} frames", not alive)
 
     bomb = [f for f in rows if any(shot.id == SHOT_BOMB and shot.owner == 1 for shot in f.shots)]
     went_off = next((f.tframe for f in bomb if any(shot.id == SHOT_BOMB and shot.exploded for shot in f.shots)), None)
@@ -406,8 +413,7 @@ def scenario_shots(s):
 def scenario_solo(s):
     frames, _ = run_replay_game(s, 1, s.args.replay, s.args.pad_script, live_local=True)
     rows = flown(frames, 1)
-    s.check(f"{len(rows)} frames with player 0 flying (min {FRAMES - INPUT_START - 100})",
-            len(rows) >= FRAMES - INPUT_START - 100)
+    s.check(f"{len(rows)} frames with player 0 flying (min {MIN_FLOWN})", len(rows) >= MIN_FLOWN)
     check_stream(s, rows, 0, replay_rule(0))
 
 

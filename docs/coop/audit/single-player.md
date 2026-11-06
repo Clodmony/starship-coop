@@ -21,19 +21,19 @@ pattern without reading the code, so treat it as a guess.
 
 ## Summary
 
-1788 sites in 407 functions in 43 files.
+1786 sites in 406 functions in 43 files.
 A function whose sites have more than one verdict counts once per verdict in the functions column.
 
 | verdict | sites | functions | `gPlayer[0]` | `gPlayer->` | `gMainController` | `gCamCount` |
 |---|---:|---:|---:|---:|---:|---:|
 | sim | 1074 | 192 | 1073 | 1 | 0 | 0 |
-| view | 223 | 89 | 178 | 0 | 42 | 3 |
-| input | 19 | 11 | 0 | 0 | 19 | 0 |
+| view | 224 | 90 | 178 | 0 | 43 | 3 |
+| input | 11 | 7 | 0 | 0 | 11 | 0 |
 | flow | 326 | 76 | 323 | 0 | 3 | 0 |
 | setup | 53 | 33 | 2 | 0 | 0 | 51 |
-| ok | 93 | 37 | 1 | 2 | 82 | 8 |
+| ok | 98 | 39 | 1 | 2 | 87 | 8 |
 
-Basis per site: read 193, site 953, name 642.
+Basis per site: read 193, site 951, name 642.
 
 ## Sites
 
@@ -68,19 +68,18 @@ Basis per site: read 193, site 953, name 642.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `PlayerShot_CheckActorHitbox` | 440:P0, 441:P0 | sim | site | hit test uses player 0 camera position |
-| `PlayerShot_CollisionCheck` | 837:CC, 886:CC | setup | site | loops players; gCamCount != 1 as versus flag |
-| `PlayerShot_CollisionCheck` | 880:P0 | sim | site | on-foot check uses player 0 form for every shot |
-| `PlayerShot_DrawLaser` | 1106:CC | setup | site | gCamCount < 4 as "not versus" for laser look |
-| `PlayerShot_DrawLaser` | 1109:P0, 1145:P0 | view | site | laser drawing keyed to player 0 intro state |
-| `PlayerShot_UpdateBeam` | 1652:CC, 1654:P0 | setup | site | gCamCount != 4 as "not versus"; also player 0 form (Landmaster) for every shot |
-| `PlayerShot_FindLockTarget` | 1758:CC | ok | read | versus branch, loops all players |
-| `PlayerShot_SearchLockOnTarget` | 1791:MC | input | site | charge shot release read from gMainController, not from the shot owner |
-| `PlayerShot_ApplyExplosionDamage` | 2022:CC | setup | site | loops gCamCount players |
-| `PlayerShot_UpdateBomb` | 2074:MC, 2104:MC | input | site | bomb detonation read from gMainController (button map already per sourceId) |
-| `PlayerShot_UpdateBomb` | 2095:P0, 2096:P0, 2097:P0, 2098:P0 | sim | site | bomb blast pushes player 0 only |
-| `PlayerShot_UpdateLockOnShot` | 2161:CC, 2161:P0 | setup | site | loops gCamCount players |
-| `PlayerShot_Update` | 2329:P0 | view | site | shots not drawn or updated while player 0 is in the intro |
+| `PlayerShot_CheckActorHitbox` | 441:P0, 442:P0 | sim | site | hit test uses player 0 camera position |
+| `PlayerShot_CollisionCheck` | 838:CC, 887:CC | setup | site | loops players; gCamCount != 1 as versus flag |
+| `PlayerShot_CollisionCheck` | 881:P0 | sim | site | on-foot check uses player 0 form for every shot |
+| `PlayerShot_DrawLaser` | 1107:CC | setup | site | gCamCount < 4 as "not versus" for laser look |
+| `PlayerShot_DrawLaser` | 1110:P0, 1146:P0 | view | site | laser drawing keyed to player 0 intro state |
+| `PlayerShot_UpdateBeam` | 1653:CC, 1655:P0 | setup | site | gCamCount != 4 as "not versus"; also player 0 form (Landmaster) for every shot |
+| `PlayerShot_FindLockTarget` | 1759:CC | ok | read | versus branch, loops all players |
+| `PlayerShot_ApplyExplosionDamage` | 2024:CC | setup | site | loops gCamCount players |
+| `PlayerShot_UpdateBomb` | 2098:P0, 2099:P0, 2100:P0, 2101:P0 | sim | site | bomb blast pushes player 0 only |
+| `PlayerShot_UpdateBomb` | 2107:MC | view | site | rumble strength from player 0's distance to the blast; detonation reads the owner's pad since WP-14 |
+| `PlayerShot_UpdateLockOnShot` | 2164:CC, 2164:P0 | setup | site | loops gCamCount players |
+| `PlayerShot_Update` | 2332:P0 | view | site | shots not drawn or updated while player 0 is in the intro |
 
 ### `src/engine/fox_bg.c`
 
@@ -188,34 +187,34 @@ Basis per site: read 193, site 953, name 642.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `func_enmy_80060FE4` | 102:P0 | flow | site | player 0 intro state |
-| `func_enmy_80061148` | 130:P0 | flow | site | player 0 level complete |
-| `func_enmy_80061A4C` | 319:P0, 320:P0 | sim | site | target point around player 0 |
-| `func_enmy_80061B68` | 340:P0, 343:P0 | sim | site | target point around player 0 |
-| `Object_Load` | 439:P0, 440:P0 | sim | site | level objects spawn relative to player 0 path position |
-| `Object_LoadLevelObjects` | 592:P0, 595:P0, 632:P0, 633:P0 | sim | site | spawning on path splits follows player 0 path change |
-| `Object_Init` | 1224:P0 | sim | site | init depends on player 0 z |
-| `ActorMissileSeek_Update` | 1608:P0, 1609:P0, 1610:P0, 1686:P0, 1707:P0, 1710:P0 | sim | site | homing missile seeks player 0 |
-| `SceneryRotateTowardsCamera` | 2016:P0 | view | site | billboard to player 0 camera |
-| `Item_CheckBounds` | 2027:P0, 2033:P0, 2036:P0, 2037:P0, 2039:P0, 2040:P0 | sim | site | items kept inside player 0 path bounds |
-| `ActorSupplies_Update` | 2127:P0, 2152:P0 | sim | site | supply drop for player 0 |
-| `func_enmy_80067A40` | 2200:P0, 2202:P0, 2204:P0, 2206:P0, 2208:P0 | sim | site | wing repair applied to player 0 |
-| `ItemLasers_Update` | 2296:P0, 2297:P0 | sim | site | laser item checks player 0 wings |
-| `ItemSupplyRing_Update` | 2363:P0 | view | site | player 0 alternate (cockpit) view |
-| `ItemMeteoWarp_Update` | 2440:P0, 2443:P0, 2448:P0, 2449:P0 | flow | site | warp ring sends player 0 into the warp zone |
-| `ItemCheckpoint_Update` | 2472:P0 | view | site | player 0 alternate (cockpit) view |
-| `ItemPathChange_Update` | 2518:P0, 2521:P0, 2522:P0, 2525:P0, 2526:P0, 2529:P0, 2536:P0, 2539:P0, 2542:P0, 2550:P0, 2551:P0, 2555:P0, 2556:P0, 2557:P0, 2559:P0, 2560:P0, 2565:P0, 2566:P0, 2570:P0, 2571:P0, 2575:P0, 2576:P0, 2577:P0, 2579:P0, 2580:P0, 2585:P0, 2586:P0, 2590:P0, 2591:P0 | flow | read | path split and level end gate: changes player 0 path, state and flags |
-| `Sprite_UpdateDoodad` | 2600:P0 | view | site | billboard to player 0 camera |
-| `Actor_Move` | 2690:P0, 2694:P0, 2695:P0, 2696:P0, 2697:P0 | sim | read | actors are killed (Object_Kill) when outside player 0 camera and path bounds |
-| `Boss_Move` | 2734:P0, 2735:P0 | sim | site | bosses culled by player 0 camera |
-| `Scenery_Move` | 2741:P0, 2747:P0, 2754:P0, 2757:P0 | sim | site | scenery culled by player 0 camera |
-| `Sprite_Move` | 2774:P0, 2784:P0 | sim | site | sprites culled by player 0 camera |
-| `Effect_Move` | 2798:P0, 2800:P0, 2801:P0 | sim | read | effects killed (Object_Kill) outside player 0 camera range |
-| `Item_Move` | 2809:P0 | sim | site | items culled by player 0 camera |
-| `Actor_Update` | 2840:CC | ok | read | versus branch, loops all players |
-| `Actor_Update` | 2850:MC, 2851:MC | input | read | campaign lock-on release reads gMainController for TEAM_ID_FOX; versus branch already per player |
-| `TexturedLine_Update` | 3088:P0, 3105:P0, 3107:P0 | sim | site | damages player 0 only |
-| `Object_Update` | 3148:P0, 3149:P0, 3150:P0, 3154:P0 | flow | site | objects update and load only in certain player 0 states |
+| `func_enmy_80060FE4` | 103:P0 | flow | site | player 0 intro state |
+| `func_enmy_80061148` | 131:P0 | flow | site | player 0 level complete |
+| `func_enmy_80061A4C` | 320:P0, 321:P0 | sim | site | target point around player 0 |
+| `func_enmy_80061B68` | 341:P0, 344:P0 | sim | site | target point around player 0 |
+| `Object_Load` | 440:P0, 441:P0 | sim | site | level objects spawn relative to player 0 path position |
+| `Object_LoadLevelObjects` | 593:P0, 596:P0, 633:P0, 634:P0 | sim | site | spawning on path splits follows player 0 path change |
+| `Object_Init` | 1225:P0 | sim | site | init depends on player 0 z |
+| `ActorMissileSeek_Update` | 1609:P0, 1610:P0, 1611:P0, 1687:P0, 1708:P0, 1711:P0 | sim | site | homing missile seeks player 0 |
+| `SceneryRotateTowardsCamera` | 2017:P0 | view | site | billboard to player 0 camera |
+| `Item_CheckBounds` | 2028:P0, 2034:P0, 2037:P0, 2038:P0, 2040:P0, 2041:P0 | sim | site | items kept inside player 0 path bounds |
+| `ActorSupplies_Update` | 2128:P0, 2153:P0 | sim | site | supply drop for player 0 |
+| `func_enmy_80067A40` | 2201:P0, 2203:P0, 2205:P0, 2207:P0, 2209:P0 | sim | site | wing repair applied to player 0 |
+| `ItemLasers_Update` | 2297:P0, 2298:P0 | sim | site | laser item checks player 0 wings |
+| `ItemSupplyRing_Update` | 2364:P0 | view | site | player 0 alternate (cockpit) view |
+| `ItemMeteoWarp_Update` | 2441:P0, 2444:P0, 2449:P0, 2450:P0 | flow | site | warp ring sends player 0 into the warp zone |
+| `ItemCheckpoint_Update` | 2473:P0 | view | site | player 0 alternate (cockpit) view |
+| `ItemPathChange_Update` | 2519:P0, 2522:P0, 2523:P0, 2526:P0, 2527:P0, 2530:P0, 2537:P0, 2540:P0, 2543:P0, 2551:P0, 2552:P0, 2556:P0, 2557:P0, 2558:P0, 2560:P0, 2561:P0, 2566:P0, 2567:P0, 2571:P0, 2572:P0, 2576:P0, 2577:P0, 2578:P0, 2580:P0, 2581:P0, 2586:P0, 2587:P0, 2591:P0, 2592:P0 | flow | read | path split and level end gate: changes player 0 path, state and flags |
+| `Sprite_UpdateDoodad` | 2601:P0 | view | site | billboard to player 0 camera |
+| `Actor_Move` | 2691:P0, 2695:P0, 2696:P0, 2697:P0, 2698:P0 | sim | read | actors are killed (Object_Kill) when outside player 0 camera and path bounds |
+| `Boss_Move` | 2735:P0, 2736:P0 | sim | site | bosses culled by player 0 camera |
+| `Scenery_Move` | 2742:P0, 2748:P0, 2755:P0, 2758:P0 | sim | site | scenery culled by player 0 camera |
+| `Sprite_Move` | 2775:P0, 2785:P0 | sim | site | sprites culled by player 0 camera |
+| `Effect_Move` | 2799:P0, 2801:P0, 2802:P0 | sim | read | effects killed (Object_Kill) outside player 0 camera range |
+| `Item_Move` | 2810:P0 | sim | site | items culled by player 0 camera |
+| `Actor_Update` | 2841:CC | ok | read | versus branch, loops all players |
+| `Actor_Update` | 2852:MC, 2853:MC | ok | read | campaign lock-on release with co-op off; in co-op CoopPlayers_ReleaseLockOns runs each player's down on its own A (WP-14) |
+| `TexturedLine_Update` | 3090:P0, 3107:P0, 3109:P0 | sim | site | damages player 0 only |
+| `Object_Update` | 3150:P0, 3151:P0, 3152:P0, 3156:P0 | flow | site | objects update and load only in certain player 0 states |
 
 ### `src/engine/fox_enmy2.c`
 
@@ -284,7 +283,7 @@ Basis per site: read 193, site 953, name 642.
 | `Player_Setup` | 4937:CC | setup | site | gCamCount == gPlayerNum + 1: HUD and hit counters reset only when the last player is set up |
 | `Player_UpdateTankJets` | 5477:CC, 5481:CC | setup | site | gCamCount == 1 as "not versus" for jet effects |
 | `Player_UpdateEffects` | 5523:CC | setup | site | loops gCamCount players |
-| `Player_Update` | 5896:MC, 5897:MC, 5898:MC | input | read | gInputHold/gInputPress/gControllerRumble taken from gMainController for every player; WP-14 replaces this |
+| `Player_Update` | 5896:MC, 5897:MC, 5898:MC | ok | read | with co-op off; in co-op CoopPlayers_SelectInput points at the player's own slot right after (WP-14) |
 | `Player_Update` | 6130:CC | setup | site | gCamCount == 4: down in versus goes to VS_STANDBY, else fade out and restart level |
 | `Player_Update` | 6140:P0, 6209:P0 | flow | site | death restart resets gPlayer[0].zPath and path progress; boost check reads player 0 state for every player |
 | `Camera_SetStarfieldPos` | 6638:P0, 6650:P0 | view | site | starfield from player 0 camera |
