@@ -123,6 +123,204 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-06, #59, secret routes and events that depend on a wingman
+
+Read at `95962d04`. Nothing was run. This describes what the game does; the rule for a human-flown wingman is for a
+later record (decision 0005, "Open"), and the open questions for it are at the end.
+
+The event scripts are not in this repo: they are ROM data. They were read from the `.o2r` built from ROM US 1.0 with a
+throwaway decoder that follows `tools/Torch/src/factories/sf64/ScriptFactory.cpp`. `CO S59:34` means level Corneria,
+script 59, command 34. The tables are the `SF64:SCRIPT` rows of `assets/yaml/us/rev0/ast_*.yaml` (Corneria:
+`ast_corneria.yaml:445`), and `ActorEvent_ProcessScript` picks one per level (`src/engine/fox_enmy2.c:1067-1120`).
+`z` is the `zPos1` of the object that starts a script. Conditions are in `ActorEvent_ProcessTriggers` (`:2354`).
+
+Short version, derived from the lists below: two routes read a wingman directly (Corneria needs Falco to open
+Sector Y; Sector X loses its choice when Slippy is shot down), Titania always takes Slippy away, and every medal needs
+all three wingmen. Four more branches depend on wingmen only through who shot what. Meteo, Zoness, Macbeth and the way
+to Venom read no wingman.
+
+Observed, how a route is chosen:
+
+- `gMissionStatus` starts at 0 (`src/engine/fox_play.c:2880`), except Sector X, which starts at `MISSION_ACCOMPLISHED`
+  (`:2882-2884`). The map turns it into the next planet: `MISSION_COMPLETE` (0) gives `dest1`, `MISSION_ACCOMPLISHED`
+  gives `dest2`, `MISSION_WARP` gives `warp` (`src/overlays/ovl_menu/fox_map.c:1487-1499`, table at `:214`).
+- **A better result opens a choice, it does not force a route.** After anything but `MISSION_COMPLETE` the map offers a
+  path change (A at `fox_map.c:6754`, Start at `:6771-6780`), and `Map_ChangePath` swaps between `dest1` and the earned
+  route (`:3698-3735`). After `MISSION_COMPLETE` the menu has no such option (`:3579`, `:3602-3603`).
+- Retry on the map restores the team from `D_ctx_80177C58` (`Map_RetryCourse`, `fox_map.c:3619-3635`), which is
+  written when the player leaves for a level (`:3525-3528`). So a route event or a lost wingman can be retried for a
+  life.
+- Bolse, Area 6 and Venom set `gNextLevel` themselves and read no wingman for it: Bolse to Venom 1
+  (`src/overlays/ovl_i4/fox_bo.c:1656`), Area 6 to Venom 2 (`src/overlays/ovl_i3/fox_a6.c:2928`), Venom 1 to Venom 2
+  (`src/overlays/ovl_i1/fox_ve1.c:2522`), Venom 2 to Andross (`src/overlays/ovl_i6/fox_ve2.c:443`).
+
+| Level | `dest1` | `dest2` | `warp` | What earns the other route | Wingman |
+|---|---|---|---|---|---|
+| Corneria | Meteo | Sector Y | | Kill the Carrier (`ovl_i1/fox_co.c:2200`) | **Direct**: Falco |
+| Meteo | Fortuna | | Katina | 7 warp rings (`engine/fox_enmy.c:2446-2452`) | None |
+| Sector Y | Katina | Aquas | | `gHitCount >= 100` at clear (`ovl_i6/fox_sy.c:2338`) | Indirect: hit credit |
+| Fortuna | Sector X | Solar | | All four of Star Wolf down in time (`ovl_i4/fox_fo.c:210-213`) | Indirect: shooter |
+| Katina | Sector X | Solar | | Saucerer core destroyed (`ovl_i4/fox_ka.c:1410`) | Indirect: shooter |
+| Sector X | Titania | Macbeth | Sector Z | Starts earned, lost with Slippy; 4 gates warp (`engine/fox_play.c:6898-6905`) | **Direct**: Slippy |
+| Zoness | Macbeth | Sector Z | | No searchlight missed (`ovl_i3/fox_zo.c:4960`) | None |
+| Macbeth | Bolse | Area 6 | | Railroad switch hit (`ovl_i5/fox_ma.c:3397-3410`) | None |
+| Sector Z | Bolse | Area 6 | | Great Fox not hit (`ovl_i4/fox_sz.c:1287`, `:1562`) | Indirect: shooter |
+
+Titania, Aquas and Solar have only `dest1` (Bolse, Zoness, Macbeth).
+
+Observed, Corneria (the verdict on the issue's claim is under Derived):
+
+- Outside debug CVars (`src/port/mods/PortEnhancements.c:95-104`), the only write of `MISSION_ACCOMPLISHED` here is the
+  Carrier's death. The Carrier fight needs the path turn at object 649 (z 168296). `Object_Init` frees that item unless
+  `gRingPassCount >= 7` and `gTeamShields[TEAM_ID_FALCO] > 0` (`engine/fox_enmy.c:1183-1189`). This is checked once,
+  when the item loads.
+- The 7 are the seven stone arches, objects 587 to 606 (z 143281 to 154454). Each spawns a ring-check item
+  (`fox_enmy.c:1061-1079`, `:1191-1192`), counted at `:2508-2513`. All seven are needed.
+- The turn moves `gPlayer[0].xPath` by 7000 (`rot.z` 70 times 100: `fox_enmy.c:1088-1090`, `:2569-2572`). Objects load
+  only within 4000 of `gPlayer[0].xPath` (`:439-440`, `:587-590`). Granga is object 763 at x -1449; the Carrier and its
+  three `OBJ_ACTOR_TEAM_BOSS` are objects 799 to 802 at x about 7000. Object 627 is a Carrier too, at x -1223, and its
+  init makes it a fly-by when `xPath` is near 0 (`ovl_i1/fox_co.c:1673-1677`, `:1761-1767`).
+- The rescue is S60 (leader, object 472), S59 (Falco, 473) and three S61 chasers (474 to 476) at z 108560 to 108699.
+  S59 hits Falco for 25, 15 and 25, then for 255 at `CO S59:34`, unless `EVC_NO_TARGET` fires first (`CO S59:10`). His
+  target is S60, which despawns on `EVC_NO_FOLLOWER` once the chasers are gone (`CO S60:12`, `fox_enmy2.c:2377`,
+  `:2637`). 255 is the only scripted hit in the campaign that downs a wingman at full shields; the next largest is 70.
+- The CVar `gHit64FalcoDead` zeroes his shields at level start (`engine/fox_play.c:2939-2941`).
+- `EVC_PASSED_ALL_RINGS` tests the same two values for scripts (`fox_enmy2.c:2663-2683`; only Corneria tests Falco).
+  With both true, Falco flies in with lines 2181, 2185 and 2188 (S14, z 158675) and Peppy's chase S1 and S2 (z 163700)
+  is skipped.
+
+Observed, Sector X and Titania:
+
+- Spyborg holds the result in `swork[6]`: 1 at spawn (`ovl_i2/fox_sx.c:533`), copied to `gMissionStatus` at its death
+  (`:1096`). From `gBossFrameCount` 2200, with Slippy up, the end of an attack leads to state 85 instead (`:971`,
+  `:1031`). That spawns a stand-in `OBJ_ACTOR_SX_SLIPPY` (`:18-38`); at animation frame 75 it sets `swork[6] = 0` and
+  `gTeamShields[TEAM_ID_SLIPPY] = -2`, and puts player 0 in `PLAYERSTATE_STANDBY` with the camera on Slippy
+  (`:102-123`, `:127-152`).
+- `SX S94` (object 997, z 204973) runs the other way round: it restores a Slippy who is not up to 255 and flies him in
+  before the boss (`EVOP_RESTORE_TEAM`, `fox_enmy2.c:1359`). No other level script uses that command.
+- `-2` is Slippy's own state. It keeps his radio working (`engine/fox_radio.c:91`), and `Play_Setup` leaves it alone
+  where `-1` and `0` move on (`fox_play.c:545-553`). The clear cutscene has two versions on it (`fox_sx.c:1877`).
+- Titania forces `-2` on every start: `Play_InitLevel` writes it (`fox_play.c:2691`) after `Play_Init` copied the saved
+  shields (`:2936`, call at `:3016`). No Titania script spawns him.
+- He comes back in the Goras fight: the third destroyed part (`ovl_i5/fox_ti.c:4013-4014`, `:4083-4084`) spawns
+  `OBJ_ACTOR_TEAM_BOSS` (`:3808-3813`), whose init sets `gTeamShields[TEAM_ID_SLIPPY] = 255`
+  (`engine/fox_hud.c:4832-4835`). The boss code flips him to 1 and back around each of his lines (`fox_ti.c:5053-5134`).
+
+Observed, medals and shooter rules:
+
+- `Play_CheckMedalStatus` needs all three wingmen above 0 and `gHitCount >= n` (`fox_play.c:59-65`). Its result gives
+  `gLeveLClearStatus` 2, the medal (`fox_demo.c:1271`, `fox_map.c:1473-1476`, `fox_hud.c:1313`). Venom 2 sets 2 itself
+  (`fox_ve2.c:123`).
+- `Actor_Despawn` adds to `gHitCount` only when `dmgSource == AI360_FOX + 1` (`fox_enmy.c:1761`). `dmgSource` is
+  `sourceId + 1` (`engine/fox_beam.c:696`) and `sourceId` is `player->num` (`fox_play.c:3091`). Other sites have no such
+  check (`fox_enmy2.c:226`, `:292`, `:2133`, `:2214`, `:2330`).
+- Katina: shots with `sourceId != TEAM_ID_FOX` do not hurt the Saucerer (`fox_beam.c:1007-1009`).
+- Fortuna: `gStarWolfTeamAlive` clears with no shooter check (`engine/fox_360.c:999-1027`), and a wingman rescued by
+  Fox turns on the Star Wolf member Fox hurt (`:530-537`).
+- Sector Z: any missile kill counts toward the 6 that end the level (`fox_360.c:918-919`, `fox_sz.c:58-60`). Falco,
+  Peppy and Slippy each get a missile as target while their `iwork[2]` is `AI360_FOX` (`fox_sz.c:308-360`); Katt takes
+  Slippy's once she has arrived.
+- Aquas sets all three to 255 at its start (`ovl_i3/fox_aq.c:437`) and the map saves that (`fox_map.c:1451-1455`).
+
+Observed, other reads of a wingman:
+
+- Slippy's boss health bar needs him above 0 (`fox_hud.c:3204`). On Venom 1 it is only switched on with him up
+  (`ovl_i1/fox_ve1.c:1164-1168`).
+- `OBJ_ACTOR_MISSILE_SEEK_TEAM` picks a wingman by shields (`fox_enmy.c:1541-1590`). All-range team actors skip a down
+  wingman (`fox_360.c:381`), and his Star Wolf opponent turns on Fox: Leon for Falco, Andrew for Slippy, Pigma for Peppy
+  (`:567-575`).
+- Start and clear cutscenes leave out a wingman at 0 or below, in every level file (for example `fox_co.c:3663-3670`,
+  `fox_andross.c:4181-4187`). Katina's also drops allies by `gKaAllyKillCount` (`ovl_i4/fox_ka.c:1775`). Bolse, Venom 2
+  and Andross read wingmen for nothing else but radio.
+- `gMissionTeamStatus` records who was up per mission (`fox_hud.c:1278-1292`, `fox_map.c:1658-1670`). It is shown on the
+  map (`:5704`) and used in the ranking (`ovl_ending/fox_end2.c:239-241`, `ovl_menu/fox_option.c:3999-4001`).
+- Hits refill surviving wingmen at level clear (`fox_hud.c:1131-1144`).
+- Katt and Bill read no wingman. They depend on `gLeveLClearStatus`: Bill on Katina (`EVC_KA_CLEAR`, for example
+  `SX S90`, `SO S20`), Katt on Zoness (`EVC_ZO_CLEAR`: `MA S10`, `MA S38`; `fox_sz.c:74`). Credits: `fox_end2.c:522`,
+  `:590`.
+- Every other `if` or `switch` on `gTeamShields` in `src/overlays/ovl_i*/`, `fox_demo.c` and `fox_360.c` was classed by
+  its function and is radio, a cutscene, or the downed-wingman logic of #61. `Corneria_CoGranga_1UpCheck` reads the team
+  only for its radio line (`fox_co.c:561`).
+
+Observed, level scripts. Fly-ins run only while that wingman's shields are above 0, except the two marked and `SX S94`.
+A rescue is a fly-in plus enemies aimed at him. It costs shields if failed, and only `CO S59` can down him from full.
+
+| Level | Fly-ins | Rescues | Content gated on a wingman |
+|---|---|---|---|
+| Corneria | Falco S4 S9 S14 S59 S64 (no gate), Slippy S17 S51 (no gate), Peppy S1 S32 | Slippy S17 with S16; Falco S59 with S60, S61; Peppy S1 with S2 | S36 (3 enemies, Falco up), S8 (Falco up, after the turn) |
+| Meteo | Falco S11 S141-143, Peppy S12 S135 S149, Slippy S21 S37 | Slippy S21 with S46, S84 | S6 (44 objects, Peppy down) and S48 (14, Slippy down, bombs); S15 S23 S34 S45 S52-54 (Peppy up, S34 bombs); S114 gold ring meteor blows up by itself with Falco up |
+| Sector X | Falco S1 S26, Peppy S21 S76 S80, Slippy S94 (when not up) | Peppy S80 with S78; Peppy S76 with S93 | S93 (10, gold ring group, Peppy up); S105 (bees, gold ring, Slippy up) |
+| Area 6 | Falco S12 S36 S41 S48 S74, Peppy S1 S11 S40 S75, Slippy S13 S21 S42 S76 | Falco S12 with S28, S31; Falco S36 with S26; Peppy S11 with S10, S65-71; Slippy S21 with S23 | S22 (5 missiles) hit all three for 20 near player 0 |
+| Sector Y | Falco S17 S58 S71 S90 S97, Peppy S18 S59 S75 S86 S98, Slippy S19 S48 S60 S99 | Slippy S48 with S50, S63, S76; Falco S90 with S89 | S92 (object 444): laser or 1UP, **all three up** |
+| Solar | Falco S21 S23, Peppy S3 S25 S26, Slippy S4 S24 | Falco S21 with S22 | The fly-ins and S18 carry scripted `DAMAGE_TEAM` hits |
+| Zoness | Falco S7 S8 S22, Peppy S5, Slippy S9 S16 S46 | Slippy S46 with S39; Falco S8 with S24 | |
+| Macbeth | Falco S2 S3 S9 S26, Peppy S28 S37, Slippy S4 S27 S50 | Falco S2 with S29, S26 with S43; Slippy S27 with S44, S50 with S56; Peppy S28 with S45 | |
+| Titania | Falco S2 S4 S6 S7 S8 S27, Peppy S3 S5 S24 S28 | Falco S6 with S15, S18; Falco S7 with S16, S19 | |
+| Venom 1 | Falco S0 S20 S83 S85 S86 S98, Peppy S21 S77 S82 S97, Slippy S1 S22 S88 S99 | | S23 (12) and S96 (2): the z 144135 blasts run only with **all three up** |
+
+Aquas and Andross scripts read no wingman. Fortuna, Katina, Bolse, Sector Z and Venom 2 place no event actors at all:
+their wingmen are the actors in `gActors[1]` to `[3]`.
+
+Scripts that only pick a radio line by who is up, for #60: Corneria 5, Meteo 16, Sector X 13, Area 6 3, Sector Y 6,
+Venom 1 18, Zoness 5, Macbeth 6, Titania 7. No script uses `EVC_TEAM_COUNT_*` or `EVC_CHASED`. Counted over
+scripts placed in the level object lists, so unplaced ones like `CO S81` are out.
+
+Derived:
+
+- **Corneria: the issue's "saving Falco leads to the other route" is half of it.** Saving him is necessary, not
+  sufficient: the route also needs all seven arches. The rescue is only one way to keep him, because anything that
+  takes his shields to 0 before z 168296 closes the route. And the route is not forced: the map still offers Meteo.
+- Once the turn is done, Granga and the Carrier fight exclude each other: each is outside the other path's 4000 window.
+- A slow Spyborg fight forces Titania. A fast one, or a Slippy already down, leaves `MISSION_ACCOMPLISHED`: Macbeth,
+  with the choice back to Titania. So Slippy's knock-out does not open Titania, it takes the other options away.
+- Slippy is missing from Titania even when the player picked it with him healthy.
+- Nearly everything reads one value, `gTeamShields[id] > 0`, not an actor. What that value means for a human flyer
+  decides most of this list.
+- The other half of a rescue is the actor: `EVOP_SET_TEAM_ID` stores it in `gTeamEventActorIndex`
+  (`fox_enmy2.c:1262-1267`) and chasers aim at that index (`EVOP_SET_TARGET`, `:1451-1456`; chase timer, `:3239`). With
+  no such actor the index is stale.
+- `CO S51` and `CO S64` have no gate, so a check on shields alone does not stop those two fly-ins.
+- If Falco's actor is not spawned, `CO S59` never reaches its 255 hit, so nothing can fail the rescue and the route
+  would rest on the arches alone.
+- Ring items are collected per player (`Player_CheckItemCollect`, `fox_play.c:1657-1669`), but the path change moves
+  only `gPlayer[0]` (`fox_enmy.c:2515-2571`), and the load window follows only `gPlayer[0].xPath`.
+- Kills by player 1 do not count in `Actor_Despawn` today. If kills by players 2 to 4 start to count (DESIGN.md
+  section 4, item 5 proposes a team total), the Sector Y route and every medal threshold get easier. If they do not,
+  those players cannot help earn them. At Katina they cannot hurt the Saucerer at all.
+- Replacing a computer wingman removes his help at Fortuna and Sector Z, and the human's shots count there instead.
+  Zoness searchlights and Macbeth switches check no shooter either (`ovl_i3/fox_zo.c:4306`, `ovl_i5/fox_ma.c:3397`).
+- DESIGN.md section 4, item 4 treats a route as something a player triggers in the level. The map adds a second
+  decision after every earned route, and it reads only `gMainController`.
+
+Guess:
+
+- Meteo's S6 waves (Peppy down) stand in for the S15-style waves (Peppy up), to keep that section equally busy.
+
+Unknown:
+
+- Anything at run time: none of this was played. That covers the frames Falco has in S59, how often computer wingmen
+  really kill missiles or Star Wolf, and whether the turn item can be missed (its hitbox is 1200 wide,
+  `engine/fox_edata_info.c:82`).
+- US 1.1: its yaml lists the same scripts, but only US 1.0 data was decoded.
+- `EVC_EXPERT_MODE` branches were not followed.
+
+Open questions for the record, nothing decided here:
+
+1. What does `gTeamShields[id]` hold while a human flies that wingman: their shields, a fixed value, or only up or down?
+2. Does a human-flown wingman still get the scripted actor? If not, do chasers go after the human, and who takes
+   scripted damage, including the 255 at `CO S59:34`?
+3. Corneria: what replaces "Falco is up" when a human flies Falco, and what if that player is down at z 168296?
+4. Sector X: is a human Slippy taken out at 2200 boss frames, with the stand-in actor and the camera on him? If not,
+   does the slow fight still force Titania?
+5. Titania: where is a human Slippy until the third Goras part falls?
+6. Medals: what counts as "all three up" with human wingmen?
+7. Hit credit: do kills by players 2 to 4 count toward `gHitCount`, and does Sector Y's 100 stay?
+8. Katina: may players 2 to 4 hurt the Saucerer?
+9. Is the lost computer help at Fortuna and Sector Z acceptable, or does it need balancing?
+10. Boss health bar: who sees it when Slippy is human, or down?
+11. Who picks on the map (`gMainController`; DESIGN.md section 4, item 4)?
+12. `gMissionTeamStatus` and the ranking: does a human wingman count as a wingman there?
+
 ### 2026-11-06, #56, audit regenerated after WP-10 and WP-11
 
 Read at `a69c811a`. `python tools/coop/sp_audit.py --check` passes again. This moved line numbers and corrected the
@@ -179,6 +377,184 @@ Unknown:
   Nothing here rechecked them.
 - Why the `flow` group is not usable as a checklist yet: #56 does not say. 113 of its 326 sites have basis `name`.
 - Which physical pad lands on index 0: that is libultraship's mapping, not read here.
+
+### 2026-11-06, #60, which radio lines a wingman says on its own
+
+Read at `95962d04`; nothing was run. "Wingman" means Falco, Slippy and Peppy, the three a player can take (decision
+0005); Katt and Bill are left out. Lines are named by message id or described, not quoted. Paths in the tables drop
+`src/engine/` and `src/overlays/`.
+
+Scripted lines are ROM data, not source, so they are cited as level, script index and command index (`aiIndex / 2`),
+for example Corneria 17.8. The tables are the `SF64:SCRIPT` assets (`assets/yaml/us/rev0/ast_corneria.yaml:445` for
+Corneria), picked per level in `ActorEvent_ProcessScript` (`src/engine/fox_enmy2.c:1075-1122`). They were decoded from
+a US 1.0 `sf64.o2r` with a throwaway script, not kept. Its command format is `EVENT_CMD` (`include/sf64event.h:92`).
+Script counts come from walking each script's branches, so they say what can run, not what a given run plays.
+
+**Observed: how a line reaches the radio**
+
+- *One door.* Everything in play ends in `Radio_PlayMessage(msg, character)` (`src/engine/fox_radio.c:58-130`). Four
+  routes add their own conditions. `AllRange_PlayMessage` needs an idle radio and player 0 not in standby
+  (`src/engine/fox_360.c:89-96`). `ActorAllRange_PlayMessage` needs `!gHideRadio`, `gActors[0].state == STATE360_2` and
+  player 0 not in standby (`:479-483`). `ActorEvent_SetMessage` needs an idle radio or another speaker
+  (`src/engine/fox_enmy2.c:29-34`). The script op `EVOP_PLAY_MSG` needs `gPlayer[0].state == PLAYERSTATE_ACTIVE`, reads
+  the speaker from the low 9 bits, and moves on either way, so a skipped line is lost (`:1333-1339`).
+- *No queue.* A message starts with a priority character (`src/engine/fox_radio.c:64-78`). While the radio is busy, a
+  lower priority is dropped and an equal or higher one replaces the current line (`:43-56`, `:97-99`). Of the 363
+  message ids wingmen use, 304 are priority 1, 50 priority 2, the 6 low-shield comfort lines priority 0 and the 3 lines
+  for Fox's death priority 3.
+- *The radio is game state.* `Radio_Draw` advances `gRadioState` in the draw path (`src/engine/fox_game.c:569`), 31
+  lines outside `fox_radio.c` read it, and it is hashed with `gRadioMsgId` (`src/port/coop/sync/state_hash.c:246-247`).
+  The 2026-11-04 determinism note covers its link to audio.
+- *No wingman on the map.* The planet briefing has its own path without `Radio_PlayMessage`
+  (`src/overlays/ovl_menu/fox_map.c:5954`). Its 14 message pairs (`:203-213`) read as the General and Fox.
+
+**Observed: how a line picks its speaker**
+
+| Way | Where |
+|---|---|
+| Named in the call | Most level, boss and cutscene lines |
+| Named in the script | Every `EVOP_PLAY_MSG` |
+| The reacting actor | `this->aiType` in `ActorAllRange_*` and `ActorTeamBoss_*`, `this->iwork[12]` in `ActorEvent_*` |
+| The target of a chasing enemy | `this->aiIndex`, `engine/fox_360.c:1710-1752` |
+| Random living wingman: `RAND_INT(2.9f) + 1` until `gTeamShields[id] > 0`, after checking one is up | `engine/fox_play.c:5844-5848`, `engine/fox_beam.c:2287-2289`, `engine/fox_demo.c:1612-1614`, `ovl_i1/fox_co.c:565-567` |
+| First living in a fixed order | `engine/fox_enmy.c:1803-1809` (Peppy, Slippy, Falco), `ovl_i3/fox_a6.c:1031-1036` and Meteo 82 (Falco, Slippy, Peppy) |
+| Rotating slots, a slot is skipped if its speaker is down | `D_ctx_80177A10[8]`, `ovl_i6/fox_sy.c:348-370`, `:1305-1325` |
+| One-in-four roll, Falco or Bill | `ovl_i4/fox_ka.c:2342-2358` |
+| Three calls in one frame | `ovl_i6/fox_ve2.c:467-469`, see Derived |
+
+**Observed: what happens when the speaker is down**
+
+- *The gate.* In `GSTATE_PLAY`, a line for Falco, Slippy or Peppy returns silently when `gTeamShields[id] <= 0` and
+  `!= -2` (`src/engine/fox_radio.c:80-95`). No stand-in, no delay. Other speakers are not gated, and neither are the
+  `RCID_*_RED` wingman ids, which no call or script uses.
+- *-2 means away, not down.* It is only ever written for Slippy: Titania start (`src/engine/fox_play.c:2691`), Sector X
+  boss (`src/overlays/ovl_i2/fox_sx.c:113`). The gate lets it speak and the portrait shows no DOWN. What -1 and 0 mean
+  is #61.
+- *Stand-in lines.* Level-complete cutscenes test `gTeamShields` first and let ROB speak instead: 86 sites in 12
+  functions, usually one line for -1 (ship in for repairs or in the docking bay) and one for 0 (repairs complete), for
+  example `src/overlays/ovl_i6/fox_sy.c:2353-2370`. `Andross_80193C4C` (`src/overlays/ovl_i6/fox_andross.c:4303-4342`),
+  `Katina_LevelComplete` (`src/overlays/ovl_i4/fox_ka.c:2046`) and Slippy in `Titania_LevelComplete`
+  (`src/overlays/ovl_i5/fox_ti_cs.c:439`) have none, so the gate just drops the line.
+- *Skipped scenes.* `EVC_FALCO_ACTIVE`, `EVC_PEPPY_ACTIVE` and `EVC_SLIPPY_ACTIVE` branch only when `gTeamShields > 0`
+  (`src/engine/fox_enmy2.c:2408-2424`). 216 of the 245 reachable scripted lines sit behind one, usually with the whole
+  scene: no branch, no teammate actor (Corneria 17). The other 29 rely on the gate; 16 of them are in Aquas, whose init
+  sets all three to 255 (`src/overlays/ovl_i3/fox_aq.c:437`).
+- *Forced past the gate.* Some code writes `gTeamShields[id] = 1` around the call. Each retreat does this, then writes
+  -1 (`src/engine/fox_360.c:1448-1466`, `src/engine/fox_hud.c:4247-4262`, `src/engine/fox_enmy2.c:2077-2090`). So does
+  `Aquas_CsLevelComplete`, restoring the old value (`src/engine/fox_hud.c:6064-6088`), and Slippy in the Titania boss
+  (`src/overlays/ovl_i5/fox_ti.c:5053-5134`).
+- *The portrait.* A wingman speaking with `gTeamShields <= 0`, not -2, flashes DOWN with the wrench, and the box always
+  shows a shield bar from `gTeamShields` (`src/engine/fox_radio.c:729-760`). Only a line already playing or forced gets
+  that far.
+
+**Observed: story lines.** Nothing here reads how the wingman is flying, only whether it is up.
+
+| Trigger | Where | Reads | Count |
+|---|---|---|---|
+| Level-start cutscene | `Corneria_LevelStart` (`ovl_i1/fox_co.c:3135`, `:3190`, `:3221`), `Meteo_LevelStart` (`ovl_i2/fox_me.c:2293`, `:2299`), `Area6_LevelStart` (`ovl_i3/fox_a6.c:2565`) | `csTimer`, `gCsFrameCount` | 6 |
+| Level-complete cutscene | every `*_LevelComplete*`, `Cutscene_CoComplete2` (`engine/fox_demo.c:1203-1219`), `Aquas_CsLevelComplete`, `Andross_80193C4C`, `func_demo_80048AC0` (`engine/fox_demo.c:25-75`) | `gCsFrameCount` | 59 |
+| All-range event clock | `Bolse_UpdateEventHandler` (`ovl_i4/fox_bo.c:241-259`, `:382`), `Fortuna_UpdateEvents` (`ovl_i4/fox_fo.c:126`), `Katina_UpdateEvents` (`ovl_i4/fox_ka.c:2332`, `:2356`), `SectorZ_UpdateEvents` (`ovl_i4/fox_sz.c:578`), `SectorZ_EnemyUpdate` (`:365`), `Venom2_UpdateEvents` (`ovl_i6/fox_ve2.c:176`) | `gAllRangeEventTimer`, `gStarWolfMsgTimer`, actor timers | 14 |
+| Boss clock or boss state | 34 functions in `src/overlays/`, for example `Corneria_CoGranga_Update` (`ovl_i1/fox_co.c:691-704`), `SectorY_SyShogun_Update` (`ovl_i6/fox_sy.c:1698-1724`), `Titania_TiGoras_Update` (`ovl_i5/fox_ti.c:4994-5138`) | `gBossFrameCount`, boss `state` and `swork`, hits on a boss part | 86 |
+| Level script, no teammate on screen | 10 levels, for example Corneria 33, Zoness 0, Venom 1 39 | spawn position, then script order and `EVC_*` | 143 |
+
+- Script actors spawn when `gPathProgress` reaches their entry in the level's object list
+  (`src/engine/fox_enmy.c:630-638`, `:412`); Venom 1 also compares `gPlayer[0].xPath` (`:631-633`). Fortuna, Bolse,
+  Katina, Sector Z and Venom 2 place no event actors, so their lines are all in code.
+- This group holds the hints too, mostly Peppy's: controls in scripts (Corneria 27, Meteo 133), boss weak points in
+  code (`src/overlays/ovl_i1/fox_co.c:700`). All are addressed to Fox.
+- `func_demo_80048AC0` is a story slot whose wording reads shields: Slippy and Peppy by their own (above 160, above
+  64, else), Falco by his own under 64, then by Fox's (`src/engine/fox_demo.c:25-75`). 19 calls from six levels.
+- Slippy's own story in Sector X and Titania runs on boss state in this group (`src/overlays/ovl_i2/fox_sx.c:35`,
+  `:109`, `src/overlays/ovl_i5/fox_ti.c:5005-5134`). The route is #59.
+
+**Observed: scripted teammate scenes on rails.** 102 scripted lines are in scripts that bring a wingman's Arwing on
+screen as an event actor (`EVID_TEAMMATE`, `EVOP_SET_TEAM_ID`, `src/engine/fox_enmy2.c:1262-1271`).
+
+- 79 are fixed steps of the scene. **The on-rails calls for help are among them**: they play at their step, whatever
+  has happened, for example Corneria 17.8, Macbeth 26.8 and 26.25, Area 6 12.8, Zoness 46.7. Beyond the check that the
+  wingman is up, nothing reads its state to choose them.
+- 23 sit behind a condition that reads how the scene went: `EVC_NO_TARGET` 11 (`src/engine/fox_enmy2.c:2377-2382`),
+  `EVC_NOT_CHASED` 9 (`:2788-2792`, fed by the chaser at `:3235-3239`), `EVC_NO_FOLLOWER` 2 (`:2637-2645`),
+  `EVC_ATTACK_GROUP_CLEARED` 1 (`:2685-2692`). These are the on-rails thanks and "that was my target" lines, for example
+  Corneria 17.33, Macbeth 28.35, Corneria 9.51.
+- Levels: Corneria 15, Macbeth 16, Zoness 14, Area 6 12, Titania 11, Solar 10, Sector X 8, Sector Y 6, Meteo 5, Venom 1
+  5. The damage steps between the lines (`EVOP_DAMAGE_TEAM`, `src/engine/fox_enmy2.c:1384-1394`) are #59 and #61.
+
+**Observed: lines that react to the wingman's own state.** 63 sites, in the code of the actor that carries the wingman:
+`ActorAllRange` in all-range (`src/engine/fox_360.c:375`), `ActorTeamBoss` at bosses (`src/engine/fox_demo.c:861-873`,
+`src/engine/fox_enmy.c:465`), `ActorEvent` with a team id on rails.
+
+| Reaction | All-range `engine/fox_360.c` | Boss `engine/fox_hud.c` | On rails `engine/fox_enmy2.c` | Count |
+|---|---|---|---|---|
+| Shields ran out, leaves the fight | `:1444-1469` | `ActorTeamBoss_Retreat` `:4243-4262` | `ActorEvent_800700A4` `:2071-2094` | 9 |
+| Hit by an enemy | `:1185-1224`, only after a chase; wording by shields, 90 and up or below | `:4569-4580`, `dmgSource` 2 or 100 only | scripted | 9 |
+| Hit by Fox's shot, or ran into something | `:1129-1140`, `:1172-1184` | `:4541-4567` | `:2257-2285` | 18 |
+| Enemy on its tail, the call for help | `:1705-1752`, also sets the help marker `gTeamHelpActor` (`engine/fox_display.c:47`) | none | scripted | 9 |
+| Rescued by Fox, thanks | `:530-552`, `:625-643` | none | scripted | 6 |
+| Fox shot the enemy it called | `:1042-1053` | none | scripted | 3 |
+| Near Fox for 200 frames, small talk; wording reads Fox's shields | `:1395-1433` | none | none | 9 |
+
+**Observed: lines about the wingman's own action.** 19 sites, all-range only: attack call
+(`src/engine/fox_360.c:1781-1806`), enemy shot down (`:2204-2219`, armed at `:1074`, `:1077`), last Star Wolf
+(`:1060-1072`), missile down (`:928-937`), and leaving for a missile in Sector Z
+(`src/overlays/ovl_i4/fox_sz.c:309-352`).
+
+**Observed: lines that react to Fox, spoken by a wingman.** 21 sites, plus script conditions.
+
+| Trigger | Where | Count |
+|---|---|---|
+| Player shields under 64, at most every 960 frames | `Player_LowHealthMsg`, `engine/fox_play.c:5834-5875` | 6 |
+| Player died | `Cutscene_KillPlayer`, `engine/fox_demo.c:1609-1630` | 3 |
+| Lock-on shot worth 7 hits or more, on rails, no boss | `PlayerShot_UpdateShot`, `engine/fox_beam.c:2284-2301` | 3 |
+| Enemy dropping `DROP_TEAM_MESG` killed | `Actor_Despawn`, `engine/fox_enmy.c:1802-1809` | 3 |
+| Granga one-up check passed | `Corneria_CoGranga_1UpCheck`, `ovl_i1/fox_co.c:561-578` | 3 |
+| Enemy on Fox's tail | `engine/fox_360.c:1696`, `:1819` | 2 |
+| Third warp ring | `Player_CollisionCheck`, `engine/fox_play.c:2175` | 1 |
+
+Scripted lines reach the same kind of trigger through `EVC_CLOSE_*`, `EVC_HEALTH_0p`, `EVC_30_HITS` and `EVC_80_HITS`
+(`src/engine/fox_enmy2.c:2546-2550`, `:2806-2816`), all on `gPlayer[0]` or `gHitCount`.
+
+Counts: 268 code sites name a wingman (165 story, 63 own state, 19 own action, 21 about Fox); 261 script commands do.
+
+**Derived (read, not run)**
+
+- *The owner's split does not follow the code on rails.* In all-range a call for help is an AI reaction. On rails it is
+  a script step in the same scene as the story around it, and the scene needs a teammate actor. So what a later record
+  says about each scene (#59) decides these lines too.
+- *Reaction and action lines depend on the wingman's slot in `gActors`.* They run in its actor's code, or read that slot
+  (chase, rescue, Sector Z). With no actor in the slot they should not fire. Story lines and lines about Fox need no
+  actor, only `gTeamShields`.
+- *Every down check reads `gTeamShields`, not a `Player`.* Whatever co-op keeps there decides whether a human-flown
+  character's story lines play and which ROB stand-in appears. Also, `Radio_Draw`'s shield bar shows that value.
+- *Dropping a line changes game state.* `gRadioState == 0` gates AI code, including whether the chase block draws
+  random numbers (`src/engine/fox_360.c:1705`) and damage lines (`src/engine/fox_hud.c:4537`). A line dropped on one
+  client only would change `gRadioState`, the hash and then the simulation.
+- *Friendly-fire lines only know player 0.* They test `dmgSource == AI360_FOX + 1`, and `dmgSource` is `sourceId + 1`
+  with `sourceId = player->num` (`src/engine/fox_beam.c:696`, `src/engine/fox_play.c:3091`). A shot from player index 1
+  gives 2, which is `DMG_SRC_2`, so `ActorTeamBoss_HandleDamage` takes it as an enemy hit (`src/engine/fox_hud.c:4569`).
+  Indexes 2 and 3 give 3 and 4, which none of these lines test.
+- *Lines about Fox are not limited to Fox.* `Player_LowHealthMsg` runs for every active player
+  (`src/engine/fox_play.c:5957`, loop at `:7039-7045`) and its timer is one global, so two active players count it
+  twice per frame. `Cutscene_KillPlayer` has no player 0 check. The random pick does not know who is human: a character
+  can comfort itself.
+- *Scripted lines follow player 0.* While `gPlayer[0]` is not active they are skipped and lost, and `EVC_CLOSE_*`
+  measures to `gPlayer[0]`.
+- `Venom2_LevelComplete` makes three equal-priority calls in one frame, so the last living of Falco, Peppy, Slippy
+  ends up on the radio.
+
+**Guess**
+
+- The `gTeamShields[TEAM_ID_SLIPPY] = 1` writes in the Titania boss look unneeded, since -2 passes the gate anyway.
+
+**Unknown**
+
+- Which lines a real run reaches: counts cover every script a level places, whatever route or branch that needs. 15
+  commands sit in scripts no object list places or links to (Corneria 81, Meteo 10, Sector X 60, Solar 27, Venom 1 42,
+  63, 91, 106) and 1 is unreachable (Meteo 140.10). These are left out of the 245.
+- Whether US 1.1 scripts differ: only US 1.0 was decoded.
+- Whether a line can be hidden without moving `gRadioState`: the state machine waits on the voice
+  (`src/engine/fox_radio.c:628`), and nothing here tried it.
+- How enemies choose a target when a wingman's slot is empty, which the chase lines depend on. Not read.
 
 ### 2026-11-05, #6 (WP-06), on-rails: player position, path progress, camera
 
@@ -289,6 +665,181 @@ Read from the source only; nothing was run. Line numbers are for `origin/coop` a
 - Cockpit view (`Camera_UpdateCockpitOnRails`, `src/engine/fox_play.c:6287`), tank and Blue Marine cameras: not read.
 - Whether the 500000 wrap is ever reached in a normal campaign.
 
+### 2026-11-06, #61, how a downed wingman returns
+
+Read at `95962d04`, nothing was run. This is code reading, plus the level event scripts, which are asset data and not
+in the repo: they were read out of an `sf64.o2r` built from ROM US 1.0. It answers the question 0005 left open, and it
+describes the game only. The co-op rule is for a later record (DESIGN.md section 4, items 2 and 3).
+
+Short answer: "they miss the next level and return after it" is right for the usual case. A wingman whose shields run
+out leaves the level, sits out the whole next level, and is back at full shields (255) in the level after that. It
+costs no life. It is not the whole story: Slippy can return inside Sector X, Slippy has a state of his own around
+Titania, Aquas refills everyone, the Venom levels do not bring anyone back, and a retry can undo the loss.
+
+Observed:
+
+**What the value means.** `gTeamShields[1..3]` are Falco, Slippy, Peppy (`src/engine/fox_context.c:22-24`).
+
+| `gTeamShields` | Meaning | Source |
+|---|---|---|
+| 1 to 255 | Flying, with that many shield points | `src/engine/fox_hud.c:1139-1140` |
+| 0 | Sitting this level out. Map shows the face with a blinking "OK !"; level-end radio says repairs are complete | `src/overlays/ovl_menu/fox_map.c:6153-6160`, `src/overlays/ovl_i2/fox_sx.c:1889-1891` |
+| -1 | Went down in the level just played. Map shows a dim face with a wrench; level-end radio says the ship is in for repairs | `fox_map.c:6144-6151`, `:6172-6173`, `fox_sx.c:1885-1887`, `src/overlays/ovl_i5/fox_ti_cs.c:443-450` |
+| -2 | Slippy only: out of play for a story event. Dim face on the map, no wrench, and the radio still lets him talk | `fox_map.c:6145`, `:6172`, `fox_hud.c:197-198`, `src/engine/fox_radio.c:91` |
+
+The radio drops any wingman line while the value is 0 or -1 (`fox_radio.c:91`), so code that needs a line sets the
+value to 1 around the call (`src/engine/fox_360.c:1448`, `src/engine/fox_enmy2.c:2077`, `fox_hud.c:4247`). A 1 in the
+middle of a retreat is that trick, not a real shield value.
+
+**How a wingman goes down.** A wingman is one of three actor kinds, and each has its own damage and retreat code. All
+three end at -1, and none of them explodes: the Arwing climbs away and is removed.
+
+- Event actor (on rails): damage comes off `gTeamShields` directly (`fox_enmy2.c:2121-2122`).
+  `ActorEvent_800700A4` then starts `EVSTATE_TEAM_RETREAT`, plays the line and writes -1 (`fox_enmy2.c:2070-2097`,
+  `:3335-3339`).
+- `ActorTeamBoss`: damage comes off `health`, floored at -1 and copied to `gTeamShields` (`fox_hud.c:4508-4511`,
+  `:4535`). The retreat is state 3 (`fox_hud.c:4241-4279`, `:4307-4310`).
+- `ActorAllRange`: a hit sets `gTeamDamage`, twice the damage for Slippy and Peppy (`fox_360.c:908-913`).
+  `Play_Update` drains that by 2 per frame and writes -1 when shields reach 0 (`fox_play.c:7029-7036`). The retreat is
+  `STATE360_6` (`fox_360.c:1444-1470`, `:1473-1495`).
+- Scripts can hurt a wingman too, with `EVOP_DAMAGE_TEAM` (`fox_enmy2.c:1384-1391`).
+
+A wingman at 0 or below is not spawned: `fox_360.c:381`, `fox_hud.c:4851-4853`. Intros and event scripts test the
+value before they use him (`src/engine/fox_demo.c:163-171`, `EVC_*_ACTIVE` at `fox_enmy2.c:2408-2424`).
+
+**Where the value moves.**
+
+| Stage | What happens to the shields | Source |
+|---|---|---|
+| New run | All stores set to 255 | `Map_Setup_Menu` `fox_map.c:1578-1589`; `gClearPlayerInfo` `fox_play.c:4921-4924`, set at `src/engine/fox_game.c:419` |
+| Leaving for a level | `Play_Setup`: saved -1 becomes 0, saved 0 becomes 255, -2 stays. Skipped for Andross and for Venom 2 phase 2 | `fox_play.c:541-553`, called at `fox_map.c:4294`, `fox_game.c:96` |
+| Level load | `gTeamShields` = `gSavedTeamShields`, then `Play_InitLevel` runs after that copy | `fox_play.c:2935-2937`, `:3016` |
+| Checkpoint | Saved = current, for the checkpoint item and in Bolse, Fortuna, Katina | `src/engine/fox_enmy.c:2500-2502`, `src/overlays/ovl_i4/fox_bo.c:385-387`, `fox_fo.c:304-306`, `fox_ka.c:944-946` |
+| Fox dies, lives left | `PLAY_INIT` again, without `Play_Setup`: everyone goes back to saved | `fox_play.c:6163`, `:7171-7172` |
+| Pause, retry | Costs a life. Saved = `gPrevPlanetTeamShields`, with -1 written as 0. Checkpoint cleared, then as above | `fox_hud.c:1475-1480`, `:1538-1539`, `:1551-1552`, `:1587-1594`, `:1600-1607` |
+| Level clear screen | Each wingman above 0 gains hit count / 2, capped at 255. Nobody else changes | `fox_hud.c:1097`, `:1131-1151` |
+| Level end, to the map | `Map_Setup_Play`: `gPrevPlanetTeamShields` = current with 0 written as 255, saved = current | `fox_map.c:1395-1396`, `:1451-1461` |
+| Level end, no map | Same code inline in Bolse and Area 6 | `fox_bo.c:1661-1671`, `src/overlays/ovl_i3/fox_a6.c:2910-2919` |
+| Map, go on | `D_ctx_80177C58` = current, the value the next retry goes back to | `fox_map.c:3525-3528`, `:6763-6765` |
+| Map, retry course | Costs a life, or game over at 0 lives. `gTeamShields`, saved and `gPrevPlanetTeamShields` = `D_ctx_80177C58`, with 0 written as 255 in the last, then the normal level start | `fox_map.c:3493-3500`, `:3511-3513`, `:3541-3549`, `:3619-3636` |
+| Game over | Nothing restored. `gMissionTeamStatus` is written, then ranking, then `GSTATE_INIT` | `fox_play.c:6159-6160`, `fox_map.c:1525-1539`, `:3143-3148`, `src/overlays/ovl_menu/fox_option.c:4508-4512` |
+| Continue | Does not exist in the campaign: game over ends the run. `func_pause_800A3E00`, which looks like one, has no caller | `src/engine/fox_pause.c:22-42` |
+| Save file | Shields are not saved. Only one alive bit per wingman per mission reaches the ranking record | `include/sf64save.h:24-31`, `fox_option.c:4350-4352` |
+
+The stores: `gSavedTeamShields` is the value the next load copies. `gPrevPlanetTeamShields` is what a pause retry goes
+back to. `D_ctx_80177C58` is what a retry from the map goes back to. `gPrevPlanetSavedTeamShields` is written in seven
+places and never read.
+
+**Exceptions to the usual case.**
+
+- **Slippy can return inside Sector X.** `EVOP_RESTORE_TEAM` sets a wingman to 255 (`fox_enmy2.c:1359-1360`). Of 19100
+  script commands in 1700 script resources, one uses it: `ast_sector_x/D_SX_60320D0_cmd_94`, command 4, for Slippy. That
+  script stops at once if `EVC_SLIPPY_ACTIVE` holds; otherwise it restores him and flies him in as an `EVID_TEAMMATE`
+  actor. It is placed once, as object id 1094 at index 997 of 1026 in `D_SX_602A164`, at z about 205000, with the boss
+  at about 227000 and the only checkpoint at about 83000. It is not in the warp list `D_SX_602F18C`
+  (`fox_enmy.c:559-560`).
+- **Slippy's -2.** The Sector X boss can knock him out, only after 2200 boss frames and only if he is above 0
+  (`fox_sx.c:971`, `:982`, `:102-113`). That also clears `swork[6]`, so the mission ends as `MISSION_COMPLETE`, whose
+  next planet is Titania (`fox_sx.c:112`, `:533`, `:1096`, `fox_map.c:1487-1490`, `:271`). `Play_Setup` leaves -2 alone.
+  Titania writes -2 on every load, after the copy from saved, whatever his value was (`fox_play.c:2689-2691`). He
+  returns at 255 when three of the boss's four parts are gone and `ActorTeamBoss_Init` runs
+  (`src/overlays/ovl_i5/fox_ti.c:4013-4014`, `:4083-4084`, `:3808-3813`, `fox_hud.c:4831-4835`).
+- **Aquas.** `Aquas_InitLevel` sets all three to 255, after the copy from saved (`src/overlays/ovl_i3/fox_aq.c:437`,
+  `fox_play.c:2686`). So everyone leaves Aquas at 255, and a wingman in his sit-out level counts as above 0 there.
+- **The Venom levels bring nobody back.** Bolse goes to Venom 1 and Area 6 goes to Venom 2 through `Play_Setup`, which
+  runs as usual (`fox_bo.c:1655-1656`, `fox_a6.c:2927-2928`). Venom 1 to Venom 2 phase 2 and Venom 2 to Andross skip its
+  conversion (`src/overlays/ovl_i1/fox_ve1.c:2515-2523`, `src/overlays/ovl_i6/fox_ve2.c:436-445`, `fox_play.c:541-543`).
+- **A retry can undo it.** See the table: dying goes back to the last save point, a retry goes back to the level start.
+- Katt and Bill (ids 4, 5) take no damage (`fox_enmy2.c:2117-2119`), and `Play_Setup` only touches ids 1 to 3. The Hit64
+  CVars force a wingman to 0 at every load (`fox_play.c:2939-2947`).
+
+**What being down changes,** beyond the wingman being absent. Routes and radio lines are #59 and #60.
+
+- No medal: `Play_CheckMedalStatus` needs all three above 0 when the level is scored (`fox_play.c:59-66`). That counts
+  the sit-out level too.
+- The mission's alive bit is cleared for any value at or below 0 (`fox_hud.c:1278-1292`, `fox_map.c:1658-1669`).
+- No heal on the clear screen, and Slippy's boss health bar goes with him (`fox_hud.c:3204`).
+
+**Details that matter to sync.** Nothing clears `gTeamDamage` at level load: its only writers are `fox_360.c:910-912`,
+`:1467`, `:1479`, `fox_enmy2.c:1390`, `:2091`, `:3338`, and the drain at `fox_play.c:7031`. The heal runs in
+`HUD_LevelClearStatusScreen_Draw`, a draw function. `state_hash.c` covers `gTeamShields` only
+(`src/port/coop/sync/state_hash.c:241`), not the other stores.
+
+Derived:
+
+- The usual case, as one wingman going down in level N (no checkpoint after it):
+
+| Moment | `gTeamShields` | `gSavedTeamShields` | `gPrevPlanetTeamShields` |
+|---|---|---|---|
+| Level N, shot down | -1 | value at level start or last checkpoint | unchanged |
+| Map after N | -1 | -1 | -1 |
+| Leaving the map | -1 | 0 | -1 |
+| Level N+1 | 0 | 0 | -1 |
+| Map after N+1 | 0 | 0 | 255 |
+| Leaving the map | 0 | 255 | 255 |
+| Level N+2 | 255 | 255 | 255 |
+
+- The return is a full refill: a wingman who survives on 1 point keeps 1 plus the heal, one who goes down comes back at
+  255. The count runs on level changes, not on time.
+- Fox's death can bring a wingman back. If he went down after the last save point, the restart copies the older
+  positive value. If a checkpoint was reached after he went down, saved is -1 and he stays out, and the usual count
+  goes on from there.
+- `gPrevPlanetTeamShields` holds the start value of the level being played, and the two rewrites keep it that way: a
+  wingman in his sit-out level stays out after a pause retry (-1 written as 0), and one returning stays back (0 was
+  written as 255).
+- A retry from the map after level N undoes a loss in level N, because `D_ctx_80177C58` still holds the value from
+  before level N. The sit-out count is not advanced by retrying.
+- Down in Bolse, Area 6, Venom 1 or Venom 2 means out until the end of the run. A wingman sitting out Bolse or Area 6
+  is back for the level after it.
+- Slippy down at the z of script 94 in Sector X returns at 255, whether he went down earlier in that level or is in his
+  sit-out level. It is the only script that can bring back a wingman who went down in the same level. After a death
+  past that point he goes back to the checkpoint's value, and the script fires again.
+- After Sector X's -2 the only ways on are Titania or a retry: `MISSION_COMPLETE` offers no change of course
+  (`fox_map.c:3518-3523`, `:3541-3558`). Titania also holds Slippy captive on a run where he was never knocked out,
+  because its -2 does not look at his value. That can happen by changing course to Titania on the map after a
+  `MISSION_ACCOMPLISHED` Sector X (`fox_map.c:3698-3702`).
+- A wingman at 0 cannot become -1 through scripted damage in normal play, as far as the scripts show: all 35
+  script/wingman pairs with `EVOP_DAMAGE_TEAM` test that wingman in the same script. Of 107 pairs with
+  `EVOP_SET_TEAM_ID`, 103 test him; the other 4 are `D_CO_603D9E8` 51 and 64, in Corneria where nobody can be in a
+  sit-out level, and `D_ME_602F3AC` 136 and `D_SY_6032E18` 33, which are in neither level's object lists. This checked
+  that a test exists, not which way it branches.
+
+Guess:
+
+- Script 94 exists so the Sector X boss event, and with it the Titania route, can still happen: `fox_sx.c:971` needs
+  Slippy above 0.
+- Aquas sets 255 so that the radio and the clear screen work with all three there.
+
+Unknown:
+
+- All of this is from reading. No run has shown it, including script 94 firing with Slippy down.
+- Whether Titania can end with Slippy still at -2. If it can, nothing but Aquas or a new run brings him back.
+- Whether a value of exactly 0 can stick inside a level. `fox_enmy2.c:2122` can land on 0, and -1 is only written on
+  that actor's next update. If the actor is gone by then, the wingman would be read as sitting out and be back one level
+  early.
+- What a pending `gTeamDamage` does across a restart: the code allows it, its effect in play was not looked at.
+- Whether anything other than an object list starts `D_ME_602F3AC` 136 or `D_SY_6032E18` 33.
+
+Open questions for the record that settles this, with lives and respawn (nothing here decides them):
+
+1. Does a human-flown wingman go down through `gTeamShields` at all, or through `Player` shields with `gTeamShields`
+   kept in step? Medals, routes, radio, intros and Star Wolf's targets all read `gTeamShields`, so what it says for a
+   human matters either way.
+2. Does a human who goes down miss a whole level as the game's wingmen do, or return sooner? What does that player do
+   and see meanwhile?
+3. Does a human wingman going down cost a life from the pool? In the game it costs none, and only Fox's death does.
+4. Who triggers a level restart? Today only Fox's death does, for everyone. Does a human wingman's death restart the
+   level, and does Fox's death still restore every human wingman to the save point?
+5. Who may choose pause retry and retry course? Both spend a life and both can undo a wingman's loss.
+6. Does a downed human's return at 255 stay a full refill, and does the clear screen's heal apply to human wingmen?
+7. Who flies when the player's wingman is scripted away: Slippy knocked out in Sector X, held captive in Titania, the
+   script 94 fly-in, and scripted `EVOP_DAMAGE_TEAM` hits (up to 255 on Falco in `D_CO_603D9E8` 59)?
+8. Do the Venom levels keep "out until the end" for a human, who would then watch the final levels?
+9. Does one player down cost the whole team the medal, as `Play_CheckMedalStatus` does today?
+10. Do humans and computer wingmen follow one rule, or can a run mix two?
+11. Which stores join the state hash or the host's snapshot: `gSavedTeamShields`, `gPrevPlanetTeamShields`,
+    `D_ctx_80177C58`, `gTeamDamage`?
+
 ### 2026-11-05, #5 (WP-05), single-player assumptions audit
 
 Read at `d653ee21` (branch `coop`). Full list with a verdict per site: `docs/coop/audit/single-player.md`, generated
@@ -365,11 +916,190 @@ Unknown:
   `gLifeCount[0]`, `D_ctx_801779A8[0]`). Not counted here.
 - `src/port/` (enhancements, cheats, hooks) was out of scope.
 
+### 2026-11-06, #73, a new site under an existing audit row
+
+Read at `95962d04`. Python only: no build, no ROM, no game run. The tool behaviour below comes from temporary sites in
+a worktree, reverted afterwards, and from `python tools/coop/sp_audit_test.py`.
+
+Observed:
+
+- **Before.** `--check` printed the same `is stale` line for a new site, a moved line and a removed site, and passed
+  after a rerun, for all four kinds of new site tried: a new function under a `*` row (`fox_demo.c`) and under the
+  `ovl_i*` glob row (`fox_co.c`), a new pattern and one more of a pattern in a function with a row
+  (`Player_CheckBounds360`). An untracked file gave no output at all.
+- **After.** The committed `single-player.md` is the baseline. A site it does not have, counted per path, function and
+  pattern, is named with the row it would take its verdict from. A plain rerun then writes nothing and exits 1,
+  `--check` stays red, and only `--accept` turns it green. Moved lines, a removed site and a changed row still need
+  only the plain rerun. An untracked file with a site gets a warning and keeps the exit code.
+- **One commit is enough.** The list is in the commit, and `git clone --depth 1` gave the same results: green as
+  checked out, exit 1 with a new site. The scenarios of `sp_audit_test.py` run in a repository with no commit at all.
+  CI's checkouts set no `fetch-depth` (`.github/workflows/coop-build.yml:68`, `:93`).
+- **What it adds to the files: nothing.** The verdict file is unchanged and the list only changed its header. A count
+  per row would have rewritten all 254 rows of the verdict file. With a site added under a row, `--accept` changed 0
+  lines of the verdict file. All 36 overlay `.c` files changed at once took one `--accept` as well; 4 of those new
+  functions had no row, so `--check` stayed red on those alone, as it did before this change.
+- **Merges, tried in a scratch clone.** A branch that added a site with the old tool merged cleanly into this one, and
+  `--check` passed. Two branches that each accepted a site in one function conflicted in the list only: a plain rerun on
+  the file with its markers wrote it and passed, because both sides' rows count. Taking one side instead showed the
+  other side's site as new, and one `--accept` cleared it.
+
+Derived:
+
+- `--check` still passes once someone has run `--accept`. It stops the author, not the reviewer. A reviewer can list
+  what a pull request took in by putting the base's `single-player.md` in place and running `--check`.
+- `--accept` says a site was shown, not that its verdict fits.
+- A site that replaces another of the same pattern in the same function does not show: the list holds counts and line
+  numbers, not the code on the line. Test `known-gap-swap` pins this.
+
 ### 2026-11-01, project setup
 
 Observed: see DESIGN.md section 2 (player array, `gCamCount`, object arrays, RNG, event hooks, `USE_NETWORKING`).
 
 Unknown: everything listed in DESIGN.md section 2, "Unknown".
+
+### 2026-11-06, #68, controller state: devices, ports and what WP-14 reads
+
+Base build of `origin/coop` at 95962d04: ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window, with
+`libultraship` at eaaf9d0f. The runs were gdb on the headless game with a generated replay; `f357` is the 357th
+`Game_Update` call of that run. Replay frame 0 fell between f20 and f35, because the replay starts after the boot logo
+(`src/port/coop/test/replay.c:225-235`). No real pad was attached. The runs with pads used SDL virtual gamepads,
+attached from gdb inside the game process (`SDL_JoystickAttachVirtual`, `SDL_JoystickSetVirtualButton`). Paths starting
+with `controldeck/`, `controldevice/` or `physicaldevice/` are under `libultraship/src/controller/`.
+
+**For WP-14: the local controller is port 0.** Read `gControllerHold[0]` once per frame, first thing in
+`GamePreUpdateEvent`, on every client, whatever `CoopPlayers_LocalIndex()` says. `gControllerPlugged` and
+`gMainController` are constants here and say nothing about devices. Make button press edges from your own copy of the
+last hold, not from `gControllerPress[0].button`. No code was changed; the reasons are under Decision.
+
+Observed, devices and ports:
+
+- **Four ports always exist.** `LUS::ControlDeck` builds four `ControlPort`s with a `Controller` each
+  (`controldeck/ControlDeck.cpp:126-128`). Nothing calls `ControlPort::Connect` or `Disconnect`
+  (`controldeck/ControlPort.cpp:14-20`), so `GetConnectedController()` never says "nothing there".
+- **Devices are not assigned to ports. A port has mappings, and a mapping names a kind of input.** A gamepad button
+  mapping asks every gamepad its port does not ignore and sets the bit if any has it down
+  (`controldevice/controller/mapping/sdl/SDLButtonToButtonMapping.cpp:21-28`). Keyboard events go to all four ports
+  (`controldeck/ControlDeck.cpp:44-50`).
+- **Every gamepad lands on port 0.** `RefreshConnectedSDLGamepads` puts each one on the ignore list of ports 1-3 and
+  never on port 0's (`physicaldevice/ConnectedPhysicalDeviceManager.cpp:68-70`). Run: with one and with two virtual
+  pads, each pad read ignored `[0, 1, 1, 1]` for ports 0-3, and A on either pad showed in `sNextController[0]` only
+  (f356-360, f416-420).
+- **A fresh config maps port 0 only.** `ControlDeck::Init` adds the defaults to port 0 and nothing to the others
+  (`controldeck/ControlDeck.cpp:34-39`). Run: keyboard, mouse and gamepad mappings were `[1, 0, 1]` on port 0 and
+  `[0, 0, 0]` on ports 1-3; the written config has `Port1` (port index 0) and no `Port2` to `Port4`.
+- **A pad reaches port 1 only with a mapping there and off that port's ignore list.** Run, on port 1: mappings alone, A
+  stayed on port 0 (f446-450). Off the ignore list too, the same pad drove ports 0 and 1 (f476-480). Ignored by port 0,
+  it drove port 1 only (f506-510). The checkbox in the Input Editor makes those calls
+  (`libultraship/src/window/gui/InputEditorWindow.cpp:1200-1207`); here gdb made them, and the editor was not opened.
+- **Any hotplug undoes that.** A third pad arrived and the refresh put the second pad back on port 1's ignore list. It
+  was still on port 0's, so it read `[1, 1, 1, 1]` and reached no port (f536-540). The lists live in memory only
+  (`physicaldevice/ConnectedPhysicalDeviceManager.h:30`).
+- **Who says what is connected.** C++ only, through `Ship::Context::GetInstance()->GetControlDeck()`:
+  `GetConnectedPhysicalDeviceManager()->GetConnectedSDLGamepadNames()` lists all gamepads and
+  `GetConnectedSDLGamepadsForPort(port)` those a port listens to; `GetControllerByPort(port)` gives
+  `HasMappingsForPhysicalDeviceType(type)` and `HasConfig()`. Nothing says whether a keyboard or mouse is there; they
+  only have mappings. From C there is only `ControllerBlockGameInput` and `ControllerUnblockGameInput`
+  (`libultraship/src/public/bridge/controllerbridge.h:9-10`).
+- **`osContInit` does not say either.** It sets the status of the first entry and bit 0 of the mask, whatever is
+  connected (`libultraship/src/public/libultra/os.cpp:15-16`, `controldeck/ControlDeck.cpp:26`). Run: mask 1,
+  `sControllerStatus` status 1, 0, 0, 0, so `gControllerPlugged` is (1, 0, 0, 0) until the first
+  `Controller_UpdateInput`.
+- **A port with no device reports a zeroed `OSContPad` with `err_no` 0, the same as an idle pad.**
+  `osContGetReadData` clears all four (`libultraship/src/public/libultra/os.cpp:42`) and nothing in libultraship sets
+  `err_no`. Run with `SDL_NumJoysticks` 0: over 3400 frames `err_no` was 0 on all ports and ports 1-3 held only zeros.
+
+Observed, the derived points in #68:
+
+- `gControllerPlugged` was (1, 1, 1, 1) on 3399 of 3400 frames, boot into Corneria. The other frame is the first
+  `Game_Update` (`src/sys/sys_main.c:219`), which runs before `Controller_Init` (`:366`) and read (0, 0, 0, 0).
+- `gMainController` was 0 on all 3400 frames and `Title_CheckControllers` returned 0 on all 124 calls. In the level
+  `gInputHold` and `gInputPress` pointed at slot 0.
+- Neither follows devices. `gControllerPlugged` stayed (1, 1, 1, 1) with 0, 1, 2 and 3 virtual pads, with a pad driving
+  port 1 only (f507-510), and after all were removed, when `gMainController` was still 0.
+
+Observed, reads:
+
+- `gControllerPlugged` is read in `Controller_UpdateInput` and `Controller_Rumble` (`src/sys/sys_joybus.c:70`, `:111`),
+  in `Title_CheckControllers` (`src/overlays/ovl_menu/fox_title.c:392-393`), and otherwise only for versus. In
+  `src/overlays/ovl_menu/fox_option.c`: `Option_VersusMenu_Setup` (`:2668-2672`, an unplugged port is inactive and
+  counts as confirmed), `Option_VersusMenu_Draw` (`:2746-2747`), `Option_Vs_Point_Selection` (`:3013-3014`),
+  `Option_VsTimeSelection` (`:3053-3054`), `Option_VsStageSelection` (`:3095-3096`), `Option_VsConfirmSelection`
+  (`:3149-3150`). In `src/engine/fox_versus.c`: `Versus_CheckForWinner` (`:838-887`, six reads),
+  `Versus_GetMenuInput` (`:1029`), `Versus_UpdateMenu` (`:1138`), `func_versus_800C0E78` (`:1213`). Written at
+  `src/sys/sys_joybus.c:57`, `:69` and `src/sys/sys_fault.c:242`.
+- `gMainController` has 166 lines in `src` and `include`. Only two read its value: `Title_Setup` skips the attract
+  sequence at -1 (`fox_title.c:204`) and `Title_PressStart_Draw` shows "No Controller" below 0 (`fox_title.c:2983`).
+  The rest are its two writes, its two declarations and 160 uses as an index: 100 pad reads, 9 cursor arguments, 30
+  rumble flags and timers, 21 rumble strengths. `docs/coop/audit/single-player.md` has the sites.
+- With no plugged port the title locks up. gdb set `gControllerPlugged` to 0 at each `Game_Update`, so only game logic
+  saw it. `gMainController` was -1 from f39, the attract sequence was skipped, and "No Controller" was drawn 832 times
+  and "Press Start" never. The replay's A every 30 frames did nothing and the game was still on the title at f900,
+  because the title then reads `gControllerPress[-1]`, memory before the array. Unforced, the same replay left the
+  title 125 frames after reaching it.
+- **Versus cannot be entered.** `DEBUG_VERSUS` is 0 (`include/mods.h:100`, upstream commit 18631e72, "disable versus
+  mode for now"), so A on the VS card does nothing (`fox_option.c:975-979`). Run: with the cursor on card 2, A left the
+  menu in the same state. `GSTATE_VS_INIT` has one writer, behind those screens (`fox_option.c:2993`). So every versus
+  read above is dead code in a stock build.
+- **Past that gate, the handicap screen needs all four ports.** gdb set `sMainMenuState = 11`, which is what the A press
+  does after the gate. All four ports counted as present (`gPlayerInactive` all 0). A on port 0 set `D_menu_801B93C4` to
+  1 and 13 more presses changed nothing. Only A on ports 1, 2 and 3 from the replay took it to 0xF (f830-890), and then
+  port 0 could go on to the stage screen (f930).
+- `Controller_Rumble` serves only entries with the status bit (`src/sys/sys_joybus.c:112`) and clears every flag
+  (`:137`). Run: `gControllerRumbleEnabled` was 1, 0, 0, 0 in the level.
+
+Observed, what WP-14 can trust in slot 0. Anything that writes a slot during the frame reaches
+`Controller_UpdateInput` on the next one, because it keeps `gControllerHold[i]` as the previous state
+(`src/sys/sys_joybus.c:71-74`). The replay writes all four slots (`src/port/coop/test/replay.c:277-278`). One virtual
+pad held R for five frames in three cases, read at `Game_Update` before the replay wrote:
+
+| Slot 0 meanwhile | `gControllerHold[0]` | `gControllerPress[0].button` |
+|---|---|---|
+| Nobody writes it, replay over (f522-525) | R | R on the first frame, then 0: correct |
+| Replay writes it idle (f337-340) | R | R on every frame: the press repeats |
+| Replay writes it with R held (f417-420) | R | 0 on every frame: the press is lost |
+
+`gControllerHold[0]` was right in all three. A press took two frames to reach it: `sNextController` the next frame, hold
+the frame after (f355, f356, f357).
+
+Decision: no change to `src/sys/sys_joybus.c`.
+
+- Co-op gains nothing. Outside `sys_joybus.c`, the campaign reads `gControllerPlugged` only in
+  `Title_CheckControllers`, and WP-14 needs no answer from it: the local player is port 0 and everyone else comes from
+  a stream.
+- Port 0 has to stay plugged. A keyboard is not in any device list, so an answer from the gamepad list would show "No
+  Controller" to keyboard players. See the forced run above.
+- Ports 1-3 only matter to versus, which cannot be entered, and changing them with co-op off would leave upstream
+  behaviour. A real answer also needs a C++ bridge, not a line in `sys_joybus.c`.
+
+Derived:
+
+- On a client, slot 0 will carry player 0's stream if WP-14 fills slots by player number, so the local pad has to be
+  copied out before that write, and `gControllerPress[0].button` cannot be used after it. Sticks are safe:
+  `Controller_AddDeadZone` rebuilds `gControllerPress[i].stick_x` and `stick_y` from the fresh hold
+  (`src/sys/sys_joybus.c:13-49`, `:75`).
+- A replay for the other players with a live local player needs the replay to stop writing the local slot.
+- With the stock mappings ports 1-3 press nothing, so versus switched back on as it stands would stop at the handicap
+  screen unless all four ports are mapped. That is the one thing a real `osContGetStatus` would fix, and it is
+  upstream's: see `// LTODO: Fix this` (`src/sys/sys_joybus.c:62`), the same line in `origin/main`.
+- Two pads on one PC drive one player, which fits one player per client. Split screen (WP-13, WP-15) needs a real
+  assignment, and the ignore lists are not one: they are lost on hotplug and on restart.
+- `Player_Update` picks input and rumble from `gMainController` outside versus (`src/engine/fox_play.c:5892-5894`), so
+  WP-14 has to change that branch. If a client's local player is index 1, its rumble flag must end up at index 0, as
+  only that entry is served.
+- `gControllerLock` zeroes `sNextController` on all ports (`src/sys/sys_joybus.c:87-91`), so the local read is zero
+  during a lock, as it is for the game today.
+
+Not shown:
+
+- A real pad: SDL's device drivers, real hotplug, real rumble. Virtual pads cover SDL's joystick and controller layers
+  and everything above them, not what is below.
+- Keyboard and mouse input in a run. Those lines are from reading.
+- Windows, macOS, a pad attached before boot, and restarting with a saved port 1 mapping.
+
+Unknown:
+
+- Whether two game instances on one PC both follow one pad. `SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS` is on
+  (`libultraship/src/window/gui/Gui.cpp:173`), which suggests they do; not run.
 
 ### 2026-11-05, #8 (WP-10), player count apart from camera count
 
