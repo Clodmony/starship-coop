@@ -2188,7 +2188,7 @@ void Player_CollisionCheck(Player* player) {
                             } else {
                                 Player_ApplyDamage(player, temp_v0, actor->info.damage);
                                 actor->dmgType = DMG_COLLISION;
-                                actor->dmgSource = player->num + 1;
+                                actor->dmgSource = CoopPlayers_DmgSource(player->num); // COOP: was num + 1 (#86)
                             }
                         }
                     }

@@ -235,6 +235,12 @@ def pattern_row(r):
     r.stopped(f"new site: {ENGINE} Beta_Update gMainController: 1 listed, 2 now, lines 7, 9", PATTERN_ROW)
 
 
+def shooter_sites(r):
+    sites = "    this->dmgSource = 0;\n    x = shot->sourceId;\n    case AI360_FOX + 1:\n    case TEAM_ID_FOX + 1:\n"
+    r.edit(ENGINE, "    if (gCamCount == 1) {", sites + "    if (gCamCount == 1) {")
+    r.stopped(f"new site: {ENGINE} Beta_Update shooter: 0 listed, 4 now, lines 7, 8, 9, 10", BETA_ROW)
+
+
 def star_row(r):
     r.write(OVERLAY, r.read(OVERLAY) + NEW_FUNCTION)
     r.stopped(f"new site: {OVERLAY} Epsilon_Update gPlayer[0]: 0 listed, 1 now, lines 10", STAR_ROW)
@@ -410,6 +416,7 @@ SCENARIOS = {
     "function-row-new-pattern": function_row_new_pattern,
     "function-row-one-more": function_row_one_more,
     "pattern-row": pattern_row,
+    "shooter-sites": shooter_sites,
     "star-row": star_row,
     "star-row-new-file": star_row_new_file,
     "star-row-site-moved": star_row_site_moved,

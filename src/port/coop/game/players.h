@@ -97,6 +97,15 @@ int32_t CoopPlayers_ReleaseLockOns(struct Actor* actor);
 // the fade to a level restart for everyone. Respawn rules are WP-16.
 int32_t CoopPlayers_OnPlayerDown(struct Player* player);
 
+// What Actor.dmgSource holds after a hit by `sourceId`: a player index, or an NPC's shot id. Upstream writes
+// sourceId + 1, which for player index 1 is DMG_SRC_2, the value an enemy's hit on a wingman has. So in co-op, players
+// 1 and up get COOP_DMG_SRC_PLAYER + index instead, a value no game code writes or tests: rules that test for player 0
+// (AI360_FOX + 1) or for an enemy (DMG_SRC_2) do not fire for them. Co-op off, player 0 and NPCs stay sourceId + 1.
+// Whether a rule should count them is up to the work package that owns it, see the shooter rows of sp-verdicts.tsv.
+int32_t CoopPlayers_DmgSource(int32_t sourceId);
+
+#define COOP_DMG_SRC_PLAYER 10 // 5 to 99 are free: 1 to 4 are versus players, 100 and up enemies and NPCs
+
 #define COOP_PLAYERS_DEBUG_CVAR "gCoopDebugPlayerCount"
 
 // The slot of player `index` as a plain number, for the state hash: a number has the same size on every compiler, an

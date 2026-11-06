@@ -107,6 +107,13 @@ void CoopPlayers_SetLocalIndex(int32_t index) {
     sLocalIndex = ((index < 0) || (index >= COOP_PLAYERS_MAX)) ? 0 : index;
 }
 
+int32_t CoopPlayers_DmgSource(int32_t sourceId) {
+    if (CoopPlayers_IsCoop() && (sourceId > 0) && (sourceId < COOP_PLAYERS_MAX)) {
+        return COOP_DMG_SRC_PLAYER + sourceId;
+    }
+    return sourceId + 1;
+}
+
 int32_t CoopPlayers_IsParked(int32_t index) {
     if ((index < 0) || (index >= COOP_PLAYERS_MAX) || !CoopPlayers_IsCoop()) {
         return 0;
