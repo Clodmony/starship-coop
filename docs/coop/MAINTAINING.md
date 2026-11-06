@@ -41,15 +41,17 @@ Local builds are the development loop (`python tools/coop/build.py`); CI is the 
 | Workflow | File | Runs | Jobs |
 |---|---|---|---|
 | `Co-op checks` | `coop-checks.yml` | every PR, every push to `coop` | repo checks, seconds |
-| `Co-op build` | `coop-build.yml` | PRs and pushes to `coop` that touch code, CMake files or submodules; manual | Linux and Windows, both through `tools/coop/build.py` |
+| `Co-op build` | `coop-build.yml` | PRs and pushes to `coop` that touch code, CMake files or submodules; manual | Linux and Windows, both through `tools/coop/build.py`; each uploads a test build, see below |
 
 Nothing runs on `main`: upstream's own workflows are disabled (below), and ours only exist on `coop`.
 
 Upstream's workflows (`GenerateBuilds` in `main.yml`, and the `Linux`, `Windows`, `MacOS`, `Switch` validation
 workflows) are **disabled in the repository settings**, not deleted, so their files stay identical to upstream and
 upstream syncs do not conflict. `GenerateBuilds` built four platforms on every push to any branch, which is too much
-for a project with many contributors. Re-enable one for a release build with `gh workflow enable <name>`; release
-builds are WP-30. As of 2026-11-01 upstream's macOS jobs target the `macos-14` runner image, which GitHub retires on
+for a project with many contributors. Re-enable one for a release build with `gh workflow enable <name>`. Test builds come
+from `Co-op build` instead: a run whose tests of the build pass leaves `starship-coop-<id>-linux-x64` and
+`-windows-x64` on its Actions page for 14 days, `<id>` being the id the game shows. They hold no ROM and no `.o2r`, so
+they do not start on their own (NOTES.md, 2026-11-06, #26). As of 2026-11-01 upstream's macOS jobs target the `macos-14` runner image, which GitHub retires on
 2026-11-02, so they need an upstream fix (or our own release workflow) before macOS builds work again.
 
 ```sh
