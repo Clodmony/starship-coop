@@ -6,7 +6,11 @@
 //   SF64_COOP_HASH_LOG=<file>     write one line per game frame: frame number, total hash and one hash per region
 //   SF64_COOP_HASH_POKE=<frame>   test only: flip one bit of one byte of game state at that frame, so the log shows
 //                                 a deliberate divergence (needs SF64_COOP_HASH_LOG)
-// With neither set, no listener is registered and the game runs unchanged.
+//   SF64_COOP_HASH_POKE_PLAYER=<i> test only: the poke flips a bit of player i instead of an actor
+//   SF64_COOP_HASH_PROBE=<n>      test only: every n frames, change single values one at a time, hash, change them
+//                                 back and log which regions noticed, as "# probe" lines. Needs no second run and
+//                                 leaves the game as it was (needs SF64_COOP_HASH_LOG)
+// With none set, no listener is registered and the game runs unchanged.
 //
 // Frames are counted the same way as the input replay (src/port/coop/test/replay.c): frame 0 is the first frame in
 // GSTATE_START, so a hash log and a replay file line up frame by frame.

@@ -542,6 +542,82 @@ Unknown:
 
 ## Determinism
 
+### 2026-11-06, #53, state hash: every co-op player, negative numbers, free slots
+
+Identity: ROM US 1.0, branch `issue/53-hash-players` on top of `a69c811a`, Linux, GCC, Debug, OpenGL on a software
+renderer, no window, one game per run, no transport. Input by rule (`tools/coop/hash_check.py`,
+`write_generated_replay`): 5800 frames, Corneria from frame 3096, all-range from frame 4880, player 2 flying from
+between frames 5000 and 5200. These runs are Corneria only, on one machine.
+
+Observed (code):
+
+- `CoopPlayers_Count()` returns `gCamCount` unless that is 1, and then the count fixed in `Play_Init`, which stays 1
+  while `gCoopDebugPlayerCount` is unset (`src/port/coop/game/players.c:26-50`). `CoopPlayers_IsCoop()` is 0 before the
+  first level, even with the CVar set.
+- `Memory_Allocate` does not clear (`src/sys/sys_memory.c:12-17`). `gScenery360` comes from it, and the game then sets
+  only `obj.status` of each slot (`src/engine/fox_play.c`, `if (gChangeTo360)` and `Play_Init`).
+- The menus put the star field at the start of the same buffer, 36000 bytes (`src/engine/fox_play.c:642-644`,
+  `src/overlays/ovl_menu/fox_title.c:196-198`). Space levels and Training set up a star field before `gPlayer`
+  (`src/engine/fox_play.c:2906-2907`), so there `gScenery360` lies behind it.
+- The game writes negative numbers to `iwork`: `-1` (`src/engine/fox_360.c:1367`, `src/overlays/ovl_i6/fox_sy.c:3605`,
+  `src/overlays/ovl_i5/fox_ma.c:1168`) and unclamped steps (`this->iwork[0] -= 7` while it is not 0,
+  `src/engine/fox_demo.c:2897-2899`). No store truncates a pointer to 32 bits: every pointer store into `iwork` uses
+  `(uintptr_t)` (grep, `src/overlays/ovl_i5/fox_ti.c` only).
+- `sRandSeed1..3` are multiplied modulo the primes 30269, 30307 and 30323 (`src/sys/sys_math.c:29-31`).
+
+Observed (runs):
+
+- **Two Linux runs of the same input matched** on every frame both logs hold, including `rng`: 1 player (5801 frames
+  before the fix, 5800 after), 2 players (5803 before, 5800 after), and 2 players with L to level complete (12007,
+  after). Other games and builds ran on the machine at the time.
+- **Player 2 was not hashed.** `hash_check.py probe --players 2` on the test commit: flipping a bit of player 2 changed
+  nothing, parked (10 of 10 probes) or flying (4 of 4), while player 0 showed on 14 of 14.
+  `hash_check.py run --players 2 --poke-player 1`: with the bit flipped at frame 5400, the first hash difference was
+  at frame 5401, in `effects` and `shots`. So the hash saw only what player 2's difference did to other objects, a
+  frame late. After the fix: 14 of 14 probes, and the first difference is at frame 5400, in `players` only.
+- **Co-op off is unchanged.** The 1-player log of `a69c811a` and of this branch are equal in frame, game state, level,
+  total and all 12 regions on all 5801 frames.
+- **Negative numbers collapse:** with `iwork` at -1 and at -2, the hash stayed the same (14 of 14 probes). **No natural
+  case was seen:** no actor held an `iwork` value above 32 bits on any frame of the three measured runs (5800 frames
+  with 1 player, 5800 and 12000 with 2), neither negative numbers nor foreign pointers.
+- **Free slots hold old bytes:** in Corneria's all-range section 67 slots are active and 133 free, and all 133 are not
+  zero on every measured frame. Flipping a bit in one changed the hash (5 of 5 probes). One-player and 2-player runs
+  first differ at frame 4880, in `scenery360` only, before player 2 has joined: the active slots hash the same in both
+  (`3575d50e9bbd95cf`), the free ones do not (`f8a1b945780158fb`, `f21f981611287fec`). `gScenery360` starts 1264 bytes
+  behind `gPlayer` with 1 player and 2528 with 2.
+
+What changed (`src/port/coop/sync/state_hash.c`):
+
+- `CoopPlayers_Count()` at the three player sites. `gCamCount` stays in the globals, as a value.
+- In co-op only, a negative number stays what it is, and a free `gScenery360` slot counts as empty. With co-op off both
+  stay as they were, so single-player logs still line up with older ones (`docs/coop/QA.md`, test plan item 1).
+
+Derived:
+
+- A non-zero seed below its prime modulus never becomes 0, so the re-seed in `Rand_ZeroOne` (`src/sys/sys_math.c:24`)
+  fires only if a seed starts at 0 or something else writes one. A replay's seeds are not 0, which fits the equal `rng`
+  regions above. This narrows the WP-02 note, it does not close it: the upstream comment says something corrupts the
+  seeds on Linux, and the check still reads `sRandSeed2` twice and `sRandSeed3` never.
+- Two-run comparisons are not blocked on Linux for this input.
+- In Corneria the free slots lie inside the star field block, so with one player count their bytes should be the same
+  for every client.
+
+Guess:
+
+- The bytes in Corneria's free slots are the star field. Follows from the code above; the bytes were not compared.
+- In space levels the bytes behind the star field survive the menus, so a client that played another all-range level
+  before the session would hash differently from one that did not. Not run. It is the case the free slot fix is for.
+
+Unknown:
+
+- Other levels: none was run, so whether the game reaches a negative `iwork` value, and whether free slots ever differ
+  between clients with the same player count.
+- The frames between two levels with 2 players. In this input the level-complete state lasts past frame 12000, so no
+  second level was reached, and frames where `gPlayer` still points at the last level's memory did not run.
+- Other platforms and compilers: the Linux and Windows runs used different input.
+- State that is still not hashed for any player: the per-player arrays such as `gLeftWingHealth`, `gLaserStrength` and
+  `gChargeTimers`, and the co-op slot state in `src/port/coop/game/players.c`.
+
 ### 2026-11-04, #3 (WP-03), input replay
 
 Identity: ROM US 1.0, branch `issue/3-input-replay` on top of `ba0781d7`, Windows 11, MSVC 19.44 (VS 2022 Build
