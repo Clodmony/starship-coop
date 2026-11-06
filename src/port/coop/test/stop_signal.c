@@ -14,6 +14,7 @@ static const char* const sTestRunVariables[] = {
     "SF64_COOP_REPLAY_PLAY",
     "SF64_COOP_HASH_LOG",
     "SF64_COOP_TRACE",
+    "SF64_COOP_TEST_MENU",
 };
 
 static volatile sig_atomic_t sStopRequested = 0;
