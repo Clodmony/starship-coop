@@ -6,6 +6,7 @@
 #include "port/interpolation/FrameInterpolation.h"
 #include "port/hooks/list/EngineEvent.h"
 #include "port/mods/PortEnhancements.h"
+#include "port/coop/game/players.h" // COOP: the local player is drawn (#96)
 
 f32 gNextVsViewScale;
 f32 gVsViewScale;
@@ -516,7 +517,7 @@ void Game_Update(void) {
                 break;
         }
 
-        Game_Draw(0);
+        Game_Draw(CoopPlayers_LocalIndex()); // COOP: was 0; the same outside co-op (#96)
 
         if (gCamCount == 2) {
             Game_InitViewport(&gMasterDisp, gCamCount, 1);

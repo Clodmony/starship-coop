@@ -29,8 +29,13 @@ int32_t CoopPlayers_Count(void);
 // Nonzero when more players are simulated than cameras rendered, which only co-op does.
 int32_t CoopPlayers_IsCoop(void);
 
-// Index of the player this client controls and looks through. 0 for now; WP-28 makes it per client.
+// Index of the player this client controls and looks through. Always 0 outside co-op, and when the index asked for is
+// not a player of this level.
 int32_t CoopPlayers_LocalIndex(void);
+
+// Asks for a local player. 0 until something calls this: SF64_COOP_TEST_LOCAL_INDEX (src/port/coop/test/switches.h)
+// for now; WP-28 makes it per client.
+void CoopPlayers_SetLocalIndex(int32_t index);
 
 // Nonzero while player `index` is parked: allocated, but not updated, not given a camera update and not drawn.
 // In co-op, players 1 and up start parked and join when the level reaches a section that supports them.

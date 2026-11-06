@@ -21,6 +21,9 @@ typedef enum {
 
 static CoopSlot sSlot[COOP_PLAYERS_MAX];
 
+// The player this client looks through, as asked for. Only counts in co-op, and only for a player in the level.
+static s32 sLocalIndex = 0;
+
 // How far a joining player is placed from player 0, per player index (x to the side, y up), in world units.
 #define COOP_JOIN_OFFSET_X 250.0f
 #define COOP_JOIN_OFFSET_Y 80.0f
@@ -57,7 +60,14 @@ int32_t CoopPlayers_IsCoop(void) {
 }
 
 int32_t CoopPlayers_LocalIndex(void) {
-    return 0;
+    if (!CoopPlayers_IsCoop() || (sLocalIndex >= CoopPlayers_Count())) {
+        return 0;
+    }
+    return sLocalIndex;
+}
+
+void CoopPlayers_SetLocalIndex(int32_t index) {
+    sLocalIndex = ((index < 0) || (index >= COOP_PLAYERS_MAX)) ? 0 : index;
 }
 
 int32_t CoopPlayers_IsParked(int32_t index) {
