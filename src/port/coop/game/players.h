@@ -78,10 +78,19 @@ struct Player;
 // and brake move it ahead of and behind player 0 without changing the speed along the path.
 int32_t CoopPlayers_FollowPath(struct Player* player);
 
-// Points gInputHold, gInputPress and gControllerRumble at the controller of player `index`, in co-op only: player 0 has
-// gMainController, the others the controller with their index. Replays hold all four, so a replay can fly any player.
-// WP-14 replaces this with a real input source per player.
+// Points gInputHold, gInputPress and gControllerRumble at player `index`, in co-op only: its pad slot, which holds that
+// player's input for this frame whoever steers it (input.h), and its rumble flag.
 void CoopPlayers_SelectInput(int32_t index);
+
+// The pad slot to read for something that belongs to player `index`, such as a shot of that player: its own slot in
+// co-op, gMainController otherwise, as upstream.
+int32_t CoopPlayers_PadOf(int32_t index);
+
+struct Actor;
+
+// Call in Actor_Update where the campaign runs down its lock-on. Nonzero means co-op, and the lock-ons of every player
+// on `actor` were handled here: each player's runs down on its own A. Upstream only looks at player 0's.
+int32_t CoopPlayers_ReleaseLockOns(struct Actor* actor);
 
 // Call at the start of Player_Down. Nonzero means a co-op player other than player 0 went down: it is taken out of
 // the level and Player_Down must return, because it also stops the music, plays the "player down" theme and starts

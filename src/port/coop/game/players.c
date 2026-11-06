@@ -1,5 +1,7 @@
 #include "players.h"
 
+#include "input.h"
+
 #include "global.h"
 #include "public/bridge/consolevariablebridge.h"
 
@@ -266,15 +268,35 @@ int32_t CoopPlayers_FollowPath(Player* player) {
 }
 
 void CoopPlayers_SelectInput(int32_t index) {
-    s32 pad;
-
     if (!CoopPlayers_IsCoop()) {
         return;
     }
-    pad = (index == 0) ? gMainController : index;
-    gInputHold = &gControllerHold[pad];
-    gInputPress = &gControllerPress[pad];
-    gControllerRumble = &gControllerRumbleFlags[pad];
+    gInputHold = &gControllerHold[index];
+    gInputPress = &gControllerPress[index];
+    gControllerRumble = &gControllerRumbleFlags[CoopInput_RumbleSlot(index, CoopPlayers_LocalIndex())];
+}
+
+int32_t CoopPlayers_PadOf(int32_t index) {
+    return CoopPlayers_IsCoop() ? index : gMainController;
+}
+
+int32_t CoopPlayers_ReleaseLockOns(Actor* actor) {
+    bool rapidFire;
+    s32 i;
+
+    if (!CoopPlayers_IsCoop()) {
+        return 0;
+    }
+    rapidFire = CVarGetInteger("gRapidFire", 0) == 1;
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        if (actor->lockOnTimers[i] != 0) {
+            if (!(gControllerHold[i].button & A_BUTTON) || rapidFire) {
+                actor->lockOnTimers[i]--;
+            }
+            gChargeTimers[i] = 0;
+        }
+    }
+    return 1;
 }
 
 int32_t CoopPlayers_OnPlayerDown(Player* player) {

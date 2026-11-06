@@ -429,6 +429,92 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-06, #12, input source per player: who steers whom
+
+Runs on `origin/coop` at 797c678b and on this branch: ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no
+window, one game per run, no transport. Frames are replay frames. "The gamepad" is the SDL virtual gamepad of
+`src/port/coop/test/test_pad.c`; no real pad was attached. The runs are `python tools/coop/input_test.py`.
+
+**What a slot means in co-op now.** `CoopInput_Route` (`src/port/coop/game/input.c`) runs in `GamePreUpdateEvent` and
+fills the pad slots by player number: slot i holds what player i does this frame, on every client. The local player has
+port 0, every other player its source, and nothing else on the PC reaches a slot. With co-op off it does nothing.
+
+Why by player number, and not a private array per player: game code reads slots directly. It reads
+`gControllerPress[gMainController]` for pause and the supply call, and `gControllerHold[player->num]`
+(`src/engine/fox_hud.c:6231`). Filled by player number, all of that reads the same input on every client.
+
+For WP-22: a network stream drops in with `CoopInput_SetSource` for each remote player, and a client sends what
+`CoopInput_Controller` returns. A stream carries hold and press together, the pair the sender's player used, so a
+receiver has nothing to work out again. A sync layer that delays the local player's own input uses
+`CoopInput_SetLocalSource`. A source cannot wait, as it is read inside the frame: a sync model that waits for a player
+waits before the frame starts. None of this picks a side in decision 0002, which is still proposed.
+
+Observed, runs, before (test commit, replay and gamepad steering opposite ways, port 1 pushing a third way):
+
+- A replay wrote every slot, so a live player beside it did not exist: player 0 had the gamepad's buttons on 1 of 1201
+  frames and the replay's decoy button on 1200, and flew the gamepad's way on 0 of 10 half cycles.
+- With no replay, port 1 steered player 1: its pad was idle on 1 of 1208 frames and it moved 1350 in its flight box.
+- **Three reads gave a player's shot to player 0's buttons**, which routing alone does not cure:
+  - `PlayerShot_SearchLockOnTarget`: a search shot of player 1 flew on 0 frames with only its owner holding A. It died
+    on the frame it left, unless player 0 held A.
+  - `PlayerShot_UpdateBomb`: player 1's bomb left at 5600 and went off at 5610, when player 0 pressed B.
+  - `Actor_Update`: the campaign branch runs down `lockOnTimers[TEAM_ID_FOX]` only, so a lock-on of player 1 outlasted
+    its owner's A by 50 frames. The timer starts at 20. That run had the other two fixed, as the first bug hid part of
+    this one.
+
+Observed, runs, after:
+
+- `live`: player 0 had the gamepad's buttons and stick on 1200 of 1200 frames, two frames later, and flew its way on 10
+  of 10 half cycles. Player 1 had its stream exactly, hold and press, on 1200 of 1200 frames and swept 2200 of x.
+- `alone`, no replay: the same for player 0. Player 1, with no stream, was idle on 1200 of 1200 frames and moved 0.
+- `shots`: a search shot of player 1 flew on 43 frames, all with its owner holding A. The bomb went off at 5618, on its
+  owner's press. A lock-on outlasted its owner's A by at most 19 frames.
+- `whole` and `solo`: a plain replay still flies every player, and co-op off ignores the gamepad, 1200 of 1200 frames.
+- `unit`: 16882 of 16882 checks, every local index from 0 to 3 with every player count. 15 of 15 hand-made breaks of
+  `input.c` were caught. Press edges taken from the slot pass at index 0 and fail at index 1: that case cannot show in
+  the game yet.
+- The rail replay on 797c678b and on this branch, `hash_check.py diff`: no difference on 7506 common rows with co-op off
+  and on 7501 with two players, every column. So routing changes nothing a replay already did.
+- A stick pushed to 80 reads 78 after libultraship.
+
+Observed, reads:
+
+- Team-wide reads stay on `gMainController`, which is player 0's slot: `Play_Main` for Start and R
+  (`src/engine/fox_play.c:7199`, `:7222`, `:7232`, `:7252`), the supply call (`src/engine/fox_360.c:667`), the C-right
+  trigger (`src/engine/fox_enmy2.c:2695`), the training call (`src/overlays/ovl_i1/fox_tr360.c:257`) and a cutscene
+  timer (`src/overlays/ovl_i6/fox_andross.c:1438`).
+- **The pause menu reads `gInputPress`** (`src/engine/fox_hud.c:1345`, `:1471`, `:1475`), and that points at the local
+  player after the player loop (`src/engine/fox_play.c:7051-7053`, `:7068-7070`).
+- The team has one bomb slot, the last entry of `gPlayerShots` (`src/engine/fox_play.c:3217`). A lock by any player
+  kills every search shot in flight (`PlayerShot_FindLockTarget`, `src/engine/fox_beam.c:1748-1752`).
+- Rumble written straight to an entry stays there: `gControllerRumbleFlags[gMainController]` has 16 sites and
+  `gControllerRumbleFlags[0]` 7 more in the overlays. Only entry 0 is served (see #68 below), so these reach the local
+  pad at any local index. `CoopInput_RumbleSlot` moves only what goes through `gControllerRumble`.
+
+Derived:
+
+- Who may pause, skip or call for supplies has no record (`DESIGN.md` section 4). Leaving those reads on player 0 picks
+  no new rule: it is what the slots give with no change, and it can be changed site by site.
+- At a local index other than 0 the pause menu would read a different pad on each client while Start stays player 0's.
+  Under lockstep that desyncs, as the menu can quit the level. Nothing reaches it while `CoopPlayers_LocalIndex` is 0;
+  #96 and #30 meet it when they change that.
+- Press edges come from a copy of the pad, so they do not see what game code writes to a slot in a frame
+  (`src/engine/fox_play.c:5713`, `src/overlays/ovl_i3/fox_zo.c:4741`). Upstream's do, through `sPrevController`. A
+  button pressed right after a forced boost can make a press here that it would not make upstream. Not seen in a run.
+- A stale `CoopPlayers_IsCoop` after a level means routing also runs in the menus after it. On index 0 that is the same
+  input; a client would see the host drive the menus.
+
+Not shown:
+
+- A local index other than 0 in the game: only `unit` runs it, with a copy of `Controller_UpdateInput`.
+- Rumble in a run. `unit` checks which entry each player gets.
+- A real pad, keyboard and mouse, Windows, macOS, a network. Two clients: every run here is one game.
+- A live player in all-range, or anywhere but Corneria's rails. `gRapidFire` in co-op: read, not run.
+
+Unknown:
+
+- Whether a real pad on this PC would reach a test game. None was attached.
+
 ### 2026-11-06, #59, secret routes and events that depend on a wingman
 
 Read at `95962d04`. Nothing was run. This describes what the game does; the rule for a human-flown wingman is for a

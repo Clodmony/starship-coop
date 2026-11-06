@@ -47,6 +47,7 @@
 #include "port/coop/test/stop_signal.h"  // COOP: clean exit on SIGTERM in test runs (#71)
 #include "port/coop/test/join_driver.h" // COOP: scripted join flow for tests (WP-24)
 #include "port/coop/ui/menu_window.h"     // COOP: the co-op menu starts levels (#126)
+#include "port/coop/game/input_game.h"    // COOP: an input source per player (WP-14)
 
 #include <Fast3D/interpreter.h>
 #include <filesystem>
@@ -316,6 +317,7 @@ void GameEngine::Create() {
     CoopViewTrace_Init(); // COOP: no-op unless SF64_COOP_VIEW_TRACE is set (#30)
     CoopJoinDriver_Init(); // COOP: no-op unless SF64_COOP_JOIN_* is set (WP-24)
     CoopUi::Listen();      // COOP: does nothing on a frame without a co-op session (#126)
+    CoopInput_Init(); // COOP: does nothing until a co-op level starts (WP-14)
 }
 
 void GameEngine::Destroy() {
