@@ -1727,6 +1727,31 @@ GCC 16.2.1, Debug, graphics backend OpenGL, `USE_NETWORKING` on, `SDL_VIDEODRIVE
 - A boot with networking on under Windows or macOS. CI builds the game on Windows but does not start it.
 - Anything past the title screen.
 
+### 2026-11-06, #75, transport tests under sanitizers, and the audit in CI
+
+Read at `95962d04` (origin/coop).
+
+**Observed**
+
+- `net_test.py --asan` found nothing in `net_core.c` or `transport_sdlnet.c`: 17/17 scenarios, in Release and in Debug,
+  and no sanitizer line in any log.
+- The step can fail. Throwaway breaks, each reported in the summary line: dropping `free(core)` from
+  `CoopNetCore_Destroy` (LeakSanitizer, `sim` and `lan`), `1u << (i + 1)` in the ack loop (UBSan, `sim` and `lan`), a
+  `memcpy` of `size + 4096` in `Sdl_Tx` (AddressSanitizer, `lan`).
+- A scenario does not watch every program to its end. `sc_host_full` never looks at its host, so with a heap overflow
+  in the host's refusal path the scenario itself still passed. That is why `net_test.py --asan` also reads each
+  scenario's logs: the same break then fails `host_full`.
+- `sp_audit.py --check` passes in a depth 1 clone without submodules: it only runs `git ls-files`.
+- The audit holds line numbers. One comment line added at the top of `src/engine/fox_play.c` makes `--check` fail, so
+  any change that moves a site needs a rerun of `sp_audit.py`, not only a change that adds one.
+
+**Derived**
+
+- Programs that `Run.stop_all` kills never reach their leak check. That covers the hold-mode host and first client in
+  `host_full`, and the client that `kill_client` kills. Their leaks are only seen in the scenarios that exit normally.
+- AddressSanitizer knows allocations, not fields, so an overrun from one `TxSlot` or `RxSlot` into its neighbour stays
+  inside `CoopNetCore` and goes unseen. Not tested.
+
 ### 2026-11-06, #55, what the session tests can and cannot see
 
 Read at `a69c811a` (origin/coop).

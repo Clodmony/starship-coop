@@ -69,9 +69,10 @@ number of clients, transport.
    configured build directory but no ROM. WP-27 does the same with real game clients.
    Whether those scenarios can fail at all is checked by `python tools/coop/net_mutants.py`: it breaks one behaviour
    of `net_core.c` at a time and requires the named scenario to fail (#44). Run it after changing `net_core.c`.
-   `python tools/coop/session_mutants.py` does the same for `session.c` and `session_test.py` (#55), and
-   `python tools/coop/session_test.py --asan` runs the session tests under AddressSanitizer and UBSan (CI does, on
-   Linux); `session_mutants.py --asan` shows that run can fail.
+   `python tools/coop/session_mutants.py` does the same for `session.c` and `session_test.py` (#55; CI runs it on
+   Linux), and `python tools/coop/session_test.py --asan` runs the session tests under AddressSanitizer and UBSan (CI
+   does, on Linux); `session_mutants.py --asan` shows that run can fail. `python tools/coop/net_test.py --asan` does
+   the same for the transport tests (#75; CI does, on Linux).
 5. **Regression per bug.** Every desync fix comes with the replay that triggered it; every transport fix adds a
    break to `tools/coop/net_mutants.py`, every session fix one to `tools/coop/session_mutants.py`.
 
