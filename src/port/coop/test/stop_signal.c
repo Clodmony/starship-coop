@@ -19,6 +19,7 @@ static const char* const sTestRunVariables[] = {
     "SF64_COOP_REPLAY_PLAY",
     "SF64_COOP_HASH_LOG",
     "SF64_COOP_TRACE",
+    "SF64_COOP_TEST_MENU",
 };
 
 // The signals libultraship's crash handler takes (libultraship/src/debug/CrashHandler.cpp:423-426).

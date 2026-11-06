@@ -109,6 +109,8 @@ bool CoopSession_Pick(CoopSession* s, CoopCharacter character);
 bool CoopSession_StartLevel(CoopSession* s, const CoopLevelStart* start);
 // The current roster, valid until the next Poll. NULL on a client before the first ROSTER event and after the end.
 const CoopRoster* CoopSession_Roster(const CoopSession* s);
+// The transport's counters for a peer that has joined, rttMs among them. False for anyone else.
+bool CoopSession_Stats(const CoopSession* s, int peer, CoopNetStats* out);
 // Messages dropped because their sender had not joined, or because they were out of place in the handshake.
 uint32_t CoopSession_Ignored(const CoopSession* s);
 void CoopSession_Close(CoopSession* s);

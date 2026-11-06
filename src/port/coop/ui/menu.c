@@ -1,0 +1,315 @@
+// The co-op menu without ImGui, see menu.h.
+
+#ifdef USE_NETWORKING
+
+#include "menu.h"
+
+#include <ctype.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static const uint8_t sChoices[COOP_MENU_CHOICES] = { COOP_CHARACTER_FALCO, COOP_CHARACTER_SLIPPY,
+                                                     COOP_CHARACTER_PEPPY };
+
+static void Menu_Say(CoopMenu* m, const char* format, ...) {
+    va_list args;
+
+    va_start(args, format);
+    vsnprintf(m->message, sizeof(m->message), format, args);
+    va_end(args);
+}
+
+// strtol takes signs and spaces, a port field should not. A number too large for long comes back as LONG_MAX.
+static bool Port_Read(const char* text, long lowest, uint16_t* out) {
+    char* end;
+    long value;
+
+    if (text == NULL || !isdigit((unsigned char) text[0])) {
+        return false;
+    }
+    value = strtol(text, &end, 10);
+    if (*end != '\0' || value < lowest || value > 65535) {
+        return false;
+    }
+    *out = (uint16_t) value;
+    return true;
+}
+
+static void Menu_EndSession(CoopMenu* m) {
+    CoopSession_Close(m->session);
+    m->session = NULL;
+    m->phase = COOP_MENU_IDLE;
+    m->pendingPick = 0;
+}
+
+void CoopMenu_Init(CoopMenu* m, const CoopMenuBackend* backend) {
+    memset(m, 0, sizeof(*m));
+    m->backend = backend;
+}
+
+bool CoopMenu_Host(CoopMenu* m, const char* portText) {
+    CoopTransport* t;
+    CoopIdentity identity;
+    uint16_t port;
+
+    if (m->phase != COOP_MENU_IDLE) {
+        return false;
+    }
+    m->message[0] = '\0';
+    if (!Port_Read(portText, 0, &port)) {
+        Menu_Say(m, "The port has to be a number from 0 to 65535. 0 picks a free one.");
+        return false;
+    }
+    t = m->backend->host(port, NULL);
+    if (t == NULL) {
+        Menu_Say(m, "Could not open UDP port %u. Another program may be using it.", (unsigned) port);
+        return false;
+    }
+    m->port = m->backend->port(t);
+    m->backend->identity(&identity);
+    m->session = CoopSession_Host(t, &identity);
+    if (m->session == NULL) {
+        Menu_Say(m, "Could not start the session.");
+        return false;
+    }
+    m->phase = COOP_MENU_HOSTING;
+    m->self = 0;
+    return true;
+}
+
+bool CoopMenu_Join(CoopMenu* m, const char* address, const char* portText, uint32_t nowMs) {
+    CoopTransport* t;
+    CoopIdentity identity;
+    uint16_t port;
+
+    if (m->phase != COOP_MENU_IDLE) {
+        return false;
+    }
+    m->message[0] = '\0';
+    if (address == NULL || address[0] == '\0') {
+        Menu_Say(m, "Enter the host's address.");
+        return false;
+    }
+    if (!Port_Read(portText, 1, &port)) {
+        Menu_Say(m, "The port has to be a number from 1 to 65535, the one the host shows.");
+        return false;
+    }
+    t = m->backend->connect(address, port, NULL);
+    if (t == NULL) {
+        Menu_Say(m, "Could not reach %s. Check the address.", address);
+        return false;
+    }
+    m->backend->identity(&identity);
+    m->session = CoopSession_Join(t, &identity, nowMs);
+    if (m->session == NULL) {
+        Menu_Say(m, "Could not start the session.");
+        return false;
+    }
+    snprintf(m->address, sizeof(m->address), "%s", address);
+    m->port = port;
+    m->phase = COOP_MENU_CONNECTING;
+    return true;
+}
+
+// The index of the player who holds character, -1 if nobody does.
+static int Roster_Holder(const CoopRoster* roster, uint8_t character) {
+    int i;
+
+    for (i = 0; i < COOP_SESSION_PLAYERS; i++) {
+        if (roster->character[i] == character) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static bool Choice_Is(uint8_t character) {
+    int i;
+
+    for (i = 0; i < COOP_MENU_CHOICES; i++) {
+        if (sChoices[i] == character) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// This is the one rule for what can be chosen: the view shows it, and CoopMenu_Pick holds to it.
+static bool Menu_CanPick(const CoopMenu* m, const CoopRoster* roster, uint8_t character) {
+    return m->phase == COOP_MENU_JOINED && roster != NULL && m->pendingPick == 0 && Choice_Is(character) &&
+           Roster_Holder(roster, character) < 0;
+}
+
+bool CoopMenu_Pick(CoopMenu* m, uint8_t character) {
+    if (m->session == NULL || !Menu_CanPick(m, CoopSession_Roster(m->session), character)) {
+        return false;
+    }
+    m->message[0] = '\0';
+    if (!CoopSession_Pick(m->session, (CoopCharacter) character)) {
+        Menu_Say(m, "Could not ask the host. Try again.");
+        return false;
+    }
+    m->pendingPick = character;
+    return true;
+}
+
+void CoopMenu_Leave(CoopMenu* m) {
+    if (m->session != NULL) {
+        Menu_EndSession(m);
+        m->message[0] = '\0';
+    }
+}
+
+static void Menu_OnEvent(CoopMenu* m, const CoopSessionEvent* ev) {
+    const CoopRoster* roster;
+
+    switch (ev->type) {
+        case COOP_SESSION_EV_JOINED:
+            if (m->phase == COOP_MENU_CONNECTING) {
+                m->phase = COOP_MENU_JOINED;
+                m->self = ev->playerIndex;
+                Menu_Say(m, "%s", ev->text);
+            } else {
+                Menu_Say(m, "Player %d joined.\n%s", ev->playerIndex + 1, ev->text);
+            }
+            break;
+        case COOP_SESSION_EV_REFUSED:
+            if (m->phase == COOP_MENU_HOSTING) {
+                Menu_Say(m, "A player was refused.\n%s", ev->text);
+            } else {
+                Menu_Say(m, "%s", ev->text);
+            }
+            break;
+        case COOP_SESSION_EV_LEFT:
+            Menu_Say(m, "Player %d left. %s", ev->peer + 2, ev->text);
+            break;
+        case COOP_SESSION_EV_ENDED:
+            // After a refusal the REFUSED event has already said more than this one can.
+            if (ev->end != COOP_SESSION_END_REFUSED) {
+                Menu_Say(m, "%s", ev->text);
+            }
+            Menu_EndSession(m);
+            break;
+        case COOP_SESSION_EV_ROSTER:
+            roster = CoopSession_Roster(m->session);
+            if (roster != NULL && roster->character[m->self] == m->pendingPick) {
+                m->pendingPick = 0;
+            }
+            break;
+        case COOP_SESSION_EV_PICK_REFUSED:
+            if (m->phase == COOP_MENU_HOSTING) {
+                Menu_Say(m, "Player %d: %s", ev->peer + 2, ev->text);
+            } else {
+                m->pendingPick = 0;
+                Menu_Say(m, "%s", ev->text);
+            }
+            break;
+        case COOP_SESSION_EV_MESSAGE:
+            // Nothing above the session range is for the menu yet. WP-24 (#22): the level start's events go in this
+            // switch. It has no default, so the compiler names a new event.
+            break;
+    }
+}
+
+void CoopMenu_Tick(CoopMenu* m, uint32_t nowMs) {
+    CoopSessionEvent ev;
+
+    while (m->session != NULL && CoopSession_Poll(m->session, nowMs, &ev)) {
+        Menu_OnEvent(m, &ev);
+    }
+}
+
+// A host measures the round trip to each client, a client only the one to the host.
+static int View_PingPeer(const CoopMenu* m, int player) {
+    if (m->phase == COOP_MENU_HOSTING) {
+        return player > 0 ? player - 1 : -1;
+    }
+    return player == 0 ? 0 : -1;
+}
+
+static void View_Player(const CoopMenu* m, const CoopRoster* roster, int player, CoopMenuPlayer* out) {
+    const char* name;
+    const char* you = player == m->self ? " (you)" : "";
+    char ping[32] = "";
+    int peer = View_PingPeer(m, player);
+
+    out->character = roster->character[player];
+    out->present = out->character != COOP_CHARACTER_NO_PLAYER;
+    if (!out->present) {
+        return;
+    }
+    name = out->character == COOP_CHARACTER_UNPICKED ? "no character yet" : CoopSession_CharacterName(out->character);
+    if (peer >= 0) {
+        CoopNetStats stats;
+
+        // The transport gives 0 until the first pong.
+        out->hasPing = CoopSession_Stats(m->session, peer, &stats) && stats.rttMs != 0;
+        if (out->hasPing) {
+            out->pingMs = stats.rttMs;
+            snprintf(ping, sizeof(ping), ", ping %u ms", (unsigned) stats.rttMs);
+        } else {
+            snprintf(ping, sizeof(ping), ", ping not measured yet");
+        }
+    }
+    snprintf(out->text, sizeof(out->text), "Player %d%s: %s%s", player + 1, you, name, ping);
+}
+
+static void View_Choice(const CoopMenu* m, const CoopRoster* roster, uint8_t character, CoopMenuChoice* out) {
+    const char* name = CoopSession_CharacterName(character);
+    int holder = Roster_Holder(roster, character);
+
+    out->character = character;
+    out->enabled = Menu_CanPick(m, roster, character);
+    if (character == m->pendingPick) {
+        snprintf(out->label, sizeof(out->label), "%s (asking the host)", name);
+    } else if (holder == m->self) {
+        snprintf(out->label, sizeof(out->label), "%s (you)", name);
+    } else if (holder >= 0) {
+        snprintf(out->label, sizeof(out->label), "%s (player %d)", name, holder + 1);
+    } else {
+        snprintf(out->label, sizeof(out->label), "%s", name);
+    }
+}
+
+void CoopMenu_View(const CoopMenu* m, CoopMenuView* out) {
+    const CoopRoster* roster = m->session != NULL ? CoopSession_Roster(m->session) : NULL;
+    int players = 0;
+    int i;
+
+    memset(out, 0, sizeof(*out));
+    out->phase = m->phase;
+    snprintf(out->message, sizeof(out->message), "%s", m->message);
+    if (roster != NULL) {
+        for (i = 0; i < COOP_SESSION_PLAYERS; i++) {
+            View_Player(m, roster, i, &out->players[i]);
+            players += out->players[i].present;
+        }
+    }
+    if (m->phase == COOP_MENU_JOINED && roster != NULL) {
+        out->showChoices = true;
+        for (i = 0; i < COOP_MENU_CHOICES; i++) {
+            View_Choice(m, roster, sChoices[i], &out->choices[i]);
+        }
+    }
+
+    switch (m->phase) {
+        case COOP_MENU_IDLE:
+            snprintf(out->status, sizeof(out->status), "Not in a session.");
+            break;
+        case COOP_MENU_HOSTING:
+            snprintf(out->status, sizeof(out->status), "Hosting on port %u, %d of %d players.", (unsigned) m->port,
+                     players, COOP_SESSION_PLAYERS);
+            break;
+        case COOP_MENU_CONNECTING:
+            snprintf(out->status, sizeof(out->status), "Connecting to %s:%u...", m->address, (unsigned) m->port);
+            break;
+        case COOP_MENU_JOINED:
+            snprintf(out->status, sizeof(out->status), "In the session at %s:%u as player %d.", m->address,
+                     (unsigned) m->port, m->self + 1);
+            break;
+    }
+}
+
+#endif

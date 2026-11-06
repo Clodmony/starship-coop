@@ -12,6 +12,7 @@
 //   SF64_COOP_REPLAY_RECORD, SF64_COOP_REPLAY_PLAY   see replay.h
 //   SF64_COOP_HASH_LOG                               see src/port/coop/sync/state_hash.h
 //   SF64_COOP_TRACE                                  see player_trace.h
+//   SF64_COOP_TEST_MENU                              see menu_driver.h
 // Those are the variables that make the game write test output, and every game the tools in tools/coop start has one.
 // Then this replaces that handler with one that only sets a flag; the main loop in src/port/Game.cpp reads it at the
 // next frame, and the game ends the way it does when the window is closed. With none set, the game keeps upstream's

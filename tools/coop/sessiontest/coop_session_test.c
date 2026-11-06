@@ -1132,6 +1132,29 @@ static void Script_Lifetime(void) {
     EXPECT(t.closes == 1, name, "the session did not close its transport");
 }
 
+// The counters are for peers that have joined, and they are the transport's own.
+static void Script_PeerStats(void) {
+    const char* name = "peer_stats";
+    CoopIdentity a;
+    Script t;
+    Side sides[COOP_NET_MAX_PEERS];
+    CoopNetStats stats;
+    CoopSession* s;
+
+    Id_Default(&a);
+    s = Script_Host(&t, sides, &a);
+    EXPECT(!CoopSession_Stats(s, 0, &stats), name, "counters for a peer that has not joined");
+    Script_Connected(&t, 0);
+    Script_Hello(&t, 0, &a);
+    Drain(s, SCRIPT_T0, sides);
+    t.pending = 7;
+    memset(&stats, 0, sizeof(stats));
+    EXPECT(CoopSession_Stats(s, 0, &stats) && stats.pending == 7, name, "not the counters of a joined peer");
+    EXPECT(!CoopSession_Stats(s, 1, &stats), name, "counters for a free slot");
+    EXPECT(!CoopSession_Stats(s, COOP_NET_MAX_PEERS, &stats), name, "counters for a peer that cannot exist");
+    CoopSession_Close(s);
+}
+
 static void Script_EndTexts(void) {
     static const struct {
         CoopSessionEnd end;
@@ -3356,6 +3379,7 @@ static int Sim_Main(void) {
     Sim_RawHost();
     Sim_RawClient();
     Script_Lifetime();
+    Script_PeerStats();
     Script_EndTexts();
     Script_HostSilentClient();
     Script_HostRefusal();

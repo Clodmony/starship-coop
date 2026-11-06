@@ -395,6 +395,8 @@ if(USE_NETWORKING)
     add_subdirectory(tools/coop/nettest)
     # COOP: test program for the session handshake, built on demand by tools/coop/session_test.py.
     add_subdirectory(tools/coop/sessiontest)
+    # COOP: test program for the co-op menu, built on demand by tools/coop/menu_test.py.
+    add_subdirectory(tools/coop/menutest)
 endif()
 
 option(USE_STANDALONE "Build as a standalone executable" OFF)
