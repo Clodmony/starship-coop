@@ -4,6 +4,7 @@
     python tools/coop/replay_test.py                                # unattended; prints PASS or FAIL
     python tools/coop/replay_test.py --only header-only,cut-frame
     python tools/coop/replay_test.py --list
+    python tools/coop/replay_test.py --exe <build>/Starship         # default: the newest build found
 
 Records a short replay nobody plays, then plays it whole and damaged through the command lines of replay.py,
 hash_check.py and determinism.py, and checks each exit code and result line. Needs a build with assets
@@ -36,6 +37,7 @@ FRAMES = 120  # whole frames in the test replay: 4 seconds of game
 CUT_FRAMES = 30  # whole frames left before the cut in cut-frame
 CHANGED_FRAME = 20  # frame whose checkpoint is changed in mismatch and cut-mismatch
 TIMEOUT = "120"  # per game run; a run takes about 20 s
+RUN_FOLDER = re.compile(r"test-(?:replay|trace)-[a-z0-9-]*?\d{8}-\d{6}(?:-\d+)?")  # as the tools name them
 
 COMMANDS = {
     "replay": lambda file: ["replay.py", "play", file, "--timeout", TIMEOUT],
@@ -65,10 +67,11 @@ SCENARIOS = {
 class Bench:
     """The test's own folder under local/, and every run folder the tools made."""
 
-    def __init__(self):
-        self.folder = ROOT / "local" / f"test-replaytools-{time.strftime('%Y%m%d-%H%M%S')}"
+    def __init__(self, exe):
+        self.folder = ROOT / "local" / f"test-replaytools-{time.strftime('%Y%m%d-%H%M%S')}-{os.getpid()}"
         self.folder.mkdir(parents=True)
-        self.archive = replay_tool.find_data(replay_tool.find_exe(None), ARCHIVE)
+        self.exe = replay_tool.find_exe(exe)
+        self.archive = replay_tool.find_data(self.exe, ARCHIVE)
         if self.archive is None:
             sys.exit(f"replay_test: {ARCHIVE} not found; run python tools/coop/build.py --assets first")
         self.runs = []
@@ -85,7 +88,8 @@ class Bench:
                        GALLIUM_DRIVER="llvmpipe")
         log = self.folder / f"{tag}.log"
         with log.open("w", encoding="utf-8") as out:
-            code = subprocess.run([sys.executable, "-u", str(ROOT / "tools" / "coop" / command[0]), *command[1:]],
+            code = subprocess.run([sys.executable, "-u", str(ROOT / "tools" / "coop" / command[0]), *command[1:],
+                                   "--exe", str(self.exe)],
                                   cwd=ROOT, env=env, stdout=out, stderr=subprocess.STDOUT).returncode
         output = log.read_text(encoding="utf-8", errors="replace")
 
@@ -94,7 +98,7 @@ class Bench:
         if wrote:
             failures.append(f"game wrote into SHIP_HOME: {', '.join(wrote)}")
         # By folder name, not by line: the threads of hash_check.py can print onto each other's lines.
-        runs = [ROOT / "local" / r for r in sorted(set(re.findall(r"test-replay-[a-z0-9-]*?\d{8}-\d{6}", output)))]
+        runs = [ROOT / "local" / r for r in sorted(set(RUN_FOLDER.findall(output)))]
         self.runs += runs
         if not wrote and any(not (r / "starship.cfg.json").exists() for r in runs):
             failures.append("game did not write its config into the run folder")
@@ -168,6 +172,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--only", help="comma-separated scenarios (default: all)")
     p.add_argument("--list", action="store_true", help="print the scenarios and stop")
+    p.add_argument("--exe", help="Starship executable (default: newest build found)")
     args = p.parse_args()
 
     if args.list:
@@ -181,7 +186,7 @@ def main():
         sys.exit(f"replay_test: unknown scenario(s) {', '.join(unknown)}; known: {', '.join(SCENARIOS)}")
 
     start = time.monotonic()
-    bench = Bench()
+    bench = Bench(args.exe)
     print(f"replay_test: recording {FRAMES} frames with nobody playing, in {bench.folder}", flush=True)
     files = make_replays(bench)
     if files is None:
