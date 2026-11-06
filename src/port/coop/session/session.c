@@ -144,6 +144,14 @@ static CoopSessionEnd End_FromNet(CoopNetEnd end) {
     }
 }
 
+// True if data is one identity and nothing else. CoopIdentity_Read returns 0 on failure, so an empty payload would
+// pass a plain comparison with its size.
+static bool Identity_ReadAll(CoopIdentity* id, const uint8_t* data, uint16_t size) {
+    uint16_t read = CoopIdentity_Read(id, data, size);
+
+    return read != 0 && read == size;
+}
+
 static void Event_Init(CoopSessionEvent* ev, CoopSessionEventType type, int peer) {
     memset(ev, 0, sizeof(*ev));
     ev->type = type;
@@ -190,7 +198,7 @@ static void Host_Hello(CoopSession* s, int peer, const CoopNetEvent* net, uint32
     uint32_t diff;
     uint16_t size;
 
-    if (CoopIdentity_Read(&p->identity, net->data, net->size) != net->size) {
+    if (!Identity_ReadAll(&p->identity, net->data, net->size)) {
         Host_Refuse(s, peer, COOP_SESSION_REFUSE_MALFORMED, nowMs, ev);
         return;
     }
@@ -306,7 +314,7 @@ static void Client_Answer(CoopSession* s, const CoopNetEvent* net, CoopSessionEv
 
     if (net->msgId == COOP_MSG_SESSION_WELCOME) {
         if (net->size < 1 || net->data[0] < 1 || net->data[0] > COOP_NET_MAX_PEERS ||
-            CoopIdentity_Read(host, net->data + 1, (uint16_t) (net->size - 1)) != net->size - 1) {
+            !Identity_ReadAll(host, net->data + 1, (uint16_t) (net->size - 1))) {
             s->t->ops->disconnect(s->t, 0);
             Client_End(s, COOP_SESSION_END_BAD_MESSAGE, ev);
             return;
@@ -322,7 +330,7 @@ static void Client_Answer(CoopSession* s, const CoopNetEvent* net, CoopSessionEv
 
     // SESSION_REFUSE. We leave at once: the host waits for our goodbye or for the ack.
     s->t->ops->disconnect(s->t, 0);
-    if (net->size < 4 || CoopIdentity_Read(host, net->data + 4, (uint16_t) (net->size - 4)) != net->size - 4) {
+    if (net->size < 4 || !Identity_ReadAll(host, net->data + 4, (uint16_t) (net->size - 4))) {
         Client_End(s, COOP_SESSION_END_BAD_MESSAGE, ev);
         return;
     }

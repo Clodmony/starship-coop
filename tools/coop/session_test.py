@@ -5,9 +5,11 @@
     python tools/coop/session_test.py --only sim,rom   # chosen scenarios
     python tools/coop/session_test.py --list
     python tools/coop/session_test.py --no-build --build-dir <dir>
+    python tools/coop/session_test.py --asan           # the same under AddressSanitizer and UBSan; not on Windows
 
 No ROM and no game data are needed; identities are given on the command line of the test program. Prints one line
 per scenario and a RESULT line, keeps every log in local/test-session/<stamp>/, exits 0 only when everything passed.
+Whether the scenarios can fail at all is checked by session_mutants.py.
 """
 import argparse
 import platform
@@ -25,6 +27,7 @@ from net_test import SEED, Fail, Run, chaos, expect, read  # noqa: E402
 # Bits of CoopIdentityDiff, src/port/coop/session/identity.h.
 DIFF_BUILD, DIFF_ROM, DIFF_CVARS, DIFF_PLATFORM = 1, 2, 4, 8
 END_REFUSED = 1  # COOP_SESSION_END_REFUSED
+EAGER = 3  # game messages each side pushes past the session in a refused handshake
 
 
 def pair(run, host_args=(), client_args=(), via=None, seconds=60, seed=SEED):
@@ -68,8 +71,12 @@ def refused(run, host_args, client_args, diff, needle, via=None):
         for h, c in damaged_pair(run, host_args, client_args, via):
             detail = check_refused(h, c, diff, needle)
         return f"{detail} (relay dropped {run.lost}, try {run.tries})"
-    h, c, _ = pair(run, host_args, client_args)
-    return check_refused(h, c, diff, needle)
+    # Without game messages on the wire the check that none got through could not fail. Not on a relay: the refusal
+    # would queue behind them and could run out of linger time.
+    h, c, _ = pair(run, [*host_args, "--eager", EAGER], [*client_args, "--eager", EAGER])
+    detail = check_refused(h, c, diff, needle)
+    expect(h["ignored"] + c["ignored"] > 0, "nothing was held back, so this pass proves nothing")
+    return detail
 
 
 def check_refused(h, c, diff, needle):
@@ -99,6 +106,7 @@ def check_joined(h, c, diff):
     expect(len(hj) == 1 and len(cj) == 1, f"not joined: host {h['events']}, client {c['events']}")
     expect(not events(h, "refused") and not events(c, "refused"), "refused although it should match")
     expect(hj[0]["diff"] == diff and cj[0]["diff"] == diff, f"warnings {hj[0]['diff']}/{cj[0]['diff']}, want {diff}")
+    expect(hj[0]["text"] == cj[0]["text"], "host and client got different texts")
     expect(cj[0]["player"] == 1, f"client got player {cj[0]['player']}, want 1")
     expect(h["received"] == 1 and c["received"] == 1, "game messages did not pass after the welcome")
     expect(events(h, "left"), "host did not see the client leave")
@@ -110,9 +118,12 @@ def check_joined(h, c, diff):
 def sc_sim(run, args):
     out = run.folder / "sim.log"
     with open(out, "w", encoding="utf-8") as log:
-        code = subprocess.run([str(run.exe), "sim"], stdout=log, stderr=subprocess.STDOUT, timeout=600).returncode
+        code = subprocess.run([str(run.exe), "sim"], stdout=log, stderr=subprocess.STDOUT, timeout=120).returncode
     text = out.read_text(encoding="utf-8").strip()
-    expect(code == 0, text.splitlines()[-1] if text else f"exit code {code}")
+    lines = text.splitlines()
+    # A sanitizer report ends in stack frames; this line says what happened.
+    report = [line for line in lines if "ERROR: " in line or "runtime error: " in line]
+    expect(code == 0, report[0] if report else lines[-1] if lines else f"exit code {code}")
     return text
 
 
@@ -176,8 +187,12 @@ SCENARIOS = {
 }
 
 
-def find_exe(build_dir, config):
-    name = "coop_session_test.exe" if IS_WINDOWS else "coop_session_test"
+def target(asan):
+    return "coop_session_test_asan" if asan else "coop_session_test"
+
+
+def find_exe(build_dir, config, asan=False):
+    name = target(asan) + (".exe" if IS_WINDOWS else "")
     for path in (build_dir / "coop-session-test" / name, build_dir / "coop-session-test" / config / name):
         if path.exists():
             return path
@@ -191,12 +206,16 @@ def main():
     ap.add_argument("--build-dir", type=Path, help="default: build/x64 on Windows, build-cmake elsewhere")
     ap.add_argument("--config", default="Debug", choices=["Debug", "Release", "RelWithDebInfo"])
     ap.add_argument("--no-build", action="store_true", help="use the coop_session_test already built")
+    ap.add_argument("--asan", action="store_true", help="use coop_session_test_asan: AddressSanitizer and UBSan")
     ap.add_argument("--out", type=Path, help="log folder, default local/test-session/<stamp>")
     args = ap.parse_args()
 
     if args.list:
         print("\n".join(SCENARIOS))
         return 0
+    if args.asan and IS_WINDOWS:
+        print("RESULT: FAILED, --asan needs GCC or Clang; MSVC has no UBSan")
+        return 2
     names = args.only.split(",") if args.only else list(SCENARIOS)
     unknown = [n for n in names if n not in SCENARIOS]
     if unknown:
@@ -215,16 +234,16 @@ def main():
         build_log = out / "build.log"
         with open(build_log, "w", encoding="utf-8") as log:
             code = subprocess.run(["cmake", "--build", str(build_dir), "--config", args.config, "--target",
-                                   "coop_session_test"], stdout=log, stderr=subprocess.STDOUT).returncode
+                                   target(args.asan)], stdout=log, stderr=subprocess.STDOUT).returncode
         if code != 0:
             tail = build_log.read_text(encoding="utf-8", errors="replace").strip().splitlines()[-8:]
             print("\n".join(tail))
-            print(f"RESULT: FAILED, coop_session_test did not build (log: {build_log})")
+            print(f"RESULT: FAILED, {target(args.asan)} did not build (log: {build_log})")
             return 1
 
-    exe = find_exe(build_dir, args.config)
+    exe = find_exe(build_dir, args.config, args.asan)
     if exe is None:
-        print(f"RESULT: FAILED, no coop_session_test in {build_dir}")
+        print(f"RESULT: FAILED, no {target(args.asan)} in {build_dir}")
         return 1
 
     lines = []

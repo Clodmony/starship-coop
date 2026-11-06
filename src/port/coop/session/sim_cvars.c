@@ -29,6 +29,7 @@ static const SimCvar sCvars[] = {
     { "gScoreEditor", "Score editor", 0 },
     { "gScoreEditValue", "Score editor value", 1 },
     { "gSpawnerMod", "Object spawner", 0 },
+    { "gSkipBriefing", "Skip briefing", 0 },
     // Restored beta features and bug fixes.
     { "gRestoreBetaBombExplosion", "Beta bomb explosion", 0 },
     { "gRestoreBetaBoostGauge", "Beta boost gauge", 0 },
@@ -57,6 +58,7 @@ static const SimCvar sCvars[] = {
     { "gDebugPause", "Debug: pause", 0 },
     { "gLToDebugPause", "Debug: pause on L", 0 },
     { "gLToFrameAdvance", "Debug: frame advance on L", 0 },
+    { "gCoopDebugPlayerCount", "Debug: player count", 1 }, // COOP_PLAYERS_DEBUG_CVAR, port/coop/game/players.h
 };
 
 #define FIXED_COUNT (sizeof(sCvars) / sizeof(sCvars[0]))
