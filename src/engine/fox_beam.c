@@ -4,6 +4,7 @@
 #include "assets/ast_great_fox.h"
 #include "assets/ast_versus.h"
 #include "port/interpolation/FrameInterpolation.h"
+#include "port/coop/game/players.h" // COOP
 
 Vec3f sShotViewPos;
 
@@ -1062,7 +1063,8 @@ void PlayerShot_DrawHitmark(PlayerShot* shot) {
         }
     }
     if (!isDrawn) {
-        if (!gVersusMode) {
+        // COOP: like versus, a shot is not freed for being out of view (#96)
+        if (!gVersusMode && !CoopPlayers_IsCoop()) {
             Object_Kill(&shot->obj, shot->sfxSource);
             return;
         }
@@ -1249,7 +1251,8 @@ void PlayerShot_DrawShot(PlayerShot* shot) {
         }
     }
     if (!isDrawn) {
-        if ((shot->obj.id != PLAYERSHOT_BOMB) && (shot->timer < 10) && !gVersusMode) {
+        // COOP: as above
+        if ((shot->obj.id != PLAYERSHOT_BOMB) && (shot->timer < 10) && !gVersusMode && !CoopPlayers_IsCoop()) {
             Object_Kill(&shot->obj, shot->sfxSource);
         }
     } else {
@@ -2368,9 +2371,14 @@ void PlayerShot_DrawAll(void) {
         gPlayerShots[i].index = i;
         if (gPlayerShots[i].obj.status != SHOT_FREE) {
             if (!((gReflectY < 0) && (gPlayerShots[i].obj.rot.x < -10.0f))) {
+                Vec3f coopRot = gPlayerShots[i].obj.rot; // COOP: facing this camera lasts for this draw only (#96)
+
                 Matrix_Push(&gGfxMatrix);
                 PlayerShot_Draw(&gPlayerShots[i]);
                 Matrix_Pop(&gGfxMatrix);
+                if (CoopPlayers_IsCoop()) { // COOP
+                    gPlayerShots[i].obj.rot = coopRot;
+                }
             }
             if (gReflectY > 0) {
                 Object_SetSfxSourceToView(gPlayerShots[i].sfxSource, &sShotViewPos);

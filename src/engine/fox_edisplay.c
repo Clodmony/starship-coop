@@ -11,6 +11,8 @@
 #include "assets/ast_venom_2.h"
 #include "assets/ast_fortuna.h"
 #include "assets/ast_corneria.h"
+#include "port/coop/game/players.h" // COOP
+#include "port/coop/game/view.h"    // COOP
 #include "assets/ast_meteo.h"
 #include "assets/ast_solar.h"
 #include "assets/ast_sector_x.h"
@@ -1160,7 +1162,8 @@ void Actor_DrawOnRails(Actor* this) {
             if ((this->lockOnTimers[TEAM_ID_FOX] != 0) && (gReflectY > 0)) {
                 sp34.y += this->info.targetOffset;
                 Matrix_MultVec3f(gGfxMatrix, &sp34, &gLockOnTargetViewPos[TEAM_ID_FOX]);
-                if (gLockOnTargetViewPos[TEAM_ID_FOX].z > -200.0f) {
+                // COOP: judged from the view of player 0 on every client (#96)
+                if (CoopView_LockOnZ(&this->obj.pos, gLockOnTargetViewPos[TEAM_ID_FOX].z) > -200.0f) {
                     this->lockOnTimers[TEAM_ID_FOX] = 0;
                 }
             }
@@ -1198,10 +1201,17 @@ void Actor_DrawAllRange(Actor* this) {
         // @port draw no matter what
         // goto render;
 
+        // COOP: the draw code runs on every client, in view or not (#96)
+        if (CoopView_DrawAnyway((var_fv0 > sViewPos.z) && (sViewPos.z > var_fv1) &&
+                                (fabsf(sViewPos.x) < (fabsf(sViewPos.z * 0.5f) + 500.0f) * 2.6f) &&
+                                (fabsf(sViewPos.y) < (fabsf(sViewPos.z * 0.5f) + 500.0f)))) {
+            goto render;
+        }
+
         if ((var_fv0 > sViewPos.z) && (sViewPos.z > var_fv1)) {
             if (fabsf(sViewPos.x) < (fabsf(sViewPos.z * 0.5f) + 500.0f) * 2.6f) {
                 if (fabsf(sViewPos.y) < (fabsf(sViewPos.z * 0.5f) + 500.0f)) {
-                    // render:
+                render: // COOP: was a comment
                     Matrix_RotateY(gCalcMatrix, this->obj.rot.y * M_DTOR, MTXF_APPLY);
                     Matrix_RotateX(gCalcMatrix, this->obj.rot.x * M_DTOR, MTXF_APPLY);
                     Matrix_RotateZ(gCalcMatrix, this->obj.rot.z * M_DTOR, MTXF_APPLY);
@@ -1236,6 +1246,13 @@ void Actor_DrawAllRange(Actor* this) {
         // @port draw no matter what
         // goto render2;
 
+        // COOP: as above
+        if (CoopView_DrawAnyway((var_fv0 > sViewPos.z) && (sViewPos.z > var_fv1) &&
+                                (fabsf(sViewPos.x) < (fabsf(sViewPos.z * var_fa1) + var_ft5) * 2.6f) &&
+                                (fabsf(sViewPos.y) < (fabsf(sViewPos.z * var_fa1) + var_ft5)))) {
+            goto render2;
+        }
+
         if ((var_fv0 > sViewPos.z) && (sViewPos.z > var_fv1)) {
             if (fabsf(sViewPos.x) < (fabsf(sViewPos.z * var_fa1) + var_ft5) * 2.6f) {
                 if (fabsf(sViewPos.y) < (fabsf(sViewPos.z * var_fa1) + var_ft5)) {
@@ -1262,6 +1279,8 @@ void Actor_DrawAllRange(Actor* this) {
         }
     }
 
+    CoopView_EndHidden(); // COOP
+
     if (!sDrewActor) {
         this->lockOnTimers[gPlayerNum] = 0;
         if ((this->obj.id == OBJ_ACTOR_DEBRIS) || (this->obj.id == OBJ_ACTOR_AND_BRAIN_WASTE)) {
@@ -1273,7 +1292,9 @@ void Actor_DrawAllRange(Actor* this) {
         if (this->lockOnTimers[playerNum] != 0) {
             gLockOnTargetViewPos[playerNum] = sViewPos;
             gLockOnTargetViewPos[playerNum].y += this->info.targetOffset;
-            if ((playerNum == gPlayerNum) && (gLockOnTargetViewPos[playerNum].z > -300.0f)) {
+            // COOP: judged from the view of player 0 on every client (#96)
+            if (((playerNum == gPlayerNum) || CoopPlayers_IsCoop()) &&
+                (CoopView_LockOnZ(&this->obj.pos, gLockOnTargetViewPos[playerNum].z) > -300.0f)) {
                 this->lockOnTimers[playerNum] = 0;
             }
         }
@@ -1324,6 +1345,14 @@ void Boss_Draw(Boss* this, s32 arg1) {
 
     sp3C = -1.0f;
 
+    // COOP: the draw code runs on every client, in view or not (#96)
+    if (CoopView_DrawAnyway(
+            (D_edisplay_801615D0.z < var_fv0) && (var_fv1 < D_edisplay_801615D0.z) &&
+            (fabsf(D_edisplay_801615D0.x) < (fabsf(D_edisplay_801615D0.z * var_ft5) + var_fa1) * 1.77f) &&
+            (fabsf(D_edisplay_801615D0.y) < (fabsf(D_edisplay_801615D0.z * var_ft5) + var_fa1)))) {
+        goto render;
+    }
+
     // @port draw no matter what
     // if ((gCurrentLevel != LEVEL_KATINA) &&
     //     (gCurrentLevel != LEVEL_SECTOR_Y)) { // Excepting Katina because of KaSaucerer's bug
@@ -1333,7 +1362,7 @@ void Boss_Draw(Boss* this, s32 arg1) {
     if ((D_edisplay_801615D0.z < var_fv0) && (var_fv1 < D_edisplay_801615D0.z)) {
         if (fabsf(D_edisplay_801615D0.x) < (fabsf(D_edisplay_801615D0.z * var_ft5) + var_fa1) * 1.77f) {
             if (fabsf(D_edisplay_801615D0.y) < (fabsf(D_edisplay_801615D0.z * var_ft5) + var_fa1)) {
-                // render:
+            render: // COOP: was a comment
                 sp3C = 1.0f;
                 if (this->obj.id != OBJ_BOSS_BO_BASE) {
                     if (this->obj.id != OBJ_BOSS_KA_SAUCERER) {
@@ -1352,6 +1381,21 @@ void Boss_Draw(Boss* this, s32 arg1) {
             }
         }
     }
+    CoopView_EndHidden(); // COOP
+
+    // COOP: boss AI reads this (Corneria_CoGranga_Update and others): the view of player 0 on every client, and whether
+    // that view has the boss in it (#96)
+    if (CoopPlayers_IsCoop()) {
+        Vec3f coopWorld = { this->obj.pos.x, this->obj.pos.y, this->obj.pos.z + gPathProgress };
+
+        CoopView_ToReference(&coopWorld, &D_edisplay_801615D0);
+        sp3C = ((D_edisplay_801615D0.z < var_fv0) && (var_fv1 < D_edisplay_801615D0.z) &&
+                (fabsf(D_edisplay_801615D0.x) < (fabsf(D_edisplay_801615D0.z * var_ft5) + var_fa1) * 1.77f) &&
+                (fabsf(D_edisplay_801615D0.y) < (fabsf(D_edisplay_801615D0.z * var_ft5) + var_fa1)))
+                   ? 1.0f
+                   : -1.0f;
+    }
+
     D_edisplay_801615D0.y = sp3C;
 
     if (this->obj.id == OBJ_BOSS_BO_BASE) {
@@ -1410,10 +1454,18 @@ void Effect_DrawAllRange(Effect* this) {
         minZ = -10000.0f;
     }
 
+    // COOP: the draw code runs on every client, in view or not, and nothing is freed for being out of view (#96)
+    if (CoopView_DrawAnyway((dest.z < 0.0f) && (minZ < dest.z) &&
+                            (fabsf(dest.x) < (fabsf(dest.z * /* 0.5f */ 1.5f) + 500.0f)) &&
+                            (fabsf(dest.y) < (fabsf(dest.z * 0.5f) + 500.0f)))) {
+        goto render;
+    }
+
     if ((dest.z < 0.0f) && (minZ < dest.z)) {
         // @port: Extend draw distance up to 32/9
         if (fabsf(dest.x) < (fabsf(dest.z * /* 0.5f */ 1.5f) + 500.0f)) {
             if (fabsf(dest.y) < (fabsf(dest.z * 0.5f) + 500.0f)) {
+            render: // COOP
                 if (this->info.draw != NULL) {
                     Matrix_RotateY(gGfxMatrix, this->obj.rot.y * M_DTOR, MTXF_APPLY);
                     Matrix_RotateX(gGfxMatrix, this->obj.rot.x * M_DTOR, MTXF_APPLY);
@@ -1427,6 +1479,8 @@ void Effect_DrawAllRange(Effect* this) {
             }
         }
     }
+
+    CoopView_EndHidden(); // COOP
 
     Object_SetSfxSourceToView(this->sfxSource, &dest);
 
@@ -1471,8 +1525,9 @@ void Item_Draw(Item* this, s32 arg1) {
 
     Object_SetSfxSourceToView(this->sfxSource, &dest);
 
+    // COOP: like with more than one camera, an item out of view stays (#96)
     if (!drawn && (gLevelMode == LEVELMODE_ALL_RANGE) && (gCamCount == 1) && (this->obj.id < OBJ_ITEM_GOLD_RING) &&
-        (gCurrentLevel != LEVEL_VENOM_ANDROSS)) {
+        (gCurrentLevel != LEVEL_VENOM_ANDROSS) && !CoopPlayers_IsCoop()) {
         Object_Kill(&this->obj, this->sfxSource);
     }
 }
@@ -1970,6 +2025,8 @@ void Effect_DrawAll(s32 arg0) {
         if (effect->obj.status >= OBJ_ACTIVE) {
             FrameInterpolation_RecordOpenChild(effect, i);
 
+            Vec3f coopRot = effect->obj.rot; // COOP: facing this camera lasts for this draw only (#96)
+
             if (effect->info.unk_14 == 1) {
                 effect->obj.rot.y = RAD_TO_DEG(-gPlayer[gPlayerNum].camYaw);
                 effect->obj.rot.x = RAD_TO_DEG(gPlayer[gPlayerNum].camPitch);
@@ -1989,6 +2046,10 @@ void Effect_DrawAll(s32 arg0) {
                     Object_DrawShadow(i, &effect->obj);
                     Matrix_Pop(&gGfxMatrix);
                 }
+            }
+
+            if (CoopPlayers_IsCoop()) { // COOP
+                effect->obj.rot = coopRot;
             }
 
             FrameInterpolation_RecordCloseChild();

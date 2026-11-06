@@ -153,6 +153,8 @@ def play(replay, exe, timeout, tag, poke=None, env_extra=None, config=None):
     log = run / "state-hash.txt"
     result = values.get("result") if values else "NO_REPORT"
     print(f"hash: run {tag}: replay {result}, {elapsed:.0f}s, log {log}")
+    if values:
+        values["log"] = log
     if not log.exists():
         return values, None, None
     names, rows = read_log(log)
@@ -340,6 +342,32 @@ VIEW_SECTIONS = {  # name -> (frames, frame of the L press into all-range)
 }
 
 
+def read_views(path):
+    """The camera a co-op run drew, from the "# view" lines of its log: frame -> (local index, eye)."""
+    views = {}
+    for line in Path(path).read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith("# view "):
+            parts = line.split()
+            views[int(parts[2].split("=")[1])] = (int(parts[3].split("=")[1]), parts[4:])
+    return views
+
+
+def check_views_differ(section, a_values, b_values):
+    """Equal hashes only mean something if the two runs drew different cameras. Returns a list of failures."""
+    if not a_values or not b_values:
+        return []
+    a_views, b_views = read_views(a_values["log"]), read_views(b_values["log"])
+    common = sorted(set(a_views) & set(b_views))
+    apart = [frame for frame in common if a_views[frame][1] != b_views[frame][1]]
+    print(f"hash: {section}: the cameras drawn differ on {len(apart)} of {len(common)} sampled frames")
+    failures = []
+    if not apart:
+        failures.append(f"{section}: both runs drew the same camera, so equal hashes say nothing")
+    if not any(b_views[frame][0] == 1 for frame in common):
+        failures.append(f"{section}: the run with index 1 never looked through player 1")
+    return failures
+
+
 def view_section(section, exe, args):
     """Play one section with each local index. Returns a list of failures."""
     frames, l_frame = VIEW_SECTIONS[section]
@@ -363,6 +391,7 @@ def view_section(section, exe, args):
                 for index, values in ((0, a_values), (1, b_values)) if not played_through(values)]
     if min(len(a_rows), len(b_rows)) < frames:
         failures.append(f"{section}: hash logs shorter than the replay ({len(a_rows)}, {len(b_rows)} < {frames} frames)")
+    failures += check_views_differ(section, a_values, b_values)
     diff = first_difference(a_rows, b_rows, frames)
     if diff is not None:
         failures.append(f"{section}: index 0 and 1 differ: {describe(names, diff)}")

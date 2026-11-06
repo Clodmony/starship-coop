@@ -68,19 +68,19 @@ Basis per site: read 193, site 953, name 642.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `PlayerShot_CheckActorHitbox` | 440:P0, 441:P0 | sim | site | hit test uses player 0 camera position |
-| `PlayerShot_CollisionCheck` | 837:CC, 886:CC | setup | site | loops players; gCamCount != 1 as versus flag |
-| `PlayerShot_CollisionCheck` | 880:P0 | sim | site | on-foot check uses player 0 form for every shot |
-| `PlayerShot_DrawLaser` | 1106:CC | setup | site | gCamCount < 4 as "not versus" for laser look |
-| `PlayerShot_DrawLaser` | 1109:P0, 1145:P0 | view | site | laser drawing keyed to player 0 intro state |
-| `PlayerShot_UpdateBeam` | 1652:CC, 1654:P0 | setup | site | gCamCount != 4 as "not versus"; also player 0 form (Landmaster) for every shot |
-| `PlayerShot_FindLockTarget` | 1758:CC | ok | read | versus branch, loops all players |
-| `PlayerShot_SearchLockOnTarget` | 1791:MC | input | site | charge shot release read from gMainController, not from the shot owner |
-| `PlayerShot_ApplyExplosionDamage` | 2022:CC | setup | site | loops gCamCount players |
-| `PlayerShot_UpdateBomb` | 2074:MC, 2104:MC | input | site | bomb detonation read from gMainController (button map already per sourceId) |
-| `PlayerShot_UpdateBomb` | 2095:P0, 2096:P0, 2097:P0, 2098:P0 | sim | site | bomb blast pushes player 0 only |
-| `PlayerShot_UpdateLockOnShot` | 2161:CC, 2161:P0 | setup | site | loops gCamCount players |
-| `PlayerShot_Update` | 2329:P0 | view | site | shots not drawn or updated while player 0 is in the intro |
+| `PlayerShot_CheckActorHitbox` | 441:P0, 442:P0 | sim | site | hit test uses player 0 camera position |
+| `PlayerShot_CollisionCheck` | 838:CC, 887:CC | setup | site | loops players; gCamCount != 1 as versus flag |
+| `PlayerShot_CollisionCheck` | 881:P0 | sim | site | on-foot check uses player 0 form for every shot |
+| `PlayerShot_DrawLaser` | 1108:CC | setup | site | gCamCount < 4 as "not versus" for laser look |
+| `PlayerShot_DrawLaser` | 1111:P0, 1147:P0 | view | site | laser drawing keyed to player 0 intro state |
+| `PlayerShot_UpdateBeam` | 1655:CC, 1657:P0 | setup | site | gCamCount != 4 as "not versus"; also player 0 form (Landmaster) for every shot |
+| `PlayerShot_FindLockTarget` | 1761:CC | ok | read | versus branch, loops all players |
+| `PlayerShot_SearchLockOnTarget` | 1794:MC | input | site | charge shot release read from gMainController, not from the shot owner |
+| `PlayerShot_ApplyExplosionDamage` | 2025:CC | setup | site | loops gCamCount players |
+| `PlayerShot_UpdateBomb` | 2077:MC, 2107:MC | input | site | bomb detonation read from gMainController (button map already per sourceId) |
+| `PlayerShot_UpdateBomb` | 2098:P0, 2099:P0, 2100:P0, 2101:P0 | sim | site | bomb blast pushes player 0 only |
+| `PlayerShot_UpdateLockOnShot` | 2164:CC, 2164:P0 | setup | site | loops gCamCount players |
+| `PlayerShot_Update` | 2332:P0 | view | site | shots not drawn or updated while player 0 is in the intro |
 
 ### `src/engine/fox_bg.c`
 
@@ -140,49 +140,49 @@ Basis per site: read 193, site 953, name 642.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `ActorTeamArwing_Draw` | 567:P0, 568:P0, 571:P0, 573:P0, 575:P0, 577:P0, 578:P0, 604:P0 | view | site | team Arwing look copies player 0 wing state and state |
-| `Object_SetShadowDL` | 734:P0 | view | site | player 0 state |
-| `Object_SetMatrix` | 960:P0 | view | site | billboard to player 0 camera |
-| `Actor_DrawAllRange` | 1212:P0, 1223:P0, 1252:P0 | view | site | all-range markers by player 0 state |
-| `Actor_DrawAllRange` | 1272:CC | setup | site | loops players for markers |
-| `Item_Draw` | 1474:CC | setup | site | gCamCount == 1 as "not versus" for all-range item marker |
-| `Object_SetSfxSourceToPos` | 1582:CC, 1585:P0, 1586:P0 | view | site | object sounds placed relative to player 0 camera (gCamCount != 1 skips: versus has no positional sound) |
-| `Object_UpdateSfxSource` | 1603:CC | view | site | gCamCount != 1 skips positional sound |
-| `Object_SetSfxSourceToView` | 1615:CC | view | site | gCamCount != 1 skips positional sound |
-| `Display_SetSecondLight` | 1717:P0 | view | site | player 0 state |
-| `Object_DrawAll` | 1907:P0, 1908:P0 | view | site | player 0 state |
-| `Object_Draw` | 2021:P0 | view | site | water reflection by player 0 state |
-| `Effect_Draw` | 2038:P0 | view | site | water reflection by player 0 state |
+| `ActorTeamArwing_Draw` | 569:P0, 570:P0, 573:P0, 575:P0, 577:P0, 579:P0, 580:P0, 606:P0 | view | site | team Arwing look copies player 0 wing state and state |
+| `Object_SetShadowDL` | 736:P0 | view | site | player 0 state |
+| `Object_SetMatrix` | 962:P0 | view | site | billboard to player 0 camera |
+| `Actor_DrawAllRange` | 1222:P0, 1233:P0, 1269:P0 | view | site | all-range markers by player 0 state |
+| `Actor_DrawAllRange` | 1291:CC | setup | site | loops players for markers |
+| `Item_Draw` | 1529:CC | setup | site | gCamCount == 1 as "not versus" for all-range item marker |
+| `Object_SetSfxSourceToPos` | 1637:CC, 1640:P0, 1641:P0 | view | site | object sounds placed relative to player 0 camera (gCamCount != 1 skips: versus has no positional sound) |
+| `Object_UpdateSfxSource` | 1658:CC | view | site | gCamCount != 1 skips positional sound |
+| `Object_SetSfxSourceToView` | 1670:CC | view | site | gCamCount != 1 skips positional sound |
+| `Display_SetSecondLight` | 1772:P0 | view | site | player 0 state |
+| `Object_DrawAll` | 1962:P0, 1963:P0 | view | site | player 0 state |
+| `Object_Draw` | 2082:P0 | view | site | water reflection by player 0 state |
+| `Effect_Draw` | 2099:P0 | view | site | water reflection by player 0 state |
 
 ### `src/engine/fox_effect.c`
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `BonusText_Update` | 65:P0, 66:P0, 67:P0 | view | site | bonus text follows player 0 |
-| `Effect_Effect384_Draw` | 246:P0 | view | site | player 0 state |
-| `Effect_Effect393_Update` | 564:P0, 565:P0, 566:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect357_Setup` | 624:P0, 625:P0, 626:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect357_Update` | 720:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect357_Draw` | 747:P0 | view | site | player 0 state |
-| `Effect_Effect372_Setup1` | 1125:P0, 1126:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect362_Setup` | 1497:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect362_Update` | 1514:P0, 1515:P0, 1516:P0, 1518:P0 | view | site | faces player 0 camera |
-| `Effect_Effect360_Update` | 1550:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect343_Setup` | 1751:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect387_Update` | 1789:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect339_Update` | 2025:P0, 2038:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect374_Update` | 2271:P0, 2272:P0, 2273:P0, 2274:P0 | sim | site | hits player 0 only |
-| `Effect_Effect345_Update` | 2338:CC | setup | site | gCamCount != 1 as versus flag |
-| `func_effect_8007E6B8` | 2446:P0, 2447:P0, 2448:P0 | sim | site | enemy shot aimed at player 0 |
-| `func_effect_8007E93C` | 2500:P0, 2501:P0, 2502:P0 | sim | site | enemy shot aimed at player 0 camera |
-| `Effect_EnemyLaser` | 2647:P0 | sim | site | enemy laser only spawned near player 0 |
-| `func_effect_8007F20C` | 2662:P0 | sim | site | only spawned near player 0 camera |
-| `Effect_Effect353_354_Update` | 2922:P0, 2926:P0, 2927:P0, 2928:P0, 2929:P0, 2941:P0, 2945:P0, 2947:P0, 2949:P0, 2952:P0, 2954:P0 | sim | read | enemy projectile hits, deflects and knocks back player 0 only |
-| `Effect_Effect398_Update` | 3029:P0, 3030:P0, 3031:P0, 3056:P0, 3060:P0, 3061:P0, 3062:P0, 3063:P0, 3075:P0, 3079:P0, 3081:P0, 3083:P0, 3085:P0, 3087:P0 | sim | read | aims at, hits and knocks back player 0 only |
-| `Effect_Effect395_Update` | 3644:P0, 3834:P0, 3835:P0, 3838:P0, 3839:P0, 3840:P0, 3881:P0, 3886:P0, 3887:P0, 3888:P0 | sim | site | hits player 0 only; boss faces player 0 camera |
-| `Effect_Effect391_Update` | 4127:P0 | view | site | faces player 0 camera |
-| `func_effect_80083D2C` | 4189:P0, 4190:P0, 4191:P0 | sim | site | aims at player 0 |
-| `Effect_Effect399_Update` | 4228:P0, 4229:P0 | view | site | faces player 0 camera |
+| `BonusText_Update` | 66:P0, 67:P0, 68:P0 | view | site | bonus text follows player 0 |
+| `Effect_Effect384_Draw` | 247:P0 | view | site | player 0 state |
+| `Effect_Effect393_Update` | 565:P0, 566:P0, 567:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect357_Setup` | 625:P0, 626:P0, 627:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect357_Update` | 721:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect357_Draw` | 748:P0 | view | site | player 0 state |
+| `Effect_Effect372_Setup1` | 1126:P0, 1127:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect362_Setup` | 1498:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect362_Update` | 1515:P0, 1516:P0, 1517:P0, 1519:P0 | view | site | faces player 0 camera |
+| `Effect_Effect360_Update` | 1551:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect343_Setup` | 1752:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect387_Update` | 1790:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect339_Update` | 2026:P0, 2039:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect374_Update` | 2272:P0, 2273:P0, 2274:P0, 2275:P0 | sim | site | hits player 0 only |
+| `Effect_Effect345_Update` | 2339:CC | setup | site | gCamCount != 1 as versus flag |
+| `func_effect_8007E6B8` | 2447:P0, 2448:P0, 2449:P0 | sim | site | enemy shot aimed at player 0 |
+| `func_effect_8007E93C` | 2501:P0, 2502:P0, 2503:P0 | sim | site | enemy shot aimed at player 0 camera |
+| `Effect_EnemyLaser` | 2648:P0 | sim | site | enemy laser only spawned near player 0 |
+| `func_effect_8007F20C` | 2663:P0 | sim | site | only spawned near player 0 camera |
+| `Effect_Effect353_354_Update` | 2923:P0, 2927:P0, 2928:P0, 2929:P0, 2930:P0, 2942:P0, 2946:P0, 2948:P0, 2950:P0, 2953:P0, 2955:P0 | sim | read | enemy projectile hits, deflects and knocks back player 0 only |
+| `Effect_Effect398_Update` | 3030:P0, 3031:P0, 3032:P0, 3057:P0, 3061:P0, 3062:P0, 3063:P0, 3064:P0, 3076:P0, 3080:P0, 3082:P0, 3084:P0, 3086:P0, 3088:P0 | sim | read | aims at, hits and knocks back player 0 only |
+| `Effect_Effect395_Update` | 3645:P0, 3835:P0, 3836:P0, 3839:P0, 3840:P0, 3841:P0, 3882:P0, 3887:P0, 3888:P0, 3889:P0 | sim | site | hits player 0 only; boss faces player 0 camera |
+| `Effect_Effect391_Update` | 4128:P0 | view | site | faces player 0 camera |
+| `func_effect_80083D2C` | 4190:P0, 4191:P0, 4192:P0 | sim | site | aims at player 0 |
+| `Effect_Effect399_Update` | 4229:P0, 4230:P0 | view | site | faces player 0 camera |
 
 ### `src/engine/fox_enmy.c`
 
@@ -221,24 +221,24 @@ Basis per site: read 193, site 953, name 642.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `MeteoBall_IsCloseToPlayer` | 127:P0 | sim | site | distance to player 0 |
-| `MeteoBall_Update` | 142:P0, 144:P0, 145:P0 | view | site | faces player 0 camera |
-| `CoMoleMissile_Update` | 432:P0 | sim | site | distance to player 0 |
-| `ActorDebris_Update` | 552:P0, 553:P0 | sim | site | debris placed relative to player 0 |
-| `func_enmy2_8006D0F4` | 884:P0 | sim | site | scenery search ahead of player 0 |
-| `ActorEvent_ProcessScript` | 1188:P0, 1248:P0, 1335:P0, 1344:P0 | sim | site | event scripts check player 0 state and position; radio only when player 0 active |
-| `ActorEvent_ProcessActions` | 1844:P0, 1858:P0, 1909:P0, 1917:P0, 1924:P0, 1925:P0, 1926:P0, 1927:P0, 1930:P0, 1931:P0, 1990:P0 | sim | read | event actors aim at player 0 (temporarily jitters player 0 position to aim off) |
-| `ActorEvent_8006FE28` | 2038:P0, 2039:P0 | sim | site | contact with player 0 |
-| `ActorEvent_ProcessTriggers` | 2367:P0, 2427:P0, 2433:P0, 2439:P0, 2445:P0, 2451:P0, 2457:P0, 2463:P0, 2469:P0, 2475:P0, 2481:P0, 2487:P0, 2493:P0, 2499:P0, 2505:P0, 2511:P0, 2517:P0, 2523:P0, 2529:P0, 2535:P0, 2541:P0, 2547:P0, 2553:P0, 2559:P0, 2565:P0, 2571:P0, 2577:P0, 2583:P0, 2589:P0, 2595:P0, 2601:P0, 2704:P0, 2705:P0 | sim | read | event conditions read player 0 position, shields, speed and laser level |
-| `ActorEvent_ProcessTriggers` | 2695:MC | input | site | C-right condition read from gMainController |
-| `ActorEvent_80072474` | 3014:P0 | sim | site | angle to player 0 |
-| `ActorEvent_Update` | 3046:P0, 3067:P0, 3130:P0, 3131:P0, 3132:P0, 3134:P0, 3135:P0, 3136:P0, 3194:P0, 3195:P0, 3196:P0, 3198:P0, 3199:P0, 3200:P0, 3463:P0 | sim | site | event actors aim at player 0 and set player 0 damage type; killed on player 0 level complete |
+| `MeteoBall_IsCloseToPlayer` | 128:P0 | sim | site | distance to player 0 |
+| `MeteoBall_Update` | 143:P0, 145:P0, 146:P0 | view | site | faces player 0 camera |
+| `CoMoleMissile_Update` | 434:P0 | sim | site | distance to player 0 |
+| `ActorDebris_Update` | 554:P0, 555:P0 | sim | site | debris placed relative to player 0 |
+| `func_enmy2_8006D0F4` | 886:P0 | sim | site | scenery search ahead of player 0 |
+| `ActorEvent_ProcessScript` | 1190:P0, 1250:P0, 1337:P0, 1346:P0 | sim | site | event scripts check player 0 state and position; radio only when player 0 active |
+| `ActorEvent_ProcessActions` | 1846:P0, 1860:P0, 1911:P0, 1919:P0, 1926:P0, 1927:P0, 1928:P0, 1929:P0, 1932:P0, 1933:P0, 1992:P0 | sim | read | event actors aim at player 0 (temporarily jitters player 0 position to aim off) |
+| `ActorEvent_8006FE28` | 2040:P0, 2041:P0 | sim | site | contact with player 0 |
+| `ActorEvent_ProcessTriggers` | 2369:P0, 2429:P0, 2435:P0, 2441:P0, 2447:P0, 2453:P0, 2459:P0, 2465:P0, 2471:P0, 2477:P0, 2483:P0, 2489:P0, 2495:P0, 2501:P0, 2507:P0, 2513:P0, 2519:P0, 2525:P0, 2531:P0, 2537:P0, 2543:P0, 2549:P0, 2555:P0, 2561:P0, 2567:P0, 2573:P0, 2579:P0, 2585:P0, 2591:P0, 2597:P0, 2603:P0, 2706:P0, 2707:P0 | sim | read | event conditions read player 0 position, shields, speed and laser level |
+| `ActorEvent_ProcessTriggers` | 2697:MC | input | site | C-right condition read from gMainController |
+| `ActorEvent_80072474` | 3016:P0 | sim | site | angle to player 0 |
+| `ActorEvent_Update` | 3048:P0, 3069:P0, 3132:P0, 3133:P0, 3134:P0, 3136:P0, 3137:P0, 3138:P0, 3196:P0, 3197:P0, 3198:P0, 3200:P0, 3201:P0, 3202:P0, 3465:P0 | sim | site | event actors aim at player 0 and set player 0 damage type; killed on player 0 level complete |
 
 ### `src/engine/fox_game.c`
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Game_Update` | 366:CC, 422:CC, 521:CC, 522:CC, 527:CC, 528:CC, 530:CC, 532:CC, 563:CC, 581:CC | setup | site | viewports from gCamCount (1, 2, 4); GSTATE_INIT resets to 1; player loop for draw |
+| `Game_Update` | 368:CC, 424:CC, 525:CC, 526:CC, 531:CC, 532:CC, 534:CC, 536:CC, 567:CC, 585:CC | setup | site | viewports from gCamCount (1, 2, 4); GSTATE_INIT resets to 1; player loop for draw |
 
 ### `src/engine/fox_hud.c`
 

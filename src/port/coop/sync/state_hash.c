@@ -19,7 +19,8 @@
 //
 // Co-op hashes differently from single player: negative numbers in Actor.iwork[] (NormalizeWord), free gScenery360
 // slots (HashScenery360), the per-player arrays and the co-op slots (HashPlayerArrays), the team member arrays
-// (HashTeamArrays), and it leaves out the per-player values of players who are not in the level (HashPerPlayer). With
+// (HashTeamArrays), and it leaves out the per-player values of players who are not in the level (HashPerPlayer) and
+// what follows the camera a client draws and only sound or draw code reads (ClearViewState, ClearPlayerViewState). With
 // co-op off the hash stays as it was, so a single-player log still lines up with one from an older build
 // (docs/coop/QA.md, test plan item 1).
 //
@@ -49,6 +50,7 @@ extern s32 sSeededRandSeed3;
 #define FNV_PRIME 0x100000001B3ULL
 #define FOREIGN_POINTER 0xFFFFFFFFFFFFFFFEULL
 #define SCENERY360_COUNT 200 // MEM_ARRAY_ALLOCATE(gScenery360, 200), src/engine/fox_play.c:2958
+#define VIEW_LOG_PERIOD 100  // frames between two "# view" lines
 
 static const char* sRegionNames[COOP_HASH_REGION_COUNT] = {
     "players", "actors",     "bosses", "effects", "items", "scenery",
@@ -200,6 +202,30 @@ static void ClearInfoPointers(ObjectInfo* info) {
     info->hitbox = NULL;
 }
 
+// Where an object is for the sound engine, as seen from the camera a client draws. In co-op that differs between
+// clients with nothing wrong. Only sound and draw code read it: docs/coop/NOTES.md, 2026-11-06, #96.
+static void ClearViewState(f32* sfxSource) {
+    if (CoopPlayers_IsCoop()) {
+        sfxSource[0] = sfxSource[1] = sfxSource[2] = 0.0f;
+    }
+}
+
+// The same for a player, with what draw code writes for a player the camera sees. Same note.
+static void ClearPlayerViewState(Player* player) {
+    if (!CoopPlayers_IsCoop()) {
+        return;
+    }
+    ClearViewState(player->sfxSource);
+    ClearViewState(player->sfxVel);
+    memset(&player->sfx, 0, sizeof(player->sfx));
+    player->shadowing = 0;
+    player->arwing.unk_28 = 0.0f;
+    player->arwing.upperRightFlapYrot = 0.0f;
+    player->arwing.bottomRightFlapYrot = 0.0f;
+    player->arwing.upperLeftFlapYrot = 0.0f;
+    player->arwing.bottomLeftFlapYrot = 0.0f;
+}
+
 // A per-player array, slot by slot. With co-op off that is the same bytes in the same order as hashing the array whole.
 static void HashPerPlayer(uint64_t* h, const void* array, size_t size) {
     static const u8 sEmpty[sizeof(s32)] = { 0 };
@@ -224,6 +250,7 @@ static void HashPlayers(uint64_t* h) {
         copy = gPlayer[i];
         copy.sfx.srcPos = NULL;
         copy.sfx.srcVel = NULL;
+        ClearPlayerViewState(&copy);
         HASH_VAR(h, copy);
     }
 }
@@ -259,6 +286,11 @@ static void HashActors(uint64_t* h) {
     for (i = 0; i < ARRAY_COUNT(gActors); i++) {
         copy = gActors[i];
         ClearInfoPointers(&copy.info);
+        ClearViewState(copy.sfxSource);
+        // SectorX_SxSlippy_Draw turns it to face the camera drawn, and only draw code reads that.
+        if (CoopPlayers_IsCoop() && (copy.obj.id == OBJ_ACTOR_SX_SLIPPY)) {
+            copy.obj.rot.x = copy.obj.rot.y = 0.0f;
+        }
         for (k = 0; k < ARRAY_COUNT(copy.iwork); k++) {
             copy.iwork[k] = (uintptr_t) NormalizeWord(copy.iwork[k]);
         }
@@ -278,6 +310,19 @@ static void HashActors(uint64_t* h) {
         }                                      \
     } while (0)
 
+// The same, for objects that also have a sound position.
+#define HASH_SOUND_ARRAY(h, Type, array, count) \
+    do {                                        \
+        Type copy_;                             \
+        s32 i_;                                 \
+        for (i_ = 0; i_ < (count); i_++) {      \
+            copy_ = (array)[i_];                \
+            ClearInfoPointers(&copy_.info);     \
+            ClearViewState(copy_.sfxSource);    \
+            HASH_VAR((h), copy_);               \
+        }                                       \
+    } while (0)
+
 static void HashEffects(uint64_t* h) {
     Effect copy;
     s32 i;
@@ -286,6 +331,7 @@ static void HashEffects(uint64_t* h) {
         copy = gEffects[i];
         ClearInfoPointers(&copy.info);
         copy.unk_74 = NULL;
+        ClearViewState(copy.sfxSource);
         HASH_VAR(h, copy);
     }
 }
@@ -303,6 +349,33 @@ static void HashScenery360(uint64_t* h) {
         if (CoopPlayers_IsCoop() && (copy.obj.status == OBJ_FREE)) {
             memset(&copy, 0, sizeof(copy));
         }
+        HASH_VAR(h, copy);
+    }
+}
+
+static void HashItems(uint64_t* h) {
+    Item copy;
+    s32 i;
+
+    for (i = 0; i < ARRAY_COUNT(gItems); i++) {
+        copy = gItems[i];
+        ClearInfoPointers(&copy.info);
+        ClearViewState(copy.sfxSource);
+        // ItemMeteoWarp_Draw turns it to face the camera drawn, and only Item_Draw reads that.
+        if (CoopPlayers_IsCoop() && (copy.obj.id == OBJ_ITEM_METEO_WARP)) {
+            copy.obj.rot.y = 0.0f;
+        }
+        HASH_VAR(h, copy);
+    }
+}
+
+static void HashShots(uint64_t* h) {
+    PlayerShot copy;
+    s32 i;
+
+    for (i = 0; i < ARRAY_COUNT(gPlayerShots); i++) {
+        copy = gPlayerShots[i];
+        ClearViewState(copy.sfxSource);
         HASH_VAR(h, copy);
     }
 }
@@ -350,15 +423,15 @@ void CoopStateHash_Compute(CoopStateHash* out) {
         HashPlayerArrays(&r[COOP_HASH_PLAYERS]);
     }
     HashActors(&r[COOP_HASH_ACTORS]);
-    HASH_INFO_ARRAY(&r[COOP_HASH_BOSSES], Boss, gBosses, ARRAY_COUNT(gBosses));
+    HASH_SOUND_ARRAY(&r[COOP_HASH_BOSSES], Boss, gBosses, ARRAY_COUNT(gBosses));
     HashEffects(&r[COOP_HASH_EFFECTS]);
-    HASH_INFO_ARRAY(&r[COOP_HASH_ITEMS], Item, gItems, ARRAY_COUNT(gItems));
-    HASH_INFO_ARRAY(&r[COOP_HASH_SCENERY], Scenery, gScenery, ARRAY_COUNT(gScenery));
+    HashItems(&r[COOP_HASH_ITEMS]);
+    HASH_SOUND_ARRAY(&r[COOP_HASH_SCENERY], Scenery, gScenery, ARRAY_COUNT(gScenery));
     HASH_INFO_ARRAY(&r[COOP_HASH_SPRITES], Sprite, gSprites, ARRAY_COUNT(gSprites));
     if (Scenery360Valid()) {
         HashScenery360(&r[COOP_HASH_SCENERY360]);
     }
-    HASH_VAR(&r[COOP_HASH_SHOTS], gPlayerShots);
+    HashShots(&r[COOP_HASH_SHOTS]);
     HASH_VAR(&r[COOP_HASH_MISC], gTexturedLines);
     HASH_VAR(&r[COOP_HASH_MISC], gBonusText);
     HASH_VAR(&r[COOP_HASH_MISC], gRadarMarks);
@@ -543,6 +616,13 @@ static void CoopStateHash_OnGamePreUpdate(IEvent* event) {
     }
     if ((sProbePeriod > 0) && (((s64) sFrame % sProbePeriod) == 0)) {
         Probe();
+    }
+
+    // Test only: the camera this client drew, which the hash must not show. tools/coop/hash_check.py views reads it, to
+    // know two runs really looked through different players.
+    if (CoopPlayers_IsCoop() && (gGameState == GSTATE_PLAY) && ((sFrame % VIEW_LOG_PERIOD) == 0)) {
+        fprintf(sLog, "# view frame=%u local=%d eye=%.1f %.1f %.1f\n", sFrame, CoopPlayers_LocalIndex(), gPlayCamEye.x,
+                gPlayCamEye.y, gPlayCamEye.z);
     }
 
     CoopStateHash_Compute(&hash);

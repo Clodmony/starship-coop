@@ -29,8 +29,9 @@ int32_t CoopPlayers_Count(void);
 // Nonzero when more players are simulated than cameras rendered, which only co-op does.
 int32_t CoopPlayers_IsCoop(void);
 
-// Index of the player this client controls and looks through. Always 0 outside co-op, and when the index asked for is
-// not a player of this level.
+// Index of the player this client looks through: what Game_Draw draws. Always 0 outside co-op, and when the index asked
+// for is not a player of this level. The simulation never reads it: outside Game_Draw gPlayerNum is 0 or the player
+// being updated (src/port/coop/game/view.h).
 int32_t CoopPlayers_LocalIndex(void);
 
 // Asks for a local player. 0 until something calls this: SF64_COOP_TEST_LOCAL_INDEX (src/port/coop/test/switches.h)
