@@ -2,11 +2,12 @@
 
 // Forces effects onto one player and logs who they hit, for unattended tests (#100).
 //
-// Off unless the environment variable SF64_COOP_EFFECT_PROBE names a file. Once every player flies, the probe takes the
-// cases of sCases in effect_probe.c one at a time, each for every player in turn: it heals the players, places the
-// effect where the target will be on the next frame, and lets the game run it. The effect's own update does the rest,
-// as in play; only the spawn is forced, so a level can test effects that belong to another level. One line per case and
-// target:
+// Off unless the environment variable SF64_COOP_EFFECT_PROBE names a file. While every player flies, and with
+// gDebugJumpToAllRange set only in all-range, the probe takes the cases of sCases in effect_probe.c one at a time, each
+// for every player in turn: it heals the players, moves all but player 0 out of each other's reach, places the effect
+// where the target will be on the next frame, and lets the game run it. A hit earlier in that frame does not count. The
+// effect's own update does the rest, as in play; only the spawn is forced, so a level can test effects that belong to
+// another level. One line per case and target:
 //
 //   effect frame=<gGameFrameCount> case=<name> target=<player> hit=<mask> deflect=<mask> damage=<per player>
 //   shields=<per player>

@@ -682,6 +682,58 @@ Counts: 268 code sites name a wingman (165 story, 63 own state, 19 own action, 2
   (`src/engine/fox_radio.c:628`), and nothing here tried it.
 - How enemies choose a target when a wingman's slot is empty, which the chase lines depend on. Not read.
 
+### 2026-11-06, #100, who an enemy effect can hit
+
+Identity: ROM US 1.0, on commit `7700bed8`, Linux, GCC, Debug, OpenGL in software, no window, one game with two players.
+
+Observed, with `player_trace.py effects --players 2` on Corneria, on rails and with `--all-range`:
+
+- Before the fix (`8e00e695`), 19 of 34 lines hold in both sections. All 16 player 0 controls pass. Player 1 is hit by
+  none of the 15 cases that should hit or deflect.
+- With the fix, 34 of 34 hold in both sections, also with player 1 in a barrel roll, player 0 in one, and a player out.
+- Only the spawn is forced, and the effect's own update does the test. Corneria ran the effects of other levels: this
+  does not show those levels, and it does not show enemy fire in play hitting player 1.
+- A probe that moved player 0 made the camera jump and aborted the game: `std::vector::back()` on an empty vector, from
+  `Matrix_Push` in `Display_PlayerShadow_Update`, with a state 1 Effect374 placed. That run had 16 camera skips. With
+  player 0 left alone the same section had 3, and no abort. Earlier runs with 13 to 17 skips did not abort either.
+
+Read, in this checkout:
+
+- `gPlayer` is the array, so a bare `gPlayer` is player 0. `sp_audit.py` finds 21 such arguments, not the 20 of the
+  issue: the extra one is `Turret_Draw(gPlayer)` (`src/engine/fox_display.c:2084`), in a mode nothing sets
+  (`include/sf64player.h:64`).
+- All 15 callers of `func_effect_8007A774` (`src/engine/fox_effect.c:1022`) pass player 0, 9 as `gPlayer` and 6 as
+  `&gPlayer[0]` (`src/overlays/ovl_i3/fox_so.c:747,826,876,904`, `src/overlays/ovl_i6/fox_andross.c:1609,1621`), and
+  none uses what it returns. So one line inside it covers all of them.
+- Enemy lasers and Effect398 test the player themselves, with 100 more reach in a barrel roll, which deflects the shot
+  (`src/engine/fox_effect.c:2927-2945`). `deflectCount` is never read (`include/sf64player.h:316`).
+- Effect398 also calls `func_effect_8007A774` after its own test (`src/engine/fox_effect.c:3124`). That call does not
+  look at a roll, so a rolling player deflects the shot and is hit by it: the case `shot398-roll` shows both.
+- Effect397 tests its target only when player 0 is not rolling (`src/overlays/ovl_i4/fox_bo.c:1831`). In co-op each
+  player's own roll counts, so `src/overlays/ovl_i4/fox_bo.c:1834` tests the others while player 0 rolls.
+- `Player_ApplyDamage` writes `gCalcMatrix` (`src/engine/fox_play.c:1032-1033`). The test of Effect395's beam needs the
+  beam's rotation there, and `CoopEffects_BeamHit` runs before player 0's test (`src/engine/fox_effect.c:3887-3892`), so
+  it pushes and pops around the call.
+- Who an effect is aimed at does not change: an effect that aims does so at player 0, as upstream.
+- `Effect_Move` measures its cull from player 0's camera (`src/engine/fox_enmy.c:2797`), on rails only
+  (`src/engine/fox_enmy.c:3147-3151`).
+
+Derived:
+
+- The abort comes from upstream's code, in a path #100 does not touch. On a camera jump recording goes off
+  (`src/engine/fox_display.c:1918`), so `Effect_DrawAll` opens the effect's child without a push
+  (`src/engine/fox_edisplay.c:1971`). `Effect_Effect374_Draw` turns recording on (`src/engine/fox_effect.c:2306`), so
+  the close pops the root (`src/engine/fox_edisplay.c:1994`), and the next recorded call finds no path
+  (`src/port/interpolation/FrameInterpolation.cpp:179`). It needs a jump and that draw in one frame, which fits the runs
+  above. `Effect_Effect382_Draw` has the same shape (`src/engine/fox_effect.c:235`).
+- An effect aimed at a player far behind player 0's camera on rails can be culled before its test.
+
+Unknown:
+
+- Whether that abort happens in normal play on Zoness. Not run there, and it was not run on the base build.
+- How the effects of other levels behave in co-op on those levels. Not run: Meteo, Sector X, Sector Y, Aquas, Zoness,
+  Area 6, Bolse, Solar, Venom, Titania, Macbeth.
+
 ### 2026-11-05, #6 (WP-06), on-rails: player position, path progress, camera
 
 Read from the source only; nothing was run. Line numbers are for `origin/coop` at 1ec6c677.
