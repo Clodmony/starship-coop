@@ -797,6 +797,68 @@ Read at `95962d04`, nothing was run. This is code reading, plus the level event 
 in the repo: they were read out of an `sf64.o2r` built from ROM US 1.0. It answers the question 0005 left open, and it
 describes the game only. The co-op rule is for a later record (DESIGN.md section 4, items 2 and 3).
 
+**2026-11-06, #89, what the runs showed.** Both points of #89 were run, so "nothing was run" above and the first item
+under Unknown below no longer hold for them. The entry stands otherwise, apart from the two sentences marked
+**Disagrees** in this note. To repeat it: `python tools/coop/wingman_check.py all`. Run at `797c678b` plus the test code
+of #89, which changes no game code: ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, one client, no co-op
+session. Each run is input by rule with the CVars `gLevelSelector`, `gSkipBriefing`, `gDebugWarpZone` and `gInvincible`,
+a trace of the four stores, and gdb stops at script 94's test and at `EVOP_RESTORE_TEAM` in the Sector X runs. Reaching
+Sector X needed no level-start switch: level select does it.
+
+Observed, in the scripted runs:
+
+- **Slippy forced down in Sector X** (`down`). A test switch wrote -1 at path 120000; nothing hit him. Script 94 tested
+  him at path 204798, and `EVOP_RESTORE_TEAM` ran once, at path 204833, for id 2, from script 94, with him at -1. From
+  that frame he read 255 and had a ship. The ship was gone by path 215221 and he stayed at 255.
+- **Slippy alive** (`alive`). The same test at the same path, reading 255. `EVOP_RESTORE_TEAM` did not run, and he had
+  no ship through path 218941, where the run ended.
+- **Slippy in his sit-out level** (`sitout`). -1 by the switch in Meteo, 0 at the start of Sector X, then as in `down`:
+  one `EVOP_RESTORE_TEAM` at path 204833, with him at 0, then 255 and a ship.
+- **A wingman at -1 across two level starts** (`chain`). Falco, -1 by the switch in Meteo, then Sector X, then Titania.
+  Every row of the table under Derived below matched, in all three stores: 0 at the start of Sector X, 255 at the start
+  of Titania. `D_ctx_80177C58` read -1 at the second level start and 0 at the third.
+- **Titania's -2** (`chain`). Slippy read -2 from Titania's load on, with saved at 255, on a run where nothing had
+  touched him (`fox_play.c:2689-2691`).
+- **A wingman going down with nothing forced.** In all three Sector X runs Peppy fell from 255 to -1 by steps of 2, 10
+  and 12, reaching -1 at path 187990 (`alive`, `down`) and 187390 (`sitout`). His ship stayed 73 to 85 frames more,
+  saved stayed 255, and he was still at -1 when the run ended.
+- **Ending a level by rule.** `gDebugWarpZone` and L ended Meteo and Sector X, through the warp.
+
+Observed, in one exploratory run each, which the tool does not repeat:
+
+- **Disagrees:** "The Hit64 CVars force a wingman to 0 at every load". Not on the first level of a run: with
+  `gHit64SlippyDead` on and Sector X as the first level, script 94's test read 255. From reading, not from the run:
+  `gClearPlayerInfo` is still set then, and its block writes 255 when the player is set up, after the load
+  (`fox_play.c:2951-2955`, `:5948`, `:4925-4928`).
+- `gDebugLevelComplete` did not end Corneria: the player stayed in `PLAYERSTATE_LEVEL_COMPLETE`, for 4000 frames on
+  rails and 9500 in all-range.
+- Falco forced to 0 in Corneria while he had no ship stayed at 0 for 668 frames, until his ship spawned, and read -1 on
+  that same trace line.
+
+Derived:
+
+- **Disagrees:** "whether he went down earlier in that level or is in his sit-out level". Script 94 brought him back in
+  both, but as far as the scripts show the first only happens forced. He has no ship before script 94 (`alive`), and in
+  the whole Sector X scripts only script 94 gives him a team id and `EVOP_DAMAGE_TEAM` is only used on Peppy. So in
+  normal play the script serves the sit-out level, and it brings him back one level early.
+
+Not run:
+
+- A real hit on Slippy or Falco: both were written by the switch. Peppy, the one real loss, was not followed to a later
+  level.
+- A normal level end. Every level here ended through the warp, as `MISSION_WARP`, not through a boss, and the clear
+  screen's heal was not looked at. The natural way out of Corneria was not run either.
+- The course menu: level select picks the next level on the map, so its "go on" was not taken.
+- Pause retry, retry course, Fox's death, game over, Aquas, the Venom levels, and Slippy's -2 at the Sector X boss. The
+  run ends early in Titania, so his return there was not run.
+- Anything with two clients.
+
+Unknown:
+
+- The Unknown below on a value of exactly 0 stays open. The exploratory run above shows a 0 lasting while no actor is
+  there to write -1, not the case it names, an actor removed while the value is 0. The drain cannot leave 0
+  (`fox_play.c:7038-7039`).
+
 Short answer: "they miss the next level and return after it" is right for the usual case. A wingman whose shields run
 out leaves the level, sits out the whole next level, and is back at full shields (255) in the level after that. It
 costs no life. It is not the whole story: Slippy can return inside Sector X, Slippy has a state of his own around
