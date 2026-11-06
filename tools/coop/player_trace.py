@@ -4,6 +4,7 @@
     python tools/coop/player_trace.py rails --players 2                                # input by rule, 1 and N players
     python tools/coop/player_trace.py run   local/replays/corneria.sfcr --players 2   # play it, then check
     python tools/coop/player_trace.py check local/test-trace-<time>/trace.txt          # check an existing trace
+    python tools/coop/player_trace.py shots --players 2                                # input by rule, who fired what
 
 `run` makes a fresh folder under local/ (data files copied in, a config with only gCoopDebugPlayerCount set), then
 starts the game with SF64_COOP_REPLAY_PLAY (input replay, WP-03) and SF64_COOP_TRACE
@@ -35,6 +36,18 @@ same time, checks the second trace as above, and compares the two on every frame
 with both: gPathProgress, gPathVelZ and gPathTexScroll must match single player, the section must end on the same frame,
 and each extra player must have covered --min-sweep units of x, stayed in the flight box, boosted and braked (its
 camDist only) and looped. Both runs set gInvincible: flying by rule, player 0 is shot down half way through the section.
+
+`shots` is the test for #86. It plays one replay by rule into Corneria's all-range section (see shot_input: pad 0 gets
+through the menus and stops firing, the other pads sweep and fire) with gHyperLaser, so every player starts with
+upgraded lasers, and with SF64_COOP_TRACE_STEER, because a replay cannot aim at a wingman. Then it checks the trace:
+
+  - at least --min-hits shots of players 1 and up hit a wingman while the radio was free; none of those hits holds an
+    enemy's dmgSource or starts an enemy-hit line,
+  - hits on wingmen by Granga's missiles are the control: at least --min-enemy of them start their enemy-hit line. A
+    script line can take the radio on the same frame, so not every one does,
+  - a ground hit of upgraded lasers leaves two marks: at least --min-ground frames have two while a player 1 and up
+    has them, and none has two once those players are back on single lasers. Player 0 keeps gHyperLaser and does not
+    fire, so a shot that read player 0's lasers would show there.
 
 Stopping the game can cut the last line of the trace; only that line may be cut.
 """
@@ -74,7 +87,8 @@ ARWING = 0
 
 # One player on one frame and one whole frame, as player_trace.c writes them.
 Slot = namedtuple("Slot", "state cs x y z parked draw zpath camdist xpath ypath width shields somersault form")
-Row = namedtuple("Row", "frame level mode players path pathvel scroll")
+Row = namedtuple("Row", "frame level mode players path pathvel scroll radio_state radio_id lasers hits marks")
+Hit = namedtuple("Hit", "actor ai type source shooter")
 
 # OSContPad.button
 BUTTON_A = 0x8000
@@ -90,6 +104,18 @@ RAIL_FRAMES = 10500
 RAIL_SEEDS = (1234, 5678, 9012, 111, 222, 333)
 RAIL_REPLAY_HEADER = 40  # ReplayHeader in src/port/coop/test/replay.c
 RAIL_SETTLE = 100  # frames of the section left out of the speed check: the level starts with its own boost
+
+# Input by rule for `shots`: pad 0 stops firing before player 0 flies and presses L for all-range (CVar
+# gDebugJumpToAllRange), the other pads fire from SHOT_INPUT_START on.
+SHOT_LEAD_STOP = 4700
+SHOT_L_FRAME = 4840
+SHOT_INPUT_START = 5000
+SHOT_FRAMES = 9000
+BUTTON_L = 0x0020
+
+# dmgSource and radio lines of ActorTeamBoss_HandleDamage, src/engine/fox_hud.c
+DMG_ENEMY = (2, 100)  # DMG_SRC_2, DMG_SRC_100
+ENEMY_LINES = (20030, 20040, 20050)
 
 
 def find_exe(given):
@@ -128,6 +154,8 @@ def play(args):
     env["SF64_COOP_REPLAY_PLAY"] = str(replay)
     env["SF64_COOP_REPLAY_REPORT"] = str(report_path)
     env["SF64_COOP_TRACE"] = str(run_dir / "trace.txt")
+    if getattr(args, "steer", 0):
+        env["SF64_COOP_TRACE_STEER"] = str(args.steer)
     print(f"player_trace: run folder {run_dir}")
     start = time.monotonic()
     proc = subprocess.Popen([str(exe)], cwd=run_dir, env=env)
@@ -176,8 +204,11 @@ def parse_row(line):
         players.append(Slot(int(s[0]), int(s[1]), float(s[2]), float(s[3]), float(s[4]), int(s[5]), int(s[6]),
                             float(s[7]), float(s[8]), float(s[9]), float(s[10]), float(s[11]), int(s[12]), int(s[13]),
                             int(s[14])))
+    radio = [int(v) for v in f.get("radio", "0,0").split(",")]
+    hits = [Hit(*(int(v) for v in h.split(":"))) for h in f["hits"].split(";")] if "hits" in f else []
+    lasers = [int(v) for v in f.get("lasers", "0").split(",")]
     return Row(int(f["frame"]), int(f["level"]), int(f["mode"]), players, float(f["path"]), float(f["pathvel"]),
-               float(f["scroll"]))
+               float(f["scroll"]), radio[0], radio[1], lasers, hits, int(f.get("marks", 0)))
 
 
 def parse(path):
@@ -396,10 +427,10 @@ def rail_lead(frame):
     return 0
 
 
-def write_rail_replay(path, frames):
-    """Write the input for `rails`, in the layout of ReplayHeader and ReplayFrame in src/port/coop/test/replay.c: no
-    checkpoints, so playback reports FAIL_MISMATCH at frame 0 and plays on. Hold and press pads get the same stick;
-    press holds the buttons that went down on this frame."""
+def write_pads(path, frames, pad_input):
+    """Write a replay in the layout of ReplayHeader and ReplayFrame in src/port/coop/test/replay.c: no checkpoints, so
+    playback reports FAIL_MISMATCH at frame 0 and plays on. pad_input(frame, pad) gives (button, stick_x, stick_y). Hold
+    and press pads get the same stick; press holds the buttons that went down on this frame."""
     data = bytearray(b"SFCR" + struct.pack("<III6i", 2, 20, 204, *RAIL_SEEDS))
     assert len(data) == RAIL_REPLAY_HEADER
     last = [0, 0, 0, 0]
@@ -407,10 +438,7 @@ def write_rail_replay(path, frames):
         hold = bytearray()
         press = bytearray()
         for pad in range(4):
-            if pad == 0:
-                button, stick_x, stick_y = (BUTTON_A if frame >= 60 and frame % 30 == 0 else 0) | rail_lead(frame), 0, 0
-            else:
-                button, stick_x, stick_y = rail_pad(frame, pad)
+            button, stick_x, stick_y = pad_input(frame, pad)
             hold += struct.pack("<Hbb16x", button, stick_x, stick_y)
             press += struct.pack("<Hbb16x", button & ~last[pad], stick_x, stick_y)
             last[pad] = button
@@ -420,6 +448,17 @@ def write_rail_replay(path, frames):
     temp = path.with_name(f"{path.name}.{os.getpid()}")
     temp.write_bytes(data)
     temp.replace(path)
+
+
+def rail_input(frame, pad):
+    if pad == 0:
+        return (BUTTON_A if frame >= 60 and frame % 30 == 0 else 0) | rail_lead(frame), 0, 0
+    return rail_pad(frame, pad)
+
+
+def write_rail_replay(path, frames):
+    """Write the input for `rails`."""
+    write_pads(path, frames, rail_input)
 
 
 def compare_path(solo, coop, args):
@@ -507,6 +546,84 @@ def rails(args):
     return 0 if ok else 1
 
 
+def shot_pad(frame, index):
+    """(button, stick_x, stick_y) of extra player `index` on `frame`: slow sweeps, a shot every 8 frames."""
+    if frame < SHOT_INPUT_START:
+        return 0, 0, 0
+    t = frame - SHOT_INPUT_START
+    return (BUTTON_A if t % 8 == 0 else 0), rail_sweep(t + 90 * index, 360, 50), rail_sweep(t + 40 * index, 240, 40)
+
+
+def shot_input(frame, pad):
+    if pad == 0:
+        return (BUTTON_A if 60 <= frame < SHOT_LEAD_STOP and frame % 30 == 0 else 0) | \
+            (BUTTON_L if frame == SHOT_L_FRAME else 0), 0, 0
+    return shot_pad(frame, pad)
+
+
+def write_shot_replay(path, frames):
+    """Write the input for `shots`."""
+    write_pads(path, frames, shot_input)
+
+
+def read_hits(rows):
+    """(n, hit) for each hit on a wingman on the frame before the wingman reads it: it stays in the trace until then."""
+    for n, row in enumerate(rows):
+        later = {h.actor for h in rows[n + 1].hits} if n + 1 < len(rows) else set()
+        yield from ((n, hit) for hit in row.hits if hit.actor not in later)
+
+
+def started_line(rows, n):
+    """The radio line that started on the frame after rows[n], or None."""
+    if n + 1 < len(rows) and rows[n].radio_state == 0 and rows[n + 1].radio_state != 0:
+        return rows[n + 1].radio_id
+    return None
+
+
+def check_shots(rows, args):
+    """Return (text, good) per rule of `shots`, for report_results."""
+    free = [(rows[n].frame, hit, started_line(rows, n)) for n, hit in read_hits(rows) if rows[n].radio_state == 0]
+    players = [h for h in free if 0 < h[1].shooter < args.players]
+    enemies = [h for h in free if h[1].shooter < 0 and h[1].source in DMG_ENEMY]
+    as_enemy = [h for h in players if h[1].source in DMG_ENEMY]
+    enemy_line = [h for h in players if h[2] in ENEMY_LINES]
+    with_line = [h for h in enemies if h[2] in ENEMY_LINES]
+    pairs = [r for r in rows if r.marks >= 2]
+    upgraded = [r for r in pairs if any(r.lasers[1:])]
+    single = [(r.frame, r.lasers) for r in pairs if not any(r.lasers[1:])]
+
+    def first(found):
+        return f", first at frame {found[0][0]}: {found[0][1:]}" if found else ""
+
+    return [
+        (f"wingmen hit by players 1 and up, radio free: {len(players)}, need {args.min_hits}",
+         len(players) >= args.min_hits),
+        (f"of those, with an enemy's dmgSource: {len(as_enemy)}{first(as_enemy)}", not as_enemy),
+        (f"of those, starting an enemy-hit line: {len(enemy_line)}{first(enemy_line)}", not enemy_line),
+        (f"enemy hits on wingmen, radio free: {len(enemies)}, with their line: {len(with_line)}, need "
+         f"{args.min_enemy}", len(with_line) >= args.min_enemy),
+        (f"frames with two laser marks, players 1 and up upgraded: {len(upgraded)}, need {args.min_ground}",
+         len(upgraded) >= args.min_ground),
+        (f"frames with two laser marks, players 1 and up on single lasers: {len(single)}{first(single)}", not single),
+    ]
+
+
+def shots(args):
+    replay = ROOT / "local" / "test-trace-shots.sfcr"
+    write_shot_replay(replay, args.frames)
+    args.replay = str(replay)
+    args.no_checkpoints = True
+    args.cvar = args.cvar + ["gDebugJumpToAllRange=1", "gInvincible=1", "gHyperLaser=1"]
+    trace = play(args)
+    if trace is None:
+        print("player_trace: FAIL")
+        return 1
+    print(f"player_trace: trace {trace}")
+    ok = report_results(check_shots(parse(trace), args))
+    print(f"player_trace: shots {'PASS' if ok else 'FAIL'}")
+    return 0 if ok else 1
+
+
 def add_check_options(parser):
     parser.add_argument("--players", type=int, default=2, help="players the trace must hold (default 2)")
     parser.add_argument("--min-move", type=float, default=5.0)
@@ -541,7 +658,19 @@ def main():
                    help="how far knockback may push past the box (default 100)")
     t.add_argument("--cvar", action="append", default=[], metavar="NAME[=VALUE]", help="another CVar for both runs")
     add_check_options(t)
+    h = sub.add_parser("shots", help="input by rule in all-range: what the shots of players 1 and up count as")
+    h.add_argument("--exe")
+    h.add_argument("--timeout", type=int, default=900, help="seconds to wait for the replay report (default 900)")
+    h.add_argument("--frames", type=int, default=SHOT_FRAMES, help=f"replay length (default {SHOT_FRAMES})")
+    h.add_argument("--steer", type=int, default=150, help="frames between shots carried to a wingman (default 150)")
+    h.add_argument("--min-hits", type=int, default=5, help="wingman hits by players the run must hold (default 5)")
+    h.add_argument("--min-enemy", type=int, default=1, help="enemy-hit lines the run must hold (default 1)")
+    h.add_argument("--min-ground", type=int, default=5, help="frames with two marks the run must hold (default 5)")
+    h.add_argument("--cvar", action="append", default=[], metavar="NAME[=VALUE]", help="another CVar for the run")
+    h.add_argument("--players", type=int, default=2, help="players in the run (default 2)")
     args = ap.parse_args()
+    if args.cmd == "shots":
+        sys.exit(shots(args))
     if args.cmd == "run":
         sys.exit(run(args))
     if args.cmd == "rails":
