@@ -28,9 +28,10 @@ Nothing in the online design may rule it out.
   `gControllerPress[]` indexed by `gPlayerNum` or `gMainController`.
 - **Two level modes matter:** `LEVELMODE_ON_RAILS` and `LEVELMODE_ALL_RANGE` (`include/sf64player.h:62`).
 - **On rails, path progress is one global fed by each player.** `Player_UpdatePath` copies the player's own `zPath`
-  into `gPathProgress` (`src/engine/fox_play.c:3627`); object loading, floor collision and object drawing use the
-  global, ground scroll sums every player's speed (`gPathTexScroll`, `:3637`), and path turns and culling are set on
-  `gPlayer[0]` only (`src/engine/fox_enmy.c:630`, `:2550-2591`, `:2694`). Details in NOTES.md, 2026-11-05, WP-06.
+  into `gPathProgress` (`src/engine/fox_play.c:3627`); object loading, dynamic-floor collision and object drawing use
+  the global, ground scroll sums every player's speed (`gPathTexScroll`, `:3637`; Titania follows the last writer),
+  and path turns and the x/y part of culling read `gPlayer[0]` only (`src/engine/fox_enmy.c:630`, `:2550-2591`,
+  `:2694-2696`). Details in NOTES.md, 2026-11-05, WP-06.
 - **Wingmen are separate from players.** `gTeamShields[6]` (`include/sf64context.h:23`) with ids starting at
   `TEAM_ID_FALCO` (`include/sf64player.h:18`); level init copies them from `gSavedTeamShields`
   (`src/engine/fox_play.c`, after the `gCamCount` lines).

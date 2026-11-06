@@ -93,7 +93,7 @@ Read from the source only; nothing was run. Line numbers are for `origin/coop` a
   `src/engine/fox_play.c:3649`; shot hit test `src/engine/fox_beam.c:857`). `camDist` is not 0 in all normal flight:
   `Player_ArwingBoost` pulls it towards -400 while boosting (`src/engine/fox_play.c:5228`; -130 in a meteo warp,
   `:5172`), `Player_ArwingBrake` towards 180 while braking (`:5326`) and back towards 0 on every call (`:5343`). Both
-  run each frame for the Arwing (`:5707-5708`). Cutscenes such as the warp exit also write it
+  run each frame for the Arwing (`:5707-5708`). Cutscenes such as `Cutscene_EnterWarpZone` also write it
   (`src/engine/fox_demo.c:469-490`).
 - *Path progress is per player, then copied into one global.* `Player_UpdatePath` (`src/engine/fox_play.c:3627`)
   adds `-vel.z` to `player->zPath`, sets `gPathVelZ` and `gPathProgress` from that player, and adds its `zPathVel` to
@@ -107,7 +107,8 @@ Read from the source only; nothing was run. Line numbers are for `origin/coop` a
   how fast that player's `zPath`, and with it `gPathProgress`, grows.
 - *The flight box follows the path centre.* `pos.x` is clamped to `xPath ± pathWidth`, `pos.y` to
   `yPath + pathFloor … yPath + pathHeight` (`src/engine/fox_play.c:4148-4170`). The box sizes come from
-  `Player_Setup` (`:4566`, sizes at `:4621-4659`; Arwing 700 wide, Landmaster 500).
+  `Player_Setup` (`:4566`, starting sizes at `:4621-4659`); after that `Player_Update` eases `pathWidth` towards 1100
+  for the Arwing and 700 for other forms (`:6182-6195`; `gFovYMode` is only ever 0). `pathWidth` is a half-width.
 - *Path turns.* `xPath`/`yPath` ease towards `xPathTarget`/`yPathTarget` in `Player_UpdatePath`
   (`src/engine/fox_play.c:3671-3674`); the step taken this frame goes into the globals `gPathVelX`/`gPathVelY`,
   which effects add to their own velocity (`src/engine/fox_effect.c:2459-2460`, `:2513-2514`, `:3038-3039`).
@@ -118,19 +119,25 @@ Read from the source only; nothing was run. Line numbers are for `origin/coop` a
   next entries of the level's object list whose `zPos1` lies in `[gPathProgress, gPathProgress + 200]` (`:630`),
   and checks `gPlayer[0]`'s path turn and `xPath` (`:592-595`, `:631-633`). It runs only while `gPlayer[0]` is not
   in the level intro, and culling is switched on by `gPlayer[0].state` (`:3146-3155`).
-- *Culling uses player 0's camera.* Objects are removed or skipped when they are behind
-  `gPlayer[0].cam.eye.z` in path space (`src/engine/fox_enmy.c:2694-2695`, `:2798`).
+- *Culling mixes both.* Objects are removed when `gPlayer[0].cam.eye.z + cullDistance < obj.pos.z + gPathProgress`
+  (`src/engine/fox_enmy.c:2694`, `:2798`) or when they are too far from `gPlayer[0]`'s `xPath`/`yPath`
+  (`:2695-2696`). On rails eye z stays near 400, so the depth test follows the global progress; x and y follow
+  player 0.
 - *Drawing.* Objects are drawn at `obj.pos.z + gPathProgress` (`src/engine/fox_edisplay.c:983` and many more).
-  An Arwing is drawn at `trueZpos + zPath` with **its own** `zPath` (`src/engine/fox_display.c:1417`, `:1466`,
-  `:1500`).
+  A player is drawn at `trueZpos + zPath` with **its own** `zPath` (`src/engine/fox_display.c:1519` for the Arwing,
+  `:1466` for the Landmaster, `:1500` on foot).
 - *Ground scroll.* `Background_DrawGround` scrolls the ground texture from `gPathTexScroll`, not `gPathProgress`
-  (`src/engine/fox_bg.c:1418`, `:1538`, `:1645`, `:1738`, `:1813`).
+  (`src/engine/fox_bg.c:1418`, `:1538`, `:1645`, `:1738`, `:1813`). Titania draws its ground from
+  `gPathGroundScroll` instead (`src/engine/fox_display.c:1951-1957`), which `Player_UpdatePath` sets from the last
+  caller when `gGroundType == 4` (`src/engine/fox_play.c:3639-3641`).
 - *Floor collision.* `Play_CheckDynaFloorCollision` (`src/engine/fox_play.c:1149`) adds the global `gPathProgress` to
   the z it is given (`:1194`, `:1201`, `:1237`). The player's hit points go through it while `gUseDynaFloor` is set
-  (`:2309-2341`; set at `:2713`), and so do shots (`src/engine/fox_beam.c:907`).
+  (`:2309-2341`; set at `:2713`), and so do shots (`src/engine/fox_beam.c:907`). Ground checks for
+  `gGroundType == 4` use the player's own `zPath` instead (`:1800-1801`, `src/engine/fox_tank.c:314`).
 - *Camera.* `Camera_Update` (`src/engine/fox_play.c:6664`) picks `Camera_UpdateArwingOnRails` (`:6211`) for the
   Arwing. Eye and look-at x/y follow the player's offset from `xPath`/`yPath`, scaled by `unk_148`/`unk_14C`
-  (0.777, set in `Player_Setup`); eye z is a constant 400 (`:6258`), look-at z is `trueZpos + gPathProgress - 1`
+  (0.777, set in `Player_Setup`); eye z is 400 plus `sOverheadCamDist`, and 200 more in a somersault (`:6258-6264`),
+  look-at z is `trueZpos + gPathProgress - 1`
   (`:6257`). The camera also reads the stick through `gInputPress` (`:6222-6223`). The frame's view is built from
   `gPlayer[gPlayerNum]`: its camera offset, rotated by its `yRot_114`/`xRot_120`, plus its `trueZpos + zPath`
   (`src/engine/fox_display.c:1833`, `:1866-1888`).
@@ -147,15 +154,17 @@ Read from the source only; nothing was run. Line numbers are for `origin/coop` a
   front of a camera whose eye sits at z = 400, so boost moves it forward and brake moves it back. Wherever else
   `pos.z` is written on rails (knockback, cutscenes) this can drift.
 - With two players the global progress is whatever the last player in the loop wrote, so player 1 would drive object
-  loading, floor collision and every object's draw position, while path turns and culling still follow player 0.
-- Ground scroll is not last-writer-wins: `gPathTexScroll` takes every player's `zPathVel`, so two players would scroll
-  the ground at the sum of their speeds, about twice as fast as one.
+  loading, dynamic-floor collision, the depth part of culling and every object's draw position, while path turns and
+  the x/y part of culling still follow player 0.
+- Ground scroll mostly does not follow the last writer: `gPathTexScroll` takes every player's `zPathVel`, so two
+  players would scroll the ground at the sum of their speeds, about twice as fast as one. Titania is the exception:
+  `gPathGroundScroll` follows the last writer.
 - If the two players fly at different speeds (one boosts, one brakes), their `zPath` values drift apart. Each Arwing
   is still drawn at its own depth, but objects are drawn with the shared progress, so the other player would look
   closer than it is and its shots would not line up with where it is drawn. Hit tests against shots compare level z
-  (`trueZpos`) and should stay correct. Floor collision would not: it adds the shared `gPathProgress` to a player's
-  z, so where `gUseDynaFloor` is set, the player whose `zPath` differs from the global is tested against the wrong
-  stretch of floor.
+  (`trueZpos`) and should stay correct. Dynamic-floor collision would not: it adds the shared `gPathProgress` to a
+  player's z, so where `gUseDynaFloor` is set, the player whose `zPath` differs from the global is tested against
+  the wrong stretch of floor.
 - Player 2 has its own `xPath`/`yPath`. Since path items only turn `gPlayer[0]`, player 2's flight box and camera
   would stay on the old path centre after a turn.
 - `Camera_Update` does not set `gInputPress` again, so each player's on-rails camera sways with whatever controller
