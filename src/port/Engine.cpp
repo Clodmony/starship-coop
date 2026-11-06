@@ -40,6 +40,7 @@
 #include "audio/GameAudio.h"
 #include "port/patches/DisplayListPatch.h"
 #include "port/mods/PortEnhancements.h"
+#include "port/coop/test/replay.h" // COOP: input replay for tests (WP-03)
 
 #include <Fast3D/interpreter.h>
 #include <filesystem>
@@ -302,6 +303,7 @@ void GameEngine::Create() {
     osSetTime(0);
 #endif
     PortEnhancements_Init();
+    CoopReplay_Init(); // COOP: no-op unless SF64_COOP_REPLAY_* is set (WP-03)
 }
 
 void GameEngine::Destroy() {
