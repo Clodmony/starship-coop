@@ -916,6 +916,41 @@ Unknown:
   `gLifeCount[0]`, `D_ctx_801779A8[0]`). Not counted here.
 - `src/port/` (enhancements, cheats, hooks) was out of scope.
 
+### 2026-11-06, #73, a new site under an existing audit row
+
+Read at `95962d04`. Python only: no build, no ROM, no game run. The tool behaviour below comes from temporary sites in
+a worktree, reverted afterwards, and from `python tools/coop/sp_audit_test.py`.
+
+Observed:
+
+- **Before.** `--check` printed the same `is stale` line for a new site, a moved line and a removed site, and passed
+  after a rerun, for all four kinds of new site tried: a new function under a `*` row (`fox_demo.c`) and under the
+  `ovl_i*` glob row (`fox_co.c`), a new pattern and one more of a pattern in a function with a row
+  (`Player_CheckBounds360`). An untracked file gave no output at all.
+- **After.** The committed `single-player.md` is the baseline. A site it does not have, counted per path, function and
+  pattern, is named with the row it would take its verdict from. A plain rerun then writes nothing and exits 1,
+  `--check` stays red, and only `--accept` turns it green. Moved lines, a removed site and a changed row still need
+  only the plain rerun. An untracked file with a site gets a warning and keeps the exit code.
+- **One commit is enough.** The list is in the commit, and `git clone --depth 1` gave the same results: green as
+  checked out, exit 1 with a new site. The scenarios of `sp_audit_test.py` run in a repository with no commit at all.
+  CI's checkouts set no `fetch-depth` (`.github/workflows/coop-build.yml:68`, `:93`).
+- **What it adds to the files: nothing.** The verdict file is unchanged and the list only changed its header. A count
+  per row would have rewritten all 254 rows of the verdict file. With a site added under a row, `--accept` changed 0
+  lines of the verdict file. All 36 overlay `.c` files changed at once took one `--accept` as well; 4 of those new
+  functions had no row, so `--check` stayed red on those alone, as it did before this change.
+- **Merges, tried in a scratch clone.** A branch that added a site with the old tool merged cleanly into this one, and
+  `--check` passed. Two branches that each accepted a site in one function conflicted in the list only: a plain rerun on
+  the file with its markers wrote it and passed, because both sides' rows count. Taking one side instead showed the
+  other side's site as new, and one `--accept` cleared it.
+
+Derived:
+
+- `--check` still passes once someone has run `--accept`. It stops the author, not the reviewer. A reviewer can list
+  what a pull request took in by putting the base's `single-player.md` in place and running `--check`.
+- `--accept` says a site was shown, not that its verdict fits.
+- A site that replaces another of the same pattern in the same function does not show: the list holds counts and line
+  numbers, not the code on the line. Test `known-gap-swap` pins this.
+
 ### 2026-11-01, project setup
 
 Observed: see DESIGN.md section 2 (player array, `gCamCount`, object arrays, RNG, event hooks, `USE_NETWORKING`).
