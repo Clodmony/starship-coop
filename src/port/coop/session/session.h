@@ -3,6 +3,8 @@
 // A co-op session on top of a transport: host or join, then the handshake of PROTOCOL.md rule 2. A client sends
 // SESSION_HELLO with its identity; the host compares it with its own and answers SESSION_WELCOME or SESSION_REFUSE.
 // Both sides get the same readable text for every difference. Only after the welcome do other messages pass.
+// After the welcome a client picks a character and the host keeps the roster of who flies what (decision 0005): see
+// CoopSession_Pick and CoopSession_Roster.
 // Nothing here blocks or reads a clock: call Poll once per frame with the time in ms, until it returns false.
 
 #include <stdbool.h>
@@ -21,13 +23,34 @@ extern "C" {
 #define COOP_SESSION_REFUSE_LINGER_MS 3000
 // Size of the text in an event.
 #define COOP_SESSION_TEXT 1024
+// The host and its clients. Player 0 is the host, player n is the client at transport peer n - 1.
+#define COOP_SESSION_PLAYERS (COOP_NET_MAX_PEERS + 1)
+
+// What a player slot holds. These are the wire values, see PROTOCOL.md. FOX to PEPPY run in the order of TeamId
+// (include/sf64player.h), so that WP-17 can get from one to the other, but this header does not depend on it.
+typedef enum {
+    COOP_CHARACTER_NO_PLAYER, // nobody is in this slot
+    COOP_CHARACTER_UNPICKED,  // a client that joined and holds no character yet
+    COOP_CHARACTER_FOX,       // player 0, always
+    COOP_CHARACTER_FALCO,
+    COOP_CHARACTER_SLIPPY,
+    COOP_CHARACTER_PEPPY,
+    COOP_CHARACTER_COUNT,
+} CoopCharacter;
+
+// Who flies what, by player index; each entry a CoopCharacter. No two players hold the same character.
+typedef struct {
+    uint8_t character[COOP_SESSION_PLAYERS];
+} CoopRoster;
 
 typedef enum {
-    COOP_SESSION_EV_JOINED,  // host: client `peer` passed the handshake. Client: the host let us in.
-    COOP_SESSION_EV_REFUSED, // host: client `peer` was refused. Client: the host refused us; ENDED follows.
-    COOP_SESSION_EV_LEFT,    // host: a client that had joined is gone
-    COOP_SESSION_EV_ENDED,   // client: the session is over, see end. Nothing follows.
-    COOP_SESSION_EV_MESSAGE, // a message above the session range from a peer that has joined
+    COOP_SESSION_EV_JOINED,       // host: client `peer` passed the handshake. Client: the host let us in.
+    COOP_SESSION_EV_REFUSED,      // host: client `peer` was refused. Client: the host refused us; ENDED follows.
+    COOP_SESSION_EV_LEFT,         // host: a client that had joined is gone
+    COOP_SESSION_EV_ENDED,        // client: the session is over, see end. Nothing follows.
+    COOP_SESSION_EV_MESSAGE,      // a message above the session range from a peer that has joined
+    COOP_SESSION_EV_ROSTER,       // the roster changed, see CoopSession_Roster
+    COOP_SESSION_EV_PICK_REFUSED, // host: client `peer` asked for a taken character. Client: we did. Nothing changes.
 } CoopSessionEventType;
 
 typedef enum {
@@ -38,7 +61,7 @@ typedef enum {
     COOP_SESSION_END_HOST_FULL,    // no free slot on the host
     COOP_SESSION_END_PROTOCOL,     // the other side runs another COOP_PROTOCOL_VERSION
     COOP_SESSION_END_NO_HANDSHAKE, // connected, but the handshake did not finish in time
-    COOP_SESSION_END_BAD_MESSAGE,  // the other side sent a handshake message we could not read
+    COOP_SESSION_END_BAD_MESSAGE,  // the other side sent a session message we could not read
 } CoopSessionEnd;
 
 // Reason bit in a refusal next to the CoopIdentityDiff bits: the hello could not be read.
@@ -48,6 +71,7 @@ typedef struct {
     CoopSessionEventType type;
     int peer;            // transport peer index; a client has the host at 0
     uint8_t playerIndex; // JOINED: the player slot, 0 for the host and 1 to 3 for clients in join order of slots
+    uint8_t character;   // PICK_REFUSED: the CoopCharacter that was asked for
     uint32_t diff;       // JOINED: warnings (COOP_ID_DIFF_PLATFORM). REFUSED: the reasons.
     CoopSessionEnd end;  // REFUSED on a client, ENDED, LEFT
     const char* text;    // for the player, "" if there is nothing to say; valid until the next Poll
@@ -66,11 +90,19 @@ bool CoopSession_Poll(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev);
 bool CoopSession_Send(CoopSession* s, int peer, uint16_t msgId, const void* data, uint16_t size, CoopNetLane lane);
 // The identity a joined peer sent (host) or the host's (client); NULL before the handshake.
 const CoopIdentity* CoopSession_PeerIdentity(const CoopSession* s, int peer);
+// Client: ask the host for Falco, Slippy or Peppy, in place of what we hold. The answer is a ROSTER event with the
+// character in our slot, or PICK_REFUSED, which leaves us connected and free to pick again. Picking what we already
+// hold has no answer. False if it could not be sent, on a host, before the welcome, or for any other character.
+bool CoopSession_Pick(CoopSession* s, CoopCharacter character);
+// The current roster, valid until the next Poll. NULL on a client before the first ROSTER event and after the end.
+const CoopRoster* CoopSession_Roster(const CoopSession* s);
 // Messages dropped because their sender had not joined, or because they were out of place in the handshake.
 uint32_t CoopSession_Ignored(const CoopSession* s);
 void CoopSession_Close(CoopSession* s);
 
 const char* CoopSession_EndText(CoopSessionEnd end);
+// "Falco"; "" for a value that is no character.
+const char* CoopSession_CharacterName(uint8_t character);
 
 #ifdef __cplusplus
 }

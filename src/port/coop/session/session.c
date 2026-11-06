@@ -108,6 +108,22 @@ bool CoopSession_Send(CoopSession* s, int peer, uint16_t msgId, const void* data
     return s->t->ops->send(s->t, peer, msgId, data, size, lane);
 }
 
+bool CoopSession_Pick(CoopSession* s, CoopCharacter character) {
+    (void) s;
+    (void) character;
+    return false;
+}
+
+const CoopRoster* CoopSession_Roster(const CoopSession* s) {
+    (void) s;
+    return NULL;
+}
+
+const char* CoopSession_CharacterName(uint8_t character) {
+    (void) character;
+    return "";
+}
+
 const char* CoopSession_EndText(CoopSessionEnd end) {
     switch (end) {
         case COOP_SESSION_END_REFUSED:
