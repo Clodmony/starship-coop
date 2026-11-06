@@ -8,6 +8,8 @@ src/engine/fox_context.c	<file scope>	ok	read	definitions
 # --- engine core: player setup, play loop, display
 src/engine/fox_play.c	Play_Init	setup	read	sets gCamCount 1 (4 in versus), then CoopPlayers_LevelInit; since WP-10 CoopPlayers_Count() sizes the player allocation, the clear (Player_InitializeAll) and the init loop
 # Player_InitializeAll and Play_Update have no site left: WP-10 moved their loops to CoopPlayers_Count() (#56).
+# Display_ArwingWingsOverrideLimbDraw, AllRangeGround_Draw, ActorAllRange_DrawBarrelRoll, HUD_LivesCount1_Draw,
+# HUD_LivesCount2_Draw and HUD_EdgeArrows_Draw have no site left: they follow the local player now (#30).
 src/engine/fox_play.c	Player_CanLockOn	setup	site	loops gCamCount players
 src/engine/fox_play.c	Player_UpdateLockOn	setup	site	loops gCamCount players
 src/engine/fox_play.c	Player_UpdateEffects	setup	site	loops gCamCount players
@@ -17,7 +19,7 @@ src/engine/fox_play.c	Player_FloorCheck	setup	site	gCamCount == 1 / != 1 as vers
 src/engine/fox_play.c	Player_CheckBounds360	setup	read	gCamCount != 1 as versus flag: wraps the arena at 12000
 src/engine/fox_play.c	Player_Setup	setup	site	gCamCount == gPlayerNum + 1: HUD and hit counters reset only when the last player is set up
 src/engine/fox_play.c	Player_UpdateTankJets	setup	site	gCamCount == 1 as "not versus" for jet effects
-src/engine/fox_play.c	Player_Update@gMainController	input	read	gInputHold/gInputPress/gControllerRumble taken from gMainController for every player; WP-14 replaces this
+src/engine/fox_play.c	Player_Update@gMainController	ok	read	with co-op off; in co-op CoopPlayers_SelectInput points at the player's own slot right after (WP-14)
 src/engine/fox_play.c	Player_Update@gCamCount	setup	site	gCamCount == 4: down in versus goes to VS_STANDBY, else fade out and restart level
 src/engine/fox_play.c	Player_Update@gPlayer[0]	flow	site	death restart resets gPlayer[0].zPath and path progress; boost check reads player 0 state for every player
 src/engine/fox_play.c	Play_InitEnvironment	view	site	kills a sound on player 0 source
@@ -33,8 +35,7 @@ src/engine/fox_display.c	Display_Update@gPlayer->	ok	read	debug numbers (csTimer
 src/engine/fox_display.c	Display_Update@gPlayer[0]	view	site	water, turret, Aquas lighting, starfield roll and face drawing keyed to player 0
 src/engine/fox_display.c	Display_Player_Update	setup	site	loops gCamCount players
 src/engine/fox_display.c	Display_LockOnIndicator	setup	site	loops gCamCount players
-src/engine/fox_display.c	Display_DrawHelpAlert	view	read	help arrow from player 0 camera to the wingman in trouble
-src/engine/fox_display.c	Display_ArwingWingsOverrideLimbDraw	view	site	wing damage effect of player 0
+src/engine/fox_display.c	Display_DrawHelpAlert	flow	read	goes by player 0 state; the arrow follows the camera drawn (#30)
 src/engine/fox_display.c	Display_ArwingWings	sim	site	draws wings with player 0 joint table for every Arwing drawn this way; wrong for player 2
 src/engine/camera_interp_skip.c	should_interpolate_perspective	view	read	port interpolation skip keyed to player 0 state
 src/engine/fox_radio.c	Radio_Draw@gCamCount	setup	site	no radio when gCamCount != 1
@@ -47,7 +48,6 @@ src/engine/fox_tank.c	func_tank_80045678	setup	site	gCamCount == 1 as "not versu
 src/engine/fox_tank.c	func_tank_80047FBC	flow	site	skips while player 0 is in level complete
 src/engine/fox_bg.c	Background_DrawBackdrop	view	site	backdrop from player 0 camera and state
 src/engine/fox_bg.c	Background_DrawSun	view	site	sun keyed to player 0 state
-src/engine/fox_bg.c	AllRangeGround_Draw	view	site	ground tiles chosen by player 0 position
 src/engine/fox_bg.c	Background_DrawGround	view	site	ground drawing by player 0 camera and state
 #
 # --- engine: all-range AI (fox_360.c)
@@ -60,7 +60,6 @@ src/engine/fox_360.c	ActorAllRange_UpdateEvents	flow	site	events paused while pl
 src/engine/fox_360.c	ActorAllRange_CheckObjectNearby	flow	site	checks player 0 intro state
 src/engine/fox_360.c	ActorAllRange_CheckPlayerNearby	sim	site	AI avoids player 0 only
 src/engine/fox_360.c	ActorAllRange_Update	sim	site	wingmen and Star Wolf follow, chase and react to player 0 (position, speed, somersault, shields)
-src/engine/fox_360.c	ActorAllRange_DrawBarrelRoll	view	site	billboard to player 0 camera
 #
 # --- engine: player shots (fox_beam.c)
 src/engine/fox_beam.c	PlayerShot_CheckActorHitbox	sim	site	hit test uses player 0 camera position
@@ -70,9 +69,8 @@ src/engine/fox_beam.c	PlayerShot_DrawLaser@gCamCount	setup	site	gCamCount < 4 as
 src/engine/fox_beam.c	PlayerShot_DrawLaser@gPlayer[0]	view	site	laser drawing keyed to player 0 intro state
 src/engine/fox_beam.c	PlayerShot_UpdateBeam	setup	site	gCamCount != 4 as "not versus"; also player 0 form (Landmaster) for every shot
 src/engine/fox_beam.c	PlayerShot_FindLockTarget	ok	read	versus branch, loops all players
-src/engine/fox_beam.c	PlayerShot_SearchLockOnTarget	input	site	charge shot release read from gMainController, not from the shot owner
 src/engine/fox_beam.c	PlayerShot_ApplyExplosionDamage	setup	site	loops gCamCount players
-src/engine/fox_beam.c	PlayerShot_UpdateBomb@gMainController	input	site	bomb detonation read from gMainController (button map already per sourceId)
+src/engine/fox_beam.c	PlayerShot_UpdateBomb@gMainController	view	site	rumble strength from player 0's distance to the blast; detonation reads the owner's pad since WP-14
 src/engine/fox_beam.c	PlayerShot_UpdateBomb@gPlayer[0]	sim	site	bomb blast pushes player 0 only
 src/engine/fox_beam.c	PlayerShot_UpdateLockOnShot	setup	site	loops gCamCount players
 src/engine/fox_beam.c	PlayerShot_Update	view	site	shots not drawn or updated while player 0 is in the intro
@@ -102,7 +100,7 @@ src/engine/fox_enmy.c	Scenery_Move	sim	site	scenery culled by player 0 camera
 src/engine/fox_enmy.c	Sprite_Move	sim	site	sprites culled by player 0 camera
 src/engine/fox_enmy.c	Effect_Move	sim	read	effects killed (Object_Kill) outside player 0 camera range
 src/engine/fox_enmy.c	Item_Move	sim	site	items culled by player 0 camera
-src/engine/fox_enmy.c	Actor_Update	input	read	campaign lock-on release reads gMainController for TEAM_ID_FOX; versus branch already per player
+src/engine/fox_enmy.c	Actor_Update	ok	read	campaign lock-on release with co-op off; in co-op CoopPlayers_ReleaseLockOns runs each player's down on its own A (WP-14)
 src/engine/fox_enmy.c	TexturedLine_Update	sim	site	damages player 0 only
 src/engine/fox_enmy.c	Object_Update	flow	site	objects update and load only in certain player 0 states
 #
@@ -164,8 +162,6 @@ src/engine/fox_effect.c	Effect_Effect399_Update	view	site	faces player 0 camera
 src/engine/fox_effect.c	*	view	name	effect moves with or faces player 0 (velocity, camera), or keys on player 0 state
 #
 # --- engine: HUD, pause, team AI (fox_hud.c)
-src/engine/fox_hud.c	HUD_LivesCount1_Draw	view	site	lives of player 0
-src/engine/fox_hud.c	HUD_LivesCount2_Draw	view	site	lives of player 0
 src/engine/fox_hud.c	HUD_TeamDownWrench_Draw	view	site	player 0 state
 src/engine/fox_hud.c	HUD_TeamShields_Draw	view	site	player 0 state
 src/engine/fox_hud.c	HUD_PauseScreen_Update	flow	site	pause menu retry and quit set player 0 state only
@@ -173,9 +169,8 @@ src/engine/fox_hud.c	HUD_RadarMark_Arwing_Draw	setup	site	gCamCount != 1 as vers
 src/engine/fox_hud.c	HUD_RadarMark_Draw	setup	site	gCamCount != 1 as versus flag
 src/engine/fox_hud.c	HUD_RadarWindow_Draw	setup	site	gCamCount != 1 as versus flag
 src/engine/fox_hud.c	HUD_RadarMarks_Setup	setup	site	loops players for radar marks
-src/engine/fox_hud.c	HUD_PlayerShieldGauge_Update	view	site	shield gauge shows player 0 and adds heal to player 0
+src/engine/fox_hud.c	HUD_PlayerShieldGauge_Update	sim	site	gold ring heal goes to player 0; the gauge shows the local player (#30)
 src/engine/fox_hud.c	HUD_RadioDamage_Type	view	site	player 0 radio damage
-src/engine/fox_hud.c	HUD_EdgeArrows_Draw	view	site	player 0 camera
 src/engine/fox_hud.c	HUD_Draw	setup	site	gCamCount != 1 draws the versus HUD
 src/engine/fox_hud.c	FoBase_ExplodeCs	flow	site	Fortuna base explosion cutscene on player 0
 src/engine/fox_hud.c	ActorTeamBoss_SlippyEscapeFromTiBoss	sim	site	wingman AI flies relative to player 0
@@ -285,3 +280,46 @@ src/overlays/ovl_i6/fox_andross.c	Andross_8018D2B0	sim	site	sets player 0 state
 src/overlays/ovl_i6/fox_sy.c	SectorY_SyShogun_Init	sim	site	boss; sets player 0 to START_360
 src/overlays/ovl_i6/fox_sy.c	SectorY_80198F5C	sim	site	boss; sets player 0 state and camera
 src/overlays/ovl_i6/fox_sy.c	SectorY_80199438	sim	site	boss cutscene; moves player 0 camera
+#
+# --- who fired: dmgSource and sourceId (#86, NOTES.md). flow rows name the work package that owns the rule
+include/sf64object.h	<file scope>@shooter	ok	read	the dmgSource field
+include/sf64player.h	<file scope>@shooter	ok	read	the sourceId field
+src/engine/fox_360.c	ActorAllRange_UpdateStarWolfEvents@shooter	flow	site	rescue: only player 0's hit on the chaser frees the wingman and earns the thanks; who may rescue is WP-17 (#15), NOTES #59
+src/engine/fox_360.c	ActorAllRange_UpdateEnemyEvents@shooter	flow	site	the same rescue when player 0 shoots a chaser down; WP-17 (#15)
+src/engine/fox_360.c	ActorAllRange_ApplyDamage@shooter	flow	site	only player 0 counts: Sector Z missile +11 hits and Katina ally kills are WP-16 (#14), friendly-fire and kill lines WP-17 (#15); players 1 and up get no line
+src/engine/fox_beam.c	PlayerShot_ExplodeBomb@shooter	ok	site	per shooter: bomb sound slot; colour in versus only
+src/engine/fox_beam.c	PlayerShot_Impact@shooter	ok	site	per shooter: lock-on timers; colour in versus only
+src/engine/fox_beam.c	PlayerShot_CheckObjectHitbox@shooter	ok	site	sourceId < 4 and gLaserStrength[sourceId]: every player, own lasers
+src/engine/fox_beam.c	PlayerShot_CheckEventHitbox@shooter	ok	site	sourceId < 4 and gLaserStrength[sourceId]: every player, own lasers
+src/engine/fox_beam.c	PlayerShot_CheckActorHitbox@shooter	ok	site	sourceId < 4 and gLaserStrength[sourceId]: every player, own lasers
+src/engine/fox_beam.c	PlayerShot_ApplyDamageToActor@shooter	ok	read	damage by the shooter's own lasers; dmgSource through CoopPlayers_DmgSource since #86
+src/engine/fox_beam.c	PlayerShot_CollisionCheck@shooter	flow	site	open rules: Star Wolf dodges only player 0's shots outside Venom 2 and only player 0 hurts the Saucerer (WP-16 #14, NOTES #59 question 8), shots hit player 0 only in all-range (friendly fire, #7), Shogun bonus only for sourceId 0 (fox_sy.c:564, :602, WP-16 #14)
+src/engine/fox_beam.c	PlayerShot_DrawLaser@shooter	view	site	colour by NPC id; player colours in the versus branch
+src/engine/fox_beam.c	PlayerShot_DrawShot@shooter	view	site	player colours in versus branches
+src/engine/fox_beam.c	PlayerShot_UpdateBeam@shooter	ok	read	ground hit uses the shooter's own lasers and form since #86; :1696 tests NPC ids
+src/engine/fox_beam.c	PlayerShot_FindLockTarget@shooter	ok	site	per shooter: lock-on timers, sound, reticle; gVsLockOnTimers in versus only
+src/engine/fox_beam.c	PlayerShot_SearchLockOnTarget@shooter	input	site	gControllerHold[sourceId] in versus only; the campaign reads gMainController for every shooter (WP-14)
+src/engine/fox_beam.c	PlayerShot_SetBombLight@shooter	ok	site	player colours in versus only
+src/engine/fox_beam.c	PlayerShot_ApplyExplosionDamage@shooter	ok	site	dmgSource through CoopPlayers_DmgSource since #86; the player loop is versus only
+src/engine/fox_beam.c	PlayerShot_UpdateBomb@shooter	input	site	the campaign detonates on gMainController with the shooter's button map, so a bomb of player 1 and up follows player 0's press (WP-14)
+src/engine/fox_beam.c	PlayerShot_UpdateLockOnShot@shooter	ok	site	per shooter: lock-on timers; gVsLockOnTimers in versus only
+src/engine/fox_beam.c	PlayerShot_UpdateShot@shooter	ok	site	the shooter's own player; gPlayerScores in versus only; the lock-on bonus adds to gHitCount for any shooter (WP-16, #14)
+src/engine/fox_effect.c	func_effect_8007FD84@shooter	ok	site	enemy effect hitting an actor writes CS_SHOT_ID
+src/engine/fox_enmy.c	ActorMissileSeek_Update@shooter	ok	site	enemy missile on a wingman writes DMG_SRC_2, which since #86 only enemies do in co-op
+src/engine/fox_enmy.c	Actor_Despawn@shooter	flow	read	only player 0's kills add to gHitCount, the hit-count drop and Star Wolf hits: WP-16 (#14), DESIGN.md section 4 item 5; the score branch is versus only
+src/engine/fox_enmy2.c	<file scope>@shooter	ok	site	NPC shot setup: writes NPC ids
+src/engine/fox_enmy2.c	ActorEvent_ProcessScript@shooter	ok	site	script damage writes DMG_SRC_100
+src/engine/fox_enmy2.c	ActorEvent_800701E0@shooter	flow	site	on-rails wingman line only for player 0's hit; WP-17 (#15)
+src/engine/fox_enmy2.c	ActorEvent_800720E8@shooter	ok	site	tests NPC ids only (Bill)
+src/engine/fox_hud.c	ActorTeamBoss_HandleDamage@shooter	flow	read	friendly lines only for player 0's hit, WP-17 (#15); the enemy line is enemies only since #86, so players 1 and up get no line
+src/engine/fox_play.c	Player_CollisionCheck@shooter	ok	site	dmgSource through CoopPlayers_DmgSource since #86
+src/engine/fox_play.c	Player_SetupArwingShot@shooter	ok	site	writes player->num
+src/engine/fox_play.c	Player_SetupTankShot@shooter	ok	site	writes player->num
+src/engine/fox_play.c	Player_SetupOnFootShot@shooter	ok	site	writes player->num
+src/engine/fox_tank.c	func_tank_800481F4@shooter	ok	site	dmgSource through CoopPlayers_DmgSource since #86
+src/overlays/ovl_i3/fox_a6.c	<file scope>@shooter	ok	site	cutscene shot writes CS_SHOT_ID
+src/overlays/ovl_i3/fox_aq.c	Aquas_Actor255_Update@shooter	ok	site	DMG_SRC_2 before Actor_Despawn: no player gets the kill
+src/overlays/ovl_i3/fox_aq.c	Aquas_AqPearl_Update@shooter	ok	site	DMG_SRC_2 before Actor_Despawn: no player gets the kill
+src/overlays/ovl_i3/fox_zo.c	Zoness_ZoBall_Update@shooter	ok	site	DMG_SRC_2 before Actor_Despawn: no player gets the kill
+src/overlays/ovl_i3/fox_zo.c	Zoness_ZoMine_Update@shooter	ok	site	DMG_SRC_2 before Actor_Despawn: no player gets the kill
+src/overlays/ovl_i6/fox_turret.c	Turret_SetupShot@shooter	ok	site	writes player->num
