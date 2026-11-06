@@ -2032,6 +2032,31 @@ static void Script_HostPicks(void) {
     CoopSession_Close(s);
 }
 
+// Two picks of one character in the same frame: the first to arrive has it, and the other client is told.
+static void Script_HostRace(void) {
+    const char* name = "host_race";
+    CoopIdentity a;
+    Script t;
+    Side sides[COOP_NET_MAX_PEERS];
+    CoopSession* s;
+    const CoopRoster* r;
+    uint32_t sent;
+
+    Id_Default(&a);
+    s = Script_HostWith(&t, sides, &a, 2);
+    r = CoopSession_Roster(s);
+    sent = t.sentCount;
+    Script_Pick(&t, 1, SLIPPY);
+    Script_Pick(&t, 0, SLIPPY);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Roster(name, r, FOX, UNPICKED, SLIPPY, NO_PLAYER);
+    EXPECT(sides[0].pickRefused == 1 && sides[1].pickRefused == 0, name, "the second pick was not the one refused");
+    EXPECT(Last_Sent(&t, COOP_MSG_SESSION_PICK_REFUSE)->peer == 0, name, "the refusal went to the wrong client");
+    Expect_RosterTo(name, &t, sent, 0, r);
+    Expect_RosterTo(name, &t, sent, 1, r);
+    CoopSession_Close(s);
+}
+
 // A pick that cannot be read is a broken peer, as a hello that cannot be read is: it goes, and its character with it.
 static void Expect_BadPick(const char* name, const uint8_t* data, uint16_t size) {
     CoopIdentity a;
@@ -2201,6 +2226,11 @@ static void Script_HostFullWindow(void) {
     EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_PICK_REFUSE) == 0, name, "a refusal went to a client that left");
     EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_ROSTER) == 1, name, "a roster went to a client that left");
     Expect_RosterTo(name, &t, sent, 0, r);
+    sent = t.sentCount;
+    Script_Connected(&t, 1);
+    Script_Hello(&t, 1, &a);
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_PICK_REFUSE) == 0, name, "a new client got the last one's refusal");
     CoopSession_Close(s);
 }
 
@@ -2725,6 +2755,7 @@ static int Sim_Main(void) {
     Script_CharacterNames();
     Script_HostRoster();
     Script_HostPicks();
+    Script_HostRace();
     Script_HostBadPicks();
     Script_HostPicksOutOfPlace();
     Script_HostFullWindow();
@@ -2838,7 +2869,7 @@ static int Bot_Main(const BotOptions* o) {
     uint32_t eager = o->eager;
     uint32_t nextPick = 0;
     uint32_t rosters = 0;
-    CoopRoster complete;
+    CoopRoster complete = { { 0 } };
     bool isComplete = false;
     bool joined = false;
     bool finished = false;

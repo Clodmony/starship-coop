@@ -908,6 +908,49 @@ Read at `a69c811a` (origin/coop).
 - Whether a player on such a link is better served by a longer linger time. It is a trade against a slot held by a
   client that already gave up.
 
+### 2026-11-06, #58, characters through the session
+
+Read at `95962d04` (origin/coop). The rules and the wire form are in PROTOCOL.md, section Characters.
+
+**Observed**
+
+- The session carried nothing about characters (`src/port/coop/session/session.c` at `95962d04`), and nothing in the
+  game calls the session yet, so all of this is reached from the test program only.
+- The transport's `disconnect` raises no event (`src/port/coop/net/transport.h`, "No event follows"), so a host that
+  drops a joined client itself has to report LEFT itself. `Host_Left` is the one way out of JOINED now.
+- A reliable send fails when 128 messages are in flight (PROTOCOL.md). `Host_Hello` can turn that into a refusal, but a
+  roster has no such way out: one that is simply lost leaves a client disagreeing for good. So what a peer is owed
+  stays owed and goes out at the start of a poll (`Host_SendOwed`).
+- A joined client does not read `SESSION_REFUSE` (`Client_Poll`; `Script_ClientJoined` holds it to that), so the host
+  cannot tell a joined client why it drops it. Such a client sees "The other player closed the connection."
+- `session_mutants.py` left out dropping `memset(p, 0, ...)` on CONNECTED as invisible. That no longer holds: the
+  memset also clears a refusal still owed to the slot's last client, so it is a row in the table now.
+
+**Derived**
+
+- Two clients cannot disagree on who won a character, because neither decides: the host orders picks by arrival, and
+  the reliable lane delivers its rosters in order. No version number is needed; the last roster is the truth.
+- A roster is 4 bytes, so sending the whole of it on each change is simpler than sending changes, and a client that
+  missed one behind a full window loses nothing.
+- Two clients can race for a wingman, so a pick can only be refused for that with three or more players. The tests
+  run three clients, which is also the most a host takes, so four players are covered and two are a smaller case.
+
+**Choices the owner can reverse** (from the coordinator's guidance and this code; not decided in a record)
+
+- A refused pick does not end the session; the client stays and may pick again.
+- Every roster change goes to everyone, so a menu can grey out what is taken (WP-25).
+- A client holds nothing until it picks. The host gives out nothing by itself.
+- A client that leaves frees its character and its slot at once. Nothing is kept for its return.
+- A client can change its pick to any free character, and cannot go back to holding nothing.
+
+**Unknown**
+
+- When picks close. Nothing stops a pick once a level runs; WP-24 has to.
+- What a level start does with a client that holds nothing. Decision 0005 says a wingman no player chose stays a
+  computer wingman, but not what such a client flies; WP-24 has to.
+- What happens in a level when a player leaves. The character is free in the roster at once, but until WP-17 it means
+  nothing in the level, and whether a computer wingman takes over is open.
+
 ### 2026-11-05, #19 (WP-21), session handshake: build, ROM, CVars
 
 Read at `1ec6c677` (origin/coop). The handshake code is in `src/port/coop/session/`, the wire form in PROTOCOL.md.
