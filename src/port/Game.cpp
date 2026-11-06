@@ -2,6 +2,7 @@
 
 #include <Fast3D/interpreter.h>
 #include "Engine.h"
+#include "port/coop/test/stop_signal.h" // COOP: clean exit on SIGTERM (#71)
 
 extern "C" {
 #include <sf64mesg.h>
@@ -42,7 +43,8 @@ int main(int argc, char *argv[]) {
     Lib_FillScreen(1);
     Main_Initialize();
     Main_ThreadEntry(NULL);
-    while (WindowIsRunning()) {
+    // COOP: a stop signal ends the loop as closing the window does, see stop_signal.h (#71)
+    while (WindowIsRunning() && !CoopStopSignal_Requested()) {
         push_frame();
     }
     GameEngine::Instance->Destroy();
