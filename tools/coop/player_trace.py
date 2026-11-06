@@ -396,10 +396,11 @@ def rail_lead(frame):
     return 0
 
 
-def write_rail_replay(path, frames):
+def write_rail_replay(path, frames, lead=None, pad_rule=rail_pad):
     """Write the input for `rails`, in the layout of ReplayHeader and ReplayFrame in src/port/coop/test/replay.c: no
     checkpoints, so playback reports FAIL_MISMATCH at frame 0 and plays on. Hold and press pads get the same stick;
-    press holds the buttons that went down on this frame."""
+    press holds the buttons that went down on this frame. lead(frame), if given, is (button, stick_x, stick_y) of pad 0
+    in place of the rule for `rails`, and pad_rule(frame, pad) the same for the other pads."""
     data = bytearray(b"SFCR" + struct.pack("<III6i", 2, 20, 204, *RAIL_SEEDS))
     assert len(data) == RAIL_REPLAY_HEADER
     last = [0, 0, 0, 0]
@@ -407,10 +408,12 @@ def write_rail_replay(path, frames):
         hold = bytearray()
         press = bytearray()
         for pad in range(4):
-            if pad == 0:
+            if pad == 0 and lead is not None:
+                button, stick_x, stick_y = lead(frame)
+            elif pad == 0:
                 button, stick_x, stick_y = (BUTTON_A if frame >= 60 and frame % 30 == 0 else 0) | rail_lead(frame), 0, 0
             else:
-                button, stick_x, stick_y = rail_pad(frame, pad)
+                button, stick_x, stick_y = pad_rule(frame, pad)
             hold += struct.pack("<Hbb16x", button, stick_x, stick_y)
             press += struct.pack("<Hbb16x", button & ~last[pad], stick_x, stick_y)
             last[pad] = button

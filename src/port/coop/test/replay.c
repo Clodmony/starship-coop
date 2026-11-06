@@ -12,6 +12,7 @@
 
 #include "replay.h"
 #include "switches.h"
+#include "test_pad.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -286,6 +287,7 @@ void CoopReplay_Init(void) {
 
     // Test switches (WP-02) apply before the first game frame, with or without a replay.
     CoopTestSwitches_Init();
+    CoopTestPad_Init();
 
     if ((reportPath != NULL) && (reportPath[0] != '\0')) {
         sReportPath = reportPath;

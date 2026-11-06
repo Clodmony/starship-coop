@@ -65,6 +65,11 @@ number of clients, transport.
    window and frame pacing, audio timing (`SF64_COOP_TEST_AUDIO_SAMPLES`) and C runtime math without FMA3
    (`SF64_COOP_TEST_NO_FMA3`, `src/port/coop/test/switches.h`). Every run's hash must equal the first run's on every
    recorded frame. `--only opengl,no-fma3` picks variants.
+   `python tools/coop/input_test.py` (WP-14, unattended, exit code 0 on `PASS`) checks who steers whom. `SF64_COOP_TEST_PAD=<file>`
+   makes the game attach an SDL virtual gamepad that presses what the file says (`src/port/coop/test/test_pad.h`), so
+   the live local controller is tested on the road a real pad takes, with nobody at the controls.
+   `SF64_COOP_REPLAY_LIVE_LOCAL=1` makes a replay fly every player but the local one (`src/port/coop/test/replay.h`).
+   The `unit` scenario is the only test of a local index other than 0, until the game can have one.
 3. **Two clients on one machine.** Two Starship processes with their own config, save and log folders (never the
    owner's), connected over loopback, both fed replays.
 4. **Network conditions (WP-27).** Lag, loss and reordering between the clients with a chaos relay, as in the hub's
