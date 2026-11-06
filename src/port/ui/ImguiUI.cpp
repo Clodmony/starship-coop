@@ -12,6 +12,7 @@
 #include <Fast3D/interpreter.h>
 #include "port/Engine.h"
 #include "port/notification/notification.h"
+#include "port/coop/ui/menu_window.h" // COOP: the co-op menu (WP-25)
 #include "port/coop/ui/version_label.h" // COOP: build id in the menu bar (#26)
 #include "utils/StringHelper.h"
 
@@ -80,9 +81,11 @@ void SetupGuiElements() {
     mNotificationWindow = std::make_shared<Notification::Window>("gNotifications", "Notifications Window");
     gui->AddGuiWindow(mNotificationWindow);
     mNotificationWindow->Show();
+    CoopUi::Setup(); // COOP: the co-op window, closed until the player opens it (WP-25)
 }
 
 void Destroy() {
+    CoopUi::Destroy(); // COOP: closes a running co-op session (WP-25)
     auto gui = Ship::Context::GetInstance()->GetWindow()->GetGui();
     gui->RemoveAllGuiWindows();
 
@@ -933,6 +936,8 @@ void GameMenuBar::DrawElement() {
         DrawCheatsMenu();
 
         ImGui::SetCursorPosY(0.0f);
+
+        CoopUi::DrawMenuEntry(); // COOP: the only change with no session (WP-25)
 
         ImGui::SetCursorPosY(0.0f);
 
