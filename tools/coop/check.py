@@ -59,12 +59,13 @@ def main():
     if dups:
         failures.append("duplicate message ids in docs/coop/PROTOCOL.md: " + ", ".join(dups))
 
-    # 5. Transport mutation check: every break in net_mutants.py must still match net_core.c (no build, no write).
-    mut = subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "coop" / "net_mutants.py"), "--check"],
-                         cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
-    if mut.returncode != 0:
-        failures.append("tools/coop/net_mutants.py --check failed; update the break that guards the code you changed:\n  "
-                        + "\n  ".join((mut.stdout + mut.stderr).strip().splitlines()))
+    # 5. Mutation checks: every break must still match the source it guards (no build, no write).
+    for tool in ("net_mutants.py", "session_mutants.py"):
+        mut = subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "coop" / tool), "--check"],
+                             cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
+        if mut.returncode != 0:
+            failures.append(f"tools/coop/{tool} --check failed; update the break that guards the code you changed:\n  "
+                            + "\n  ".join((mut.stdout + mut.stderr).strip().splitlines()))
 
     # Info: where the fork diverges from upstream game code.
     grep = git("grep", "-n", "COOP:", "--", "src", "include", ":!src/port/coop")

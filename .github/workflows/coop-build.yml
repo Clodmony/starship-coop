@@ -83,6 +83,8 @@ jobs:
         run: python3 tools/coop/net_test.py --config Release
       - name: Session tests
         run: python3 tools/coop/session_test.py --config Release
+      - name: Session tests under AddressSanitizer and UBSan
+        run: python3 tools/coop/session_test.py --config Release --asan
 
   windows:
     name: Co-op build (Windows)

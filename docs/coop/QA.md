@@ -56,14 +56,28 @@ number of clients, transport.
    configured build directory but no ROM. WP-27 does the same with real game clients.
    Whether those scenarios can fail at all is checked by `python tools/coop/net_mutants.py`: it breaks one behaviour
    of `net_core.c` at a time and requires the named scenario to fail (#44). Run it after changing `net_core.c`.
+   `python tools/coop/session_mutants.py` does the same for `session.c` and `session_test.py` (#55), and
+   `python tools/coop/session_test.py --asan` runs the session tests under AddressSanitizer and UBSan (CI does, on
+   Linux); `session_mutants.py --asan` shows that run can fail.
 5. **Regression per bug.** Every desync fix comes with the replay that triggered it; every transport fix adds a
-   break to `tools/coop/net_mutants.py`.
+   break to `tools/coop/net_mutants.py`, every session fix one to `tools/coop/session_mutants.py`.
 
 Running tests must never use or modify the owner's own `starship.cfg.json`, saves, `mods/` folder or running game.
 
 ## Results
 
 Newest first. One block per run that matters (a milestone, a release, a QA level change).
+
+```
+date:       2026-11-06
+commit:     issue/55-session-tests, on a69c811a
+identity:   no game, no ROM; Linux, GCC, Debug; 2 or 3 processes, UDP over loopback, chaos relay
+what ran:   python tools/coop/session_test.py, then with --asan; python tools/coop/session_mutants.py, then with --asan;
+            python tools/coop/net_mutants.py
+result:     9/9 scenarios, plain and under AddressSanitizer and UBSan. All 129 session breaks caught (139 break-and-test
+            pairs), all 3 sanitizer breaks caught, all 16 transport breaks caught (20 pairs). Handshake and transport
+            only, not co-op play.
+```
 
 ```
 date:       2026-11-05
