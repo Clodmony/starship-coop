@@ -3,13 +3,17 @@
 //   coop_session_test sim
 //       The session over the real transport core in a seeded virtual network: no sockets, no real time. Every
 //       mismatch, a match, lossy links, two clients, broken and silent peers, raw peers that push game messages
-//       before the welcome. Then the session on a scripted transport: every failure and time-out on demand, to the
-//       millisecond. Prints one line, exits 0 on PASS.
-//   coop_session_test host --port-file F [--clients N] [identity options] [--out FILE] [--max-seconds S] [--eager N]
-//   coop_session_test client --connect HOST:PORT [identity options] [--out FILE] [--max-seconds S] [--eager N]
+//       before the welcome, three clients picking characters. Then the session on a scripted transport: every
+//       failure and time-out on demand, to the millisecond. Prints one line, exits 0 on PASS.
+//   coop_session_test host --port-file F [--clients N] [--players N] [identity options] [--out FILE] [--max-seconds S]
+//                          [--eager N]
+//   coop_session_test client --connect HOST:PORT [--pick NAME]... [--players N] [identity options] [--out FILE]
+//                            [--max-seconds S] [--eager N]
 //       Real processes over UDP. Each writes what happened as JSON. --eager sends N game messages straight into the
 //       transport, past CoopSession_Send, as soon as it has a connection; the session on the other side must drop
-//       them.
+//       them. --pick names a character (falco, slippy, peppy, fox) to ask for after the welcome; several go in order,
+//       the next one after each refusal. With --players a client stays until the first N players all hold a
+//       character, and the JSON has that roster.
 //
 // Identity options: --build TEXT --platform TEXT --rom HEX (repeat for several archives) --cvar NAME=VALUE (repeat).
 // Defaults: build "test-build", this machine's platform, ROM US 1.0, every CVar at its default.
@@ -31,6 +35,13 @@
 #define ROM_US10 0x76924CA9u
 #define ROM_OTHER 0x94F1D5A7u
 #define TEST_PAYLOAD "session test"
+
+#define NO_PLAYER COOP_CHARACTER_NO_PLAYER
+#define UNPICKED COOP_CHARACTER_UNPICKED
+#define FOX COOP_CHARACTER_FOX
+#define FALCO COOP_CHARACTER_FALCO
+#define SLIPPY COOP_CHARACTER_SLIPPY
+#define PEPPY COOP_CHARACTER_PEPPY
 
 static void Fail(const char* scenario, const char* what) {
     printf("sim: FAIL %s: %s\n", scenario, what);
@@ -233,8 +244,13 @@ typedef struct {
     uint8_t playerIndex;
     uint32_t messages;      // TEST_SESSION with its payload
     uint32_t otherMessages; // anything else above the session range
+    uint32_t rosters;       // ROSTER events. Not in `events`: they come along with JOINED and LEFT.
+    uint32_t pickRefused;
+    uint8_t refusedCharacter;
     char text[COOP_SESSION_TEXT];
     char endText[COOP_SESSION_TEXT]; // of the last LEFT or ENDED
+    // Of the last PICK_REFUSED.
+    char pickText[COOP_SESSION_TEXT];
 } Side;
 
 static void Side_Record(Side* side, const CoopSessionEvent* ev) {
@@ -242,6 +258,11 @@ static void Side_Record(Side* side, const CoopSessionEvent* ev) {
     EXPECT(ev->type == COOP_SESSION_EV_JOINED || ev->playerIndex == 0, "events", "a stale field in an event");
     EXPECT(ev->type == COOP_SESSION_EV_MESSAGE || (ev->msgId == 0 && ev->size == 0 && ev->data == NULL), "events",
            "a stale field in an event");
+    EXPECT(ev->type == COOP_SESSION_EV_PICK_REFUSED || ev->character == 0, "events", "a stale field in an event");
+    if (ev->type == COOP_SESSION_EV_ROSTER) {
+        side->rosters++;
+        return;
+    }
     side->events++;
     switch (ev->type) {
         case COOP_SESSION_EV_JOINED:
@@ -277,6 +298,13 @@ static void Side_Record(Side* side, const CoopSessionEvent* ev) {
             } else {
                 side->otherMessages++;
             }
+            break;
+        case COOP_SESSION_EV_PICK_REFUSED:
+            side->pickRefused++;
+            side->refusedCharacter = ev->character;
+            snprintf(side->pickText, sizeof(side->pickText), "%s", ev->text);
+            break;
+        case COOP_SESSION_EV_ROSTER:
             break;
     }
 }
@@ -875,7 +903,7 @@ static void Sim_RawClient(void) {
 
 #define SCRIPT_T0 0xFFFFFC00u // scripted clocks start here, so the time-outs run across the 32-bit wrap
 #define SCRIPT_EVENTS 8
-#define SCRIPT_SENDS 8
+#define SCRIPT_SENDS 64
 
 typedef struct {
     int peer;
@@ -1025,15 +1053,25 @@ static void Script_Refuse(Script* t, const CoopIdentity* id, uint32_t reasons) {
     Script_Message(t, 0, COOP_MSG_SESSION_REFUSE, buf, Wire_Refuse(id, reasons, buf));
 }
 
-// The last thing sent: msgId to peer on the reliable lane, with the identity id behind the first skip bytes.
+static const ScriptSent* Last_Sent(const Script* t, uint16_t msgId) {
+    uint32_t i;
+
+    for (i = t->sentCount; i > 0; i--) {
+        if (t->sent[i - 1].msgId == msgId) {
+            return &t->sent[i - 1];
+        }
+    }
+    return NULL;
+}
+
+// The last msgId sent: to peer on the reliable lane, with the identity id behind the first skip bytes.
 static void Expect_Sent(const char* name, const Script* t, int peer, uint16_t msgId, uint16_t skip,
                         const CoopIdentity* id) {
-    const ScriptSent* m;
+    const ScriptSent* m = Last_Sent(t, msgId);
     CoopIdentity got;
 
-    EXPECT(t->sentCount > 0, name, "nothing was sent");
-    m = &t->sent[t->sentCount - 1];
-    EXPECT(m->peer == peer && m->msgId == msgId && m->lane == COOP_NET_RELIABLE, name, "the wrong message was sent");
+    EXPECT(m != NULL, name, "nothing was sent");
+    EXPECT(m->peer == peer && m->lane == COOP_NET_RELIABLE, name, "the wrong message was sent");
     EXPECT(m->size > skip, name, "a handshake message without an identity");
     EXPECT(CoopIdentity_Read(&got, m->data + skip, (uint16_t) (m->size - skip)) == m->size - skip, name,
            "the identity sent cannot be read");
@@ -1425,7 +1463,7 @@ static void Script_HostSlots(void) {
         EXPECT(sides[peer].joined == 1 && sides[peer].playerIndex == peer + 1, name,
                "the host event has the wrong slot");
         Expect_Sent(name, &t, peer, COOP_MSG_SESSION_WELCOME, 1, &a);
-        EXPECT(t.sent[t.sentCount - 1].data[0] == peer + 1, name, "the welcome has the wrong slot");
+        EXPECT(Last_Sent(&t, COOP_MSG_SESSION_WELCOME)->data[0] == peer + 1, name, "the welcome has the wrong slot");
     }
 
     // Events for a peer that cannot exist change nothing, not even a counter.
@@ -1752,6 +1790,884 @@ static void Script_ClientJoined(void) {
     CoopSession_Close(s);
 }
 
+// ---- Characters on a scripted transport ----
+
+static void Expect_Roster(const char* name, const CoopRoster* r, uint8_t p0, uint8_t p1, uint8_t p2, uint8_t p3) {
+    const uint8_t want[COOP_SESSION_PLAYERS] = { p0, p1, p2, p3 };
+
+    EXPECT(r != NULL, name, "no roster");
+    EXPECT(memcmp(r->character, want, sizeof(want)) == 0, name, "the roster is wrong");
+}
+
+static uint32_t Sent_Since(const Script* t, uint32_t from, uint16_t msgId) {
+    uint32_t n = 0;
+
+    for (; from < t->sentCount; from++) {
+        n += t->sent[from].msgId == msgId;
+    }
+    return n;
+}
+
+// Since from, peer got the roster exactly once: on the reliable lane, with the bytes of want.
+static void Expect_RosterTo(const char* name, const Script* t, uint32_t from, int peer, const CoopRoster* want) {
+    uint32_t n = 0;
+
+    for (; from < t->sentCount; from++) {
+        const ScriptSent* m = &t->sent[from];
+
+        if (m->peer == peer && m->msgId == COOP_MSG_SESSION_ROSTER) {
+            n++;
+            EXPECT(m->lane == COOP_NET_RELIABLE, name, "a roster on the unreliable lane");
+            EXPECT(m->size == sizeof(want->character) && memcmp(m->data, want->character, m->size) == 0, name,
+                   "the roster sent is not the host's");
+        }
+    }
+    EXPECT(n == 1, name, "a peer did not get the roster exactly once");
+}
+
+static void Script_Pick(Script* t, int peer, uint8_t character) {
+    Script_Message(t, peer, COOP_MSG_SESSION_PICK, &character, 1);
+}
+
+static void Script_RosterMsg(Script* t, uint8_t p0, uint8_t p1, uint8_t p2, uint8_t p3) {
+    const uint8_t bytes[COOP_SESSION_PLAYERS] = { p0, p1, p2, p3 };
+
+    Script_Message(t, 0, COOP_MSG_SESSION_ROSTER, bytes, sizeof(bytes));
+}
+
+// A host with joined clients at peers 0 to clients - 1.
+static CoopSession* Script_HostWith(Script* t, Side* sides, const CoopIdentity* id, int clients) {
+    CoopSession* s = Script_Host(t, sides, id);
+    int peer;
+
+    for (peer = 0; peer < clients; peer++) {
+        Script_Connected(t, peer);
+        Script_Hello(t, peer, id);
+        Drain(s, SCRIPT_T0, sides);
+    }
+    return s;
+}
+
+// A client that the host welcomed as player.
+static CoopSession* Script_Joined(Script* t, Side* side, const CoopIdentity* id, uint8_t player) {
+    CoopSession* s = Script_Client(t, side, id);
+
+    Script_Welcome(t, id, player);
+    Drain(s, SCRIPT_T0 + 1, side);
+    return s;
+}
+
+static void Script_CharacterNames(void) {
+    static const struct {
+        uint8_t character;
+        const char* text;
+    } cases[] = {
+        { FOX, "Fox" },    { FALCO, "Falco" }, { SLIPPY, "Slippy" },         { PEPPY, "Peppy" },
+        { NO_PLAYER, "" }, { UNPICKED, "" },   { COOP_CHARACTER_COUNT, "" }, { 0xFF, "" },
+    };
+    size_t i;
+
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        EXPECT(strcmp(CoopSession_CharacterName(cases[i].character), cases[i].text) == 0, "character_names",
+               "wrong name");
+    }
+}
+
+// Who is in the roster: the host from the start, a client from its welcome until it goes.
+static void Script_HostRoster(void) {
+    const char* name = "host_roster";
+    CoopIdentity a, other;
+    Script t;
+    Side sides[COOP_NET_MAX_PEERS];
+    CoopSession* s;
+    const CoopRoster* r;
+    uint32_t sent;
+
+    Id_Default(&a);
+    Id_Other(&other);
+    s = Script_Host(&t, sides, &a);
+    r = CoopSession_Roster(s);
+    Expect_Roster(name, r, FOX, NO_PLAYER, NO_PLAYER, NO_PLAYER);
+
+    // Not yet at the connection.
+    Script_Connected(&t, 0);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Roster(name, r, FOX, NO_PLAYER, NO_PLAYER, NO_PLAYER);
+    EXPECT(sides[0].rosters == 0 && t.sentCount == 0, name, "a roster for a client that has not joined");
+
+    // Joined: in the roster without a character, and the client hears of it after its welcome.
+    Script_Hello(&t, 0, &a);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Roster(name, r, FOX, UNPICKED, NO_PLAYER, NO_PLAYER);
+    EXPECT(sides[0].rosters == 1, name, "the host's game did not hear of the roster");
+    EXPECT(t.sentCount == 2 && t.sent[0].msgId == COOP_MSG_SESSION_WELCOME, name, "no roster right after the welcome");
+    Expect_RosterTo(name, &t, 0, 0, r);
+
+    // By slot, and everyone who joined hears of it.
+    sent = t.sentCount;
+    Script_Connected(&t, 2);
+    Script_Hello(&t, 2, &a);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Roster(name, r, FOX, UNPICKED, NO_PLAYER, UNPICKED);
+    EXPECT(sides[0].rosters == 2, name, "the host's game did not hear of the second client");
+    Expect_RosterTo(name, &t, sent, 0, r);
+    Expect_RosterTo(name, &t, sent, 2, r);
+
+    // A refused client never was a player, so nothing changes when it comes or goes.
+    sent = t.sentCount;
+    t.pending = 1;
+    Script_Connected(&t, 1);
+    Script_Hello(&t, 1, &other);
+    Drain(s, SCRIPT_T0, sides);
+    Script_Gone(&t, 1, COOP_NET_END_CLOSED);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Roster(name, r, FOX, UNPICKED, NO_PLAYER, UNPICKED);
+    EXPECT(sides[0].rosters == 2 && Sent_Since(&t, sent, COOP_MSG_SESSION_ROSTER) == 0, name,
+           "a refused client changed the roster");
+    CoopSession_Close(s);
+}
+
+// Each character once: what the host takes, what it refuses and who hears of which.
+static void Script_HostPicks(void) {
+    const char* name = "host_picks";
+    CoopIdentity a;
+    Script t;
+    Side sides[COOP_NET_MAX_PEERS];
+    CoopSession* s;
+    const CoopRoster* r;
+    const ScriptSent* m;
+    uint32_t sent;
+    uint32_t rosters;
+    int peer;
+
+    Id_Default(&a);
+    s = Script_HostWith(&t, sides, &a, COOP_NET_MAX_PEERS);
+    r = CoopSession_Roster(s);
+    Expect_Roster(name, r, FOX, UNPICKED, UNPICKED, UNPICKED);
+
+    // Free: the client gets it and everyone hears of it.
+    sent = t.sentCount;
+    rosters = sides[0].rosters;
+    Script_Pick(&t, 0, FALCO);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Roster(name, r, FOX, FALCO, UNPICKED, UNPICKED);
+    for (peer = 0; peer < COOP_NET_MAX_PEERS; peer++) {
+        Expect_RosterTo(name, &t, sent, peer, r);
+    }
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_PICK_REFUSE) == 0, name, "a free character was refused");
+    EXPECT(sides[0].rosters == rosters + 1 && sides[0].pickRefused == 0, name, "the host's game heard the wrong thing");
+
+    // Taken: only the one who asked hears of it, and it stays.
+    sent = t.sentCount;
+    rosters = sides[0].rosters;
+    Script_Pick(&t, 1, FALCO);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Roster(name, r, FOX, FALCO, UNPICKED, UNPICKED);
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_PICK_REFUSE) == 1, name, "a taken character was not refused once");
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_ROSTER) == 0 && sides[0].rosters == rosters, name,
+           "a refusal changed the roster");
+    m = Last_Sent(&t, COOP_MSG_SESSION_PICK_REFUSE);
+    EXPECT(m->peer == 1 && m->lane == COOP_NET_RELIABLE && m->size == 1 && m->data[0] == FALCO, name,
+           "the refusal sent is wrong");
+    EXPECT(sides[1].pickRefused == 1 && sides[1].refusedCharacter == FALCO && sides[0].pickRefused == 0, name,
+           "the host's event has the wrong peer or character");
+    EXPECT(strcmp(sides[1].pickText, "Falco is already taken.") == 0, name, "wrong text");
+    EXPECT(sides[1].left == 0 && t.disconnects[1] == 0 && Session_CanSend(s, 1), name,
+           "a refused pick ended the client");
+
+    // Fox is player 0's, whatever it asks.
+    sent = t.sentCount;
+    Script_Pick(&t, 1, FOX);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Roster(name, r, FOX, FALCO, UNPICKED, UNPICKED);
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_PICK_REFUSE) == 1 && sides[1].refusedCharacter == FOX, name,
+           "Fox was not refused");
+
+    // A refused client may pick again.
+    Script_Pick(&t, 1, PEPPY);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Roster(name, r, FOX, FALCO, PEPPY, UNPICKED);
+
+    // What it already holds: not refused, nothing to tell.
+    sent = t.sentCount;
+    rosters = sides[0].rosters;
+    Script_Pick(&t, 1, PEPPY);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Roster(name, r, FOX, FALCO, PEPPY, UNPICKED);
+    EXPECT(t.sentCount == sent && sides[0].rosters == rosters && sides[1].pickRefused == 2, name,
+           "picking your own character did something");
+
+    // Another pick frees the old one at once.
+    Script_Pick(&t, 0, SLIPPY);
+    Script_Pick(&t, 2, FALCO);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Roster(name, r, FOX, SLIPPY, PEPPY, FALCO);
+    EXPECT(sides[2].pickRefused == 0, name, "the character given up was still taken");
+
+    // A refused pick keeps what the client holds.
+    Script_Pick(&t, 0, FALCO);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Roster(name, r, FOX, SLIPPY, PEPPY, FALCO);
+    EXPECT(sides[0].pickRefused == 1, name, "the last taken character was not refused");
+
+    // Gone: the character is free at once, and only those still here hear of it.
+    sent = t.sentCount;
+    rosters = sides[0].rosters;
+    Script_Gone(&t, 2, COOP_NET_END_CLOSED);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Roster(name, r, FOX, SLIPPY, PEPPY, NO_PLAYER);
+    EXPECT(sides[2].left == 1 && sides[0].rosters == rosters + 1, name, "the host's game did not hear of the change");
+    Expect_RosterTo(name, &t, sent, 0, r);
+    Expect_RosterTo(name, &t, sent, 1, r);
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_ROSTER) == 2, name, "a roster went to a client that left");
+    Script_Pick(&t, 0, FALCO);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Roster(name, r, FOX, FALCO, PEPPY, NO_PLAYER);
+    EXPECT(sides[0].pickRefused == 1, name, "the character of a client that left was still taken");
+
+    // Whoever comes next into the slot starts with nothing.
+    Script_Connected(&t, 2);
+    Script_Hello(&t, 2, &a);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Roster(name, r, FOX, FALCO, PEPPY, UNPICKED);
+    CoopSession_Close(s);
+}
+
+// Two picks of one character in the same frame: the first to arrive has it, and the other client is told.
+static void Script_HostRace(void) {
+    const char* name = "host_race";
+    CoopIdentity a;
+    Script t;
+    Side sides[COOP_NET_MAX_PEERS];
+    CoopSession* s;
+    const CoopRoster* r;
+    uint32_t sent;
+
+    Id_Default(&a);
+    s = Script_HostWith(&t, sides, &a, 2);
+    r = CoopSession_Roster(s);
+    sent = t.sentCount;
+    Script_Pick(&t, 1, SLIPPY);
+    Script_Pick(&t, 0, SLIPPY);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Roster(name, r, FOX, UNPICKED, SLIPPY, NO_PLAYER);
+    EXPECT(sides[0].pickRefused == 1 && sides[1].pickRefused == 0, name, "the second pick was not the one refused");
+    EXPECT(Last_Sent(&t, COOP_MSG_SESSION_PICK_REFUSE)->peer == 0, name, "the refusal went to the wrong client");
+    Expect_RosterTo(name, &t, sent, 0, r);
+    Expect_RosterTo(name, &t, sent, 1, r);
+    CoopSession_Close(s);
+}
+
+// A pick that cannot be read is a broken peer, as a hello that cannot be read is: it goes, and its character with it.
+static void Expect_BadPick(const char* name, const uint8_t* data, uint16_t size) {
+    CoopIdentity a;
+    Script t;
+    Side sides[COOP_NET_MAX_PEERS];
+    CoopSession* s;
+    const CoopRoster* r;
+    uint32_t sent;
+    uint32_t rosters;
+
+    Id_Default(&a);
+    s = Script_HostWith(&t, sides, &a, 2);
+    r = CoopSession_Roster(s);
+    Script_Pick(&t, 0, FALCO);
+    Script_Pick(&t, 1, PEPPY);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Roster(name, r, FOX, FALCO, PEPPY, NO_PLAYER);
+
+    sent = t.sentCount;
+    rosters = sides[0].rosters;
+    Script_Message(&t, 1, COOP_MSG_SESSION_PICK, data, size);
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(sides[1].left == 1 && sides[1].end == COOP_SESSION_END_BAD_MESSAGE, name,
+           "a pick that cannot be read did not end the client");
+    EXPECT(strcmp(sides[1].endText, CoopSession_EndText(COOP_SESSION_END_BAD_MESSAGE)) == 0, name, "wrong text");
+    EXPECT(t.disconnects[1] == 1 && t.disconnects[0] == 0, name, "the wrong peer was dropped");
+    EXPECT(sides[1].pickRefused == 0 && Sent_Since(&t, sent, COOP_MSG_SESSION_PICK_REFUSE) == 0, name,
+           "a pick that cannot be read counted as a pick");
+    Expect_Roster(name, r, FOX, FALCO, NO_PLAYER, NO_PLAYER);
+    EXPECT(sides[0].rosters == rosters + 1, name, "the host's game did not hear of the change");
+    Expect_RosterTo(name, &t, sent, 0, r);
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_ROSTER) == 1, name, "a roster went to the dropped client");
+    EXPECT(CoopSession_PeerIdentity(s, 1) == NULL && !Session_CanSend(s, 1), name, "a dropped client counts as joined");
+    EXPECT(Drain(s, SCRIPT_T0 + COOP_SESSION_HANDSHAKE_MS + 1, sides) == 0 && t.disconnects[1] == 1, name,
+           "a dropped client still had a state");
+    CoopSession_Close(s);
+}
+
+static void Script_HostBadPicks(void) {
+    static const uint8_t noCharacter[] = { NO_PLAYER, UNPICKED, COOP_CHARACTER_COUNT, 0xFF };
+    const uint8_t two[2] = { SLIPPY, SLIPPY };
+    size_t i;
+
+    Expect_BadPick("pick_empty", NULL, 0);
+    Expect_BadPick("pick_trailing", two, sizeof(two));
+    for (i = 0; i < sizeof(noCharacter); i++) {
+        Expect_BadPick("pick_no_character", &noCharacter[i], 1);
+    }
+}
+
+// Picks from someone who is no player, and the host's own messages from a client: dropped and counted, nothing else.
+static void Script_HostPicksOutOfPlace(void) {
+    const char* name = "host_picks_out_of_place";
+    const uint8_t falco = FALCO;
+    const uint8_t roster[COOP_SESSION_PLAYERS] = { FOX, FALCO, NO_PLAYER, NO_PLAYER };
+    CoopIdentity a, other;
+    Script t;
+    Side sides[COOP_NET_MAX_PEERS];
+    CoopSession* s;
+    const CoopRoster* r;
+    uint32_t sent;
+
+    Id_Default(&a);
+    Id_Other(&other);
+
+    // Before the hello; it does not count later either.
+    s = Script_Host(&t, sides, &a);
+    r = CoopSession_Roster(s);
+    Script_Connected(&t, 0);
+    Script_Pick(&t, 0, FALCO);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Roster(name, r, FOX, NO_PLAYER, NO_PLAYER, NO_PLAYER);
+    EXPECT(CoopSession_Ignored(s) == 1 && t.sentCount == 0 && sides[0].events == 0, name,
+           "a pick before the hello counted");
+    Script_Hello(&t, 0, &a);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Roster(name, r, FOX, UNPICKED, NO_PLAYER, NO_PLAYER);
+
+    // A client has no say in the roster.
+    sent = t.sentCount;
+    Script_Message(&t, 0, COOP_MSG_SESSION_ROSTER, roster, sizeof(roster));
+    Script_Message(&t, 0, COOP_MSG_SESSION_PICK_REFUSE, &falco, 1);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Roster(name, r, FOX, UNPICKED, NO_PLAYER, NO_PLAYER);
+    EXPECT(CoopSession_Ignored(s) == 3 && t.sentCount == sent && sides[0].left == 0 && t.disconnects[0] == 0, name,
+           "a host's message from a client counted");
+    CoopSession_Close(s);
+
+    // After a refusal.
+    s = Script_Host(&t, sides, &a);
+    r = CoopSession_Roster(s);
+    t.pending = 1;
+    Script_Connected(&t, 0);
+    Script_Hello(&t, 0, &other);
+    Drain(s, SCRIPT_T0, sides);
+    sent = t.sentCount;
+    Script_Pick(&t, 0, FALCO);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Roster(name, r, FOX, NO_PLAYER, NO_PLAYER, NO_PLAYER);
+    EXPECT(CoopSession_Ignored(s) == 1 && t.sentCount == sent, name, "a pick from a refused client counted");
+    CoopSession_Close(s);
+}
+
+// The transport refuses a send while its window is full. All clients have to end up with the same roster anyway.
+static void Script_HostFullWindow(void) {
+    const char* name = "host_full_window";
+    CoopIdentity a;
+    Script t;
+    Side sides[COOP_NET_MAX_PEERS];
+    CoopSession* s;
+    const CoopRoster* r;
+    uint32_t sent;
+
+    Id_Default(&a);
+    s = Script_HostWith(&t, sides, &a, 2);
+    r = CoopSession_Roster(s);
+
+    // One peer's roster fails: that one is sent again on the next poll, the other one is not.
+    sent = t.sentCount;
+    t.failSends = 1;
+    Script_Pick(&t, 0, FALCO);
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_ROSTER) == 1, name, "the peer with room did not get the roster");
+    Drain(s, SCRIPT_T0, sides);
+    Expect_RosterTo(name, &t, sent, 0, r);
+    Expect_RosterTo(name, &t, sent, 1, r);
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_ROSTER) == 2, name, "a roster was sent again after it went out");
+
+    // Several changes behind a full window: what goes out is the last roster.
+    sent = t.sentCount;
+    t.failSends = 100;
+    Script_Pick(&t, 0, SLIPPY);
+    Script_Pick(&t, 1, PEPPY);
+    Drain(s, SCRIPT_T0, sides);
+    t.failSends = 0;
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Roster(name, r, FOX, SLIPPY, PEPPY, NO_PLAYER);
+    Expect_RosterTo(name, &t, sent, 0, r);
+    Expect_RosterTo(name, &t, sent, 1, r);
+
+    // A refusal waits the same way, and it goes out once.
+    sent = t.sentCount;
+    t.failSends = 1;
+    Script_Pick(&t, 0, PEPPY);
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_PICK_REFUSE) == 0 && sides[0].pickRefused == 1, name,
+           "the refusal should have failed");
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_PICK_REFUSE) == 1, name, "a refusal that failed was not sent again");
+    EXPECT(Last_Sent(&t, COOP_MSG_SESSION_PICK_REFUSE)->peer == 0 &&
+               Last_Sent(&t, COOP_MSG_SESSION_PICK_REFUSE)->data[0] == PEPPY,
+           name, "the wrong refusal was sent");
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_PICK_REFUSE) == 1, name, "a refusal was sent twice");
+
+    // Whoever goes meanwhile gets nothing, and the slot's next client owes nothing from the last one.
+    sent = t.sentCount;
+    t.failSends = 100;
+    Script_Pick(&t, 1, FOX);
+    Script_Pick(&t, 0, FALCO);
+    Script_Gone(&t, 1, COOP_NET_END_CLOSED);
+    Drain(s, SCRIPT_T0, sides);
+    t.failSends = 0;
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Roster(name, r, FOX, FALCO, NO_PLAYER, NO_PLAYER);
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_PICK_REFUSE) == 0, name, "a refusal went to a client that left");
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_ROSTER) == 1, name, "a roster went to a client that left");
+    Expect_RosterTo(name, &t, sent, 0, r);
+    sent = t.sentCount;
+    Script_Connected(&t, 1);
+    Script_Hello(&t, 1, &a);
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_PICK_REFUSE) == 0, name, "a new client got the last one's refusal");
+    CoopSession_Close(s);
+}
+
+static void Script_ClientPick(void) {
+    static const uint8_t wingmen[] = { FALCO, SLIPPY, PEPPY };
+    const char* name = "client_pick";
+    CoopIdentity a;
+    Script t;
+    Side side;
+    Side sides[COOP_NET_MAX_PEERS];
+    CoopSession* s;
+    uint32_t sent;
+    size_t i;
+
+    Id_Default(&a);
+
+    // Not before the welcome: nothing but the hello goes out.
+    s = Script_Client(&t, &side, &a);
+    EXPECT(!CoopSession_Pick(s, FALCO) && t.sentCount == 1, name, "a pick before the welcome");
+    Script_Welcome(&t, &a, 1);
+    Drain(s, SCRIPT_T0 + 1, &side);
+
+    // The wingmen, and nothing else.
+    sent = t.sentCount;
+    EXPECT(!CoopSession_Pick(s, NO_PLAYER) && !CoopSession_Pick(s, UNPICKED) && !CoopSession_Pick(s, FOX) &&
+               !CoopSession_Pick(s, COOP_CHARACTER_COUNT) && t.sentCount == sent,
+           name, "only a wingman can be picked");
+    for (i = 0; i < sizeof(wingmen); i++) {
+        const ScriptSent* m;
+
+        EXPECT(CoopSession_Pick(s, (CoopCharacter) wingmen[i]), name, "a wingman could not be picked");
+        m = &t.sent[t.sentCount - 1];
+        EXPECT(m->peer == 0 && m->msgId == COOP_MSG_SESSION_PICK && m->lane == COOP_NET_RELIABLE && m->size == 1 &&
+                   m->data[0] == wingmen[i],
+               name, "the pick sent is wrong");
+    }
+
+    // The answer comes from the host, not from what this client saw last: a taken character still goes out.
+    Script_RosterMsg(&t, FOX, FALCO, NO_PLAYER, NO_PLAYER);
+    Drain(s, SCRIPT_T0 + 1, &side);
+    sent = t.sentCount;
+    EXPECT(CoopSession_Pick(s, FALCO) && t.sentCount == sent + 1, name, "the client decided a pick itself");
+
+    t.failSends = 1;
+    EXPECT(!CoopSession_Pick(s, FALCO), name, "a pick that failed was reported as sent");
+
+    // Not after the end.
+    Script_Gone(&t, 0, COOP_NET_END_CLOSED);
+    Drain(s, SCRIPT_T0 + 2, &side);
+    sent = t.sentCount;
+    EXPECT(!CoopSession_Pick(s, FALCO) && t.sentCount == sent, name, "a pick after the end");
+    CoopSession_Close(s);
+
+    // Player 0 is Fox: a host has nothing to pick, whoever has joined.
+    s = Script_HostWith(&t, sides, &a, 1);
+    sent = t.sentCount;
+    EXPECT(!CoopSession_Pick(s, FALCO) && t.sentCount == sent, name, "a host picked");
+    Expect_Roster(name, CoopSession_Roster(s), FOX, UNPICKED, NO_PLAYER, NO_PLAYER);
+    CoopSession_Close(s);
+}
+
+// What a client knows and when.
+static void Script_ClientRoster(void) {
+    const char* name = "client_roster";
+    const uint8_t falco = FALCO;
+    CoopIdentity a;
+    Script t;
+    Side side;
+    CoopSession* s;
+
+    Id_Default(&a);
+
+    // Nothing before the welcome, and the wait for the answer goes on.
+    Script_Init(&t);
+    memset(&side, 0, sizeof(side));
+    s = CoopSession_Join(&t.base, &a, SCRIPT_T0);
+    Script_RosterMsg(&t, FOX, UNPICKED, NO_PLAYER, NO_PLAYER);
+    Drain(s, SCRIPT_T0, &side);
+    EXPECT(side.rosters == 0 && CoopSession_Ignored(s) == 1, name, "a roster before the connection counted");
+    CoopSession_Close(s);
+
+    s = Script_Client(&t, &side, &a);
+    Script_RosterMsg(&t, FOX, UNPICKED, NO_PLAYER, NO_PLAYER);
+    Script_Message(&t, 0, COOP_MSG_SESSION_PICK_REFUSE, &falco, 1);
+    Drain(s, SCRIPT_T0 + 1, &side);
+    EXPECT(side.rosters == 0 && side.pickRefused == 0 && side.events == 0, name,
+           "an answer before the welcome counted");
+    EXPECT(CoopSession_Ignored(s) == 2 && t.disconnects[0] == 0, name, "not dropped and counted");
+    EXPECT(CoopSession_Roster(s) == NULL, name, "a roster before the welcome");
+
+    // The welcome says nothing about the roster.
+    Script_Welcome(&t, &a, 1);
+    Drain(s, SCRIPT_T0 + 1, &side);
+    EXPECT(side.joined == 1 && CoopSession_Roster(s) == NULL, name, "a roster nobody sent");
+
+    // Every form a host can send: free slots, players without a character, each wingman.
+    Script_RosterMsg(&t, FOX, UNPICKED, NO_PLAYER, NO_PLAYER);
+    Drain(s, SCRIPT_T0 + 1, &side);
+    EXPECT(side.rosters == 1, name, "a roster was not passed on");
+    Expect_Roster(name, CoopSession_Roster(s), FOX, UNPICKED, NO_PLAYER, NO_PLAYER);
+    Script_RosterMsg(&t, FOX, UNPICKED, UNPICKED, UNPICKED);
+    Drain(s, SCRIPT_T0 + 1, &side);
+    Expect_Roster(name, CoopSession_Roster(s), FOX, UNPICKED, UNPICKED, UNPICKED);
+    Script_RosterMsg(&t, FOX, FALCO, NO_PLAYER, UNPICKED);
+    Drain(s, SCRIPT_T0 + 1, &side);
+    Expect_Roster(name, CoopSession_Roster(s), FOX, FALCO, NO_PLAYER, UNPICKED);
+    Script_RosterMsg(&t, FOX, PEPPY, SLIPPY, FALCO);
+    Drain(s, SCRIPT_T0 + 1, &side);
+    Expect_Roster(name, CoopSession_Roster(s), FOX, PEPPY, SLIPPY, FALCO);
+    EXPECT(side.rosters == 4 && CoopSession_Ignored(s) == 2 && t.disconnects[0] == 0, name,
+           "a good roster was dropped");
+
+    // A pick is the client's own message.
+    Script_Pick(&t, 0, FALCO);
+    Drain(s, SCRIPT_T0 + 1, &side);
+    EXPECT(CoopSession_Ignored(s) == 3 && side.rosters == 4 && t.disconnects[0] == 0, name,
+           "a pick from the host counted");
+
+    // Gone with the session.
+    Script_Gone(&t, 0, COOP_NET_END_CLOSED);
+    Drain(s, SCRIPT_T0 + 2, &side);
+    EXPECT(CoopSession_Roster(s) == NULL, name, "a roster after the end");
+    CoopSession_Close(s);
+}
+
+static void Expect_BadRoster(const char* name, uint8_t player, const uint8_t* data, uint16_t size) {
+    CoopIdentity a;
+    Script t;
+    Side side;
+    CoopSession* s;
+
+    Id_Default(&a);
+    s = Script_Joined(&t, &side, &a, player);
+    Script_Message(&t, 0, COOP_MSG_SESSION_ROSTER, data, size);
+    Drain(s, SCRIPT_T0 + 2, &side);
+    EXPECT(side.ended == 1 && side.end == COOP_SESSION_END_BAD_MESSAGE, name,
+           "a broken roster did not end the session");
+    EXPECT(side.rosters == 0, name, "a broken roster was taken for a roster");
+    EXPECT(strcmp(side.endText, CoopSession_EndText(COOP_SESSION_END_BAD_MESSAGE)) == 0, name, "wrong text");
+    EXPECT(t.disconnects[0] == 1, name, "the client did not leave once");
+    EXPECT(CoopSession_Roster(s) == NULL && !Session_CanSend(s, 0), name, "a broken roster left something behind");
+    CoopSession_Close(s);
+}
+
+static void Script_ClientBadRosters(void) {
+    static const struct {
+        const char* name;
+        uint8_t player;
+        uint8_t bytes[COOP_SESSION_PLAYERS];
+    } cases[] = {
+        { "roster_host_not_fox", 1, { UNPICKED, UNPICKED, NO_PLAYER, NO_PLAYER } },
+        { "roster_host_wingman", 1, { FALCO, UNPICKED, NO_PLAYER, NO_PLAYER } },
+        { "roster_host_missing", 1, { NO_PLAYER, UNPICKED, NO_PLAYER, NO_PLAYER } },
+        { "roster_second_fox", 1, { FOX, FOX, NO_PLAYER, NO_PLAYER } },
+        { "roster_last_fox", 1, { FOX, UNPICKED, NO_PLAYER, FOX } },
+        { "roster_past_the_end", 1, { FOX, COOP_CHARACTER_COUNT, NO_PLAYER, NO_PLAYER } },
+        { "roster_last_past_the_end", 1, { FOX, UNPICKED, NO_PLAYER, COOP_CHARACTER_COUNT } },
+        { "roster_unknown", 1, { FOX, 0xFF, NO_PLAYER, NO_PLAYER } },
+        { "roster_twice", 1, { FOX, FALCO, FALCO, NO_PLAYER } },
+        { "roster_twice_apart", 1, { FOX, PEPPY, UNPICKED, PEPPY } },
+        { "roster_twice_at_the_end", 1, { FOX, UNPICKED, SLIPPY, SLIPPY } },
+        { "roster_without_us_1", 1, { FOX, NO_PLAYER, UNPICKED, NO_PLAYER } },
+        { "roster_without_us_3", 3, { FOX, UNPICKED, UNPICKED, NO_PLAYER } },
+    };
+    const uint8_t good[COOP_SESSION_PLAYERS + 1] = { FOX, UNPICKED, NO_PLAYER, NO_PLAYER, NO_PLAYER };
+    size_t i;
+
+    Expect_BadRoster("roster_empty", 1, NULL, 0);
+    Expect_BadRoster("roster_short", 1, good, COOP_SESSION_PLAYERS - 1);
+    Expect_BadRoster("roster_trailing", 1, good, COOP_SESSION_PLAYERS + 1);
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        Expect_BadRoster(cases[i].name, cases[i].player, cases[i].bytes, COOP_SESSION_PLAYERS);
+    }
+}
+
+static void Expect_BadPickRefuse(const char* name, const uint8_t* data, uint16_t size) {
+    CoopIdentity a;
+    Script t;
+    Side side;
+    CoopSession* s;
+
+    Id_Default(&a);
+    s = Script_Joined(&t, &side, &a, 1);
+    Script_Message(&t, 0, COOP_MSG_SESSION_PICK_REFUSE, data, size);
+    Drain(s, SCRIPT_T0 + 2, &side);
+    EXPECT(side.ended == 1 && side.end == COOP_SESSION_END_BAD_MESSAGE, name,
+           "a broken refusal did not end the session");
+    EXPECT(side.pickRefused == 0 && t.disconnects[0] == 1, name, "a broken refusal was taken for a refusal");
+    CoopSession_Close(s);
+}
+
+static void Script_ClientPickRefused(void) {
+    static const uint8_t noCharacter[] = { NO_PLAYER, UNPICKED, COOP_CHARACTER_COUNT, 0xFF };
+    static const uint8_t refusable[] = { FOX, FALCO, SLIPPY, PEPPY };
+    const char* name = "client_pick_refused";
+    const uint8_t two[2] = { FALCO, FALCO };
+    CoopIdentity a;
+    Script t;
+    Side side;
+    CoopSession* s;
+    size_t i;
+
+    Id_Default(&a);
+
+    // Told, still connected, roster untouched, free to go on.
+    s = Script_Joined(&t, &side, &a, 2);
+    Script_RosterMsg(&t, FOX, FALCO, UNPICKED, NO_PLAYER);
+    Drain(s, SCRIPT_T0 + 2, &side);
+    for (i = 0; i < sizeof(refusable); i++) {
+        Script_Message(&t, 0, COOP_MSG_SESSION_PICK_REFUSE, &refusable[i], 1);
+        Drain(s, SCRIPT_T0 + 2, &side);
+        EXPECT(side.pickRefused == i + 1 && side.refusedCharacter == refusable[i], name,
+               "the refusal was not passed on");
+    }
+    EXPECT(strcmp(side.pickText, "Peppy is already taken.") == 0, name, "wrong text");
+    EXPECT(side.ended == 0 && t.disconnects[0] == 0 && side.rosters == 1, name, "a refused pick changed the session");
+    Expect_Roster(name, CoopSession_Roster(s), FOX, FALCO, UNPICKED, NO_PLAYER);
+    EXPECT(CoopSession_Pick(s, PEPPY) && Session_CanSend(s, 0), name, "a refused client could not go on");
+    CoopSession_Close(s);
+
+    Expect_BadPickRefuse("pick_refuse_empty", NULL, 0);
+    Expect_BadPickRefuse("pick_refuse_trailing", two, sizeof(two));
+    for (i = 0; i < sizeof(noCharacter); i++) {
+        Expect_BadPickRefuse("pick_refuse_no_character", &noCharacter[i], 1);
+    }
+}
+
+// ---- Characters over the real transport core: three clients, each going down its list on every refusal ----
+
+#define PARTY_CLIENTS (MAX_CLIENTS + 1) // one more than fit at once, for a client that comes after another left
+
+typedef struct {
+    CoopSession* host;
+    CoopSession* clients[PARTY_CLIENTS];
+    const uint8_t* picks[PARTY_CLIENTS]; // the next one to ask for; NO_PLAYER ends the list
+    Side hostSides[COOP_NET_MAX_PEERS];
+    Side sides[PARTY_CLIENTS];
+} Party;
+
+static void Party_Start(Party* p, uint64_t seed, uint32_t lossPercent, uint32_t latencyMs, const CoopIdentity* id) {
+    memset(p, 0, sizeof(*p));
+    Sim_Reset(seed, lossPercent, latencyMs);
+    p->host = CoopSession_Host(Sim_Transport(SIM_HOST), id);
+}
+
+static void Party_Join(Party* p, int i, const CoopIdentity* id, const uint8_t* picks) {
+    p->picks[i] = picks;
+    p->clients[i] = CoopSession_Join(Sim_Transport(2 + i), id, sNet.now);
+}
+
+static void Party_Step(Party* p, const char* name) {
+    int i;
+
+    Sim_Step();
+    Drain(p->host, sNet.now, p->hostSides);
+    for (i = 0; i < PARTY_CLIENTS; i++) {
+        CoopSessionEvent ev;
+
+        while (p->clients[i] != NULL && CoopSession_Poll(p->clients[i], sNet.now, &ev)) {
+            Side_Record(&p->sides[i], &ev);
+            if ((ev.type == COOP_SESSION_EV_JOINED || ev.type == COOP_SESSION_EV_PICK_REFUSED) &&
+                *p->picks[i] != NO_PLAYER) {
+                EXPECT(CoopSession_Pick(p->clients[i], (CoopCharacter) *p->picks[i]), name, "a pick could not be sent");
+                p->picks[i]++;
+            }
+        }
+    }
+}
+
+// True when every client there has the host's roster, and that one has `held` clients with a character.
+static bool Party_Agrees(const Party* p, int held) {
+    const CoopRoster* r = CoopSession_Roster(p->host);
+    int n = 0;
+    int i;
+
+    for (i = 1; i < COOP_SESSION_PLAYERS; i++) {
+        n += r->character[i] >= COOP_CHARACTER_FOX;
+    }
+    if (n != held) {
+        return false;
+    }
+    for (i = 0; i < PARTY_CLIENTS; i++) {
+        const CoopRoster* seen = p->clients[i] != NULL ? CoopSession_Roster(p->clients[i]) : NULL;
+
+        if (p->clients[i] != NULL && (seen == NULL || memcmp(seen, r, sizeof(*r)) != 0)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Runs until everyone agrees, then a while longer: agreeing for a moment is not enough.
+static void Party_Settle(Party* p, const char* name, int held) {
+    uint32_t start = sNet.now;
+
+    while (!Party_Agrees(p, held)) {
+        EXPECT(sNet.now - start < 30000, name, "the clients and the host did not come to agree");
+        Party_Step(p, name);
+    }
+    start = sNet.now;
+    while (sNet.now - start < 1000) {
+        Party_Step(p, name);
+    }
+    EXPECT(Party_Agrees(p, held), name, "the clients and the host did not stay in agreement");
+}
+
+static uint32_t Party_Refused(const Party* p, const char* name) {
+    uint32_t onHost = 0;
+    uint32_t onClients = 0;
+    int i;
+
+    for (i = 0; i < COOP_NET_MAX_PEERS; i++) {
+        onHost += p->hostSides[i].pickRefused;
+    }
+    for (i = 0; i < PARTY_CLIENTS; i++) {
+        onClients += p->sides[i].pickRefused;
+    }
+    EXPECT(onHost == onClients, name, "the host refused other picks than the clients heard of");
+    return onClients;
+}
+
+static void Party_Close(Party* p) {
+    int i;
+
+    for (i = 0; i < PARTY_CLIENTS; i++) {
+        CoopSession_Close(p->clients[i]);
+    }
+    CoopSession_Close(p->host);
+}
+
+// Fox, then each wingman once.
+static void Expect_Full(const char* name, const CoopRoster* r) {
+    uint32_t seen = 0;
+    int i;
+
+    EXPECT(r->character[0] == FOX, name, "player 0 is not Fox");
+    for (i = 1; i < COOP_SESSION_PLAYERS; i++) {
+        EXPECT(r->character[i] > FOX && r->character[i] < COOP_CHARACTER_COUNT, name, "a client holds no wingman");
+        seen |= 1u << r->character[i];
+    }
+    EXPECT(seen == ((1u << FALCO) | (1u << SLIPPY) | (1u << PEPPY)), name, "a wingman is held twice");
+}
+
+static const uint8_t sJustFalco[] = { FALCO, NO_PLAYER };
+static const uint8_t sJustSlippy[] = { SLIPPY, NO_PLAYER };
+static const uint8_t sJustPeppy[] = { PEPPY, NO_PLAYER };
+static const uint8_t sAllWingmen[] = { FALCO, SLIPPY, PEPPY, NO_PLAYER };
+
+static void Sim_Characters(void) {
+    const char* name = "characters";
+    static const uint8_t lateComer[] = { SLIPPY, PEPPY, NO_PLAYER };
+    const CoopRoster* r;
+    CoopIdentity a;
+    Party p;
+    int i;
+
+    Id_Default(&a);
+
+    // Everyone gets their wish and everyone knows.
+    Party_Start(&p, 21, 0, 5, &a);
+    Party_Join(&p, 0, &a, sJustFalco);
+    Party_Join(&p, 1, &a, sJustSlippy);
+    Party_Join(&p, 2, &a, sJustPeppy);
+    Party_Settle(&p, name, 3);
+    r = CoopSession_Roster(p.host);
+    Expect_Full(name, r);
+    EXPECT(Party_Refused(&p, name) == 0, name, "a pick of a free character was refused");
+    EXPECT(r->character[p.sides[0].playerIndex] == FALCO && r->character[p.sides[1].playerIndex] == SLIPPY &&
+               r->character[p.sides[2].playerIndex] == PEPPY,
+           name, "a client did not get what it picked");
+
+    // The holder of Falco goes: free at once for those who stay, and the slot for whoever comes next.
+    {
+        int slot = p.sides[0].playerIndex;
+
+        CoopSession_Close(p.clients[0]);
+        p.clients[0] = NULL;
+        Party_Settle(&p, name, 2);
+        EXPECT(CoopSession_Roster(p.host)->character[slot] == NO_PLAYER, name,
+               "the slot of a client that left is taken");
+        EXPECT(CoopSession_Pick(p.clients[1], FALCO), name, "a pick could not be sent");
+        while (CoopSession_Roster(p.host)->character[p.sides[1].playerIndex] != FALCO) {
+            EXPECT(p.hostSides[p.sides[1].playerIndex - 1].pickRefused == 0, name, "the freed character was refused");
+            Party_Step(&p, name);
+        }
+        Party_Settle(&p, name, 2);
+
+        // Slippy is free again after that, Peppy is not: the new client's first wish goes through.
+        Party_Join(&p, 3, &a, lateComer);
+        Party_Settle(&p, name, 3);
+        EXPECT(p.sides[3].playerIndex == slot, name, "the new client did not get the free slot");
+        Expect_Full(name, CoopSession_Roster(p.host));
+        EXPECT(CoopSession_Roster(p.host)->character[slot] == SLIPPY, name, "the new client did not get what was free");
+    }
+    Party_Close(&p);
+
+    // All three want the same: one gets it, the others are told and go on, and the count of refusals is known.
+    Party_Start(&p, 22, 0, 5, &a);
+    for (i = 0; i < MAX_CLIENTS; i++) {
+        Party_Join(&p, i, &a, sAllWingmen);
+    }
+    Party_Settle(&p, name, 3);
+    Expect_Full(name, CoopSession_Roster(p.host));
+    EXPECT(Party_Refused(&p, name) == 3, name, "not one refusal for each pick of a taken character");
+    for (i = 0; i < MAX_CLIENTS; i++) {
+        EXPECT(p.sides[i].left == 0 && p.sides[i].ended == 0, name, "a refused pick ended a client");
+        EXPECT(strstr(p.sides[i].pickText, "already taken") != NULL || p.sides[i].pickRefused == 0, name, "wrong text");
+    }
+    Party_Close(&p);
+}
+
+// Rosters and refusals are reliable, so a bad link only takes longer.
+static uint32_t Sim_CharactersLossy(uint32_t seeds) {
+    const char* name = "characters_lossy";
+    CoopIdentity a;
+    Party p;
+    uint32_t seed;
+    uint32_t dropped = 0;
+    int i;
+
+    Id_Default(&a);
+    for (seed = 1; seed <= seeds; seed++) {
+        Party_Start(&p, 3000 + seed, 10 + seed % 31, 40, &a);
+        for (i = 0; i < MAX_CLIENTS; i++) {
+            Party_Join(&p, i, &a, sAllWingmen);
+        }
+        Party_Settle(&p, name, 3);
+        Expect_Full(name, CoopSession_Roster(p.host));
+        EXPECT(Party_Refused(&p, name) == 3, name, "not one refusal for each pick of a taken character");
+        dropped += sNet.dropped;
+        Party_Close(&p);
+    }
+    EXPECT(dropped > 0, name, "the virtual network dropped nothing, so this run proves nothing");
+    return dropped;
+}
+
 // ---- Identity wire form ----
 
 static void Sim_Identity(void) {
@@ -1837,9 +2753,22 @@ static int Sim_Main(void) {
     Script_ClientRefused();
     Script_ClientHoldBack();
     Script_ClientJoined();
+    Script_CharacterNames();
+    Script_HostRoster();
+    Script_HostPicks();
+    Script_HostRace();
+    Script_HostBadPicks();
+    Script_HostPicksOutOfPlace();
+    Script_HostFullWindow();
+    Script_ClientPick();
+    Script_ClientRoster();
+    Script_ClientBadRosters();
+    Script_ClientPickRefused();
+    Sim_Characters();
     dropped = Sim_Lossy(40);
+    dropped += Sim_CharactersLossy(20);
     printf("sim: PASS identity, 12 mismatch cases, two clients, broken, silent and raw peers, scripted transport, "
-           "80 lossy runs (dropped %u datagrams)\n",
+           "characters, 100 lossy runs (dropped %u datagrams)\n",
            (unsigned) dropped);
     return 0;
 }
@@ -1853,6 +2782,9 @@ typedef struct {
     uint32_t clients;
     uint32_t maxSeconds;
     uint32_t eager;
+    uint32_t players;                    // stay until this many players hold a character; 0: do not wait for that
+    uint8_t picks[COOP_CHARACTER_COUNT]; // what to ask for after the welcome, the next one after each refusal
+    uint32_t pickCount;
     CoopIdentity id;
 } BotOptions;
 
@@ -1862,6 +2794,7 @@ typedef struct {
     uint32_t diff;
     CoopSessionEnd end;
     uint8_t playerIndex;
+    uint8_t character;
     char text[COOP_SESSION_TEXT];
 } BotEvent;
 
@@ -1875,6 +2808,8 @@ static const char* Event_Name(CoopSessionEventType type) {
             return "left";
         case COOP_SESSION_EV_ENDED:
             return "ended";
+        case COOP_SESSION_EV_PICK_REFUSED:
+            return "pick_refused";
         default:
             return "message";
     }
@@ -1896,6 +2831,32 @@ static void Json_String(FILE* f, const char* s) {
     fputc('"', f);
 }
 
+static bool Roster_Complete(const CoopRoster* r, uint32_t players) {
+    uint32_t i;
+
+    for (i = 0; i < players; i++) {
+        if (r->character[i] < COOP_CHARACTER_FOX) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static uint8_t Character_FromName(const char* name) {
+    static const struct {
+        const char* name;
+        uint8_t character;
+    } names[] = { { "fox", FOX }, { "falco", FALCO }, { "slippy", SLIPPY }, { "peppy", PEPPY } };
+    size_t i;
+
+    for (i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if (strcmp(names[i].name, name) == 0) {
+            return names[i].character;
+        }
+    }
+    return NO_PLAYER;
+}
+
 static int Bot_Main(const BotOptions* o) {
     CoopNetConfig config = { 0 };
     CoopTransport* t;
@@ -1907,6 +2868,10 @@ static int Bot_Main(const BotOptions* o) {
     uint32_t received = 0;
     uint32_t finishedAt = 0;
     uint32_t eager = o->eager;
+    uint32_t nextPick = 0;
+    uint32_t rosters = 0;
+    CoopRoster complete = { { 0 } };
+    bool isComplete = false;
     bool joined = false;
     bool finished = false;
     FILE* f;
@@ -1960,6 +2925,16 @@ static int Bot_Main(const BotOptions* o) {
                 received++;
                 continue;
             }
+            if (ev.type == COOP_SESSION_EV_ROSTER) {
+                const CoopRoster* r = CoopSession_Roster(s);
+
+                rosters++;
+                if (!isComplete && o->players > 0 && Roster_Complete(r, o->players)) {
+                    complete = *r;
+                    isComplete = true;
+                }
+                continue;
+            }
             if (eventCount < 32) {
                 BotEvent* e = &events[eventCount++];
 
@@ -1968,10 +2943,15 @@ static int Bot_Main(const BotOptions* o) {
                 e->diff = ev.diff;
                 e->end = ev.end;
                 e->playerIndex = ev.playerIndex;
+                e->character = ev.character;
                 snprintf(e->text, sizeof(e->text), "%s", ev.text);
             }
             printf("%s peer %d: %s\n", Event_Name(ev.type), ev.peer, ev.text[0] ? ev.text : "-");
             fflush(stdout);
+            if (!isHost && (ev.type == COOP_SESSION_EV_JOINED || ev.type == COOP_SESSION_EV_PICK_REFUSED) &&
+                nextPick < o->pickCount) {
+                CoopSession_Pick(s, (CoopCharacter) o->picks[nextPick++]);
+            }
             if (ev.type == COOP_SESSION_EV_JOINED) {
                 joined = true;
                 CoopSession_Send(s, ev.peer, COOP_MSG_TEST_SESSION, TEST_PAYLOAD, sizeof(TEST_PAYLOAD),
@@ -1998,7 +2978,7 @@ static int Bot_Main(const BotOptions* o) {
                     finished = true;
                 }
             }
-        } else if (joined && received > 0) {
+        } else if (joined && received > 0 && (o->players == 0 || isComplete)) {
             CoopNetStats stats;
 
             if (t->ops->stats(t, 0, &stats) && stats.pending == 0) {
@@ -2012,15 +2992,21 @@ static int Bot_Main(const BotOptions* o) {
     if (f == NULL) {
         return 2;
     }
-    fprintf(f, "{\"role\": \"%s\", \"finished\": %s, \"received\": %u, \"ignored\": %u, \"events\": [",
+    fprintf(f, "{\"role\": \"%s\", \"finished\": %s, \"received\": %u, \"ignored\": %u, \"rosters\": %u, \"roster\": [",
             isHost ? "host" : "client", finished ? "true" : "false", (unsigned) received,
-            (unsigned) CoopSession_Ignored(s));
+            (unsigned) CoopSession_Ignored(s), (unsigned) rosters);
+    for (i = 0; isComplete && i < COOP_SESSION_PLAYERS; i++) {
+        fprintf(f, "%s\"%s\"", i ? ", " : "", CoopSession_CharacterName(complete.character[i]));
+    }
+    fprintf(f, "], \"events\": [");
     for (i = 0; i < eventCount; i++) {
         const BotEvent* e = &events[i];
 
-        fprintf(f, "%s{\"type\": \"%s\", \"peer\": %d, \"diff\": %u, \"end\": %u, \"player\": %u, \"text\": ",
+        fprintf(f,
+                "%s{\"type\": \"%s\", \"peer\": %d, \"diff\": %u, \"end\": %u, \"player\": %u, \"character\": "
+                "\"%s\", \"text\": ",
                 i ? ", " : "", Event_Name(e->type), e->peer, (unsigned) e->diff, (unsigned) e->end,
-                (unsigned) e->playerIndex);
+                (unsigned) e->playerIndex, CoopSession_CharacterName(e->character));
         Json_String(f, e->text);
         fputc('}', f);
     }
@@ -2062,6 +3048,16 @@ int main(int argc, char** argv) {
             o.maxSeconds = (uint32_t) atoi(value);
         } else if (strcmp(key, "--eager") == 0) {
             o.eager = (uint32_t) atoi(value);
+        } else if (strcmp(key, "--players") == 0) {
+            o.players = (uint32_t) atoi(value);
+        } else if (strcmp(key, "--pick") == 0) {
+            uint8_t character = Character_FromName(value);
+
+            if (character == NO_PLAYER || o.pickCount == sizeof(o.picks)) {
+                fprintf(stderr, "bad --pick %s\n", value);
+                return 2;
+            }
+            o.picks[o.pickCount++] = character;
         } else if (strcmp(key, "--build") == 0) {
             snprintf(o.id.build, sizeof(o.id.build), "%s", value);
         } else if (strcmp(key, "--platform") == 0) {

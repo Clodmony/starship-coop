@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Tests for the co-op session handshake (WP-21): a virtual network, then real processes over UDP.
+"""Tests for the co-op session: handshake (WP-21) and characters (WP-34). A virtual network, then real processes over
+UDP.
 
     python tools/coop/session_test.py                  # build coop_session_test, run every scenario
     python tools/coop/session_test.py --only sim,rom   # chosen scenarios
@@ -47,22 +48,27 @@ def events(result, kind):
     return [e for e in result["events"] if e["type"] == kind]
 
 
-def damaged_pair(run, host_args, client_args, via, tries=8):
+def damaged_runs(run, play, tries=8):
     """A handshake is only a few datagrams, so a relay run may well lose none, and a pass on an undamaged link proves
-    nothing. Tries seeds until the relay did drop something; every try before must pass as well."""
+    nothing. Tries seeds until the relay did drop something; every try before must pass as well. play(run, seed)
+    returns the results and then the relay's info."""
     for n in range(tries):
         sub = Run(run.exe, run.folder / f"try{n}")
         try:
-            h, c, info = pair(sub, host_args, client_args, via, seed=SEED + n)
+            *results, info = play(sub, SEED + n)
             stats = chaos.stats(info)
         finally:
             sub.stop_all()
-        yield h, c
+        yield results
         if stats["c2s"]["dropped"] + stats["s2c"]["dropped"] > 0:
             run.lost = stats["c2s"]["dropped"] + stats["s2c"]["dropped"]
             run.tries = n + 1
             return
     raise Fail(f"the relay dropped nothing in {tries} runs, so this pass would prove nothing")
+
+
+def damaged_pair(run, host_args, client_args, via):
+    return damaged_runs(run, lambda sub, seed: pair(sub, host_args, client_args, via, seed=seed))
 
 
 def refused(run, host_args, client_args, diff, needle, via=None):
@@ -111,6 +117,43 @@ def check_joined(h, c, diff):
     expect(h["received"] == 1 and c["received"] == 1, "game messages did not pass after the welcome")
     expect(events(h, "left"), "host did not see the client leave")
     return cj[0]["text"] or "joined, no warnings"
+
+
+def party(run, picks, via=None, seconds=60, seed=SEED):
+    """A host and one client for each list of characters in picks. A client asks for the first and for the next one
+    after each refusal, and stays until every player holds a character. Returns host, clients and the relay's info."""
+    common = ["--max-seconds", seconds, "--players", len(picks) + 1]
+    host, port, host_out = run.host("--clients", len(picks), *common)
+    info = None
+    if via:
+        port, info = run.relay(port, via, seed)
+    clients = []
+    for n, names in enumerate(picks):
+        wishes = [arg for name in names for arg in ("--pick", name)]
+        clients.append(run.client(port, *common, *wishes, name=f"client{n}"))
+    for n, (proc, _) in enumerate(clients):
+        run.wait(proc, seconds + 10, f"client {n}")
+    run.wait(host, seconds + 10, "host")
+    return read(host_out), [read(out) for _, out in clients], info
+
+
+def check_party(h, clients, refusals):
+    """Every side saw the same full roster: Fox as player 0, each wingman once, each client in its own slot."""
+    roster = h["roster"]
+    expect(len(roster) == len(clients) + 1, f"host never saw everyone with a character: {roster}")
+    expect(roster[0] == "Fox", f"player 0 is {roster[0]}")
+    expect(sorted(roster[1:]) == ["Falco", "Peppy", "Slippy"], f"a wingman is missing or held twice: {roster}")
+    for n, c in enumerate(clients):
+        expect(c["roster"] == roster, f"client {n} has {c['roster']}, host {roster}")
+    expect(len({events(c, "joined")[0]["player"] for c in clients}) == len(clients), "two clients in one slot")
+    held = [events(c, "pick_refused") for c in clients]
+    expect(sum(len(r) for r in held) == refusals, f"want {refusals} refused picks, got {held}")
+    expect(len(events(h, "pick_refused")) == refusals, f"host refused {events(h, 'pick_refused')}")
+    for c in clients:
+        for r in events(c, "pick_refused"):
+            expect(r["text"] == f"{r['character']} is already taken.", f"wrong text: {r['text']!r}")
+        expect(not events(c, "ended"), f"a client was ended: {c['events']}")
+    return " ".join(roster)
 
 
 # ---- Scenarios. Each returns the text for its summary line. ----
@@ -174,6 +217,30 @@ def sc_two_clients(run, args):
     return "one joined, one refused for Rapid fire"
 
 
+def sc_characters(run, args):
+    h, clients, _ = party(run, [["falco"], ["slippy"], ["peppy"]])
+    detail = check_party(h, clients, 0)
+    for c, name in zip(clients, ("Falco", "Slippy", "Peppy")):
+        player = events(c, "joined")[0]["player"]
+        expect(c["roster"][player] == name, f"player {player} holds {c['roster'][player]}, picked {name}")
+    return detail
+
+
+WISHES = ["falco", "slippy", "peppy"]
+TAKEN = 3  # three clients walking down the same list: 0, 1 and 2 refusals, in whatever order they arrive
+
+
+def sc_taken(run, args):
+    h, clients, _ = party(run, [WISHES] * 3)
+    return f"{check_party(h, clients, TAKEN)}, {TAKEN} picks refused"
+
+
+def sc_taken_bad_wifi(run, args):
+    for h, clients in damaged_runs(run, lambda sub, seed: party(sub, [WISHES] * 3, "bad_wifi", seed=seed)):
+        detail = check_party(h, clients, TAKEN)
+    return f"{detail} (relay dropped {run.lost}, try {run.tries})"
+
+
 SCENARIOS = {
     "sim": sc_sim,
     "match": sc_match,
@@ -182,8 +249,11 @@ SCENARIOS = {
     "cvar": sc_cvar,
     "platform": sc_platform,
     "two_clients": sc_two_clients,
+    "characters": sc_characters,
+    "taken": sc_taken,
     "match_bad_wifi": sc_match_bad_wifi,
     "refuse_hell": sc_refuse_hell,
+    "taken_bad_wifi": sc_taken_bad_wifi,
 }
 
 
