@@ -9,6 +9,7 @@
 #include "port/hooks/list/EngineEvent.h"
 #include "port/mods/PortEnhancements.h"
 #include "port/coop/game/players.h" // COOP: player count apart from camera count (WP-10)
+#include "port/coop/game/view.h"    // COOP: what a client shows of the other players (#30)
 
 // f32 path1 = 0.0f;
 // f32 path2 = 0.0f;
@@ -63,12 +64,14 @@ void Display_DrawHelpAlert(void) {
     }
 
     if ((gTeamHelpTimer & 4) == 0) {
-        Matrix_RotateY(gCalcMatrix, gPlayer[0].camYaw, MTXF_NEW);
-        Matrix_RotateX(gCalcMatrix, gPlayer[0].camPitch, MTXF_APPLY);
+        const Player* coopCamera = &gPlayer[CoopPlayers_ViewIndex()]; // COOP: was player 0, draw only (#30)
 
-        sp68.x = gTeamHelpActor->obj.pos.x - gPlayer[0].cam.eye.x;
-        sp68.y = gTeamHelpActor->obj.pos.y - gPlayer[0].cam.eye.y;
-        sp68.z = gTeamHelpActor->obj.pos.z + gPathProgress - gPlayer[0].cam.eye.z;
+        Matrix_RotateY(gCalcMatrix, coopCamera->camYaw, MTXF_NEW);
+        Matrix_RotateX(gCalcMatrix, coopCamera->camPitch, MTXF_APPLY);
+
+        sp68.x = gTeamHelpActor->obj.pos.x - coopCamera->cam.eye.x;
+        sp68.y = gTeamHelpActor->obj.pos.y - coopCamera->cam.eye.y;
+        sp68.z = gTeamHelpActor->obj.pos.z + gPathProgress - coopCamera->cam.eye.z;
 
         Matrix_MultVec3f(gCalcMatrix, &sp68, &sp5C);
 
@@ -510,10 +513,13 @@ void Display_SetCullingMode(void) {
     }
 }
 
+// COOP: the player whose Arwing is being drawn. 0 for every Arwing but a co-op player's (#30)
+static s32 sCoopArwing = 0;
+
 bool Display_ArwingWingsOverrideLimbDraw(s32 limbIndex, Gfx** gfxPtr, Vec3f* pos, Vec3f* rot, void* wingData) {
     ArwingInfo* arwing = (ArwingInfo*) wingData;
 
-    if (D_display_800CA22C && (gPlayer[0].dmgEffect == 0)) {
+    if (D_display_800CA22C && (gPlayer[sCoopArwing].dmgEffect == 0)) { // COOP: was player 0
         RCP_SetupDL(&gMasterDisp, SETUPDL_29);
         Display_SetCullingMode();
     }
@@ -526,10 +532,10 @@ bool Display_ArwingWingsOverrideLimbDraw(s32 limbIndex, Gfx** gfxPtr, Vec3f* pos
             if (arwing->rightWingState == WINGSTATE_BROKEN) {
                 *gfxPtr = aAwLeftWingBrokenDL;
             }
-            if (D_display_800CA22C && ((gRightWingFlashTimer[0] % 2) != 0)) {
+            if (D_display_800CA22C && ((gRightWingFlashTimer[sCoopArwing] % 2) != 0)) { // COOP: was player 0
                 RCP_SetupDL(&gMasterDisp, SETUPDL_34);
                 Display_SetCullingMode();
-                if (gRightWingFlashTimer[0] > 1000) {
+                if (gRightWingFlashTimer[sCoopArwing] > 1000) { // COOP
                     gDPSetPrimColor(gMasterDisp++, 0x00, 0x00, 32, 32, 255, 255);
                 } else {
                     gDPSetPrimColor(gMasterDisp++, 0x00, 0x00, 255, 0, 0, 255);
@@ -542,10 +548,10 @@ bool Display_ArwingWingsOverrideLimbDraw(s32 limbIndex, Gfx** gfxPtr, Vec3f* pos
             if (arwing->rightWingState != 2) {
                 *gfxPtr = NULL;
             }
-            if (D_display_800CA22C && ((gRightWingFlashTimer[0] % 2) != 0)) {
+            if (D_display_800CA22C && ((gRightWingFlashTimer[sCoopArwing] % 2) != 0)) { // COOP: was player 0
                 RCP_SetupDL(&gMasterDisp, SETUPDL_34);
                 Display_SetCullingMode();
-                if (gRightWingFlashTimer[0] > 1000) {
+                if (gRightWingFlashTimer[sCoopArwing] > 1000) { // COOP
                     gDPSetPrimColor(gMasterDisp++, 0x00, 0x00, 32, 32, 255, 255);
                 } else {
                     gDPSetPrimColor(gMasterDisp++, 0x00, 0x00, 255, 0, 0, 255);
@@ -560,10 +566,10 @@ bool Display_ArwingWingsOverrideLimbDraw(s32 limbIndex, Gfx** gfxPtr, Vec3f* pos
             if (arwing->leftWingState == WINGSTATE_BROKEN) {
                 *gfxPtr = aAwRightWingBrokenDL;
             }
-            if (D_display_800CA22C && ((gLeftWingFlashTimer[0] % 2) != 0)) {
+            if (D_display_800CA22C && ((gLeftWingFlashTimer[sCoopArwing] % 2) != 0)) { // COOP: was player 0
                 RCP_SetupDL(&gMasterDisp, SETUPDL_34);
                 Display_SetCullingMode();
-                if (gLeftWingFlashTimer[0] > 1000) {
+                if (gLeftWingFlashTimer[sCoopArwing] > 1000) { // COOP
                     gDPSetPrimColor(gMasterDisp++, 0x00, 0x00, 32, 32, 255, 255);
                 } else {
                     gDPSetPrimColor(gMasterDisp++, 0x00, 0x00, 255, 0, 0, 255);
@@ -576,10 +582,10 @@ bool Display_ArwingWingsOverrideLimbDraw(s32 limbIndex, Gfx** gfxPtr, Vec3f* pos
             if (arwing->leftWingState != 2) {
                 *gfxPtr = NULL;
             }
-            if (D_display_800CA22C && ((gLeftWingFlashTimer[0] % 2) != 0)) {
+            if (D_display_800CA22C && ((gLeftWingFlashTimer[sCoopArwing] % 2) != 0)) { // COOP: was player 0
                 RCP_SetupDL(&gMasterDisp, SETUPDL_34);
                 Display_SetCullingMode();
-                if (gLeftWingFlashTimer[0] > 1000) {
+                if (gLeftWingFlashTimer[sCoopArwing] > 1000) { // COOP
                     gDPSetPrimColor(gMasterDisp++, 0x00, 0x00, 32, 32, 255, 255);
                 } else {
                     gDPSetPrimColor(gMasterDisp++, 0x00, 0x00, 255, 0, 0, 255);
@@ -631,8 +637,9 @@ void Display_ArwingWings(ArwingInfo* arwing) {
     }
 
     if (gGameState == GSTATE_PLAY) {
-        Animation_DrawSkeleton(1, D_arwing_3016610, gPlayer[0].jointTable, Display_ArwingWingsOverrideLimbDraw, NULL,
-                               arwing, &gIdentityMatrix);
+        // COOP: was player 0
+        Animation_DrawSkeleton(1, D_arwing_3016610, gPlayer[sCoopArwing].jointTable,
+                               Display_ArwingWingsOverrideLimbDraw, NULL, arwing, &gIdentityMatrix);
     } else {
         if (gGameState == GSTATE_MENU) {
             Animation_GetFrameData(&D_arwing_3015AF4, 0, frameTable);
@@ -719,7 +726,7 @@ void Display_CockpitGlass(void) {
 
     Matrix_Push(&gGfxMatrix);
 
-    Matrix_Copy(gGfxMatrix, &D_display_80161418[0]);
+    Matrix_Copy(gGfxMatrix, &D_display_80161418[CoopPlayers_ViewIndex()]); // COOP: was player 0 (#30)
     Matrix_Translate(gGfxMatrix, 0.0f, D_display_800CA290, D_display_800CA294, MTXF_APPLY);
     Matrix_Scale(gGfxMatrix, D_display_800CA28C, D_display_800CA28C, D_display_800CA28C, MTXF_APPLY);
     Matrix_SetGfxMtx(&gMasterDisp);
@@ -752,8 +759,9 @@ void Display_Arwing(Player* player, s32 reflectY) {
         Matrix_MultVec3f(gGfxMatrix, &sp4C, &D_display_801613E0[1]);
     }
 
+    // COOP: only the player this client looks through has a cockpit; to the others it stays an Arwing (#30)
     if (player->alternateView && (gLevelMode == LEVELMODE_ON_RAILS) &&
-        (fabsf(player->trueZpos + gPathProgress - player->cam.eye.z) < 10.0f)) {
+        (fabsf(player->trueZpos + gPathProgress - player->cam.eye.z) < 10.0f) && CoopPlayers_IsViewed(player->num)) {
         if (reflectY == 0) {
             sDrawCockpit = true;
             Matrix_Push(&gGfxMatrix);
@@ -784,7 +792,9 @@ void Display_Arwing(Player* player, s32 reflectY) {
             }
             D_display_800CA22C = true;
             gReflectY = reflectY;
+            sCoopArwing = CoopPlayers_IsCoop() ? player->num : 0; // COOP (#30)
             Display_ArwingWings(&player->arwing);
+            sCoopArwing = 0; // COOP
         }
     }
 }
@@ -1707,7 +1717,8 @@ void Display_LockOnIndicator(void) {
     f32 var_fs0;
 
     for (i = 0; i < gCamCount; i++) {
-        if (gLockOnTargetViewPos[i].z < 0.0f) {
+        // COOP: slot 0 is player 0's lock-on, which only its own client shows (#30)
+        if ((gLockOnTargetViewPos[i].z < 0.0f) && CoopPlayers_IsViewed(i)) {
             var_fs0 = VEC3F_MAG(&gLockOnTargetViewPos[i]);
             if (var_fs0 < 20000.0f) {
                 FrameInterpolation_RecordOpenChild("LockOnIndicator", i);
@@ -1936,7 +1947,7 @@ void Display_Update(void) {
     tempVec.z = 0.0f;
     Matrix_MultVec3f(gCalcMatrix, &tempVec, &playerCamUp);
     if (gStarCount != 0) {
-        gStarfieldRoll = DEG_TO_RAD(gPlayer[0].camRoll);
+        gStarfieldRoll = DEG_TO_RAD(gPlayer[CoopPlayers_ViewIndex()].camRoll); // COOP: was player 0 (#30)
         Camera_SetStarfieldPos(gPlayCamEye.x, gPlayCamEye.y, gPlayCamEye.z, gPlayCamAt.x, gPlayCamAt.y, gPlayCamAt.z);
         Background_DrawStarfield();
     }
@@ -1971,6 +1982,7 @@ void Display_Update(void) {
         playerPos.y = player->pos.y;
         playerPos.z = player->trueZpos;
         Display_SetSecondLight(&playerPos);
+        CoopView_SeePlayer(player); // COOP: where its shield bar goes (#30)
         FrameInterpolation_RecordOpenChild(player, i);
         Display_Player_Update(player, 0);
         FrameInterpolation_RecordCloseChild();
@@ -2061,6 +2073,7 @@ void Display_Update(void) {
     BonusText_DrawAll();
     Matrix_Pop(&gGfxMatrix);
     Display_ActorMarks();
+    CoopView_DrawShieldBars(); // COOP (#30)
     Display_LockOnIndicator();
 
     if (sDrawCockpit) {

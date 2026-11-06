@@ -12,6 +12,7 @@
 #include "assets/ast_corneria.h"
 #include "assets/ast_meteo.h"
 #include "assets/ast_training.h"
+#include "port/coop/game/players.h" // COOP
 #include "assets/ast_sector_x.h"
 #include "assets/ast_sector_y.h"
 #include "assets/ast_aquas.h"
@@ -131,7 +132,7 @@ void BonusText_Draw(BonusText* bonus) {
                     gSPDisplayList(gMasterDisp++, sLargeBonusDLs[dlIndex][0]);
                     gSPDisplayList(gMasterDisp++, sLargeBonusDLs[dlIndex][1]);
                 }
-            } else {
+            } else if (!CoopPlayers_IsCoop()) { // COOP: not freed for being out of view; its timer does that (#96)
                 bonus->hits = BONUS_TEXT_FREE;
             }
         }

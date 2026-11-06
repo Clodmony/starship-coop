@@ -33,6 +33,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
+from run_folder import make_run_folder
+
 ROOT = Path(__file__).resolve().parents[2]
 FOLDER = ROOT / "local" / "test-mutants"
 LOCK = FOLDER / "lock"
@@ -261,7 +263,7 @@ def main(description, make_table, add_options=None):
         print("RESULT: FAILED, cmake not found")
         return 1
 
-    out = args.out or FOLDER / time.strftime("%Y%m%d-%H%M%S")
+    out = args.out or make_run_folder(FOLDER)
     out.mkdir(parents=True, exist_ok=True)
     runner = Runner(table, args, out)
     chosen = [b for b in rows if b[0] in names]

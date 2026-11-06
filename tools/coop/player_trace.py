@@ -54,6 +54,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools" / "coop"))
 from replay import game_env, read_report  # noqa: E402
+from run_folder import make_run_folder  # noqa: E402
 EXE_CANDIDATES = [
     "build/x64/Release/Starship.exe",
     "build/x64/RelWithDebInfo/Starship.exe",
@@ -80,6 +81,7 @@ Row = namedtuple("Row", "frame level mode players path pathvel scroll")
 BUTTON_A = 0x8000
 BUTTON_C_LEFT = 0x0002  # gBoostButton, src/engine/fox_game.c
 BUTTON_C_DOWN = 0x0004  # gBrakeButton
+BUTTON_L = 0x0020
 
 # Input by rule for `rails`. Pad 0 presses A every 30 frames: that gets through the menus into Corneria, where player 0
 # is active at about frame 4775, and keeps firing there. From RAIL_INPUT_START all pads repeat RAIL_CYCLE frames:
@@ -110,8 +112,7 @@ def play(args):
     """Play args.replay with args.players players. Returns the trace file, or None when the run failed."""
     exe = find_exe(args.exe)
     replay = Path(args.replay).resolve()
-    run_dir = ROOT / "local" / f"test-trace-{args.players}p-{time.strftime('%Y%m%d-%H%M%S')}"
-    run_dir.mkdir(parents=True)
+    run_dir = make_run_folder(ROOT / "local", f"test-trace-{args.players}p-")
     for name in DATA_FILES:
         for d in (exe.parent, exe.parent.parent, ROOT / "build/x64", ROOT / "build-cmake", ROOT):
             if (d / name).exists():
@@ -396,11 +397,12 @@ def rail_lead(frame):
     return 0
 
 
-def write_rail_replay(path, frames, lead=None, pad_rule=rail_pad):
+def write_rail_replay(path, frames, l_frame=None, lead=None, pad_rule=rail_pad, extra=None):
     """Write the input for `rails`, in the layout of ReplayHeader and ReplayFrame in src/port/coop/test/replay.c: no
     checkpoints, so playback reports FAIL_MISMATCH at frame 0 and plays on. Hold and press pads get the same stick;
-    press holds the buttons that went down on this frame. lead(frame), if given, is (button, stick_x, stick_y) of pad 0
-    in place of the rule for `rails`, and pad_rule(frame, pad) the same for the other pads."""
+    press holds the buttons that went down on this frame. l_frame adds one L on pad 0 (with CVar gDebugJumpToAllRange,
+    the jump to all-range). lead(frame), if given, is (button, stick_x, stick_y) of pad 0 in place of the rule for
+    `rails`, and pad_rule(frame, pad) the same for the other pads. extra(frame, pad) gives buttons to add."""
     data = bytearray(b"SFCR" + struct.pack("<III6i", 2, 20, 204, *RAIL_SEEDS))
     assert len(data) == RAIL_REPLAY_HEADER
     last = [0, 0, 0, 0]
@@ -412,8 +414,12 @@ def write_rail_replay(path, frames, lead=None, pad_rule=rail_pad):
                 button, stick_x, stick_y = lead(frame)
             elif pad == 0:
                 button, stick_x, stick_y = (BUTTON_A if frame >= 60 and frame % 30 == 0 else 0) | rail_lead(frame), 0, 0
+                if frame == l_frame:
+                    button |= BUTTON_L
             else:
                 button, stick_x, stick_y = pad_rule(frame, pad)
+            if extra is not None:
+                button |= extra(frame, pad)
             hold += struct.pack("<Hbb16x", button, stick_x, stick_y)
             press += struct.pack("<Hbb16x", button & ~last[pad], stick_x, stick_y)
             last[pad] = button

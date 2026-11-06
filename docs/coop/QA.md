@@ -57,6 +57,14 @@ number of clients, transport.
    so this does not need two runs to agree. With `--players 1` (co-op off) it checks that single player kept the old
    rules: the arrays that are new in co-op must not show, `gLifeCount`, `gBombCount` and `gPlayerScores` must, in every
    slot.
+   `python tools/coop/hash_check.py views` (unattended, exit code 0 on `PASS`) plays one replay with
+   `SF64_COOP_TEST_LOCAL_INDEX` 0 and 1, in Corneria's rails and its all-range section: two clients of one session, who
+   draw different cameras and must still hash alike on every frame. It names the first differing frame and regions.
+   `python tools/coop/view_check.py` (unattended, exit code 0 on `PASS`) plays the same two clients with buttons and
+   pokes that give the two players different numbers, and checks what each one shows and hears from a view trace
+   (`src/port/coop/test/view_trace.h`): camera, shield gauge, bomb counter, cockpit, hit flash, shield bar, sound, pause.
+   The trace holds what a client means to show. What reached the screen needs a picture: a game with no window can be
+   read back from OpenGL, and such pictures are game art, so they stay local and are deleted after reading.
    `python tools/coop/hash_check.py diff <a> <b>` compares every column of the two logs, names the first differing
    frame and the regions that differ there. It compares the common frames: read its first line for the two lengths.
    `python tools/coop/replay.py play <replay> --hash-log` writes a log next to an ordinary playback.
@@ -71,7 +79,10 @@ number of clients, transport.
    `SF64_COOP_REPLAY_LIVE_LOCAL=1` makes a replay fly every player but the local one (`src/port/coop/test/replay.h`).
    The `unit` scenario is the only test of a local index other than 0, until the game can have one.
 3. **Two clients on one machine.** Two Starship processes with their own config, save and log folders (never the
-   owner's), connected over loopback, both fed replays.
+   owner's), connected over loopback, both fed replays. `python tools/coop/join_test.py` (WP-24, unattended, exit code
+   0 only when everything passed) takes two or three games from the lobby into a level through the scripted flow in
+   `src/port/coop/test/join_driver.h`. Each game starts from other seeds, and its hash log must then equal the host's
+   on every frame from the first frame in the level. `control` lets a client keep its own values and must differ.
 4. **Network conditions (WP-27).** Lag, loss and reordering between the clients with a chaos relay, as in the hub's
    [network chaos testing](https://github.com/cranebeaker/coop-anything/blob/main/playbook/network-chaos-testing.md).
    The transport on its own already runs through that relay: `python tools/coop/net_test.py` (WP-20), which needs a
@@ -81,8 +92,15 @@ number of clients, transport.
    `python tools/coop/session_mutants.py` does the same for `session.c` and `session_test.py` (#55; CI runs it on
    Linux), and `python tools/coop/session_test.py --asan` runs the session tests under AddressSanitizer and UBSan (CI
    does, on Linux); `session_mutants.py --asan` shows that run can fail. `python tools/coop/net_test.py --asan` does
-   the same for the transport tests (#75; CI does, on Linux).
-5. **Regression per bug.** Every desync fix comes with the replay that triggered it; every transport fix adds a
+   the same for the transport tests (#75; CI does, on Linux), and `net_mutants.py --asan` shows that run can fail
+   (#92).
+5. **The co-op menu (WP-25).** `python tools/coop/menu_test.py` checks the menu layer with no game: `sim` on the real
+   session in a virtual network, `udp` over real sockets. `python tools/coop/menu_test.py --game` starts three real
+   games with `SF64_COOP_TEST_MENU=<folder>` (`src/port/coop/test/menu_driver.h`), clicks the real ImGui widgets through
+   ImGui's input queue and reads back what each window holds, so it needs nobody at the screen. Its `game_level` and
+   `game_level_map` scenarios (#126) go on to the Start button and compare the state hash logs from the first frame after
+   `Play_Init`, as `join_test.py` does. Neither says how the window looks.
+6. **Regression per bug.** Every desync fix comes with the replay that triggered it; every transport fix adds a
    break to `tools/coop/net_mutants.py`, every session fix one to `tools/coop/session_mutants.py`.
 
 Running tests must never use or modify the owner's own `starship.cfg.json`, saves, `mods/` folder or running game.
