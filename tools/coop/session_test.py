@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Tests for the co-op session: handshake (WP-21) and characters (WP-34). A virtual network, then real processes over
-UDP.
+"""Tests for the co-op session: handshake (WP-21), characters (WP-34) and level start (WP-24). A virtual network, then
+real processes over UDP.
 
     python tools/coop/session_test.py                  # build coop_session_test, run every scenario
     python tools/coop/session_test.py --only sim,rom   # chosen scenarios
@@ -29,6 +29,9 @@ from net_test import SEED, Fail, Run, chaos, expect, read  # noqa: E402
 DIFF_BUILD, DIFF_ROM, DIFF_CVARS, DIFF_PLATFORM = 1, 2, 4, 8
 END_REFUSED = 1  # COOP_SESSION_END_REFUSED
 EAGER = 3  # game messages each side pushes past the session in a refused handshake
+REFUSE_STARTED = 1 << 9  # COOP_SESSION_REFUSE_STARTED
+LEVEL, PHASE = 5, 1  # what the bots start: TEST_PHASE in coop_session_test.c
+LEVEL_VALUES = 86  # COOP_LEVEL_START_VALUES
 
 
 def pair(run, host_args=(), client_args=(), via=None, seconds=60, seed=SEED):
@@ -119,18 +122,18 @@ def check_joined(h, c, diff):
     return cj[0]["text"] or "joined, no warnings"
 
 
-def party(run, picks, via=None, seconds=60, seed=SEED):
+def party(run, picks, via=None, seconds=60, seed=SEED, host_args=(), client_args=()):
     """A host and one client for each list of characters in picks. A client asks for the first and for the next one
     after each refusal, and stays until every player holds a character. Returns host, clients and the relay's info."""
     common = ["--max-seconds", seconds, "--players", len(picks) + 1]
-    host, port, host_out = run.host("--clients", len(picks), *common)
+    host, port, host_out = run.host("--clients", len(picks), *common, *host_args)
     info = None
     if via:
         port, info = run.relay(port, via, seed)
     clients = []
     for n, names in enumerate(picks):
         wishes = [arg for name in names for arg in ("--pick", name)]
-        clients.append(run.client(port, *common, *wishes, name=f"client{n}"))
+        clients.append(run.client(port, *common, *wishes, *client_args, name=f"client{n}"))
     for n, (proc, _) in enumerate(clients):
         run.wait(proc, seconds + 10, f"client {n}")
     run.wait(host, seconds + 10, "host")
@@ -154,6 +157,33 @@ def check_party(h, clients, refusals):
             expect(r["text"] == f"{r['character']} is already taken.", f"wrong text: {r['text']!r}")
         expect(not events(c, "ended"), f"a client was ended: {c['events']}")
     return " ".join(roster)
+
+
+def level_values():
+    """What the bots start from, as Level_Value in coop_session_test.c."""
+    words = [(0x9E3779B1 * (i + 1)) & 0xFFFFFFFF for i in range(LEVEL_VALUES)]
+    return [w - (1 << 32) if w >= 1 << 31 else w for w in words]
+
+
+def level_party(run, picks, via=None, seed=SEED, client_args=()):
+    """party(), with the host trying to start LEVEL as soon as every client has joined, and the clients staying until
+    it has started."""
+    return party(run, picks, via, seed=seed, host_args=["--start-level", LEVEL],
+                 client_args=["--wait-level", 1, *client_args])
+
+
+def check_level(h, clients):
+    """Every side saw one level start, and the same one: the level, the values and the host's last roster."""
+    start = h["level_start"]
+    expect(start is not None, f"the host never started: {h['events']}")
+    expect(start["level"] == LEVEL and start["phase"] == PHASE, f"level {start['level']} phase {start['phase']}")
+    expect(start["values"] == level_values(), "the host's values are not the ones the bot gave it")
+    expect(start["roster"][:len(clients) + 1] == h["roster"][:len(clients) + 1], f"host started from {start['roster']}")
+    for side in [h, *clients]:
+        expect(len(events(side, "level_start")) == 1, f"{side['role']}: {side['events']}")
+    for n, c in enumerate(clients):
+        expect(c["level_start"] == start, f"client {n} started from {c['level_start']}, host from {start}")
+    return " ".join(name for name in start["roster"] if name)
 
 
 # ---- Scenarios. Each returns the text for its summary line. ----
@@ -241,6 +271,45 @@ def sc_taken_bad_wifi(run, args):
     return f"{detail} (relay dropped {run.lost}, try {run.tries})"
 
 
+def sc_level_start(run, args):
+    h, clients, _ = level_party(run, [WISHES] * 3)
+    check_party(h, clients, TAKEN)
+    return f"{check_level(h, clients)} on level {LEVEL}, {TAKEN} picks refused"
+
+
+def sc_level_start_bad_wifi(run, args):
+    def play(sub, seed):
+        return level_party(sub, [WISHES] * 3, "bad_wifi", seed)
+    for h, clients in damaged_runs(run, play):
+        check_party(h, clients, TAKEN)
+        detail = check_level(h, clients)
+    return f"{detail} (relay dropped {run.lost}, try {run.tries})"
+
+
+def sc_unpicked_holds_start(run, args):
+    h, clients, _ = level_party(run, [["falco"]], client_args=["--pick-delay-ms", 500])
+    expect(h["start_refused"] > 0, "the host never had to wait, so this pass proves nothing")
+    return f"{check_level(h, clients)}, host turned down {h['start_refused']} times until the pick"
+
+
+def sc_late_client(run, args):
+    common = ["--max-seconds", 60]
+    host, port, host_out = run.host("--clients", 2, "--start-level", LEVEL, "--start-with", 1, *common)
+    first, first_out = run.client(port, *common, "--pick", "falco", "--players", 2, "--wait-level", 1, name="client0")
+    run.wait(first, 70, "client 0")
+    late, late_out = run.client(port, *common, name="client1")
+    run.wait(late, 70, "client 1")
+    run.wait(host, 70, "host")
+    h, c = read(host_out), read(late_out)
+    hr, cr = events(h, "refused"), events(c, "refused")
+    expect(len(hr) == 1 and len(cr) == 1 and not events(c, "joined"), f"client 1: {c['events']}")
+    expect(hr[0]["diff"] == REFUSE_STARTED and cr[0]["diff"] == REFUSE_STARTED, f"reasons {hr} {cr}")
+    expect(hr[0]["text"] == cr[0]["text"], "host and client got different texts")
+    expect(events(c, "ended")[0]["end"] == END_REFUSED, f"client did not end with the refusal: {c['events']}")
+    expect(read(first_out)["level_start"]["level"] == LEVEL, "client 0 did not start the level")
+    return cr[0]["text"]
+
+
 SCENARIOS = {
     "sim": sc_sim,
     "match": sc_match,
@@ -251,9 +320,13 @@ SCENARIOS = {
     "two_clients": sc_two_clients,
     "characters": sc_characters,
     "taken": sc_taken,
+    "level_start": sc_level_start,
+    "unpicked_holds_start": sc_unpicked_holds_start,
+    "late_client": sc_late_client,
     "match_bad_wifi": sc_match_bad_wifi,
     "refuse_hell": sc_refuse_hell,
     "taken_bad_wifi": sc_taken_bad_wifi,
+    "level_start_bad_wifi": sc_level_start_bad_wifi,
 }
 
 
