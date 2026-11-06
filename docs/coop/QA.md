@@ -36,6 +36,11 @@ number of clients, transport.
    (one bit of game state flipped) must first differ at exactly that frame.
    `python tools/coop/hash_check.py diff <a> <b>` names the first differing frame and the regions that differ there.
    `python tools/coop/replay.py play <replay> --hash-log` writes a log next to an ordinary playback.
+   `python tools/coop/determinism.py <replay>` (WP-02, unattended, exit code 0 on `PASS`) plays the replay once alone
+   and then six more times at once, each under a condition that can differ between machines: graphics backend,
+   window and frame pacing, audio timing (`SF64_COOP_TEST_AUDIO_SAMPLES`) and C runtime math without FMA3
+   (`SF64_COOP_TEST_NO_FMA3`, `src/port/coop/test/switches.h`). Every run's hash must equal the first run's on every
+   recorded frame. `--only opengl,no-fma3` picks variants.
 3. **Two clients on one machine.** Two Starship processes with their own config, save and log folders (never the
    owner's), connected over loopback, both fed replays.
 4. **Network conditions (WP-27).** Lag, loss and reordering between the clients with a chaos relay, as in the hub's
@@ -86,6 +91,15 @@ identity:   no game, no ROM; Linux, GCC, Debug; 2 or 3 processes on one machine,
 what ran:   python tools/coop/net_test.py
 result:     17/17 scenarios: virtual network with 200 seeds, every relay profile, corruption, outages, timeouts,
             killed client, full host, two clients, junk datagrams. Transport only, not co-op play.
+```
+
+```
+date:       2026-11-05
+commit:     issue/2-determinism (WP-02), on top of e8c4e6a2
+identity:   ROM US 1.0, Windows 11, MSVC 19.44, Debug, DirectX 11 (OpenGL in one run), 1 client per run, no transport
+what ran:   python tools/coop/determinism.py local/replays/corneria.sfcr
+result:     PASS. 6/6 variants (base-2, opengl, window, audio-low, audio-high, no-fma3) equal to base on 13545/13545
+            frames; 7 replays PASS; 1040 s
 ```
 
 ```

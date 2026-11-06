@@ -96,8 +96,9 @@ src/port/coop/
 
 Each needs a decision record before code depends on it. Proposals in brackets.
 
-1. Who player 2 is: a fifth Arwing, or flying in place of a wingman [in place of Falco, keeps radio and story intact;
-   Peppy and Slippy for players 3 and 4].
+1. Who player 2 is: decided in [0005](decisions/0005-players-and-characters.md). Player 1 is always Fox; players 2-4
+   each pick Falco, Peppy or Slippy; unpicked wingmen stay computer wingmen. Wingman events, radio and damage are
+   still open there.
 2. Lives: shared pool or per player [shared pool, game over when it is empty].
 3. A player goes down: respawn rule [respawn after a delay while any player is alive].
 4. Route choices and warps: who decides [whoever triggers it; the whole team follows].
