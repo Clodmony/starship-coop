@@ -2,6 +2,7 @@
 """Run a replay with several co-op players and check what each player did, from the per-frame player trace.
 
     python tools/coop/player_trace.py rails --players 2                                # input by rule, 1 and N players
+    python tools/coop/player_trace.py lowhealth --players 2                            # low-health radio timer (#87)
     python tools/coop/player_trace.py run   local/replays/corneria.sfcr --players 2   # play it, then check
     python tools/coop/player_trace.py check local/test-trace-<time>/trace.txt          # check an existing trace
 
@@ -36,6 +37,20 @@ with both: gPathProgress, gPathVelZ and gPathTexScroll must match single player,
 and each extra player must have covered --min-sweep units of x, stayed in the flight box, boosted and braked (its
 camDist only) and looped. Both runs set gInvincible: flying by rule, player 0 is shot down half way through the section.
 
+`lowhealth` is the test for #87: gTeamLowHealthMsgTimer is one timer, stepped by Player_LowHealthMsg. It plays one replay
+by rule (--section rails or all-range) four times, one after the other, with gInvincible and with shields held by
+SF64_COOP_TRACE_SHIELDS (src/port/coop/test/player_trace.h):
+
+  solo   one player, low: what the timer does in single player.
+  low0   N players, only player 0 low.
+  again  the same again.
+  low1   N players, all but player 0 low.
+
+The timer of low0 and low1 must equal solo's on every frame, rise by at most 1 a frame and reach its limit on the same
+frames. low0 must play its lines on the frames solo does, and low1 none: player 0's shields decide, which is a choice no
+record covers yet (NOTES.md, 2026-11-06, #87). low0 and again must have equal state hashes on every frame, RNG included,
+so the draws behind a line repeat. Each run is one game: this says nothing about two clients.
+
 Stopping the game can cut the last line of the trace; only that line may be cut.
 """
 import argparse
@@ -53,6 +68,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools" / "coop"))
+from hash_check import describe, first_difference, read_log, write_generated_replay  # noqa: E402
 from replay import game_env, read_report  # noqa: E402
 EXE_CANDIDATES = [
     "build/x64/Release/Starship.exe",
@@ -74,7 +90,7 @@ ARWING = 0
 
 # One player on one frame and one whole frame, as player_trace.c writes them.
 Slot = namedtuple("Slot", "state cs x y z parked draw zpath camdist xpath ypath width shields somersault form")
-Row = namedtuple("Row", "frame level mode players path pathvel scroll")
+Row = namedtuple("Row", "frame level mode players path pathvel scroll lowmsg radio_state radio_id")
 
 # OSContPad.button
 BUTTON_A = 0x8000
@@ -90,6 +106,13 @@ RAIL_FRAMES = 10500
 RAIL_SEEDS = (1234, 5678, 9012, 111, 222, 333)
 RAIL_REPLAY_HEADER = 40  # ReplayHeader in src/port/coop/test/replay.c
 RAIL_SETTLE = 100  # frames of the section left out of the speed check: the level starts with its own boost
+
+# `lowhealth`. Player_LowHealthMsg (src/engine/fox_play.c) plays a line under 64 shields, at most every 961 frames, and
+# player 0 is active at about replay frame 4775: 8000 frames hold three limits at the original rate.
+LOW_FRAMES = 8000
+LOW_SHIELDS = 40
+FULL_SHIELDS = 200
+LOW_LINES = range(20304, 20310)  # gMsg_ID_20304 to gMsg_ID_20309, as gRadioMsgId holds them
 
 
 def find_exe(given):
@@ -128,6 +151,9 @@ def play(args):
     env["SF64_COOP_REPLAY_PLAY"] = str(replay)
     env["SF64_COOP_REPLAY_REPORT"] = str(report_path)
     env["SF64_COOP_TRACE"] = str(run_dir / "trace.txt")
+    if getattr(args, "shields", None):
+        env["SF64_COOP_TRACE_SHIELDS"] = args.shields
+        env["SF64_COOP_HASH_LOG"] = str(run_dir / "state-hash.txt")
     print(f"player_trace: run folder {run_dir}")
     start = time.monotonic()
     proc = subprocess.Popen([str(exe)], cwd=run_dir, env=env)
@@ -176,8 +202,9 @@ def parse_row(line):
         players.append(Slot(int(s[0]), int(s[1]), float(s[2]), float(s[3]), float(s[4]), int(s[5]), int(s[6]),
                             float(s[7]), float(s[8]), float(s[9]), float(s[10]), float(s[11]), int(s[12]), int(s[13]),
                             int(s[14])))
+    radio = f.get("radio", "0,0").split(",")
     return Row(int(f["frame"]), int(f["level"]), int(f["mode"]), players, float(f["path"]), float(f["pathvel"]),
-               float(f["scroll"]))
+               float(f["scroll"]), int(f.get("lowmsg", 0)), int(radio[0]), int(radio[1]))
 
 
 def parse(path):
@@ -507,6 +534,96 @@ def rails(args):
     return 0 if ok else 1
 
 
+def low_limits(rows):
+    """Frames on which the timer reached its limit: it goes back to 0 there, the only way down but the end of a level."""
+    return [b.frame for a, b in zip(rows, rows[1:]) if 0 <= b.lowmsg < a.lowmsg]
+
+
+def low_steps(rows):
+    """(frames with every player flying, how far the timer rose on them, the largest rise on one frame)."""
+    rises = [b.lowmsg - a.lowmsg for a, b in zip(rows, rows[1:]) if all(flying(p) for p in a.players + b.players) and
+             b.lowmsg > a.lowmsg]
+    return len(rises), sum(rises), max(rises, default=0)
+
+
+def low_lines(rows):
+    """Frames on which a low-health line started: the radio was idle or on another line, and took one of LOW_LINES. A
+    line the radio refuses, as one with a higher priority is playing, does not show: the limit passes in silence."""
+    return [b.frame for a, b in zip(rows, rows[1:]) if b.radio_id in LOW_LINES and b.radio_state != 0 and
+            (a.radio_state == 0 or a.radio_id != b.radio_id)]
+
+
+def check_low_timer(name, rows, solo, args):
+    """Return the rule results for the timer of one co-op run against the single player run."""
+    solo_timer = {r.frame: r.lowmsg for r in solo}
+    both = [r for r in rows if r.frame in solo_timer]
+    same = sum(1 for r in both if r.lowmsg == solo_timer[r.frame])
+    worst = max((abs(r.lowmsg - solo_timer[r.frame]) for r in both), default=None)
+    frames, rise, step = low_steps(rows)
+    rate = rise / frames if frames else 0.0
+    limits, solo_limits = low_limits(rows), low_limits(solo)
+    return [
+        (f"{name}: timer as in single player on {same} of {len(both)} frames, largest difference {worst}",
+         bool(both) and same == len(both)),
+        (f"{name}: timer rose {rise} on {frames} frames with every player flying, {rate:.2f} per frame, at most {step} "
+         f"(max 1)", frames > 0 and step == 1),
+        (f"{name}: limits on frames {limits}, in single player {solo_limits}", limits == solo_limits),
+    ]
+
+
+def low_shields(count, low):
+    """The value of SF64_COOP_TRACE_SHIELDS for `count` players, low for those whose index is in `low`."""
+    return ",".join(str(LOW_SHIELDS if i in low else FULL_SHIELDS) for i in range(count))
+
+
+def lowhealth(args):
+    replay = ROOT / "local" / f"test-trace-lowhealth-{args.section}.sfcr"
+    args.no_checkpoints = True
+    args.cvar = args.cvar + ["gInvincible=1"]  # shields stay where SF64_COOP_TRACE_SHIELDS holds them
+    if args.section == "all-range":
+        write_generated_replay(replay, args.frames)
+        args.cvar = args.cvar + ["gDebugJumpToAllRange=1"]
+    else:
+        write_rail_replay(replay, args.frames)
+    args.replay = str(replay)
+
+    extra = set(range(1, args.players))
+    runs = {"solo": (1, {0}), "low0": (args.players, {0}), "again": (args.players, {0}),
+            "low1": (args.players, extra)}
+    traces = {}
+    for name, (count, low) in runs.items():
+        print(f"player_trace: lowhealth: {name}, {count} player(s), shields {low_shields(count, low)}", flush=True)
+        traces[name] = play(argparse.Namespace(**{**vars(args), "players": count, "shields": low_shields(count, low)}))
+        if traces[name] is None:
+            print("player_trace: lowhealth FAIL")
+            return 1
+    rows = {name: first_attempt(parse(trace)) for name, trace in traces.items()}
+    print("player_trace: traces " + " ".join(str(t) for t in traces.values()))
+
+    solo, low0, low1 = rows["solo"], rows["low0"], rows["low1"]
+    solo_limits, solo_lines = low_limits(solo), low_lines(solo)
+    results = [(f"solo: {len(solo_limits)} limits (min {args.min_limits}), lines on frames {solo_lines}",
+                len(solo_limits) >= args.min_limits and bool(solo_lines))]
+    for name, run_rows in (("low0", low0), ("low1", low1)):
+        results += check_low_timer(name, run_rows, solo, args)
+    lines = low_lines(low0)
+    results.append((f"low0: only player 0 low, lines on frames {lines}, in single player {solo_lines}",
+                    lines == solo_lines))
+    lines = low_lines(low1)
+    results.append((f"low1: only the others low, lines on frames {lines} (none allowed)", not lines))
+
+    names, a_rows = read_log(traces["low0"].with_name("state-hash.txt"))
+    _, b_rows = read_log(traces["again"].with_name("state-hash.txt"))
+    diff = first_difference(a_rows, b_rows)
+    common = min(len(a_rows), len(b_rows))
+    results.append((f"low0 and again: state hash equal on {common} frames" if diff is None else
+                    f"low0 and again: first difference at {describe(names, diff)}",
+                    diff is None and common >= args.frames - 100))
+    ok = report_results(results)
+    print(f"player_trace: lowhealth {'PASS' if ok else 'FAIL'}")
+    return 0 if ok else 1
+
+
 def add_check_options(parser):
     parser.add_argument("--players", type=int, default=2, help="players the trace must hold (default 2)")
     parser.add_argument("--min-move", type=float, default=5.0)
@@ -541,11 +658,22 @@ def main():
                    help="how far knockback may push past the box (default 100)")
     t.add_argument("--cvar", action="append", default=[], metavar="NAME[=VALUE]", help="another CVar for both runs")
     add_check_options(t)
+    w = sub.add_parser("lowhealth", help="the low-health radio timer: N players against one player")
+    w.add_argument("--exe")
+    w.add_argument("--timeout", type=int, default=900, help="seconds to wait for each replay report (default 900)")
+    w.add_argument("--frames", type=int, default=LOW_FRAMES, help=f"replay length (default {LOW_FRAMES})")
+    w.add_argument("--section", choices=("rails", "all-range"), default="rails",
+                   help="where to fly: Corneria's rails, or all-range with gDebugJumpToAllRange (default rails)")
+    w.add_argument("--min-limits", type=int, default=3, help="limits single player must reach (default 3)")
+    w.add_argument("--players", type=int, default=2, help="players of the co-op runs (default 2)")
+    w.add_argument("--cvar", action="append", default=[], metavar="NAME[=VALUE]", help="another CVar for every run")
     args = ap.parse_args()
     if args.cmd == "run":
         sys.exit(run(args))
     if args.cmd == "rails":
         sys.exit(rails(args))
+    if args.cmd == "lowhealth":
+        sys.exit(lowhealth(args))
     sys.exit(check_trace(Path(args.trace), args))
 
 
