@@ -148,7 +148,7 @@ in `src/port/coop/session/session.c`; what the values are is in `src/port/coop/g
 | 1 | Level: a `LevelId` below 20, so not versus |
 | 1 | Phase: `gLevelPhase` |
 | 4 | Roster, as in Characters |
-| 4 v | The values, each a little-endian 32-bit integer, in the order of the table in `level_start.c`: `COOP_LEVEL_START_VALUES`, 86 now |
+| 4 v | The values, each a little-endian 32-bit integer, in the order of the table in `level_start.c`: `COOP_LEVEL_START_VALUES`, 87 now |
 
 Each game goes to the level by itself, as soon as it hears: no frame is shared yet, so the games are not in step. That
 is WP-22, whose first frame will be what holds them together.

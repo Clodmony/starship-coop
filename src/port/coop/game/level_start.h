@@ -16,7 +16,7 @@ extern "C" {
 #endif
 
 // How many values the table in level_start.c holds.
-#define COOP_LEVEL_START_VALUES 86
+#define COOP_LEVEL_START_VALUES 87
 // Levels below this can be started: LEVEL_VERSUS and up (include/sf64level.h) are not co-op levels.
 #define COOP_LEVEL_START_LEVELS 20
 

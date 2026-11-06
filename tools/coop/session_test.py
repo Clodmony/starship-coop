@@ -31,7 +31,7 @@ END_REFUSED = 1  # COOP_SESSION_END_REFUSED
 EAGER = 3  # game messages each side pushes past the session in a refused handshake
 REFUSE_STARTED = 1 << 9  # COOP_SESSION_REFUSE_STARTED
 LEVEL, PHASE = 5, 1  # what the bots start: TEST_PHASE in coop_session_test.c
-LEVEL_VALUES = 86  # COOP_LEVEL_START_VALUES
+LEVEL_VALUES = 87  # COOP_LEVEL_START_VALUES
 
 
 def pair(run, host_args=(), client_args=(), via=None, seconds=60, seed=SEED):

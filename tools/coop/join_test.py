@@ -102,7 +102,7 @@ class Game:
         return read_report(self.report_path)
 
 
-def play(folder, exe, frames, picks, host_env=None, client_env=None, press_until=0):
+def play(folder, exe, frames, picks, host_env=None, client_env=None, press_until=0, client_frames=None):
     """A host and one client for each list of picks. Clients start once the host has its port."""
     folder.mkdir(parents=True, exist_ok=True)
     port_file = folder / "port"
@@ -118,7 +118,7 @@ def play(folder, exe, frames, picks, host_env=None, client_env=None, press_until
     clients = []
     for n, wishes in enumerate(picks):
         env = {"SF64_COOP_JOIN_CONNECT": f"127.0.0.1:{port}", "SF64_COOP_JOIN_PICKS": ",".join(wishes)}
-        clients.append(Game(folder, f"client{n}", exe, frames, {**env, **(client_env or {})}))
+        clients.append(Game(folder, f"client{n}", exe, client_frames or frames, {**env, **(client_env or {})}))
         clients[-1].thread.start()
     for game in [host, *clients]:
         game.thread.join()
@@ -189,9 +189,11 @@ def sc_level(args, folder):
 
 
 def sc_from_the_menus(args, folder):
-    host, clients = play(folder, args.exe, args.frames + MENU_START_FRAME - START_FRAME, [["peppy"]],
+    # The map draws slowly, so a client on the title screen gets far ahead of the host in frames.
+    frames = args.frames + MENU_START_FRAME - START_FRAME
+    host, clients = play(folder, args.exe, frames, [["peppy"]],
                          host_env={"SF64_COOP_JOIN_START_FRAME": str(MENU_START_FRAME)},
-                         press_until=MENU_START_FRAME - 60)
+                         press_until=MENU_START_FRAME - 60, client_frames=frames + 3000)
     check_started(host, clients, "Fox,Peppy,-,-")
     _, before, _ = host.rows()
     states = {row[1] for row in before[-30:]}

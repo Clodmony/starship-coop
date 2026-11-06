@@ -31,6 +31,7 @@ void Map_LevelStart_AudioSpecSetup(LevelId level);
     X(gClearPlayerInfo, s32)            \
     X(gGreatFoxIntact, u8)              \
     X(gVenomHardClear, u8)              \
+    X(gRadioMsgId, s32)                 \
     X(gTeamShields, s32)                \
     X(gSavedTeamShields, s32)           \
     X(gPrevPlanetTeamShields, s32)      \
