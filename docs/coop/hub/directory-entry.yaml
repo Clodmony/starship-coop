@@ -1,0 +1,34 @@
+# Draft for the hub's data/directory.yaml: append the entry below, without this comment.
+# Schema: data/SCHEMA.md in the hub. Sources for the fields: docs/coop/HUB.md, "Why the entry says what it says".
+- game: Star Fox 64
+  year: 1997
+  engine: N64 decompilation port (Starship, libultraship)
+  project: Starship Co-op
+  url: https://github.com/Clodmony/starship-coop
+  other_urls:
+  - https://github.com/HarbourMasters/Starship
+  kind: fork
+  status: prototype
+  coop_scope:
+    players_visible: no
+    story: no
+    enemies: no
+    world_state: no
+    items: no
+  players: "2 planned, later up to 4"
+  networking: direct-ip
+  open_source: yes
+  last_activity: 2026-11
+  qa: none
+  notes: Campaign co-op for the Starship PC port, pre-alpha. No co-op play with two clients yet and no release, so
+    nothing is shared between players today. Two parts are built and tested on their own. A UDP transport and session
+    handshake run over loopback in test programs, and the game does not call them yet. A second player runs inside
+    one game process, on Corneria only, behind a debug setting. The sync model is still open. License CC0 1.0.
+  sources:
+  - https://github.com/Clodmony/starship-coop
+  - https://github.com/Clodmony/starship-coop/blob/coop/docs/coop/QA.md
+  - https://github.com/Clodmony/starship-coop/blob/coop/docs/coop/ROADMAP.md
+  - https://github.com/Clodmony/starship-coop/blob/coop/docs/coop/decisions/0002-sync-model.md
+  - https://github.com/Clodmony/starship-coop/blob/coop/docs/coop/decisions/0004-transport.md
+  checked: '2026-11-06'
+  made_with_coop_anything: true
