@@ -371,6 +371,150 @@ Observed: see DESIGN.md section 2 (player array, `gCamCount`, object arrays, RNG
 
 Unknown: everything listed in DESIGN.md section 2, "Unknown".
 
+### 2026-11-06, #68, controller state: devices, ports and what WP-14 reads
+
+Base build of `origin/coop` at 95962d04: ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window, with
+`libultraship` at eaaf9d0f. The runs were gdb on the headless game with a generated replay; `f357` is the 357th
+`Game_Update` call of that run. Replay frame 0 fell between f20 and f35, because the replay starts after the boot logo
+(`src/port/coop/test/replay.c:225-235`). No real pad was attached. The runs with pads used SDL virtual gamepads,
+attached from gdb inside the game process (`SDL_JoystickAttachVirtual`, `SDL_JoystickSetVirtualButton`). Paths starting
+with `controldeck/`, `controldevice/` or `physicaldevice/` are under `libultraship/src/controller/`.
+
+**For WP-14: the local controller is port 0.** Read `gControllerHold[0]` once per frame, first thing in
+`GamePreUpdateEvent`, on every client, whatever `CoopPlayers_LocalIndex()` says. `gControllerPlugged` and
+`gMainController` are constants here and say nothing about devices. Make button press edges from your own copy of the
+last hold, not from `gControllerPress[0].button`. No code was changed; the reasons are under Decision.
+
+Observed, devices and ports:
+
+- **Four ports always exist.** `LUS::ControlDeck` builds four `ControlPort`s with a `Controller` each
+  (`controldeck/ControlDeck.cpp:126-128`). Nothing calls `ControlPort::Connect` or `Disconnect`
+  (`controldeck/ControlPort.cpp:14-20`), so `GetConnectedController()` never says "nothing there".
+- **Devices are not assigned to ports. A port has mappings, and a mapping names a kind of input.** A gamepad button
+  mapping asks every gamepad its port does not ignore and sets the bit if any has it down
+  (`controldevice/controller/mapping/sdl/SDLButtonToButtonMapping.cpp:21-28`). Keyboard events go to all four ports
+  (`controldeck/ControlDeck.cpp:44-50`).
+- **Every gamepad lands on port 0.** `RefreshConnectedSDLGamepads` puts each one on the ignore list of ports 1-3 and
+  never on port 0's (`physicaldevice/ConnectedPhysicalDeviceManager.cpp:68-70`). Run: with one and with two virtual
+  pads, each pad read ignored `[0, 1, 1, 1]` for ports 0-3, and A on either pad showed in `sNextController[0]` only
+  (f356-360, f416-420).
+- **A fresh config maps port 0 only.** `ControlDeck::Init` adds the defaults to port 0 and nothing to the others
+  (`controldeck/ControlDeck.cpp:34-39`). Run: keyboard, mouse and gamepad mappings were `[1, 0, 1]` on port 0 and
+  `[0, 0, 0]` on ports 1-3; the written config has `Port1` (port index 0) and no `Port2` to `Port4`.
+- **A pad reaches port 1 only with a mapping there and off that port's ignore list.** Run, on port 1: mappings alone, A
+  stayed on port 0 (f446-450). Off the ignore list too, the same pad drove ports 0 and 1 (f476-480). Ignored by port 0,
+  it drove port 1 only (f506-510). The checkbox in the Input Editor makes those calls
+  (`libultraship/src/window/gui/InputEditorWindow.cpp:1200-1207`); here gdb made them, and the editor was not opened.
+- **Any hotplug undoes that.** A third pad arrived and the refresh put the second pad back on port 1's ignore list. It
+  was still on port 0's, so it read `[1, 1, 1, 1]` and reached no port (f536-540). The lists live in memory only
+  (`physicaldevice/ConnectedPhysicalDeviceManager.h:30`).
+- **Who says what is connected.** C++ only, through `Ship::Context::GetInstance()->GetControlDeck()`:
+  `GetConnectedPhysicalDeviceManager()->GetConnectedSDLGamepadNames()` lists all gamepads and
+  `GetConnectedSDLGamepadsForPort(port)` those a port listens to; `GetControllerByPort(port)` gives
+  `HasMappingsForPhysicalDeviceType(type)` and `HasConfig()`. Nothing says whether a keyboard or mouse is there; they
+  only have mappings. From C there is only `ControllerBlockGameInput` and `ControllerUnblockGameInput`
+  (`libultraship/src/public/bridge/controllerbridge.h:9-10`).
+- **`osContInit` does not say either.** It sets the status of the first entry and bit 0 of the mask, whatever is
+  connected (`libultraship/src/public/libultra/os.cpp:15-16`, `controldeck/ControlDeck.cpp:26`). Run: mask 1,
+  `sControllerStatus` status 1, 0, 0, 0, so `gControllerPlugged` is (1, 0, 0, 0) until the first
+  `Controller_UpdateInput`.
+- **A port with no device reports a zeroed `OSContPad` with `err_no` 0, the same as an idle pad.**
+  `osContGetReadData` clears all four (`libultraship/src/public/libultra/os.cpp:42`) and nothing in libultraship sets
+  `err_no`. Run with `SDL_NumJoysticks` 0: over 3400 frames `err_no` was 0 on all ports and ports 1-3 held only zeros.
+
+Observed, the derived points in #68:
+
+- `gControllerPlugged` was (1, 1, 1, 1) on 3399 of 3400 frames, boot into Corneria. The other frame is the first
+  `Game_Update` (`src/sys/sys_main.c:219`), which runs before `Controller_Init` (`:366`) and read (0, 0, 0, 0).
+- `gMainController` was 0 on all 3400 frames and `Title_CheckControllers` returned 0 on all 124 calls. In the level
+  `gInputHold` and `gInputPress` pointed at slot 0.
+- Neither follows devices. `gControllerPlugged` stayed (1, 1, 1, 1) with 0, 1, 2 and 3 virtual pads, with a pad driving
+  port 1 only (f507-510), and after all were removed, when `gMainController` was still 0.
+
+Observed, reads:
+
+- `gControllerPlugged` is read in `Controller_UpdateInput` and `Controller_Rumble` (`src/sys/sys_joybus.c:70`, `:111`),
+  in `Title_CheckControllers` (`src/overlays/ovl_menu/fox_title.c:392-393`), and otherwise only for versus. In
+  `src/overlays/ovl_menu/fox_option.c`: `Option_VersusMenu_Setup` (`:2668-2672`, an unplugged port is inactive and
+  counts as confirmed), `Option_VersusMenu_Draw` (`:2746-2747`), `Option_Vs_Point_Selection` (`:3013-3014`),
+  `Option_VsTimeSelection` (`:3053-3054`), `Option_VsStageSelection` (`:3095-3096`), `Option_VsConfirmSelection`
+  (`:3149-3150`). In `src/engine/fox_versus.c`: `Versus_CheckForWinner` (`:838-887`, six reads),
+  `Versus_GetMenuInput` (`:1029`), `Versus_UpdateMenu` (`:1138`), `func_versus_800C0E78` (`:1213`). Written at
+  `src/sys/sys_joybus.c:57`, `:69` and `src/sys/sys_fault.c:242`.
+- `gMainController` has 166 lines in `src` and `include`. Only two read its value: `Title_Setup` skips the attract
+  sequence at -1 (`fox_title.c:204`) and `Title_PressStart_Draw` shows "No Controller" below 0 (`fox_title.c:2983`).
+  The rest are its two writes, its two declarations and 160 uses as an index: 100 pad reads, 9 cursor arguments, 30
+  rumble flags and timers, 21 rumble strengths. `docs/coop/audit/single-player.md` has the sites.
+- With no plugged port the title locks up. gdb set `gControllerPlugged` to 0 at each `Game_Update`, so only game logic
+  saw it. `gMainController` was -1 from f39, the attract sequence was skipped, and "No Controller" was drawn 832 times
+  and "Press Start" never. The replay's A every 30 frames did nothing and the game was still on the title at f900,
+  because the title then reads `gControllerPress[-1]`, memory before the array. Unforced, the same replay left the
+  title 125 frames after reaching it.
+- **Versus cannot be entered.** `DEBUG_VERSUS` is 0 (`include/mods.h:100`, upstream commit 18631e72, "disable versus
+  mode for now"), so A on the VS card does nothing (`fox_option.c:975-979`). Run: with the cursor on card 2, A left the
+  menu in the same state. `GSTATE_VS_INIT` has one writer, behind those screens (`fox_option.c:2993`). So every versus
+  read above is dead code in a stock build.
+- **Past that gate, the handicap screen needs all four ports.** gdb set `sMainMenuState = 11`, which is what the A press
+  does after the gate. All four ports counted as present (`gPlayerInactive` all 0). A on port 0 set `D_menu_801B93C4` to
+  1 and 13 more presses changed nothing. Only A on ports 1, 2 and 3 from the replay took it to 0xF (f830-890), and then
+  port 0 could go on to the stage screen (f930).
+- `Controller_Rumble` serves only entries with the status bit (`src/sys/sys_joybus.c:112`) and clears every flag
+  (`:137`). Run: `gControllerRumbleEnabled` was 1, 0, 0, 0 in the level.
+
+Observed, what WP-14 can trust in slot 0. Anything that writes a slot during the frame reaches
+`Controller_UpdateInput` on the next one, because it keeps `gControllerHold[i]` as the previous state
+(`src/sys/sys_joybus.c:71-74`). The replay writes all four slots (`src/port/coop/test/replay.c:277-278`). One virtual
+pad held R for five frames in three cases, read at `Game_Update` before the replay wrote:
+
+| Slot 0 meanwhile | `gControllerHold[0]` | `gControllerPress[0].button` |
+|---|---|---|
+| Nobody writes it, replay over (f522-525) | R | R on the first frame, then 0: correct |
+| Replay writes it idle (f337-340) | R | R on every frame: the press repeats |
+| Replay writes it with R held (f417-420) | R | 0 on every frame: the press is lost |
+
+`gControllerHold[0]` was right in all three. A press took two frames to reach it: `sNextController` the next frame, hold
+the frame after (f355, f356, f357).
+
+Decision: no change to `src/sys/sys_joybus.c`.
+
+- Co-op gains nothing. Outside `sys_joybus.c`, the campaign reads `gControllerPlugged` only in
+  `Title_CheckControllers`, and WP-14 needs no answer from it: the local player is port 0 and everyone else comes from
+  a stream.
+- Port 0 has to stay plugged. A keyboard is not in any device list, so an answer from the gamepad list would show "No
+  Controller" to keyboard players. See the forced run above.
+- Ports 1-3 only matter to versus, which cannot be entered, and changing them with co-op off would leave upstream
+  behaviour. A real answer also needs a C++ bridge, not a line in `sys_joybus.c`.
+
+Derived:
+
+- On a client, slot 0 will carry player 0's stream if WP-14 fills slots by player number, so the local pad has to be
+  copied out before that write, and `gControllerPress[0].button` cannot be used after it. Sticks are safe:
+  `Controller_AddDeadZone` rebuilds `gControllerPress[i].stick_x` and `stick_y` from the fresh hold
+  (`src/sys/sys_joybus.c:13-49`, `:75`).
+- A replay for the other players with a live local player needs the replay to stop writing the local slot.
+- With the stock mappings ports 1-3 press nothing, so versus switched back on as it stands would stop at the handicap
+  screen unless all four ports are mapped. That is the one thing a real `osContGetStatus` would fix, and it is
+  upstream's: see `// LTODO: Fix this` (`src/sys/sys_joybus.c:62`), the same line in `origin/main`.
+- Two pads on one PC drive one player, which fits one player per client. Split screen (WP-13, WP-15) needs a real
+  assignment, and the ignore lists are not one: they are lost on hotplug and on restart.
+- `Player_Update` picks input and rumble from `gMainController` outside versus (`src/engine/fox_play.c:5892-5894`), so
+  WP-14 has to change that branch. If a client's local player is index 1, its rumble flag must end up at index 0, as
+  only that entry is served.
+- `gControllerLock` zeroes `sNextController` on all ports (`src/sys/sys_joybus.c:87-91`), so the local read is zero
+  during a lock, as it is for the game today.
+
+Not shown:
+
+- A real pad: SDL's device drivers, real hotplug, real rumble. Virtual pads cover SDL's joystick and controller layers
+  and everything above them, not what is below.
+- Keyboard and mouse input in a run. Those lines are from reading.
+- Windows, macOS, a pad attached before boot, and restarting with a saved port 1 mapping.
+
+Unknown:
+
+- Whether two game instances on one PC both follow one pad. `SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS` is on
+  (`libultraship/src/window/gui/Gui.cpp:173`), which suggests they do; not run.
+
 ### 2026-11-05, #8 (WP-10), player count apart from camera count
 
 Observed:
