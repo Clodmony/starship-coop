@@ -47,7 +47,10 @@ number of clients, transport.
    [network chaos testing](https://github.com/cranebeaker/coop-anything/blob/main/playbook/network-chaos-testing.md).
    The transport on its own already runs through that relay: `python tools/coop/net_test.py` (WP-20), which needs a
    configured build directory but no ROM. WP-27 does the same with real game clients.
-5. **Regression per bug.** Every desync fix comes with the replay that triggered it.
+   Whether those scenarios can fail at all is checked by `python tools/coop/net_mutants.py`: it breaks one behaviour
+   of `net_core.c` at a time and requires the named scenario to fail (#44). Run it after changing `net_core.c`.
+5. **Regression per bug.** Every desync fix comes with the replay that triggered it; every transport fix adds a
+   break to `tools/coop/net_mutants.py`.
 
 Running tests must never use or modify the owner's own `starship.cfg.json`, saves, `mods/` folder or running game.
 
