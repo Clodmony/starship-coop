@@ -1521,6 +1521,121 @@ Unknown:
 - Whether two game instances on one PC both follow one pad. `SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS` is on
   (`libultraship/src/window/gui/Gui.cpp:173`), which suggests they do; not run.
 
+### 2026-11-06, #30, what a client shows and hears: its own player, and the other one
+
+Identity: ROM US 1.0, branch `issue/30-local-player-view` on top of `2c63dacb` (PR #128), Linux, GCC, Debug, OpenGL on a
+software renderer, no window, no transport. Two games per section, one replay, local index 0 and 1. Corneria only.
+
+Method: `tools/coop/view_check.py`. Input by rule flies both players, and buttons and pokes give them different numbers,
+so a client showing the wrong player shows the wrong number. A view trace (`src/port/coop/test/view_trace.h`) logs what
+each client holds to show and every sound request. That is not the same as what reached the screen, so pictures were
+read too: a shared library, not committed, read the OpenGL buffer of a game with no window on chosen frames, and every
+picture was deleted after reading. It needs `glReadBuffer` left alone (a pbuffer has no back buffer) and a frame test
+with an upper bound, as `gGameFrameCount` carries over from the menu until the level resets it. Both cost a run of black
+pictures that said nothing about the game.
+
+Observed (runs), before, test commit: `camera-own` and `hash` passed. Everything else failed:
+
+| Rule | Before | After |
+|---|---|---|
+| `camera-parked` | 0 of 1674 parked frames look through player 0 | all |
+| `hud-shield` | client 1 shows 0.784, its player has 0.471 | all frames right |
+| `hud-bombs` | client 1 shows 5, its player has 7 | all frames right |
+| `cockpit` | glass on the other client on 95 and 89 frames | 0 and 0 |
+| `flash` | a hit reddens both clients, 16 frames each | only the client of the player hit |
+| `shield-bar` | no bar | the other player's, right value, never the own one, none while parked |
+| `sound-own` | view change and shield alarm on both clients | only the client of that player |
+| `sound-engine` | player 1 has no engine | starts on every join, off while parked |
+| `sound-source` | own player ahead of the camera on 605 of 1226 frames | all |
+| `player-down` | not in the test commit | client 1 looks through player 0, engine off |
+
+`hud-bombs` allows the counter's own step, a frame or so behind the player's number. In all-range `shield-bar` is exact:
+the bar shows on every frame the other player is ahead of the camera and on none it is behind (0 wrong of 1074 and 1036
+frames), on rails at least half the frames, as the trace has no `zPath`. `pause`: player 0's pad paused both clients for
+the same 30 rows and player 1's pad paused neither, and `hash` stayed equal through pokes, cockpit view and pause.
+
+Observed (runs), the rest, after:
+
+- `hash_check.py views`: equal on all 10500 rails and 8000 all-range frames. The cameras differ on 56 of 74 and 31 of 49
+  sampled frames, against 74 of 74 and 49 of 49 in #96: on the others a client now watches player 0 instead of an empty
+  camera, so equal is right there.
+- Co-op off, one player, the test commit against this branch, with a hit, low shields, cockpit view and pause: state
+  hash and whole view trace equal, 5734 frames and 2633 rows on rails, 6309 and 3208 in all-range. That holds for the
+  camera, the fill and every sound request. The red fill of a hit is there in both, 48 and 80 rows, so the old path
+  still runs.
+
+- With #12: a trial merge of `origin/issue/12-input-source` at `231e54e1`, not kept, built and passed `view_check.py`,
+  hash and pause included. The replay flies every player there, so the local controller's own path did not run.
+
+Observed (pictures), after, both clients on the same frame:
+
+- Before player 1 joins both show the same intro. Before the fix client 1 showed grey polygons, from an empty camera.
+- Lives, bombs and the shield and boost gauges differ per client. Lives and boost have no value a trace can read, so
+  this is their only check: poked to 4 and 7, each client showed its own.
+- The other Arwing is whole, in its own pose, with a green bar above it and the empty part dark. In cockpit view a
+  client sees its cockpit, and the other client sees that player as an Arwing, no glass.
+- A hit reddens the screen of the player hit only, either way round.
+- All-range: ground, backdrop and radar follow the client. The radar marks both players.
+
+What changed, and where it writes:
+
+| Item | Change | Touches the simulation |
+|---|---|---|
+| Camera | `CoopPlayers_ViewIndex`: the local player while it flies, player 0 while it is parked | No |
+| Who a client is | `CoopPlayers_LocalIndex` stays the own player, parked or not | No |
+| HUD numbers | `CoopPlayers_HudIndex` for what is only shown; `gPlayerNum` stays 0 for the HUD | No |
+| `gBombCount` limit (`src/engine/fox_hud.c`, `HUD_BombCounter_Draw`) | Goes through every player | The same on every client |
+| `gLifeCount` (level clear, pause: `HUD_LevelClearStatusScreen_Draw`, `HUD_PauseScreen_Update`) | Stays on slot 0: `gPlayerNum` is 0 there | Unchanged |
+| Cockpit (`Display_Arwing`, `Display_CockpitGlass`) | Only the player looked through | No |
+| Hit flash (`Player_Update`) | Left out of `gFillScreen*` in co-op, drawn per client from `dmgEffectTimer` | Same on every client: the fade no longer moves |
+| Boss shadow (`Object_DrawAll`) | By the camera drawn; `D_edisplay_801615D0` stays player 0's for the AI | No |
+| Glare, lock-on mark, help arrow, starfield roll, backdrop, ground | The camera drawn | No |
+| Other Arwing (`Display_ArwingWings`) | Its own `jointTable`, wing flash and `dmgEffect`, not player 0's; every pilot shows | `drawFace`, the same on every client |
+| Shield bar (`src/port/coop/game/view.c`) | Quad from `starDL`'s pattern, no asset | No |
+| Radar | Players 1 and up in `gRadarMarks[60..62]`, slots 1 to 3 being the wingmen's | Hashed, the same on every client |
+| Engine sound | Every joined player, started on a join, stopped on leaving | No |
+| Sound position (`Object_SetSfxSourceToPos`) | From the camera drawn; leaves `gCalcMatrix` alone, as simulation code calls it | No |
+| Alarms and pickups (`Player_ApplyDamage`, `Object_PlayerSfx`, view change) | Only the player looked through | No |
+
+Audit rows marked `view`: six have no site left. The 55 others stay, for one of these reasons:
+
+- **Level state, the same for everyone:** `gPlayer[0].state` and `csState`, as in `Radio_Draw`, `Background_DrawSun`,
+  `Object_DrawAll`. Player 0 drives the level, and a client whose player is parked looks through it.
+- **Writes a hashed value, so it must stay on player 0:** billboards in update code (`Sprite_UpdateDoodad`,
+  `MeteoBall_Update`, `Effect_Effect362_Update` and others) and `Object_SetMatrix`, which writes `obj.rot` of buildings.
+  These face player 0's camera on every client. Picture only, and small while the players fly near each other.
+- **Levels nothing has run:** the overlays' `name` rows, the tank, Aquas.
+
+Derived:
+
+- A client's identity and its view are two things. Input (#12) needs the first even while parked: on that branch
+  `CoopInput_Route` hands the local controller to slot `CoopPlayers_LocalIndex()`, so a fallback to 0 there would steer
+  player 0 from client 1, and the clients would disagree on player 0's input. `view_check.py` `local-index` guards it.
+- Pause stays in the simulation and every client agrees: `gPlayState` follows `gControllerPress[gMainController]`, and
+  `HUD_PauseScreen_Update` reads `gInputPress`, which after the player loop is player 0's. On #12's branch slot 0 holds
+  player 0's input on every client (`input.h`), so that holds after merging, as long as `gPlayerNum` stays 0 there, as
+  #96 set it (`src/engine/fox_play.c`, after both player loops).
+- With #12 merged, rumble reaches the local pad for the client's own player: `CoopInput_RumbleSlot` gives it entry 0,
+  the only one `Controller_Rumble` serves. The direct writes to `[gMainController]` and `[0]` are level events, and they
+  reach entry 0 on every client. Read, not run. Without #12, player 1's rumble goes to entry 1 and no pad.
+
+Choices this makes, all reversible, none a game rule with a record (`DESIGN.md` section 4):
+
+- A client with a parked or downed player watches player 0, HUD and all.
+- Every client hears every engine, placed from its own camera, rather than its own engine only.
+- Lives shown are `gLifeCount[<player looked through>]`. Whether lives are shared is open (section 4, item 2).
+- Only player 0 can pause, as only its input reaches `gControllerPress[gMainController]`.
+- On the radar a wingman sharing a colour with the local player blinks with it, until WP-17 replaces that wingman.
+
+Unknown:
+
+- Whether any of it feels right: nobody has flown it, looked at it moving or heard it. Sound is checked as requests and
+  positions, not by ear. The shield bar's size and height are a first guess.
+- The boss shadow: no run had the two views disagree on a boss, so that fix is read, not run.
+- Every level but Corneria, local indexes 2 and 3, a real session: only the test switch sets the local index so far. The
+  session hands out `playerIndex` (`session.h`), and the join flow (WP-24) has to pass it on.
+- Player 1's own lock-on mark: not shown. Slot 0 belongs to player 0, and the draw code only fills that slot on rails.
+
 ### 2026-11-05, #8 (WP-10), player count apart from camera count
 
 Observed:

@@ -621,7 +621,7 @@ static void CoopStateHash_OnGamePreUpdate(IEvent* event) {
     // Test only: the camera this client drew, which the hash must not show. tools/coop/hash_check.py views reads it, to
     // know two runs really looked through different players.
     if (CoopPlayers_IsCoop() && (gGameState == GSTATE_PLAY) && ((sFrame % VIEW_LOG_PERIOD) == 0)) {
-        fprintf(sLog, "# view frame=%u local=%d eye=%.1f %.1f %.1f\n", sFrame, CoopPlayers_LocalIndex(), gPlayCamEye.x,
+        fprintf(sLog, "# view frame=%u player=%d eye=%.1f %.1f %.1f\n", sFrame, CoopPlayers_ViewIndex(), gPlayCamEye.x,
                 gPlayCamEye.y, gPlayCamEye.z);
     }
 

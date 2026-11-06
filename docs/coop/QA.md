@@ -60,6 +60,11 @@ number of clients, transport.
    `python tools/coop/hash_check.py views` (unattended, exit code 0 on `PASS`) plays one replay with
    `SF64_COOP_TEST_LOCAL_INDEX` 0 and 1, in Corneria's rails and its all-range section: two clients of one session, who
    draw different cameras and must still hash alike on every frame. It names the first differing frame and regions.
+   `python tools/coop/view_check.py` (unattended, exit code 0 on `PASS`) plays the same two clients with buttons and
+   pokes that give the two players different numbers, and checks what each one shows and hears from a view trace
+   (`src/port/coop/test/view_trace.h`): camera, shield gauge, bomb counter, cockpit, hit flash, shield bar, sound, pause.
+   The trace holds what a client means to show. What reached the screen needs a picture: a game with no window can be
+   read back from OpenGL, and such pictures are game art, so they stay local and are deleted after reading.
    `python tools/coop/hash_check.py diff <a> <b>` compares every column of the two logs, names the first differing
    frame and the regions that differ there. It compares the common frames: read its first line for the two lengths.
    `python tools/coop/replay.py play <replay> --hash-log` writes a log next to an ordinary playback.
