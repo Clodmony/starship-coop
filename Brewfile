@@ -6,3 +6,5 @@ brew "nlohmann-json"
 brew "tinyxml2"
 brew "spdlog"
 brew "vorbis-tools"
+# COOP: the co-op transport needs SDL2_net
+brew "sdl2_net"

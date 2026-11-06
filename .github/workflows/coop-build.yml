@@ -18,9 +18,15 @@ on:
       - 'libultraship'
       - 'tools/Torch'
       - 'tools/coop/build.py'
+      - 'tools/coop/net_test.py'
+      - 'tools/coop/nettest/**'
+      - 'tools/coop/session_test.py'
+      - 'tools/coop/sessiontest/**'
+      - 'tools/coop/cmake/**'
+      - 'tools/coop/chaos/**'
       - '.github/workflows/coop-build.yml'
   push:
-    branches: [ main ]
+    branches: [ coop ]
     paths:
       - 'src/**'
       - 'include/**'
@@ -35,6 +41,12 @@ on:
       - 'libultraship'
       - 'tools/Torch'
       - 'tools/coop/build.py'
+      - 'tools/coop/net_test.py'
+      - 'tools/coop/nettest/**'
+      - 'tools/coop/session_test.py'
+      - 'tools/coop/sessiontest/**'
+      - 'tools/coop/cmake/**'
+      - 'tools/coop/chaos/**'
       - '.github/workflows/coop-build.yml'
   workflow_dispatch:
 
@@ -67,6 +79,10 @@ jobs:
           key: coop-linux
       - name: Build
         run: python3 tools/coop/build.py --config Release --no-check --quiet
+      - name: Transport tests
+        run: python3 tools/coop/net_test.py --config Release
+      - name: Session tests
+        run: python3 tools/coop/session_test.py --config Release
 
   windows:
     name: Co-op build (Windows)
@@ -77,3 +93,7 @@ jobs:
           submodules: recursive
       - name: Build
         run: python tools/coop/build.py --config Release --no-check --quiet
+      - name: Transport tests
+        run: python tools/coop/net_test.py --config Release
+      - name: Session tests
+        run: python tools/coop/session_test.py --config Release

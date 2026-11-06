@@ -42,8 +42,8 @@ Nothing in the online design may rule it out.
   `src/port/hooks/impl/EventSystem.h`, events in `src/port/hooks/list/` (`GamePreUpdateEvent`,
   `PlayerPreUpdateEvent`, `PlayerPostUpdateEvent`, `ObjectInitEvent`, `ObjectDestroyEvent`, `ItemDropEvent`,
   `PlayerAction*Event`, HUD draw events).
-- **Networking hook in the build:** `CMakeLists.txt` has `set(USE_NETWORKING OFF)` (line 99); when on, it links
-  SDL2_net and defines `USE_NETWORKING` (lines 370-377).
+- **Networking hook in the build:** `USE_NETWORKING` in `CMakeLists.txt` links SDL2_net and defines `USE_NETWORKING`.
+  Upstream hard-sets it off; this fork turns it on for desktop builds (WP-20).
 - **Render rate is separate from game rate:** the interpolation frame count is derived from `gInterpolationFPS` and
   `gVIsPerFrame` (`src/port/Engine.cpp`, `GetInterpolationFPS` and the function after it).
 
@@ -64,14 +64,15 @@ Nothing in the online design may rule it out.
 - How on-rails levels place the player relative to the path and camera, and what breaks with two players on rails.
 - Which code assumes `gPlayer[0]` or a single player: cameras, HUD, radio, cutscenes, level-complete logic, warps.
 - How the Landmaster (Titania, Macbeth) and Blue Marine (Aquas) levels handle extra players.
-- Which port enhancements (CVars) change the simulation and must match between players.
+- Which port enhancements (CVars) change the simulation and must match between players. A first list from reading
+  the code is in NOTES.md (WP-21) and in the handshake; nothing has tested it against state hashes yet.
 
 ## 3. Architecture (proposed)
 
 ```
 src/port/coop/
   session/   lobby, peers, handshake: build id, ROM version, sim-affecting CVars must match
-  net/       transport behind one interface: SDL2_net first (USE_NETWORKING), Steam relay later
+  net/       transport behind one interface: UDP on SDL2_net first (USE_NETWORKING, decision 0004), Steam relay later
   sync/      the sync model from decision 0002 (input exchange + state hashes, or host snapshots)
   game/      game glue: player count apart from camera count, player 2+ spawn, input routing, HUD, rules
   ui/        ImGui menu entries: host, join, status (the menubar is in src/port/ui/ImguiUI.cpp)

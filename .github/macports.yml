@@ -1,6 +1,9 @@
 ports:
   - name: libsdl2
     select: [ universal ]
+  # COOP: the co-op transport needs SDL2_net
+  - name: libsdl2_net
+    select: [ universal ]
   - name: libpng
     select: [ universal ]
   - name: glew

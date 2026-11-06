@@ -40,7 +40,8 @@ Many people (and their coding agents) work on this at the same time, so the work
 
 1. Read [CONTRIBUTING.md](CONTRIBUTING.md). Agents start at [AGENTS.md](AGENTS.md).
 2. Pick an open work package from the [roadmap](docs/coop/ROADMAP.md) or the issue tracker and claim it on its issue.
-3. One issue per branch (`coop/<issue>-<slug>`), one branch per pull request, draft first.
+3. One issue per branch (`issue/<issue>-<slug>`, from `coop`), one branch per pull request, draft first. `coop` is
+   the default branch with all co-op work; `main` mirrors upstream Starship unchanged.
 
 Design documents live in [docs/coop/](docs/coop/):
 

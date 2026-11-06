@@ -8,6 +8,7 @@
 #include "port/interpolation/FrameInterpolation.h"
 #include "port/hooks/list/EngineEvent.h"
 #include "port/mods/PortEnhancements.h"
+#include "port/coop/game/players.h" // COOP: player count apart from camera count (WP-10)
 
 // f32 path1 = 0.0f;
 // f32 path2 = 0.0f;
@@ -1965,7 +1966,7 @@ void Display_Update(void) {
     Lights_SetOneLight(&gMasterDisp, gLight2x, gLight2y, gLight2z, gLight2R, gLight2G, gLight2B, gAmbientR, gAmbientG,
                        gAmbientB);
 
-    for (i = 0, player = &gPlayer[0]; i < gCamCount; i++, player++) {
+    for (i = 0, player = &gPlayer[0]; i < CoopPlayers_Count(); i++, player++) { // COOP: was gCamCount
         playerPos.x = player->pos.x;
         playerPos.y = player->pos.y;
         playerPos.z = player->trueZpos;
@@ -1981,7 +1982,7 @@ void Display_Update(void) {
                            gAmbientG, gAmbientB);
         Matrix_Push(&gGfxMatrix);
         Matrix_Scale(gGfxMatrix, 1.0f, -1.0f, 1.0f, MTXF_APPLY);
-        for (i = 0, player = &gPlayer[0]; i < gCamCount; i++, player++) {
+        for (i = 0, player = &gPlayer[0]; i < CoopPlayers_Count(); i++, player++) { // COOP: was gCamCount
             playerPos.x = player->pos.x;
             playerPos.y = player->pos.y;
             playerPos.z = player->trueZpos;
@@ -2012,13 +2013,15 @@ void Display_Update(void) {
     if ((gGroundSurface == SURFACE_WATER) && (gPlayer[0].state != PLAYERSTATE_LEVEL_INTRO)) {
         Matrix_Push(&gGfxMatrix);
         Matrix_Scale(gGfxMatrix, 1.0f, -1.0f, 1.0f, MTXF_APPLY);
-        for (i = 0, player = &gPlayer[0]; i < gCamCount; i++, player++) {
+        for (i = 0, player = &gPlayer[0]; i < CoopPlayers_Count(); i++, player++) { // COOP: was gCamCount
             if (sPlayersVisible[i]) {
                 Display_PlayerFeatures(player);
                 Display_ArwingWingTrail_Update(player);
             }
-            Matrix_Pop(&gGfxMatrix);
+            // COOP: one pop for the one push above. Upstream pops once per player, which only balances with one
+            // player; with two it underflowed the matrix stack every frame over water.
         }
+        Matrix_Pop(&gGfxMatrix); // COOP: moved out of the loop
     }
 
     if (gCurrentLevel == LEVEL_AQUAS) {
@@ -2038,7 +2041,7 @@ void Display_Update(void) {
 
     gReflectY = 1;
 
-    for (i = 0, player = &gPlayer[0]; i < gCamCount; i++, player++) {
+    for (i = 0, player = &gPlayer[0]; i < CoopPlayers_Count(); i++, player++) { // COOP: was gCamCount
         if (sPlayersVisible[i]) {
             Display_PlayerShadow_Update(player);
             Display_PlayerFeatures(player);
@@ -2064,7 +2067,7 @@ void Display_Update(void) {
         Display_CockpitGlass();
     }
 
-    for (i = 0, player = &gPlayer[0]; i < gCamCount; i++, player++) {
+    for (i = 0, player = &gPlayer[0]; i < CoopPlayers_Count(); i++, player++) { // COOP: was gCamCount
         if (sPlayersVisible[i]) {
             if (gShowReticles[i]) {
                 Display_Reticle(player);

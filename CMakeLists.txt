@@ -96,7 +96,12 @@ endif()
 
 # Set game compilation version
 set(VERSION us)
-set(USE_NETWORKING OFF)
+# COOP: on by default on desktop, co-op needs the transport. -DUSE_NETWORKING=OFF gives upstream's build.
+if(CMAKE_SYSTEM_NAME MATCHES "^(Windows|Linux|Darwin)$")
+    option(USE_NETWORKING "Build the co-op network transport (needs SDL2_net)" ON)
+else()
+    set(USE_NETWORKING OFF)
+endif()
 set(SKIP_XCODE_VERSION_CHECK ON)
 
 # Add compile definitions for the target
@@ -367,14 +372,29 @@ else()
 	)
 endif()
 
+# COOP: build id for the co-op handshake (git commit), rewritten on every build when it changes.
+add_custom_target(CoopBuildId
+    COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR} -DOUT=${CMAKE_BINARY_DIR}/coop/coop_build_id.h
+        -P ${CMAKE_SOURCE_DIR}/tools/coop/cmake/coop_build_id.cmake
+    BYPRODUCTS ${CMAKE_BINARY_DIR}/coop/coop_build_id.h
+)
+add_dependencies(${PROJECT_NAME} CoopBuildId)
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_BINARY_DIR}/coop)
+
 if(USE_NETWORKING)
     if(MSVC)
         vcpkg_install_packages(sdl2-net)
     endif()
     find_package(SDL2_net REQUIRED)
     include_directories(${SDL2_NET_INCLUDE_DIRS})
-    target_link_libraries(${PROJECT_NAME} PRIVATE SDL2_net::SDL2_net)
+    # COOP: a static SDL2_net (vcpkg on Windows) only has the -static target.
+    set(COOP_SDL2_NET "$<IF:$<TARGET_EXISTS:SDL2_net::SDL2_net>,SDL2_net::SDL2_net,SDL2_net::SDL2_net-static>")
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${COOP_SDL2_NET})
     target_compile_definitions(${PROJECT_NAME} PRIVATE USE_NETWORKING)
+    # COOP: test program for the transport, built on demand by tools/coop/net_test.py.
+    add_subdirectory(tools/coop/nettest)
+    # COOP: test program for the session handshake, built on demand by tools/coop/session_test.py.
+    add_subdirectory(tools/coop/sessiontest)
 endif()
 
 option(USE_STANDALONE "Build as a standalone executable" OFF)

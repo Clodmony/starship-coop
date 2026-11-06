@@ -6,26 +6,33 @@ For maintainers: GitHub setup, upstream syncs, releases.
 
 `Clodmony/starship-coop` is a **standalone repository, not a GitHub fork** of HarbourMasters/Starship: a GitHub fork
 would default every new pull request to target HarbourMasters, which is easy to get wrong with many contributors.
-Remote names are fixed in CONTRIBUTING.md ("Remotes"): `origin` is this repo, `starship` is HarbourMasters.
+Remote and branch names are fixed in CONTRIBUTING.md ("Branches", "Remotes and branches"): `origin` is this repo,
+`starship` is HarbourMasters; `coop` is the default integration branch, `main` mirrors upstream (decision 0003).
 
 The repository is **public**. Applied (re-apply if it is ever recreated):
 
+- Default branch `coop`.
 - Features: Issues and Discussions on; Wiki and Projects off.
 - Merging: squash (default for work branches) and merge commits (for upstream syncs) allowed, rebase merging off,
   head branches deleted after merge.
 - Labels: `python tools/coop/setup_labels.py Clodmony/starship-coop`.
 - Milestones `M0` to `M3` plus `Later`, and one issue per work package, linked from `docs/coop/ROADMAP.md`.
-- Branch ruleset `main` (applied 2026-11-01), stored in `.github/rulesets/main.json`: no deletion, no force push,
-  changes only through pull requests with 1 approval from a code owner and stale approvals dismissed, required
-  status check `Co-op checks`. Repository admins may bypass it for pull requests only, so a sole maintainer can
-  merge their own PRs; direct pushes stay blocked. To recreate it:
+- Ruleset `coop` on the default branch (`.github/rulesets/coop.json`): no deletion, no force push, changes only
+  through pull requests with 1 approval from a code owner and stale approvals dismissed, required status check
+  `Co-op checks`. Repository admins may bypass it for pull requests only, so a sole maintainer can merge their own
+  PRs; direct pushes stay blocked.
+- Ruleset `upstream-mirror` on `main` (`.github/rulesets/upstream-mirror.json`): no deletion, no force push, and
+  only repository admins can update it, by fast-forward from upstream.
 
 ```sh
-gh api -X POST repos/Clodmony/starship-coop/rulesets --input .github/rulesets/main.json
+gh api -X POST repos/Clodmony/starship-coop/rulesets --input .github/rulesets/coop.json
+gh api -X POST repos/Clodmony/starship-coop/rulesets --input .github/rulesets/upstream-mirror.json
 ```
 
 GitHub only allows rulesets on private repositories with a paid plan; if the repository ever goes private again,
-`main` loses this protection.
+both branches lose this protection.
+
+Do not rename a branch that is the head of an open PR: GitHub closes the PR (that happened to #32).
 
 ## CI
 
@@ -33,8 +40,10 @@ Local builds are the development loop (`python tools/coop/build.py`); CI is the 
 
 | Workflow | File | Runs | Jobs |
 |---|---|---|---|
-| `Co-op checks` | `coop-checks.yml` | every PR, every push to `main` | repo checks, seconds |
-| `Co-op build` | `coop-build.yml` | PRs and pushes to `main` that touch code, CMake files or submodules; manual | Linux and Windows, both through `tools/coop/build.py` |
+| `Co-op checks` | `coop-checks.yml` | every PR, every push to `coop` | repo checks, seconds |
+| `Co-op build` | `coop-build.yml` | PRs and pushes to `coop` that touch code, CMake files or submodules; manual | Linux and Windows, both through `tools/coop/build.py` |
+
+Nothing runs on `main`: upstream's own workflows are disabled (below), and ours only exist on `coop`.
 
 Upstream's workflows (`GenerateBuilds` in `main.yml`, and the `Linux`, `Windows`, `MacOS`, `Switch` validation
 workflows) are **disabled in the repository settings**, not deleted, so their files stay identical to upstream and
@@ -73,13 +82,21 @@ maintainers) and give them areas in `.github/CODEOWNERS`.
 
 ## Upstream sync
 
-Do it regularly (at least after every upstream release) so the gap stays small. The `starship-upstream-sync` skill
-has the same steps for agents.
+Two steps. The `starship-upstream-sync` skill has the same steps for agents.
+
+**1. Update the mirror** (any time, no risk: `main` only ever fast-forwards to upstream; admins only):
 
 ```sh
-git fetch --multiple origin starship
-git switch -c sync/upstream-$(date +%F) origin/main
-git merge --no-ff starship/main
+git fetch starship main
+git push origin starship/main:main      # refused if it is not a fast-forward, which means someone committed to main
+```
+
+**2. Bring the mirror into `coop`** (regularly, at least after every upstream release, so the gap stays small):
+
+```sh
+git fetch origin
+git switch -c sync/upstream-$(date +%F) origin/coop
+git merge --no-ff origin/main
 git submodule update --init --recursive
 ```
 
@@ -87,14 +104,14 @@ git submodule update --init --recursive
   code. `git grep -n "COOP:"` before and after must list the same places (plus any new ones you had to add).
 - `README.md`: keep ours. Upstream's README is linked from it.
 - `.gitignore`: keep both.
-- Build, run the single-player replay checks from `docs/coop/QA.md` once they exist, then open the PR.
+- Build, run the single-player replay checks from `docs/coop/QA.md` once they exist, then open the PR into `coop`.
 - Merge sync PRs with a **merge commit**, not squash, so upstream history stays intact and the next sync is clean.
 
 ## Sending fixes upstream
 
 Generic fixes (port bugs, build fixes, new hook events that are not co-op specific) belong upstream as well. Branch
-from `starship/main`, cherry-pick, and open the PR against HarbourMasters/Starship from a personal fork of
-HarbourMasters/Starship. Follow their contribution rules, and disclose AI use.
+from `origin/main` (the clean upstream mirror), cherry-pick, and open the PR against HarbourMasters/Starship from a
+personal fork of HarbourMasters/Starship. Follow their contribution rules, and disclose AI use.
 
 ## Releases
 
