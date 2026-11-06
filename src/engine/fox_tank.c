@@ -2,6 +2,7 @@
 #include "assets/ast_landmaster.h"
 #include "assets/ast_titania.h"
 #include "port/hooks/Events.h"
+#include "port/coop/game/players.h" // COOP: who fired, per player (#86)
 
 void func_tank_80047754(Player* player);
 void func_tank_80047D38(Player* player, f32);
@@ -1418,7 +1419,7 @@ void func_tank_800481F4(Player* player) {
                     if (temp_v0 != 0) {
                         Player_ApplyDamage(player, temp_v0, actor->info.damage);
                         actor->dmgType = DMG_COLLISION;
-                        actor->dmgSource = player->num + 1;
+                        actor->dmgSource = CoopPlayers_DmgSource(player->num); // COOP: was num + 1 (#86)
                     }
                 } else if (actor->obj.id == OBJ_ACTOR_207) {
                     if (func_tank_80046E40(player, actor->info.hitbox, &sp98, actor->obj.pos.x, actor->obj.pos.y,

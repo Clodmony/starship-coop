@@ -6,6 +6,8 @@
 //   SF64_COOP_REPLAY_RECORD=<file>  record controller input per game frame into <file>
 //   SF64_COOP_REPLAY_PLAY=<file>    play <file> back instead of the live controllers
 //   SF64_COOP_REPLAY_REPORT=<file>  where to write the result line (default: replay-report.txt)
+//   SF64_COOP_REPLAY_LIVE_LOCAL=1   in co-op, with SF64_COOP_REPLAY_PLAY: the local player stays on the live controller
+//                                   and the replay flies the others (WP-14). Outside co-op it changes nothing.
 // With none of them set, no listener is registered and the game runs unchanged.
 //
 // The report ends with result=<value>. Recording: RECORDED. Playback: PASS, FAIL_MISMATCH (a checkpoint differs),

@@ -5,6 +5,7 @@
     python tools/coop/hash_check.py run  --players 2 --poke-player 1   # same, co-op, input by rule, poke in player 2
     python tools/coop/hash_check.py diff a/state-hash.txt b/state-hash.txt
     python tools/coop/hash_check.py probe --players 2                  # unattended; prints PASS or FAIL
+    python tools/coop/hash_check.py views                              # unattended; prints PASS or FAIL
 
 run plays the replay three times at once, each in a fresh folder under local/ (see tools/coop/replay.py):
   A and B  plain playback; their per-frame state hashes must be equal on every recorded frame.
@@ -17,6 +18,9 @@ probe plays one game with SF64_COOP_HASH_PROBE: every --period frames the game c
   them back and logs what the hash did (state_hash.c, Probe). See PROBE_RULES for what must and must not show. Both
   hashes of a probe come from the same frame of the same process, so this needs no second run to agree with: it says
   whether the hash can see a value, not whether two runs match. Without a replay file, as for run.
+views plays one replay twice per section, with SF64_COOP_TEST_LOCAL_INDEX 0 and 1: two clients of one session, who look
+  through different players and must still hash alike. Input by rule flies every player (player_trace.py, rail_pad), and
+  --section picks Corneria's rails, its all-range section or both. Prints the first differing frame and regions.
 
 Exit code 0 on PASS (or no difference for diff), 1 otherwise.
 """
@@ -148,6 +152,8 @@ def play(replay, exe, timeout, tag, poke=None, env_extra=None, config=None):
     log = run / "state-hash.txt"
     result = values.get("result") if values else "NO_REPORT"
     print(f"hash: run {tag}: replay {result}, {elapsed:.0f}s, log {log}")
+    if values:
+        values["log"] = log
     if not log.exists():
         return values, None, None
     names, rows = read_log(log)
@@ -329,6 +335,83 @@ def cmd_probe(args):
     return 1 if failures else 0
 
 
+VIEW_SECTIONS = {  # name -> (frames, frame of the L press into all-range)
+    "rails": (None, None),  # None: player_trace.RAIL_FRAMES
+    "all-range": (8000, GENERATED_L_FRAME),
+}
+
+
+def read_views(path):
+    """The camera a co-op run drew, from the "# view" lines of its log: frame -> (player looked through, eye)."""
+    views = {}
+    for line in Path(path).read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith("# view "):
+            parts = line.split()
+            views[int(parts[2].split("=")[1])] = (int(parts[3].split("=")[1]), parts[4:])
+    return views
+
+
+def check_views_differ(section, a_values, b_values):
+    """Equal hashes only mean something if the two runs drew different cameras. Returns a list of failures."""
+    if not a_values or not b_values:
+        return []
+    a_views, b_views = read_views(a_values["log"]), read_views(b_values["log"])
+    common = sorted(set(a_views) & set(b_views))
+    apart = [frame for frame in common if a_views[frame][1] != b_views[frame][1]]
+    print(f"hash: {section}: the cameras drawn differ on {len(apart)} of {len(common)} sampled frames")
+    failures = []
+    if not apart:
+        failures.append(f"{section}: both runs drew the same camera, so equal hashes say nothing")
+    if not any(b_views[frame][0] == 1 for frame in common):
+        failures.append(f"{section}: the run with index 1 never looked through player 1")
+    return failures
+
+
+def view_section(section, exe, args):
+    """Play one section with each local index. Returns a list of failures."""
+    import player_trace  # here, as player_trace imports this file
+
+    frames, l_frame = VIEW_SECTIONS[section]
+    frames = args.frames or frames or player_trace.RAIL_FRAMES
+    replay = replay_tool.ROOT / "local" / f"test-hash-views-{section}.sfcr"
+    player_trace.write_rail_replay(replay, frames, l_frame)
+    # Flying by rule, player 0 would not live through the section, as in player_trace.py rails.
+    cvars = {"gCoopDebugPlayerCount": args.players, "gInvincible": 1}
+    if l_frame is not None:
+        cvars["gDebugJumpToAllRange"] = 1
+    config = {"CVars": cvars}
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        jobs = [pool.submit(play, replay, exe, args.timeout, f"view-{section}-{index}", config=config,
+                            env_extra={"SF64_COOP_TEST_LOCAL_INDEX": str(index)}) for index in (0, 1)]
+        (a_values, names, a_rows), (b_values, _, b_rows) = [job.result() for job in jobs]
+
+    if a_rows is None or b_rows is None:
+        return [f"{section}: no hash log written"]
+    failures = [f"{section}: index {index} did not play through: {values.get('result') if values else 'no report'}"
+                for index, values in ((0, a_values), (1, b_values)) if not played_through(values)]
+    if min(len(a_rows), len(b_rows)) < frames:
+        failures.append(f"{section}: hash logs shorter than the replay ({len(a_rows)}, {len(b_rows)} < {frames} frames)")
+    failures += check_views_differ(section, a_values, b_values)
+    diff = first_difference(a_rows, b_rows, frames)
+    if diff is not None:
+        failures.append(f"{section}: index 0 and 1 differ: {describe(names, diff)}")
+    else:
+        print(f"hash: {section}: index 0 and 1 equal on all {min(frames, len(a_rows), len(b_rows))} frames")
+    return failures
+
+
+def cmd_views(args):
+    exe = replay_tool.find_exe(args.exe)
+    failures = []
+    for section in VIEW_SECTIONS if args.section == "both" else (args.section,):
+        failures += view_section(section, exe, args)
+    for f in failures:
+        print(f"FAIL: {f}")
+    print("hash: FAIL" if failures else "hash: PASS")
+    return 1 if failures else 0
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -348,8 +431,14 @@ def main():
     b.add_argument("--period", type=int, default=200, help="frames between probes (default 200)")
     b.add_argument("--exe", help="Starship executable (default: newest build found)")
     b.add_argument("--timeout", type=float, default=900, help="give up after this many seconds")
+    v = sub.add_parser("views", help="play one replay with local index 0 and 1 and compare the hashes")
+    v.add_argument("--section", choices=[*VIEW_SECTIONS, "both"], default="both", help="default: both")
+    v.add_argument("--players", type=int, default=2, help="players, through gCoopDebugPlayerCount (default 2)")
+    v.add_argument("--frames", type=int, help="replay length (default: what the section needs)")
+    v.add_argument("--exe", help="Starship executable (default: newest build found)")
+    v.add_argument("--timeout", type=float, default=1800, help="per run: give up after this many seconds")
     args = p.parse_args()
-    return {"run": cmd_run, "diff": cmd_diff, "probe": cmd_probe}[args.cmd](args)
+    return {"run": cmd_run, "diff": cmd_diff, "probe": cmd_probe, "views": cmd_views}[args.cmd](args)
 
 
 if __name__ == "__main__":

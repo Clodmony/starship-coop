@@ -397,6 +397,10 @@ if(USE_NETWORKING)
     add_subdirectory(tools/coop/nettest)
     # COOP: test program for the session handshake, built on demand by tools/coop/session_test.py.
     add_subdirectory(tools/coop/sessiontest)
+    # COOP: test program for the co-op menu, built on demand by tools/coop/menu_test.py.
+    add_subdirectory(tools/coop/menutest)
+    # COOP: test program for the input sources, built on demand by tools/coop/input_test.py.
+    add_subdirectory(tools/coop/inputtest)
     # COOP: test program for the Steam relay transport, built on demand by tools/coop/steam_test.py. It runs on a fake
     # Steam, so it is there with USE_STEAM_RELAY off too. Nothing in the game calls the transport yet, so only its two
     # files need the switch; a work package that calls it makes this a target_compile_definitions.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests that a test run stops soon after a stop signal and leaves its files whole (#71). Linux only.
+"""Tests that a test run ends soon after a stop signal or a crash and leaves its files whole (#71, #98). Linux only.
 
     python tools/coop/exit_test.py                       # unattended; prints PASS or FAIL
     python tools/coop/exit_test.py --only record,play --repeat 10
@@ -13,6 +13,15 @@ report and a replay file of whole frames with nothing missing at the end.
 The game only takes this path in a test run, which it knows by the variables in src/port/coop/test/stop_signal.h. A run
 without a replay asks for it with SF64_COOP_HASH_LOG. The scenario plain sets none of them and shows the other side: the
 game keeps upstream's handler, which never ends it with exit code 0. It waits PLAIN_WAIT seconds for that, then SIGKILL.
+
+The crash-* scenarios send a crash signal instead. The game must end within EXIT_LIMIT seconds with the exit code of
+libultraship's crash handler, 1, and leave its crash log in logs/Starship.log. crash-plain is the other side again: a
+game with no test variable hangs after a crash as upstream's does, and its crash log is there all the same.
+
+The fault-* scenarios need gdb, which starts the game and sends the program counter to address 0 in the middle of a
+frame: a real fault, not a signal from outside. fault-main does that on the main thread, fault-audio on the audio
+thread. fault-stuck also makes the crash handler itself stop for good before it writes anything, where a lock taken by
+the crashed code would stop it: only the time limit in stop_signal.c ends that game, by SIGALRM, and there is no log.
 
 Needs a build with assets (python tools/coop/build.py --assets) or --exe. Exit code 0 when every run holds, 1 otherwise.
 
@@ -35,6 +44,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import hash_check  # noqa: E402
 import replay as replay_tool  # noqa: E402
+from run_folder import make_run_folder  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 EXIT_LIMIT = 10  # seconds; run_game in replay.py allows 15 before it uses SIGKILL
@@ -42,9 +52,27 @@ PLAIN_WAIT = 3  # seconds; ten times what the slowest test run took to end
 READY_LIMIT = 120  # seconds until the game must have drawn frames
 READY_FILE = "imgui.ini"  # ImGui writes it a few seconds after it starts to draw
 MAX_DELAY = 1.5  # seconds after READY_FILE, so the signal does not land on the same point of a frame each time
+CRASH_CODE = 1  # the exit(1) of Ship::ErrorHandler, libultraship/src/debug/CrashHandler.cpp:202
+CRASH_LOG = Path("logs") / "Starship.log"
+# What Ship::ErrorHandler writes for each signal it handles, libultraship/src/debug/CrashHandler.cpp:154-165
+CRASH_LINES = {
+    signal.SIGILL: "ILLEGAL INSTRUCTION",
+    signal.SIGABRT: "ABORT",
+    signal.SIGFPE: "ERRONEUS ARITHEMETIC OPERATION",
+    signal.SIGSEGV: "INVALID ACCESS TO STORAGE",
+}
+FAULT_AFTER = 300  # calls of the function a fault-* scenario stops in, so the game is well into its frames
+FAULT_MARK = "COOP-FAULT"  # gdb prints this just before the game runs into the fault
+# name: function to stop in, the thread that runs it being the one that faults; function that then hangs for good, if any
+FAULTS = {
+    "main": ("push_frame", None),
+    "audio": ("AudioPlayerBuffered", None),
+    "stuck": ("push_frame", "backtrace_symbols"),
+}
 
-# name: signal to send, mode ("plain", "hash", "record" or "play"), result line wanted in the report
-Scenario = namedtuple("Scenario", "signal mode result")
+# name: signal to send or, with a fault, the signal it ends in; mode ("plain", "hash", "record" or "play"); result line
+# wanted in the report; key in FAULTS
+Scenario = namedtuple("Scenario", "signal mode result fault", defaults=(None,))
 SCENARIOS = {
     "plain": Scenario(signal.SIGTERM, "plain", None),
     "idle": Scenario(signal.SIGTERM, "hash", None),
@@ -52,18 +80,51 @@ SCENARIOS = {
     "sigquit": Scenario(signal.SIGQUIT, "hash", None),
     "record": Scenario(signal.SIGTERM, "record", "RECORDED"),
     "play": Scenario(signal.SIGTERM, "play", "FAIL_INCOMPLETE"),
+    "crash-plain": Scenario(signal.SIGSEGV, "plain", None),
+    "crash-segv": Scenario(signal.SIGSEGV, "hash", None),
+    "crash-abrt": Scenario(signal.SIGABRT, "hash", None),
+    "crash-fpe": Scenario(signal.SIGFPE, "hash", None),
+    "crash-ill": Scenario(signal.SIGILL, "hash", None),
+    "crash-record": Scenario(signal.SIGSEGV, "record", "RECORDED"),
+    "crash-play": Scenario(signal.SIGSEGV, "play", "FAIL_INCOMPLETE"),
+    "fault-main": Scenario(signal.SIGSEGV, "hash", None, "main"),
+    "fault-audio": Scenario(signal.SIGSEGV, "hash", None, "audio"),
+    "fault-stuck": Scenario(signal.SIGSEGV, "hash", None, "stuck"),
 }
+
+
+def gdb_command(exe, fault):
+    """gdb runs the game, stops in FAULTS[fault] and jumps to address 0 there. A hang wanted in the crash handler is a
+    jump to pause(), which only a signal ends."""
+    where, hang = FAULTS[fault]
+    steps = ["set pagination off", "set confirm off", "set debuginfod enabled off", "set startup-with-shell off",
+             "set breakpoint pending on", "handle SIGSEGV SIGALRM nostop noprint pass", f"break {where}",
+             f"ignore 1 {FAULT_AFTER}", "run", "delete"]
+    if hang is not None:
+        steps += [f"break {hang}"]
+    steps += [f'echo {FAULT_MARK}\\n', "set $pc = 0", "continue"]
+    if hang is not None:
+        steps += ["delete", "set $pc = (void*) pause", "continue"]
+    return ["gdb", "-q", "-nx", "--batch", *[a for step in steps for a in ("-ex", step)], "--args", str(exe)]
 
 
 def start_game(exe, run, scenario, replay):
     env = {k: v for k, v in os.environ.items() if not k.startswith("SF64_COOP_")}
     env.update(SHIP_HOME=str(run), SDL_VIDEODRIVER="offscreen", SDL_AUDIODRIVER="dummy", LIBGL_ALWAYS_SOFTWARE="1",
                GALLIUM_DRIVER="llvmpipe")
+    # The crash handler opens a message box. Offscreen it opened none (#98), but that is up to the SDL in use, and
+    # nothing here may reach the desktop this script runs on.
+    env.pop("DISPLAY", None)
+    env.pop("WAYLAND_DISPLAY", None)
     if scenario.mode in ("record", "play"):
         env["SF64_COOP_REPLAY_RECORD" if scenario.mode == "record" else "SF64_COOP_REPLAY_PLAY"] = str(replay)
         env["SF64_COOP_REPLAY_REPORT"] = str(run / "replay-report.txt")
     if scenario.mode != "plain":
         env["SF64_COOP_HASH_LOG"] = str(run / "state-hash.txt")
+    if scenario.fault is not None:
+        with open(run / "gdb.txt", "wb") as out:
+            return subprocess.Popen(gdb_command(exe, scenario.fault), cwd=run, env=env, stdin=subprocess.DEVNULL,
+                                    stdout=out, stderr=subprocess.STDOUT)
     return subprocess.Popen([str(exe)], cwd=run, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
@@ -76,8 +137,46 @@ def wait_ready(proc, run):
     return True
 
 
+def wait_fault(proc, run):
+    """Wait until gdb has got the game to the fault. It keeps gdb's output in the run folder."""
+    start = time.monotonic()
+    while FAULT_MARK not in (run / "gdb.txt").read_text(encoding="utf-8", errors="replace"):
+        if proc.poll() is not None or time.monotonic() - start > READY_LIMIT:
+            return False
+        time.sleep(0.2)
+    return True
+
+
+def fault_ending(run):
+    """How the game under gdb ended, from what gdb printed. gdb's own exit code says nothing about that."""
+    text = (run / "gdb.txt").read_text(encoding="utf-8", errors="replace")
+    code = re.search(r"exited with code (\d+)\]", text)  # gdb prints it in octal
+    if code is not None:
+        return f"exit code {int(code.group(1), 8)}"
+    if "exited normally" in text:
+        return "exit code 0"
+    return "SIGALRM" if "terminated with signal SIGALRM" in text else "no ending reported"
+
+
+def stop_fault(proc, run, scenario):
+    """Wait for the game under gdb to end by itself. Same return as stop()."""
+    start = time.monotonic()
+    try:
+        proc.wait(timeout=EXIT_LIMIT)
+    except subprocess.TimeoutExpired:
+        # gdb started the game, so the game goes with it.
+        proc.kill()
+        proc.wait()
+        return None, [f"still running {EXIT_LIMIT}s after the fault"]
+    elapsed = time.monotonic() - start
+    ending = fault_ending(run)
+    want = "SIGALRM" if scenario.fault == "stuck" else f"exit code {CRASH_CODE}"
+    return elapsed, [] if ending == want else [f"{ending}, want {want}"]
+
+
 def stop(proc, sig):
     """Send sig to the game this script started. Returns (seconds until it ended or None, failures)."""
+    want = CRASH_CODE if sig in CRASH_LINES else 0
     start = time.monotonic()
     proc.send_signal(sig)
     try:
@@ -87,12 +186,14 @@ def stop(proc, sig):
         proc.wait()
         return None, [f"still running {EXIT_LIMIT}s after {sig.name}"]
     elapsed = time.monotonic() - start
-    return elapsed, [] if proc.returncode == 0 else [f"exit code {proc.returncode}, want 0"]
+    return elapsed, [] if proc.returncode == want else [f"exit code {proc.returncode}, want {want}"]
 
 
 def stop_plain(proc, sig):
-    """Send sig to a game with no test variable. Only the handler of a test run ends it with exit code 0, so that is the
-    failure; a game still hanging after PLAIN_WAIT seconds is what upstream's handler does. Same return as stop()."""
+    """Send sig to a game with no test variable. Only the handlers of a test run end it with the exit code they want, so
+    that is the failure; a game still hanging after PLAIN_WAIT seconds is what upstream's handler does. Same return as
+    stop()."""
+    want = CRASH_CODE if sig in CRASH_LINES else 0
     start = time.monotonic()
     proc.send_signal(sig)
     try:
@@ -100,7 +201,7 @@ def stop_plain(proc, sig):
     except subprocess.TimeoutExpired:
         return None, []
     elapsed = time.monotonic() - start
-    return elapsed, ["exit code 0: a plain game lost upstream's handler"] if proc.returncode == 0 else []
+    return elapsed, [f"exit code {want}: a plain game lost upstream's handler"] if proc.returncode == want else []
 
 
 def check_replay_file(replay, report_frames):
@@ -120,11 +221,21 @@ def check_replay_file(replay, report_frames):
     return []
 
 
+def check_crash_log(run, sig):
+    """The crash log Ship::ErrorHandler leaves, libultraship/src/debug/CrashHandler.cpp:150-198."""
+    log = run / CRASH_LOG
+    text = log.read_text(encoding="utf-8", errors="replace") if log.exists() else ""
+    return [f"{CRASH_LOG} lacks {line!r}" for line in (f"Signal: {int(sig)}", CRASH_LINES[sig], "Traceback:")
+            if line not in text]
+
+
 def check_files(run, scenario, replay):
     """What the game must have written on its way out. Returns (failures, frames in the report or None)."""
+    if scenario.fault == "stuck":
+        return [], None  # stopped before the crash handler wrote anything, and it never got to exit
+    failures = check_crash_log(run, scenario.signal) if scenario.signal in CRASH_LINES else []
     if scenario.mode == "plain":
-        return [], None
-    failures = []
+        return failures, None
     frames = None
     if scenario.mode != "hash":
         report = replay_tool.read_report(run / "replay-report.txt")
@@ -157,10 +268,15 @@ def run_once(exe, folder, name, scenario, number):
         shutil.copy2(folder / "play.sfcr", replay)
     proc = start_game(exe, run, scenario, replay)
     try:
-        if not wait_ready(proc, run):
-            return None, f"game did not get to draw (exit code {proc.poll()})", ["game did not start"], run
-        time.sleep(random.uniform(0, MAX_DELAY))
-        elapsed, failures = (stop_plain if scenario.mode == "plain" else stop)(proc, scenario.signal)
+        if scenario.fault is not None:
+            if not wait_fault(proc, run):
+                return None, f"gdb did not get to the fault (exit code {proc.poll()})", ["game did not start"], run
+            elapsed, failures = stop_fault(proc, run, scenario)
+        else:
+            if not wait_ready(proc, run):
+                return None, f"game did not get to draw (exit code {proc.poll()})", ["game did not start"], run
+            time.sleep(random.uniform(0, MAX_DELAY))
+            elapsed, failures = (stop_plain if scenario.mode == "plain" else stop)(proc, scenario.signal)
     finally:
         if proc.poll() is None:
             # Only the process this script started.
@@ -169,7 +285,8 @@ def run_once(exe, folder, name, scenario, number):
     more, frames = check_files(run, scenario, replay)
     failures += more
     took = "no exit" if elapsed is None else f"{elapsed:.2f}s"
-    line = f"{took}, exit code {proc.returncode}" + (f", {frames} frames" if frames is not None else "")
+    ending = fault_ending(run) if scenario.fault is not None else f"exit code {proc.returncode}"
+    line = f"{took}, {ending}" + (f", {frames} frames" if frames is not None else "")
     return elapsed, line, failures, run
 
 
@@ -183,7 +300,7 @@ def main():
 
     if args.list:
         for name, s in SCENARIOS.items():
-            print(f"{name}: {s.signal.name}, {s.mode}")
+            print(f"{name}: {s.signal.name}, {s.mode}" + (f", fault {s.fault}" if s.fault else ""))
         return 0
     if not sys.platform.startswith("linux"):
         sys.exit("exit_test: Linux only; only there does libultraship catch these signals")
@@ -191,10 +308,11 @@ def main():
     unknown = [s for s in chosen if s not in SCENARIOS]
     if unknown:
         sys.exit(f"exit_test: unknown scenario(s) {', '.join(unknown)}; known: {', '.join(SCENARIOS)}")
+    if shutil.which("gdb") is None and any(SCENARIOS[s].fault for s in chosen):
+        sys.exit("exit_test: the fault-* scenarios need gdb; leave them out with --only")
 
     exe = replay_tool.find_exe(args.exe)
-    folder = ROOT / "local" / f"test-exit-{time.strftime('%Y%m%d-%H%M%S')}"
-    folder.mkdir(parents=True)
+    folder = make_run_folder(ROOT / "local", "test-exit-")
     hash_check.write_generated_replay(folder / "play.sfcr")
     print(f"exit_test: exe {exe}")
 

@@ -50,6 +50,44 @@ Unknown:
 - Windows and macOS: none of this ran there. `SHIP_HOME` is read on Linux and macOS only
   (`libultraship/src/Context.cpp:471-486`).
 
+### 2026-11-06, #104, run folders of the test tools
+
+Identity: before the change `797c678b`, ROM US 1.0, Linux, GCC, Debug, OpenGL in software, no window. The games ran on a
+build of that commit, the transport tests on the same source.
+
+Observed, before the change, with the real clock and runs started just after a second began:
+
+- `exit_test.py`, two at once: one `PASS`, one `FileExistsError` on `local/test-exit-<stamp>`.
+- `player_trace.py run`, two at once: the second stopped with `FileExistsError`. `rails --players 1` did the same
+  between the two threads of one process.
+- `net_test.py --only lan`, two at once, four times: both printed the same `logs:` line, and in every pair at least one
+  run failed, five of the eight: `ran out of time: host False, client True` (three), `8 resends on a clean link` (one)
+  and one whose line was not kept. Alone the scenario passed five of five.
+- `session_test.py --only sim`, two at once: the same `logs:` line, both passed.
+- `net_mutants.py` twice, one after the other, with a build folder that does not exist: the same `logs:` line.
+
+Observed, after the change: the same runs each print a folder of their own, the later one with `-2`. `lan` two at once,
+four times: all eight passed. `exit_test.py`, two at once: both `PASS`.
+
+Derived:
+
+- A shared folder is more than overwritten logs: `net_test.py` reads and writes `host.port`, `host.json` and
+  `client.json` by name in the scenario's folder (`tools/coop/net_test.py:67-68`, `:80`), so two runs use the same
+  files.
+- `mutants.py` takes a lock before it names the folder (`tools/coop/mutants.py:237`), so of its runs only one that
+  starts after another has ended can land in that folder, and that takes a run that ends within the second.
+- `mutants.py` starts the test script with `python -I` (`tools/coop/mutants.py:141`), and `check.py` does so too. `-I`
+  keeps the script's own folder off `sys.path`, so a tool started that way has to add `tools/coop` itself to import
+  `run_folder`. Removing that line from `net_test.py` turned `run_folder_test.py` red.
+
+Guess:
+
+- `ran out of time` comes from the two runs mixing up those files. No run looked at which file went where.
+
+Unknown:
+
+- Windows and macOS: none of this ran there.
+
 ### 2026-11-06, #70, which test variables reach the game
 
 Identity: ROM US 1.0, on commit `95962d04`, Linux, GCC, Debug, OpenGL in software, no window.
@@ -97,6 +135,84 @@ Unknown:
 
 - Windows and macOS: none of this ran there. `SF64_COOP_TEST_NO_FMA3` only acts on Windows x64
   (`src/port/coop/test/switches.c:24-33`); here it only logged that it has no effect.
+
+### 2026-11-06, #26, what a co-op build needs to start, and what game data it holds
+
+Run on the game code at `e2cb9f1d` and on `797c678b`. ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no
+window. All runs were local, except where a CI run is named, and no game was started on Windows.
+
+**Observed**
+
+- The code treats `starship.o2r` as optional (`src/port/Engine.cpp:107`), but the game does not start without it. A copy
+  of the game in a folder of its own, with only `sf64.o2r`, logs `Failed to load default fragment shader, missing
+  f3d.o2r?` (`libultraship/src/graphic/Fast3D/backends/gfx_opengl.cpp:303`) and signal 6, and draws no frame. The process
+  had not ended 120 s later, so a player sees a hang. The folder `tools/coop/package.py` makes, given `sf64.o2r` and
+  `starship.o2r`, draws frames; given `sf64.o2r` alone it does the same as above.
+- That archive is packed from `port/` (target `GeneratePortO2R`, `CMakeLists.txt`): 13 files, the shaders and nine HUD
+  textures, about 47 KB unpacked.
+- `LocateFileAcrossAppDirs` also looks in the executable's folder (`src/port/Engine.cpp:80`). A game in `build-cmake`
+  found that folder's `starship.o2r` with none in its run folder, so a test of "without it" needs the game copied away.
+- The menu bar is opaque and everything right of the last menu is one colour; the menu font has 7-pixel cells, and a
+  character looks the same in every cell. `tools/coop/version_test.py` relies on both, and needs no OCR.
+- A CI-built Linux binary (run 42267003729) does not start on a machine with newer libraries: it is linked against
+  Ubuntu 24.04's, and `libzip.so.4`, `libtinyxml2.so.10`, `libspdlog.so.1.12` and `libfmt.so.9` are not found. So a
+  packaged game has been started from a local Debug build only, and the Linux artifact needs those versions.
+- Inside the game binary: of 360,788 windows of 32 bytes, taken every 64 bytes from the ROM and from every entry of
+  `sf64.o2r` (zero runs and padding left out), 92 are found. All 92 are in the binary of `797c678b` too. They are in
+  named symbols of compiled C: `devstr*` strings, audio tables, `D_Tex_800DB4B8` (`src/engine/fox_wheels.c:93`, 1024
+  bytes), four `*_copy` vertex arrays (`src/engine/water_effect.inc`, 4624 bytes each). Those two files equal the
+  upstream mirror.
+
+**Derived**
+
+- An artifact without any `.o2r` cannot start by itself, which is why the package now holds `starship.o2r` (next entry).
+- No ROM and no `sf64.o2r` is in the binary. The decompiled tables are, as in any build of this source: the check above
+  samples, so it shows what is there, not that nothing else is.
+
+**Unknown**
+
+- Whether the Windows artifact starts. Windows is linked statically (`CMakeLists.txt`, `x64-windows-static`) and upstream
+  ships the executable alone, so no DLLs are packaged; not run.
+
+### 2026-11-06, #26, where the files in starship.o2r come from
+
+Compared locally with ROM US 1.0, with `sf64.o2r` and with all 51 compressed ROM segments decompressed. Only counts are
+kept here, no game data.
+
+**Decision**
+
+The owner accepted `starship.o2r` in the package, knowing the source of its textures stays unknown (PR #120).
+`tools/coop/package.py` packs exactly the 13 tracked files under `port/` itself, with no Torch build: four shaders and
+nine HUD textures, `sBoostGaugeArrow0` to `8`. Nothing else may go in, and the names are pinned, so a new file under
+`port/` stops the package until someone has looked at it.
+
+**Observed**
+
+- **Not ROM data.** No file, pixel block, row of a frame (55 tested) or small chunk (144 tested) of the nine textures is
+  in the ROM in either byte order, in a decompressed segment or in any of the 15,898 entries of `sf64.o2r`. The same
+  search found 200 of 200 real game textures.
+- **Source unknown.** All nine came in one upstream commit, `903cfc81` (2025-01-04, "Added an option to restore the old
+  boost gauge and fixed coin"), and have not changed since. That commit has no pull request and no description, and it
+  names no source image or tool. Upstream's tracker has nothing on it.
+- **The only statement of origin** is the tooltip of the option that uses them: "Restores the beta boost gauge that was
+  seen in some beta footage" (`src/port/ui/ImguiUI.cpp:637`).
+- The nine frames are one image, rotated: 23 of 91 opaque pixels are equal in all of them, and frame 0 is 94% equal to
+  frame 8 mirrored. A shape search over 1,608 of the 1,945 textures, which traced 11 of 12 rotated test sprites to their
+  source, found generic wedges and teardrops, none a needle on a hub.
+- The asset table entries around `D_1012290`, the gauge frame the same option draws, run back to back with no gap.
+- Upstream's own release workflow ships `starship.o2r` (`.github/workflows/main.yml`), and these files are public in
+  this repository and in upstream's.
+
+**Guess**
+
+- From the tooltip alone: the needle was redrawn from footage of the pre-release game. That would not be ROM data, but
+  it would reproduce the game's design.
+
+**Unknown**
+
+- Who made the source image, and from what.
+- Whether a rotated copy sits in ROM data no asset table lists: the search that covered it failed its own control.
+- Any redrawn or recoloured derivative: a shape search cannot rule one out.
 
 ### 2026-11-04, #1 (WP-01), Windows build
 
@@ -204,6 +320,70 @@ Unknown:
 - Release builds, Windows and macOS: not run. libultraship installs these handlers on Linux only
   (`libultraship/src/debug/CrashHandler.cpp:416`), so `stop_signal.c` does nothing elsewhere.
 
+### 2026-11-06, #98, why a crash did not end a test run
+
+Identity: ROM US 1.0, on commit `797c678b`, Linux, GCC, Debug, OpenGL in software, no window, one game at a time.
+
+Observed:
+
+- On `797c678b`, 12 of 12 test runs were still running 10 s after a crash signal, in `exit_test.py`: SIGSEGV 6 times
+  (without a replay, recording, playing), SIGABRT, SIGFPE and SIGILL twice each. All 12 had their crash log, and their
+  report and closing hash line where the run writes them.
+- So were real faults, 1 of 1 each: gdb sent the program counter to address 0 on the main thread (`fault-main`) and in
+  `AudioPlayerBuffered` on the audio thread (`fault-audio`, thread 49 in gdb, `src/port/Engine.cpp:391`). Both left a
+  crash log with `Signal: 11`. The stack of these hangs was not taken: that it is the destructor rests on the #71 entry.
+- A crash handler made to stop for good before it writes anything (`fault-stuck`, gdb jumps from `backtrace_symbols`
+  to `pause`) was still running 10 s later, 1 of 1.
+- The fix (`src/port/coop/test/stop_signal.c`) uses the gate of the stop handler. In a test run it puts a handler in
+  front of libultraship's for SIGILL, SIGABRT, SIGFPE and SIGSEGV. That one sets a flag and calls libultraship's, which
+  writes the log as before. An atexit handler (`stop_signal.c:55`) sees the flag and leaves with `_exit(1)`.
+- With the fix, 18 of 18 crash signals ended with exit code 1, the slowest 0.37 s after the signal, with crash log,
+  report, closing hash line and, recording, whole frames. `fault-main` did the same in 4 of 4, slowest 0.47 s, and
+  `fault-audio` in 14 of 14, slowest 1.59 s, both under gdb.
+- `fault-stuck` ended by SIGALRM in 4 of 4, 5.14 to 5.39 s after the fault, from an alarm of 5 s
+  (`stop_signal.c:69`), and left no crash log entry for that crash.
+- Stop signals kept their path: 15 of 15 test runs ended with exit code 0, the slowest 0.22 s after the signal.
+- A plain game was still running 3 s after SIGSEGV in 8 of 8 tries, with its crash log, and after SIGTERM in 3 of 3.
+  `797c678b` did the same after SIGSEGV in 2 of 2. The check behind that fails when it should: run against a test run,
+  it gave `exit code 1: a plain game lost upstream's handler` in 3 of 3.
+- With `SDL_VIDEODRIVER=offscreen` the crash handler tried no message box: a listener on the socket of a made-up X
+  display saw 0 connections and fake `zenity` and `kdialog` were not called, 1 of 1, on `797c678b`. The same listener
+  saw 3 connections and the fake dialogs 3 calls in a game with no driver set, which failed while starting up. That
+  game ended with exit code 1 and a crash log.
+- The system's SDL here is sdl2-compat on SDL3.
+- A crashed recording reports `RECORDED` and a crashed playback `FAIL_INCOMPLETE`, as a closed window does. Only the
+  exit code and the crash log tell them apart, and `tools/coop/replay.py:166` prints the exit code only when there is
+  no report.
+
+Derived:
+
+- The order is what makes this work. atexit handlers run last registered first. The destructor of the static `audio`
+  was registered before `main`, `CoopStopSignal_Init` runs at `src/port/Engine.cpp:301`, and `CoopReplay_Init` and
+  `CoopStateHash_Init` at `:310` and `:311`. So the test output is written first and `_exit` comes before the destructor.
+- `_exit(1)` keeps the exit code of upstream's `exit(1)` (`libultraship/src/debug/CrashHandler.cpp:202`), so a tool can
+  tell a crash from a stop.
+- The alarm is there for the other hang, the 62nd run of the #71 entry: `Ship::ErrorHandler` calls `backtrace_symbols`
+  (`libultraship/src/debug/CrashHandler.cpp:148`), which allocates, so a crash inside `malloc` or `free` can stop on a
+  lock the crashed code holds. That happens before the log is written (`:198`), so such a run has no crash log, and
+  nothing in this repo can change that without replacing libultraship's handler.
+- The alarm is off with a window. `SDL_ShowSimpleMessageBox` (`:192`) also comes before the log, so a limit there could
+  kill the game while someone reads the box, and the log would be lost.
+- The issue's candidate, never destroying `audio`, would change a plain game too, which the owner's rule from #71 does
+  not allow, and would not reach a crash handler that hangs before `exit`.
+
+Guess:
+
+- A real lock hang ends through the alarm the way `fault-stuck` does. `fault-stuck` stands in for it with `pause`; a real
+  crash inside `malloc` was not produced.
+
+Unknown:
+
+- A test run with a window: not run. The message box waits there as upstream's does, and the `_exit(1)` should follow
+  once it is closed.
+- Release builds, Windows and macOS: not run. The handlers exist on Linux only, as in the #71 entry.
+- A crash before `src/port/Engine.cpp:301` keeps upstream's path. The run with no driver above is the only such crash
+  seen, and it ended by itself.
+
 ### 2026-11-04, #1 (WP-01), Linux build
 
 Identity: ROM US 1.0 (SHA-1 `d8b1088520f7c5f81433292a9258c1184afa1457`, `config.yml:34`), commit `ba0781d7`, Linux,
@@ -249,6 +429,92 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-06, #12, input source per player: who steers whom
+
+Runs on `origin/coop` at 797c678b and on this branch: ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no
+window, one game per run, no transport. Frames are replay frames. "The gamepad" is the SDL virtual gamepad of
+`src/port/coop/test/test_pad.c`; no real pad was attached. The runs are `python tools/coop/input_test.py`.
+
+**What a slot means in co-op now.** `CoopInput_Route` (`src/port/coop/game/input.c`) runs in `GamePreUpdateEvent` and
+fills the pad slots by player number: slot i holds what player i does this frame, on every client. The local player has
+port 0, every other player its source, and nothing else on the PC reaches a slot. With co-op off it does nothing.
+
+Why by player number, and not a private array per player: game code reads slots directly. It reads
+`gControllerPress[gMainController]` for pause and the supply call, and `gControllerHold[player->num]`
+(`src/engine/fox_hud.c:6231`). Filled by player number, all of that reads the same input on every client.
+
+For WP-22: a network stream drops in with `CoopInput_SetSource` for each remote player, and a client sends what
+`CoopInput_Controller` returns. A stream carries hold and press together, the pair the sender's player used, so a
+receiver has nothing to work out again. A sync layer that delays the local player's own input uses
+`CoopInput_SetLocalSource`. A source cannot wait, as it is read inside the frame: a sync model that waits for a player
+waits before the frame starts. None of this picks a side in decision 0002, which is still proposed.
+
+Observed, runs, before (test commit, replay and gamepad steering opposite ways, port 1 pushing a third way):
+
+- A replay wrote every slot, so a live player beside it did not exist: player 0 had the gamepad's buttons on 1 of 1201
+  frames and the replay's decoy button on 1200, and flew the gamepad's way on 0 of 10 half cycles.
+- With no replay, port 1 steered player 1: its pad was idle on 1 of 1208 frames and it moved 1350 in its flight box.
+- **Three reads gave a player's shot to player 0's buttons**, which routing alone does not cure:
+  - `PlayerShot_SearchLockOnTarget`: a search shot of player 1 flew on 0 frames with only its owner holding A. It died
+    on the frame it left, unless player 0 held A.
+  - `PlayerShot_UpdateBomb`: player 1's bomb left at 5600 and went off at 5610, when player 0 pressed B.
+  - `Actor_Update`: the campaign branch runs down `lockOnTimers[TEAM_ID_FOX]` only, so a lock-on of player 1 outlasted
+    its owner's A by 50 frames. The timer starts at 20. That run had the other two fixed, as the first bug hid part of
+    this one.
+
+Observed, runs, after:
+
+- `live`: player 0 had the gamepad's buttons and stick on 1200 of 1200 frames, two frames later, and flew its way on 10
+  of 10 half cycles. Player 1 had its stream exactly, hold and press, on 1200 of 1200 frames and swept 2200 of x.
+- `alone`, no replay: the same for player 0. Player 1, with no stream, was idle on 1200 of 1200 frames and moved 0.
+- `shots`: a search shot of player 1 flew on 43 frames, all with its owner holding A. The bomb went off at 5618, on its
+  owner's press. A lock-on outlasted its owner's A by at most 19 frames.
+- `whole` and `solo`: a plain replay still flies every player, and co-op off ignores the gamepad, 1200 of 1200 frames.
+- `unit`: 16882 of 16882 checks, every local index from 0 to 3 with every player count. 15 of 15 hand-made breaks of
+  `input.c` were caught. Press edges taken from the slot pass at index 0 and fail at index 1: that case cannot show in
+  the game yet.
+- The rail replay on 797c678b and on this branch, `hash_check.py diff`: no difference on 7506 common rows with co-op off
+  and on 7501 with two players, every column. So routing changes nothing a replay already did.
+- A stick pushed to 80 reads 78 after libultraship.
+
+Observed, reads:
+
+- Team-wide reads stay on `gMainController`, which is player 0's slot: `Play_Main` for Start and R
+  (`src/engine/fox_play.c:7199`, `:7222`, `:7232`, `:7252`), the supply call (`src/engine/fox_360.c:667`), the C-right
+  trigger (`src/engine/fox_enmy2.c:2695`), the training call (`src/overlays/ovl_i1/fox_tr360.c:257`) and a cutscene
+  timer (`src/overlays/ovl_i6/fox_andross.c:1438`).
+- **The pause menu reads `gInputPress`** (`src/engine/fox_hud.c:1345`, `:1471`, `:1475`), and that points at the local
+  player after the player loop (`src/engine/fox_play.c:7051-7053`, `:7068-7070`).
+- The team has one bomb slot, the last entry of `gPlayerShots` (`src/engine/fox_play.c:3217`). A lock by any player
+  kills every search shot in flight (`PlayerShot_FindLockTarget`, `src/engine/fox_beam.c:1748-1752`).
+- Rumble written straight to an entry stays there: `gControllerRumbleFlags[gMainController]` has 16 sites and
+  `gControllerRumbleFlags[0]` 7 more in the overlays. Only entry 0 is served (see #68 below), so these reach the local
+  pad at any local index. `CoopInput_RumbleSlot` moves only what goes through `gControllerRumble`.
+
+Derived:
+
+- Who may pause, skip or call for supplies has no record (`DESIGN.md` section 4). Leaving those reads on player 0 picks
+  no new rule: it is what the slots give with no change, and it can be changed site by site.
+- At a local index other than 0 the pause menu would read a different pad on each client while Start stays player 0's.
+  Under lockstep that desyncs, as the menu can quit the level. Nothing reaches it while `CoopPlayers_LocalIndex` is 0;
+  #96 and #30 meet it when they change that.
+- Press edges come from a copy of the pad, so they do not see what game code writes to a slot in a frame
+  (`src/engine/fox_play.c:5713`, `src/overlays/ovl_i3/fox_zo.c:4741`). Upstream's do, through `sPrevController`. A
+  button pressed right after a forced boost can make a press here that it would not make upstream. Not seen in a run.
+- A stale `CoopPlayers_IsCoop` after a level means routing also runs in the menus after it. On index 0 that is the same
+  input; a client would see the host drive the menus.
+
+Not shown:
+
+- A local index other than 0 in the game: only `unit` runs it, with a copy of `Controller_UpdateInput`.
+- Rumble in a run. `unit` checks which entry each player gets.
+- A real pad, keyboard and mouse, Windows, macOS, a network. Two clients: every run here is one game.
+- A live player in all-range, or anywhere but Corneria's rails. `gRapidFire` in co-op: read, not run.
+
+Unknown:
+
+- Whether a real pad on this PC would reach a test game. None was attached.
+
 ### 2026-11-06, #59, secret routes and events that depend on a wingman
 
 Read at `95962d04`. Nothing was run. This describes what the game does; the rule for a human-flown wingman is for a
@@ -259,6 +525,7 @@ throwaway decoder that follows `tools/Torch/src/factories/sf64/ScriptFactory.cpp
 script 59, command 34. The tables are the `SF64:SCRIPT` rows of `assets/yaml/us/rev0/ast_*.yaml` (Corneria:
 `ast_corneria.yaml:445`), and `ActorEvent_ProcessScript` picks one per level (`src/engine/fox_enmy2.c:1067-1120`).
 `z` is the `zPos1` of the object that starts a script. Conditions are in `ActorEvent_ProcessTriggers` (`:2354`).
+To look a reference up: `python tools/coop/script_reader.py CO S59:34`, see the #90 entry.
 
 Short version, derived from the lists below: two routes read a wingman directly (Corneria needs Falco to open
 Sector Y; Sector X loses its choice when Slippy is shot down), Titania always takes Slippy away, and every medal needs
@@ -447,6 +714,89 @@ Open questions for the record, nothing decided here:
 11. Who picks on the map (`gMainController`; DESIGN.md section 4, item 4)?
 12. `gMissionTeamStatus` and the ranking: does a human wingman count as a wingman there?
 
+### 2026-11-06, #86, who fired: shooter tests and dmgSource in co-op
+
+Identity: ROM US 1.0, game code at `4955ca69` on `797c678b`, Linux, GCC, Debug, OpenGL on a software renderer, no
+window, 1 client per run, no transport, input by rule. Red is `2b3ade53`, the same commits without the fix.
+
+Observed in the code:
+
+- Three things write a player into `dmgSource`: a shot (`src/engine/fox_beam.c:697`), a bomb or lock-on blast (`:1954`,
+  `:1961`, `:1976`) and a collision (`src/engine/fox_play.c:2191`, `src/engine/fox_tank.c:1422`). Upstream writes
+  index + 1.
+- Enemy code writes `DMG_SRC_2` in six places. Only one is a hit on a wingman: a seek-team missile
+  (`src/engine/fox_enmy.c:1645`). The other five come just before `Actor_Despawn`, so that no player gets the kill
+  (`src/overlays/ovl_i3/fox_aq.c:1802`, `:2520`, `src/overlays/ovl_i3/fox_zo.c:3522`, `:3630`, `:3648`).
+- `dmgSource` is read as: 1 for Fox, 1 to 4 for a versus player (`src/engine/fox_enmy.c:1757`), 2 or 100 for an enemy
+  (`src/engine/fox_hud.c:4569`), and 101 and up for an NPC. `<= AI360_PEPPY + 101` takes players and the team together
+  (`src/engine/fox_360.c:1145`). Nothing uses 5 to 99.
+- A wingman at a boss reads `dmgType` only with `work_048` at 0 (`src/engine/fox_hud.c:4862-4870`).
+- A broken wing sets that player's lasers to single when it next shoots (`src/engine/fox_play.c:3465-3468`).
+- The Shogun rule keeps its shooter in `boss->swork[19]` (`src/engine/fox_beam.c:1035`), read at
+  `src/overlays/ovl_i6/fox_sy.c:564` and `:602`. The audit pattern cannot see those two reads.
+
+Observed in runs (`player_trace.py shots --players 2`, Corneria all-range, 20 shots carried to wingmen with the radio
+free):
+
+| | red `2b3ade53` | fixed `4955ca69` |
+|---|---|---|
+| `dmgSource` of those hits | 2, on all 20 | 11, on all 20 |
+| Radio after them | an enemy-hit line on 19, line 2265 on 1 | no line on all 20 |
+| Missile hits on wingmen, radio free | 1, with its enemy-hit line | 4, each with its enemy-hit line |
+| Frames with two laser marks | 0 | 56 |
+
+- In the fixed run player 1's lasers went from 2 to 0 at frame 4383, player 0 stayed on 2, and the last frame with two
+  marks is 4360.
+- In that run the five missile hits stayed unread for 6, 53, 56, 58 and 69 frames. All 22 hits of carried shots, 20 of
+  them with the radio free, were read on the next frame.
+- With four players on the fixed build, 22 carried shots hit with the radio free, none with an enemy's `dmgSource` or
+  line. 4 missile hits had their line, and 202 frames had two marks.
+- A second fixed two-player run gave the same results. Its trace equals the first on all 5905 lines it holds; the first
+  has 23 more at its end.
+- The check on single lasers can fail. With the eight `(gLaserStrength[shot->sourceId] != LASERS_SINGLE)` tests in
+  `src/engine/fox_beam.c` reading `[0]`, player 1's lasers dropped at frame 4384 and frame 4399 still had two marks.
+- Co-op off, `hash_check.py diff` finds no difference between `797c678b` and the fix on two one-player replays: 9015
+  frames with player 0 sweeping and firing in all-range, 8003 through the rail section. With the trace on, the
+  all-range replay has 42 frames with two marks and one wingman hit with `dmgSource` 1, and matches the base hashes
+  too, so it reaches the changed ground test. The rail replay has 2 frames with one mark and no hit on a wingman.
+
+Derived:
+
+- Co-op needs its own values, because `DMG_SRC_2` cannot be taken back from enemy code: `CoopPlayers_DmgSource` gives
+  players 1 and up 10 + index. No rule tests those values, so the only behaviour it changes is the enemy-hit line of
+  `ActorTeamBoss_HandleDamage`. The other `AI360_FOX + 1` tests read the same before and after for these players.
+- Friendly-fire lines stay player 0's. Players 1 and up get no line, which is what indexes 2 and 3 already got. That
+  keeps the choice open, and adding them later is one test per site.
+
+Who owns each rule that stays as it was, with the verdict in `docs/coop/audit/sp-verdicts.tsv`:
+
+| Rule | Where | Owner |
+|---|---|---|
+| Hit count, drops and Star Wolf hits | `src/engine/fox_enmy.c:1761` | WP-16 (#14), DESIGN.md section 4 item 5 |
+| Sector Z missile bonus | `src/engine/fox_360.c:920` | WP-16 (#14) |
+| Shogun bonus | `src/engine/fox_beam.c:1035` | WP-16 (#14) |
+| Katina ally kills | `src/engine/fox_360.c:992` | WP-16 (#14) |
+| Saucerer takes only player 0's shots | `src/engine/fox_beam.c:1008` | WP-16 (#14), question 8 in the #59 entry |
+| Star Wolf dodges only player 0's shots, outside Venom 2 | `src/engine/fox_beam.c:809` | WP-16 (#14): it decides how fast they fall, and so Fortuna's route |
+| Friendly-fire and collision lines | `src/engine/fox_hud.c:4541`, `:4555`, `src/engine/fox_360.c:1147`, `:1172`, `src/engine/fox_enmy2.c:2257` | WP-17 (#15) |
+| Rescue of a wingman | `src/engine/fox_360.c:532`, `:626` | WP-17 (#15) |
+| Shots hit player 0 only, in all-range | `src/engine/fox_beam.c:838` | friendly fire, WP-07 (#7) |
+| Bomb and lock-on buttons of players 1 and up | `src/engine/fox_beam.c:2076`, `:1793` | WP-14 |
+
+A lock-on blast adds to `gHitCount` for any shooter (`src/engine/fox_beam.c:2284`), so that one count already includes
+players 1 and up. It is left as it is, for WP-16.
+
+Guess:
+
+- Player 1's lasers dropped at 4383 because a wing broke. The trace does not log wings.
+
+Unknown:
+
+- Whether Granga or the Carrier fired the missiles in these runs: both can (`src/overlays/ovl_i1/fox_co.c:406`,
+  `:1654`).
+- Anything outside Corneria. The Saucerer, Star Wolf and Shogun sites were read, not run.
+- Whether the friendly-fire lines would fit a human-flown wingman: their text was not read.
+
 ### 2026-11-06, #56, audit regenerated after WP-10 and WP-11
 
 Read at `a69c811a`. `python tools/coop/sp_audit.py --check` passes again. This moved line numbers and corrected the
@@ -504,6 +854,76 @@ Unknown:
 - Why the `flow` group is not usable as a checklist yet: #56 does not say. 113 of its 326 sites have basis `name`.
 - Which physical pad lands on index 0: that is libultraship's mapping, not read here.
 
+### 2026-11-06, #87, low-health radio timer with several players
+
+Identity: ROM US 1.0, on commit `797c678b`, Linux, GCC, Debug, OpenGL in software, no window, one game per run, the
+second player from the replay file, no transport. Frames are level frames (`gGameFrameCount`). Runs: `player_trace.py
+lowhealth`, with `gInvincible` and shields held by `SF64_COOP_TRACE_SHIELDS`.
+
+Observed, before the change, two players, Corneria:
+
+- The timer rose 2.00 per frame while both flew (6484 on 3242 frames, rails). Limits on rails at 2155, 2635, 3116, 3596,
+  4077, 4557; in single player at 2635, 3596, 4557.
+- The players took turns at the limit. Where the timer ended the frame at 1 (2155, 3116, 4077), player 0's call reached
+  it and player 1's stepped it on; where it ended at 0 (2635, 3596, 4557), player 1's call reached it. With only player
+  1 low, lines started at 2635 and 3596; with only player 0 low, at 4077, as 2155 and 3116 met a busy radio.
+- One player alone steps it too: in all-range the timer rose 36 on the 37 frames that started with only player 1 active.
+
+Observed, in single player:
+
+- The timer steps once on every frame player 0 goes into active and on no other: 0 frames off, in every run. It stands
+  still in a U-turn (111 frames) and in the cut to all-range, as only the `PLAYERSTATE_ACTIVE` case calls
+  `Player_LowHealthMsg` (`src/engine/fox_play.c:5966`).
+
+Observed, about the radio, under gdb with a breakpoint on the `RAND_INT` line (`src/engine/fox_play.c:5854`), the fixed
+build, all-range, two players, 10000 replay frames:
+
+- Only player 0 low: four attempts, at 3099, 4282, 5576 and 6870, each with `player->num` 0. The radio was on state 6,
+  3, 2 and 0. Only the last played a line (id 20305).
+- Only player 1 low: no attempt. So a silent limit there is the check not firing, not the radio hiding a line.
+
+After the change, two players:
+
+- Rails: the timer rose 1.00 per frame (3248 on 3248 frames), 0 of 4925 frames off the original rate, equal to single
+  player on all 4912 frames of the same flight, limits at 2635, 3596, 4557 as in single player. With only player 0 low,
+  lines at 2635 and 3596, the two limits with the radio free. With only player 1 low, none at those same two.
+- All-range, 10200 replay frames: 0 of 7103 frames off the original rate, equal to single player on all 6753 frames of
+  the same flight. The timer stood still on the 37 frames that started with only player 1 active (172 with player 1
+  low). With only player 0 low, a line at 6870, its one limit with the radio free. With only player 1 low, none, with
+  the radio free at 4282.
+- Two runs of one game with player 0 low: state hash equal on 8007 frames on rails and 10204 in all-range, RNG included.
+- Co-op off: one replay on `797c678b` and on this change, no test switch: no difference on 8005 common frames. Shields
+  held low so that lines play, before and after the change: no difference on 8005 frames (rails) and 10223 (all-range).
+
+Choice, which no record covers: in co-op only player 0 goes through `Player_LowHealthMsg`, so only player 0's shields
+decide, and a low player 2 to 4 gets no line. It is neutral, not a rule: one player's game reads its one player, #60
+files these lines under reacting to Fox, and decision 0005 keeps player 0 as Fox. It is reversible in one function,
+`CoopPlayers_SkipLowHealthMsg` (`src/port/coop/game/players.c:239`). The radio question in decision 0005 and DESIGN.md
+section 4 item 7 are still open and can change it.
+
+Derived:
+
+- Whatever replaces that choice has to keep one step per frame and read only state every client shares. The branch here
+  reads `player->num` and the player count. `CoopPlayers_LocalIndex` would differ between clients, and the line draws
+  from the RNG (`src/engine/fox_play.c:5854`, then `Rand_ZeroOne` in the switch).
+- The draws come before `Radio_PlayMessage` can refuse the line (`src/engine/fox_radio.c:97`), so a refused line still
+  moves the RNG. The number of draws depends on `gTeamShields`, which is in the state hash.
+- These lines have priority 0: no line followed at `gRadioMsgPri` 1, and `func_radio_800BA7BC` refuses only a lower
+  priority (`src/engine/fox_radio.c:43-55`).
+- The timer itself is not in the state hash (`src/port/coop/sync/state_hash.c:310-337`), so a client whose timer drifted
+  would show only at the next limit that draws.
+
+Unknown:
+
+- Two clients: nothing here ran two clients. Each run is one game, so "the same draws on every client" is read from the
+  code, and shown only as two runs of one game with equal hashes, RNG included.
+- Why player 0's flight parts from single player late in all-range: its fourth limit came at 6759 with player 1 low and
+  6870 with player 0 low, one U-turn apart.
+- What else draws from the RNG depending on shields: on rails `low0` and `low1` first differ in `rng` at about frame
+  2189, before the first limit, with `players` and `effects` differing a frame earlier. So the RNG cannot show whether
+  the check ran.
+- Three and four players, other levels, and player 0 going down: not run.
+
 ### 2026-11-06, #60, which radio lines a wingman says on its own
 
 Read at `95962d04`; nothing was run. "Wingman" means Falco, Slippy and Peppy, the three a player can take (decision
@@ -515,6 +935,7 @@ for example Corneria 17.8. The tables are the `SF64:SCRIPT` assets (`assets/yaml
 Corneria), picked per level in `ActorEvent_ProcessScript` (`src/engine/fox_enmy2.c:1075-1122`). They were decoded from
 a US 1.0 `sf64.o2r` with a throwaway script, not kept. Its command format is `EVENT_CMD` (`include/sf64event.h:92`).
 Script counts come from walking each script's branches, so they say what can run, not what a given run plays.
+To look a reference up: `python tools/coop/script_reader.py Corneria 17.8`, see the #90 entry.
 
 **Observed: how a line reaches the radio**
 
@@ -682,6 +1103,58 @@ Counts: 268 code sites name a wingman (165 story, 63 own state, 19 own action, 2
   (`src/engine/fox_radio.c:628`), and nothing here tried it.
 - How enemies choose a target when a wingman's slot is empty, which the chase lines depend on. Not read.
 
+### 2026-11-06, #100, who an enemy effect can hit
+
+Identity: ROM US 1.0, on commit `7700bed8`, Linux, GCC, Debug, OpenGL in software, no window, one game with two players.
+
+Observed, with `player_trace.py effects --players 2` on Corneria, on rails and with `--all-range`:
+
+- Before the fix (`8e00e695`), 19 of 34 lines hold in both sections. All 16 player 0 controls pass. Player 1 is hit by
+  none of the 15 cases that should hit or deflect.
+- With the fix, 34 of 34 hold in both sections, also with player 1 in a barrel roll, player 0 in one, and a player out.
+- Only the spawn is forced, and the effect's own update does the test. Corneria ran the effects of other levels: this
+  does not show those levels, and it does not show enemy fire in play hitting player 1.
+- A probe that moved player 0 made the camera jump and aborted the game: `std::vector::back()` on an empty vector, from
+  `Matrix_Push` in `Display_PlayerShadow_Update`, with a state 1 Effect374 placed. That run had 16 camera skips. With
+  player 0 left alone the same section had 3, and no abort. Earlier runs with 13 to 17 skips did not abort either.
+
+Read, in this checkout:
+
+- `gPlayer` is the array, so a bare `gPlayer` is player 0. `sp_audit.py` finds 21 such arguments, not the 20 of the
+  issue: the extra one is `Turret_Draw(gPlayer)` (`src/engine/fox_display.c:2084`), in a mode nothing sets
+  (`include/sf64player.h:64`).
+- All 15 callers of `func_effect_8007A774` (`src/engine/fox_effect.c:1022`) pass player 0, 9 as `gPlayer` and 6 as
+  `&gPlayer[0]` (`src/overlays/ovl_i3/fox_so.c:747,826,876,904`, `src/overlays/ovl_i6/fox_andross.c:1609,1621`), and
+  none uses what it returns. So one line inside it covers all of them.
+- Enemy lasers and Effect398 test the player themselves, with 100 more reach in a barrel roll, which deflects the shot
+  (`src/engine/fox_effect.c:2927-2945`). `deflectCount` is never read (`include/sf64player.h:316`).
+- Effect398 also calls `func_effect_8007A774` after its own test (`src/engine/fox_effect.c:3124`). That call does not
+  look at a roll, so a rolling player deflects the shot and is hit by it: the case `shot398-roll` shows both.
+- Effect397 tests its target only when player 0 is not rolling (`src/overlays/ovl_i4/fox_bo.c:1831`). In co-op each
+  player's own roll counts, so `src/overlays/ovl_i4/fox_bo.c:1834` tests the others while player 0 rolls.
+- `Player_ApplyDamage` writes `gCalcMatrix` (`src/engine/fox_play.c:1032-1033`). The test of Effect395's beam needs the
+  beam's rotation there, and `CoopEffects_BeamHit` runs before player 0's test (`src/engine/fox_effect.c:3887-3892`), so
+  it pushes and pops around the call.
+- Who an effect is aimed at does not change: an effect that aims does so at player 0, as upstream.
+- `Effect_Move` measures its cull from player 0's camera (`src/engine/fox_enmy.c:2797`), on rails only
+  (`src/engine/fox_enmy.c:3147-3151`).
+
+Derived:
+
+- The abort comes from upstream's code, in a path #100 does not touch. On a camera jump recording goes off
+  (`src/engine/fox_display.c:1918`), so `Effect_DrawAll` opens the effect's child without a push
+  (`src/engine/fox_edisplay.c:1971`). `Effect_Effect374_Draw` turns recording on (`src/engine/fox_effect.c:2306`), so
+  the close pops the root (`src/engine/fox_edisplay.c:1994`), and the next recorded call finds no path
+  (`src/port/interpolation/FrameInterpolation.cpp:179`). It needs a jump and that draw in one frame, which fits the runs
+  above. `Effect_Effect382_Draw` has the same shape (`src/engine/fox_effect.c:235`).
+- An effect aimed at a player far behind player 0's camera on rails can be culled before its test.
+
+Unknown:
+
+- Whether that abort happens in normal play on Zoness. Not run there, and it was not run on the base build.
+- How the effects of other levels behave in co-op on those levels. Not run: Meteo, Sector X, Sector Y, Aquas, Zoness,
+  Area 6, Bolse, Solar, Venom, Titania, Macbeth.
+
 ### 2026-11-05, #6 (WP-06), on-rails: player position, path progress, camera
 
 Read from the source only; nothing was run. Line numbers are for `origin/coop` at 1ec6c677.
@@ -796,6 +1269,68 @@ Read from the source only; nothing was run. Line numbers are for `origin/coop` a
 Read at `95962d04`, nothing was run. This is code reading, plus the level event scripts, which are asset data and not
 in the repo: they were read out of an `sf64.o2r` built from ROM US 1.0. It answers the question 0005 left open, and it
 describes the game only. The co-op rule is for a later record (DESIGN.md section 4, items 2 and 3).
+
+**2026-11-06, #89, what the runs showed.** Both points of #89 were run, so "nothing was run" above and the first item
+under Unknown below no longer hold for them. The entry stands otherwise, apart from the two sentences marked
+**Disagrees** in this note. To repeat it: `python tools/coop/wingman_check.py all`. Run at `797c678b` plus the test code
+of #89, which changes no game code: ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, one client, no co-op
+session. Each run is input by rule with the CVars `gLevelSelector`, `gSkipBriefing`, `gDebugWarpZone` and `gInvincible`,
+a trace of the four stores, and gdb stops at script 94's test and at `EVOP_RESTORE_TEAM` in the Sector X runs. Reaching
+Sector X needed no level-start switch: level select does it.
+
+Observed, in the scripted runs:
+
+- **Slippy forced down in Sector X** (`down`). A test switch wrote -1 at path 120000; nothing hit him. Script 94 tested
+  him at path 204798, and `EVOP_RESTORE_TEAM` ran once, at path 204833, for id 2, from script 94, with him at -1. From
+  that frame he read 255 and had a ship. The ship was gone by path 215221 and he stayed at 255.
+- **Slippy alive** (`alive`). The same test at the same path, reading 255. `EVOP_RESTORE_TEAM` did not run, and he had
+  no ship through path 218941, where the run ended.
+- **Slippy in his sit-out level** (`sitout`). -1 by the switch in Meteo, 0 at the start of Sector X, then as in `down`:
+  one `EVOP_RESTORE_TEAM` at path 204833, with him at 0, then 255 and a ship.
+- **A wingman at -1 across two level starts** (`chain`). Falco, -1 by the switch in Meteo, then Sector X, then Titania.
+  Every row of the table under Derived below matched, in all three stores: 0 at the start of Sector X, 255 at the start
+  of Titania. `D_ctx_80177C58` read -1 at the second level start and 0 at the third.
+- **Titania's -2** (`chain`). Slippy read -2 from Titania's load on, with saved at 255, on a run where nothing had
+  touched him (`fox_play.c:2689-2691`).
+- **A wingman going down with nothing forced.** In all three Sector X runs Peppy fell from 255 to -1 by steps of 2, 10
+  and 12, reaching -1 at path 187990 (`alive`, `down`) and 187390 (`sitout`). His ship stayed 73 to 85 frames more,
+  saved stayed 255, and he was still at -1 when the run ended.
+- **Ending a level by rule.** `gDebugWarpZone` and L ended Meteo and Sector X, through the warp.
+
+Observed, in one exploratory run each, which the tool does not repeat:
+
+- **Disagrees:** "The Hit64 CVars force a wingman to 0 at every load". Not on the first level of a run: with
+  `gHit64SlippyDead` on and Sector X as the first level, script 94's test read 255. From reading, not from the run:
+  `gClearPlayerInfo` is still set then, and its block writes 255 when the player is set up, after the load
+  (`fox_play.c:2951-2955`, `:5948`, `:4925-4928`).
+- `gDebugLevelComplete` did not end Corneria: the player stayed in `PLAYERSTATE_LEVEL_COMPLETE`, for 4000 frames on
+  rails and 9500 in all-range.
+- Falco forced to 0 in Corneria while he had no ship stayed at 0 for 668 frames, until his ship spawned, and read -1 on
+  that same trace line.
+
+Derived:
+
+- **Disagrees:** "whether he went down earlier in that level or is in his sit-out level". Script 94 brought him back in
+  both, but as far as the scripts show the first only happens forced. He has no ship before script 94 (`alive`), and in
+  the whole Sector X scripts only script 94 gives him a team id and `EVOP_DAMAGE_TEAM` is only used on Peppy. So in
+  normal play the script serves the sit-out level, and it brings him back one level early.
+
+Not run:
+
+- A real hit on Slippy or Falco: both were written by the switch. Peppy, the one real loss, was not followed to a later
+  level.
+- A normal level end. Every level here ended through the warp, as `MISSION_WARP`, not through a boss, and the clear
+  screen's heal was not looked at. The natural way out of Corneria was not run either.
+- The course menu: level select picks the next level on the map, so its "go on" was not taken.
+- Pause retry, retry course, Fox's death, game over, Aquas, the Venom levels, and Slippy's -2 at the Sector X boss. The
+  run ends early in Titania, so his return there was not run.
+- Anything with two clients.
+
+Unknown:
+
+- The Unknown below on a value of exactly 0 stays open. The exploratory run above shows a 0 lasting while no actor is
+  there to write -1, not the case it names, an actor removed while the value is 0. The drain cannot leave 0
+  (`fox_play.c:7038-7039`).
 
 Short answer: "they miss the next level and return after it" is right for the usual case. A wingman whose shields run
 out leaves the level, sits out the whole next level, and is back at full shields (255) in the level after that. It
@@ -966,6 +1501,65 @@ Open questions for the record that settles this, with lives and respawn (nothing
 11. Which stores join the state hash or the host's snapshot: `gSavedTeamShields`, `gPrevPlanetTeamShields`,
     `D_ctx_80177C58`, `gTeamDamage`?
 
+### 2026-11-06, #90, how to look up a level script reference
+
+Read at `797c678b`. The tool ran on an `sf64.o2r` built from ROM US 1.0, version `76924CA9`. No game ran.
+
+Level scripts are ROM data, so the notes cite them by level, script and command. `tools/coop/script_reader.py` reads
+them from your own `sf64.o2r`. Both ways the notes write a reference work:
+
+```sh
+python tools/coop/script_reader.py CO S59:34       # the #59 entry: level prefix, script, command
+python tools/coop/script_reader.py Corneria 17.8   # the #60 entry: level name, script, command
+```
+
+It prints the whole script and marks the command with `>`. A script without a command marks nothing, a level alone
+lists its scripts, and no argument lists the levels. Prefixes are the ones in `include/sf64event.h`. In the #59 table
+the first column is the level, so `S4` in the Corneria row is `CO S4`, and `S141-143` is three lookups. It finds
+`sf64.o2r` in `build-cmake/`, `build/x64/` or the repo root; `--o2r <file>` names another. It reads that one file and
+writes nothing. What it prints is game data: keep it out of git, issues and PRs. A reference holds for the ROM it was
+read on, so the first line of the output shows the archive's version.
+
+Observed, how a reference maps to the game:
+
+- The script is the slot in the level's table. An object's id minus `ACTOR_EVENT_ID` gives `aiType`
+  (`src/engine/fox_enmy.c:412`), and `levelScripts[this->aiType]` is the script (`src/engine/fox_enmy2.c:1122`).
+- The command is `aiIndex / 2`. A command is two 16-bit words (`EVENT_CMD`, `include/sf64event.h:92`), and branches
+  land on `n * 2` (`fox_enmy2.c:1492`, `:2341`).
+- The level picks the table in `ActorEvent_ProcessScript` (`fox_enmy2.c:1075-1121`). Levels with no case use Corneria's
+  (`:1118-1120`); the tool refuses those instead of showing Corneria.
+- A table entry is a 0x40-byte header, a count, then one 64-bit hash per slot (`ScriptBinaryExporter`,
+  `tools/Torch/src/factories/sf64/ScriptFactory.cpp:330-335`, read at `src/port/resource/importers/ScriptFactory.cpp:16-19`).
+  The hash is `CRC64()` of the entry's path (`ScriptFactory.cpp:325`). That function returns the value uninverted
+  (`tools/Torch/lib/strhash64/StrHash64.cpp:249`), unlike `update_crc64` (`:234`).
+- `<table>_cmd_<n>` counts in sorted address order, not table order (`ScriptFactory.cpp:296`, `:302`), so `n` is not
+  defined to be the script number. The tool follows the hash, as the game does.
+- Some macro parameters read the other way round from the interpreter. `EVENT_F4_PLUS_X(rot, rotVel)` puts `rotVel * 10`
+  in arg1 (`include/sf64event.h:106`), while the interpreter takes arg1 as the angle and arg2 / 10 as the step
+  (`fox_enmy2.c:1546-1547`, `:3277-3283`). The tool prints what the interpreter reads.
+
+Observed, run on all 14 tables:
+
+- 1700 scripts and 19100 commands decode. Every opcode and enum value has a name in the headers, and in every table
+  `n` equals the slot.
+- The #59 entry holds up: `CO S59:34`, `CO S59:10` and `CO S60:12` show what it says, all 176 scripts its level table
+  names exist, and all 98 fly-ins it lists set that wingman's team id. Only `SX S94` uses `EVOP_RESTORE_TEAM`, the
+  largest `EVOP_DAMAGE_TEAM` values are 255 and 70, and no script uses `EVC_TEAM_COUNT_*` or `EVC_CHASED`.
+- The references in the #60 entry resolve with their commands in range: 29, found by pattern.
+- Two branches land one past the last command of their script: `A6 S26:53` and `VE1 S40:6`.
+
+Derived:
+
+- On the N64 those two targets are the first command of the next script: a script's size is the distance to the next
+  pointer (`ScriptFactory.cpp:562`), and the table is in address order. In the port each script is a buffer of its own
+  (`src/port/resource/type/Script.cpp:13`), so taking either branch reads past the end of it.
+
+Unknown:
+
+- Whether either branch can fire in play. Nothing was run.
+- Whether US 1.1 scripts differ: only US 1.0 was read. `aVe1EventScript` has another offset in rev1
+  (`assets/yaml/us/rev1/ast_venom_1.yaml:122`).
+
 ### 2026-11-05, #5 (WP-05), single-player assumptions audit
 
 Read at `d653ee21` (branch `coop`). Full list with a verdict per site: `docs/coop/audit/single-player.md`, generated
@@ -1041,6 +1635,59 @@ Unknown:
   gPlayer` (without `[0]`), `gPlayer[i]` with a fixed `i`, and arrays indexed `[0]` that mean player 0 (`gLaserStrength[0]`,
   `gLifeCount[0]`, `D_ctx_801779A8[0]`). Not counted here.
 - `src/port/` (enhancements, cheats, hooks) was out of scope.
+
+### 2026-11-06, #114, --check ignores only line numbers
+
+Read at `797c678b`. Python only: no ROM, no game run. The results on real code come from a scratch clone, the rest from
+`python tools/coop/sp_audit_test.py`.
+
+Observed:
+
+- **Before.** One added line above the sites of `src/engine/fox_demo.c` gave `is stale`, exit 1. Two branches that each
+  added a comment above that file's first site, each rerun and green alone, merged with no conflict, and the merge
+  failed `--check`. A docs-only commit on top failed the same way. This is the failure #114 derived from the code.
+- **Not every such pair merges.** Two branches that added a line at lines 85 and 1575 of the same file conflicted in the
+  list instead of merging.
+- **After.** On such a merged tree `--check` exits 0 and prints a note that only line numbers differ. A plain rerun
+  writes the list, and the note goes. A site added or removed in `fox_demo.c` still exits 1, and the last line names the
+  command to run: `--accept` for a new site, the plain rerun for a lost one.
+- **The key.** Sites are counted per file, function and pattern, so a site that moves to another function is not a moved
+  line: it is lost there and new here, also under one verdict row with the row's count unchanged
+  (`star-row-site-moved`). A renamed function goes the same way (`star-row-function-renamed`). Both stop the rerun until
+  `--accept`, as they did since #73 for the new half.
+- **What `--check` compares (owner decision on #114).** The list against what a rerun would write, both read by the same
+  parser: site counts, each site's verdict, basis and note, and every line outside the rows. A verdict and a note changed
+  in `sp-verdicts.tsv` for `fox_demo.c` each exited 1, named the site as `changed site: ... listed ..., now ...` and the
+  plain rerun, and a rerun cleared them. A new row after `--accept` does the same (`no-row`). Errors in the verdict file
+  still fail on their own: a site with no row, a row that matches no site, a bad verdict or basis.
+- **Hand edits and conflict markers.** Comparing verdicts alone would not close this: a marker in the summary touches no
+  verdict. The lines outside the rows close it. A hand edit of a row, the header or a summary count, and markers outside
+  the rows, each exit 1 (`hand-edit-*`, `conflict-markers-*`). On the real list: `changed text: listed '<<<<<<< HEAD'`.
+- **What `--check` still ignores.** Line numbers, and the order of rows and of sites in a row that follows from them. So a
+  wrong line number typed by hand passes with the note (`hand-edit-line-numbers`). A site that replaces another of the
+  same pattern in the same function passes without one (`known-gap-swap`).
+- **Two branches that each accept a site can still leave `coop` red.** Two green branches, one new `sim` site of
+  `gPlayer[0]` each, in `fox_360.c` and `fox_effect.c`, merged with no conflict. Both had written `1789 sites`, so `--check`
+  on the merge exits 1 with `changed text: listed '1789 sites in 407 functions in 43 files.', now '1790 sites ...`, until
+  a plain rerun. With only the sites compared, the same merge passed with the note. Moved lines cannot do this.
+- **A tracked file that is deleted but not committed.** `FileNotFoundError` before, from `--check`, `--todo` and the plain
+  rerun. Now it is skipped. If the list has sites of it, a warning names the file and the sites count as lost; if not,
+  nothing is said. A plain rerun then writes the list without them. Restoring the file afterwards shows them as new, so
+  they need `--accept` (`file-deleted`).
+- **A list with conflict markers.** In the conflicted merge above both sides' rows counted, so `--check` said `lost site`
+  for each doubled function (`6 listed, 3 now`) and failed. A plain rerun wrote the list and passed.
+
+Derived:
+
+- The line in the #75 entry that any change moving a site needs a rerun no longer holds.
+- Two branches merge cleanly into a stale list only when both shift the same rows alike, so both edits sit in one gap
+  between sites of a file. Otherwise the list conflicts. A branch that only moves lines can now leave the list alone, and
+  then it has nothing to conflict with.
+- Two branches that change verdicts can leave `coop` red the same way, if their list changes merge cleanly. Not run.
+
+Unknown:
+
+- How far the line numbers will drift in practice. Nothing reruns the audit on its own.
 
 ### 2026-11-06, #73, a new site under an existing audit row
 
@@ -1226,6 +1873,121 @@ Unknown:
 
 - Whether two game instances on one PC both follow one pad. `SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS` is on
   (`libultraship/src/window/gui/Gui.cpp:173`), which suggests they do; not run.
+
+### 2026-11-06, #30, what a client shows and hears: its own player, and the other one
+
+Identity: ROM US 1.0, branch `issue/30-local-player-view` on top of `2c63dacb` (PR #128), Linux, GCC, Debug, OpenGL on a
+software renderer, no window, no transport. Two games per section, one replay, local index 0 and 1. Corneria only.
+
+Method: `tools/coop/view_check.py`. Input by rule flies both players, and buttons and pokes give them different numbers,
+so a client showing the wrong player shows the wrong number. A view trace (`src/port/coop/test/view_trace.h`) logs what
+each client holds to show and every sound request. That is not the same as what reached the screen, so pictures were
+read too: a shared library, not committed, read the OpenGL buffer of a game with no window on chosen frames, and every
+picture was deleted after reading. It needs `glReadBuffer` left alone (a pbuffer has no back buffer) and a frame test
+with an upper bound, as `gGameFrameCount` carries over from the menu until the level resets it. Both cost a run of black
+pictures that said nothing about the game.
+
+Observed (runs), before, test commit: `camera-own` and `hash` passed. Everything else failed:
+
+| Rule | Before | After |
+|---|---|---|
+| `camera-parked` | 0 of 1674 parked frames look through player 0 | all |
+| `hud-shield` | client 1 shows 0.784, its player has 0.471 | all frames right |
+| `hud-bombs` | client 1 shows 5, its player has 7 | all frames right |
+| `cockpit` | glass on the other client on 95 and 89 frames | 0 and 0 |
+| `flash` | a hit reddens both clients, 16 frames each | only the client of the player hit |
+| `shield-bar` | no bar | the other player's, right value, never the own one, none while parked |
+| `sound-own` | view change and shield alarm on both clients | only the client of that player |
+| `sound-engine` | player 1 has no engine | starts on every join, off while parked |
+| `sound-source` | own player ahead of the camera on 605 of 1226 frames | all |
+| `player-down` | not in the test commit | client 1 looks through player 0, engine off |
+
+`hud-bombs` allows the counter's own step, a frame or so behind the player's number. In all-range `shield-bar` is exact:
+the bar shows on every frame the other player is ahead of the camera and on none it is behind (0 wrong of 1074 and 1036
+frames), on rails at least half the frames, as the trace has no `zPath`. `pause`: player 0's pad paused both clients for
+the same 30 rows and player 1's pad paused neither, and `hash` stayed equal through pokes, cockpit view and pause.
+
+Observed (runs), the rest, after:
+
+- `hash_check.py views`: equal on all 10500 rails and 8000 all-range frames. The cameras differ on 56 of 74 and 31 of 49
+  sampled frames, against 74 of 74 and 49 of 49 in #96: on the others a client now watches player 0 instead of an empty
+  camera, so equal is right there.
+- Co-op off, one player, the test commit against this branch, with a hit, low shields, cockpit view and pause: state
+  hash and whole view trace equal, 5734 frames and 2633 rows on rails, 6309 and 3208 in all-range. That holds for the
+  camera, the fill and every sound request. The red fill of a hit is there in both, 48 and 80 rows, so the old path
+  still runs.
+
+- With #12: a trial merge of `origin/issue/12-input-source` at `231e54e1`, not kept, built and passed `view_check.py`,
+  hash and pause included. The replay flies every player there, so the local controller's own path did not run.
+
+Observed (pictures), after, both clients on the same frame:
+
+- Before player 1 joins both show the same intro. Before the fix client 1 showed grey polygons, from an empty camera.
+- Lives, bombs and the shield and boost gauges differ per client. Lives and boost have no value a trace can read, so
+  this is their only check: poked to 4 and 7, each client showed its own.
+- The other Arwing is whole, in its own pose, with a green bar above it and the empty part dark. In cockpit view a
+  client sees its cockpit, and the other client sees that player as an Arwing, no glass.
+- A hit reddens the screen of the player hit only, either way round.
+- All-range: ground, backdrop and radar follow the client. The radar marks both players.
+
+What changed, and where it writes:
+
+| Item | Change | Touches the simulation |
+|---|---|---|
+| Camera | `CoopPlayers_ViewIndex`: the local player while it flies, player 0 while it is parked | No |
+| Who a client is | `CoopPlayers_LocalIndex` stays the own player, parked or not | No |
+| HUD numbers | `CoopPlayers_HudIndex` for what is only shown; `gPlayerNum` stays 0 for the HUD | No |
+| `gBombCount` limit (`src/engine/fox_hud.c`, `HUD_BombCounter_Draw`) | Goes through every player | The same on every client |
+| `gLifeCount` (level clear, pause: `HUD_LevelClearStatusScreen_Draw`, `HUD_PauseScreen_Update`) | Stays on slot 0: `gPlayerNum` is 0 there | Unchanged |
+| Cockpit (`Display_Arwing`, `Display_CockpitGlass`) | Only the player looked through | No |
+| Hit flash (`Player_Update`) | Left out of `gFillScreen*` in co-op, drawn per client from `dmgEffectTimer` | Same on every client: the fade no longer moves |
+| Boss shadow (`Object_DrawAll`) | By the camera drawn; `D_edisplay_801615D0` stays player 0's for the AI | No |
+| Glare, lock-on mark, help arrow, starfield roll, backdrop, ground | The camera drawn | No |
+| Other Arwing (`Display_ArwingWings`) | Its own `jointTable`, wing flash and `dmgEffect`, not player 0's; every pilot shows | `drawFace`, the same on every client |
+| Shield bar (`src/port/coop/game/view.c`) | Quad from `starDL`'s pattern, no asset | No |
+| Radar | Players 1 and up in `gRadarMarks[60..62]`, slots 1 to 3 being the wingmen's | Hashed, the same on every client |
+| Engine sound | Every joined player, started on a join, stopped on leaving | No |
+| Sound position (`Object_SetSfxSourceToPos`) | From the camera drawn; leaves `gCalcMatrix` alone, as simulation code calls it | No |
+| Alarms and pickups (`Player_ApplyDamage`, `Object_PlayerSfx`, view change) | Only the player looked through | No |
+
+Audit rows marked `view`: six have no site left. The 55 others stay, for one of these reasons:
+
+- **Level state, the same for everyone:** `gPlayer[0].state` and `csState`, as in `Radio_Draw`, `Background_DrawSun`,
+  `Object_DrawAll`. Player 0 drives the level, and a client whose player is parked looks through it.
+- **Writes a hashed value, so it must stay on player 0:** billboards in update code (`Sprite_UpdateDoodad`,
+  `MeteoBall_Update`, `Effect_Effect362_Update` and others) and `Object_SetMatrix`, which writes `obj.rot` of buildings.
+  These face player 0's camera on every client. Picture only, and small while the players fly near each other.
+- **Levels nothing has run:** the overlays' `name` rows, the tank, Aquas.
+
+Derived:
+
+- A client's identity and its view are two things. Input (#12) needs the first even while parked: on that branch
+  `CoopInput_Route` hands the local controller to slot `CoopPlayers_LocalIndex()`, so a fallback to 0 there would steer
+  player 0 from client 1, and the clients would disagree on player 0's input. `view_check.py` `local-index` guards it.
+- Pause stays in the simulation and every client agrees: `gPlayState` follows `gControllerPress[gMainController]`, and
+  `HUD_PauseScreen_Update` reads `gInputPress`, which after the player loop is player 0's. On #12's branch slot 0 holds
+  player 0's input on every client (`input.h`), so that holds after merging, as long as `gPlayerNum` stays 0 there, as
+  #96 set it (`src/engine/fox_play.c`, after both player loops).
+- With #12 merged, rumble reaches the local pad for the client's own player: `CoopInput_RumbleSlot` gives it entry 0,
+  the only one `Controller_Rumble` serves. The direct writes to `[gMainController]` and `[0]` are level events, and they
+  reach entry 0 on every client. Read, not run. Without #12, player 1's rumble goes to entry 1 and no pad.
+
+Choices this makes, all reversible, none a game rule with a record (`DESIGN.md` section 4):
+
+- A client with a parked or downed player watches player 0, HUD and all.
+- Every client hears every engine, placed from its own camera, rather than its own engine only.
+- Lives shown are `gLifeCount[<player looked through>]`. Whether lives are shared is open (section 4, item 2).
+- Only player 0 can pause, as only its input reaches `gControllerPress[gMainController]`.
+- On the radar a wingman sharing a colour with the local player blinks with it, until WP-17 replaces that wingman.
+
+Unknown:
+
+- Whether any of it feels right: nobody has flown it, looked at it moving or heard it. Sound is checked as requests and
+  positions, not by ear. The shield bar's size and height are a first guess.
+- The boss shadow: no run had the two views disagree on a boss, so that fix is read, not run.
+- Every level but Corneria, local indexes 2 and 3, a real session: only the test switch sets the local index so far. The
+  session hands out `playerIndex` (`session.h`), and the join flow (WP-24) has to pass it on.
+- Player 1's own lock-on mark: not shown. Slot 0 belongs to player 0, and the draw code only fills that slot on rails.
 
 ### 2026-11-05, #8 (WP-10), player count apart from camera count
 
@@ -1523,6 +2285,160 @@ Unknown:
   once player 0 is active after the intro. Not run.
 
 ## Determinism
+
+### 2026-11-06, #96, draw code is part of the simulation: one camera per client
+
+Identity: ROM US 1.0, branch `issue/96-draw-state` on top of `797c678b`, Linux, GCC, Debug, OpenGL on a software
+renderer, no window, one game per run, no transport. Input by rule (`tools/coop/player_trace.py`, `write_rail_replay`),
+2 players, `gInvincible`. Corneria only, on one machine.
+
+Method, three ways, because each misses what the others see:
+
+- **Run:** `hash_check.py views` plays one replay with `SF64_COOP_TEST_LOCAL_INDEX` 0 and 1, which is two clients of one
+  session that draw different cameras.
+- **Measured:** a throwaway build compared all of `.data` and `.bss` before `Game_Draw` and after `GamePostUpdateEvent`
+  on every in-level frame, so it lists what the draw section really changes (4500 in-level frames, rails into all-range).
+  Not committed. It shows net changes only: a write of the value already there does not appear.
+- **Read:** every function reachable from the draw entry points in `Game_Update` and from every `draw` slot of
+  `gObjectInfo`, following any function named in a reachable body, stopping at the `Ovl*_CallFunction` dispatchers. In
+  level code that is 595 functions and about 2180 writes to something not a plain local. Then, for each global, whether
+  anything outside that set mentions it, and for each camera-derived value who reads it.
+
+Observed (runs), before the fix, test commit `e18af46e`: the logs split at once, and not only in what the camera touches.
+First differing frame per region:
+
+| Region | Rails, 10500 frames | All-range, 8000 frames |
+|---|---|---|
+| `players` | 3102 | 3102 |
+| `actors` | 3103 | 3103 |
+| `effects` | 3389 | 3389 |
+| `shots` | 4801 | 4801 |
+| `scenery` | 5371 | none |
+| `items` | 5970 | 7719 |
+| `bosses` | 8767 | 4880 |
+| `misc` | 9582 | 5194 |
+| `rng` | 9683 | 5188 |
+| `sprites` | 10139 | 7052 |
+| `globals` | none | 5586 |
+| `scenery360` | none | none |
+
+Frame 3102 is one frame after Corneria starts. `rng` differing means the two clients no longer play the same game, so
+this is a real divergence, not only a hash that sees too much.
+
+Observed (runs), after the fix, commit `66df1cac`, the same two replays: index 0 and 1 are equal on all 10500 rails
+frames and all 8000 all-range frames, in the total and all 12 regions. The cameras drawn differ on 74 of 74 and 49 of 49
+sampled frames, so the equal hashes are not two runs of one camera: `views` fails if they are, and it did when given one
+log twice. Co-op off, one replay of 5800 frames into all-range, 1 player, base build against this branch: no difference
+on the 5817 common frames, state, level, total and 12 regions. The two logs end 11 frames apart, both after the last
+frame of the replay.
+
+Observed (measured), draw writes on Corneria: 116 symbols changed, most of them plainly render state. In objects:
+`obj.status` of actors, effects and shots (kills), `obj.rot` of effects and shots, `sfxSource` of all, `Actor.iwork[11]`,
+`iwork[24]`, `fwork[29]`. In players: `camYaw` and `camPitch` of the player drawn only, `shadowing`, `sfxSource`,
+`sfxVel`, `sfx`, `arwing.drawFace`, `state` once. Outside: `sCoGrangaWork`, `D_edisplay_801615D0`, the radio state, HUD statics.
+After the fix, with index 1: no `obj.status` or `obj.rot` is written any more.
+
+Observed (read), the mechanisms:
+
+- **Draw frees what it does not see.** Shots (`src/engine/fox_beam.c:1067-1068`, `:1255-1256`), all-range effects
+  (`src/engine/fox_edisplay.c:1487`), all-range items (`:1529-1530`), debris (`:1286`), bonus text
+  (`src/engine/fox_effect.c:136`). Upstream already skips the shot and effect kills in versus, the one mode with several
+  cameras (`!gVersusMode`), and skips the item kill unless `gCamCount == 1`.
+- **Six places skip an object's draw function by camera.** `Actor_DrawAllRange`, `Boss_Draw` and `Effect_DrawAllRange`
+  skip functions with game logic in them. `Item_Draw`, `Scenery360_Draw` and the sprite loop of `Object_DrawAll`
+  (`src/engine/fox_edisplay.c:1919`, in all-range and during a level intro) skip functions that write nothing but the
+  rotation in `ItemMeteoWarp_Draw`, so those three stay as they are. On rails `Actor_DrawOnRails` and `Scenery_Draw` have
+  no such test.
+- **Draw functions hold game logic, behind that test:** boss damage (`src/overlays/ovl_i3/fox_a6.c:1980`), boss state
+  (`src/overlays/ovl_i1/fox_ve1.c:2546`, `src/overlays/ovl_i5/fox_ti.c:5452`), limb positions the boss update reads
+  (`sCoGrangaWork`, `src/overlays/ovl_i1/fox_co.c:1187`), effects spawned from draw (`ActorEvent_Draw`,
+  `src/engine/fox_enmy2.c:3894`), random numbers (`:4061`).
+- **Boss AI reads a position in camera space.** `D_edisplay_801615D0` is the boss seen from the camera, with `.y` replaced
+  by "in view" (`src/engine/fox_edisplay.c:1399`). Read at `src/overlays/ovl_i1/fox_co.c:356`, `:488`, `:514`, `:675-676`,
+  `src/overlays/ovl_i4/fox_ka.c:888`, `src/overlays/ovl_i4/fox_sz.c:194`, `src/overlays/ovl_i6/fox_sy.c:990`, `:1234`,
+  `:1711-1728`.
+- **Limb callbacks are not in camera space.** `Animation_DrawSkeleton` starts `gCalcMatrix` from the `transform` it is
+  given, apart from `gGfxMatrix` (`src/engine/fox_std_lib.c`), so a limb position depends on whether the draw ran, not on
+  which camera ran it.
+- **`gPlayerNum` was the local player during `Object_Update`,** and simulation reads it: `MeHopBot_Update`
+  (`src/engine/fox_enmy2.c:156`), `func_enmy_80060FE4` (`src/engine/fox_enmy.c:106`), the laser at `:3092`.
+
+Verdict of each write. **Moved out of the draw path in co-op** (`src/port/coop/game/view.c`):
+
+| Write | Read by | In co-op |
+|---|---|---|
+| Kills of shots, effects, items, debris, bonus text, above | Every later frame: slots, collisions | Not freed for being out of view, as versus does for shots and effects. Their own timers end them |
+| `Actor.iwork[24]` (`src/engine/fox_edisplay.c:1304`) | `src/engine/fox_360.c:1233`, a wingman near player 0 for 200 frames speaks | Always 1: every actor's draw runs, so all count as seen |
+| `lockOnTimers`, not drawn (`:1285`) | `src/engine/fox_play.c:3313`, `:3378`, `:3426` | Does not run: all count as seen |
+| `lockOnTimers`, too close (`:1166`, `:1297`, `src/engine/fox_enmy2.c:321`) | The same | Judged from the view of player 0 (`CoopView_LockOnZ`) |
+| `camYaw`, `camPitch` (`src/engine/fox_display.c:1928-1929`) | 27 sites, for example `ItemSupplyRing_Update` | Worked out for every player before the draw, put back after it |
+| `Player.xPath` (`src/engine/fox_bg.c:1344`, `:1352`) | Draw, the path code | Cleared for every player before the draw, so the draw's write changes nothing |
+| `D_edisplay_801615D0`, `Boss.vwork[30]` (`src/engine/fox_edisplay.c:1391`, `:1402`) | Boss AI, above | The view of player 0 on every client, from a matrix every client builds |
+| `obj.rot` facing the camera, effects and shots (`:2031`, `src/engine/fox_beam.c:1263`) | Draw | Put back after the draw |
+| Object draw functions, boss damage and the rest above | Boss update, AI, slots, RNG | Run on every client, in view or not; what is out of view has its output dropped (`CoopView_DrawAnyway`) |
+| `gPlayerNum` (`src/engine/fox_play.c:7052`, `:7069`, `src/engine/fox_game.c`) | Above | Local only inside `Game_Draw`; 0 for the simulation, and for the HUD |
+
+**Left out of the hash in co-op** (`ClearViewState`, `ClearPlayerViewState`, `src/port/coop/sync/state_hash.c`), each read
+only by the sound engine or draw code, checked at every read site:
+
+| Value | Written | Why it may differ |
+|---|---|---|
+| `sfxSource` of actors, bosses, effects, items, scenery, shots | `Object_SetSfxSourceToView`, `Object_UpdateSfxSource` | Sound position from the camera. Read by sound and `src/engine/fox_display.c:96` |
+| `Player.sfxSource`, `sfxVel`, `sfx` | `src/engine/fox_display.c:1748-1765` | The same; `sfx` is read in `src/audio/audio_general.c` |
+| `Player.shadowing` | `:861-863` | Written for a player the camera sees. Read at `:852` |
+| `arwing` flap angles, `unk_28` | `:782-783` | Cleared for a player the camera sees in space levels. Feed only themselves and draw |
+| `obj.rot` of `OBJ_ACTOR_SX_SLIPPY`, `obj.rot.y` of `OBJ_ITEM_METEO_WARP` | `src/overlays/ovl_i2/fox_sx.c:181-182`, `src/engine/fox_edisplay.c:930` | Faces the camera, one frame late, so it cannot be put back like an effect's. Read by draw only |
+
+**Shown harmless:**
+
+| Write | Why |
+|---|---|
+| HUD, pause and level clear logic: `gBombCount` (`src/engine/fox_hud.c:3457`), `gLifeCount` (`:1089`, `:1539`, `:1552`), `gPlayer[0].state` (`:1485`), `gPlayer[0].heal` (`:2440`) | Same on every client: runs every frame by shared state, and `gPlayerNum` is 0 there now. Only slot 0 is clamped and credited |
+| `gRadioState` and radio state (`Radio_Draw`, `src/engine/fox_radio.c:534`) | Runs every frame by shared state, no camera in it. Audio timing is another question, under Unknown |
+| `gHitCount` clamp (`src/engine/fox_display.c:1845`), `arwing.drawFace` (`:1839`), `gTeamHelpTimer` (`:58`), `gGroundSurface` (`src/engine/fox_bg.c:1505`) | No camera in them: the same on every client |
+| `Actor.iwork[11]`, `fwork[29]` | Engine glow, set by draw functions that now always run. Read only by draw (`src/engine/fox_edisplay.c:479-485`) |
+| `gRadarMarks` | Hashed in `misc`, read only by the HUD, and written from shared state |
+| `gTeamArrowsViewPos`, `gLockOnTargetViewPos`, `sPlayersVisible`, `sViewPos`, `sShotViewPos`, `gPlayCamEye`, `gPlayCamAt`, `gSunViewX`, `gLight1x`, `y`, `z`, `gLight2x`, `y`, `z`, `gStarfield*`, `D_display_*` | Camera results that only draw reads: outside draw nothing reads them, apart from clearing at level start |
+| `gPlayerGlare*` (`src/engine/fox_bg.c:1083`) | The same, and Andross fades its own glare from its own value (`src/overlays/ovl_i6/fox_andross.c:1047`, `:4370`). Nothing else follows from it |
+| 124 of the 307 globals written in draw | Nothing outside draw mentions them |
+| The other globals draw writes and simulation code mentions: pause and continue state (`HUD_PauseScreen_Update`), level start clears (`Play_ClearObjectData`), light colours and targets (`Camera_SetupLights`), limb tables in the overlays, radio and HUD timers | Grouped here, not listed one by one. No camera value feeds them: 64 draw functions read a camera value or `gPlayerNum`, and what each writes is in these tables, or is a local, draw-only or versus-only. The code runs on every client, so the values match |
+| `Object_Kill` in `Macbeth_TrainTrack_Draw` (`src/overlays/ovl_i5/fox_ma.c:2624`, `:2633`) | Reached through `Scenery_Draw`, which has no view test, and judged by `gPlayer[0]` |
+| `Matrix_GetYRPAngles(gGfxMatrix)` (`src/overlays/ovl_i5/fox_ti.c:2558`, `:3121`) | Only undoes a rotation for a billboard, then draws |
+| `Rand_ZeroOneSeeded` in `Bolse_DrawDynamicGround` (`src/overlays/ovl_i4/fox_bo.c:2238`) | Drawn before its culling test, from a seed set each frame, so the sequence does not depend on the view |
+
+Choices this makes, all reversible, none of them a game rule with a record (`DESIGN.md` section 4):
+
+- The camera the simulation uses is player 0's. For player 0 that is single-player behaviour.
+- A wingman's "near player 0" line no longer needs the wingman on screen.
+- What leaves the view lives on until its own timer.
+- `gBombCount` is clamped and level clear lives credited for slot 0 only, as any client's HUD draws through `gPlayerNum`
+  0. WP-28 moves the HUD to the local player: these writes must stay on slot 0 or go through every player.
+
+Derived:
+
+- Rendering is not on top of game logic: `Game_Draw` runs once per tick and changes state. The Derived point in
+  `DESIGN.md` section 2 was wrong as written, and no earlier determinism run could show it, as all drew player 0.
+- Lockstep with one camera per client does not need a design change on this evidence: every client has every player's
+  camera, so all can agree on one camera for the simulation.
+- WP-22 can rely on the hash with different local indexes, on Corneria.
+- This replaces older lines. `gPlayerNum` is no longer the local player between the player loops, in the #8 entry
+  and the #67 entry: it is 0 there, and local only inside `Game_Draw`. The Derived point of #67 that WP-22 can rely on the
+  hash only while `CoopPlayers_LocalIndex()` is 0 no longer holds on Corneria.
+
+Unknown:
+
+- Every level but Corneria: the verdicts there come from reading, not from a run.
+- Whether effects with no timer of their own pile up now that nothing frees them for leaving the view. Versus runs that
+  path upstream, but only on versus stages. The runs here did not count slots.
+- Whether the sound and picture look right for a client through player 1: these runs check state, not what is seen.
+  Before player 1 joins it looks through a parked player's empty camera, which WP-28 has to settle.
+- Local indexes 2 and 3: only 0 and 1 ran.
+- A camera value that reaches a write through a local or a parameter: the read searched for the names of camera values,
+  so it sees such a path only where a function was read by hand.
+- `Katina_EnemyDraw` picks low poly by `gSysFrameCount` into `iwork` (`src/overlays/ovl_i4/fox_ka.c:2633`): not a camera
+  matter, but two clients need not share that count, and `iwork` is hashed.
+- `Radio_Draw` follows the voice status (`src/engine/fox_radio.c:645`), which comes from the sound thread. WP-02's audio
+  variants matched on one machine; two machines did not run.
 
 ### 2026-11-06, #67, state hash: per-player arrays, team arrays, co-op slots
 
@@ -2056,6 +2972,48 @@ GCC 16.2.1, Debug, graphics backend OpenGL, `USE_NETWORKING` on, `SDL_VIDEODRIVE
 - A boot with networking on under Windows or macOS. CI builds the game on Windows but does not start it.
 - Anything past the title screen.
 
+### 2026-11-06, #92, what the sanitizer runs can fail on, and why the session tests need no log scan
+
+Read at `797c678b` (origin/coop).
+
+**Observed**
+
+- `net_mutants.py --asan` has four breaks, all caught in Debug and in Release: a leak (`sim`, `lan`), a signed shift
+  (`sim`, `lan`), a stack overflow by one byte in `Core_Write` (`sim`, `lan`), and a heap overflow in `Sdl_Tx`,
+  `transport_sdlnet.c:34`, after the host's refusal (`host_full`).
+- All four still pass every named scenario in the build without sanitizers, so no ordinary check sees them.
+- With `sanitizer_report` switched off, `refuse_overruns_tx_packet` passes `net_test.py --asan` too. So that break also
+  guards the scan: remove the scan and it survives.
+- Every program's exit in `session_test.py` is read. Each of the 37 programs of the 11 scenarios with real processes
+  was made to end with exit code 77 after its normal end, one at a time, and every run failed with that code. The
+  same probe on `net_test.py` reports the host and the first client of `host_full` as not read, so it can tell. The
+  only program in the session tests that nobody waits for is the relay, which is Python and has no sanitizer.
+- `session_mutants.py --asan` now has `host_close_leaks` and `client_close_leaks`, which fire at the very end of one
+  side, after its result file is written, and `refuse_reads_past_session`, the session's version of the `host_full`
+  break. All are caught, through `run.wait` (`net_test.py:99`), with no scan.
+- With `run.wait` not reading the host's exit, `host_close_leaks` passes all 11 scenarios; the same for the clients and
+  `client_close_leaks`. So the exit is the only thing that fails them, and those two breaks guard it.
+- Such a failure reads `host exited with 1`. What the sanitizer found is only in `host.log`, and CI keeps no logs.
+- The report of `refuse_hell` is in `try0/host.log`: `damaged_runs` gives each try a subfolder
+  (`session_test.py:56`), and `sanitizer_report` reads only the top of a folder (`net_test.py:359`).
+- `s->text[sizeof(s->text)] = 0` in `session.c` is seen by no sanitizer, and no log held a report. In the 64-bit Linux
+  build `CoopSession` is 5400 bytes and `text`, its last field, ends at 5396, so the write stays in the allocation.
+- `roster_read_past_end` in `SANITIZER_BREAKS` also fails `sim` without sanitizers (`roster_trailing`), so it is not
+  one that only a sanitizer can see.
+
+**Derived**
+
+- `session_test.py` does not need the scan to catch a finding: a finding ends its program with a code other than 0, and
+  every program's exit is read. The scan would only add what was found to the summary line.
+- A scan copied into `session_test.py` would have to search subfolders, or it misses every scenario with a relay.
+- A new scenario that leaves a host or all clients running is caught by the two close breaks. One that leaves only some
+  of several clients running is not: a break fires in all clients of a scenario, and the others still fail it.
+
+**Unknown**
+
+- Why UBSan's bounds check says nothing about `s->text[sizeof(s->text)]`. Guess: it treats a last array like a flexible
+  one.
+
 ### 2026-11-06, #75, transport tests under sanitizers, and the audit in CI
 
 Read at `95962d04` (origin/coop).
@@ -2080,6 +3038,47 @@ Read at `95962d04` (origin/coop).
   `host_full`, and the client that `kill_client` kills. Their leaks are only seen in the scenarios that exit normally.
 - AddressSanitizer knows allocations, not fields, so an overrun from one `TxSlot` or `RxSlot` into its neighbour stays
   inside `CoopNetCore` and goes unseen. Not tested.
+
+### 2026-11-06, #91, the audit and its test inside check.py
+
+Read at `797c678b` (origin/coop). Python only, no game run. Results come from `check.py`, `sp_audit.py` and
+`sp_audit_test.py` on depth 1 clones without submodules, with temporary changes that were not kept.
+
+**Observed**
+
+- `check.py` took 0.24 s of CPU before and 6.26 s after, the median of 6 runs each, taken in turn so both saw the same
+  load. Wall time was 1.74 s and 33.86 s, on a machine with far more jobs running than it has cores.
+- `sp_audit_test.py` with `GIT_DIR` and `GIT_INDEX_FILE` set, as git does for a hook, printed `PASS`, exited 0 and
+  staged 783 paths in the outer repository's index. Its `git add .` follows those variables out of its own folder. It
+  now clears every `GIT_` variable, and the same run leaves the index empty.
+- What `sp_audit.py` does on the real tree after each kind of change a sync brings:
+
+| Change | Plain rerun | `--accept` |
+|---|---|---|
+| A site line moved | exit 0, list rewritten | not needed |
+| One site more in a function with a row | exit 1, writes nothing | exit 0 |
+| A new function, no row | exit 1, writes nothing | exit 1, list written, `no verdict` stays until the row is there |
+| The same, row added first | not tried | exit 0 |
+| A row with no sites left | exit 1, list written, `matches no site` | not tried; deleting the row and rerunning gives exit 0 |
+
+- A tracked file deleted but not committed makes `sp_audit.py` stop with a `FileNotFoundError` traceback
+  (`tools/coop/sp_audit.py:83`), so `check.py` and a local build fail on it too.
+- The `coop` ruleset requires `Co-op checks` and does not require a branch to be up to date
+  (`.github/rulesets/coop.json:18`).
+
+**Derived**
+
+- The audit is now a merge gate: `Co-op build` was not required, `Co-op checks` is. Two PRs that each pass alone can
+  leave `coop` stale when both merge, for example one moving a site line and one regenerating the list before it. Every
+  PR then fails `Co-op checks`, docs-only ones too, until the list is regenerated.
+- After an upstream sync the audit has to come before the build. `build.py` ends in `check.py`, so a sync text that
+  builds first stops there on a stale list.
+
+**Unknown**
+
+- How long `check.py` takes in CI and on an idle machine.
+- Whether `check.py` passes on Windows: this work ran neither audit tool there, and the Windows CI job builds with
+  `--no-check`. Local Windows builds do run it.
 
 ### 2026-11-06, #55, what the session tests can and cannot see
 
@@ -2117,6 +3116,73 @@ Read at `a69c811a` (origin/coop).
 
 - Whether a player on such a link is better served by a longer linger time. It is a trade against a slot held by a
   client that already gave up.
+
+### 2026-11-06, #22, join flow: from the lobby into a level
+
+Identity: ROM US 1.0, on commit `d71979bf`, Linux, GCC, Debug, OpenGL on a software renderer, no window, 2 or 3 game
+clients, UDP over loopback, no input after the level start. The rules and the wire form are in PROTOCOL.md, section
+Level start. `python tools/coop/join_test.py` runs all of this.
+
+**Observed**
+
+- Real games ran the session for the first time here, and `CoopIdentity_FromGame` (`src/port/coop/session/identity_game.c`)
+  with it: two and three games of one build passed the handshake.
+- Two games that start from other seeds reach Corneria with the same seeds, the same team values and the same
+  characters, and their state hash is equal in every region on every compared frame: 1995 frames from the title
+  screen, 2001 with the host coming from the map, 2001 with three games. A client that keeps its own values differs on
+  level frame 0, in `rng` and `globals`, so the check can fail.
+- `gNextGameState = GSTATE_PLAY` goes to a level from any game state, as `src/overlays/ovl_i3/fox_a6.c:2927` does:
+  `Game_SetGameState` (`src/engine/fox_game.c:86`) runs right after `GamePreUpdateEvent` (`:352`, `:354`). It ran from
+  the title screen and from the map. `CoopLevelStart_Enter` uses it, so the host and a client take one path.
+- On the frames between that and `Play_Init` the game is in `GSTATE_PLAY` but `gGameFrameCount` still counts the screen
+  it came from: `Play_Init` clears it (`src/engine/fox_play.c:2879`), and `PLAY_STANDBY` then `PLAY_INIT` come first
+  (`:7173`, `:7179`). In the run looked at, five rows differ in `globals` there and nothing else. The first frame in
+  `PLAY_UPDATE` is where games can agree, so `join_test.py` compares from there.
+- `gRadioMsgId` is set by a radio line (`src/engine/fox_radio.c:128`, `src/overlays/ovl_menu/fox_title.c:3654`), read at
+  `src/engine/fox_radio.c:660`, and no level start clears it. With a host coming through the map's briefing, `globals`
+  differed from a client on the title screen on level frames 0 to 331 and was equal from 332 on. With the value in the
+  table the same run was equal on 2014 frames.
+- A level reads the save: Start in a level intro skips the intro only if `normalClear` is set for that planet
+  (`src/engine/fox_play.c:7198-7200`). No run here pressed Start, and every game had a fresh save.
+- `session_mutants.py` showed that `p->state == PEER_JOINED` could not be seen in the start guard: a roster slot only
+  holds value 1 for a joined peer, as `Host_Hello` sets it and `Host_Left` clears it. It is gone.
+- Bit 9 of the refusal reasons was in the test constant `0x04030204`, which stood for bits nobody uses. It is
+  `0x04030404` now.
+
+**Derived**
+
+- Every game entering from the message, the host's too, means no game's history counts. The host's own values go
+  through the same path as everyone else's, so a difference cannot hide on one side.
+- The values are what a level reads and level init does not set: the seeds (`Rand_Init` reads the clock at boot,
+  `src/engine/fox_game.c:58`), `gTeamDamage` and `gTeamEventActorIndex` (#67), the team and Star Wolf arrays, lives,
+  bombs, lasers, gold rings, `gExpertMode`, `gClearPlayerInfo` (`src/engine/fox_play.c:4925`), `gGreatFoxIntact`,
+  `gVenomHardClear` and `gRadioMsgId`. The list comes from reading and from the hash, so it covers what those two can
+  see.
+- The roster has to be taken with the level. If it went out as it is when the send happens, a client leaving in between
+  would give the host one player count and the others another.
+- `Rand_ZeroOne` re-seeds from the clock when a seed is 0 (`src/sys/sys_math.c:25`), which would part two games. No guard
+  is needed: 30269, 30307 and 30323 are prime, so a seed that is not 0 never becomes 0.
+- Picks race the start harmlessly: the host decides by arrival, and the level start says what each client holds.
+
+**Choices the owner can reverse** (from the coordinator's guidance and this code; not decided in a record)
+
+- The host does not start while a client that joined holds nothing. So nobody flies with nothing, and decision 0005 does
+  not have to say what such a client flies.
+- A client in the handshake holds the start up too, for 10000 ms at most.
+- Nobody joins once a level has started, and a client that leaves cannot come back. Late join has no design.
+- There is one level start per session, and nothing opens picks again.
+- A host's lives, bombs, team shields and the rest overwrite what a client has. That says nothing about lives or saves
+  as game rules, only that the games start equal.
+
+**Unknown**
+
+- Every level but Corneria. Levels with a phase and all-range levels have not run from a level start.
+- A client coming from anywhere but the title screen, for example the map, a level it plays alone or the pause menu.
+- What the next level does. The session takes one level start, and how a campaign goes on is open.
+- What happens in a level when a player leaves. It stays in the player count, and whether a computer wingman takes over
+  is open.
+- Whether a game state exists that neither the hash nor reading found, for example a `static` in an overlay.
+- Windows and macOS: none of this ran there.
 
 ### 2026-11-06, #58, characters through the session
 
@@ -2160,6 +3226,109 @@ Read at `95962d04` (origin/coop). The rules and the wire form are in PROTOCOL.md
   computer wingman, but not what such a client flies; WP-24 has to.
 - What happens in a level when a player leaves. The character is free in the roster at once, but until WP-17 it means
   nothing in the level, and whether a computer wingman takes over is open.
+
+### 2026-11-06, #23, the co-op menu: where it ticks, and what a window can see
+
+Read at `797c678b` (origin/coop). The window is `src/port/coop/ui/menu_window.cpp`, the logic `src/port/coop/ui/menu.c`.
+
+**Observed**
+
+- `Gui::DrawMenu` calls `Update()` on every registered window each frame, and only `Draw()` looks at whether it is
+  visible (`libultraship/src/window/gui/Gui.cpp`, `DrawMenu`; `GuiWindow.cpp`, `Draw`). So a window's `UpdateElement`
+  runs with the window closed, and that is where the session is polled. The menu bar is different: nothing of
+  `GameMenuBar` runs while it is hidden (`GuiMenuBar.cpp`, `Draw`).
+- A dropped frame skips all of it: `Fast3dWindow::DrawAndRunGraphicsCommands` returns before `gui->StartDraw()` when
+  `IsFrameReady` is false (`libultraship/src/graphic/Fast3D/Fast3dWindow.cpp:178`). The next frame polls what piled up,
+  so `CoopMenu_Tick` has to read until `CoopSession_Poll` returns false.
+- The game's frames and the gui run on one thread: `Graphics_ThreadUpdate` is called from `push_frame`, and that from
+  the loop in `src/port/Game.cpp:47`; the only `std::thread` in `src/port/Engine.cpp` is the audio one (`:444`).
+- The transport pings the moment a link connects (`l->nextPing = now`, `src/port/coop/net/net_core.c:235, :493`). So on
+  a good link both sides already have a round trip when the welcome is through, and a player rarely sees "not measured".
+  `coop_menu_test` has to hold back pongs to reach that state.
+- `rttMs` is 0 until the first pong, and a measured round trip of 0 ms reads the same (`Link_OnRtt`). The menu shows
+  both as not measured.
+- A client only knows its round trip to the host. The roster carries no ping, so a client has no number for another
+  client.
+- An open popup blocks hovering in every other window (`IsWindowContentHoverable`, `imgui.cpp:4588` in the ImGui 1.91.9b
+  that the build fetches), and `UIWidgets::WindowButton` leaves its menu open. The first run of `menu_test.py --game`
+  stopped there: the entry stayed open after the button, and a click on its label did not close it within 60 s. The
+  entry now closes itself when the button is pressed.
+- `CoopIdentity_FromGame` has now run in a game: three games of one build matched, and a fourth with `gInvincible` set
+  in its config was refused with `Setting "Invincible" (gInvincible): host 0, joining player 1.`
+
+**Derived**
+
+- The menu has one reader of session events, `Menu_OnEvent`. Whatever else needs them, WP-24 first, has to go through
+  that switch or the events are gone: `CoopSession_Poll` hands each one out once.
+- Ping is measured per frame on both ends, so it holds up to about two frames on top of the network (guess at the size,
+  not measured).
+
+**Choices the owner can reverse** (not decided in a record)
+
+- The port field starts at 46464, on both sides. Nothing depends on the number, and 0 on a host picks a free port.
+- The address and port are not kept between runs.
+- A client is shown the three wingmen and picks with one button each. A character held by someone else is greyed out
+  with that player's number.
+- While a pick is under way every choice is greyed out, so nothing can overtake it.
+
+**Unknown**
+
+- How the window works for a person at a real screen, with a real mouse and keyboard and at other window sizes. It has
+  only been seen in a capture of a game with no window, at 1024 by 768 on a software renderer.
+- Whether a host name that takes long to resolve is a problem in play: `CoopNetSdl_Connect` blocks on the lookup
+  (`src/port/coop/net/transport.h`), and the menu calls it on the game's thread.
+
+### 2026-11-06, #126, starting a level from the co-op menu
+
+Read and run at `212271f6`, on top of PR #124 and PR #125. ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer,
+no window, 2 or 3 clients over loopback. The Start button and the event reader are in `src/port/coop/ui/menu.c`, what
+touches the game in `src/port/coop/ui/menu_game.c`.
+
+**Observed**
+
+- The window's `UpdateElement` runs inside `Graphics_PushFrame`, after `Game_Update` (`src/sys/sys_main.c:248, :264`),
+  with `Audio_Update` (`:280`) and `Timer_Update` (`src/port/Game.cpp:28`) still to come in that frame.
+- `GamePreUpdateEvent` is the first thing in `Game_Update`, and `Game_SetGameState` the next
+  (`src/engine/fox_game.c:352, :354`).
+- `GameUI::SetupGuiElements` runs before the events exist (`src/port/Engine.cpp:306, :311`,
+  `src/port/mods/PortEnhancements.c:440`), and a listener on an event not registered yet throws
+  (`src/port/hooks/impl/EventSystem.cpp:13`). So `CoopUi::Setup` cannot add one; `CoopUi::Listen` does, from
+  `GameEngine::Create`.
+- With real widgets clicked in real games, `menu_test.py`'s `game_level`: three games from other seeds, same state hash
+  in every region on 1270 frames from the first frame after `Play_Init`. `game_level_map`: a host that came from the map
+  (game state 4), a client from the title screen, same hash on 1238 frames.
+- The control, a throwaway build whose menu enters each game with its own values: the hash logs differ on level frame 0,
+  in `rng` with everyone on the title screen, and in `rng` and `globals` with a host from the map.
+
+**Derived**
+
+- The menu's session now runs on `GamePreUpdateEvent`, not in `UpdateElement` as in the #23 entry above. That is where
+  `join_driver.c` runs it, so a level start from the menu goes in the order `join_test.py` tested: state hash, session,
+  `Game_SetGameState`. `CoopLevelStart_Enter` asks for nothing to run between the values and the level, and in
+  `UpdateElement` the audio and the timers would.
+- A dropped frame no longer skips the session, as it still skips the window (#23 entry). The poll comes once per game
+  frame now, not once per drawn frame, so a ping can hold up to one game frame more (guess at the size, not measured).
+
+**Choices the owner can reverse** (not decided in a record)
+
+- Start sends everyone to Corneria, phase 0 (`CoopMenuGame_Level`). The menu has no level choice: #126 asks for none,
+  and only Corneria has been run.
+- A host alone can press Start. The session allows it and the menu follows the session.
+- The window stays open when the level starts; the player closes it.
+- From the level start on a client's character buttons are gone, not grey.
+- Leave in a level ends the session for that player, and the level goes on in that game.
+
+**Unknown**
+
+- What happens once a player touches the controls. No game here got input after its level start, and nothing keeps
+  games together until WP-22.
+- A level start reaching a game anywhere but the title screen or the map: in a level, paused, on the game over screen,
+  in versus. Read, not run: `Play_Init` sets `gCamCount` back to 1 and `Play_Setup` clears `gVersusMode`
+  (`src/engine/fox_play.c:2929, :2864`).
+- Whether the default time-out of 5000 ms holds through a level load on a slow PC. The menu passes no config
+  (`src/port/coop/ui/menu.c:67, :101`), and `join_driver.c:34` asks for 30000 ms on purpose. Every run here stayed in
+  the session, at load averages of 50 to 90.
+- A second session in one run of the game. `sim` covers the menu's side of it; no real game has done it.
 
 ### 2026-11-05, #19 (WP-21), session handshake: build, ROM, CVars
 
