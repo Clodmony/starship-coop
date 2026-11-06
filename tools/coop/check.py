@@ -67,6 +67,13 @@ def main():
             failures.append(f"tools/coop/{tool} --check failed; update the break that guards the code you changed:\n  "
                             + "\n  ".join((mut.stdout + mut.stderr).strip().splitlines()))
 
+    # 6. Run folders: each test tool gets a folder of its own, however close together runs start.
+    folders = subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "coop" / "run_folder_test.py")],
+                             cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
+    if folders.returncode != 0:
+        failures.append("tools/coop/run_folder_test.py failed:\n  "
+                        + "\n  ".join((folders.stdout + folders.stderr).strip().splitlines()))
+
     # Info: where the fork diverges from upstream game code.
     grep = git("grep", "-n", "COOP:", "--", "src", "include", ":!src/port/coop")
     markers = len(grep.stdout.splitlines()) if grep.returncode == 0 else 0

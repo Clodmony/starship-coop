@@ -28,8 +28,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 IS_WINDOWS = platform.system() == "Windows"
+sys.path.insert(0, str(ROOT / "tools" / "coop"))
 sys.path.insert(0, str(ROOT / "tools" / "coop" / "chaos"))
 import client as chaos  # noqa: E402
+from run_folder import make_run_folder  # noqa: E402
 
 SEED = 4242
 TIMEOUT_MS = 2000  # the keep-alive timeout in the scenarios that test it
@@ -397,8 +399,7 @@ def main():
 
     build_dir = args.build_dir or (Path("build/x64") if IS_WINDOWS else Path("build-cmake"))
     build_dir = build_dir if build_dir.is_absolute() else ROOT / build_dir
-    stamp = time.strftime("%Y%m%d-%H%M%S")
-    out = args.out or ROOT / "local" / "test-net" / stamp
+    out = args.out or make_run_folder(ROOT / "local" / "test-net")
     out.mkdir(parents=True, exist_ok=True)
 
     if not args.no_build:
