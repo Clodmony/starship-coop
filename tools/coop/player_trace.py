@@ -467,7 +467,9 @@ def check_rail_flight(rows, i, args):
     sweep = max(s.x for s in slots) - min(s.x for s in slots)
     rise = max(s.y for s in slots) - min(s.y for s in slots)
     apart = sum(abs(s.x - r.players[0].x) for s, r in zip(slots, flown)) / len(slots)
-    outside = sum(1 for s in slots if abs(s.x - s.xpath) > s.width + args.box_slack)
+    # Player_PerformLoop has no box, only a floor. The frame a loop ends is still outside; the next one is clamped.
+    outside = sum(1 for a, b in zip(slots, slots[1:]) if abs(b.x - b.xpath) > b.width + args.box_slack and
+                  not a.somersault and not b.somersault)
     ahead = min(s.camdist for s in slots)
     behind = max(s.camdist for s in slots)
     loops = sum(1 for a, b in zip(slots, slots[1:]) if b.somersault and not a.somersault)
@@ -476,7 +478,7 @@ def check_rail_flight(rows, i, args):
          slots[-1].shields > 0 and len(flown) == len(rail_rows(rows))),
         (f"player {i} swept {sweep:.0f} in x (min {args.min_sweep}), {rise:.0f} in y", sweep >= args.min_sweep),
         (f"player {i} {apart:.0f} from player 0 in x on average (min 100)", apart >= 100),
-        (f"player {i} outside the flight box on {outside} frames", outside == 0),
+        (f"player {i} outside the flight box on {outside} frames, loops left out", outside == 0),
         (f"player {i} camDist {ahead:.0f} to {behind:.0f}: boosted (below -100) and braked (above 50)",
          ahead < -100 and behind > 50),
         (f"player {i} looped {loops} time(s) (min 1)", loops >= 1),
