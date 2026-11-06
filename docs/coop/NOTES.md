@@ -123,6 +123,204 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-06, #59, secret routes and events that depend on a wingman
+
+Read at `95962d04`. Nothing was run. This describes what the game does; the rule for a human-flown wingman is for a
+later record (decision 0005, "Open"), and the open questions for it are at the end.
+
+The event scripts are not in this repo: they are ROM data. They were read from the `.o2r` built from ROM US 1.0 with a
+throwaway decoder that follows `tools/Torch/src/factories/sf64/ScriptFactory.cpp`. `CO S59:34` means level Corneria,
+script 59, command 34. The tables are the `SF64:SCRIPT` rows of `assets/yaml/us/rev0/ast_*.yaml` (Corneria:
+`ast_corneria.yaml:445`), and `ActorEvent_ProcessScript` picks one per level (`src/engine/fox_enmy2.c:1067-1120`).
+`z` is the `zPos1` of the object that starts a script. Conditions are in `ActorEvent_ProcessTriggers` (`:2354`).
+
+Short version, derived from the lists below: two routes read a wingman directly (Corneria needs Falco to open
+Sector Y; Sector X loses its choice when Slippy is shot down), Titania always takes Slippy away, and every medal needs
+all three wingmen. Four more branches depend on wingmen only through who shot what. Meteo, Zoness, Macbeth and the way
+to Venom read no wingman.
+
+Observed, how a route is chosen:
+
+- `gMissionStatus` starts at 0 (`src/engine/fox_play.c:2880`), except Sector X, which starts at `MISSION_ACCOMPLISHED`
+  (`:2882-2884`). The map turns it into the next planet: `MISSION_COMPLETE` (0) gives `dest1`, `MISSION_ACCOMPLISHED`
+  gives `dest2`, `MISSION_WARP` gives `warp` (`src/overlays/ovl_menu/fox_map.c:1487-1499`, table at `:214`).
+- **A better result opens a choice, it does not force a route.** After anything but `MISSION_COMPLETE` the map offers a
+  path change (A at `fox_map.c:6754`, Start at `:6771-6780`), and `Map_ChangePath` swaps between `dest1` and the earned
+  route (`:3698-3735`). After `MISSION_COMPLETE` the menu has no such option (`:3579`, `:3602-3603`).
+- Retry on the map restores the team from `D_ctx_80177C58` (`Map_RetryCourse`, `fox_map.c:3619-3635`), which is
+  written when the player leaves for a level (`:3525-3528`). So a route event or a lost wingman can be retried for a
+  life.
+- Bolse, Area 6 and Venom set `gNextLevel` themselves and read no wingman for it: Bolse to Venom 1
+  (`src/overlays/ovl_i4/fox_bo.c:1656`), Area 6 to Venom 2 (`src/overlays/ovl_i3/fox_a6.c:2928`), Venom 1 to Venom 2
+  (`src/overlays/ovl_i1/fox_ve1.c:2522`), Venom 2 to Andross (`src/overlays/ovl_i6/fox_ve2.c:443`).
+
+| Level | `dest1` | `dest2` | `warp` | What earns the other route | Wingman |
+|---|---|---|---|---|---|
+| Corneria | Meteo | Sector Y | | Kill the Carrier (`ovl_i1/fox_co.c:2200`) | **Direct**: Falco |
+| Meteo | Fortuna | | Katina | 7 warp rings (`engine/fox_enmy.c:2446-2452`) | None |
+| Sector Y | Katina | Aquas | | `gHitCount >= 100` at clear (`ovl_i6/fox_sy.c:2338`) | Indirect: hit credit |
+| Fortuna | Sector X | Solar | | All four of Star Wolf down in time (`ovl_i4/fox_fo.c:210-213`) | Indirect: shooter |
+| Katina | Sector X | Solar | | Saucerer core destroyed (`ovl_i4/fox_ka.c:1410`) | Indirect: shooter |
+| Sector X | Titania | Macbeth | Sector Z | Starts earned, lost with Slippy; 4 gates warp (`engine/fox_play.c:6898-6905`) | **Direct**: Slippy |
+| Zoness | Macbeth | Sector Z | | No searchlight missed (`ovl_i3/fox_zo.c:4960`) | None |
+| Macbeth | Bolse | Area 6 | | Railroad switch hit (`ovl_i5/fox_ma.c:3397-3410`) | None |
+| Sector Z | Bolse | Area 6 | | Great Fox not hit (`ovl_i4/fox_sz.c:1287`, `:1562`) | Indirect: shooter |
+
+Titania, Aquas and Solar have only `dest1` (Bolse, Zoness, Macbeth).
+
+Observed, Corneria (the verdict on the issue's claim is under Derived):
+
+- Outside debug CVars (`src/port/mods/PortEnhancements.c:95-104`), the only write of `MISSION_ACCOMPLISHED` here is the
+  Carrier's death. The Carrier fight needs the path turn at object 649 (z 168296). `Object_Init` frees that item unless
+  `gRingPassCount >= 7` and `gTeamShields[TEAM_ID_FALCO] > 0` (`engine/fox_enmy.c:1183-1189`). This is checked once,
+  when the item loads.
+- The 7 are the seven stone arches, objects 587 to 606 (z 143281 to 154454). Each spawns a ring-check item
+  (`fox_enmy.c:1061-1079`, `:1191-1192`), counted at `:2508-2513`. All seven are needed.
+- The turn moves `gPlayer[0].xPath` by 7000 (`rot.z` 70 times 100: `fox_enmy.c:1088-1090`, `:2569-2572`). Objects load
+  only within 4000 of `gPlayer[0].xPath` (`:439-440`, `:587-590`). Granga is object 763 at x -1449; the Carrier and its
+  three `OBJ_ACTOR_TEAM_BOSS` are objects 799 to 802 at x about 7000. Object 627 is a Carrier too, at x -1223, and its
+  init makes it a fly-by when `xPath` is near 0 (`ovl_i1/fox_co.c:1673-1677`, `:1761-1767`).
+- The rescue is S60 (leader, object 472), S59 (Falco, 473) and three S61 chasers (474 to 476) at z 108560 to 108699.
+  S59 hits Falco for 25, 15 and 25, then for 255 at `CO S59:34`, unless `EVC_NO_TARGET` fires first (`CO S59:10`). His
+  target is S60, which despawns on `EVC_NO_FOLLOWER` once the chasers are gone (`CO S60:12`, `fox_enmy2.c:2377`,
+  `:2637`). 255 is the only scripted hit in the campaign that downs a wingman at full shields; the next largest is 70.
+- The CVar `gHit64FalcoDead` zeroes his shields at level start (`engine/fox_play.c:2939-2941`).
+- `EVC_PASSED_ALL_RINGS` tests the same two values for scripts (`fox_enmy2.c:2663-2683`; only Corneria tests Falco).
+  With both true, Falco flies in with lines 2181, 2185 and 2188 (S14, z 158675) and Peppy's chase S1 and S2 (z 163700)
+  is skipped.
+
+Observed, Sector X and Titania:
+
+- Spyborg holds the result in `swork[6]`: 1 at spawn (`ovl_i2/fox_sx.c:533`), copied to `gMissionStatus` at its death
+  (`:1096`). From `gBossFrameCount` 2200, with Slippy up, the end of an attack leads to state 85 instead (`:971`,
+  `:1031`). That spawns a stand-in `OBJ_ACTOR_SX_SLIPPY` (`:18-38`); at animation frame 75 it sets `swork[6] = 0` and
+  `gTeamShields[TEAM_ID_SLIPPY] = -2`, and puts player 0 in `PLAYERSTATE_STANDBY` with the camera on Slippy
+  (`:102-123`, `:127-152`).
+- `SX S94` (object 997, z 204973) runs the other way round: it restores a Slippy who is not up to 255 and flies him in
+  before the boss (`EVOP_RESTORE_TEAM`, `fox_enmy2.c:1359`). No other level script uses that command.
+- `-2` is Slippy's own state. It keeps his radio working (`engine/fox_radio.c:91`), and `Play_Setup` leaves it alone
+  where `-1` and `0` move on (`fox_play.c:545-553`). The clear cutscene has two versions on it (`fox_sx.c:1877`).
+- Titania forces `-2` on every start: `Play_InitLevel` writes it (`fox_play.c:2691`) after `Play_Init` copied the saved
+  shields (`:2936`, call at `:3016`). No Titania script spawns him.
+- He comes back in the Goras fight: the third destroyed part (`ovl_i5/fox_ti.c:4013-4014`, `:4083-4084`) spawns
+  `OBJ_ACTOR_TEAM_BOSS` (`:3808-3813`), whose init sets `gTeamShields[TEAM_ID_SLIPPY] = 255`
+  (`engine/fox_hud.c:4832-4835`). The boss code flips him to 1 and back around each of his lines (`fox_ti.c:5053-5134`).
+
+Observed, medals and shooter rules:
+
+- `Play_CheckMedalStatus` needs all three wingmen above 0 and `gHitCount >= n` (`fox_play.c:59-65`). Its result gives
+  `gLeveLClearStatus` 2, the medal (`fox_demo.c:1271`, `fox_map.c:1473-1476`, `fox_hud.c:1313`). Venom 2 sets 2 itself
+  (`fox_ve2.c:123`).
+- `Actor_Despawn` adds to `gHitCount` only when `dmgSource == AI360_FOX + 1` (`fox_enmy.c:1761`). `dmgSource` is
+  `sourceId + 1` (`engine/fox_beam.c:696`) and `sourceId` is `player->num` (`fox_play.c:3091`). Other sites have no such
+  check (`fox_enmy2.c:226`, `:292`, `:2133`, `:2214`, `:2330`).
+- Katina: shots with `sourceId != TEAM_ID_FOX` do not hurt the Saucerer (`fox_beam.c:1007-1009`).
+- Fortuna: `gStarWolfTeamAlive` clears with no shooter check (`engine/fox_360.c:999-1027`), and a wingman rescued by
+  Fox turns on the Star Wolf member Fox hurt (`:530-537`).
+- Sector Z: any missile kill counts toward the 6 that end the level (`fox_360.c:918-919`, `fox_sz.c:58-60`). Falco,
+  Peppy and Slippy each get a missile as target while their `iwork[2]` is `AI360_FOX` (`fox_sz.c:308-360`); Katt takes
+  Slippy's once she has arrived.
+- Aquas sets all three to 255 at its start (`ovl_i3/fox_aq.c:437`) and the map saves that (`fox_map.c:1451-1455`).
+
+Observed, other reads of a wingman:
+
+- Slippy's boss health bar needs him above 0 (`fox_hud.c:3204`). On Venom 1 it is only switched on with him up
+  (`ovl_i1/fox_ve1.c:1164-1168`).
+- `OBJ_ACTOR_MISSILE_SEEK_TEAM` picks a wingman by shields (`fox_enmy.c:1541-1590`). All-range team actors skip a down
+  wingman (`fox_360.c:381`), and his Star Wolf opponent turns on Fox: Leon for Falco, Andrew for Slippy, Pigma for Peppy
+  (`:567-575`).
+- Start and clear cutscenes leave out a wingman at 0 or below, in every level file (for example `fox_co.c:3663-3670`,
+  `fox_andross.c:4181-4187`). Katina's also drops allies by `gKaAllyKillCount` (`ovl_i4/fox_ka.c:1775`). Bolse, Venom 2
+  and Andross read wingmen for nothing else but radio.
+- `gMissionTeamStatus` records who was up per mission (`fox_hud.c:1278-1292`, `fox_map.c:1658-1670`). It is shown on the
+  map (`:5704`) and used in the ranking (`ovl_ending/fox_end2.c:239-241`, `ovl_menu/fox_option.c:3999-4001`).
+- Hits refill surviving wingmen at level clear (`fox_hud.c:1131-1144`).
+- Katt and Bill read no wingman. They depend on `gLeveLClearStatus`: Bill on Katina (`EVC_KA_CLEAR`, for example
+  `SX S90`, `SO S20`), Katt on Zoness (`EVC_ZO_CLEAR`: `MA S10`, `MA S38`; `fox_sz.c:74`). Credits: `fox_end2.c:522`,
+  `:590`.
+- Every other `if` or `switch` on `gTeamShields` in `src/overlays/ovl_i*/`, `fox_demo.c` and `fox_360.c` was classed by
+  its function and is radio, a cutscene, or the downed-wingman logic of #61. `Corneria_CoGranga_1UpCheck` reads the team
+  only for its radio line (`fox_co.c:561`).
+
+Observed, level scripts. Fly-ins run only while that wingman's shields are above 0, except the two marked and `SX S94`.
+A rescue is a fly-in plus enemies aimed at him. It costs shields if failed, and only `CO S59` can down him from full.
+
+| Level | Fly-ins | Rescues | Content gated on a wingman |
+|---|---|---|---|
+| Corneria | Falco S4 S9 S14 S59 S64 (no gate), Slippy S17 S51 (no gate), Peppy S1 S32 | Slippy S17 with S16; Falco S59 with S60, S61; Peppy S1 with S2 | S36 (3 enemies, Falco up), S8 (Falco up, after the turn) |
+| Meteo | Falco S11 S141-143, Peppy S12 S135 S149, Slippy S21 S37 | Slippy S21 with S46, S84 | S6 (44 objects, Peppy down) and S48 (14, Slippy down, bombs); S15 S23 S34 S45 S52-54 (Peppy up, S34 bombs); S114 gold ring meteor blows up by itself with Falco up |
+| Sector X | Falco S1 S26, Peppy S21 S76 S80, Slippy S94 (when not up) | Peppy S80 with S78; Peppy S76 with S93 | S93 (10, gold ring group, Peppy up); S105 (bees, gold ring, Slippy up) |
+| Area 6 | Falco S12 S36 S41 S48 S74, Peppy S1 S11 S40 S75, Slippy S13 S21 S42 S76 | Falco S12 with S28, S31; Falco S36 with S26; Peppy S11 with S10, S65-71; Slippy S21 with S23 | S22 (5 missiles) hit all three for 20 near player 0 |
+| Sector Y | Falco S17 S58 S71 S90 S97, Peppy S18 S59 S75 S86 S98, Slippy S19 S48 S60 S99 | Slippy S48 with S50, S63, S76; Falco S90 with S89 | S92 (object 444): laser or 1UP, **all three up** |
+| Solar | Falco S21 S23, Peppy S3 S25 S26, Slippy S4 S24 | Falco S21 with S22 | The fly-ins and S18 carry scripted `DAMAGE_TEAM` hits |
+| Zoness | Falco S7 S8 S22, Peppy S5, Slippy S9 S16 S46 | Slippy S46 with S39; Falco S8 with S24 | |
+| Macbeth | Falco S2 S3 S9 S26, Peppy S28 S37, Slippy S4 S27 S50 | Falco S2 with S29, S26 with S43; Slippy S27 with S44, S50 with S56; Peppy S28 with S45 | |
+| Titania | Falco S2 S4 S6 S7 S8 S27, Peppy S3 S5 S24 S28 | Falco S6 with S15, S18; Falco S7 with S16, S19 | |
+| Venom 1 | Falco S0 S20 S83 S85 S86 S98, Peppy S21 S77 S82 S97, Slippy S1 S22 S88 S99 | | S23 (12) and S96 (2): the z 144135 blasts run only with **all three up** |
+
+Aquas and Andross scripts read no wingman. Fortuna, Katina, Bolse, Sector Z and Venom 2 place no event actors at all:
+their wingmen are the actors in `gActors[1]` to `[3]`.
+
+Scripts that only pick a radio line by who is up, for #60: Corneria 5, Meteo 16, Sector X 13, Area 6 3, Sector Y 6,
+Venom 1 18, Zoness 5, Macbeth 6, Titania 7. No script uses `EVC_TEAM_COUNT_*` or `EVC_CHASED`. Counted over
+scripts placed in the level object lists, so unplaced ones like `CO S81` are out.
+
+Derived:
+
+- **Corneria: the issue's "saving Falco leads to the other route" is half of it.** Saving him is necessary, not
+  sufficient: the route also needs all seven arches. The rescue is only one way to keep him, because anything that
+  takes his shields to 0 before z 168296 closes the route. And the route is not forced: the map still offers Meteo.
+- Once the turn is done, Granga and the Carrier fight exclude each other: each is outside the other path's 4000 window.
+- A slow Spyborg fight forces Titania. A fast one, or a Slippy already down, leaves `MISSION_ACCOMPLISHED`: Macbeth,
+  with the choice back to Titania. So Slippy's knock-out does not open Titania, it takes the other options away.
+- Slippy is missing from Titania even when the player picked it with him healthy.
+- Nearly everything reads one value, `gTeamShields[id] > 0`, not an actor. What that value means for a human flyer
+  decides most of this list.
+- The other half of a rescue is the actor: `EVOP_SET_TEAM_ID` stores it in `gTeamEventActorIndex`
+  (`fox_enmy2.c:1262-1267`) and chasers aim at that index (`EVOP_SET_TARGET`, `:1451-1456`; chase timer, `:3239`). With
+  no such actor the index is stale.
+- `CO S51` and `CO S64` have no gate, so a check on shields alone does not stop those two fly-ins.
+- If Falco's actor is not spawned, `CO S59` never reaches its 255 hit, so nothing can fail the rescue and the route
+  would rest on the arches alone.
+- Ring items are collected per player (`Player_CheckItemCollect`, `fox_play.c:1657-1669`), but the path change moves
+  only `gPlayer[0]` (`fox_enmy.c:2515-2571`), and the load window follows only `gPlayer[0].xPath`.
+- Kills by player 1 do not count in `Actor_Despawn` today. If kills by players 2 to 4 start to count (DESIGN.md
+  section 4, item 5 proposes a team total), the Sector Y route and every medal threshold get easier. If they do not,
+  those players cannot help earn them. At Katina they cannot hurt the Saucerer at all.
+- Replacing a computer wingman removes his help at Fortuna and Sector Z, and the human's shots count there instead.
+  Zoness searchlights and Macbeth switches check no shooter either (`ovl_i3/fox_zo.c:4306`, `ovl_i5/fox_ma.c:3397`).
+- DESIGN.md section 4, item 4 treats a route as something a player triggers in the level. The map adds a second
+  decision after every earned route, and it reads only `gMainController`.
+
+Guess:
+
+- Meteo's S6 waves (Peppy down) stand in for the S15-style waves (Peppy up), to keep that section equally busy.
+
+Unknown:
+
+- Anything at run time: none of this was played. That covers the frames Falco has in S59, how often computer wingmen
+  really kill missiles or Star Wolf, and whether the turn item can be missed (its hitbox is 1200 wide,
+  `engine/fox_edata_info.c:82`).
+- US 1.1: its yaml lists the same scripts, but only US 1.0 data was decoded.
+- `EVC_EXPERT_MODE` branches were not followed.
+
+Open questions for the record, nothing decided here:
+
+1. What does `gTeamShields[id]` hold while a human flies that wingman: their shields, a fixed value, or only up or down?
+2. Does a human-flown wingman still get the scripted actor? If not, do chasers go after the human, and who takes
+   scripted damage, including the 255 at `CO S59:34`?
+3. Corneria: what replaces "Falco is up" when a human flies Falco, and what if that player is down at z 168296?
+4. Sector X: is a human Slippy taken out at 2200 boss frames, with the stand-in actor and the camera on him? If not,
+   does the slow fight still force Titania?
+5. Titania: where is a human Slippy until the third Goras part falls?
+6. Medals: what counts as "all three up" with human wingmen?
+7. Hit credit: do kills by players 2 to 4 count toward `gHitCount`, and does Sector Y's 100 stay?
+8. Katina: may players 2 to 4 hurt the Saucerer?
+9. Is the lost computer help at Fortuna and Sector Z acceptable, or does it need balancing?
+10. Boss health bar: who sees it when Slippy is human, or down?
+11. Who picks on the map (`gMainController`; DESIGN.md section 4, item 4)?
+12. `gMissionTeamStatus` and the ranking: does a human wingman count as a wingman there?
+
 ### 2026-11-06, #56, audit regenerated after WP-10 and WP-11
 
 Read at `a69c811a`. `python tools/coop/sp_audit.py --check` passes again. This moved line numbers and corrected the
