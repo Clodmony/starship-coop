@@ -397,11 +397,11 @@ def rail_lead(frame):
     return 0
 
 
-def write_rail_replay(path, frames, l_frame=None):
+def write_rail_replay(path, frames, l_frame=None, extra=None):
     """Write the input for `rails`, in the layout of ReplayHeader and ReplayFrame in src/port/coop/test/replay.c: no
     checkpoints, so playback reports FAIL_MISMATCH at frame 0 and plays on. Hold and press pads get the same stick;
     press holds the buttons that went down on this frame. l_frame adds one L on pad 0 (with CVar gDebugJumpToAllRange,
-    the jump to all-range)."""
+    the jump to all-range). extra(frame, pad) gives buttons to add."""
     data = bytearray(b"SFCR" + struct.pack("<III6i", 2, 20, 204, *RAIL_SEEDS))
     assert len(data) == RAIL_REPLAY_HEADER
     last = [0, 0, 0, 0]
@@ -415,6 +415,8 @@ def write_rail_replay(path, frames, l_frame=None):
                     button |= BUTTON_L
             else:
                 button, stick_x, stick_y = rail_pad(frame, pad)
+            if extra is not None:
+                button |= extra(frame, pad)
             hold += struct.pack("<Hbb16x", button, stick_x, stick_y)
             press += struct.pack("<Hbb16x", button & ~last[pad], stick_x, stick_y)
             last[pad] = button

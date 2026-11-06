@@ -35,6 +35,11 @@ void CoopView_ToReference(const Vec3f* world, Vec3f* view);
 // The view depth a lock-on on the object at `pos` is judged by: `drawnZ`, from the camera drawn, outside co-op.
 float CoopView_LockOnZ(const Vec3f* pos, float drawnZ);
 
+// Test only, for src/port/coop/test/view_trace.c. The alpha of the red of a hit on this client's screen, and the shield
+// bar drawn on player `index` this frame, as a fraction, negative for none. Nothing draws either yet.
+int32_t CoopView_HitFlashAlpha(void);
+float CoopView_ShieldBar(int32_t index);
+
 #ifdef __cplusplus
 }
 #endif

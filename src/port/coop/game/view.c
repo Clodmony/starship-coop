@@ -146,3 +146,12 @@ float CoopView_LockOnZ(const Vec3f* pos, float drawnZ) {
     CoopView_ToReference(&world, &view);
     return view.z;
 }
+
+int32_t CoopView_HitFlashAlpha(void) {
+    return 0;
+}
+
+float CoopView_ShieldBar(int32_t index) {
+    (void) index;
+    return -1.0f;
+}
