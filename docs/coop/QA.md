@@ -20,8 +20,22 @@ number of clients, transport.
 
 1. **Replays (WP-03).** Controller input recorded per game frame and played back. Single-player replays guard the rule
    that co-op off changes nothing: a replay recorded on upstream must give the same per-frame hashes on this fork.
+   `python tools/coop/replay.py record <file>` (someone plays, closes the window to stop) and
+   `python tools/coop/replay.py play <file>` (unattended, exit code 0 on `PASS`). Each run gets a fresh folder under
+   `local/`. Recording starts at `GSTATE_START`, after the boot logo; each frame stores a checkpoint (game state, level,
+   player 0 state and position, RNG seeds) and playback reports the first frame that differs. Replay files hold raw
+   structs: same build and platform only, and they stay in `local/` (made from game play, not shared).
 2. **State hashes (WP-04).** One hash per game frame over players, object arrays, RNG seeds and key globals. Two
-   clients compare hashes; the first different frame is the desync.
+   clients compare hashes; the first different frame is the desync. `SF64_COOP_HASH_LOG=<file>` makes the game write
+   one line per frame (`src/port/coop/sync/state_hash.h`): frame, game state, level, total hash and one hash per
+   region (players, actors, bosses, effects, items, scenery, sprites, scenery360, shots, misc, rng, globals). Frame 0
+   is the same frame as in the replay, so logs from two runs of one replay line up. Pointers are normalised or left
+   out, so two runs of the same build give equal logs despite address randomisation.
+   `python tools/coop/hash_check.py run <replay>` (unattended, exit code 0 on `PASS`) plays the replay three times:
+   two plain runs must give equal hashes on every recorded frame, and a third run with `SF64_COOP_HASH_POKE=<frame>`
+   (one bit of game state flipped) must first differ at exactly that frame.
+   `python tools/coop/hash_check.py diff <a> <b>` names the first differing frame and the regions that differ there.
+   `python tools/coop/replay.py play <replay> --hash-log` writes a log next to an ordinary playback.
 3. **Two clients on one machine.** Two Starship processes with their own config, save and log folders (never the
    owner's), connected over loopback, both fed replays.
 4. **Network conditions (WP-27).** Lag, loss and reordering between the clients with a chaos relay, as in the hub's
@@ -35,6 +49,17 @@ Running tests must never use or modify the owner's own `starship.cfg.json`, save
 ## Results
 
 Newest first. One block per run that matters (a milestone, a release, a QA level change).
+
+```
+date:       2026-11-05
+commit:     issue/19-session (WP-21), on 1ec6c677
+identity:   no game, no ROM; Windows 11, MSVC 19.44, Debug; 2 or 3 processes, UDP over loopback, chaos relay
+what ran:   python tools/coop/session_test.py
+result:     9/9 scenarios: virtual network (identity wire form and fuzz, transport endings, 10 mismatch cases, two
+            clients, broken and silent peers, 80 lossy runs), then real processes: match, build, ROM, CVar,
+            platform warning, two clients, a match through bad_wifi and a refusal through hell. Handshake only;
+            the game glue (CoopIdentity_FromGame) compiles but has not run.
+```
 
 ```
 date:       2026-11-05
@@ -61,6 +86,14 @@ identity:   no game, no ROM; Linux, GCC, Debug; 2 or 3 processes on one machine,
 what ran:   python tools/coop/net_test.py
 result:     17/17 scenarios: virtual network with 200 seeds, every relay profile, corruption, outages, timeouts,
             killed client, full host, two clients, junk datagrams. Transport only, not co-op play.
+```
+
+```
+date:       2026-11-04
+commit:     issue/4-state-hash (WP-04), on top of 070256bd
+identity:   ROM US 1.0, Windows 11, MSVC 19.44, Debug, DirectX 11, 1 client per run, no transport
+what ran:   python tools/coop/hash_check.py run local/replays/corneria.sfcr
+result:     PASS. A = B on 13545/13545 frames; poke at 6772 first seen at 6772 (actors); 3 replays PASS; 467 s
 ```
 
 ```

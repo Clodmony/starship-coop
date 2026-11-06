@@ -28,9 +28,9 @@ Nothing in the online design may rule it out.
   `gControllerPress[]` indexed by `gPlayerNum` or `gMainController`.
 - **Two level modes matter:** `LEVELMODE_ON_RAILS` and `LEVELMODE_ALL_RANGE` (`include/sf64player.h:62`).
 - **On rails, path progress is one global fed by each player.** `Player_UpdatePath` copies the player's own `zPath`
-  into `gPathProgress` (`src/engine/fox_play.c:3627`); object loading, ground scroll and object drawing use the
-  global, while path turns and culling are set on `gPlayer[0]` only (`src/engine/fox_enmy.c:630`, `:2550-2591`,
-  `:2694`). Details in NOTES.md, 2026-11-05, WP-06.
+  into `gPathProgress` (`src/engine/fox_play.c:3627`); object loading, floor collision and object drawing use the
+  global, ground scroll sums every player's speed (`gPathTexScroll`, `:3637`), and path turns and culling are set on
+  `gPlayer[0]` only (`src/engine/fox_enmy.c:630`, `:2550-2591`, `:2694`). Details in NOTES.md, 2026-11-05, WP-06.
 - **Wingmen are separate from players.** `gTeamShields[6]` (`include/sf64context.h:23`) with ids starting at
   `TEAM_ID_FALCO` (`include/sf64player.h:18`); level init copies them from `gSavedTeamShields`
   (`src/engine/fox_play.c`, after the `gCamCount` lines).
@@ -53,8 +53,9 @@ Nothing in the online design may rule it out.
 
 ### Derived (reasoning, not yet tested)
 
-- Running a second `Player` in the campaign is mostly a matter of separating "number of players" from "number of
-  cameras", because versus mode already updates and draws several players.
+- Running a second `Player` in the campaign starts with separating "number of players" from "number of cameras",
+  because versus mode already updates and draws several players. On rails it also needs one shared path (NOTES.md,
+  2026-11-05, WP-06).
 - Game logic appears to tick at a fixed rate with interpolated rendering on top, which is what lockstep needs.
 - Because world state is in fixed arrays plus one bump-allocated buffer plus globals, a full state snapshot (for
   rollback or for a late join) is plausible in size. The arrays contain pointers, so a snapshot is only valid for the
@@ -69,7 +70,8 @@ Nothing in the online design may rule it out.
   with a second player).
 - Which code assumes `gPlayer[0]` or a single player: cameras, HUD, radio, cutscenes, level-complete logic, warps.
 - How the Landmaster (Titania, Macbeth) and Blue Marine (Aquas) levels handle extra players.
-- Which port enhancements (CVars) change the simulation and must match between players.
+- Which port enhancements (CVars) change the simulation and must match between players. A first list from reading
+  the code is in NOTES.md (WP-21) and in the handshake; nothing has tested it against state hashes yet.
 
 ## 3. Architecture (proposed)
 
