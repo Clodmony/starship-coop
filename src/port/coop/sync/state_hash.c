@@ -11,10 +11,15 @@
 // - Effect.unk_74 (a display list) and Player.sfx.srcPos/srcVel (sound sources) are cleared.
 // - Actor.iwork[] holds plain numbers and, in some actors, pointers to other objects (for example
 //   src/overlays/ovl_i5/fox_ti.c:694-697). A value that points into one of the hashed arrays is replaced by
-//   (array, byte offset); any other value above 32 bits is replaced by one fixed marker.
+//   (array, byte offset); any other value above 32 bits is replaced by one fixed marker, except in co-op, where
+//   negative numbers stay what they are.
 // Padding bytes are hashed too. The game clears every object byte by byte before use (Actor_Initialize and friends
 // in src/engine/fox_enmy.c:156-210, Player_InitializeAll in src/engine/fox_play.c:2605), so padding is 0 unless
 // the game wrote it.
+//
+// Co-op hashes two things more strictly than single player: negative numbers in Actor.iwork[] (NormalizeWord) and free
+// gScenery360 slots (HashScenery360). With co-op off the hash stays as it was, so a single-player log still lines up
+// with one from an older build (docs/coop/QA.md, test plan item 1).
 //
 // The listener runs on GamePreUpdateEvent, before any game logic of the frame, so the hash of frame N is the state
 // after frame N-1. It runs after the input replay listener (EVENT_PRIORITY_LOW runs first, see
@@ -113,7 +118,9 @@ static void UpdateRanges(void) {
     SetRange(RANGE_SHOTS, gPlayerShots, sizeof(gPlayerShots));
 }
 
-// A pointer into a hashed array becomes (array, offset); any other value too large for 32 bits becomes a marker.
+// A pointer into a hashed array becomes (array, offset); any other value too large for 32 bits becomes a marker. In
+// co-op a negative number stays: the game's s32 values sign-extend into the word, so its top half is all ones, and no
+// user-space pointer looks like that.
 static uint64_t NormalizeWord(uintptr_t value) {
     s32 i;
 
@@ -126,6 +133,9 @@ static uint64_t NormalizeWord(uintptr_t value) {
         }
     }
     if ((uint64_t) value > 0xFFFFFFFFULL) {
+        if (CoopPlayers_IsCoop() && (((uint64_t) value >> 32) == 0xFFFFFFFFULL)) {
+            return (uint64_t) value;
+        }
         return FOREIGN_POINTER;
     }
     return (uint64_t) value;
@@ -191,6 +201,23 @@ static void HashEffects(uint64_t* h) {
     }
 }
 
+// gScenery360 comes from Memory_Allocate, which does not clear it, and the game only sets the status of each slot. So
+// a free slot keeps what the memory held before (all 133 free slots in Corneria's all-range section were not zero). In
+// co-op it counts as empty.
+static void HashScenery360(uint64_t* h) {
+    Scenery360 copy;
+    s32 i;
+
+    for (i = 0; i < SCENERY360_COUNT; i++) {
+        copy = gScenery360[i];
+        ClearInfoPointers(&copy.info);
+        if (CoopPlayers_IsCoop() && (copy.obj.status == OBJ_FREE)) {
+            memset(&copy, 0, sizeof(copy));
+        }
+        HASH_VAR(h, copy);
+    }
+}
+
 static void HashGlobals(uint64_t* h) {
     HASH_VAR(h, gGameState);
     HASH_VAR(h, gNextGameStateTimer);
@@ -237,7 +264,7 @@ void CoopStateHash_Compute(CoopStateHash* out) {
     HASH_INFO_ARRAY(&r[COOP_HASH_SCENERY], Scenery, gScenery, ARRAY_COUNT(gScenery));
     HASH_INFO_ARRAY(&r[COOP_HASH_SPRITES], Sprite, gSprites, ARRAY_COUNT(gSprites));
     if (Scenery360Valid()) {
-        HASH_INFO_ARRAY(&r[COOP_HASH_SCENERY360], Scenery360, gScenery360, SCENERY360_COUNT);
+        HashScenery360(&r[COOP_HASH_SCENERY360]);
     }
     HASH_VAR(&r[COOP_HASH_SHOTS], gPlayerShots);
     HASH_VAR(&r[COOP_HASH_MISC], gTexturedLines);
