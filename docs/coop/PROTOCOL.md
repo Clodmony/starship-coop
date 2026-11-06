@@ -1,7 +1,7 @@
 # Wire protocol
 
-Status: the transport (WP-20), the session handshake (WP-21) and the characters (WP-34) exist;
-`COOP_PROTOCOL_VERSION` is 3. Sync and game messages come with their work packages. This
+Status: the transport (WP-20), the session handshake (WP-21), the characters (WP-34) and the level start (WP-24) exist;
+`COOP_PROTOCOL_VERSION` is 4. Sync and game messages come with their work packages. This
 page sets the rules so parallel work does not collide.
 
 ## Rules
@@ -123,8 +123,41 @@ What does not fit, as in the handshake:
   on a `SESSION_ROSTER` of a size other than 4, without Fox at player 0, with Fox or a value above 5 anywhere else,
   with a wingman twice, or with its own slot free.
 
-Nothing here reads or writes game state. Until WP-17 the character changes nothing in the level, and nothing stops a
-pick once a level runs; that belongs to WP-24.
+Nothing here reads or writes game state. Until WP-17 the character changes nothing in the level. Picks stop at the
+level start, see below.
+
+## Level start
+
+The host starts one level for everyone. `SESSION_LEVEL_START` goes on the reliable lane, after the welcome. The code is
+in `src/port/coop/session/session.c`; what the values are is in `src/port/coop/game/level_start.c`.
+
+1. The host's game asks for a level with what it holds now. The host turns that down while a client that joined holds
+   value 1, or while a client is in the handshake, which ends within 10000 ms. Nothing changes then, and it can ask
+   again. So a client never flies with nothing: nobody starts until it has picked or left.
+2. When the host takes it, the level, the phase, the values and the roster of that moment are fixed. A client that
+   leaves afterwards does not change what the others start from, so every game comes to the same player count.
+3. From then on nobody picks and nobody joins, and nothing opens that again yet. A `SESSION_PICK` on its way is dropped
+   and counted; the client learns what it holds from the level start. A hello gets `SESSION_REFUSE` with bit 9, whatever
+   its identity.
+4. The host sends the message to every client that joined, on the next poll, and tries again on the next one while the
+   window is full. Its own game hears of it on that poll too. Each game then enters the level from the message, the
+   host's as well, so no game goes by its own history.
+
+| Size | Field |
+|---|---|
+| 1 | Level: a `LevelId` below 20, so not versus |
+| 1 | Phase: `gLevelPhase` |
+| 4 | Roster, as in Characters |
+| 4 v | The values, each a little-endian 32-bit integer, in the order of the table in `level_start.c`: `COOP_LEVEL_START_VALUES`, 87 now |
+
+Each game goes to the level by itself, as soon as it hears: no frame is shared yet, so the games are not in step. That
+is WP-22, whose first frame will be what holds them together.
+
+What does not fit, as before:
+
+- A second level start, one before the welcome, and one from a client are dropped and counted (`CoopSession_Ignored`).
+- A client ends with `BAD_MESSAGE` on a level start of another size, with a level of 20 or more, with a roster that
+  `SESSION_ROSTER` could not hold, or with value 1 anywhere in the roster.
 
 ## Id ranges
 
@@ -150,10 +183,11 @@ pick once a level runs; that belongs to WP-24.
 | 0x0006 | `PONG` | both | u32 the clock value from the ping | WP-20 |
 | 0x0010 | `SESSION_HELLO` | client to host | identity | WP-21 |
 | 0x0011 | `SESSION_WELCOME` | host to client | u8 player index (1 to 3), then the host's identity | WP-21 |
-| 0x0012 | `SESSION_REFUSE` | host to client | u32 reasons: bit 0 build, 1 ROM, 2 CVars, 3 platform (never alone), 8 the hello could not be read; 0 means no hello in time. Then the host's identity. | WP-21 |
+| 0x0012 | `SESSION_REFUSE` | host to client | u32 reasons: bit 0 build, 1 ROM, 2 CVars, 3 platform (never alone), 8 the hello could not be read, 9 a level has started (WP-24); 0 means no hello in time. Then the host's identity. | WP-21 |
 | 0x0013 | `SESSION_PICK` | client to host | u8 character asked for (3 to 5; 2 is refused as taken) | WP-34 |
 | 0x0014 | `SESSION_PICK_REFUSE` | host to client | u8 character asked for (2 to 5). The only reason is that someone else holds it. | WP-34 |
 | 0x0015 | `SESSION_ROSTER` | host to client | u8 for each of the 4 players, see Characters | WP-34 |
+| 0x0016 | `SESSION_LEVEL_START` | host to client | level, phase, roster and values, see Level start | WP-24 |
 | 0x00C0 | `TEST_RELIABLE` | both | test pattern, only sent by `coop_net_test` | WP-20 |
 | 0x00C1 | `TEST_UNRELIABLE` | both | test pattern, only sent by `coop_net_test` | WP-20 |
 | 0x00C2 | `TEST_DONE` | both | none, only sent by `coop_net_test` | WP-20 |
