@@ -67,6 +67,13 @@ def main():
             failures.append(f"tools/coop/{tool} --check failed; update the break that guards the code you changed:\n  "
                             + "\n  ".join((mut.stdout + mut.stderr).strip().splitlines()))
 
+    # 6. Script reader: its level and command tables must still match the game source (no build, no ROM).
+    reader = subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "coop" / "script_reader_test.py")],
+                            cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
+    if reader.returncode != 0:
+        failures.append("tools/coop/script_reader_test.py failed:\n  "
+                        + "\n  ".join(reader.stdout.strip().splitlines()))
+
     # Info: where the fork diverges from upstream game code.
     grep = git("grep", "-n", "COOP:", "--", "src", "include", ":!src/port/coop")
     markers = len(grep.stdout.splitlines()) if grep.returncode == 0 else 0
