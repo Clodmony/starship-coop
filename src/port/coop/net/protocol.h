@@ -3,7 +3,7 @@
 // Message ids and the protocol version. The registry and the wire layout are in docs/coop/PROTOCOL.md.
 
 // Bump whenever a message layout changes (PROTOCOL.md rule 2).
-#define COOP_PROTOCOL_VERSION 3
+#define COOP_PROTOCOL_VERSION 4
 
 typedef enum {
     // Transport. These never reach the layers above it.
@@ -25,6 +25,9 @@ typedef enum {
     COOP_MSG_SESSION_PICK = 0x0013,
     COOP_MSG_SESSION_PICK_REFUSE = 0x0014,
     COOP_MSG_SESSION_ROSTER = 0x0015,
+
+    // Level start (WP-24): everyone into the same level from the same state.
+    COOP_MSG_SESSION_LEVEL_START = 0x0016,
     COOP_MSG_SESSION_END = 0x0040,
 
     // Debug and test harness.

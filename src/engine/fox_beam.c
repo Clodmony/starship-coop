@@ -4,7 +4,7 @@
 #include "assets/ast_great_fox.h"
 #include "assets/ast_versus.h"
 #include "port/interpolation/FrameInterpolation.h"
-#include "port/coop/game/players.h" // COOP: who fired, per player (#86)
+#include "port/coop/game/players.h" // COOP: a shot answers to the pad of its owner (WP-14), who fired (#86)
 
 Vec3f sShotViewPos;
 
@@ -1063,7 +1063,8 @@ void PlayerShot_DrawHitmark(PlayerShot* shot) {
         }
     }
     if (!isDrawn) {
-        if (!gVersusMode) {
+        // COOP: like versus, a shot is not freed for being out of view (#96)
+        if (!gVersusMode && !CoopPlayers_IsCoop()) {
             Object_Kill(&shot->obj, shot->sfxSource);
             return;
         }
@@ -1250,7 +1251,8 @@ void PlayerShot_DrawShot(PlayerShot* shot) {
         }
     }
     if (!isDrawn) {
-        if ((shot->obj.id != PLAYERSHOT_BOMB) && (shot->timer < 10) && !gVersusMode) {
+        // COOP: as above
+        if ((shot->obj.id != PLAYERSHOT_BOMB) && (shot->timer < 10) && !gVersusMode && !CoopPlayers_IsCoop()) {
             Object_Kill(&shot->obj, shot->sfxSource);
         }
     } else {
@@ -1789,8 +1791,9 @@ void PlayerShot_SearchLockOnTarget(PlayerShot* shot) {
         }
     } else {
         bool rapidFire = CVarGetInteger("gRapidFire", 0) == 1;
+        s32 pad = CoopPlayers_PadOf(shot->sourceId); // COOP: was gMainController, the owner's A in co-op (WP-14)
         if ((shot->obj.pos.y < gGroundHeight) || PlayerShot_FindLockTarget(shot) ||
-            (!(gControllerHold[gMainController].button & A_BUTTON) ^ rapidFire) || (shot->timer == 0)) {
+            (!(gControllerHold[pad].button & A_BUTTON) ^ rapidFire) || (shot->timer == 0)) {
             Object_Kill(&shot->obj, shot->sfxSource);
         }
     }
@@ -2073,7 +2076,8 @@ void PlayerShot_UpdateBomb(PlayerShot* shot) {
                         break;
                     }
                 } else {
-                    if (gControllerPress[gMainController].button & gBombButton[shot->sourceId]) {
+                    // COOP: was gMainController, the owner's button in co-op (WP-14)
+                    if (gControllerPress[CoopPlayers_PadOf(shot->sourceId)].button & gBombButton[shot->sourceId]) {
                         PlayerShot_ExplodeBomb(shot);
                         break;
                     }
@@ -2370,9 +2374,14 @@ void PlayerShot_DrawAll(void) {
         gPlayerShots[i].index = i;
         if (gPlayerShots[i].obj.status != SHOT_FREE) {
             if (!((gReflectY < 0) && (gPlayerShots[i].obj.rot.x < -10.0f))) {
+                Vec3f coopRot = gPlayerShots[i].obj.rot; // COOP: facing this camera lasts for this draw only (#96)
+
                 Matrix_Push(&gGfxMatrix);
                 PlayerShot_Draw(&gPlayerShots[i]);
                 Matrix_Pop(&gGfxMatrix);
+                if (CoopPlayers_IsCoop()) { // COOP
+                    gPlayerShots[i].obj.rot = coopRot;
+                }
             }
             if (gReflectY > 0) {
                 Object_SetSfxSourceToView(gPlayerShots[i].sfxSource, &sShotViewPos);
