@@ -248,8 +248,9 @@ typedef struct {
     uint32_t pickRefused;
     uint8_t refusedCharacter;
     char text[COOP_SESSION_TEXT];
-    char endText[COOP_SESSION_TEXT];  // of the last LEFT or ENDED
-    char pickText[COOP_SESSION_TEXT]; // of the last PICK_REFUSED
+    char endText[COOP_SESSION_TEXT]; // of the last LEFT or ENDED
+    // Of the last PICK_REFUSED.
+    char pickText[COOP_SESSION_TEXT];
 } Side;
 
 static void Side_Record(Side* side, const CoopSessionEvent* ev) {

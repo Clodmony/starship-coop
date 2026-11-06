@@ -44,13 +44,14 @@ typedef struct {
 } CoopRoster;
 
 typedef enum {
-    COOP_SESSION_EV_JOINED,       // host: client `peer` passed the handshake. Client: the host let us in.
-    COOP_SESSION_EV_REFUSED,      // host: client `peer` was refused. Client: the host refused us; ENDED follows.
-    COOP_SESSION_EV_LEFT,         // host: a client that had joined is gone
-    COOP_SESSION_EV_ENDED,        // client: the session is over, see end. Nothing follows.
-    COOP_SESSION_EV_MESSAGE,      // a message above the session range from a peer that has joined
-    COOP_SESSION_EV_ROSTER,       // the roster changed, see CoopSession_Roster
-    COOP_SESSION_EV_PICK_REFUSED, // host: client `peer` asked for a taken character. Client: we did. Nothing changes.
+    COOP_SESSION_EV_JOINED,  // host: client `peer` passed the handshake. Client: the host let us in.
+    COOP_SESSION_EV_REFUSED, // host: client `peer` was refused. Client: the host refused us; ENDED follows.
+    COOP_SESSION_EV_LEFT,    // host: a client that had joined is gone
+    COOP_SESSION_EV_ENDED,   // client: the session is over, see end. Nothing follows.
+    COOP_SESSION_EV_MESSAGE, // a message above the session range from a peer that has joined
+    COOP_SESSION_EV_ROSTER,  // the roster changed, see CoopSession_Roster
+    // Host: client `peer` asked for a taken character. Client: we did. Nothing changes.
+    COOP_SESSION_EV_PICK_REFUSED,
 } CoopSessionEventType;
 
 typedef enum {
