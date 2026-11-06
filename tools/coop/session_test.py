@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[2]
 IS_WINDOWS = platform.system() == "Windows"
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from net_test import SEED, Fail, Run, chaos, expect, read  # noqa: E402
+from run_folder import make_run_folder  # noqa: E402
 
 # Bits of CoopIdentityDiff, src/port/coop/session/identity.h.
 DIFF_BUILD, DIFF_ROM, DIFF_CVARS, DIFF_PLATFORM = 1, 2, 4, 8
@@ -367,7 +368,7 @@ def main():
 
     build_dir = args.build_dir or (Path("build/x64") if IS_WINDOWS else Path("build-cmake"))
     build_dir = build_dir if build_dir.is_absolute() else ROOT / build_dir
-    out = args.out or ROOT / "local" / "test-session" / time.strftime("%Y%m%d-%H%M%S")
+    out = args.out or make_run_folder(ROOT / "local" / "test-session")
     out.mkdir(parents=True, exist_ok=True)
 
     if not args.no_build:

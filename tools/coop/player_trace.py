@@ -54,6 +54,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools" / "coop"))
 from replay import game_env, read_report  # noqa: E402
+from run_folder import make_run_folder  # noqa: E402
 EXE_CANDIDATES = [
     "build/x64/Release/Starship.exe",
     "build/x64/RelWithDebInfo/Starship.exe",
@@ -110,8 +111,7 @@ def play(args):
     """Play args.replay with args.players players. Returns the trace file, or None when the run failed."""
     exe = find_exe(args.exe)
     replay = Path(args.replay).resolve()
-    run_dir = ROOT / "local" / f"test-trace-{args.players}p-{time.strftime('%Y%m%d-%H%M%S')}"
-    run_dir.mkdir(parents=True)
+    run_dir = make_run_folder(ROOT / "local", f"test-trace-{args.players}p-")
     for name in DATA_FILES:
         for d in (exe.parent, exe.parent.parent, ROOT / "build/x64", ROOT / "build-cmake", ROOT):
             if (d / name).exists():

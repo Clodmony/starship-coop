@@ -79,7 +79,8 @@ number of clients, transport.
    `python tools/coop/session_mutants.py` does the same for `session.c` and `session_test.py` (#55; CI runs it on
    Linux), and `python tools/coop/session_test.py --asan` runs the session tests under AddressSanitizer and UBSan (CI
    does, on Linux); `session_mutants.py --asan` shows that run can fail. `python tools/coop/net_test.py --asan` does
-   the same for the transport tests (#75; CI does, on Linux).
+   the same for the transport tests (#75; CI does, on Linux), and `net_mutants.py --asan` shows that run can fail
+   (#92).
 5. **The co-op menu (WP-25).** `python tools/coop/menu_test.py` checks the menu layer with no game: `sim` on the real
    session in a virtual network, `udp` over real sockets. `python tools/coop/menu_test.py --game` starts three real
    games with `SF64_COOP_TEST_MENU=<folder>` (`src/port/coop/test/menu_driver.h`), clicks the real ImGui widgets through
