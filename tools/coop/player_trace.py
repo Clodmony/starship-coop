@@ -29,11 +29,12 @@ rules and exits 0 when all hold:
   - a parked player is hidden. One frame is allowed: Player_Update draws a player again on the frame it goes down,
   - after every restart it is parked, or flying on the frame player 0 is.
 
-`rails` is the test for WP-12. It plays one replay by rule (see write_rail_replay: pad 0 gets through the menus and
-fires, the other pads fly stick sweeps, boost, brake and a loop) with one player and with --players at the same time,
-checks the second trace as above, and compares the two on every frame player 0 flies Corneria's rail section with both:
-gPathProgress, gPathVelZ and gPathTexScroll must match single player, and each extra player must have covered --min-sweep
-units of x, stayed in the flight box, boosted and braked (its camDist only) and looped.
+`rails` is the test for WP-12. It plays one replay by rule (see write_rail_replay: pad 0 gets through the menus, fires,
+boosts and brakes, the other pads fly stick sweeps, boost, brake and a loop) with one player and with --players at the
+same time, checks the second trace as above, and compares the two on every frame player 0 flies Corneria's rail section
+with both: gPathProgress, gPathVelZ and gPathTexScroll must match single player, the section must end on the same frame,
+and each extra player must have covered --min-sweep units of x, stayed in the flight box, boosted and braked (its
+camDist only) and looped. Both runs set gInvincible: flying by rule, player 0 is shot down half way through the section.
 
 Stopping the game can cut the last line of the trace; only that line may be cut.
 """
@@ -81,12 +82,14 @@ BUTTON_C_LEFT = 0x0002  # gBoostButton, src/engine/fox_game.c
 BUTTON_C_DOWN = 0x0004  # gBrakeButton
 
 # Input by rule for `rails`. Pad 0 presses A every 30 frames: that gets through the menus into Corneria, where player 0
-# is active at about frame 4775, and keeps firing there. The other pads start after that and repeat RAIL_CYCLE frames.
+# is active at about frame 4775, and keeps firing there. From RAIL_INPUT_START all pads repeat RAIL_CYCLE frames:
+# rail_lead on pad 0, rail_pad on the others.
 RAIL_INPUT_START = 4800
 RAIL_CYCLE = 600
 RAIL_FRAMES = 10500
 RAIL_SEEDS = (1234, 5678, 9012, 111, 222, 333)
 RAIL_REPLAY_HEADER = 40  # ReplayHeader in src/port/coop/test/replay.c
+RAIL_SETTLE = 100  # frames of the section left out of the speed check: the level starts with its own boost
 
 
 def find_exe(given):
@@ -383,6 +386,19 @@ def rail_pad(frame, index):
     return button, stick_x, stick_y
 
 
+def rail_lead(frame):
+    """Buttons of player 0 on `frame`, past the menus: a boost and a brake every cycle, so that the speed along the path
+    changes and a player who does not follow it shows."""
+    t = (frame - RAIL_INPUT_START) % RAIL_CYCLE
+    if frame < RAIL_INPUT_START:
+        return 0
+    if 200 <= t < 225:
+        return BUTTON_C_LEFT
+    if 400 <= t < 425:
+        return BUTTON_C_DOWN
+    return 0
+
+
 def write_rail_replay(path, frames):
     """Write the input for `rails`, in the layout of ReplayHeader and ReplayFrame in src/port/coop/test/replay.c: no
     checkpoints, so playback reports FAIL_MISMATCH at frame 0 and plays on. Hold and press pads get the same stick;
@@ -395,7 +411,7 @@ def write_rail_replay(path, frames):
         press = bytearray()
         for pad in range(4):
             if pad == 0:
-                button, stick_x, stick_y = (BUTTON_A if frame >= 60 and frame % 30 == 0 else 0), 0, 0
+                button, stick_x, stick_y = (BUTTON_A if frame >= 60 and frame % 30 == 0 else 0) | rail_lead(frame), 0, 0
             else:
                 button, stick_x, stick_y = rail_pad(frame, pad)
             hold += struct.pack("<Hbb16x", button, stick_x, stick_y)
@@ -428,11 +444,14 @@ def compare_path(solo, coop, args):
         same = sum(1 for a, b in both if get(a) == get(b))
         results.append((f"{name} as in single player on {same} of {len(both)} frames, largest difference {worst:.3f} "
                         f"(max {args.max_path_diff})", worst <= args.max_path_diff))
+    speeds = [r.pathvel for _, r in both[RAIL_SETTLE:]]
+    results.append((f"speed along the path {min(speeds):.1f} to {max(speeds):.1f}: player 0 braked and boosted",
+                    bool(speeds) and min(speeds) < 35 and max(speeds) > 45))
     a, b = both[0], both[-1]
     span = len(both) - 1
     if span:
-        print(f"player_trace: path progress {a[1].path:.1f} to {b[1].path:.1f}, {(b[1].path - a[1].path) / span:.3f} per "
-              f"frame; single player {(b[0].path - a[0].path) / span:.3f} per frame")
+        print(f"player_trace: path progress {a[1].path:.1f} to {b[1].path:.1f}, "
+              f"{(b[1].path - a[1].path) / span:.3f} per frame; single player {(b[0].path - a[0].path) / span:.3f}")
     # Not a rule: an extra player changes the RNG and what is left of the enemies, so player 0 can be hit elsewhere.
     apart = max(math.hypot(a.players[0].x - b.players[0].x, a.players[0].y - b.players[0].y) for a, b in both)
     print(f"player_trace: player 0 at most {apart:.1f} from where it was with 1 player, in x and y")
@@ -519,7 +538,8 @@ def main():
     t.add_argument("--min-sweep", type=float, default=600.0, help="x range each extra player must cover (default 600)")
     t.add_argument("--max-path-diff", type=float, default=0.0,
                    help="largest difference from single player on the rail section (default 0)")
-    t.add_argument("--box-slack", type=float, default=100.0, help="how far knockback may push past the box (default 100)")
+    t.add_argument("--box-slack", type=float, default=100.0,
+                   help="how far knockback may push past the box (default 100)")
     t.add_argument("--cvar", action="append", default=[], metavar="NAME[=VALUE]", help="another CVar for both runs")
     add_check_options(t)
     args = ap.parse_args()
