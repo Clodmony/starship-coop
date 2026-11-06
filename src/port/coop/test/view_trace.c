@@ -27,6 +27,7 @@ typedef enum {
     VIEW_POKE_LIVES,
     VIEW_POKE_BOOST,
     VIEW_POKE_HIT,
+    VIEW_POKE_DOWN,
 } ViewPokeKind;
 
 typedef struct {
@@ -37,7 +38,7 @@ typedef struct {
     bool done;
 } ViewPoke;
 
-static const char* sPokeNames[] = { "shields", "bombs", "lives", "boost", "hit" };
+static const char* sPokeNames[] = { "shields", "bombs", "lives", "boost", "hit", "down" };
 
 static ViewPoke sPokes[VIEW_POKES_MAX];
 static s32 sPokeCount = 0;
@@ -62,6 +63,11 @@ static void CoopViewTrace_Poke(ViewPoke* poke) {
             break;
         case VIEW_POKE_HIT:
             Player_ApplyDamage(player, 0, poke->value);
+            break;
+        case VIEW_POKE_DOWN:
+            // What Player_Update wants before it calls Player_Down; gInvincible keeps the timer from being set by a hit.
+            player->shields = 0;
+            player->radioDamageTimer = poke->value;
             break;
     }
 }

@@ -26,6 +26,7 @@ Rules, on the frames they talk about:
   sound-engine    a player who joins starts its engine, each join after leaving starts it again, and it is off while
                   the player is parked
   sound-source    all-range: a client's own player sounds from in front of its camera
+  player-down     all-range: when player 1 goes down its client looks through player 0, and its engine is off
   pause           pause is part of the shared game: player 0's pad pauses both clients on the same frames, player 1's
                   pad pauses neither
   hash            both clients played one game, pokes and all
@@ -71,6 +72,8 @@ BESIDE_CAMERA = 0.05
 PRESS_P1_START = ACTIVE + 800  # must do nothing
 PRESS_P0_START = ACTIVE + 830
 PRESS_P0_RESUME = ACTIVE + 870  # B, in the pause menu
+ALL_RANGE_NUMBERS = 2300  # both players fly all-range by then
+ALL_RANGE_DOWN = 3060  # player 1 is ACTIVE here; a U-turn has no down check
 
 SHIELDS_P0, SHIELDS_P1 = 200, 120
 BOMBS_P0, BOMBS_P1 = 5, 7
@@ -309,6 +312,14 @@ def rule_sound_source(clients):
     return len(ahead) >= len(flying) * 0.95, f"own player ahead of the camera on {len(ahead)} of {len(flying)} frames"
 
 
+def rule_player_down(clients):
+    client = clients[1]
+    after = [row for row in client.rows if row.frame > ALL_RANGE_DOWN + 5]
+    wrong = [row.frame for row in after if joined(row) or row.view != 0 or row.noise[1] != FORM_NONE]
+    good = len(after) >= 20 and not wrong
+    return good, f"{len(after) - len(wrong)} of {len(after)} frames after the poke: out, looks through player 0, engine off"
+
+
 def rule_pause(clients):
     counts = [sum(1 for row in client.rows if row.paused) for client in clients]
     early = [sum(1 for row in client.rows if row.paused and row.frame < PRESS_P0_START - 2) for client in clients]
@@ -338,6 +349,7 @@ RULES = {
         "shield-bar": rule_shield_bar,
         "sound-engine": rule_sound_engine,
         "sound-source": rule_sound_source,
+        "player-down": rule_player_down,
     },
 }
 
@@ -358,7 +370,8 @@ def pokes(section):
     numbers = [f"{POKE_NUMBERS}:0:shields:{SHIELDS_P0}", f"{POKE_NUMBERS}:1:shields:{SHIELDS_P1}",
                f"{POKE_NUMBERS}:0:bombs:{BOMBS_P0}", f"{POKE_NUMBERS}:1:bombs:{BOMBS_P1}"]
     if section == "all-range":
-        return ",".join(f"{2300}:{p.split(':', 1)[1]}" for p in numbers)
+        return ",".join([f"{ALL_RANGE_NUMBERS}:{p.split(':', 1)[1]}" for p in numbers]
+                         + [f"{ALL_RANGE_DOWN}:1:down:4"])
     return ",".join(numbers + [f"{HIT_P1 - 1}:1:hit:20", f"{HIT_P0 - 1}:0:hit:20", f"{LOW_SHIELDS}:1:shields:80",
                                f"{HIT_LOW - 1}:1:hit:20"])
 
