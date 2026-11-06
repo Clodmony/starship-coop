@@ -12,6 +12,8 @@
 #include <libultraship/libultraship.h>
 
 #include "menu.h"
+#include "menu_game.h"
+#include "port/coop/game/level_start.h"
 #include "port/coop/session/identity_game.h"
 #include "port/coop/test/menu_driver.h"
 #include "port/ui/UIWidgets.h"
@@ -24,7 +26,9 @@ constexpr size_t kPortSize = 6;
 constexpr float kMenuButtonWidth = 200.0f;
 const char* const kWindowCvar = "gCoopMenuWindow";
 
-const CoopMenuBackend kBackend = { CoopNetSdl_Host, CoopNetSdl_Connect, CoopNetSdl_Port, CoopIdentity_FromGame };
+const CoopMenuBackend kBackend = { CoopNetSdl_Host,          CoopNetSdl_Connect, CoopNetSdl_Port,
+                                   CoopIdentity_FromGame,    CoopMenuGame_Level, CoopLevelStart_Enter,
+                                   CoopMenuGame_SessionEnded };
 
 CoopMenu sMenu;
 char sAddress[COOP_MENU_ADDRESS_SIZE];
@@ -38,10 +42,9 @@ class MenuWindow : public Ship::GuiWindow {
     void InitElement() override {
     }
     void DrawElement() override;
-    // Gui::DrawMenu runs this every frame, with the window closed too, so the session goes on while it is closed.
+    // Gui::DrawMenu runs this every frame, with the window closed too. The session is not ticked here: see menu_game.h.
     void UpdateElement() override {
         CoopMenuDriver_Frame();
-        CoopMenu_Tick(&sMenu, SDL_GetTicks());
     }
 };
 
@@ -109,9 +112,18 @@ void DrawChoices(const CoopMenuView& view) {
     }
 }
 
-// WP-24 (#22): the start button goes here. It sits below the players and the characters, above Leave.
+// Below the players and the characters, above Leave.
 void DrawLevelStart(const CoopMenuView& view) {
-    (void) view;
+    if (view.showStart) {
+        UIWidgets::PaddedSeparator();
+        if (Button("start", view.startLabel, view.canStart)) {
+            CoopMenu_Start(&sMenu);
+        }
+    }
+    if (view.level[0] != '\0') {
+        UIWidgets::PaddedSeparator();
+        Text("level", view.level);
+    }
 }
 
 void MenuWindow::DrawElement() {
@@ -150,6 +162,10 @@ void Setup() {
     Ship::Context::GetInstance()->GetWindow()->GetGui()->AddGuiWindow(sWindow);
 }
 
+void Listen() {
+    CoopMenuGame_Listen(&sMenu);
+}
+
 void DrawMenuEntry() {
     bool open = UIWidgets::BeginMenu("Co-op");
 
@@ -178,6 +194,9 @@ void Destroy() {
 namespace CoopUi {
 
 void Setup() {
+}
+
+void Listen() {
 }
 
 void DrawMenuEntry() {

@@ -147,16 +147,25 @@ bool CoopSession_Pick(CoopSession* s, CoopCharacter character) {
     return s->t->ops->send(s->t, 0, COOP_MSG_SESSION_PICK, &wire, 1, COOP_NET_RELIABLE);
 }
 
-bool CoopSession_StartLevel(CoopSession* s, const CoopLevelStart* start) {
+bool CoopSession_CanStart(const CoopSession* s) {
     int i;
 
-    if (!s->isHost || s->started || start->level >= COOP_LEVEL_START_LEVELS) {
+    if (!s->isHost || s->started) {
         return false;
     }
     for (i = 0; i < COOP_NET_MAX_PEERS; i++) {
         if (s->peers[i].state == PEER_WAIT_HELLO || s->roster.character[i + 1] == COOP_CHARACTER_UNPICKED) {
             return false;
         }
+    }
+    return true;
+}
+
+bool CoopSession_StartLevel(CoopSession* s, const CoopLevelStart* start) {
+    int i;
+
+    if (!CoopSession_CanStart(s) || start->level >= COOP_LEVEL_START_LEVELS) {
+        return false;
     }
     s->level = *start;
     memcpy(s->level.roster, s->roster.character, sizeof(s->level.roster));

@@ -2478,6 +2478,58 @@ Read at `797c678b` (origin/coop). The window is `src/port/coop/ui/menu_window.cp
 - Whether a host name that takes long to resolve is a problem in play: `CoopNetSdl_Connect` blocks on the lookup
   (`src/port/coop/net/transport.h`), and the menu calls it on the game's thread.
 
+### 2026-11-06, #126, starting a level from the co-op menu
+
+Read and run at `212271f6`, on top of PR #124 and PR #125. ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer,
+no window, 2 or 3 clients over loopback. The Start button and the event reader are in `src/port/coop/ui/menu.c`, what
+touches the game in `src/port/coop/ui/menu_game.c`.
+
+**Observed**
+
+- The window's `UpdateElement` runs inside `Graphics_PushFrame`, after `Game_Update` (`src/sys/sys_main.c:248, :264`),
+  with `Audio_Update` (`:280`) and `Timer_Update` (`src/port/Game.cpp:28`) still to come in that frame.
+- `GamePreUpdateEvent` is the first thing in `Game_Update`, and `Game_SetGameState` the next
+  (`src/engine/fox_game.c:352, :354`).
+- `GameUI::SetupGuiElements` runs before the events exist (`src/port/Engine.cpp:306, :311`,
+  `src/port/mods/PortEnhancements.c:440`), and a listener on an event not registered yet throws
+  (`src/port/hooks/impl/EventSystem.cpp:13`). So `CoopUi::Setup` cannot add one; `CoopUi::Listen` does, from
+  `GameEngine::Create`.
+- With real widgets clicked in real games, `menu_test.py`'s `game_level`: three games from other seeds, same state hash
+  in every region on 1270 frames from the first frame after `Play_Init`. `game_level_map`: a host that came from the map
+  (game state 4), a client from the title screen, same hash on 1238 frames.
+- The control, a throwaway build whose menu enters each game with its own values: the hash logs differ on level frame 0,
+  in `rng` with everyone on the title screen, and in `rng` and `globals` with a host from the map.
+
+**Derived**
+
+- The menu's session now runs on `GamePreUpdateEvent`, not in `UpdateElement` as in the #23 entry above. That is where
+  `join_driver.c` runs it, so a level start from the menu goes in the order `join_test.py` tested: state hash, session,
+  `Game_SetGameState`. `CoopLevelStart_Enter` asks for nothing to run between the values and the level, and in
+  `UpdateElement` the audio and the timers would.
+- A dropped frame no longer skips the session, as it still skips the window (#23 entry). The poll comes once per game
+  frame now, not once per drawn frame, so a ping can hold up to one game frame more (guess at the size, not measured).
+
+**Choices the owner can reverse** (not decided in a record)
+
+- Start sends everyone to Corneria, phase 0 (`CoopMenuGame_Level`). The menu has no level choice: #126 asks for none,
+  and only Corneria has been run.
+- A host alone can press Start. The session allows it and the menu follows the session.
+- The window stays open when the level starts; the player closes it.
+- From the level start on a client's character buttons are gone, not grey.
+- Leave in a level ends the session for that player, and the level goes on in that game.
+
+**Unknown**
+
+- What happens once a player touches the controls. No game here got input after its level start, and nothing keeps
+  games together until WP-22.
+- A level start reaching a game anywhere but the title screen or the map: in a level, paused, on the game over screen,
+  in versus. Read, not run: `Play_Init` sets `gCamCount` back to 1 and `Play_Setup` clears `gVersusMode`
+  (`src/engine/fox_play.c:2929, :2864`).
+- Whether the default time-out of 5000 ms holds through a level load on a slow PC. The menu passes no config
+  (`src/port/coop/ui/menu.c:67, :101`), and `join_driver.c:34` asks for 30000 ms on purpose. Every run here stayed in
+  the session, at load averages of 50 to 90.
+- A second session in one run of the game. `sim` covers the menu's side of it; no real game has done it.
+
 ### 2026-11-05, #19 (WP-21), session handshake: build, ROM, CVars
 
 Read at `1ec6c677` (origin/coop). The handshake code is in `src/port/coop/session/`, the wire form in PROTOCOL.md.

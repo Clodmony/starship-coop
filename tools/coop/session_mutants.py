@@ -67,7 +67,8 @@ CLIENT_MESSAGE = ("Event_Init(ev, COOP_SESSION_EV_MESSAGE, 0);\n                
 PICK_GUARD = ("if (s->client != CLIENT_ACTIVE || s->started || character <= COOP_CHARACTER_FOX ||\n"
               "        character >= COOP_CHARACTER_COUNT) {")
 PICK_SEND = "return s->t->ops->send(s->t, 0, COOP_MSG_SESSION_PICK, &wire, 1, COOP_NET_RELIABLE);"
-START_GUARD = "if (!s->isHost || s->started || start->level >= COOP_LEVEL_START_LEVELS) {"
+START_GUARD = "if (!s->isHost || s->started) {"
+START_LEVEL = "if (!CoopSession_CanStart(s) || start->level >= COOP_LEVEL_START_LEVELS) {"
 START_WAIT = ("if (s->peers[i].state == PEER_WAIT_HELLO || s->roster.character[i + 1] == "
               "COOP_CHARACTER_UNPICKED) {")
 START_LOOP = "for (i = 0; i < COOP_NET_MAX_PEERS; i++) {\n        " + START_WAIT
@@ -471,10 +472,11 @@ BREAKS = [
 
     # Level start: who may start, and when.
     ("start_on_a_client", START_GUARD, START_GUARD.replace("!s->isHost || ", ""), SIM),
-    ("start_twice", START_GUARD, START_GUARD.replace("s->started || ", ""), SIM),
-    ("start_any_level", START_GUARD, START_GUARD.replace(" || start->level >= COOP_LEVEL_START_LEVELS", ""), SIM),
-    ("start_level_off_by_one", START_GUARD, START_GUARD.replace("start->level >= COOP", "start->level > COOP"), SIM),
-    ("start_level_too_low", START_GUARD, START_GUARD.replace("LEVELS)", "LEVELS - 1)"), SIM),
+    ("start_twice", START_GUARD, START_GUARD.replace(" || s->started", ""), SIM),
+    ("start_asks_nobody", START_LEVEL, START_LEVEL.replace("!CoopSession_CanStart(s) || ", ""), SIM),
+    ("start_any_level", START_LEVEL, START_LEVEL.replace(" || start->level >= COOP_LEVEL_START_LEVELS", ""), SIM),
+    ("start_level_off_by_one", START_LEVEL, START_LEVEL.replace("start->level >= COOP", "start->level > COOP"), SIM),
+    ("start_level_too_low", START_LEVEL, START_LEVEL.replace("LEVELS)", "LEVELS - 1)"), SIM),
     ("start_past_the_handshake", START_WAIT,
      "if (s->roster.character[i + 1] == COOP_CHARACTER_UNPICKED) {", SIM),
     ("start_past_the_unpicked", START_WAIT, "if (s->peers[i].state == PEER_WAIT_HELLO) {",
