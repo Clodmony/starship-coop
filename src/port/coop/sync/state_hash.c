@@ -27,6 +27,7 @@
 
 #include "global.h"
 #include "port/hooks/Events.h"
+#include "port/coop/game/players.h"
 
 // src/sys/sys_math.c
 extern s32 sRandSeed1;
@@ -70,6 +71,8 @@ static FILE* sLog = NULL;
 static bool sStarted = false;
 static u32 sFrame = 0;
 static s64 sPokeFrame = -1;
+static s32 sPokePlayer = -1;
+static s64 sProbePeriod = 0;
 
 static void Fnv(uint64_t* h, const void* data, size_t size) {
     const u8* p = (const u8*) data;
@@ -259,15 +262,99 @@ const char* CoopStateHash_RegionName(CoopHashRegion region) {
     return sRegionNames[region];
 }
 
-// Test only: flip the lowest bit of the first byte of the last actor's fwork[29]. The last actor slot is rarely in
-// use, so the change usually stays in memory and the hash stays different from that frame on.
+// Test only: flip the lowest bit of the first byte of one value. By default that is the last actor's fwork[29]: the
+// last actor slot is rarely in use, so the change usually stays in memory and the hash stays different from that frame
+// on. With SF64_COOP_HASH_POKE_PLAYER it is that player's pos.x, a difference the game itself then goes on with.
 static void Poke(void) {
-    u8* p = (u8*) &gActors[ARRAY_COUNT(gActors) - 1].fwork[29];
+    char target[32];
+    u8* p;
 
+    if (sPokePlayer < 0) {
+        p = (u8*) &gActors[ARRAY_COUNT(gActors) - 1].fwork[29];
+        snprintf(target, sizeof(target), "gActors[%d].fwork[29]", (s32) ARRAY_COUNT(gActors) - 1);
+    } else if ((gGameState == GSTATE_PLAY) && (gPlayer != NULL) && (sPokePlayer < CoopPlayers_Count())) {
+        p = (u8*) &gPlayer[sPokePlayer].pos.x;
+        snprintf(target, sizeof(target), "gPlayer[%d].pos.x", sPokePlayer);
+    } else {
+        return; // no such player on this frame: nothing changes, and hash_check.py reports that
+    }
     *p ^= 1;
     if (sLog != NULL) {
-        fprintf(sLog, "# poke frame=%u target=gActors[%d].fwork[29] byte=0 bit=0\n", sFrame,
-                (s32) ARRAY_COUNT(gActors) - 1);
+        fprintf(sLog, "# poke frame=%u target=%s byte=0 bit=0\n", sFrame, target);
+    }
+}
+
+// Test only: log what one change did to the hash. Both hashes come from the same frame of the same process, so this
+// needs no second run to compare with, and it says nothing about determinism.
+static void ProbeReport(const char* target, s32 parked, const CoopStateHash* a, const CoopStateHash* b) {
+    s32 count = 0;
+    s32 i;
+
+    fprintf(sLog, "# probe frame=%u target=%s parked=%d changed=%d regions=", sFrame, target, parked,
+            a->total != b->total);
+    for (i = 0; i < COOP_HASH_REGION_COUNT; i++) {
+        if (a->region[i] != b->region[i]) {
+            fprintf(sLog, "%s%s", (count++ == 0) ? "" : ",", sRegionNames[i]);
+        }
+    }
+    fprintf(sLog, "%s\n", (count == 0) ? "none" : "");
+}
+
+// Hash, flip the lowest bit of one byte, hash again and flip it back, so the game goes on as if nothing happened.
+static void ProbeBit(const char* target, s32 parked, void* where) {
+    CoopStateHash before;
+    CoopStateHash after;
+
+    CoopStateHash_Compute(&before);
+    *(u8*) where ^= 1;
+    CoopStateHash_Compute(&after);
+    *(u8*) where ^= 1;
+    ProbeReport(target, parked, &before, &after);
+}
+
+// Hash one word of the last actor at two values, then put the word back.
+static void ProbeIwork(const char* target, uintptr_t first, uintptr_t second) {
+    uintptr_t* word = &gActors[ARRAY_COUNT(gActors) - 1].iwork[0];
+    uintptr_t saved = *word;
+    CoopStateHash a;
+    CoopStateHash b;
+
+    *word = first;
+    CoopStateHash_Compute(&a);
+    *word = second;
+    CoopStateHash_Compute(&b);
+    *word = saved;
+    ProbeReport(target, 0, &a, &b);
+}
+
+static void ProbeScenery360(const char* target, u8 status) {
+    s32 i;
+
+    for (i = 0; i < SCENERY360_COUNT; i++) {
+        if (gScenery360[i].obj.status == status) {
+            ProbeBit(target, 0, &gScenery360[i].obj.pos.x);
+            return;
+        }
+    }
+}
+
+// Test only: what tools/coop/hash_check.py probe reads. Which of these must change the hash is written there.
+static void Probe(void) {
+    char target[16];
+    s32 i;
+
+    if ((gGameState != GSTATE_PLAY) || (gPlayer == NULL)) {
+        return; // the player count is fixed by the first level, and co-op does not start before it
+    }
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        snprintf(target, sizeof(target), "player%d", i);
+        ProbeBit(target, CoopPlayers_IsParked(i), &gPlayer[i].pos.x);
+    }
+    ProbeIwork("iwork-negative", (uintptr_t) -1, (uintptr_t) -2);
+    ProbeIwork("iwork-foreign", (uintptr_t) &sFrame, (uintptr_t) &sProbePeriod); // two addresses outside the arrays
+    if (Scenery360Valid()) {
+        ProbeScenery360("scenery360-active", OBJ_ACTIVE);
+        ProbeScenery360("scenery360-free", OBJ_FREE);
     }
 }
 
@@ -289,6 +376,9 @@ static void CoopStateHash_OnGamePreUpdate(IEvent* event) {
 
     if ((sPokeFrame >= 0) && ((s64) sFrame == sPokeFrame)) {
         Poke();
+    }
+    if ((sProbePeriod > 0) && (((s64) sFrame % sProbePeriod) == 0)) {
+        Probe();
     }
 
     CoopStateHash_Compute(&hash);
@@ -314,6 +404,8 @@ static void CoopStateHash_OnExit(void) {
 void CoopStateHash_Init(void) {
     const char* logPath = getenv("SF64_COOP_HASH_LOG");
     const char* poke = getenv("SF64_COOP_HASH_POKE");
+    const char* pokePlayer = getenv("SF64_COOP_HASH_POKE_PLAYER");
+    const char* probe = getenv("SF64_COOP_HASH_PROBE");
     s32 i;
 
     if ((logPath == NULL) || (logPath[0] == '\0')) {
@@ -325,6 +417,12 @@ void CoopStateHash_Init(void) {
     }
     if ((poke != NULL) && (poke[0] != '\0')) {
         sPokeFrame = strtoll(poke, NULL, 10);
+    }
+    if ((pokePlayer != NULL) && (pokePlayer[0] != '\0')) {
+        sPokePlayer = strtol(pokePlayer, NULL, 10);
+    }
+    if ((probe != NULL) && (probe[0] != '\0')) {
+        sProbePeriod = strtoll(probe, NULL, 10);
     }
 
     fprintf(sLog, "# starship-coop state hash v1 (src/port/coop/sync/state_hash.c)\n");
