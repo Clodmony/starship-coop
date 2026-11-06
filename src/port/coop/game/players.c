@@ -21,6 +21,10 @@ typedef enum {
 
 static CoopSlot sSlot[COOP_PLAYERS_MAX];
 
+// The session's roster, and how many players it makes; 0 without one.
+static u8 sRoster[COOP_PLAYERS_MAX];
+static s32 sRosterCount = 0;
+
 // The player this client looks through, as asked for. Only counts in co-op, and only for a player in the level.
 static s32 sLocalIndex = 0;
 
@@ -33,7 +37,7 @@ void CoopPlayers_LevelInit(void) {
     s32 i;
 
     if (gCamCount == 1) {
-        count = CVarGetInteger(COOP_PLAYERS_DEBUG_CVAR, 1);
+        count = (sRosterCount > 0) ? sRosterCount : CVarGetInteger(COOP_PLAYERS_DEBUG_CVAR, 1);
         if (count < 1) {
             count = 1;
         }
@@ -45,7 +49,26 @@ void CoopPlayers_LevelInit(void) {
 
     for (i = 0; i < COOP_PLAYERS_MAX; i++) {
         sSlot[i] = ((gCamCount == 1) && (i > 0) && (i < count)) ? COOP_SLOT_WAITING : COOP_SLOT_JOINED;
+        if ((sSlot[i] == COOP_SLOT_WAITING) && (sRosterCount > 0) && (sRoster[i] == 0)) {
+            sSlot[i] = COOP_SLOT_OUT;
+        }
     }
+}
+
+void CoopPlayers_SetRoster(const uint8_t* roster) {
+    s32 i;
+
+    sRosterCount = 0;
+    for (i = 0; i < COOP_PLAYERS_MAX; i++) {
+        sRoster[i] = (roster != NULL) ? roster[i] : 0;
+        if (sRoster[i] != 0) {
+            sRosterCount = i + 1;
+        }
+    }
+}
+
+int32_t CoopPlayers_Character(int32_t index) {
+    return ((index >= 0) && (index < COOP_PLAYERS_MAX)) ? sRoster[index] : 0;
 }
 
 int32_t CoopPlayers_Count(void) {

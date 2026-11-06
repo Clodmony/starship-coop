@@ -5,6 +5,7 @@
     python tools/coop/net_mutants.py --only no_resend,no_goodbye
     python tools/coop/net_mutants.py --list
     python tools/coop/net_mutants.py --check         # only check that every pattern still matches; no build
+    python tools/coop/net_mutants.py --asan          # the breaks only the sanitizers can see; not on Windows
 
 A test suite that passes proves little until you know it fails when the code is wrong. Each break below replaces one
 piece of text in src/port/coop/net/net_core.c with a broken variant and names the net_test.py scenarios that must
@@ -91,20 +92,42 @@ BREAKS = [
      ["host_full"]),
 ]
 
+# Breaks that only a sanitizer can see: the program still behaves, it just touches memory it should not. These prove
+# the --asan run in CI can fail. Run them with --asan.
+SANITIZER_BREAKS = [
+    # LeakSanitizer, at the normal end of a program.
+    ("destroy_leaks_core", "CoopNetCore_Disconnect(core, i);\n    }\n    free(core);",
+     "CoopNetCore_Disconnect(core, i);\n    }", ["sim", "lan"]),
+    # UBSan. The bit is the same either way, so only the sanitizer can tell.
+    ("ack_bit_signed_shift", "if ((bits & (1u << i)) && (uint16_t) (seq - l->txBase) < inFlight) {",
+     "if ((bits & (1 << i)) && (uint16_t) (seq - l->txBase) < inFlight) {", ["sim", "lan"]),
+    # AddressSanitizer, on the stack: only a message as large as the transport allows reaches the last byte.
+    ("datagram_buffer_one_short", "uint8_t buffer[COOP_NET_MAX_DATAGRAM];",
+     "uint8_t buffer[COOP_NET_MAX_DATAGRAM - 1];", ["sim", "lan"]),
+    # AddressSanitizer, on the heap, in transport_sdlnet.c: its packet holds one byte less. This comes after the real
+    # refusal, so the refused client and sc_host_full see nothing wrong, and sc_host_full never looks at its host. Only
+    # the log scan of net_test.py --asan can fail it; that is what this break guards.
+    ("refuse_overruns_tx_packet", "Core_Write(core, to, connId, COOP_MSG_CONNECT_REFUSE, 0, 0, 0, 0, &reason, 1);",
+     "Core_Write(core, to, connId, COOP_MSG_CONNECT_REFUSE, 0, 0, 0, 0, &reason, 1);\n"
+     "    core->tx(core->user, to, (const uint8_t*) core, COOP_NET_MAX_DATAGRAM + 1);", ["host_full"]),
+]
+
 
 def options(ap):
     ap.add_argument("--seeds", type=int, default=200, help="seeds for the sim scenario (passed to net_test.py)")
+    ap.add_argument("--asan", action="store_true", help="the breaks only AddressSanitizer and UBSan can see")
 
 
 def table(args):
     return mutants.Table(
         source=ROOT / "src" / "port" / "coop" / "net" / "net_core.c",
         test_script=ROOT / "tools" / "coop" / "net_test.py",
-        test_args=["--seeds", str(args.seeds)],
+        test_args=["--seeds", str(args.seeds)] + (["--asan"] if args.asan else []),
         scenarios=net_test.SCENARIOS,
-        target="coop_net_test",
-        find_exe=net_test.find_exe,
-        breaks=BREAKS,
+        target=net_test.target(args.asan),
+        find_exe=lambda build_dir, config: net_test.find_exe(build_dir, config, args.asan),
+        breaks=SANITIZER_BREAKS if args.asan else BREAKS,
+        known=BREAKS + SANITIZER_BREAKS,
     )
 
 

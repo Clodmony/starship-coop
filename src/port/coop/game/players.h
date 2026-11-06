@@ -18,10 +18,18 @@ extern "C" {
 #define COOP_PLAYERS_MAX 4 // the per-player arrays in sf64context.h have 4 slots
 
 // Fixes the player count for the level being started. Call it in Play_Init, after gCamCount is set and before
-// gPlayer is allocated. Until the co-op session exists (WP-21, WP-24), the count comes from the debug CVar
-// COOP_PLAYERS_DEBUG_CVAR (default 1, clamped to 1..COOP_PLAYERS_MAX); outside the campaign (gCamCount != 1) it is
+// gPlayer is allocated. The count comes from the roster of the co-op session; without one, from the debug CVar
+// COOP_PLAYERS_DEBUG_CVAR (default 1, clamped to 1..COOP_PLAYERS_MAX). Outside the campaign (gCamCount != 1) it is
 // always gCamCount.
 void CoopPlayers_LevelInit(void);
+
+// Who is in the levels from the next Play_Init on: one CoopCharacter per player, 0 for nobody. The count goes up to the
+// last player there, and a slot below that with nobody in it stays out of the level. NULL goes back to the debug CVar:
+// call it when the session ends.
+void CoopPlayers_SetRoster(const uint8_t* roster);
+
+// What player `index` flies in that roster, as a CoopCharacter; 0 without a roster. Until WP-17 nothing reads it.
+int32_t CoopPlayers_Character(int32_t index);
 
 // Number of Player structs in gPlayer for the current level.
 int32_t CoopPlayers_Count(void);
