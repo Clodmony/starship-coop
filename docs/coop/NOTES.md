@@ -242,6 +242,70 @@ Unknown:
 - Release builds, Windows and macOS: not run. libultraship installs these handlers on Linux only
   (`libultraship/src/debug/CrashHandler.cpp:416`), so `stop_signal.c` does nothing elsewhere.
 
+### 2026-11-06, #98, why a crash did not end a test run
+
+Identity: ROM US 1.0, on commit `797c678b`, Linux, GCC, Debug, OpenGL in software, no window, one game at a time.
+
+Observed:
+
+- On `797c678b`, 12 of 12 test runs were still running 10 s after a crash signal, in `exit_test.py`: SIGSEGV 6 times
+  (without a replay, recording, playing), SIGABRT, SIGFPE and SIGILL twice each. All 12 had their crash log, and their
+  report and closing hash line where the run writes them.
+- So were real faults, 1 of 1 each: gdb sent the program counter to address 0 on the main thread (`fault-main`) and in
+  `AudioPlayerBuffered` on the audio thread (`fault-audio`, thread 49 in gdb, `src/port/Engine.cpp:391`). Both left a
+  crash log with `Signal: 11`. The stack of these hangs was not taken: that it is the destructor rests on the #71 entry.
+- A crash handler made to stop for good before it writes anything (`fault-stuck`, gdb jumps from `backtrace_symbols`
+  to `pause`) was still running 10 s later, 1 of 1.
+- The fix (`src/port/coop/test/stop_signal.c`) uses the gate of the stop handler. In a test run it puts a handler in
+  front of libultraship's for SIGILL, SIGABRT, SIGFPE and SIGSEGV. That one sets a flag and calls libultraship's, which
+  writes the log as before. An atexit handler (`stop_signal.c:55`) sees the flag and leaves with `_exit(1)`.
+- With the fix, 18 of 18 crash signals ended with exit code 1, the slowest 0.37 s after the signal, with crash log,
+  report, closing hash line and, recording, whole frames. `fault-main` did the same in 4 of 4, slowest 0.47 s, and
+  `fault-audio` in 14 of 14, slowest 1.59 s, both under gdb.
+- `fault-stuck` ended by SIGALRM in 4 of 4, 5.14 to 5.39 s after the fault, from an alarm of 5 s
+  (`stop_signal.c:69`), and left no crash log entry for that crash.
+- Stop signals kept their path: 15 of 15 test runs ended with exit code 0, the slowest 0.22 s after the signal.
+- A plain game was still running 3 s after SIGSEGV in 8 of 8 tries, with its crash log, and after SIGTERM in 3 of 3.
+  `797c678b` did the same after SIGSEGV in 2 of 2. The check behind that fails when it should: run against a test run,
+  it gave `exit code 1: a plain game lost upstream's handler` in 3 of 3.
+- With `SDL_VIDEODRIVER=offscreen` the crash handler tried no message box: a listener on the socket of a made-up X
+  display saw 0 connections and fake `zenity` and `kdialog` were not called, 1 of 1, on `797c678b`. The same listener
+  saw 3 connections and the fake dialogs 3 calls in a game with no driver set, which failed while starting up. That
+  game ended with exit code 1 and a crash log.
+- The system's SDL here is sdl2-compat on SDL3.
+- A crashed recording reports `RECORDED` and a crashed playback `FAIL_INCOMPLETE`, as a closed window does. Only the
+  exit code and the crash log tell them apart, and `tools/coop/replay.py:166` prints the exit code only when there is
+  no report.
+
+Derived:
+
+- The order is what makes this work. atexit handlers run last registered first. The destructor of the static `audio`
+  was registered before `main`, `CoopStopSignal_Init` runs at `src/port/Engine.cpp:301`, and `CoopReplay_Init` and
+  `CoopStateHash_Init` at `:310` and `:311`. So the test output is written first and `_exit` comes before the destructor.
+- `_exit(1)` keeps the exit code of upstream's `exit(1)` (`libultraship/src/debug/CrashHandler.cpp:202`), so a tool can
+  tell a crash from a stop.
+- The alarm is there for the other hang, the 62nd run of the #71 entry: `Ship::ErrorHandler` calls `backtrace_symbols`
+  (`libultraship/src/debug/CrashHandler.cpp:148`), which allocates, so a crash inside `malloc` or `free` can stop on a
+  lock the crashed code holds. That happens before the log is written (`:198`), so such a run has no crash log, and
+  nothing in this repo can change that without replacing libultraship's handler.
+- The alarm is off with a window. `SDL_ShowSimpleMessageBox` (`:192`) also comes before the log, so a limit there could
+  kill the game while someone reads the box, and the log would be lost.
+- The issue's candidate, never destroying `audio`, would change a plain game too, which the owner's rule from #71 does
+  not allow, and would not reach a crash handler that hangs before `exit`.
+
+Guess:
+
+- A real lock hang ends through the alarm the way `fault-stuck` does. `fault-stuck` stands in for it with `pause`; a real
+  crash inside `malloc` was not produced.
+
+Unknown:
+
+- A test run with a window: not run. The message box waits there as upstream's does, and the `_exit(1)` should follow
+  once it is closed.
+- Release builds, Windows and macOS: not run. The handlers exist on Linux only, as in the #71 entry.
+- A crash before `src/port/Engine.cpp:301` keeps upstream's path. The run with no driver above is the only such crash
+  seen, and it ended by itself.
+
 ### 2026-11-04, #1 (WP-01), Linux build
 
 Identity: ROM US 1.0 (SHA-1 `d8b1088520f7c5f81433292a9258c1184afa1457`, `config.yml:34`), commit `ba0781d7`, Linux,
