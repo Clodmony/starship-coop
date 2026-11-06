@@ -9,6 +9,47 @@ Private notes (your paths, your PC, your logs) go in `local/`, not here.
 
 ## Build and run
 
+### 2026-11-06, #54, what SHIP_HOME reaches, and how a replay file can end
+
+Identity: ROM US 1.0, on commit `a69c811a`, Linux, GCC, Debug, OpenGL in software, no window.
+
+Observed:
+
+- `sf64.o2r` is looked up in the app directory only (`src/port/Engine.cpp:78`); `starship.o2r` also falls back to the
+  working directory (`src/port/Engine.cpp:79`, `libultraship/src/Context.cpp:511-526`). With `SHIP_HOME` at a folder
+  without `sf64.o2r`, and no window, the game exited with code 1 within 2 s and wrote nothing in either folder.
+- With `SHIP_HOME` at a folder holding `sf64.o2r`, and the tools passing it through, `default.sav`, `logs/`, `mods/` and
+  `starship.cfg.json` landed in that folder, plus `imgui.ini` on the runs of 100 frames or more (not on those of 0 or
+  30). Besides the data files copied in, the run folder got only the report and the hash log. Seen through `replay.py`,
+  `hash_check.py` and `determinism.py`; the three runs of `hash_check.py` shared that one folder.
+- A header-only replay reported `PASS` with 0 frames, and `determinism.py` then printed `det: PASS`, "equal to base on
+  all 0 frames". `hash_check.py` failed it only because its poke changed nothing, while all three replays said `PASS`.
+- A file cut inside a frame also reported `PASS`, with the whole frames before the cut as `frames`.
+- A recording stopped with SIGKILL ended inside a frame in 2 of 3 tries (16 and 32 bytes left over, the third on a frame
+  edge). The file is flushed every 60 frames (`src/port/coop/test/replay.c:260`) and in blocks in between. No report is
+  written then.
+- After SIGTERM a recording game ran its `atexit` handler (report `RECORDED`, whole frames only), yet it had not exited
+  40 s later and needed SIGKILL. One run measured this.
+- A replay with no frames to play took 17 to 21 s in `replay.py`.
+
+Derived:
+
+- A folder without `sf64.o2r` fails loudly; the dangerous `SHIP_HOME` is one that looks like a real install. A test of
+  this bug needs a decoy holding that archive, or it shows nothing.
+- With `SHIP_HOME` passed through, the game reads its config from there (`libultraship/src/Context.cpp:181`) and its
+  mods too (`src/port/Engine.cpp:110`), so a config a tool writes into the run folder is ignored. Not run for that
+  case: `determinism.py`'s `opengl` and `window` variants write one.
+
+Guess:
+
+- Most of those 17 to 21 s is `run_game` waiting 15 s for the game to exit after SIGTERM, before it uses SIGKILL.
+
+Unknown:
+
+- Why the game does not exit after SIGTERM.
+- Windows and macOS: none of this ran there. `SHIP_HOME` is read on Linux and macOS only
+  (`libultraship/src/Context.cpp:471-486`).
+
 ### 2026-11-04, #1 (WP-01), Windows build
 
 Identity: ROM US 1.0 (SHA-1 `d8b1088520f7c5f81433292a9258c1184afa1457`, `config.yml:34`), commit `ba0781d7`,

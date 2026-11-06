@@ -20,11 +20,18 @@ number of clients, transport.
 
 1. **Replays (WP-03).** Controller input recorded per game frame and played back. Single-player replays guard the rule
    that co-op off changes nothing: a replay recorded on upstream must give the same per-frame hashes on this fork.
-   `python tools/coop/replay.py record <file>` (someone plays, closes the window to stop) and
-   `python tools/coop/replay.py play <file>` (unattended, exit code 0 on `PASS`). Each run gets a fresh folder under
-   `local/`. Recording starts at `GSTATE_START`, after the boot logo; each frame stores a checkpoint (game state, level,
+   `python tools/coop/replay.py record <file>` (someone plays, closes the window to stop; with `--frames <n>` it stops
+   by itself and nobody has to play) and `python tools/coop/replay.py play <file>` (unattended, exit code 0 on `PASS`).
+   Each run gets a fresh folder under `local/`, and `SHIP_HOME` is set to that folder whatever your shell says.
+   Recording starts at `GSTATE_START`, after the boot logo; each frame stores a checkpoint (game state, level,
    player 0 state and position, RNG seeds) and playback reports the first frame that differs. Replay files hold raw
    structs: same build and platform only, and they stay in `local/` (made from game play, not shared).
+   Only a whole file can pass: `FAIL_NO_FRAMES` is a file with a header and nothing else, `FAIL_TRUNCATED` one that
+   ends inside a frame (a recording that was killed can), `ERROR_BAD_FILE` one without a valid header. These win over
+   `FAIL_MISMATCH`, and `src/port/coop/test/replay.h` lists every result.
+   `python tools/coop/replay_test.py` (unattended, exit code 0 on `PASS`, needs a build with assets) tests the tools
+   themselves: it records a short replay nobody plays and plays it whole and damaged through `replay.py`,
+   `hash_check.py` and `determinism.py`, with a decoy `SHIP_HOME` that must stay untouched.
 2. **State hashes (WP-04).** One hash per game frame over players, object arrays, RNG seeds and key globals. Two
    clients compare hashes; the first different frame is the desync. `SF64_COOP_HASH_LOG=<file>` makes the game write
    one line per frame (`src/port/coop/sync/state_hash.h`): frame, game state, level, total hash and one hash per

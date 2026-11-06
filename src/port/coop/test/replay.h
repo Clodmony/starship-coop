@@ -7,6 +7,10 @@
 //   SF64_COOP_REPLAY_PLAY=<file>    play <file> back instead of the live controllers
 //   SF64_COOP_REPLAY_REPORT=<file>  where to write the result line (default: replay-report.txt)
 // With none of them set, no listener is registered and the game runs unchanged.
+//
+// The report ends with result=<value>. Recording: RECORDED. Playback: PASS, FAIL_MISMATCH (a checkpoint differs),
+// FAIL_INCOMPLETE (the game closed first), FAIL_NO_FRAMES (the file holds a header and nothing else), FAIL_TRUNCATED
+// (the file ends inside a frame). Either mode: ERROR_OPEN_FILE, ERROR_BAD_FILE (no valid header).
 
 #ifdef __cplusplus
 extern "C" {
