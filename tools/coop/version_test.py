@@ -8,7 +8,7 @@
 Each scenario starts one game with the menu bar open, in its own folder, without a window and off the GPU, and captures
 one shown frame with versiontest/frame_shot.c. The check reads the pixels of that frame, so it sees what a player sees:
 
-  label   The right end of the menu bar shows "Co-op <id>", with <id> the id the handshake compares. The menu font has
+  label   The right end of the menu bar shows "Co-op <id>", with <id> the first 8 characters of the id the handshake compares. The menu font has
           fixed-width cells, and a character looks the same in every cell, so the cells of the label must repeat exactly
           as the characters of the text do. The same frame must not pass for an id with another pattern. This is not
           OCR: it tells a right id from a wrong one, it does not spell one out.
@@ -40,6 +40,7 @@ SHOT_SWAP = 240     # the boot logo is over and the menu bar is drawn
 RECORD_FRAMES = 300  # the game stops after the capture: recorded frames start later than swaps
 TIMEOUT = 180
 BAR_ROWS = 24       # the menu bar is opaque for these rows at the default font
+LABEL_ID = 8        # characters of the id the label shows (src/port/coop/ui/version_label.cpp)
 CELL = 7            # width of a character of the menu font
 LABEL_PREFIX = "Co-op "  # src/port/coop/ui/version_label.cpp
 WIDE = 640
@@ -136,13 +137,13 @@ def scenario_label(exe, build_id):
     if frame[0] != WIDE:
         return False, f"frame is {frame[0]} wide, asked for {WIDE}", None, None
     rows = bar_rows(frame)
-    text = LABEL_PREFIX + build_id
+    text = LABEL_PREFIX + build_id[:LABEL_ID]
     columns = text_columns(rows, WIDE)
     start = label_start(rows, WIDE, text)
     if start is None:
         last = columns[-1] if columns else "none"
         return False, f"no \"{text}\" in the menu bar (last text column {last} of {WIDE})", frame, WIDE
-    wrong = LABEL_PREFIX + other_pattern(build_id)
+    wrong = LABEL_PREFIX + other_pattern(build_id[:LABEL_ID])
     if label_start(rows, WIDE, wrong) is not None:
         return False, f"the check cannot tell \"{text}\" from \"{wrong}\"", None, None
     detail = f"\"{text}\" at x={start}, ends {WIDE - start - len(text) * CELL} px from the edge; not \"{wrong}\""
@@ -218,7 +219,7 @@ def scenario_packaged(exe, build_id):
     archive = folder / package_tool.PORT_ARCHIVE
     if f"Reading archive: {archive}" not in log:
         return False, f"the game did not read {archive.name} from the package"
-    text = LABEL_PREFIX + build_id
+    text = LABEL_PREFIX + build_id[:LABEL_ID]
     if label_start(bar_rows(frame), frame[0], text) is None:
         return False, f"the package started, but shows no \"{text}\""
 

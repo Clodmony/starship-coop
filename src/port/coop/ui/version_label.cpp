@@ -9,7 +9,8 @@
 void CoopUi_DrawVersionLabel(void) {
     char label[64];
 
-    snprintf(label, sizeof(label), "Co-op %s", CoopIdentity_BuildId());
+    // The first 8 characters: with the Co-op menu in the bar, all 12 do not fit the default window of 640.
+    snprintf(label, sizeof(label), "Co-op %.8s", CoopIdentity_BuildId());
 
     const float x = ImGui::GetWindowWidth() - ImGui::CalcTextSize(label).x - ImGui::GetStyle().ItemSpacing.x;
     if (x < ImGui::GetCursorPosX()) {
