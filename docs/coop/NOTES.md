@@ -325,6 +325,7 @@ Unknown:
   run with 2 players did not reach level complete. That is WP-11 (all-range) and WP-12 (on-rails).
 - Whether `Camera_Update` for player 2 writes globals that the local camera reads (WP-28).
 - `gCoopDebugPlayerCount` changes the simulation, so it belongs in the sim CVar list of WP-21 once both are merged.
+  (Done in #55.)
 
 Found later (2026-11-06, while testing WP-11 by watching a 2-player Corneria run):
 
@@ -692,6 +693,43 @@ GCC 16.2.1, Debug, graphics backend OpenGL, `USE_NETWORKING` on, `SDL_VIDEODRIVE
   `SDLNet_Init`. WP-21 is the first code to do that.
 - A boot with networking on under Windows or macOS. CI builds the game on Windows but does not start it.
 - Anything past the title screen.
+
+### 2026-11-06, #55, what the session tests can and cannot see
+
+Read at `a69c811a` (origin/coop).
+
+**Observed**
+
+- Nothing could fail the hold-back checks. `Check_Refused` and `check_refused` assert that no game message crossed a
+  refused handshake, but both ends only sent one after JOINED, and `CoopSession_Send` refuses before that. Both ends
+  now push game messages straight into the transport (`--eager` for real processes), and a clean run must have
+  dropped some.
+- `CoopIdentity_Read` returns 0 on failure, and the callers compared that with the size, so an empty identity passed
+  (`session.c:193, 309, 325` at `a69c811a`). The result: an empty hello got an ordinary refusal for every field instead
+  of the malformed one, a one-byte welcome let the client in with an empty host identity, and a four-byte refusal
+  read as a valid refusal. `Identity_ReadAll` now checks for 0 first.
+- Two CVars that change game flow were not in the table. With the level selector, `gSkipBriefing` starts the level
+  straight from the map instead of through the briefing (`src/mods/levelselect.c:115`; the menu entry is
+  `src/port/ui/ImguiUI.cpp:816`). `gCoopDebugPlayerCount` sets how many players the level has
+  (`src/port/coop/game/players.c:30`, default 1).
+- On a bad link a refused client can miss the refusal. In the virtual network (35 percent loss, seed 25 of
+  `Sim_Lossy`) all five copies of `SESSION_REFUSE` within the 3000 ms linger time were lost, at 180, 380, 780, 1580 and
+  2580 ms after the connection. The host then dropped the client, which read "The other player closed the connection."
+  Nothing got through, so the rule holds, but the player gets a worse text.
+
+**Derived**
+
+- A check that no input can make fail looks like coverage. The mutation table (`tools/coop/session_mutants.py`) is
+  there to find those, and it found a gap in `check_joined` too: the Python check did not compare the two texts of a
+  warning, only the C one did.
+- Eight changes to `session.c` cannot be seen from outside, in the plain or the sanitizer build; they are listed at
+  the top of `session_mutants.py` with the reason. Three more only show in the sanitizer build (`--asan`): a leak, a
+  read past the end of a short refusal, and an out-of-range peer index that stays inside the session struct.
+
+**Unknown**
+
+- Whether a player on such a link is better served by a longer linger time. It is a trade against a slot held by a
+  client that already gave up.
 
 ### 2026-11-05, #19 (WP-21), session handshake: build, ROM, CVars
 
