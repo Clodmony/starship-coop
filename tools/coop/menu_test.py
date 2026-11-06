@@ -2,7 +2,7 @@
 """Tests for the co-op menu (WP-25): the menu layer without a game, then the real menu in real games.
 
     python tools/coop/menu_test.py                  # build coop_menu_test, run sim and udp; no ROM needed
-    python tools/coop/menu_test.py --game           # and game, game_level: real games; needs a build with assets
+    python tools/coop/menu_test.py --game           # and the real games: game, game_level, game_level_map
     python tools/coop/menu_test.py --only game_level --no-build --exe <file>
     python tools/coop/menu_test.py --asan           # sim and udp under AddressSanitizer and UBSan; not on Windows
     python tools/coop/menu_test.py --list
@@ -11,8 +11,9 @@ sim runs src/port/coop/ui/menu.c on the real session and transport core in a vir
 checks are, of what can be chosen, of status and of ping against the transport's own numbers. udp does a shorter run over
 real sockets. game starts real games with SF64_COOP_TEST_MENU (src/port/coop/test/menu_driver.h), clicks the real ImGui
 widgets through ImGui's input queue and reads back what the window holds. game_level does the same up to the level
-start and then compares the state hash logs frame by frame, as join_test.py does. Its games play an empty replay, so no
-controller reaches them, each from other seeds, and report the level through SF64_COOP_JOIN_WATCH.
+start and then compares the state hash logs frame by frame, as join_test.py does; game_level_map has a host that went
+through the menus to the map first. Their games play a replay with no input after that, so no controller reaches them,
+each from other seeds, and report the level through SF64_COOP_JOIN_WATCH.
 
 Prints one line per scenario and a RESULT line, keeps logs in local/test-menu/<stamp>/, exits 0 only when everything
 passed. Each game gets its own folder under local/ with its own SHIP_HOME, removed when the run passed.
@@ -56,9 +57,9 @@ def expect(cond, what):
 
 class Game(join_test.LevelLog):
     """One real game with the menu driver on, in its own folder. With seeds it starts from them, gets no input and logs
-    what join_test.py compares."""
+    what join_test.py compares; press_until as in join_test.write_replay."""
 
-    def __init__(self, exe, name, out, cvars=None, seeds=None):
+    def __init__(self, exe, name, out, cvars=None, seeds=None, press_until=0):
         self.name = name
         self.run = replay.make_run_dir(exe, f"menu-{name}")
         self.commands = self.run / "menu-commands.txt"
@@ -72,8 +73,8 @@ class Game(join_test.LevelLog):
         env = replay.game_env(self.run)
         env["SF64_COOP_TEST_MENU"] = str(self.run)
         if seeds is not None:
-            join_test.write_replay(self.run / "idle.sfcr", LEVEL_REPLAY_FRAMES, seeds)
-            env.update({"SF64_COOP_REPLAY_PLAY": str(self.run / "idle.sfcr"),
+            join_test.write_replay(self.run / "input.sfcr", LEVEL_REPLAY_FRAMES, seeds, press_until)
+            env.update({"SF64_COOP_REPLAY_PLAY": str(self.run / "input.sfcr"),
                         "SF64_COOP_REPLAY_REPORT": str(self.run / "replay-report.txt"),
                         "SF64_COOP_HASH_LOG": str(self.run / "state-hash.txt"),
                         "SF64_COOP_JOIN_WATCH": "1", "SF64_COOP_JOIN_REPORT": str(self.report_path)})
@@ -296,19 +297,73 @@ def frames_logged(game):
         return sum(1 for _ in f)
 
 
+def open_windows(games):
+    for game in games:
+        game.wait(lambda g=game: "menu" in g.items, "Co-op entry in the menu bar", BOOT_SECONDS)
+        toggle_window(game)
+        game.wait_text("status", r"Not in a session\.")
+
+
+def host_session(host):
+    host.type("port", "0")
+    host.click("host")
+    return host.wait_text("status", r"Hosting on port (\d+), .* players\.").group(1)
+
+
+def check_level(games, characters):
+    """After the click: every game goes to the level and stays in the session, and the logs say it is the same level.
+    Returns the frames compared and the host's report of the level."""
+    host, *clients = games
+    for game in games:
+        game.wait_text("level", r"The level has started", LEVEL_SECONDS)
+    for game in games:
+        game.wait(lambda g=game: in_level(g), "frame in the level", LEVEL_SECONDS)
+    expect("start" not in host.items, "the host can start a level twice")
+    for game in clients:
+        expect("pick-peppy" not in game.items, "a client is offered characters in the level")
+
+    for game in games:
+        first = int(in_level(game)["frame"])
+        game.wait(lambda g=game, f=first: frames_logged(g) > f + join_test.FOUND_IN_LEVEL + 20,
+                  "frames enough in the level", LEVEL_SECONDS, every=2)
+    host.wait_text("status", rf", {len(games)} of 4 players\.")
+    for player, game in enumerate(clients, 2):
+        game.wait_text("status", rf" as player {player}\.")
+
+    for game in games:
+        game.stop()
+    running = in_level(host)
+    for game in clients:
+        join_test.check_running(game, running)
+    expect(running["level"] == str(join_test.LEVEL_CORNERIA), f"the host went to level {running['level']}")
+    expect(running["players"] == str(len(games)), f"{running['players']} players in the level")
+    expect(running["characters"] == characters, f"the game holds {running['characters']}")
+    return join_test.check_same_level(host, clients), running
+
+
+def level_run(args, games, body):
+    """body with the games running; they are stopped whatever it does, and their folders go if it passed."""
+    try:
+        return body()
+    except (Fail, join_test.Fail):
+        args.keep = True
+        raise
+    finally:
+        for game in games:
+            game.stop()
+        if not args.keep:
+            for game in games:
+                shutil.rmtree(game.run, ignore_errors=True)
+
+
 def scenario_game_level(args, exe, out):
     """Host, join and pick with nothing but the widgets, then the Start button into a level on every game."""
     host, a, b = games = [Game(exe, name, out, seeds=join_test.SEEDS[seeds])
                           for name, seeds in (("host", "host"), ("a", "client0"), ("b", "client1"))]
-    try:
-        for game in games:
-            game.wait(lambda g=game: "menu" in g.items, "Co-op entry in the menu bar", BOOT_SECONDS)
-            toggle_window(game)
-            game.wait_text("status", r"Not in a session\.")
 
-        host.type("port", "0")
-        host.click("host")
-        port = host.wait_text("status", r"Hosting on port (\d+), 1 of 4 players\.").group(1)
+    def body():
+        open_windows(games)
+        port = host_session(host)
         host.wait_item("start", enabled=True)
         join(a, port, 2)
         join(b, port, 3)
@@ -335,41 +390,35 @@ def scenario_game_level(args, exe, out):
         host.wait_item("start", enabled=True)
 
         host.click("start")
-        for game in games:
-            game.wait_text("level", r"The level has started", LEVEL_SECONDS)
-        for game in games:
-            game.wait(lambda g=game: in_level(g), "frame in the level", LEVEL_SECONDS)
-        expect("start" not in host.items, "the host can start a level twice")
-        expect("pick-peppy" not in a.items, "a client is offered characters in the level")
+        frames, running = check_level(games, "Fox,Falco,Slippy,-")
+        return f"3 games from Start: same hash on {frames} frames, {running['characters']}, seeds {running['seeds']}"
 
-        # Enough frames in the level on every game, each still in the session.
-        for game in games:
-            first = int(in_level(game)["frame"])
-            game.wait(lambda g=game, f=first: frames_logged(g) > f + join_test.FOUND_IN_LEVEL + 20,
-                      "frames enough in the level", LEVEL_SECONDS, every=2)
-        host.wait_text("status", r", 3 of 4 players\.")
-        a.wait_text("status", r" as player 2\.")
-        b.wait_text("status", r" as player 3\.")
+    return level_run(args, games, body)
 
-        for game in games:
-            game.stop()
-        running = in_level(host)
-        for game in (a, b):
-            join_test.check_running(game, running)
-        expect(running["level"] == str(join_test.LEVEL_CORNERIA), f"the host went to level {running['level']}")
-        expect(running["players"] == "3", f"{running['players']} players in the level")
-        expect(running["characters"] == "Fox,Falco,Slippy,-", f"the game holds {running['characters']}")
-        frames = join_test.check_same_level(host, [a, b])
-    except (Fail, join_test.Fail):
-        args.keep = True
-        raise
-    finally:
-        for game in games:
-            game.stop()
-        if not args.keep:
-            for game in games:
-                shutil.rmtree(game.run, ignore_errors=True)
-    return f"3 games from Start: same hash on {frames} frames, {running['characters']}, seeds {running['seeds']}"
+
+def scenario_game_level_map(args, exe, out):
+    """A host that pressed A through the menus, a client still on the title screen."""
+    host = Game(exe, "host", out, seeds=join_test.SEEDS["host"], press_until=join_test.MENU_START_FRAME - 60)
+    a = Game(exe, "a", out, seeds=join_test.SEEDS["client0"])
+    games = [host, a]
+
+    def body():
+        open_windows(games)
+        port = host_session(host)
+        join(a, port, 2)
+        a.click("pick-peppy")
+        host.wait_text("player2", r"^Player 2: Peppy")
+        host.wait(lambda: frames_logged(host) > join_test.MENU_START_FRAME, "frames enough to reach the map",
+                  LEVEL_SECONDS, every=2)
+        host.wait_item("start", enabled=True)
+        host.click("start")
+        frames, _ = check_level(games, "Fox,Peppy,-,-")
+        _, before, _ = host.rows()
+        states = {row[1] for row in before[-30:]}
+        expect(states != {join_test.GSTATE_TITLE}, f"the host was still on the title screen: game state {states}")
+        return f"host came from game state {sorted(states)}, client from the title screen: same hash on {frames} frames"
+
+    return level_run(args, games, body)
 
 
 def target(asan):
@@ -395,7 +444,7 @@ def scenario_program(mode):
     return run
 
 
-GAME_SCENARIOS = {"game": scenario_game, "game_level": scenario_game_level}
+GAME_SCENARIOS = {"game": scenario_game, "game_level": scenario_game_level, "game_level_map": scenario_game_level_map}
 SCENARIOS = {"sim": scenario_program("sim"), "udp": scenario_program("udp"), **GAME_SCENARIOS}
 
 
@@ -403,8 +452,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--only", help="comma separated scenario names")
     ap.add_argument("--list", action="store_true", help="print the scenario names and stop")
-    ap.add_argument("--game", action="store_true", help="also run game and game_level")
-    ap.add_argument("--exe", help="the game, for game and game_level; default: the newest build")
+    ap.add_argument("--game", action="store_true", help="also run the real games")
+    ap.add_argument("--exe", help="the game, for the real games; default: the newest build")
     ap.add_argument("--build-dir", type=Path, help="default: build/x64 on Windows, build-cmake elsewhere")
     ap.add_argument("--config", default="Debug", choices=["Debug", "Release", "RelWithDebInfo"])
     ap.add_argument("--no-build", action="store_true", help="use the coop_menu_test already built")

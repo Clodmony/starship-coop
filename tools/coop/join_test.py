@@ -26,7 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import hash_check  # noqa: E402
 import replay as replay_tool  # noqa: E402
 
-GSTATE_PLAY = 7  # include/sf64thread.h
+GSTATE_TITLE = 2  # include/sf64thread.h
+GSTATE_PLAY = 7
 LEVEL_CORNERIA = 0
 START_FRAME = 600  # the host starts here at the earliest; the title screen is playing
 MENU_START_FRAME = 1500  # the same for a host that has pressed A through the menus
@@ -207,7 +208,7 @@ def sc_from_the_menus(args, folder):
     check_started(host, clients, "Fox,Peppy,-,-")
     _, before, _ = host.rows()
     states = {row[1] for row in before[-30:]}
-    expect(states != {2}, f"the host was still on the title screen: game state {states}")
+    expect(states != {GSTATE_TITLE}, f"the host was still on the title screen: game state {states}")
     frames = check_same_level(host, clients)
     return f"host came from game state {sorted(states)}, client from the title screen: same hash on {frames} frames"
 
