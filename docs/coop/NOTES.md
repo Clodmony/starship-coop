@@ -50,6 +50,54 @@ Unknown:
 - Windows and macOS: none of this ran there. `SHIP_HOME` is read on Linux and macOS only
   (`libultraship/src/Context.cpp:471-486`).
 
+### 2026-11-06, #70, which test variables reach the game
+
+Identity: ROM US 1.0, on commit `95962d04`, Linux, GCC, Debug, OpenGL in software, no window.
+
+Observed, before the change, with a variable left in the shell and a replay of 120 frames unless noted:
+
+- `SF64_COOP_TRACE` through `replay.py play`: the result was `PASS`, and the game made that file outside the run folder.
+- `SF64_COOP_HASH_POKE_PLAYER=1` through `hash_check.py run` with one player: a good run failed with `poke at frame 60
+  did not change any hash`. Its poke went to a player the run does not have
+  (`src/port/coop/sync/state_hash.c:304-308`).
+- `SF64_COOP_HASH_PROBE=50` through `replay.py play --hash-log`, 3400 frames of input by rule into Corneria: 18
+  `# probe` lines in the hash log, the first at frame 3150.
+- `SF64_COOP_TEST_AUDIO_SAMPLES=low` and `SF64_COOP_TEST_NO_FMA3=1` through `player_trace.py run`: each wrote a
+  `coop: test switch` line into `logs/Starship.log`. Through `replay.py`, which already cleared them, neither did.
+- `SF64_COOP_HASH_PROBE` and `SF64_COOP_HASH_POKE_PLAYER` through `player_trace.py run`: no hash log was written, so
+  nothing could show. That tool clears `SF64_COOP_HASH_LOG`, and without it `CoopStateHash_Init` stops
+  (`src/port/coop/sync/state_hash.c:440`).
+- `player_trace.py run` on a replay that never reaches a level: the replay passes and the tool exits 1 with `empty
+  trace`, as the trace only has rows in `GSTATE_PLAY` (`src/port/coop/test/player_trace.c:15`).
+
+After the change, the same runs: no file outside the run folder, `hash: PASS` with the poke in `actors`, no test switch
+line and no `# probe` line. `hash_check.py probe --players 2` and `hash_check.py run --players 2 --poke-player 1` still
+pass, so what `env_extra` carries gets through.
+
+From the code:
+
+- The game reads ten variables with this prefix: `SF64_COOP_REPLAY_RECORD`, `_REPLAY_PLAY`, `_REPLAY_REPORT`
+  (`src/port/coop/test/replay.c:283-285`), `_HASH_LOG`, `_HASH_POKE`, `_HASH_POKE_PLAYER`, `_HASH_PROBE`
+  (`src/port/coop/sync/state_hash.c:434-437`), `_TRACE` (`src/port/coop/test/player_trace.c:31`), `_TEST_NO_FMA3` and
+  `_TEST_AUDIO_SAMPLES` (`src/port/coop/test/switches.c:21-22`).
+- No tracked script, workflow or doc sets one in a shell for a tool to pass on. The tools set `_REPLAY_*`, `_HASH_LOG`,
+  `_HASH_POKE` and `_TRACE` themselves, and pass the rest through `env_extra` (`tools/coop/hash_check.py:170`, `:274`,
+  `tools/coop/determinism.py:39-41`), which `run_game` applies last.
+- Probes run only in `GSTATE_PLAY` (`src/port/coop/sync/state_hash.c:375`), so a replay that stays on the title screen
+  shows none. That is why `replay_test.py` has no scenario for `SF64_COOP_HASH_PROBE`.
+
+Derived:
+
+- A leaked variable is not always harmless or always loud. It can leave `PASS` standing, or fail a good run with a
+  message that points somewhere else.
+- A variable added later is cleared too, as `game_env` in `tools/coop/replay.py` goes by the prefix. To reach the game
+  from a tool it has to go through `env_extra`.
+
+Unknown:
+
+- Windows and macOS: none of this ran there. `SF64_COOP_TEST_NO_FMA3` only acts on Windows x64
+  (`src/port/coop/test/switches.c:24-33`); here it only logged that it has no effect.
+
 ### 2026-11-04, #1 (WP-01), Windows build
 
 Identity: ROM US 1.0 (SHA-1 `d8b1088520f7c5f81433292a9258c1184afa1457`, `config.yml:34`), commit `ba0781d7`,

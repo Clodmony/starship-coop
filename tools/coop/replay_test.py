@@ -17,6 +17,12 @@ can only write into the decoy. That fails the scenario, and so does a run folder
 into. The decoy holds sf64.o2r, as a real install does: without it the game exits at once and writes nothing
 (src/port/Engine.cpp:78), which would hide the bug. On Linux the game runs without a window and off the GPU. Everything
 lands under local/test-*: the folders are deleted when all scenarios hold and kept for reading when one fails.
+
+The leak-* scenarios start a tool with the variables an earlier test can leave in a shell (#70). Each one shows when it
+reaches the game: a file in the decoy, a test switch line in the game's log, or a hash_check.py run that fails because
+its poke went to a player the run does not have. pass-audio is the other side: a variable a tool sets on purpose still
+gets through, and that line does show up in the log. SF64_COOP_HASH_PROBE is not among them, as it acts only in a level
+and this replay never reaches one.
 """
 import argparse
 import os
@@ -47,10 +53,13 @@ COMMANDS = {
     "replay": lambda file: ["replay.py", "play", file, "--timeout", TIMEOUT],
     "hash": lambda file: ["hash_check.py", "run", file, "--timeout", TIMEOUT],
     "det": lambda file: ["determinism.py", file, "--only", "base-2", "--timeout", TIMEOUT],
+    "det-audio": lambda file: ["determinism.py", file, "--only", "audio-low", "--timeout", TIMEOUT],
+    "trace": lambda file: ["player_trace.py", "run", file, "--players", "1", "--timeout", TIMEOUT],
 }
 
-# name: replay file, tool, wanted exit code, wanted result line and frames played (replay.py prints those two)
-Scenario = namedtuple("Scenario", "file tool code result frames")
+# name: replay file, tool, wanted exit code, wanted result line and frames played (replay.py prints those two), whether
+# the tool starts with variables left in the shell, and whether the game must log a test switch
+Scenario = namedtuple("Scenario", "file tool code result frames leak switch", defaults=(False, False))
 SCENARIOS = {
     "whole": Scenario("whole", "replay", 0, "PASS", FRAMES),
     "header-only": Scenario("header-only", "replay", 1, "FAIL_NO_FRAMES", 0),
@@ -66,7 +75,23 @@ SCENARIOS = {
     "hash-short-header": Scenario("short-header", "hash", 1, None, None),
     "det-whole": Scenario("whole", "det", 0, None, None),
     "det-header-only": Scenario("header-only", "det", 1, None, None),
+    "leak-replay": Scenario("whole", "replay", 0, "PASS", FRAMES, leak=True),
+    "leak-hash": Scenario("whole", "hash", 0, None, None, leak=True),
+    "leak-trace": Scenario("whole", "trace", 1, None, None, leak=True),  # no level in this replay: an empty trace
+    "pass-audio": Scenario("whole", "det-audio", 0, None, None, switch=True),
 }
+
+
+def left_in_shell(decoy):
+    """Variables an earlier test can leave in a shell. All of them show when they reach the game."""
+    return {
+        "SF64_COOP_TRACE": str(decoy / "trace.txt"),
+        "SF64_COOP_HASH_LOG": str(decoy / "state-hash.txt"),
+        "SF64_COOP_REPLAY_RECORD": str(decoy / "recording.sfcr"),
+        "SF64_COOP_HASH_POKE_PLAYER": "1",
+        "SF64_COOP_TEST_AUDIO_SAMPLES": "low",
+        "SF64_COOP_TEST_NO_FMA3": "1",
+    }
 
 
 class Bench:
@@ -81,13 +106,15 @@ class Bench:
             sys.exit(f"replay_test: {ARCHIVE} not found; run python tools/coop/build.py --assets first")
         self.runs = []
 
-    def tool(self, tag, command):
+    def tool(self, tag, command, leak=False):
         """Run one tool with its own decoy. Returns (exit code, output, failures seen in any run)."""
         decoy = self.folder / f"decoy-{tag}"
         decoy.mkdir()
         shutil.copy2(self.archive, decoy / ARCHIVE)
         env = dict(os.environ)
         env["SHIP_HOME"] = str(decoy)
+        if leak:
+            env.update(left_in_shell(decoy))
         if sys.platform.startswith("linux"):
             env.update(SDL_VIDEODRIVER="offscreen", SDL_AUDIODRIVER="dummy", LIBGL_ALWAYS_SOFTWARE="1",
                        GALLIUM_DRIVER="llvmpipe")
@@ -156,9 +183,15 @@ def make_replays(bench):
     return files
 
 
+def switch_logged(output):
+    """Whether a game the tool started logged a test switch (src/port/coop/test/switches.c)."""
+    logs = [ROOT / "local" / run / "logs" / "Starship.log" for run in set(RUN_FOLDER.findall(output))]
+    return any("coop: test switch" in log.read_text(encoding="utf-8", errors="replace") for log in logs if log.exists())
+
+
 def check(bench, name, scenario, files):
     """Run one scenario. Returns its failures."""
-    code, output, failures = bench.tool(name, COMMANDS[scenario.tool](str(files[scenario.file])))
+    code, output, failures = bench.tool(name, COMMANDS[scenario.tool](str(files[scenario.file])), scenario.leak)
     if code != scenario.code:
         failures.append(f"exit code {code}, want {scenario.code}")
     if scenario.result is not None:
@@ -170,6 +203,8 @@ def check(bench, name, scenario, files):
         played = int(frames[-1]) if frames else None
         if played != scenario.frames:
             failures.append(f"{played} frames played, want {scenario.frames}")
+    if switch_logged(output) != scenario.switch:
+        failures.append("game log shows a test switch" if not scenario.switch else "no test switch in the game log")
     return failures
 
 
