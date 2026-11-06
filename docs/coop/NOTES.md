@@ -2124,6 +2124,12 @@ Read at `797c678b` (origin/coop). The window is `src/port/coop/ui/menu_window.cp
   both as not measured.
 - A client only knows its round trip to the host. The roster carries no ping, so a client has no number for another
   client.
+- An open popup blocks hovering in every other window (`IsWindowContentHoverable`, `imgui.cpp:4588` in the ImGui 1.91.9b
+  that the build fetches), and `UIWidgets::WindowButton` leaves its menu open. The first run of `menu_test.py --game`
+  stopped there: the entry stayed open after the button, and a click on its label did not close it within 60 s. The
+  entry now closes itself when the button is pressed.
+- `CoopIdentity_FromGame` has now run in a game: three games of one build matched, and a fourth with `gInvincible` set
+  in its config was refused with `Setting "Invincible" (gInvincible): host 0, joining player 1.`
 
 **Derived**
 
@@ -2142,7 +2148,8 @@ Read at `797c678b` (origin/coop). The window is `src/port/coop/ui/menu_window.cp
 
 **Unknown**
 
-- How the window looks to a person at a real screen, with a real mouse and at other window sizes.
+- How the window works for a person at a real screen, with a real mouse and keyboard and at other window sizes. It has
+  only been seen in a capture of a game with no window, at 1024 by 768 on a software renderer.
 - Whether a host name that takes long to resolve is a problem in play: `CoopNetSdl_Connect` blocks on the lookup
   (`src/port/coop/net/transport.h`), and the menu calls it on the game's thread.
 
