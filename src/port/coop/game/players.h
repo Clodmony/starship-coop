@@ -32,6 +32,21 @@ int32_t CoopPlayers_IsCoop(void);
 // Index of the player this client controls and looks through. 0 for now; WP-28 makes it per client.
 int32_t CoopPlayers_LocalIndex(void);
 
+// Nonzero while player `index` is parked: allocated, but not updated, not given a camera update and not drawn.
+// In co-op, players 1 and up start parked and join when the level reaches a section that supports them.
+int32_t CoopPlayers_IsParked(int32_t index);
+
+// Call before Player_Update for player `index`; nonzero means skip it this frame. Brings a parked player in when its
+// section starts: in all-range mode, once player 0 is active (after the all-range cutscene), as a copy of player 0
+// placed beside it (WP-11). Players on rails stay parked (WP-12).
+int32_t CoopPlayers_SkipUpdate(int32_t index);
+
+// Call at the start of Player_Down. Nonzero means a co-op player other than player 0 went down: it is taken out of
+// the level and Player_Down must return, because it also stops the music, plays the "player down" theme and starts
+// the fade to a level restart for everyone. Respawn rules are WP-16.
+struct Player;
+int32_t CoopPlayers_OnPlayerDown(struct Player* player);
+
 #define COOP_PLAYERS_DEBUG_CVAR "gCoopDebugPlayerCount"
 
 #ifdef __cplusplus

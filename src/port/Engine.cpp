@@ -42,6 +42,7 @@
 #include "port/mods/PortEnhancements.h"
 #include "port/coop/test/replay.h" // COOP: input replay for tests (WP-03)
 #include "port/coop/sync/state_hash.h" // COOP: state hash log for tests (WP-04)
+#include "port/coop/test/player_trace.h" // COOP: per-frame player log for tests (WP-11)
 
 #include <Fast3D/interpreter.h>
 #include <filesystem>
@@ -306,6 +307,7 @@ void GameEngine::Create() {
     PortEnhancements_Init();
     CoopReplay_Init();    // COOP: no-op unless SF64_COOP_REPLAY_* is set (WP-03)
     CoopStateHash_Init(); // COOP: no-op unless SF64_COOP_HASH_LOG is set (WP-04)
+    CoopTrace_Init(); // COOP: no-op unless SF64_COOP_TRACE is set (WP-11)
 }
 
 void GameEngine::Destroy() {

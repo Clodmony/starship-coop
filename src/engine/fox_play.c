@@ -4930,7 +4930,7 @@ void Player_Setup(Player* playerx) {
         gLifeCount[gPlayerNum] = 2;
         gBombCount[gPlayerNum] = 3;
         gGreatFoxIntact = true;
-        if (CoopPlayers_Count() == (gPlayerNum + 1)) { // COOP: last player, was gCamCount
+        if (gCamCount == (gPlayerNum + 1)) {
             D_hud_80161720[0] = 0.0f;
             D_hud_80161720[1] = 0.0f;
             D_hud_80161720[2] = 0.0f;
@@ -5676,6 +5676,9 @@ void Play_dummy_800B41E0(Player* player) {
 }
 
 void Player_Down(Player* player) {
+    if (CoopPlayers_OnPlayerDown(player)) { // COOP: a co-op player 2+ leaves quietly, no level restart (WP-11)
+        return;
+    }
     player->state = PLAYERSTATE_DOWN;
 
     if (!gVersusMode) {
@@ -7034,6 +7037,9 @@ void Play_Update(void) {
     }
 
     for (i = 0; i < CoopPlayers_Count(); i++) { // COOP: was gCamCount
+        if (CoopPlayers_SkipUpdate(i)) {        // COOP: parked co-op player, or joining this frame (WP-11)
+            continue;
+        }
         gPlayer[i].num = gPlayerNum = i;
         Player_Update(&gPlayer[i]);
     }
@@ -7046,6 +7052,9 @@ void Play_Update(void) {
     BonusText_Update();
 
     for (i = 0; i < CoopPlayers_Count(); i++) { // COOP: was gCamCount
+        if (CoopPlayers_IsParked(i)) {          // COOP: no camera for a parked co-op player (WP-11)
+            continue;
+        }
         gPlayer[i].num = gPlayerNum = i;
         Camera_Update(&gPlayer[i]);
     }

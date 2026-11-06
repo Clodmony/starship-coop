@@ -293,8 +293,8 @@ What changed (`src/port/coop/game/players.c`, every game-side site marked `// CO
   that count comes from the debug CVar `gCoopDebugPlayerCount` (default 1, clamped to 1..4). `gCamCount` stays 1.
 - Switched to the player count, because they run once per player: allocation and init in `Play_Init`
   (`fox_play.c:2950-2953`), `Player_InitializeAll` (`fox_play.c:2610`), the "last player set up" check in
-  `Player_Setup` (`fox_play.c:4933`), the update and camera loops in `Play_Update` (`fox_play.c:7036, 7048`), the
-  sound cleanup when a level is quit (`fox_play.c:7188`), the five player draw loops in `Display_Update`
+  `Player_Setup` (`fox_play.c:4933`; back on `gCamCount` since WP-11), the update and camera loops in `Play_Update`
+  (`fox_play.c:7036, 7048`), the sound cleanup when a level is quit (`fox_play.c:7188`), the five player draw loops in `Display_Update`
   (`fox_display.c:1969-2068`), the engine noise loop (`audio_general.c:2137`) and the object RAM viewer
   (`src/mods/object_ram.c:323`).
 - After each loop in `Play_Update`, with co-op on, `gPlayerNum` is set back to `CoopPlayers_LocalIndex()` (0 for
@@ -335,6 +335,108 @@ Found later (2026-11-06, while testing WP-11 by watching a 2-player Corneria run
   stack underflowed every frame over water. Versus never reaches it (no water). Fix: one pop after the loop.
   Verified: the owner watched a 2-player run over Corneria's water, graphics normal, no assertion; 1-player replay
   still PASS. That the assertion came from this underflow is a guess; it did not come back after the fix.
+
+### 2026-11-05, #9 (WP-11), player 2 in Corneria's all-range section
+
+Observed:
+
+- Corneria's only all-range section is the Granga fight on the normal route. `Corneria_Granga_Init` switches player 0
+  alone: `gPlayer[0].state = PLAYERSTATE_START_360` (`src/overlays/ovl_i1/fox_co.c:102-110`). The cutscene
+  `Cutscene_AllRangeMode` sets `gChangeTo360` on its frame 37 (`src/engine/fox_demo.c:771-788`), and `Play_Main`
+  then sets `gLevelMode = LEVELMODE_ALL_RANGE` (`src/engine/fox_play.c`, `if (gChangeTo360)`).
+- In the recorded Corneria run (`local/replays/corneria.sfcr`, normal route), the trace shows: rails until frame
+  6454, `START_360` from 6454, mode all-range from 6493, player 0 `ACTIVE` from 6696, `LEVEL_COMPLETE` at 8621
+  (trace frames are `gGameFrameCount`, not replay frames).
+- `Player_Setup` resets level-wide state besides the player: radio (`gRadioState`, `gRadioMsgRadioId`), the start
+  screen timer, the intro flag `D_ctx_8017782C`, the music, `gPlayCamAt`/`gPlayCamEye`
+  (`src/engine/fox_play.c`, `Player_Setup`). Running it for a player who joins mid-level would disturb player 0.
+- `PLAYERSTATE_STANDBY` is not a quiet state: each frame it sets `gShowHud = false` and `gPauseEnabled = false`
+  (`src/engine/fox_play.c`, `Player_Update`, `case PLAYERSTATE_STANDBY`), so it cannot park a second player.
+- `Player` holds two pointers, `sfx.srcPos` and `sfx.srcVel` (`include/sf64player.h:159-160`). A copy of player 0
+  starts with them pointing into player 0; `Display_SetupPlayerSfxPos` (`src/engine/fox_display.c:1748`) points them
+  back at the player's own `sfxSource` and `sfxVel` on every draw (`:1977`). `gPlayer` lives for the whole level, so
+  copying one `Player` into another is safe.
+- Shots from player 1 can hit player 0. The all-range hit loop walks `gCamCount` players and only skips the shot's
+  own source (`src/engine/fox_beam.c:837`, `:855`), so a shot with `sourceId` 1 is tested against player 0, while
+  player 0's shots are never tested against player 1. Friendly fire is a game rule (#7); this does not change it.
+- `Player_Update` sets `draw = true` after `Player_Update360` (`src/engine/fox_play.c:5981`), so hiding a player from
+  inside `Player_Down` lasts only until that line.
+- The all-range camera code (`Camera_UpdateArwing360` to `Camera_Update360`) writes no globals. The starfield is set
+  from the draw code (`Camera_SetStarfieldPos`, `src/engine/fox_display.c:1940`).
+
+What changed (`src/port/coop/game/players.c`, two `// COOP:` checks in `Play_Update`):
+
+- In co-op, players 1 and up start parked: allocated but not updated, no camera update, not drawn (their `draw` flag
+  stays 0 from `Player_InitializeAll`).
+- When the level is in all-range mode and player 0 is `ACTIVE`, each parked player joins as a copy of player 0,
+  250 units to the side and 80 up per index, with the per-player arrays `Player_Setup` fills (wing health,
+  timers, laser, bombs, lives) copied from index 0. It updates from the next frame on.
+- `tools/coop/player_trace.py` and `src/port/coop/test/player_trace.c` (`SF64_COOP_TRACE`) log and check each
+  player's state and position per frame.
+- A joined player goes out (parked and hidden, `draw = 0`) as soon as player 0 is no longer `ACTIVE` or `U_TURN`
+  (level complete, down), and `Player_Down` returns early for co-op players 2+ (one `// COOP:` check), so they go
+  out instead. Out players stay out until the next `Play_Init`; respawn is a game rule (WP-16). `draw` is cleared
+  again on every frame while out, so a player that goes down is drawn for that one frame only.
+- The "last player set up" check in `Player_Setup` is back to upstream's `gCamCount` (`src/engine/fox_play.c:4933`).
+  Only player 0 runs `Player_Setup` now, so with `CoopPlayers_Count()` the check never fired, `gClearPlayerInfo`
+  stayed set, and every level start reset lives, bombs, laser and team shields: game over could not be reached.
+
+Tested (Windows 11 Home 10.0.26200, MSVC 14.44.35207, Debug, US 1.0 ROM, default graphics backend from a fresh
+config; this branch on top of WP-10 8b78fbf5, merged locally with the WP-03 replay code 070256bd for the test only):
+
+- Co-op off (count 1): Corneria replay PASS, `first_mismatch=-1`, level complete at replay frame 11747.
+- Count 2, same replay, `player_trace.py check`: PASS. Player 1 parked for all 6493 rail frames, active in all-range
+  on frame 6696 (the same frame as player 0), 3819 active frames, 41.9 units per frame on average, distance to
+  player 0 between 159 and 4347. It turned at the arena edge on its own (`U_TURN`, like player 0).
+- In the same run the replay stops matching at replay frame 9887, player 0 goes down at trace frame 11145 and the
+  level restarts from the checkpoint; player 1 is parked again after the restart.
+- Watched by the owner, 2026-11-06 (no replay, owner playing, `gCoopDebugPlayerCount = 2`), first build: player 2
+  appeared at Granga, but graphics broke over water (WP-10 bug, fixed there) and after Granga player 2 kept flying
+  during player 0's level-complete cutscene, crashed at trace frame 9941, and `Player_Down` started the fade to a
+  level restart (stopped music, "player down" theme) for everyone; the run then hit the debug assertion.
+  `Player_Down` (`src/engine/fox_play.c`) stops the BGM and plays `NA_BGM_PLAYER_DOWN` for any player outside versus.
+- Watched again with both fixes: graphics over water normal; player 2 looked normal at Granga and flew along; at
+  level complete (trace frame 8279) player 2 went out on the same frame and the cutscene ran to the end (player 0
+  `NEXT` at 9612, level left normally). No assertion. Owner's report: "Wasser ok, Spieler zwei hat normal ausgesehen
+  und ist verschwunden am Schluss."
+- Replay with the fixes: 1 player PASS (unchanged); 2 players `player_trace.py check` PASS; when player 0 went down
+  (trace frame 11145) player 1 went out on the same frame.
+
+Tested on Linux (GCC, Debug, OpenGL software rendered, no window, US 1.0 ROM, this branch on `coop`). This is not a
+recording and not the normal route: a generated replay presses A every 30 frames until Corneria starts (replay frame
+3101), then L with `gDebugJumpToAllRange` starts the all-range section.
+
+- Count 2, `player_trace.py run`: PASS. Player 1 parked for all 1779 rail frames, active on frame 1982 (the same frame
+  as player 0), 901 flying frames, 41.7 units per frame on average, never still.
+- Player 1 forced down through gdb (`shields = 0`): `check` PASS, drawn for at most one frame after going out. With the
+  `draw` line in `CoopPlayers_SkipUpdate` removed the check fails: drawn for 621 frames while parked.
+- Level complete while player 1 flies (`gDebugLevelComplete`): `check` PASS, out one frame after player 0. With the
+  leave check in `CoopPlayers_SkipUpdate` removed the check fails: flying on for 203 frames.
+- `gClearPlayerInfo` read through gdb when player 1 joins: 0. With `CoopPlayers_Count()` back in `Player_Setup`: 1.
+- Co-op off: a recording made before WP-10 (title and attract only, 4331 frames) PASS, no mismatch.
+- `tools/coop/player_trace.py` against bad traces and a fake game (crash, hang, early exit, freeze, wrong player count,
+  player flying on, hidden while flying, not parked after a restart): every case gives the expected exit code.
+
+Not covered by these runs: a level restart, enemy contact with player 1, and Windows with these fixes (build only).
+
+Derived:
+
+- Player 1 copies player 0's controller (both read `gMainController`), but from another position, so it flies a
+  different path. Its update draws random numbers, so the enemies act differently and the recorded inputs no longer
+  fit. Expected until each player has its own input (WP-14) and the run is recorded with two players. That this is
+  why player 0 goes down is a guess; shots from player 1 hitting it (above) could also play a part.
+
+Unknown:
+
+- The normal level-complete path is covered by the owner's watched run only; the replay diverges before it with 2
+  players, and the Linux run above reaches it through `gDebugLevelComplete`.
+- Whether enemies target or hit player 1: enemy and shot loops still use `gCamCount` or `gPlayer[0]`, so probably
+  not (guess). Friendly fire and targeting are game rules (WP-07, WP-16).
+- Player 1 has no engine noise: `Audio_StartPlayerNoise(gPlayerNum)` is called in `Player_Setup`
+  (`src/engine/fox_play.c:4954`), which a joining player skips. Whether it should get one is for WP-28 (sound follows
+  the local player).
+- Other all-range levels (Fortuna, Katina, Bolse, Sector Z, Venom 2) start in all-range; there player 1 would join
+  once player 0 is active after the intro. Not run.
 
 ## Determinism
 
