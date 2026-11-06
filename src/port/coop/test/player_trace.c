@@ -105,7 +105,7 @@ static Actor* CoopTrace_SteerTarget(void) {
 
 // See SF64_COOP_TRACE_STEER in player_trace.h. The shot moves by its velocity and the wingman about by its own before
 // PlayerShot_CollisionCheck, so the shot is put one step short.
-static void CoopTrace_OnGamePreUpdate(IEvent* event) {
+static void CoopTrace_OnSteerShot(IEvent* event) {
     Actor* target;
     s32 i;
 
@@ -181,6 +181,6 @@ void CoopTrace_Init(void) {
     REGISTER_LISTENER(GamePostUpdateEvent, CoopTrace_OnGamePostUpdate, EVENT_PRIORITY_NORMAL);
     if ((steer != NULL) && (atoi(steer) > 0)) {
         sSteerPeriod = atoi(steer);
-        REGISTER_LISTENER(GamePreUpdateEvent, CoopTrace_OnGamePreUpdate, EVENT_PRIORITY_NORMAL);
+        REGISTER_LISTENER(GamePreUpdateEvent, CoopTrace_OnSteerShot, EVENT_PRIORITY_NORMAL);
     }
 }
