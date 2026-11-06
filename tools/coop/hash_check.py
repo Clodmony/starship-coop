@@ -343,7 +343,7 @@ VIEW_SECTIONS = {  # name -> (frames, frame of the L press into all-range)
 
 
 def read_views(path):
-    """The camera a co-op run drew, from the "# view" lines of its log: frame -> (local index, eye)."""
+    """The camera a co-op run drew, from the "# view" lines of its log: frame -> (player looked through, eye)."""
     views = {}
     for line in Path(path).read_text(encoding="utf-8", errors="replace").splitlines():
         if line.startswith("# view "):

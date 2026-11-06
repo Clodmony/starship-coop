@@ -187,7 +187,7 @@ int32_t CoopView_InDrawnView(int32_t seen) {
 
 void CoopView_ToDrawnCamera(const Vec3f* pos, float* sfxSrc) {
     static Matrix sEars;
-    const Player* camera = &gPlayer[CoopPlayers_LocalIndex()];
+    const Player* camera = &gPlayer[CoopPlayers_ViewIndex()];
     Vec3f src;
     Vec3f dest;
 
@@ -209,7 +209,7 @@ int32_t CoopView_HitFlashAlpha(void) {
         return 0;
     }
     // As the hit did with the fill: 128 on the first frame, then 8 less on each (Player_Update, Play_UpdateFillScreen).
-    timer = gPlayer[CoopPlayers_LocalIndex()].dmgEffectTimer;
+    timer = gPlayer[CoopPlayers_ViewIndex()].dmgEffectTimer;
     return ((timer > HIT_FLASH_LAST_TIMER) && (timer < HIT_FLASH_FIRST_TIMER + 1))
                ? (timer - HIT_FLASH_LAST_TIMER) * HIT_FLASH_STEP
                : 0;
@@ -229,7 +229,7 @@ void CoopView_SeePlayer(const Player* player) {
         return;
     }
     sBarShown[i] = false;
-    sBarOn[i] = !CoopPlayers_IsLocal(i) && !CoopPlayers_IsParked(i) && player->draw;
+    sBarOn[i] = !CoopPlayers_IsViewed(i) && !CoopPlayers_IsParked(i) && player->draw;
     if (sBarOn[i]) {
         world.x = player->pos.x;
         world.y = player->pos.y;

@@ -519,7 +519,7 @@ void Game_Update(void) {
         }
 
         CoopView_BeginDraw();                // COOP (#96)
-        Game_Draw(CoopPlayers_LocalIndex()); // COOP: was 0; the same outside co-op (#96)
+        Game_Draw(CoopPlayers_ViewIndex());  // COOP: was 0; the same outside co-op (#96)
         CoopView_EndDraw();                  // COOP
 
         if (gCamCount == 2) {
@@ -567,10 +567,10 @@ void Game_Update(void) {
         if (gCamCount == 1) {
             Graphics_FillRectangle(&gMasterDisp, OTRGetRectDimensionFromLeftEdge(0), 0,
                                    OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH - 1), SCREEN_HEIGHT - 1,
-                                   gPlayerGlareReds[CoopPlayers_LocalIndex()], // COOP: the glare is per camera (#30)
-                                   gPlayerGlareGreens[CoopPlayers_LocalIndex()],
-                                   gPlayerGlareBlues[CoopPlayers_LocalIndex()],
-                                   gPlayerGlareAlphas[CoopPlayers_LocalIndex()]);
+                                   gPlayerGlareReds[CoopPlayers_ViewIndex()], // COOP: the glare is per camera (#30)
+                                   gPlayerGlareGreens[CoopPlayers_ViewIndex()],
+                                   gPlayerGlareBlues[CoopPlayers_ViewIndex()],
+                                   gPlayerGlareAlphas[CoopPlayers_ViewIndex()]);
             if ((gDrawMode == DRAW_PLAY) || (gDrawMode == DRAW_ENDING)) {
                 Radio_Draw();
                 if (gShowHud) {

@@ -137,7 +137,7 @@ void HUD_LivesCount1_Draw(f32 xPos, f32 yPos, s32 lifeCount) {
     RCP_SetupDL(&gMasterDisp, SETUPDL_78_OPTIONAL);
     gDPSetPrimColor(gMasterDisp++, 0, 0, 255, 255, 255, 255);
 
-    player = &gPlayer[CoopPlayers_LocalIndex()]; // COOP: was player 0 (#30)
+    player = &gPlayer[CoopPlayers_ViewIndex()]; // COOP: was player 0 (#30)
 
     lifeIconIdx = 0; // default
     switch (player->form) {
@@ -937,7 +937,7 @@ void HUD_DrawLevelClearScreen(void) {
 void HUD_LivesCount2_Draw(f32 x, f32 y, s32 number) {
     u8* sLivesCounterTexs[] = { aArwingLifeIconTex, aLandmasterLifeIconTex, aBlueMarineLifeIconTex };
     u16* sLivesCounterTLUTs[] = { aArwingLifeIconTLUT, aLandmasterLifeIconTLUT, aBlueMarineLifeIconTLUT };
-    Player* player = &gPlayer[CoopPlayers_LocalIndex()]; // COOP: was player 0 (#30)
+    Player* player = &gPlayer[CoopPlayers_ViewIndex()]; // COOP: was player 0 (#30)
     f32 x0;
     f32 x1;
     f32 x2;
@@ -2429,7 +2429,7 @@ void HUD_PlayerShieldGauge_Update(void) {
                 D_801617A4 = D_801617A8 = 1.0f;
             }
 
-            shields = gPlayer[CoopPlayers_LocalIndex()].shields; // COOP: was player 0 (#30)
+            shields = gPlayer[CoopPlayers_ViewIndex()].shields; // COOP: was player 0 (#30)
             D_801617AC = shields / ((256.0f * D_801617A8) - 1.0f);
 
             if (gGoldRingCount[0] >= 3) {
@@ -2467,7 +2467,7 @@ void HUD_PlayerShieldGauge_Update(void) {
 
             Math_SmoothStepToF(&D_801617A8, D_801617A4, 0.02f, 1000.0f, 0.001f);
 
-            shields = gPlayer[CoopPlayers_LocalIndex()].shields; // COOP: was player 0 (#30)
+            shields = gPlayer[CoopPlayers_ViewIndex()].shields; // COOP: was player 0 (#30)
             if (shields > (256.0f * D_801617A8) - 1.0f) {
                 shields = (256.0f * D_801617A8) - 1.0f;
             }
@@ -2861,8 +2861,8 @@ void HUD_EdgeArrows_Draw(s32 idx, bool arg1) {
 
     Matrix_Push(&gGfxMatrix);
 
-    if (gPlayer[CoopPlayers_LocalIndex()].alternateView) { // COOP: was player 0 (#30)
-        Matrix_RotateZ(gGfxMatrix, M_DTOR * gPlayer[CoopPlayers_LocalIndex()].camRoll, MTXF_APPLY);
+    if (gPlayer[CoopPlayers_ViewIndex()].alternateView) { // COOP: was player 0 (#30)
+        Matrix_RotateZ(gGfxMatrix, M_DTOR * gPlayer[CoopPlayers_ViewIndex()].camRoll, MTXF_APPLY);
     }
 
     if (D_800D1F88[idx]) {

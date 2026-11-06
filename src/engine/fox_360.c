@@ -2310,8 +2310,8 @@ void ActorAllRange_DrawBarrelRoll(ActorAllRange* this) {
         Matrix_RotateZ(gGfxMatrix, -this->obj.rot.z * M_DTOR, MTXF_APPLY);
         Matrix_RotateX(gGfxMatrix, -this->obj.rot.x * M_DTOR, MTXF_APPLY);
         // COOP: draw only, it faces the camera drawn (#30)
-        Matrix_RotateY(gGfxMatrix, M_DTOR * -this->obj.rot.y - gPlayer[CoopPlayers_LocalIndex()].camYaw, MTXF_APPLY);
-        Matrix_RotateX(gGfxMatrix, gPlayer[CoopPlayers_LocalIndex()].camPitch, MTXF_APPLY);
+        Matrix_RotateY(gGfxMatrix, M_DTOR * -this->obj.rot.y - gPlayer[CoopPlayers_ViewIndex()].camYaw, MTXF_APPLY);
+        Matrix_RotateX(gGfxMatrix, gPlayer[CoopPlayers_ViewIndex()].camPitch, MTXF_APPLY);
         Matrix_RotateZ(gGfxMatrix, gGameFrameCount * 20.0f * this->iwork[15] * M_DTOR, MTXF_APPLY);
 
         if (this->iwork[15] < 0) {

@@ -14,6 +14,7 @@ Rules, on the frames they talk about:
 
   camera-parked   while a client's own player is parked it looks through player 0: the same eye as client 0
   camera-own      while it flies, the client looks through it, and the two clients draw different cameras
+  local-index     who a client is does not change while it looks through player 0: its controller steers by this
   hud-shield      the shield gauge holds the shields of the client's own player
   hud-bombs       the bomb counter reaches the bombs of the client's own player; it may trail for the few frames of
                   its own step (HUD_BombCounter_Draw)
@@ -80,7 +81,7 @@ TIMEOUT = 1500
 
 Client = namedtuple("Client", "index rows by_frame")
 Slot = namedtuple("Slot", "state parked shields bombs lives alternate sfx pos")
-Row = namedtuple("Row", "frame mode view eye at shield bombs cockpit fill flash bars players noise paused sfx")
+Row = namedtuple("Row", "frame mode local view eye at shield bombs cockpit fill flash bars players noise paused sfx")
 
 
 def floats(text):
@@ -98,7 +99,7 @@ def parse_row(line):
         i += 1
     bars = {} if f["bars"] == "-" else {int(b.split(":")[0]): float(b.split(":")[1]) for b in f["bars"].split(",")}
     sfx = [] if f["sfx"] == "-" else [(int(s.split("@")[0], 16), s.split("@")[1]) for s in f["sfx"].split(",")]
-    return Row(int(f["frame"]), int(f["mode"]), int(f["view"]), floats(f["eye"]), floats(f["at"]), float(f["shield"]),
+    return Row(int(f["frame"]), int(f["mode"]), int(f["local"]), int(f["view"]), floats(f["eye"]), floats(f["at"]), float(f["shield"]),
                int(f["bombs"]), int(f["cockpit"]) != 0, tuple(int(v) for v in f["fill"].split(",")), int(f["flash"]),
                bars, players, tuple(int(v) for v in f["noise"].split(",")), int(f["pause"]) != 0, sfx)
 
@@ -149,6 +150,14 @@ def rule_camera_own(clients):
     apart = sum(1 for a, b in frames if a.eye != b.eye)
     good = apart >= len(frames) * 0.9 and not wrong
     return good, f"view right on {len(frames) - len(wrong)} of {len(frames)} frames, cameras differ on {apart}"
+
+
+def rule_local_index(clients):
+    wrong = [(client.index, row.frame, row.local) for client in clients for row in client.rows
+             if row.local != client.index]
+    parked = sum(1 for row in clients[1].rows if not joined(row))
+    detail = f"client 1 stays player 1 on all its frames, {parked} of them parked"
+    return not wrong, detail if not wrong else "first wrong: client {} frame {} says {}".format(*wrong[0])
 
 
 def rule_hud_shield(clients):
@@ -311,6 +320,7 @@ RULES = {
     "rails": {
         "camera-parked": rule_camera_parked,
         "camera-own": rule_camera_own,
+        "local-index": rule_local_index,
         "hud-shield": rule_hud_shield,
         "hud-bombs": rule_hud_bombs,
         "cockpit": rule_cockpit,
@@ -323,6 +333,7 @@ RULES = {
     "all-range": {
         "camera-parked": rule_camera_parked,
         "camera-own": rule_camera_own,
+        "local-index": rule_local_index,
         "hud-shield": rule_hud_shield,
         "shield-bar": rule_shield_bar,
         "sound-engine": rule_sound_engine,

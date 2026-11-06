@@ -104,9 +104,9 @@ static void CoopViewTrace_OnGamePostUpdate(IEvent* event) {
         return;
     }
 
-    fprintf(sFile, "frame=%d level=%d mode=%d view=%d eye=%.1f,%.1f,%.1f at=%.1f,%.1f,%.1f", gGameFrameCount,
-            gCurrentLevel, gLevelMode, CoopPlayers_LocalIndex(), gPlayCamEye.x, gPlayCamEye.y, gPlayCamEye.z,
-            gPlayCamAt.x, gPlayCamAt.y, gPlayCamAt.z);
+    fprintf(sFile, "frame=%d level=%d mode=%d local=%d view=%d eye=%.1f,%.1f,%.1f at=%.1f,%.1f,%.1f", gGameFrameCount,
+            gCurrentLevel, gLevelMode, CoopPlayers_LocalIndex(), CoopPlayers_ViewIndex(), gPlayCamEye.x, gPlayCamEye.y,
+            gPlayCamEye.z, gPlayCamAt.x, gPlayCamAt.y, gPlayCamAt.z);
     fprintf(sFile, " shield=%.4f bombs=%d cockpit=%d fill=%d,%d,%d,%d flash=%d", D_801617AC, sHudBombCount,
             sDrawCockpit, gFillScreenRed, gFillScreenGreen, gFillScreenBlue, gFillScreenAlpha,
             CoopView_HitFlashAlpha());

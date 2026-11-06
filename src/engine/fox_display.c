@@ -64,7 +64,7 @@ void Display_DrawHelpAlert(void) {
     }
 
     if ((gTeamHelpTimer & 4) == 0) {
-        const Player* coopCamera = &gPlayer[CoopPlayers_LocalIndex()]; // COOP: was player 0, draw only (#30)
+        const Player* coopCamera = &gPlayer[CoopPlayers_ViewIndex()]; // COOP: was player 0, draw only (#30)
 
         Matrix_RotateY(gCalcMatrix, coopCamera->camYaw, MTXF_NEW);
         Matrix_RotateX(gCalcMatrix, coopCamera->camPitch, MTXF_APPLY);
@@ -726,7 +726,7 @@ void Display_CockpitGlass(void) {
 
     Matrix_Push(&gGfxMatrix);
 
-    Matrix_Copy(gGfxMatrix, &D_display_80161418[CoopPlayers_LocalIndex()]); // COOP: was player 0 (#30)
+    Matrix_Copy(gGfxMatrix, &D_display_80161418[CoopPlayers_ViewIndex()]); // COOP: was player 0 (#30)
     Matrix_Translate(gGfxMatrix, 0.0f, D_display_800CA290, D_display_800CA294, MTXF_APPLY);
     Matrix_Scale(gGfxMatrix, D_display_800CA28C, D_display_800CA28C, D_display_800CA28C, MTXF_APPLY);
     Matrix_SetGfxMtx(&gMasterDisp);
@@ -761,7 +761,7 @@ void Display_Arwing(Player* player, s32 reflectY) {
 
     // COOP: only the player this client looks through has a cockpit; to the others it stays an Arwing (#30)
     if (player->alternateView && (gLevelMode == LEVELMODE_ON_RAILS) &&
-        (fabsf(player->trueZpos + gPathProgress - player->cam.eye.z) < 10.0f) && CoopPlayers_IsLocal(player->num)) {
+        (fabsf(player->trueZpos + gPathProgress - player->cam.eye.z) < 10.0f) && CoopPlayers_IsViewed(player->num)) {
         if (reflectY == 0) {
             sDrawCockpit = true;
             Matrix_Push(&gGfxMatrix);
@@ -1718,7 +1718,7 @@ void Display_LockOnIndicator(void) {
 
     for (i = 0; i < gCamCount; i++) {
         // COOP: slot 0 is player 0's lock-on, which only its own client shows (#30)
-        if ((gLockOnTargetViewPos[i].z < 0.0f) && CoopPlayers_IsLocal(i)) {
+        if ((gLockOnTargetViewPos[i].z < 0.0f) && CoopPlayers_IsViewed(i)) {
             var_fs0 = VEC3F_MAG(&gLockOnTargetViewPos[i]);
             if (var_fs0 < 20000.0f) {
                 FrameInterpolation_RecordOpenChild("LockOnIndicator", i);
@@ -1947,7 +1947,7 @@ void Display_Update(void) {
     tempVec.z = 0.0f;
     Matrix_MultVec3f(gCalcMatrix, &tempVec, &playerCamUp);
     if (gStarCount != 0) {
-        gStarfieldRoll = DEG_TO_RAD(gPlayer[CoopPlayers_LocalIndex()].camRoll); // COOP: was player 0 (#30)
+        gStarfieldRoll = DEG_TO_RAD(gPlayer[CoopPlayers_ViewIndex()].camRoll); // COOP: was player 0 (#30)
         Camera_SetStarfieldPos(gPlayCamEye.x, gPlayCamEye.y, gPlayCamEye.z, gPlayCamAt.x, gPlayCamAt.y, gPlayCamAt.z);
         Background_DrawStarfield();
     }

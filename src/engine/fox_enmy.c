@@ -85,7 +85,7 @@ void Object_PlayerSfx(f32* pos, u32 sfxId, s32 playerNum) {
     PRINTF("center_X        %f\n");
     PRINTF("Enm->obj.pos.x  %f\n");
     if (!gVersusMode) {
-        if (CoopPlayers_IsLocal(playerNum)) { // COOP: every caller is a sound of that one player (#30)
+        if (CoopPlayers_IsViewed(playerNum)) { // COOP: every caller is a sound of that one player (#30)
             AUDIO_PLAY_SFX(sfxId, gDefaultSfxSource, 4);
         }
     } else {

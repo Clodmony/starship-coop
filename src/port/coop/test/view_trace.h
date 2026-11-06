@@ -4,7 +4,8 @@
 //
 // Off unless SF64_COOP_VIEW_TRACE names a file. tools/coop/view_check.py reads it. Each line, after the frame is drawn:
 //
-//   frame=<gGameFrameCount> level=<gCurrentLevel> mode=<gLevelMode> view=<CoopPlayers_LocalIndex>
+//   frame=<gGameFrameCount> level=<gCurrentLevel> mode=<gLevelMode> local=<CoopPlayers_LocalIndex>
+//   view=<CoopPlayers_ViewIndex>
 //   eye=<x>,<y>,<z> at=<x>,<y>,<z>      the camera this client drew
 //   shield=<fraction> bombs=<n>         what the HUD holds for its shield gauge and bomb counter
 //   cockpit=<0|1>                       the cockpit glass is drawn

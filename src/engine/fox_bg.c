@@ -727,7 +727,7 @@ void Background_DrawBackdrop(void) {
                             Matrix_Scale(gGfxMatrix, 11.0f, 11.0f, 1.0f, MTXF_APPLY);
                             // COOP: backdrop, the camera drawn (#30)
                             Matrix_RotateZ(gGfxMatrix,
-                                           (gPlayer[CoopPlayers_LocalIndex()].camRoll + (gGameFrameCount * 1.5f)) *
+                                           (gPlayer[CoopPlayers_ViewIndex()].camRoll + (gGameFrameCount * 1.5f)) *
                                                M_DTOR,
                                            MTXF_APPLY);
                             Matrix_SetGfxMtx(&gMasterDisp);
@@ -738,7 +738,7 @@ void Background_DrawBackdrop(void) {
                                 Matrix_Scale(gGfxMatrix, 10.0f, 10.0f, 1.0f, MTXF_APPLY);
                                 // COOP: as above
                                 Matrix_RotateZ(gGfxMatrix,
-                                               (gPlayer[CoopPlayers_LocalIndex()].camRoll + (gGameFrameCount * -1.3f)) *
+                                               (gPlayer[CoopPlayers_ViewIndex()].camRoll + (gGameFrameCount * -1.3f)) *
                                                    M_DTOR,
                                                MTXF_APPLY);
                                 Matrix_SetGfxMtx(&gMasterDisp);
@@ -810,7 +810,7 @@ void Background_DrawBackdrop(void) {
 
                     sp13C = Math_ModF(sp13C, 7280.0f);
 
-                    f32 corneriaCamYawDeg = Math_RadToDeg(gPlayer[CoopPlayers_LocalIndex()].camYaw); // COOP (#30)
+                    f32 corneriaCamYawDeg = Math_RadToDeg(gPlayer[CoopPlayers_ViewIndex()].camYaw); // COOP (#30)
                     if (gLevelMode == LEVELMODE_ON_RAILS) {
                         if (corneriaCamYawDeg < 180.0f) {
                             sp13C = -(7280.0f - sp13C);
@@ -873,8 +873,8 @@ void Background_DrawBackdrop(void) {
         case LEVELTYPE_SPACE:
             if (gPlayer[0].state != PLAYERSTATE_ENTER_WARP_ZONE) {
                 Matrix_Push(&gGfxMatrix);
-                camYawDeg = Math_RadToDeg(gPlayer[CoopPlayers_LocalIndex()].camYaw); // COOP: as above
-                sp130 = Math_RadToDeg(gPlayer[CoopPlayers_LocalIndex()].camPitch);
+                camYawDeg = Math_RadToDeg(gPlayer[CoopPlayers_ViewIndex()].camYaw); // COOP: as above
+                sp130 = Math_RadToDeg(gPlayer[CoopPlayers_ViewIndex()].camPitch);
                 if (((camYawDeg < 110.0f) || (camYawDeg > 260.0f)) && ((sp130 < 40.0f) || (sp130 > 325.0f))) {
                     RCP_SetupDL_36();
                     bgXpos = gStarfieldX; /* @port. Range: 0.0f - 960.0f */
@@ -1226,7 +1226,7 @@ Vtx dynaFloor2Vtx[17 * 17];
 #endif
 
 void AllRangeGround_Draw(void) {
-    const Player* coopCamera = &gPlayer[CoopPlayers_LocalIndex()]; // COOP: the tiles around the camera drawn (#30)
+    const Player* coopCamera = &gPlayer[CoopPlayers_ViewIndex()]; // COOP: the tiles around the camera drawn (#30)
 
     for (int i = 0; i < ARRAY_COUNT(sGroundPositions360x_FIX); i++) {
         const f32 maxDistZ = 0.0f;
@@ -1337,7 +1337,7 @@ void Background_DrawGround(void) {
     f32 temp_fa0;
 
     // COOP: the camera drawn; #96 clears xPath in co-op, so skipping this changes nothing the simulation reads (#30)
-    if ((gCurrentLevel != LEVEL_VENOM_2) && ((gPlayer[CoopPlayers_LocalIndex()].cam.eye.y > 4000.0f) || !gDrawGround)) {
+    if ((gCurrentLevel != LEVEL_VENOM_2) && ((gPlayer[CoopPlayers_ViewIndex()].cam.eye.y > 4000.0f) || !gDrawGround)) {
         return;
     }
     if ((gCurrentLevel == LEVEL_BOLSE) && gBolseDynamicGround) {

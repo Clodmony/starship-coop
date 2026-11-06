@@ -60,18 +60,22 @@ int32_t CoopPlayers_IsCoop(void) {
 }
 
 int32_t CoopPlayers_LocalIndex(void) {
-    if (!CoopPlayers_IsCoop() || (sLocalIndex >= CoopPlayers_Count()) || (sSlot[sLocalIndex] != COOP_SLOT_JOINED)) {
+    if (!CoopPlayers_IsCoop() || (sLocalIndex >= CoopPlayers_Count())) {
         return 0;
     }
     return sLocalIndex;
 }
 
-int32_t CoopPlayers_IsLocal(int32_t index) {
-    return !CoopPlayers_IsCoop() || (index == CoopPlayers_LocalIndex());
+int32_t CoopPlayers_ViewIndex(void) {
+    return CoopPlayers_IsParked(CoopPlayers_LocalIndex()) ? 0 : CoopPlayers_LocalIndex();
+}
+
+int32_t CoopPlayers_IsViewed(int32_t index) {
+    return !CoopPlayers_IsCoop() || (index == CoopPlayers_ViewIndex());
 }
 
 int32_t CoopPlayers_HudIndex(void) {
-    return CoopPlayers_IsCoop() ? CoopPlayers_LocalIndex() : gPlayerNum;
+    return CoopPlayers_IsCoop() ? CoopPlayers_ViewIndex() : gPlayerNum;
 }
 
 void CoopPlayers_SetLocalIndex(int32_t index) {

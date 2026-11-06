@@ -29,14 +29,19 @@ int32_t CoopPlayers_Count(void);
 // Nonzero when more players are simulated than cameras rendered, which only co-op does.
 int32_t CoopPlayers_IsCoop(void);
 
-// Index of the player this client looks through: what Game_Draw draws. Always 0 outside co-op, when the index asked for
-// is not a player of this level, and while that player is parked: before it joins, in a cut, after it went down, a
-// client watches player 0. The simulation never reads it: outside Game_Draw gPlayerNum is 0 or the player being updated
-// (src/port/coop/game/view.h).
+// Index of this client's own player, parked or not: who it is, so who its controller steers. Always 0 outside co-op,
+// and when the index asked for is not a player of this level. For what a client sees and hears use
+// CoopPlayers_ViewIndex.
 int32_t CoopPlayers_LocalIndex(void);
 
-// Nonzero when what player `index` does is for this client's eyes and ears: its own player in co-op, always outside it.
-int32_t CoopPlayers_IsLocal(int32_t index);
+// Index of the player this client looks through: what Game_Draw draws, and what its camera, HUD and sound follow. The
+// local player while it flies; while that is parked, before it joins, in a cut or after it went down, player 0. The
+// simulation never reads it: outside Game_Draw gPlayerNum is 0 or the player being updated (src/port/coop/game/view.h).
+int32_t CoopPlayers_ViewIndex(void);
+
+// Nonzero when what player `index` does is for this client's eyes and ears: the player it looks through in co-op,
+// always outside it.
+int32_t CoopPlayers_IsViewed(int32_t index);
 
 // The player whose numbers the HUD shows. gPlayerNum stays 0 for the HUD in co-op, because the HUD also writes the
 // simulation (lives, the bomb limit, the pause menu), so what it only shows comes from here. gPlayerNum outside co-op.
