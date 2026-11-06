@@ -21,7 +21,8 @@ The source is changed in place, because that file is what the coop_net_test targ
 
 - The original is kept in local/test-mutants/net_core.c.orig until it is restored.
 - If a run was killed, the next run restores the original first, but only when the source still holds a text a run
-  wrote. Anything else is someone's edit: the run stops and leaves both files for you to compare.
+  wrote. Anything else is someone's edit: the run stops and leaves both files for you to compare. Until then --check,
+  and so check.py and build.py, fails, because the source may still hold a break.
 - If the source changes during a run, the run stops and leaves the file as it finds it. Do not edit net_core.c while
   a run is going.
 - Only one run at a time; a second one stops at once.
@@ -194,8 +195,11 @@ class Runner:
         cmd = [sys.executable, "-I", str(NET_TEST), "--no-build", "--only", ",".join(tests),
                "--build-dir", str(self.build_dir), "--config", self.args.config, "--seeds", str(self.args.seeds),
                "--out", str(folder)]
-        proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                              timeout=self.args.timeout)
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                  timeout=self.args.timeout)
+        except subprocess.TimeoutExpired:
+            raise Stop(f"{label}: net_test.py took longer than {self.args.timeout} s")
         (self.out / f"{label}.txt").write_text(proc.stdout + proc.stderr, encoding="utf-8")
         results, details = {}, {}
         for line in proc.stdout.splitlines():
@@ -272,7 +276,13 @@ def main():
         return 0
 
     if args.check:
-        # Never write here: check.py may run while a full run has the source broken. The backup is the real source.
+        # Never write here: check.py may run while a full run has the source broken. The backup is the real source
+        # then. With no run holding the lock, a backup means a killed run, and the source may still hold a break.
+        lock = take_lock() if BACKUP.exists() else None
+        if lock is not None:
+            print(f"RESULT: FAILED, a run did not finish and {SOURCE.name} may still hold a break; "
+                  f"run net_mutants.py to restore it")
+            return 2
         text = BACKUP.read_bytes().decode("utf-8") if BACKUP.exists() else read_source()
     else:
         lock = take_lock()  # kept until the process ends
@@ -312,7 +322,7 @@ def main():
     lines = []
     survived = []
     mutated = False
-    disturbed = False
+    problem = None
 
     def report(line):
         print(line, flush=True)
@@ -364,16 +374,16 @@ def main():
             BACKUP.unlink()
             ok, why = runner.build("restored")
             if not ok:
-                report(f"warning: the restored source {why}; rebuild coop_net_test before you trust it")
+                problem = f"the restored source {why}; rebuild coop_net_test before you trust it"
         else:
-            disturbed = True
+            problem = "the source changed during the run"
             report(f"warning: {SOURCE.name} changed during the run, so it was left as it is. It may still hold a break: "
                    f"compare it with {BACKUP.relative_to(ROOT).as_posix()}, then delete that backup")
         (out / "summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
         print(f"logs: {out}")
 
-    if disturbed:
-        report("RESULT: FAILED, the source changed during the run")
+    if problem:
+        report(f"RESULT: FAILED, {problem}")
         (out / "summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
         return 1
 
