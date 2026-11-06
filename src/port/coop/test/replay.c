@@ -11,6 +11,7 @@
 // only valid for the same build on the same platform.
 
 #include "replay.h"
+#include "switches.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -269,6 +270,9 @@ void CoopReplay_Init(void) {
     const char* recordPath = getenv("SF64_COOP_REPLAY_RECORD");
     const char* playPath = getenv("SF64_COOP_REPLAY_PLAY");
     const char* reportPath = getenv("SF64_COOP_REPLAY_REPORT");
+
+    // Test switches (WP-02) apply before the first game frame, with or without a replay.
+    CoopTestSwitches_Init();
 
     if ((reportPath != NULL) && (reportPath[0] != '\0')) {
         sReportPath = reportPath;

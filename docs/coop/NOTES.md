@@ -323,6 +323,85 @@ Unknown:
 - `gScenery360` is only hashed in `LEVELMODE_ALL_RANGE`; Andross allocates it mid-level
   (`src/overlays/ovl_i6/fox_andross.c:4055`), where it may not be hashed.
 
+### 2026-11-04, #2 (WP-02), determinism spike on one PC
+
+Identity: ROM US 1.0, branch `issue/2-determinism` on top of `e8c4e6a2` (#40), Windows 11, MSVC 19.44 (VS 2022 Build
+Tools), Debug, DirectX 11 unless a run says otherwise. One PC: the comparison across two machines is not done.
+
+Observed (code):
+
+- **Order within one frame:** `push_frame` (`src/port/Game.cpp:23-30`) runs `Graphics_ThreadUpdate`, which does the
+  whole game update and then `Audio_Update` (`src/sys/sys_main.c:232-281`). Only after that does it wake the audio
+  thread (`StartAudioFrame`) and wait for it (`EndAudioFrame`, `src/port/Engine.cpp:420-435`). Game logic and audio
+  never run at the same time.
+- Per game frame the audio thread renders `gVIsPerFrame` audio updates (`src/port/Engine.cpp:383`, `:399-402`). Each
+  update first advances the sequences by a fixed `ticksPerUpdate` (`src/audio/audio_synthesis.c:665-668`). Only then
+  does it render a sample count picked from the output device's fill level: 560 or 528 at 32 kHz
+  (`src/port/Engine.cpp:349-350`, `:387-388`). That fill level depends on wall-clock time.
+- Game logic reads audio state: the radio waits for the voice sequence (`Audio_GetCurrentVoice`,
+  `Audio_GetCurrentVoiceStatus` in `src/engine/fox_radio.c:615-645`, `src/overlays/ovl_menu/fox_map.c:6014`, `:6045`;
+  defined in `src/audio/audio_general.c:1890-1925`). `Audio_GetCurrentVoiceStatus` checks whether the voice layer
+  still holds a note.
+- `gAudioRandom` mixes in `osGetCount()` (`src/audio/audio_thread.c:87`, `:165`). It is only read in `src/audio/`
+  (sound pitch, `src/audio/audio_general.c:499`, `:2000-2001`).
+- Clock reads that can reach the simulation: `Rand_Init` (`src/sys/sys_math.c:15-18`; the replay restores the seeds)
+  and the boot logo timer (`src/engine/fox_game.c:402`, see #3). `osGetTime` in `src/engine/fox_versus.c:1657` is
+  versus mode only. No other `osGetTime`, `osGetCount`, `SDL_GetTicks`, `rand()` or `<chrono>` in `src/engine`,
+  `src/overlays` or `src/sys` outside `sys_fault.c` (searched with grep).
+- The Linux and Switch re-seed in `Rand_ZeroOne` checks `sRandSeed2` twice and `sRandSeed3` never
+  (`src/sys/sys_math.c:24`). Seeding from the clock in the middle of a level breaks lockstep on those platforms.
+- `__sinf` and `__cosf` (and so `SIN_DEG`/`COS_DEG`) call the C runtime's `sinf` and `cosf`
+  (`src/port/Engine.cpp:664-677`). On Windows x64 the MSVC runtime picks an FMA3 code path when the CPU has one;
+  `_get_FMA3_enable()` returned 1 on this PC.
+- Game code reads gameplay CVars such as `gRapidFire`, `gInvincible`, `gUnbreakableWings`, `gForceExpertMode`,
+  `gSzActorFix`, `gMaCameraFix` and `gRestoreBetaBombExplosion`
+  (`grep -rn 'CVarGetInteger("g' src/engine src/overlays src/sys`). Clients that differ in any of them simulate
+  different games.
+- The state hash log was flushed only every 60 frames (`src/port/coop/sync/state_hash.c`, WP-04). When a test tool
+  stopped the game right after the replay report, the end of the log was lost. Under load this happened in 2 of 7 runs
+  (1237 of 1251 lines). It is fixed now: the log is flushed every frame.
+
+Observed (runs, `python tools/coop/determinism.py <replay>`, build `e8c4e6a2` plus this branch's changes):
+
+- The script plays one replay with the state hash in fresh folders under `local/`, first once alone (`base`), then six
+  runs at the same time: `base-2` (defaults again), `opengl`, `window` (1280x960, vsync off, interpolation 144 fps),
+  `audio-low` and `audio-high` (fixed sample count per audio update), and `no-fma3`. Every run is compared with `base`
+  on every recorded frame.
+- The switches took effect: each game log shows `coop: test switch: FMA3 in the C runtime math functions 1 -> 0`,
+  `... audio samples per update high 528, low 528` or `... high 560, low 560`. The `opengl` and `window` settings
+  were in the run folder's `starship.cfg.json` (backend id 1; 1280x960, `gVsyncEnabled` 0, `gInterpolationFPS` 144).
+  The game log does not name the backend.
+- `local/replays/smoke-idle.sfcr` (1251 frames: title, intro, attract demo): 6/6 variants equal to base, 99 s.
+- `local/replays/corneria.sfcr` (13545 frames: menus, all of Corneria, map): **6/6 variants equal to base on all
+  13545 frames**, every replay `PASS`, 1040 s. `base` alone took 457 s. With six runs at once each took 464 to 484 s,
+  and `window` took 582 s.
+
+Derived:
+
+- On one PC and one build, the hashed state of a full Corneria run depends only on inputs and seeds. Five things that
+  differ between machines did not change it: start time, CPU load, graphics backend, window and frame pacing, and
+  the audio device's timing. This includes the radio, whose logic reads audio state (`gRadioState` and
+  `gRadioMsgId` are hashed).
+- Turning off the runtime's FMA3 path did not change any hashed value either. A CPU without FMA3 therefore probably
+  plays the same game as this one, at least for `sinf` and `cosf` in Corneria. No other CPU was involved.
+- For decision 0002 this is the result option A needs on one machine. Lockstep also requires: equal gameplay CVars on
+  every client, a session start after boot (#3), and no mid-level re-seed on Linux (`src/sys/sys_math.c:24`).
+
+Guess:
+
+- Sample count does not matter because sequences advance per audio update, not per sample
+  (`src/audio/audio_synthesis.c:665-668`). Whether a voice layer still holds a note would then also follow from the
+  sequence ticks. Not checked in the audio code beyond that loop.
+
+Unknown:
+
+- A second PC with the same build (another CPU model, another driver), the actual "two machines" half of #2.
+- Other levels: only Corneria (on-rails) was played. All-range levels, the Landmaster and Blue Marine, bosses and
+  Andross (`gScenery360` allocated mid-level, see #4) are not covered.
+- Release builds, other compilers (GCC, Clang) and cross-platform play (Windows against Linux).
+- Whether the MSVC runtime's FMA3 path gives other results than the non-FMA3 path at all, or the two agree bit for
+  bit by design. Either way the run shows no difference for this replay.
+
 ## Networking
 
 ### 2026-11-05, #18 (WP-20), UDP transport

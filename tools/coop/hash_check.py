@@ -76,8 +76,9 @@ def replay_frame_count(replay):
     return (len(data) - 40) // frame_size if frame_size else 0
 
 
-def play(replay, exe, timeout, tag, poke=None):
-    values, run, elapsed = replay_tool.run_game("play", replay, exe, timeout, hash_log=True, poke=poke, tag=tag)
+def play(replay, exe, timeout, tag, poke=None, env_extra=None, config=None):
+    values, run, elapsed = replay_tool.run_game("play", replay, exe, timeout, hash_log=True, poke=poke, tag=tag,
+                                                env_extra=env_extra, config=config)
     log = run / "state-hash.txt"
     result = values.get("result") if values else "NO_REPORT"
     print(f"hash: run {tag}: replay {result}, {elapsed:.0f}s, log {log}")
