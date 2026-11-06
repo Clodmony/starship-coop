@@ -161,6 +161,72 @@ Observed: see DESIGN.md section 2 (player array, `gCamCount`, object arrays, RNG
 
 Unknown: everything listed in DESIGN.md section 2, "Unknown".
 
+### 2026-11-05, #8 (WP-10), player count apart from camera count
+
+Observed:
+
+- `gCamCount` means two things. It is the number of players and cameras, and in about 25 places it is also the
+  versus flag: `gCamCount != 1` or `gCamCount == 4` turns on player-vs-player hits, the versus HUD, no radio, no
+  positional sound and arena wrapping (list in `docs/coop/audit/sp-verdicts.tsv` from WP-05, rows with `gCamCount`).
+  So co-op cannot just set `gCamCount = 2`.
+- Outside versus, every player reads the main controller: `Player_Update` sets `gInputPress` from
+  `gControllerPress[gMainController]` unless `gVersusMode` (`src/engine/fox_play.c:5884-5891`). A second player
+  copies the first player's input until WP-14 gives it its own input source.
+- `Play_Update` leaves `gPlayerNum` at the last player after its update loops (`src/engine/fox_play.c:7036-7053`).
+  In versus that is fine; with more players than cameras, code after the loop would act for the last player.
+- The per-player arrays have 4 slots (`gPlayerGlareAlphas[4]`, `gPlayerScores[4]`, `gControllerRumbleTimers[4]`,
+  `gVsLockOnTimers[4][4]`, `include/sf64context.h:124-293`), so the player count is capped at 4.
+
+What changed (`src/port/coop/game/players.c`, every game-side site marked `// COOP:`):
+
+- `CoopPlayers_Count()` is the player count. With `gCamCount != 1` (versus) it returns `gCamCount`; in the campaign
+  it returns the count fixed by `CoopPlayers_LevelInit()` in `Play_Init`. Until the session exists (WP-21, WP-24)
+  that count comes from the debug CVar `gCoopDebugPlayerCount` (default 1, clamped to 1..4). `gCamCount` stays 1.
+- Switched to the player count, because they run once per player: allocation and init in `Play_Init`
+  (`fox_play.c:2950-2953`), `Player_InitializeAll` (`fox_play.c:2610`), the "last player set up" check in
+  `Player_Setup` (`fox_play.c:4933`), the update and camera loops in `Play_Update` (`fox_play.c:7036, 7048`), the
+  sound cleanup when a level is quit (`fox_play.c:7188`), the five player draw loops in `Display_Update`
+  (`fox_display.c:1969-2068`), the engine noise loop (`audio_general.c:2137`) and the object RAM viewer
+  (`src/mods/object_ram.c:323`).
+- After each loop in `Play_Update`, with co-op on, `gPlayerNum` is set back to `CoopPlayers_LocalIndex()` (0 for
+  now; WP-28 makes it per client).
+- Left on `gCamCount` on purpose: every versus check, the loops inside `if (gVersusMode)`, viewports
+  (`fox_game.c`), lock-on indicators and target positions (`Display_LockOnIndicator`, `fox_edisplay.c:1272`), radar
+  marks (`HUD_RadarMarks_Setup`) and player-shot hits on players (`PlayerShot_CollisionCheck`, `fox_beam.c:837`).
+  Those are view (WP-28) or game rules (friendly fire, WP-07 and WP-16).
+
+Tested (Windows 11 Home 10.0.26200, MSVC 14.44.35207, Debug, US 1.0 ROM, default graphics backend from a fresh
+config; work on top of `coop` 1ec6c677, merged locally with the WP-03 replay code 070256bd for the test only):
+
+- `gCoopDebugPlayerCount` unset (co-op off): `tools/coop/replay.py play` of a recorded Corneria run (13545 frames,
+  recorded on the pre-WP-10 build) gave PASS, `first_mismatch=-1`, level complete at frame 11747, same as the
+  recording.
+- `gCoopDebugPlayerCount = 2`, same replay: the game kept running for all 13545 frames and after, no crash. First
+  checkpoint mismatch at frame 4926, where only the RNG seeds differed and player 1's position still matched. The
+  level was not completed; the run was stopped after 600 s.
+
+Derived:
+
+- The second player's update draws random numbers, so the RNG drifts as soon as it is in the level. That is
+  expected and why the mismatch shows up in the seeds first.
+
+Unknown:
+
+- What player 2 does in Corneria with this change: where it spawns, whether it is drawn where expected, why the
+  run with 2 players did not reach level complete. That is WP-11 (all-range) and WP-12 (on-rails).
+- Whether `Camera_Update` for player 2 writes globals that the local camera reads (WP-28).
+- `gCoopDebugPlayerCount` changes the simulation, so it belongs in the sim CVar list of WP-21 once both are merged.
+
+Found later (2026-11-06, while testing WP-11 by watching a 2-player Corneria run):
+
+- Over water the graphics broke, and the run later ended in an MSVC debug assertion (`back() called on empty
+  vector`, in `<vector>`). Cause: in `Display_Update` the loop that draws reflected player features over water pushes
+  the matrix once before the loop but popped once per player inside it (`src/engine/fox_display.c`, the
+  `gGroundSurface == SURFACE_WATER` block after `Effect_Draw`). With one player that balances; with two the matrix
+  stack underflowed every frame over water. Versus never reaches it (no water). Fix: one pop after the loop.
+  Verified: the owner watched a 2-player run over Corneria's water, graphics normal, no assertion; 1-player replay
+  still PASS. That the assertion came from this underflow is a guess; it did not come back after the fix.
+
 ## Determinism
 
 _Nothing yet._
