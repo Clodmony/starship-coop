@@ -73,7 +73,24 @@ def said(report, word):
     return [values for w, values, _ in report if w == word]
 
 
-class Game:
+class LevelLog:
+    """What a game leaves behind: the driver's report at report_path and state-hash.txt in the folder run. menu_test.py
+    reads its games the same way."""
+
+    def rows(self):
+        """Hash rows before the level, then from the frame after Play_Init on, without their frame numbers. In between
+        the game is in GSTATE_PLAY but gGameFrameCount still counts the screen it came from."""
+        names, rows = hash_check.read_log(self.run / "state-hash.txt")
+        running = said(self.report(), "level_running")
+        expect(running, f"{self.name}'s game never got to the level")
+        first = int(running[0]["frame"])
+        return names, [r for r in rows if r[1] != GSTATE_PLAY], [r[1:] for r in rows if r[0] >= first]
+
+    def report(self):
+        return read_report(self.report_path)
+
+
+class Game(LevelLog):
     """One game of a scenario, on a thread of its own: run_game blocks until the replay is over."""
 
     def __init__(self, folder, name, exe, frames, env, press_until=0):
@@ -88,18 +105,6 @@ class Game:
     def play(self, replay, exe, frames, env):
         _, self.run, _ = replay_tool.run_game("play", replay, exe, max(600, frames), hash_log=True, tag=self.name,
                                               env_extra=env)
-
-    def rows(self):
-        """Hash rows before the level, then from the frame after Play_Init on, without their frame numbers. In between
-        the game is in GSTATE_PLAY but gGameFrameCount still counts the screen it came from."""
-        names, rows = hash_check.read_log(self.run / "state-hash.txt")
-        running = said(self.report(), "level_running")
-        expect(running, f"{self.name}'s game never got to the level")
-        first = int(running[0]["frame"])
-        return names, [r for r in rows if r[1] != GSTATE_PLAY], [r[1:] for r in rows if r[0] >= first]
-
-    def report(self):
-        return read_report(self.report_path)
 
 
 def play(folder, exe, frames, picks, host_env=None, client_env=None, press_until=0, client_frames=None):
@@ -135,6 +140,14 @@ def first_difference(names, a, b):
     return None
 
 
+def check_running(game, running):
+    """This game reached the level, with what the host's game holds in running."""
+    there = said(game.report(), "level_running")
+    expect(len(there) == 1, f"{game.name}'s game never got to the level")
+    for key in ("level", "phase", "players", "characters", "seeds", "team_damage", "team_event"):
+        expect(there[0][key] == running[key], f"{game.name}: {key} {there[0][key]}, host {running[key]}")
+
+
 def check_started(host, clients, roster):
     """Everyone heard the same level start, and every game went there with it."""
     hr = host.report()
@@ -150,10 +163,7 @@ def check_started(host, clients, roster):
         expect(len(theirs) == 1, f"{game.name}: {len(theirs)} level starts")
         for key in ("level", "phase", "roster", "values"):
             expect(theirs[0][key] == starts[0][key], f"{game.name}: {key} {theirs[0][key]}, host {starts[0][key]}")
-        there = said(report, "level_running")
-        expect(len(there) == 1, f"{game.name}'s game never got to the level")
-        for key in ("level", "phase", "players", "characters", "seeds", "team_damage", "team_event"):
-            expect(there[0][key] == running[0][key], f"{game.name}: {key} {there[0][key]}, host {running[0][key]}")
+        check_running(game, running[0])
     return starts[0], running[0]
 
 

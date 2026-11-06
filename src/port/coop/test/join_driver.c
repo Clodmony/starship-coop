@@ -49,6 +49,7 @@ static s32 sLevel = 0;
 static u32 sStartFrame = 0;
 static bool sPokeTeam = false;
 static bool sKeepOwn = false;
+static bool sWatch = false;
 static bool sStartTaken = false;
 static bool sStartRefusedSaid = false;
 static bool sEntered = false;
@@ -287,6 +288,12 @@ static void CoopJoinDriver_OnGamePreUpdate(IEvent* event) {
     } else {
         sFrame++;
     }
+    if (sWatch) {
+        // A roster is there from the level start on, and nothing but a session sets one.
+        sEntered = CoopPlayers_Character(0) != 0;
+        Report_Running();
+        return;
+    }
     if (!sTried) {
         Session_Open();
     }
@@ -315,7 +322,8 @@ void CoopJoinDriver_Init(void) {
 
     sPortFile = Env_Text("SF64_COOP_JOIN_PORT_FILE");
     sConnect = Env_Text("SF64_COOP_JOIN_CONNECT");
-    if ((sPortFile == NULL) && (sConnect == NULL)) {
+    sWatch = Env_Text("SF64_COOP_JOIN_WATCH") != NULL;
+    if ((sPortFile == NULL) && (sConnect == NULL) && !sWatch) {
         return;
     }
     if (report != NULL) {

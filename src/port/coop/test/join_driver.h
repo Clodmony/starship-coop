@@ -3,7 +3,7 @@
 // A scripted join flow for tests (WP-24): the game hosts or joins a session, picks and starts a level with nobody at
 // the keyboard, as the co-op menu does for a player (WP-25). tools/coop/join_test.py drives it. See docs/coop/QA.md.
 //
-// Off unless SF64_COOP_JOIN_PORT_FILE or SF64_COOP_JOIN_CONNECT is set when the game starts:
+// Off unless SF64_COOP_JOIN_PORT_FILE, SF64_COOP_JOIN_CONNECT or SF64_COOP_JOIN_WATCH is set when the game starts:
 //   SF64_COOP_JOIN_PORT_FILE=<file>  host on a free port and write it into <file>
 //   SF64_COOP_JOIN_CONNECT=<host:port>  join that host
 //   SF64_COOP_JOIN_REPORT=<file>     one line for each thing that happened, see below
@@ -13,6 +13,8 @@
 //   SF64_COOP_JOIN_START_FRAME=<n>   host: not before this frame, counted as in the state hash log
 //   SF64_COOP_JOIN_POKE_TEAM=1       host: test only, gives the values no level start clears something to carry
 //   SF64_COOP_JOIN_KEEP_OWN=1        client: test only, goes to the level but keeps its own values, as a control
+//   SF64_COOP_JOIN_WATCH=1           no session of its own: reports `level_running` for a level the co-op menu started,
+//                                    for tools/coop/menu_test.py
 // With none set, no listener is registered and the game runs unchanged.
 //
 // Report lines, each a word and key=value pairs: `joined player=N`, `pick character=Falco`, `roster a b c d`,
