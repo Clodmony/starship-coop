@@ -289,6 +289,181 @@ Read from the source only; nothing was run. Line numbers are for `origin/coop` a
 - Cockpit view (`Camera_UpdateCockpitOnRails`, `src/engine/fox_play.c:6287`), tank and Blue Marine cameras: not read.
 - Whether the 500000 wrap is ever reached in a normal campaign.
 
+### 2026-11-06, #61, how a downed wingman returns
+
+Read at `95962d04`, nothing was run. This is code reading, plus the level event scripts, which are asset data and not
+in the repo: they were read out of an `sf64.o2r` built from ROM US 1.0. It answers the question 0005 left open, and it
+describes the game only. The co-op rule is for a later record (DESIGN.md section 4, items 2 and 3).
+
+Short answer: "they miss the next level and return after it" is right for the usual case. A wingman whose shields run
+out leaves the level, sits out the whole next level, and is back at full shields (255) in the level after that. It
+costs no life. It is not the whole story: Slippy can return inside Sector X, Slippy has a state of his own around
+Titania, Aquas refills everyone, the Venom levels do not bring anyone back, and a retry can undo the loss.
+
+Observed:
+
+**What the value means.** `gTeamShields[1..3]` are Falco, Slippy, Peppy (`src/engine/fox_context.c:22-24`).
+
+| `gTeamShields` | Meaning | Source |
+|---|---|---|
+| 1 to 255 | Flying, with that many shield points | `src/engine/fox_hud.c:1139-1140` |
+| 0 | Sitting this level out. Map shows the face with a blinking "OK !"; level-end radio says repairs are complete | `src/overlays/ovl_menu/fox_map.c:6153-6160`, `src/overlays/ovl_i2/fox_sx.c:1889-1891` |
+| -1 | Went down in the level just played. Map shows a dim face with a wrench; level-end radio says the ship is in for repairs | `fox_map.c:6144-6151`, `:6172-6173`, `fox_sx.c:1885-1887`, `src/overlays/ovl_i5/fox_ti_cs.c:443-450` |
+| -2 | Slippy only: out of play for a story event. Dim face on the map, no wrench, and the radio still lets him talk | `fox_map.c:6145`, `:6172`, `fox_hud.c:197-198`, `src/engine/fox_radio.c:91` |
+
+The radio drops any wingman line while the value is 0 or -1 (`fox_radio.c:91`), so code that needs a line sets the
+value to 1 around the call (`src/engine/fox_360.c:1448`, `src/engine/fox_enmy2.c:2077`, `fox_hud.c:4247`). A 1 in the
+middle of a retreat is that trick, not a real shield value.
+
+**How a wingman goes down.** A wingman is one of three actor kinds, and each has its own damage and retreat code. All
+three end at -1, and none of them explodes: the Arwing climbs away and is removed.
+
+- Event actor (on rails): damage comes off `gTeamShields` directly (`fox_enmy2.c:2121-2122`).
+  `ActorEvent_800700A4` then starts `EVSTATE_TEAM_RETREAT`, plays the line and writes -1 (`fox_enmy2.c:2070-2097`,
+  `:3335-3339`).
+- `ActorTeamBoss`: damage comes off `health`, floored at -1 and copied to `gTeamShields` (`fox_hud.c:4508-4511`,
+  `:4535`). The retreat is state 3 (`fox_hud.c:4241-4279`, `:4307-4310`).
+- `ActorAllRange`: a hit sets `gTeamDamage`, twice the damage for Slippy and Peppy (`fox_360.c:908-913`).
+  `Play_Update` drains that by 2 per frame and writes -1 when shields reach 0 (`fox_play.c:7029-7036`). The retreat is
+  `STATE360_6` (`fox_360.c:1444-1470`, `:1473-1495`).
+- Scripts can hurt a wingman too, with `EVOP_DAMAGE_TEAM` (`fox_enmy2.c:1384-1391`).
+
+A wingman at 0 or below is not spawned: `fox_360.c:381`, `fox_hud.c:4851-4853`. Intros and event scripts test the
+value before they use him (`src/engine/fox_demo.c:163-171`, `EVC_*_ACTIVE` at `fox_enmy2.c:2408-2424`).
+
+**Where the value moves.**
+
+| Stage | What happens to the shields | Source |
+|---|---|---|
+| New run | All stores set to 255 | `Map_Setup_Menu` `fox_map.c:1578-1589`; `gClearPlayerInfo` `fox_play.c:4921-4924`, set at `src/engine/fox_game.c:419` |
+| Leaving for a level | `Play_Setup`: saved -1 becomes 0, saved 0 becomes 255, -2 stays. Skipped for Andross and for Venom 2 phase 2 | `fox_play.c:541-553`, called at `fox_map.c:4294`, `fox_game.c:96` |
+| Level load | `gTeamShields` = `gSavedTeamShields`, then `Play_InitLevel` runs after that copy | `fox_play.c:2935-2937`, `:3016` |
+| Checkpoint | Saved = current, for the checkpoint item and in Bolse, Fortuna, Katina | `src/engine/fox_enmy.c:2500-2502`, `src/overlays/ovl_i4/fox_bo.c:385-387`, `fox_fo.c:304-306`, `fox_ka.c:944-946` |
+| Fox dies, lives left | `PLAY_INIT` again, without `Play_Setup`: everyone goes back to saved | `fox_play.c:6163`, `:7171-7172` |
+| Pause, retry | Costs a life. Saved = `gPrevPlanetTeamShields`, with -1 written as 0. Checkpoint cleared, then as above | `fox_hud.c:1475-1480`, `:1538-1539`, `:1551-1552`, `:1587-1594`, `:1600-1607` |
+| Level clear screen | Each wingman above 0 gains hit count / 2, capped at 255. Nobody else changes | `fox_hud.c:1097`, `:1131-1151` |
+| Level end, to the map | `Map_Setup_Play`: `gPrevPlanetTeamShields` = current with 0 written as 255, saved = current | `fox_map.c:1395-1396`, `:1451-1461` |
+| Level end, no map | Same code inline in Bolse and Area 6 | `fox_bo.c:1661-1671`, `src/overlays/ovl_i3/fox_a6.c:2910-2919` |
+| Map, go on | `D_ctx_80177C58` = current, the value the next retry goes back to | `fox_map.c:3525-3528`, `:6763-6765` |
+| Map, retry course | Costs a life, or game over at 0 lives. `gTeamShields`, saved and `gPrevPlanetTeamShields` = `D_ctx_80177C58`, with 0 written as 255 in the last, then the normal level start | `fox_map.c:3493-3500`, `:3511-3513`, `:3541-3549`, `:3619-3636` |
+| Game over | Nothing restored. `gMissionTeamStatus` is written, then ranking, then `GSTATE_INIT` | `fox_play.c:6159-6160`, `fox_map.c:1525-1539`, `:3143-3148`, `src/overlays/ovl_menu/fox_option.c:4508-4512` |
+| Continue | Does not exist in the campaign: game over ends the run. `func_pause_800A3E00`, which looks like one, has no caller | `src/engine/fox_pause.c:22-42` |
+| Save file | Shields are not saved. Only one alive bit per wingman per mission reaches the ranking record | `include/sf64save.h:24-31`, `fox_option.c:4350-4352` |
+
+The stores: `gSavedTeamShields` is the value the next load copies. `gPrevPlanetTeamShields` is what a pause retry goes
+back to. `D_ctx_80177C58` is what a retry from the map goes back to. `gPrevPlanetSavedTeamShields` is written in seven
+places and never read.
+
+**Exceptions to the usual case.**
+
+- **Slippy can return inside Sector X.** `EVOP_RESTORE_TEAM` sets a wingman to 255 (`fox_enmy2.c:1359-1360`). Of 19100
+  script commands in 1700 script resources, one uses it: `ast_sector_x/D_SX_60320D0_cmd_94`, command 4, for Slippy. That
+  script stops at once if `EVC_SLIPPY_ACTIVE` holds; otherwise it restores him and flies him in as an `EVID_TEAMMATE`
+  actor. It is placed once, as object id 1094 at index 997 of 1026 in `D_SX_602A164`, at z about 205000, with the boss
+  at about 227000 and the only checkpoint at about 83000. It is not in the warp list `D_SX_602F18C`
+  (`fox_enmy.c:559-560`).
+- **Slippy's -2.** The Sector X boss can knock him out, only after 2200 boss frames and only if he is above 0
+  (`fox_sx.c:971`, `:982`, `:102-113`). That also clears `swork[6]`, so the mission ends as `MISSION_COMPLETE`, whose
+  next planet is Titania (`fox_sx.c:112`, `:533`, `:1096`, `fox_map.c:1487-1490`, `:271`). `Play_Setup` leaves -2 alone.
+  Titania writes -2 on every load, after the copy from saved, whatever his value was (`fox_play.c:2689-2691`). He
+  returns at 255 when three of the boss's four parts are gone and `ActorTeamBoss_Init` runs
+  (`src/overlays/ovl_i5/fox_ti.c:4013-4014`, `:4083-4084`, `:3808-3813`, `fox_hud.c:4831-4835`).
+- **Aquas.** `Aquas_InitLevel` sets all three to 255, after the copy from saved (`src/overlays/ovl_i3/fox_aq.c:437`,
+  `fox_play.c:2686`). So everyone leaves Aquas at 255, and a wingman in his sit-out level counts as above 0 there.
+- **The Venom levels bring nobody back.** Bolse goes to Venom 1 and Area 6 goes to Venom 2 through `Play_Setup`, which
+  runs as usual (`fox_bo.c:1655-1656`, `fox_a6.c:2927-2928`). Venom 1 to Venom 2 phase 2 and Venom 2 to Andross skip its
+  conversion (`src/overlays/ovl_i1/fox_ve1.c:2515-2523`, `src/overlays/ovl_i6/fox_ve2.c:436-445`, `fox_play.c:541-543`).
+- **A retry can undo it.** See the table: dying goes back to the last save point, a retry goes back to the level start.
+- Katt and Bill (ids 4, 5) take no damage (`fox_enmy2.c:2117-2119`), and `Play_Setup` only touches ids 1 to 3. The Hit64
+  CVars force a wingman to 0 at every load (`fox_play.c:2939-2947`).
+
+**What being down changes,** beyond the wingman being absent. Routes and radio lines are #59 and #60.
+
+- No medal: `Play_CheckMedalStatus` needs all three above 0 when the level is scored (`fox_play.c:59-66`). That counts
+  the sit-out level too.
+- The mission's alive bit is cleared for any value at or below 0 (`fox_hud.c:1278-1292`, `fox_map.c:1658-1669`).
+- No heal on the clear screen, and Slippy's boss health bar goes with him (`fox_hud.c:3204`).
+
+**Details that matter to sync.** Nothing clears `gTeamDamage` at level load: its only writers are `fox_360.c:910-912`,
+`:1467`, `:1479`, `fox_enmy2.c:1390`, `:2091`, `:3338`, and the drain at `fox_play.c:7031`. The heal runs in
+`HUD_LevelClearStatusScreen_Draw`, a draw function. `state_hash.c` covers `gTeamShields` only
+(`src/port/coop/sync/state_hash.c:241`), not the other stores.
+
+Derived:
+
+- The usual case, as one wingman going down in level N (no checkpoint after it):
+
+| Moment | `gTeamShields` | `gSavedTeamShields` | `gPrevPlanetTeamShields` |
+|---|---|---|---|
+| Level N, shot down | -1 | value at level start or last checkpoint | unchanged |
+| Map after N | -1 | -1 | -1 |
+| Leaving the map | -1 | 0 | -1 |
+| Level N+1 | 0 | 0 | -1 |
+| Map after N+1 | 0 | 0 | 255 |
+| Leaving the map | 0 | 255 | 255 |
+| Level N+2 | 255 | 255 | 255 |
+
+- The return is a full refill: a wingman who survives on 1 point keeps 1 plus the heal, one who goes down comes back at
+  255. The count runs on level changes, not on time.
+- Fox's death can bring a wingman back. If he went down after the last save point, the restart copies the older
+  positive value. If a checkpoint was reached after he went down, saved is -1 and he stays out, and the usual count
+  goes on from there.
+- `gPrevPlanetTeamShields` holds the start value of the level being played, and the two rewrites keep it that way: a
+  wingman in his sit-out level stays out after a pause retry (-1 written as 0), and one returning stays back (0 was
+  written as 255).
+- A retry from the map after level N undoes a loss in level N, because `D_ctx_80177C58` still holds the value from
+  before level N. The sit-out count is not advanced by retrying.
+- Down in Bolse, Area 6, Venom 1 or Venom 2 means out until the end of the run. A wingman sitting out Bolse or Area 6
+  is back for the level after it.
+- Slippy down at the z of script 94 in Sector X returns at 255, whether he went down earlier in that level or is in his
+  sit-out level. It is the only script that can bring back a wingman who went down in the same level. After a death
+  past that point he goes back to the checkpoint's value, and the script fires again.
+- After Sector X's -2 the only ways on are Titania or a retry: `MISSION_COMPLETE` offers no change of course
+  (`fox_map.c:3518-3523`, `:3541-3558`). Titania also holds Slippy captive on a run where he was never knocked out,
+  because its -2 does not look at his value. That can happen by changing course to Titania on the map after a
+  `MISSION_ACCOMPLISHED` Sector X (`fox_map.c:3698-3702`).
+- A wingman at 0 cannot become -1 through scripted damage in normal play, as far as the scripts show: all 35
+  script/wingman pairs with `EVOP_DAMAGE_TEAM` test that wingman in the same script. Of 107 pairs with
+  `EVOP_SET_TEAM_ID`, 103 test him; the other 4 are `D_CO_603D9E8` 51 and 64, in Corneria where nobody can be in a
+  sit-out level, and `D_ME_602F3AC` 136 and `D_SY_6032E18` 33, which are in neither level's object lists. This checked
+  that a test exists, not which way it branches.
+
+Guess:
+
+- Script 94 exists so the Sector X boss event, and with it the Titania route, can still happen: `fox_sx.c:971` needs
+  Slippy above 0.
+- Aquas sets 255 so that the radio and the clear screen work with all three there.
+
+Unknown:
+
+- All of this is from reading. No run has shown it, including script 94 firing with Slippy down.
+- Whether Titania can end with Slippy still at -2. If it can, nothing but Aquas or a new run brings him back.
+- Whether a value of exactly 0 can stick inside a level. `fox_enmy2.c:2122` can land on 0, and -1 is only written on
+  that actor's next update. If the actor is gone by then, the wingman would be read as sitting out and be back one level
+  early.
+- What a pending `gTeamDamage` does across a restart: the code allows it, its effect in play was not looked at.
+- Whether anything other than an object list starts `D_ME_602F3AC` 136 or `D_SY_6032E18` 33.
+
+Open questions for the record that settles this, with lives and respawn (nothing here decides them):
+
+1. Does a human-flown wingman go down through `gTeamShields` at all, or through `Player` shields with `gTeamShields`
+   kept in step? Medals, routes, radio, intros and Star Wolf's targets all read `gTeamShields`, so what it says for a
+   human matters either way.
+2. Does a human who goes down miss a whole level as the game's wingmen do, or return sooner? What does that player do
+   and see meanwhile?
+3. Does a human wingman going down cost a life from the pool? In the game it costs none, and only Fox's death does.
+4. Who triggers a level restart? Today only Fox's death does, for everyone. Does a human wingman's death restart the
+   level, and does Fox's death still restore every human wingman to the save point?
+5. Who may choose pause retry and retry course? Both spend a life and both can undo a wingman's loss.
+6. Does a downed human's return at 255 stay a full refill, and does the clear screen's heal apply to human wingmen?
+7. Who flies when the player's wingman is scripted away: Slippy knocked out in Sector X, held captive in Titania, the
+   script 94 fly-in, and scripted `EVOP_DAMAGE_TEAM` hits (up to 255 on Falco in `D_CO_603D9E8` 59)?
+8. Do the Venom levels keep "out until the end" for a human, who would then watch the final levels?
+9. Does one player down cost the whole team the medal, as `Play_CheckMedalStatus` does today?
+10. Do humans and computer wingmen follow one rule, or can a run mix two?
+11. Which stores join the state hash or the host's snapshot: `gSavedTeamShields`, `gPrevPlanetTeamShields`,
+    `D_ctx_80177C58`, `gTeamDamage`?
+
 ### 2026-11-05, #5 (WP-05), single-player assumptions audit
 
 Read at `d653ee21` (branch `coop`). Full list with a verdict per site: `docs/coop/audit/single-player.md`, generated
