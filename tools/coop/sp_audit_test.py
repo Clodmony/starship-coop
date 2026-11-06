@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Tests for sp_audit.py itself (#73): a site the list does not have yet stops the rerun and fails --check until
-someone accepts it, and a change that adds no site does not.
+"""Tests for sp_audit.py itself (#73, #114): a site the list does not have yet stops the rerun and fails --check until
+someone accepts it, a site the list has and the code does not fails --check until a rerun, and any other change, such
+as a moved line, passes --check and waits for the next rerun.
 
     python tools/coop/sp_audit_test.py                       # unattended; prints PASS or FAIL
     python tools/coop/sp_audit_test.py --only star-row,no-row
@@ -25,6 +26,8 @@ VERDICTS = "docs/coop/audit/sp-verdicts.tsv"
 ENGINE = "src/engine/fox_a.c"
 OVERLAY = "src/overlays/ovl_x/fox_b.c"
 FIRST_RUN = ("--accept",)  # there is no list yet, so every site is new
+RERUN = "run python tools/coop/sp_audit.py"
+NOTE = "a rerun would change the list"
 
 FILES = {
     ENGINE: """\
@@ -102,6 +105,7 @@ class Repo:
         """Run the tool; note every way the exit code or the output differs from what is wanted."""
         got, out = self.audit(*args)
         name = " ".join(args) or "rerun"
+        lacks = (*lacks, "Traceback")
         if got != code:
             self.failures.append(f"{name}: exit {got}, wanted {code}")
         self.failures += [f"{name}: does not say {s!r}" for s in says if s not in out]
@@ -110,20 +114,32 @@ class Repo:
     def stopped(self, *says):
         """What a new site must do: --check names it, a rerun writes nothing, only --accept turns it green."""
         says += ("--accept",)  # every red step has to say the way out
-        self.expect("--check", code=1, says=says)
+        lacks = [] if any("lost site" in s for s in says) else ["lost site"]
+        self.expect("--check", code=1, says=says, lacks=lacks)
         before = self.read(LIST)
-        self.expect(code=1, says=says)
+        self.expect(code=1, says=says, lacks=lacks)
         if self.read(LIST) != before:
             self.failures.append("rerun: wrote the list past a new site")
-        self.expect("--check", code=1, says=says)
+        self.expect("--check", code=1, says=says, lacks=lacks)
         self.expect("--accept", code=0, says=says[:-1])
-        self.expect("--check", code=0, says=["sp-audit: OK"], lacks=["new site"])
+        self.expect("--check", code=0, says=["sp-audit: OK"], lacks=["new site", "lost site", NOTE])
 
-    def rerun_is_enough(self):
-        """What any other change must do: --check is red without a new site, and a plain rerun turns it green."""
-        self.expect("--check", code=1, says=["is stale"], lacks=["new site", "--accept"])
+    def rerun_is_enough(self, *says):
+        """What a lost site must do: --check names it and what to run, and a plain rerun turns it green."""
+        self.expect("--check", code=1, says=says + ("is stale", RERUN), lacks=["new site", "--accept"])
         self.expect(code=0, says=["sp-audit: OK"], lacks=["new site"])
-        self.expect("--check", code=0, says=["sp-audit: OK"], lacks=["new site"])
+        self.expect("--check", code=0, says=["sp-audit: OK"], lacks=["new site", "lost site", NOTE])
+
+    def drifts(self, *rows):
+        """What any other change must do: --check passes and writes nothing, and a plain rerun writes these rows."""
+        before = self.read(LIST)
+        self.expect("--check", code=0, says=["sp-audit: OK", NOTE],
+                    lacks=["new site", "lost site", "stale", "--accept"])
+        if self.read(LIST) != before:
+            self.failures.append("--check: wrote the list")
+        self.expect(code=0, says=["sp-audit: OK"], lacks=["new site", "lost site", NOTE])
+        self.failures += [f"rerun: the list has no row {s!r}" for s in rows if s not in self.read(LIST)]
+        self.expect("--check", code=0, says=["sp-audit: OK"], lacks=["new site", "lost site", NOTE])
 
 
 def clean(r):
@@ -134,17 +150,38 @@ def clean(r):
 
 def lines_move(r):
     r.write(ENGINE, "\n\n" + r.read(ENGINE))
-    r.rerun_is_enough()
+    r.drifts("| `Alpha_Update` | 4:P0, 5:P0 |", "| `Beta_Update` | 9:CC |", "| `Beta_Update` | 10:MC |")
+
+
+def site_moves_in_function(r):
+    # One site past another of a different pattern: the same file, function and pattern on another line.
+    r.edit(ENGINE, "    if (gCamCount == 1) {\n        gControllerPress[gMainController].button = 0;\n",
+           "    gControllerPress[gMainController].button = 0;\n    if (gCamCount == 1) {\n")
+    r.drifts("| `Beta_Update` | 8:CC |", "| `Beta_Update` | 7:MC |")
+
+
+def function_moves(r):
+    # The rows change order, the sites do not.
+    alpha, beta = r.read(ENGINE).split("\n\n")
+    r.write(ENGINE, beta + "\n" + alpha + "\n")
+    r.drifts("| `Beta_Update` | 2:CC |", "| `Alpha_Update` | 8:P0, 9:P0 |")
 
 
 def site_removed(r):
     r.edit(ENGINE, "    gPlayer[0].csTimer = 0;\n", "")
-    r.rerun_is_enough()
+    r.rerun_is_enough(f"lost site: {ENGINE} Alpha_Update gPlayer[0]: 2 listed, 1 now")
+
+
+def site_removed_last(r):
+    # The last site of a pattern in its function; the star row still has other sites, so only the lost site is red.
+    r.edit(OVERLAY, "    gCamCount = 1;\n", "")
+    r.rerun_is_enough(f"lost site: {OVERLAY} Delta_Update gCamCount: 1 listed, 0 now")
 
 
 def row_changed(r):
+    # Not a new or lost site, so like a moved line it waits for the next rerun.
     r.edit(VERDICTS, "sim\tread\twhole function", "view\tsite\tchanged after reading")
-    r.rerun_is_enough()
+    r.drifts("| view | site | changed after reading |")
 
 
 def function_row_new_pattern(r):
@@ -175,10 +212,19 @@ def star_row_new_file(r):
 
 
 def star_row_site_moved(r):
-    # The row's site count stays the same here; the list still sees it, because it counts per function.
+    # The row's site count stays the same here, but the key has the function in it: this is no moved line. It is lost
+    # in one function and new in the other, even under one row, because nobody has read it where it is now.
     r.edit(OVERLAY, "    gPlayer[0].csState = 0;\n", "")
     r.edit(OVERLAY, "    gCamCount = 1;\n", "    gCamCount = 1;\n    gPlayer[0].csState = 0;\n")
-    r.stopped(f"new site: {OVERLAY} Delta_Update gPlayer[0]: 0 listed, 1 now, lines 6", STAR_ROW)
+    r.stopped(f"new site: {OVERLAY} Delta_Update gPlayer[0]: 0 listed, 1 now, lines 6", STAR_ROW,
+              f"lost site: {OVERLAY} Gamma_Update gPlayer[0]: 1 listed, 0 now")
+
+
+def star_row_function_renamed(r):
+    # The same key at work: a new name means new sites, and the row cannot tell a rename from a new function.
+    r.edit(OVERLAY, "Gamma_Update", "Gamma_Tick")
+    r.stopped(f"new site: {OVERLAY} Gamma_Tick gPlayer[0]: 0 listed, 1 now, lines 2", STAR_ROW,
+              f"lost site: {OVERLAY} Gamma_Update gPlayer[0]: 1 listed, 0 now")
 
 
 def no_row(r):
@@ -189,7 +235,7 @@ def no_row(r):
     r.expect("--accept", code=1, says=says + ["1 functions have no verdict"])  # accepted, but it still needs a row
     r.expect("--check", code=1, says=["1 functions have no verdict"], lacks=["new site"])
     r.write(VERDICTS, r.read(VERDICTS) + f"{ENGINE}\tEpsilon_Update\tsim\tread\tnew row\n")
-    r.rerun_is_enough()
+    r.drifts("| `Epsilon_Update` | 13:P0 | sim | read | new row |")
 
 
 def list_missing(r):
@@ -227,13 +273,51 @@ def known_gap_swap(r):
     r.edit(ENGINE, "    gPlayer[0].csTimer = 0;\n", "    gPlayer[0].csFrameCount = 0;\n")
     r.expect("--check", code=0, says=["sp-audit: OK"], lacks=["new site"])
     r.edit(ENGINE, "    gPlayer[0].csFrameCount = 0;\n", "\n    gPlayer[0].csFrameCount = 0;\n")
-    r.rerun_is_enough()
+    r.drifts("| `Alpha_Update` | 2:P0, 4:P0 |")
+
+
+def file_deleted(r):
+    # Tracked, deleted, not committed. The scan works on what is on disk, so its sites are lost, and the file is named.
+    path = "src/overlays/ovl_x/fox_c.c"
+    r.write(path, NEW_FUNCTION)
+    r.git("add", path)
+    r.expect("--accept", code=0, says=["sp-audit: OK"])
+    (r.folder / path).unlink()
+    r.expect("--todo", code=0)
+    r.rerun_is_enough(f"warning: {path} is tracked by git but not on disk",
+                      f"lost site: {path} Epsilon_Update gPlayer[0]: 1 listed, 0 now")
+    r.write(path, NEW_FUNCTION)  # restored after that rerun: the list no longer has its site, so nothing slips in
+    r.stopped(f"new site: {path} Epsilon_Update gPlayer[0]: 0 listed, 1 now, lines 3", STAR_ROW)
+
+
+def file_deleted_no_site(r):
+    path = "src/engine/fox_c.c"
+    r.write(path, "int x;\n")
+    r.git("add", path)
+    (r.folder / path).unlink()
+    r.expect("--check", code=0, says=["sp-audit: OK"], lacks=["warning", "lost site", NOTE])
+    r.expect(code=0, says=["sp-audit: OK"], lacks=["warning", "lost site"])
+
+
+def file_removed(r):
+    # The deletion is in the index, as in a commit: lost sites, and nothing to warn about.
+    path = "src/overlays/ovl_x/fox_c.c"
+    r.write(path, NEW_FUNCTION)
+    r.git("add", path)
+    r.expect("--accept", code=0, says=["sp-audit: OK"])
+    r.git("rm", "-q", "-f", path)
+    lost = f"lost site: {path} Epsilon_Update gPlayer[0]: 1 listed, 0 now"
+    r.expect("--check", code=1, says=[lost], lacks=["warning"])
+    r.rerun_is_enough(lost)
 
 
 SCENARIOS = {
     "clean": clean,
     "lines-move": lines_move,
+    "site-moves-in-function": site_moves_in_function,
+    "function-moves": function_moves,
     "site-removed": site_removed,
+    "site-removed-last": site_removed_last,
     "row-changed": row_changed,
     "function-row-new-pattern": function_row_new_pattern,
     "function-row-one-more": function_row_one_more,
@@ -241,12 +325,16 @@ SCENARIOS = {
     "star-row": star_row,
     "star-row-new-file": star_row_new_file,
     "star-row-site-moved": star_row_site_moved,
+    "star-row-function-renamed": star_row_function_renamed,
     "no-row": no_row,
     "list-missing": list_missing,
     "untracked-site": untracked_site,
     "untracked-no-site": untracked_no_site,
     "untracked-ignored": untracked_ignored,
     "known-gap-swap": known_gap_swap,
+    "file-deleted": file_deleted,
+    "file-deleted-no-site": file_deleted_no_site,
+    "file-removed": file_removed,
 }
 
 
