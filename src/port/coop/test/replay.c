@@ -288,6 +288,8 @@ void CoopReplay_Init(void) {
         sMode = REPLAY_OFF;
         return;
     }
-    REGISTER_LISTENER(GamePreUpdateEvent, CoopReplay_OnGamePreUpdate, EVENT_PRIORITY_HIGH);
+    // Listeners run in ascending priority (src/port/hooks/impl/EventSystem.cpp:27-29), so LOW runs first: the input
+    // and the restored seeds are in place before any other listener, such as the state hash (WP-04), looks at them.
+    REGISTER_LISTENER(GamePreUpdateEvent, CoopReplay_OnGamePreUpdate, EVENT_PRIORITY_LOW);
     atexit(CoopReplay_OnExit);
 }
