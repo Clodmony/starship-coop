@@ -145,3 +145,16 @@ int32_t CoopPlayers_OnPlayerDown(Player* player) {
     CoopPlayers_SetOut(i);
     return 1;
 }
+
+int32_t CoopPlayers_SlotState(int32_t index) {
+    if ((index < 0) || (index >= COOP_PLAYERS_MAX)) {
+        return COOP_SLOT_JOINED;
+    }
+    return sSlot[index];
+}
+
+void CoopPlayers_SetSlotState(int32_t index, int32_t state) {
+    if ((index >= 0) && (index < COOP_PLAYERS_MAX)) {
+        sSlot[index] = (CoopSlot) state;
+    }
+}

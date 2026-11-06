@@ -11,7 +11,8 @@ run plays the replay three times at once, each in a fresh folder under local/ (s
   C        playback with SF64_COOP_HASH_POKE set: one bit of game state is flipped at one frame; the first frame
            whose hash differs from A must be exactly that frame. --poke-player flips a bit of that player, not of an
            actor. Without a replay file, input by rule is played (write_generated_replay), so no recording is needed.
-diff prints the first frame where two hash logs differ and which regions differ there.
+diff compares every column of two hash logs and prints the first frame where they differ and which regions differ
+  there. It compares the common frames, so read the two lengths it prints first.
 probe plays one game with SF64_COOP_HASH_PROBE: every --period frames the game changes single values, hashes, changes
   them back and logs what the hash did (state_hash.c, Probe). See PROBE_RULES for what must and must not show. Both
   hashes of a probe come from the same frame of the same process, so this needs no second run to agree with: it says
@@ -54,6 +55,25 @@ PROBE_RULES_COOP_OFF = {
     "iwork-negative": (False, None),
     "scenery360-free": (True, "scenery360"),
 }
+# Values with one slot per player, probed as name[i] for all four slots. In co-op a slot counts only while its player is
+# in the level: a probe says parked=1 for the others, and those must leave the hash alone.
+PLAYER_ARRAYS = (  # state_hash.c, sPlayerArrays: region players, in co-op only
+    "gLeftWingHealth", "gRightWingHealth", "gLaserStrength", "gChargeTimers", "gUturnDownTimers", "gUturnBrakeTimers",
+    "gLoopDownTimers", "gLoopBoostTimers", "gLeftWingDebrisTimer", "gRightWingDebrisTimer", "gHasShield",
+    "gShieldTimer", "gShieldAlpha",
+)
+PLAYER_GLOBALS = ("gLifeCount", "gBombCount", "gPlayerScores")  # HashGlobals: region globals, with co-op off too
+PLAYER_SLOTS = 4
+# state_hash.c, sTeamArrays: one value per team member, region globals, in co-op only. name -> (slots, first slot read,
+# slot after the last one read); the slots nobody reads must leave the hash alone.
+TEAM_ARRAYS = {
+    "gTeamDamage": (6, 1, 4),
+    "gSavedTeamShields": (6, 1, 6),
+    "gPrevPlanetTeamShields": (6, 1, 6),
+    "D_ctx_80177C58": (6, 1, 6),
+    "gTeamEventActorIndex": (4, 0, 4),
+    "D_enmy_Timer_80161670": (4, 0, 4),
+}
 
 
 def read_log(path):
@@ -72,13 +92,14 @@ def read_log(path):
 
 
 def first_difference(a_rows, b_rows, limit=None):
-    """Return (index, row a, row b) of the first differing frame, or None. Compares up to the shorter log (or limit)."""
+    """Return (index, row a, row b) of the first row that differs in any column, or None. Compares up to the shorter
+    log (or limit)."""
     n = min(len(a_rows), len(b_rows))
     if limit is not None:
         n = min(n, limit)
     for i in range(n):
         a, b = a_rows[i], b_rows[i]
-        if a[0] != b[0] or a[3] != b[3]:
+        if a != b:
             return i, a, b
     return None
 
@@ -96,7 +117,8 @@ def cmd_diff(args):
     diff = first_difference(a_rows, b_rows)
     print(f"hash: {len(a_rows)} vs {len(b_rows)} frames")
     if diff is None:
-        print("hash: no difference on the common frames")
+        print(f"hash: no difference on the {min(len(a_rows), len(b_rows))} common frames: state, level, total and "
+              f"{len(names)} regions")
         return 0
     print(f"hash: first difference at {describe(names, diff)}")
     return 1
@@ -223,10 +245,29 @@ def read_probes(path):
     return probes
 
 
-def probe_rule(target, players):
-    if players == 1 and target in PROBE_RULES_COOP_OFF:
+def probe_rule(target, parked, players):
+    name, _, index = target.rstrip("]").partition("[")
+    coop = players > 1
+    if name in PLAYER_ARRAYS:
+        return (True, "players") if coop and parked == "0" else (False, None)
+    if name in PLAYER_GLOBALS:
+        return (True, "globals") if parked == "0" else (False, None)
+    if name in TEAM_ARRAYS:
+        _, first, end = TEAM_ARRAYS[name]
+        return (True, "globals") if coop and first <= int(index) < end else (False, None)
+    if name == "slot":
+        # A player who is in the level or not: the values above count or stop counting with it.
+        return (True, "players,globals") if coop and int(index) < players else (False, None)
+    if not coop and target in PROBE_RULES_COOP_OFF:
         return PROBE_RULES_COOP_OFF[target]
     return PROBE_RULES["player" if target.startswith("player") else target]
+
+
+def region_allowed(seen, allowed):
+    """The first allowed region must be there and nothing but the allowed ones."""
+    allowed = allowed.split(",")
+    seen = seen.split(",")
+    return allowed[0] in seen and set(seen) <= set(allowed)
 
 
 def check_probes(probes, players):
@@ -237,11 +278,11 @@ def check_probes(probes, players):
         groups.setdefault((probe["target"], probe["parked"]), []).append(probe)
 
     for (target, parked), group in sorted(groups.items()):
-        must_change, region = probe_rule(target, players)
+        must_change, region = probe_rule(target, parked, players)
         bad = []
         for probe in group:
             changed = probe["changed"] == "1"
-            wrong_region = changed and must_change and probe["regions"] != region
+            wrong_region = changed and must_change and not region_allowed(probe["regions"], region)
             if changed != must_change or wrong_region:
                 bad.append(probe)
         state = " parked" if parked == "1" else ""
@@ -257,6 +298,10 @@ def check_probes(probes, players):
               ("player0", "0")]
     for i in range(1, players):
         wanted += [(f"player{i}", "1"), (f"player{i}", "0")]
+    for i in range(PLAYER_SLOTS):
+        states = ["0"] if players == 1 or i == 0 else ["0", "1"] if i < players else ["1"]
+        wanted += [(f"{name}[{i}]", state) for name in PLAYER_ARRAYS + PLAYER_GLOBALS + ("slot",) for state in states]
+    wanted += [(f"{name}[{i}]", "0") for name, (slots, _, _) in TEAM_ARRAYS.items() for i in range(slots)]
     for target, parked in wanted:
         if (target, parked) not in groups:
             failures.append(f"no probe of {target}{' parked' if parked == '1' else ''} ran")
