@@ -1818,6 +1818,160 @@ Unknown:
 
 ## Determinism
 
+### 2026-11-06, #96, draw code is part of the simulation: one camera per client
+
+Identity: ROM US 1.0, branch `issue/96-draw-state` on top of `797c678b`, Linux, GCC, Debug, OpenGL on a software
+renderer, no window, one game per run, no transport. Input by rule (`tools/coop/player_trace.py`, `write_rail_replay`),
+2 players, `gInvincible`. Corneria only, on one machine.
+
+Method, three ways, because each misses what the others see:
+
+- **Run:** `hash_check.py views` plays one replay with `SF64_COOP_TEST_LOCAL_INDEX` 0 and 1, which is two clients of one
+  session that draw different cameras.
+- **Measured:** a throwaway build compared all of `.data` and `.bss` before `Game_Draw` and after `GamePostUpdateEvent`
+  on every in-level frame, so it lists what the draw section really changes (4500 in-level frames, rails into all-range).
+  Not committed. It shows net changes only: a write of the value already there does not appear.
+- **Read:** every function reachable from the draw entry points in `Game_Update` and from every `draw` slot of
+  `gObjectInfo`, following any function named in a reachable body, stopping at the `Ovl*_CallFunction` dispatchers. In
+  level code that is 595 functions and about 2180 writes to something not a plain local. Then, for each global, whether
+  anything outside that set mentions it, and for each camera-derived value who reads it.
+
+Observed (runs), before the fix, test commit `e18af46e`: the logs split at once, and not only in what the camera touches.
+First differing frame per region:
+
+| Region | Rails, 10500 frames | All-range, 8000 frames |
+|---|---|---|
+| `players` | 3102 | 3102 |
+| `actors` | 3103 | 3103 |
+| `effects` | 3389 | 3389 |
+| `shots` | 4801 | 4801 |
+| `scenery` | 5371 | none |
+| `items` | 5970 | 7719 |
+| `bosses` | 8767 | 4880 |
+| `misc` | 9582 | 5194 |
+| `rng` | 9683 | 5188 |
+| `sprites` | 10139 | 7052 |
+| `globals` | none | 5586 |
+| `scenery360` | none | none |
+
+Frame 3102 is one frame after Corneria starts. `rng` differing means the two clients no longer play the same game, so
+this is a real divergence, not only a hash that sees too much.
+
+Observed (runs), after the fix, commit `66df1cac`, the same two replays: index 0 and 1 are equal on all 10500 rails
+frames and all 8000 all-range frames, in the total and all 12 regions. The cameras drawn differ on 74 of 74 and 49 of 49
+sampled frames, so the equal hashes are not two runs of one camera: `views` fails if they are, and it did when given one
+log twice. Co-op off, one replay of 5800 frames into all-range, 1 player, base build against this branch: no difference
+on the 5817 common frames, state, level, total and 12 regions. The two logs end 11 frames apart, both after the last
+frame of the replay.
+
+Observed (measured), draw writes on Corneria: 116 symbols changed, most of them plainly render state. In objects:
+`obj.status` of actors, effects and shots (kills), `obj.rot` of effects and shots, `sfxSource` of all, `Actor.iwork[11]`,
+`iwork[24]`, `fwork[29]`. In players: `camYaw` and `camPitch` of the player drawn only, `shadowing`, `sfxSource`,
+`sfxVel`, `sfx`, `arwing.drawFace`, `state` once. Outside: `sCoGrangaWork`, `D_edisplay_801615D0`, the radio state, HUD statics.
+After the fix, with index 1: no `obj.status` or `obj.rot` is written any more.
+
+Observed (read), the mechanisms:
+
+- **Draw frees what it does not see.** Shots (`src/engine/fox_beam.c:1067-1068`, `:1255-1256`), all-range effects
+  (`src/engine/fox_edisplay.c:1487`), all-range items (`:1529-1530`), debris (`:1286`), bonus text
+  (`src/engine/fox_effect.c:136`). Upstream already skips the shot and effect kills in versus, the one mode with several
+  cameras (`!gVersusMode`), and skips the item kill unless `gCamCount == 1`.
+- **Six places skip an object's draw function by camera.** `Actor_DrawAllRange`, `Boss_Draw` and `Effect_DrawAllRange`
+  skip functions with game logic in them. `Item_Draw`, `Scenery360_Draw` and the sprite loop of `Object_DrawAll`
+  (`src/engine/fox_edisplay.c:1919`, in all-range and during a level intro) skip functions that write nothing but the
+  rotation in `ItemMeteoWarp_Draw`, so those three stay as they are. On rails `Actor_DrawOnRails` and `Scenery_Draw` have
+  no such test.
+- **Draw functions hold game logic, behind that test:** boss damage (`src/overlays/ovl_i3/fox_a6.c:1980`), boss state
+  (`src/overlays/ovl_i1/fox_ve1.c:2546`, `src/overlays/ovl_i5/fox_ti.c:5452`), limb positions the boss update reads
+  (`sCoGrangaWork`, `src/overlays/ovl_i1/fox_co.c:1187`), effects spawned from draw (`ActorEvent_Draw`,
+  `src/engine/fox_enmy2.c:3894`), random numbers (`:4061`).
+- **Boss AI reads a position in camera space.** `D_edisplay_801615D0` is the boss seen from the camera, with `.y` replaced
+  by "in view" (`src/engine/fox_edisplay.c:1399`). Read at `src/overlays/ovl_i1/fox_co.c:356`, `:488`, `:514`, `:675-676`,
+  `src/overlays/ovl_i4/fox_ka.c:888`, `src/overlays/ovl_i4/fox_sz.c:194`, `src/overlays/ovl_i6/fox_sy.c:990`, `:1234`,
+  `:1711-1728`.
+- **Limb callbacks are not in camera space.** `Animation_DrawSkeleton` starts `gCalcMatrix` from the `transform` it is
+  given, apart from `gGfxMatrix` (`src/engine/fox_std_lib.c`), so a limb position depends on whether the draw ran, not on
+  which camera ran it.
+- **`gPlayerNum` was the local player during `Object_Update`,** and simulation reads it: `MeHopBot_Update`
+  (`src/engine/fox_enmy2.c:156`), `func_enmy_80060FE4` (`src/engine/fox_enmy.c:106`), the laser at `:3092`.
+
+Verdict of each write. **Moved out of the draw path in co-op** (`src/port/coop/game/view.c`):
+
+| Write | Read by | In co-op |
+|---|---|---|
+| Kills of shots, effects, items, debris, bonus text, above | Every later frame: slots, collisions | Not freed for being out of view, as versus does for shots and effects. Their own timers end them |
+| `Actor.iwork[24]` (`src/engine/fox_edisplay.c:1304`) | `src/engine/fox_360.c:1233`, a wingman near player 0 for 200 frames speaks | Always 1: every actor's draw runs, so all count as seen |
+| `lockOnTimers`, not drawn (`:1285`) | `src/engine/fox_play.c:3313`, `:3378`, `:3426` | Does not run: all count as seen |
+| `lockOnTimers`, too close (`:1166`, `:1297`, `src/engine/fox_enmy2.c:321`) | The same | Judged from the view of player 0 (`CoopView_LockOnZ`) |
+| `camYaw`, `camPitch` (`src/engine/fox_display.c:1928-1929`) | 27 sites, for example `ItemSupplyRing_Update` | Worked out for every player before the draw, put back after it |
+| `Player.xPath` (`src/engine/fox_bg.c:1344`, `:1352`) | Draw, the path code | Cleared for every player before the draw, so the draw's write changes nothing |
+| `D_edisplay_801615D0`, `Boss.vwork[30]` (`src/engine/fox_edisplay.c:1391`, `:1402`) | Boss AI, above | The view of player 0 on every client, from a matrix every client builds |
+| `obj.rot` facing the camera, effects and shots (`:2031`, `src/engine/fox_beam.c:1263`) | Draw | Put back after the draw |
+| Object draw functions, boss damage and the rest above | Boss update, AI, slots, RNG | Run on every client, in view or not; what is out of view has its output dropped (`CoopView_DrawAnyway`) |
+| `gPlayerNum` (`src/engine/fox_play.c:7052`, `:7069`, `src/engine/fox_game.c`) | Above | Local only inside `Game_Draw`; 0 for the simulation, and for the HUD |
+
+**Left out of the hash in co-op** (`ClearViewState`, `ClearPlayerViewState`, `src/port/coop/sync/state_hash.c`), each read
+only by the sound engine or draw code, checked at every read site:
+
+| Value | Written | Why it may differ |
+|---|---|---|
+| `sfxSource` of actors, bosses, effects, items, scenery, shots | `Object_SetSfxSourceToView`, `Object_UpdateSfxSource` | Sound position from the camera. Read by sound and `src/engine/fox_display.c:96` |
+| `Player.sfxSource`, `sfxVel`, `sfx` | `src/engine/fox_display.c:1748-1765` | The same; `sfx` is read in `src/audio/audio_general.c` |
+| `Player.shadowing` | `:861-863` | Written for a player the camera sees. Read at `:852` |
+| `arwing` flap angles, `unk_28` | `:782-783` | Cleared for a player the camera sees in space levels. Feed only themselves and draw |
+| `obj.rot` of `OBJ_ACTOR_SX_SLIPPY`, `obj.rot.y` of `OBJ_ITEM_METEO_WARP` | `src/overlays/ovl_i2/fox_sx.c:181-182`, `src/engine/fox_edisplay.c:930` | Faces the camera, one frame late, so it cannot be put back like an effect's. Read by draw only |
+
+**Shown harmless:**
+
+| Write | Why |
+|---|---|
+| HUD, pause and level clear logic: `gBombCount` (`src/engine/fox_hud.c:3457`), `gLifeCount` (`:1089`, `:1539`, `:1552`), `gPlayer[0].state` (`:1485`), `gPlayer[0].heal` (`:2440`) | Same on every client: runs every frame by shared state, and `gPlayerNum` is 0 there now. Only slot 0 is clamped and credited |
+| `gRadioState` and radio state (`Radio_Draw`, `src/engine/fox_radio.c:534`) | Runs every frame by shared state, no camera in it. Audio timing is another question, under Unknown |
+| `gHitCount` clamp (`src/engine/fox_display.c:1845`), `arwing.drawFace` (`:1839`), `gTeamHelpTimer` (`:58`), `gGroundSurface` (`src/engine/fox_bg.c:1505`) | No camera in them: the same on every client |
+| `Actor.iwork[11]`, `fwork[29]` | Engine glow, set by draw functions that now always run. Read only by draw (`src/engine/fox_edisplay.c:479-485`) |
+| `gRadarMarks` | Hashed in `misc`, read only by the HUD, and written from shared state |
+| `gTeamArrowsViewPos`, `gLockOnTargetViewPos`, `sPlayersVisible`, `sViewPos`, `sShotViewPos`, `gPlayCamEye`, `gPlayCamAt`, `gSunViewX`, `gLight1x`, `y`, `z`, `gLight2x`, `y`, `z`, `gStarfield*`, `D_display_*` | Camera results that only draw reads: outside draw nothing reads them, apart from clearing at level start |
+| `gPlayerGlare*` (`src/engine/fox_bg.c:1083`) | The same, and Andross fades its own glare from its own value (`src/overlays/ovl_i6/fox_andross.c:1047`, `:4370`). Nothing else follows from it |
+| 124 of the 307 globals written in draw | Nothing outside draw mentions them |
+| The other globals draw writes and simulation code mentions: pause and continue state (`HUD_PauseScreen_Update`), level start clears (`Play_ClearObjectData`), light colours and targets (`Camera_SetupLights`), limb tables in the overlays, radio and HUD timers | Grouped here, not listed one by one. No camera value feeds them: 64 draw functions read a camera value or `gPlayerNum`, and what each writes is in these tables, or is a local, draw-only or versus-only. The code runs on every client, so the values match |
+| `Object_Kill` in `Macbeth_TrainTrack_Draw` (`src/overlays/ovl_i5/fox_ma.c:2624`, `:2633`) | Reached through `Scenery_Draw`, which has no view test, and judged by `gPlayer[0]` |
+| `Matrix_GetYRPAngles(gGfxMatrix)` (`src/overlays/ovl_i5/fox_ti.c:2558`, `:3121`) | Only undoes a rotation for a billboard, then draws |
+| `Rand_ZeroOneSeeded` in `Bolse_DrawDynamicGround` (`src/overlays/ovl_i4/fox_bo.c:2238`) | Drawn before its culling test, from a seed set each frame, so the sequence does not depend on the view |
+
+Choices this makes, all reversible, none of them a game rule with a record (`DESIGN.md` section 4):
+
+- The camera the simulation uses is player 0's. For player 0 that is single-player behaviour.
+- A wingman's "near player 0" line no longer needs the wingman on screen.
+- What leaves the view lives on until its own timer.
+- `gBombCount` is clamped and level clear lives credited for slot 0 only, as any client's HUD draws through `gPlayerNum`
+  0. WP-28 moves the HUD to the local player: these writes must stay on slot 0 or go through every player.
+
+Derived:
+
+- Rendering is not on top of game logic: `Game_Draw` runs once per tick and changes state. The Derived point in
+  `DESIGN.md` section 2 was wrong as written, and no earlier determinism run could show it, as all drew player 0.
+- Lockstep with one camera per client does not need a design change on this evidence: every client has every player's
+  camera, so all can agree on one camera for the simulation.
+- WP-22 can rely on the hash with different local indexes, on Corneria.
+- This replaces older lines. `gPlayerNum` is no longer the local player between the player loops, in the #8 entry
+  and the #67 entry: it is 0 there, and local only inside `Game_Draw`. The Derived point of #67 that WP-22 can rely on the
+  hash only while `CoopPlayers_LocalIndex()` is 0 no longer holds on Corneria.
+
+Unknown:
+
+- Every level but Corneria: the verdicts there come from reading, not from a run.
+- Whether effects with no timer of their own pile up now that nothing frees them for leaving the view. Versus runs that
+  path upstream, but only on versus stages. The runs here did not count slots.
+- Whether the sound and picture look right for a client through player 1: these runs check state, not what is seen.
+  Before player 1 joins it looks through a parked player's empty camera, which WP-28 has to settle.
+- Local indexes 2 and 3: only 0 and 1 ran.
+- A camera value that reaches a write through a local or a parameter: the read searched for the names of camera values,
+  so it sees such a path only where a function was read by hand.
+- `Katina_EnemyDraw` picks low poly by `gSysFrameCount` into `iwork` (`src/overlays/ovl_i4/fox_ka.c:2633`): not a camera
+  matter, but two clients need not share that count, and `iwork` is hashed.
+- `Radio_Draw` follows the voice status (`src/engine/fox_radio.c:645`), which comes from the sound thread. WP-02's audio
+  variants matched on one machine; two machines did not run.
+
 ### 2026-11-06, #67, state hash: per-player arrays, team arrays, co-op slots
 
 Identity: ROM US 1.0, branch `issue/67-hash-player-arrays` on top of `95962d04`, Linux, GCC, Debug, OpenGL on a software

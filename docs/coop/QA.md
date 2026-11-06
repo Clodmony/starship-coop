@@ -57,6 +57,9 @@ number of clients, transport.
    so this does not need two runs to agree. With `--players 1` (co-op off) it checks that single player kept the old
    rules: the arrays that are new in co-op must not show, `gLifeCount`, `gBombCount` and `gPlayerScores` must, in every
    slot.
+   `python tools/coop/hash_check.py views` (unattended, exit code 0 on `PASS`) plays one replay with
+   `SF64_COOP_TEST_LOCAL_INDEX` 0 and 1, in Corneria's rails and its all-range section: two clients of one session, who
+   draw different cameras and must still hash alike on every frame. It names the first differing frame and regions.
    `python tools/coop/hash_check.py diff <a> <b>` compares every column of the two logs, names the first differing
    frame and the regions that differ there. It compares the common frames: read its first line for the two lengths.
    `python tools/coop/replay.py play <replay> --hash-log` writes a log next to an ordinary playback.

@@ -7048,8 +7048,8 @@ void Play_Update(void) {
         gPlayer[i].num = gPlayerNum = i;
         Player_Update(&gPlayer[i]);
     }
-    if (CoopPlayers_IsCoop()) { // COOP: the loop leaves gPlayerNum at the last player; point it at the local one
-        gPlayerNum = CoopPlayers_LocalIndex();
+    if (CoopPlayers_IsCoop()) { // COOP: the loop leaves gPlayerNum at the last player. Player 0 on every client (#96)
+        gPlayerNum = 0;
         CoopPlayers_SelectInput(gPlayerNum); // COOP: the same for the controller (WP-12)
     }
 
@@ -7066,7 +7066,7 @@ void Play_Update(void) {
         Camera_Update(&gPlayer[i]);
     }
     if (CoopPlayers_IsCoop()) { // COOP: as above
-        gPlayerNum = CoopPlayers_LocalIndex();
+        gPlayerNum = 0;
         CoopPlayers_SelectInput(gPlayerNum);
     }
 

@@ -81,6 +81,7 @@ Row = namedtuple("Row", "frame level mode players path pathvel scroll")
 BUTTON_A = 0x8000
 BUTTON_C_LEFT = 0x0002  # gBoostButton, src/engine/fox_game.c
 BUTTON_C_DOWN = 0x0004  # gBrakeButton
+BUTTON_L = 0x0020
 
 # Input by rule for `rails`. Pad 0 presses A every 30 frames: that gets through the menus into Corneria, where player 0
 # is active at about frame 4775, and keeps firing there. From RAIL_INPUT_START all pads repeat RAIL_CYCLE frames:
@@ -396,10 +397,11 @@ def rail_lead(frame):
     return 0
 
 
-def write_rail_replay(path, frames):
+def write_rail_replay(path, frames, l_frame=None):
     """Write the input for `rails`, in the layout of ReplayHeader and ReplayFrame in src/port/coop/test/replay.c: no
     checkpoints, so playback reports FAIL_MISMATCH at frame 0 and plays on. Hold and press pads get the same stick;
-    press holds the buttons that went down on this frame."""
+    press holds the buttons that went down on this frame. l_frame adds one L on pad 0 (with CVar gDebugJumpToAllRange,
+    the jump to all-range)."""
     data = bytearray(b"SFCR" + struct.pack("<III6i", 2, 20, 204, *RAIL_SEEDS))
     assert len(data) == RAIL_REPLAY_HEADER
     last = [0, 0, 0, 0]
@@ -409,6 +411,8 @@ def write_rail_replay(path, frames):
         for pad in range(4):
             if pad == 0:
                 button, stick_x, stick_y = (BUTTON_A if frame >= 60 and frame % 30 == 0 else 0) | rail_lead(frame), 0, 0
+                if frame == l_frame:
+                    button |= BUTTON_L
             else:
                 button, stick_x, stick_y = rail_pad(frame, pad)
             hold += struct.pack("<Hbb16x", button, stick_x, stick_y)
