@@ -67,7 +67,14 @@ def main():
             failures.append(f"tools/coop/{tool} --check failed; update the break that guards the code you changed:\n  "
                             + "\n  ".join((mut.stdout + mut.stderr).strip().splitlines()))
 
-    # 6. Run folders: each test tool gets a folder of its own, however close together runs start.
+    # 6. Script reader: its level and command tables must still match the game source (no build, no ROM).
+    reader = subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "coop" / "script_reader_test.py")],
+                            cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
+    if reader.returncode != 0:
+        failures.append("tools/coop/script_reader_test.py failed:\n  "
+                        + "\n  ".join(reader.stdout.strip().splitlines()))
+
+    # 7. Run folders: each test tool gets a folder of its own, however close together runs start.
     folders = subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "coop" / "run_folder_test.py")],
                              cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
     if folders.returncode != 0:

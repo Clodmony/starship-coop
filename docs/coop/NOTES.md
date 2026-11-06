@@ -297,6 +297,7 @@ throwaway decoder that follows `tools/Torch/src/factories/sf64/ScriptFactory.cpp
 script 59, command 34. The tables are the `SF64:SCRIPT` rows of `assets/yaml/us/rev0/ast_*.yaml` (Corneria:
 `ast_corneria.yaml:445`), and `ActorEvent_ProcessScript` picks one per level (`src/engine/fox_enmy2.c:1067-1120`).
 `z` is the `zPos1` of the object that starts a script. Conditions are in `ActorEvent_ProcessTriggers` (`:2354`).
+To look a reference up: `python tools/coop/script_reader.py CO S59:34`, see the #90 entry.
 
 Short version, derived from the lists below: two routes read a wingman directly (Corneria needs Falco to open
 Sector Y; Sector X loses its choice when Slippy is shot down), Titania always takes Slippy away, and every medal needs
@@ -553,6 +554,7 @@ for example Corneria 17.8. The tables are the `SF64:SCRIPT` assets (`assets/yaml
 Corneria), picked per level in `ActorEvent_ProcessScript` (`src/engine/fox_enmy2.c:1075-1122`). They were decoded from
 a US 1.0 `sf64.o2r` with a throwaway script, not kept. Its command format is `EVENT_CMD` (`include/sf64event.h:92`).
 Script counts come from walking each script's branches, so they say what can run, not what a given run plays.
+To look a reference up: `python tools/coop/script_reader.py Corneria 17.8`, see the #90 entry.
 
 **Observed: how a line reaches the radio**
 
@@ -1003,6 +1005,65 @@ Open questions for the record that settles this, with lives and respawn (nothing
 10. Do humans and computer wingmen follow one rule, or can a run mix two?
 11. Which stores join the state hash or the host's snapshot: `gSavedTeamShields`, `gPrevPlanetTeamShields`,
     `D_ctx_80177C58`, `gTeamDamage`?
+
+### 2026-11-06, #90, how to look up a level script reference
+
+Read at `797c678b`. The tool ran on an `sf64.o2r` built from ROM US 1.0, version `76924CA9`. No game ran.
+
+Level scripts are ROM data, so the notes cite them by level, script and command. `tools/coop/script_reader.py` reads
+them from your own `sf64.o2r`. Both ways the notes write a reference work:
+
+```sh
+python tools/coop/script_reader.py CO S59:34       # the #59 entry: level prefix, script, command
+python tools/coop/script_reader.py Corneria 17.8   # the #60 entry: level name, script, command
+```
+
+It prints the whole script and marks the command with `>`. A script without a command marks nothing, a level alone
+lists its scripts, and no argument lists the levels. Prefixes are the ones in `include/sf64event.h`. In the #59 table
+the first column is the level, so `S4` in the Corneria row is `CO S4`, and `S141-143` is three lookups. It finds
+`sf64.o2r` in `build-cmake/`, `build/x64/` or the repo root; `--o2r <file>` names another. It reads that one file and
+writes nothing. What it prints is game data: keep it out of git, issues and PRs. A reference holds for the ROM it was
+read on, so the first line of the output shows the archive's version.
+
+Observed, how a reference maps to the game:
+
+- The script is the slot in the level's table. An object's id minus `ACTOR_EVENT_ID` gives `aiType`
+  (`src/engine/fox_enmy.c:412`), and `levelScripts[this->aiType]` is the script (`src/engine/fox_enmy2.c:1122`).
+- The command is `aiIndex / 2`. A command is two 16-bit words (`EVENT_CMD`, `include/sf64event.h:92`), and branches
+  land on `n * 2` (`fox_enmy2.c:1492`, `:2341`).
+- The level picks the table in `ActorEvent_ProcessScript` (`fox_enmy2.c:1075-1121`). Levels with no case use Corneria's
+  (`:1118-1120`); the tool refuses those instead of showing Corneria.
+- A table entry is a 0x40-byte header, a count, then one 64-bit hash per slot (`ScriptBinaryExporter`,
+  `tools/Torch/src/factories/sf64/ScriptFactory.cpp:330-335`, read at `src/port/resource/importers/ScriptFactory.cpp:16-19`).
+  The hash is `CRC64()` of the entry's path (`ScriptFactory.cpp:325`). That function returns the value uninverted
+  (`tools/Torch/lib/strhash64/StrHash64.cpp:249`), unlike `update_crc64` (`:234`).
+- `<table>_cmd_<n>` counts in sorted address order, not table order (`ScriptFactory.cpp:296`, `:302`), so `n` is not
+  defined to be the script number. The tool follows the hash, as the game does.
+- Some macro parameters read the other way round from the interpreter. `EVENT_F4_PLUS_X(rot, rotVel)` puts `rotVel * 10`
+  in arg1 (`include/sf64event.h:106`), while the interpreter takes arg1 as the angle and arg2 / 10 as the step
+  (`fox_enmy2.c:1546-1547`, `:3277-3283`). The tool prints what the interpreter reads.
+
+Observed, run on all 14 tables:
+
+- 1700 scripts and 19100 commands decode. Every opcode and enum value has a name in the headers, and in every table
+  `n` equals the slot.
+- The #59 entry holds up: `CO S59:34`, `CO S59:10` and `CO S60:12` show what it says, all 176 scripts its level table
+  names exist, and all 98 fly-ins it lists set that wingman's team id. Only `SX S94` uses `EVOP_RESTORE_TEAM`, the
+  largest `EVOP_DAMAGE_TEAM` values are 255 and 70, and no script uses `EVC_TEAM_COUNT_*` or `EVC_CHASED`.
+- The references in the #60 entry resolve with their commands in range: 29, found by pattern.
+- Two branches land one past the last command of their script: `A6 S26:53` and `VE1 S40:6`.
+
+Derived:
+
+- On the N64 those two targets are the first command of the next script: a script's size is the distance to the next
+  pointer (`ScriptFactory.cpp:562`), and the table is in address order. In the port each script is a buffer of its own
+  (`src/port/resource/type/Script.cpp:13`), so taking either branch reads past the end of it.
+
+Unknown:
+
+- Whether either branch can fire in play. Nothing was run.
+- Whether US 1.1 scripts differ: only US 1.0 was read. `aVe1EventScript` has another offset in rev1
+  (`assets/yaml/us/rev1/ast_venom_1.yaml:122`).
 
 ### 2026-11-05, #5 (WP-05), single-player assumptions audit
 
