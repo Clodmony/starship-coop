@@ -250,7 +250,7 @@ def bare_not_argument(r):
     # A fake match in the decomp, an alias and the other names that start the same are not arguments.
     r.edit(ENGINE, "    gPlayer[0].csTimer = 0;\n", "    gPlayer[0].csTimer = 0;\n    if (gPlayer) {}\n    p = gPlayer;\n"
            "    Foo(gPlayerNum, gPlayerShots);\n")
-    r.rerun_is_enough()
+    r.drifts()
 
 
 def star_row(r):
