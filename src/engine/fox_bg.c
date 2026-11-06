@@ -1,4 +1,5 @@
 #include "global.h"
+#include "port/coop/game/players.h" // COOP: the backdrop and ground follow the camera drawn (#30)
 #include "assets/ast_katina.h"
 #include "assets/ast_venom_1.h"
 #include "assets/ast_venom_2.h"
@@ -724,7 +725,10 @@ void Background_DrawBackdrop(void) {
                             Matrix_Translate(gGfxMatrix, 0.0f, 0.0f, -290.0f, MTXF_APPLY);
                             Matrix_Push(&gGfxMatrix);
                             Matrix_Scale(gGfxMatrix, 11.0f, 11.0f, 1.0f, MTXF_APPLY);
-                            Matrix_RotateZ(gGfxMatrix, (gPlayer[0].camRoll + (gGameFrameCount * 1.5f)) * M_DTOR,
+                            // COOP: backdrop, the camera drawn (#30)
+                            Matrix_RotateZ(gGfxMatrix,
+                                           (gPlayer[CoopPlayers_LocalIndex()].camRoll + (gGameFrameCount * 1.5f)) *
+                                               M_DTOR,
                                            MTXF_APPLY);
                             Matrix_SetGfxMtx(&gMasterDisp);
                             gSPDisplayList(gMasterDisp++, D_ANDROSS_C039208);
@@ -732,7 +736,10 @@ void Background_DrawBackdrop(void) {
                             if (gDrawBackdrop != 5) {
                                 Matrix_Push(&gGfxMatrix);
                                 Matrix_Scale(gGfxMatrix, 10.0f, 10.0f, 1.0f, MTXF_APPLY);
-                                Matrix_RotateZ(gGfxMatrix, (gPlayer[0].camRoll + (gGameFrameCount * -1.3f)) * M_DTOR,
+                                // COOP: as above
+                                Matrix_RotateZ(gGfxMatrix,
+                                               (gPlayer[CoopPlayers_LocalIndex()].camRoll + (gGameFrameCount * -1.3f)) *
+                                                   M_DTOR,
                                                MTXF_APPLY);
                                 Matrix_SetGfxMtx(&gMasterDisp);
                                 gSPDisplayList(gMasterDisp++, D_ANDROSS_C039208);
@@ -803,7 +810,7 @@ void Background_DrawBackdrop(void) {
 
                     sp13C = Math_ModF(sp13C, 7280.0f);
 
-                    f32 corneriaCamYawDeg = Math_RadToDeg(gPlayer[0].camYaw);
+                    f32 corneriaCamYawDeg = Math_RadToDeg(gPlayer[CoopPlayers_LocalIndex()].camYaw); // COOP (#30)
                     if (gLevelMode == LEVELMODE_ON_RAILS) {
                         if (corneriaCamYawDeg < 180.0f) {
                             sp13C = -(7280.0f - sp13C);
@@ -866,8 +873,8 @@ void Background_DrawBackdrop(void) {
         case LEVELTYPE_SPACE:
             if (gPlayer[0].state != PLAYERSTATE_ENTER_WARP_ZONE) {
                 Matrix_Push(&gGfxMatrix);
-                camYawDeg = Math_RadToDeg(gPlayer[0].camYaw);
-                sp130 = Math_RadToDeg(gPlayer[0].camPitch);
+                camYawDeg = Math_RadToDeg(gPlayer[CoopPlayers_LocalIndex()].camYaw); // COOP: as above
+                sp130 = Math_RadToDeg(gPlayer[CoopPlayers_LocalIndex()].camPitch);
                 if (((camYawDeg < 110.0f) || (camYawDeg > 260.0f)) && ((sp130 < 40.0f) || (sp130 > 325.0f))) {
                     RCP_SetupDL_36();
                     bgXpos = gStarfieldX; /* @port. Range: 0.0f - 960.0f */
@@ -1219,12 +1226,14 @@ Vtx dynaFloor2Vtx[17 * 17];
 #endif
 
 void AllRangeGround_Draw(void) {
+    const Player* coopCamera = &gPlayer[CoopPlayers_LocalIndex()]; // COOP: the tiles around the camera drawn (#30)
+
     for (int i = 0; i < ARRAY_COUNT(sGroundPositions360x_FIX); i++) {
         const f32 maxDistZ = 0.0f;
         const f32 maxDistX = 0.0f;
 
         // UPPER LEFT QUADRANT
-        if (gPlayer[0].pos.x < maxDistX && gPlayer[0].pos.z < maxDistZ) {
+        if (coopCamera->pos.x < maxDistX && coopCamera->pos.z < maxDistZ) { // COOP: was player 0
             // upper left corner piece : 8
             // side upper  left piece : 12
             // side lower left piece : 13
@@ -1236,7 +1245,7 @@ void AllRangeGround_Draw(void) {
         }
 
         // LOWER LEFT QUADRANT
-        if (gPlayer[0].pos.x < maxDistX && gPlayer[0].pos.z > maxDistZ) {
+        if (coopCamera->pos.x < maxDistX && coopCamera->pos.z > maxDistZ) { // COOP
             // lower middle left piece: 5
             // lower middle right piece : 6
             // lower left corner piece: 7
@@ -1248,7 +1257,7 @@ void AllRangeGround_Draw(void) {
         }
 
         // UPPER RIGHT QUADRANT
-        if (gPlayer[0].pos.x > maxDistX && gPlayer[0].pos.z < maxDistZ) {
+        if (coopCamera->pos.x > maxDistX && coopCamera->pos.z < maxDistZ) { // COOP
             // uppder middle left piece : 9
             // Upper middle right piece : 10
             // upper right corner piece : 11
@@ -1260,7 +1269,7 @@ void AllRangeGround_Draw(void) {
         }
 
         // LOWER RIGHT QUADRANT
-        if (gPlayer[0].pos.x > maxDistX && gPlayer[0].pos.z > maxDistZ) {
+        if (coopCamera->pos.x > maxDistX && coopCamera->pos.z > maxDistZ) { // COOP
             // lower right corner piece : 4
             // lower middle left piece : 5
             // lower middle right piece : 6
@@ -1327,7 +1336,8 @@ void Background_DrawGround(void) {
     f32 temp_fv1;
     f32 temp_fa0;
 
-    if ((gCurrentLevel != LEVEL_VENOM_2) && ((gPlayer[0].cam.eye.y > 4000.0f) || !gDrawGround)) {
+    // COOP: the camera drawn; #96 clears xPath in co-op, so skipping this changes nothing the simulation reads (#30)
+    if ((gCurrentLevel != LEVEL_VENOM_2) && ((gPlayer[CoopPlayers_LocalIndex()].cam.eye.y > 4000.0f) || !gDrawGround)) {
         return;
     }
     if ((gCurrentLevel == LEVEL_BOLSE) && gBolseDynamicGround) {

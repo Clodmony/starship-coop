@@ -8,6 +8,8 @@ src/engine/fox_context.c	<file scope>	ok	read	definitions
 # --- engine core: player setup, play loop, display
 src/engine/fox_play.c	Play_Init	setup	read	sets gCamCount 1 (4 in versus), then CoopPlayers_LevelInit; since WP-10 CoopPlayers_Count() sizes the player allocation, the clear (Player_InitializeAll) and the init loop
 # Player_InitializeAll and Play_Update have no site left: WP-10 moved their loops to CoopPlayers_Count() (#56).
+# Display_ArwingWingsOverrideLimbDraw, AllRangeGround_Draw, ActorAllRange_DrawBarrelRoll, HUD_LivesCount1_Draw,
+# HUD_LivesCount2_Draw and HUD_EdgeArrows_Draw have no site left: they follow the local player now (#30).
 src/engine/fox_play.c	Player_CanLockOn	setup	site	loops gCamCount players
 src/engine/fox_play.c	Player_UpdateLockOn	setup	site	loops gCamCount players
 src/engine/fox_play.c	Player_UpdateEffects	setup	site	loops gCamCount players
@@ -33,8 +35,7 @@ src/engine/fox_display.c	Display_Update@gPlayer->	ok	read	debug numbers (csTimer
 src/engine/fox_display.c	Display_Update@gPlayer[0]	view	site	water, turret, Aquas lighting, starfield roll and face drawing keyed to player 0
 src/engine/fox_display.c	Display_Player_Update	setup	site	loops gCamCount players
 src/engine/fox_display.c	Display_LockOnIndicator	setup	site	loops gCamCount players
-src/engine/fox_display.c	Display_DrawHelpAlert	view	read	help arrow from player 0 camera to the wingman in trouble
-src/engine/fox_display.c	Display_ArwingWingsOverrideLimbDraw	view	site	wing damage effect of player 0
+src/engine/fox_display.c	Display_DrawHelpAlert	flow	read	goes by player 0 state; the arrow follows the camera drawn (#30)
 src/engine/fox_display.c	Display_ArwingWings	sim	site	draws wings with player 0 joint table for every Arwing drawn this way; wrong for player 2
 src/engine/camera_interp_skip.c	should_interpolate_perspective	view	read	port interpolation skip keyed to player 0 state
 src/engine/fox_radio.c	Radio_Draw@gCamCount	setup	site	no radio when gCamCount != 1
@@ -47,7 +48,6 @@ src/engine/fox_tank.c	func_tank_80045678	setup	site	gCamCount == 1 as "not versu
 src/engine/fox_tank.c	func_tank_80047FBC	flow	site	skips while player 0 is in level complete
 src/engine/fox_bg.c	Background_DrawBackdrop	view	site	backdrop from player 0 camera and state
 src/engine/fox_bg.c	Background_DrawSun	view	site	sun keyed to player 0 state
-src/engine/fox_bg.c	AllRangeGround_Draw	view	site	ground tiles chosen by player 0 position
 src/engine/fox_bg.c	Background_DrawGround	view	site	ground drawing by player 0 camera and state
 #
 # --- engine: all-range AI (fox_360.c)
@@ -60,7 +60,6 @@ src/engine/fox_360.c	ActorAllRange_UpdateEvents	flow	site	events paused while pl
 src/engine/fox_360.c	ActorAllRange_CheckObjectNearby	flow	site	checks player 0 intro state
 src/engine/fox_360.c	ActorAllRange_CheckPlayerNearby	sim	site	AI avoids player 0 only
 src/engine/fox_360.c	ActorAllRange_Update	sim	site	wingmen and Star Wolf follow, chase and react to player 0 (position, speed, somersault, shields)
-src/engine/fox_360.c	ActorAllRange_DrawBarrelRoll	view	site	billboard to player 0 camera
 #
 # --- engine: player shots (fox_beam.c)
 src/engine/fox_beam.c	PlayerShot_CheckActorHitbox	sim	site	hit test uses player 0 camera position
@@ -164,8 +163,6 @@ src/engine/fox_effect.c	Effect_Effect399_Update	view	site	faces player 0 camera
 src/engine/fox_effect.c	*	view	name	effect moves with or faces player 0 (velocity, camera), or keys on player 0 state
 #
 # --- engine: HUD, pause, team AI (fox_hud.c)
-src/engine/fox_hud.c	HUD_LivesCount1_Draw	view	site	lives of player 0
-src/engine/fox_hud.c	HUD_LivesCount2_Draw	view	site	lives of player 0
 src/engine/fox_hud.c	HUD_TeamDownWrench_Draw	view	site	player 0 state
 src/engine/fox_hud.c	HUD_TeamShields_Draw	view	site	player 0 state
 src/engine/fox_hud.c	HUD_PauseScreen_Update	flow	site	pause menu retry and quit set player 0 state only
@@ -173,9 +170,8 @@ src/engine/fox_hud.c	HUD_RadarMark_Arwing_Draw	setup	site	gCamCount != 1 as vers
 src/engine/fox_hud.c	HUD_RadarMark_Draw	setup	site	gCamCount != 1 as versus flag
 src/engine/fox_hud.c	HUD_RadarWindow_Draw	setup	site	gCamCount != 1 as versus flag
 src/engine/fox_hud.c	HUD_RadarMarks_Setup	setup	site	loops players for radar marks
-src/engine/fox_hud.c	HUD_PlayerShieldGauge_Update	view	site	shield gauge shows player 0 and adds heal to player 0
+src/engine/fox_hud.c	HUD_PlayerShieldGauge_Update	sim	site	gold ring heal goes to player 0; the gauge shows the local player (#30)
 src/engine/fox_hud.c	HUD_RadioDamage_Type	view	site	player 0 radio damage
-src/engine/fox_hud.c	HUD_EdgeArrows_Draw	view	site	player 0 camera
 src/engine/fox_hud.c	HUD_Draw	setup	site	gCamCount != 1 draws the versus HUD
 src/engine/fox_hud.c	FoBase_ExplodeCs	flow	site	Fortuna base explosion cutscene on player 0
 src/engine/fox_hud.c	ActorTeamBoss_SlippyEscapeFromTiBoss	sim	site	wingman AI flies relative to player 0

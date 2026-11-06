@@ -29,13 +29,21 @@ int32_t CoopPlayers_Count(void);
 // Nonzero when more players are simulated than cameras rendered, which only co-op does.
 int32_t CoopPlayers_IsCoop(void);
 
-// Index of the player this client looks through: what Game_Draw draws. Always 0 outside co-op, and when the index asked
-// for is not a player of this level. The simulation never reads it: outside Game_Draw gPlayerNum is 0 or the player
-// being updated (src/port/coop/game/view.h).
+// Index of the player this client looks through: what Game_Draw draws. Always 0 outside co-op, when the index asked for
+// is not a player of this level, and while that player is parked: before it joins, in a cut, after it went down, a
+// client watches player 0. The simulation never reads it: outside Game_Draw gPlayerNum is 0 or the player being updated
+// (src/port/coop/game/view.h).
 int32_t CoopPlayers_LocalIndex(void);
 
+// Nonzero when what player `index` does is for this client's eyes and ears: its own player in co-op, always outside it.
+int32_t CoopPlayers_IsLocal(int32_t index);
+
+// The player whose numbers the HUD shows. gPlayerNum stays 0 for the HUD in co-op, because the HUD also writes the
+// simulation (lives, the bomb limit, the pause menu), so what it only shows comes from here. gPlayerNum outside co-op.
+int32_t CoopPlayers_HudIndex(void);
+
 // Asks for a local player. 0 until something calls this: SF64_COOP_TEST_LOCAL_INDEX (src/port/coop/test/switches.h)
-// for now; WP-28 makes it per client.
+// for now. The join flow (WP-24) passes the playerIndex the session gives a client.
 void CoopPlayers_SetLocalIndex(int32_t index);
 
 // Nonzero while player `index` is parked: allocated, but not updated, not given a camera update and not drawn.

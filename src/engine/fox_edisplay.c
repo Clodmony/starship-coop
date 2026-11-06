@@ -1636,6 +1636,8 @@ void Object_SetSfxSourceToPos(f32* sfxSrc, Vec3f* pos) {
 
     if (gCamCount != 1) {
         sfxSrc[0] = sfxSrc[1] = sfxSrc[2] = 0.0f;
+    } else if (CoopPlayers_IsCoop()) { // COOP: a client listens from the camera it draws (#30)
+        CoopView_ToDrawnCamera(pos, sfxSrc);
     } else {
         Matrix_RotateY(gCalcMatrix, gPlayer[0].camYaw, MTXF_NEW);
         Matrix_RotateX(gCalcMatrix, gPlayer[0].camPitch, MTXF_APPLY);
@@ -1902,7 +1904,8 @@ void Object_DrawAll(s32 cullDirection) {
             Matrix_Push(&gGfxMatrix);
             Boss_Draw(boss, cullDirection);
             Matrix_Pop(&gGfxMatrix);
-            if (boss->drawShadow && (D_edisplay_801615D0.y > 0.0f)) {
+            // COOP: the shadow goes by the camera drawn; D_edisplay_801615D0 is player 0's for the AI (#30)
+            if (boss->drawShadow && CoopView_InDrawnView(D_edisplay_801615D0.y > 0.0f)) {
                 Matrix_Push(&gGfxMatrix);
                 Object_DrawShadow(i, &boss->obj);
                 Matrix_Pop(&gGfxMatrix);

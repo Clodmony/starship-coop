@@ -21,19 +21,19 @@ pattern without reading the code, so treat it as a guess.
 
 ## Summary
 
-1788 sites in 407 functions in 43 files.
+1762 sites in 401 functions in 43 files.
 A function whose sites have more than one verdict counts once per verdict in the functions column.
 
 | verdict | sites | functions | `gPlayer[0]` | `gPlayer->` | `gMainController` | `gCamCount` |
 |---|---:|---:|---:|---:|---:|---:|
-| sim | 1074 | 192 | 1073 | 1 | 0 | 0 |
-| view | 223 | 89 | 178 | 0 | 42 | 3 |
+| sim | 1074 | 193 | 1073 | 1 | 0 | 0 |
+| view | 196 | 81 | 151 | 0 | 42 | 3 |
 | input | 19 | 11 | 0 | 0 | 19 | 0 |
-| flow | 326 | 76 | 323 | 0 | 3 | 0 |
+| flow | 327 | 77 | 324 | 0 | 3 | 0 |
 | setup | 53 | 33 | 2 | 0 | 0 | 51 |
 | ok | 93 | 37 | 1 | 2 | 82 | 8 |
 
-Basis per site: read 193, site 953, name 642.
+Basis per site: read 188, site 932, name 642.
 
 ## Sites
 
@@ -53,16 +53,15 @@ Basis per site: read 193, site 953, name 642.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `AllRange_PlayMessage` | 90:P0 | flow | site | radio only when player 0 not in standby |
-| `ActorAllRange_PlayMessage` | 480:P0 | flow | site | radio only when player 0 not in standby |
-| `ActorAllRange_UpdateStarWolfEvents` | 511:P0, 513:P0, 518:P0, 520:P0, 522:P0, 523:P0, 524:P0, 525:P0, 526:P0 | flow | read | Star Wolf intro cutscene puts player 0 in standby and moves its camera |
-| `ActorAllRange_SpawnSupplies` | 667:MC | input | site | call for supplies with C-right on gMainController |
-| `ActorAllRange_SpawnSupplies` | 702:P0, 706:P0 | sim | site | supplies sent when player 0 shields are low |
-| `ActorAllRange_UpdateEvents` | 714:P0 | flow | site | events paused while player 0 is down |
-| `ActorAllRange_CheckObjectNearby` | 814:P0 | flow | site | checks player 0 intro state |
-| `ActorAllRange_CheckPlayerNearby` | 1233:P0, 1234:P0, 1235:P0, 1236:P0 | sim | site | AI avoids player 0 only |
-| `ActorAllRange_Update` | 1406:P0, 1416:P0, 1426:P0, 1505:P0, 1576:P0, 1577:P0, 1585:P0, 1597:P0, 1598:P0, 1599:P0, 1600:P0, 1601:P0, 1605:P0, 1659:P0, 1660:P0, 1661:P0, 1928:P0 | sim | site | wingmen and Star Wolf follow, chase and react to player 0 (position, speed, somersault, shields) |
-| `ActorAllRange_DrawBarrelRoll` | 2311:P0, 2312:P0 | view | site | billboard to player 0 camera |
+| `AllRange_PlayMessage` | 91:P0 | flow | site | radio only when player 0 not in standby |
+| `ActorAllRange_PlayMessage` | 481:P0 | flow | site | radio only when player 0 not in standby |
+| `ActorAllRange_UpdateStarWolfEvents` | 512:P0, 514:P0, 519:P0, 521:P0, 523:P0, 524:P0, 525:P0, 526:P0, 527:P0 | flow | read | Star Wolf intro cutscene puts player 0 in standby and moves its camera |
+| `ActorAllRange_SpawnSupplies` | 668:MC | input | site | call for supplies with C-right on gMainController |
+| `ActorAllRange_SpawnSupplies` | 703:P0, 707:P0 | sim | site | supplies sent when player 0 shields are low |
+| `ActorAllRange_UpdateEvents` | 715:P0 | flow | site | events paused while player 0 is down |
+| `ActorAllRange_CheckObjectNearby` | 815:P0 | flow | site | checks player 0 intro state |
+| `ActorAllRange_CheckPlayerNearby` | 1234:P0, 1235:P0, 1236:P0, 1237:P0 | sim | site | AI avoids player 0 only |
+| `ActorAllRange_Update` | 1407:P0, 1417:P0, 1427:P0, 1506:P0, 1577:P0, 1578:P0, 1586:P0, 1598:P0, 1599:P0, 1600:P0, 1601:P0, 1602:P0, 1606:P0, 1660:P0, 1661:P0, 1662:P0, 1929:P0 | sim | site | wingmen and Star Wolf follow, chase and react to player 0 (position, speed, somersault, shields) |
 
 ### `src/engine/fox_beam.c`
 
@@ -86,10 +85,9 @@ Basis per site: read 193, site 953, name 642.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Background_DrawBackdrop` | 607:P0, 727:P0, 735:P0, 754:P0, 769:P0, 793:P0, 794:P0, 795:P0, 798:P0, 799:P0, 800:P0, 806:P0, 867:P0, 869:P0, 870:P0, 897:P0, 946:P0, 987:P0, 1017:P0 | view | site | backdrop from player 0 camera and state |
-| `Background_DrawSun` | 1088:P0, 1108:P0 | view | site | sun keyed to player 0 state |
-| `AllRangeGround_Draw` | 1227:P0, 1239:P0, 1251:P0, 1263:P0 | view | site | ground tiles chosen by player 0 position |
-| `Background_DrawGround` | 1330:P0, 1841:P0, 1843:P0 | view | site | ground drawing by player 0 camera and state |
+| `Background_DrawBackdrop` | 608:P0, 761:P0, 776:P0, 800:P0, 801:P0, 802:P0, 805:P0, 806:P0, 807:P0, 874:P0, 904:P0, 953:P0, 994:P0, 1024:P0 | view | site | backdrop from player 0 camera and state |
+| `Background_DrawSun` | 1095:P0, 1115:P0 | view | site | sun keyed to player 0 state |
+| `Background_DrawGround` | 1851:P0, 1853:P0 | view | site | ground drawing by player 0 camera and state |
 
 ### `src/engine/fox_boss.c`
 
@@ -127,14 +125,13 @@ Basis per site: read 193, site 953, name 642.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Display_DrawHelpAlert` | 51:P0, 66:P0, 67:P0, 69:P0, 70:P0, 71:P0 | view | read | help arrow from player 0 camera to the wingman in trouble |
-| `Display_ArwingWingsOverrideLimbDraw` | 516:P0 | view | site | wing damage effect of player 0 |
-| `Display_ArwingWings` | 634:P0, 689:P0 | sim | site | draws wings with player 0 joint table for every Arwing drawn this way; wrong for player 2 |
-| `Display_Player_Update` | 1469:CC, 1522:CC | setup | site | loops gCamCount players |
-| `Display_LockOnIndicator` | 1709:CC, 1742:CC | setup | site | loops gCamCount players |
-| `Display_Update` | 1839:P0, 1853:P0, 1939:P0, 1953:P0, 1969:P0, 1980:P0, 1985:P0, 2003:P0, 2013:P0, 2016:P0, 2038:P0, 2044:P0, 2052:P0, 2057:P0, 2070:P0, 2083:P0 | view | site | water, turret, Aquas lighting, starfield roll and face drawing keyed to player 0 |
-| `Display_Update` | 2089:CC | setup | site | gCamCount != 1 draws the versus HUD; the five player draw loops are on CoopPlayers_Count() since WP-10 |
-| `Display_Update` | 2126:P->, 2128:P-> | ok | read | debug numbers (csTimer, csState) |
+| `Display_DrawHelpAlert` | 52:P0 | flow | read | goes by player 0 state; the arrow follows the camera drawn (#30) |
+| `Display_ArwingWings` | 696:P0 | sim | site | draws wings with player 0 joint table for every Arwing drawn this way; wrong for player 2 |
+| `Display_Player_Update` | 1479:CC, 1532:CC | setup | site | loops gCamCount players |
+| `Display_LockOnIndicator` | 1719:CC, 1753:CC | setup | site | loops gCamCount players |
+| `Display_Update` | 1850:P0, 1864:P0, 1964:P0, 1980:P0, 1992:P0, 1997:P0, 2015:P0, 2025:P0, 2028:P0, 2050:P0, 2056:P0, 2064:P0, 2069:P0, 2083:P0, 2096:P0 | view | site | water, turret, Aquas lighting, starfield roll and face drawing keyed to player 0 |
+| `Display_Update` | 2102:CC | setup | site | gCamCount != 1 draws the versus HUD; the five player draw loops are on CoopPlayers_Count() since WP-10 |
+| `Display_Update` | 2139:P->, 2141:P-> | ok | read | debug numbers (csTimer, csState) |
 
 ### `src/engine/fox_edisplay.c`
 
@@ -146,13 +143,13 @@ Basis per site: read 193, site 953, name 642.
 | `Actor_DrawAllRange` | 1222:P0, 1233:P0, 1269:P0 | view | site | all-range markers by player 0 state |
 | `Actor_DrawAllRange` | 1291:CC | setup | site | loops players for markers |
 | `Item_Draw` | 1529:CC | setup | site | gCamCount == 1 as "not versus" for all-range item marker |
-| `Object_SetSfxSourceToPos` | 1637:CC, 1640:P0, 1641:P0 | view | site | object sounds placed relative to player 0 camera (gCamCount != 1 skips: versus has no positional sound) |
-| `Object_UpdateSfxSource` | 1658:CC | view | site | gCamCount != 1 skips positional sound |
-| `Object_SetSfxSourceToView` | 1670:CC | view | site | gCamCount != 1 skips positional sound |
-| `Display_SetSecondLight` | 1772:P0 | view | site | player 0 state |
-| `Object_DrawAll` | 1962:P0, 1963:P0 | view | site | player 0 state |
-| `Object_Draw` | 2082:P0 | view | site | water reflection by player 0 state |
-| `Effect_Draw` | 2099:P0 | view | site | water reflection by player 0 state |
+| `Object_SetSfxSourceToPos` | 1637:CC, 1642:P0, 1643:P0 | view | site | object sounds placed relative to player 0 camera (gCamCount != 1 skips: versus has no positional sound) |
+| `Object_UpdateSfxSource` | 1660:CC | view | site | gCamCount != 1 skips positional sound |
+| `Object_SetSfxSourceToView` | 1672:CC | view | site | gCamCount != 1 skips positional sound |
+| `Display_SetSecondLight` | 1774:P0 | view | site | player 0 state |
+| `Object_DrawAll` | 1965:P0, 1966:P0 | view | site | player 0 state |
+| `Object_Draw` | 2085:P0 | view | site | water reflection by player 0 state |
+| `Effect_Draw` | 2102:P0 | view | site | water reflection by player 0 state |
 
 ### `src/engine/fox_effect.c`
 
@@ -188,34 +185,34 @@ Basis per site: read 193, site 953, name 642.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `func_enmy_80060FE4` | 102:P0 | flow | site | player 0 intro state |
-| `func_enmy_80061148` | 130:P0 | flow | site | player 0 level complete |
-| `func_enmy_80061A4C` | 319:P0, 320:P0 | sim | site | target point around player 0 |
-| `func_enmy_80061B68` | 340:P0, 343:P0 | sim | site | target point around player 0 |
-| `Object_Load` | 439:P0, 440:P0 | sim | site | level objects spawn relative to player 0 path position |
-| `Object_LoadLevelObjects` | 592:P0, 595:P0, 632:P0, 633:P0 | sim | site | spawning on path splits follows player 0 path change |
-| `Object_Init` | 1224:P0 | sim | site | init depends on player 0 z |
-| `ActorMissileSeek_Update` | 1608:P0, 1609:P0, 1610:P0, 1686:P0, 1707:P0, 1710:P0 | sim | site | homing missile seeks player 0 |
-| `SceneryRotateTowardsCamera` | 2016:P0 | view | site | billboard to player 0 camera |
-| `Item_CheckBounds` | 2027:P0, 2033:P0, 2036:P0, 2037:P0, 2039:P0, 2040:P0 | sim | site | items kept inside player 0 path bounds |
-| `ActorSupplies_Update` | 2127:P0, 2152:P0 | sim | site | supply drop for player 0 |
-| `func_enmy_80067A40` | 2200:P0, 2202:P0, 2204:P0, 2206:P0, 2208:P0 | sim | site | wing repair applied to player 0 |
-| `ItemLasers_Update` | 2296:P0, 2297:P0 | sim | site | laser item checks player 0 wings |
-| `ItemSupplyRing_Update` | 2363:P0 | view | site | player 0 alternate (cockpit) view |
-| `ItemMeteoWarp_Update` | 2440:P0, 2443:P0, 2448:P0, 2449:P0 | flow | site | warp ring sends player 0 into the warp zone |
-| `ItemCheckpoint_Update` | 2472:P0 | view | site | player 0 alternate (cockpit) view |
-| `ItemPathChange_Update` | 2518:P0, 2521:P0, 2522:P0, 2525:P0, 2526:P0, 2529:P0, 2536:P0, 2539:P0, 2542:P0, 2550:P0, 2551:P0, 2555:P0, 2556:P0, 2557:P0, 2559:P0, 2560:P0, 2565:P0, 2566:P0, 2570:P0, 2571:P0, 2575:P0, 2576:P0, 2577:P0, 2579:P0, 2580:P0, 2585:P0, 2586:P0, 2590:P0, 2591:P0 | flow | read | path split and level end gate: changes player 0 path, state and flags |
-| `Sprite_UpdateDoodad` | 2600:P0 | view | site | billboard to player 0 camera |
-| `Actor_Move` | 2690:P0, 2694:P0, 2695:P0, 2696:P0, 2697:P0 | sim | read | actors are killed (Object_Kill) when outside player 0 camera and path bounds |
-| `Boss_Move` | 2734:P0, 2735:P0 | sim | site | bosses culled by player 0 camera |
-| `Scenery_Move` | 2741:P0, 2747:P0, 2754:P0, 2757:P0 | sim | site | scenery culled by player 0 camera |
-| `Sprite_Move` | 2774:P0, 2784:P0 | sim | site | sprites culled by player 0 camera |
-| `Effect_Move` | 2798:P0, 2800:P0, 2801:P0 | sim | read | effects killed (Object_Kill) outside player 0 camera range |
-| `Item_Move` | 2809:P0 | sim | site | items culled by player 0 camera |
-| `Actor_Update` | 2840:CC | ok | read | versus branch, loops all players |
-| `Actor_Update` | 2850:MC, 2851:MC | input | read | campaign lock-on release reads gMainController for TEAM_ID_FOX; versus branch already per player |
-| `TexturedLine_Update` | 3088:P0, 3105:P0, 3107:P0 | sim | site | damages player 0 only |
-| `Object_Update` | 3148:P0, 3149:P0, 3150:P0, 3154:P0 | flow | site | objects update and load only in certain player 0 states |
+| `func_enmy_80060FE4` | 105:P0 | flow | site | player 0 intro state |
+| `func_enmy_80061148` | 133:P0 | flow | site | player 0 level complete |
+| `func_enmy_80061A4C` | 322:P0, 323:P0 | sim | site | target point around player 0 |
+| `func_enmy_80061B68` | 343:P0, 346:P0 | sim | site | target point around player 0 |
+| `Object_Load` | 442:P0, 443:P0 | sim | site | level objects spawn relative to player 0 path position |
+| `Object_LoadLevelObjects` | 595:P0, 598:P0, 635:P0, 636:P0 | sim | site | spawning on path splits follows player 0 path change |
+| `Object_Init` | 1227:P0 | sim | site | init depends on player 0 z |
+| `ActorMissileSeek_Update` | 1611:P0, 1612:P0, 1613:P0, 1689:P0, 1710:P0, 1713:P0 | sim | site | homing missile seeks player 0 |
+| `SceneryRotateTowardsCamera` | 2019:P0 | view | site | billboard to player 0 camera |
+| `Item_CheckBounds` | 2030:P0, 2036:P0, 2039:P0, 2040:P0, 2042:P0, 2043:P0 | sim | site | items kept inside player 0 path bounds |
+| `ActorSupplies_Update` | 2130:P0, 2155:P0 | sim | site | supply drop for player 0 |
+| `func_enmy_80067A40` | 2203:P0, 2205:P0, 2207:P0, 2209:P0, 2211:P0 | sim | site | wing repair applied to player 0 |
+| `ItemLasers_Update` | 2299:P0, 2300:P0 | sim | site | laser item checks player 0 wings |
+| `ItemSupplyRing_Update` | 2366:P0 | view | site | player 0 alternate (cockpit) view |
+| `ItemMeteoWarp_Update` | 2443:P0, 2446:P0, 2451:P0, 2452:P0 | flow | site | warp ring sends player 0 into the warp zone |
+| `ItemCheckpoint_Update` | 2475:P0 | view | site | player 0 alternate (cockpit) view |
+| `ItemPathChange_Update` | 2521:P0, 2524:P0, 2525:P0, 2528:P0, 2529:P0, 2532:P0, 2539:P0, 2542:P0, 2545:P0, 2553:P0, 2554:P0, 2558:P0, 2559:P0, 2560:P0, 2562:P0, 2563:P0, 2568:P0, 2569:P0, 2573:P0, 2574:P0, 2578:P0, 2579:P0, 2580:P0, 2582:P0, 2583:P0, 2588:P0, 2589:P0, 2593:P0, 2594:P0 | flow | read | path split and level end gate: changes player 0 path, state and flags |
+| `Sprite_UpdateDoodad` | 2603:P0 | view | site | billboard to player 0 camera |
+| `Actor_Move` | 2693:P0, 2697:P0, 2698:P0, 2699:P0, 2700:P0 | sim | read | actors are killed (Object_Kill) when outside player 0 camera and path bounds |
+| `Boss_Move` | 2737:P0, 2738:P0 | sim | site | bosses culled by player 0 camera |
+| `Scenery_Move` | 2744:P0, 2750:P0, 2757:P0, 2760:P0 | sim | site | scenery culled by player 0 camera |
+| `Sprite_Move` | 2777:P0, 2787:P0 | sim | site | sprites culled by player 0 camera |
+| `Effect_Move` | 2801:P0, 2803:P0, 2804:P0 | sim | read | effects killed (Object_Kill) outside player 0 camera range |
+| `Item_Move` | 2812:P0 | sim | site | items culled by player 0 camera |
+| `Actor_Update` | 2843:CC | ok | read | versus branch, loops all players |
+| `Actor_Update` | 2853:MC, 2854:MC | input | read | campaign lock-on release reads gMainController for TEAM_ID_FOX; versus branch already per player |
+| `TexturedLine_Update` | 3091:P0, 3108:P0, 3110:P0 | sim | site | damages player 0 only |
+| `Object_Update` | 3151:P0, 3152:P0, 3153:P0, 3157:P0 | flow | site | objects update and load only in certain player 0 states |
 
 ### `src/engine/fox_enmy2.c`
 
@@ -238,36 +235,33 @@ Basis per site: read 193, site 953, name 642.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Game_Update` | 368:CC, 424:CC, 525:CC, 526:CC, 531:CC, 532:CC, 534:CC, 536:CC, 567:CC, 585:CC | setup | site | viewports from gCamCount (1, 2, 4); GSTATE_INIT resets to 1; player loop for draw |
+| `Game_Update` | 368:CC, 424:CC, 525:CC, 526:CC, 531:CC, 532:CC, 534:CC, 536:CC, 567:CC, 587:CC | setup | site | viewports from gCamCount (1, 2, 4); GSTATE_INIT resets to 1; player loop for draw |
 
 ### `src/engine/fox_hud.c`
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `HUD_LivesCount1_Draw` | 139:P0 | view | site | lives of player 0 |
-| `HUD_TeamDownWrench_Draw` | 197:P0 | view | site | player 0 state |
-| `HUD_TeamShields_Draw` | 517:P0 | view | site | player 0 state |
-| `HUD_LivesCount2_Draw` | 939:P0 | view | site | lives of player 0 |
-| `HUD_PauseScreen_Update` | 1485:P0, 1495:P0, 1607:P0, 1609:P0 | flow | site | pause menu retry and quit set player 0 state only |
-| `HUD_RadarMark_Arwing_Draw` | 1797:CC | setup | site | gCamCount != 1 as versus flag |
-| `HUD_RadarMark_Draw` | 1884:CC | setup | site | gCamCount != 1 as versus flag |
-| `HUD_RadarWindow_Draw` | 1964:CC | setup | site | gCamCount != 1 as versus flag |
-| `HUD_RadarMarks_Setup` | 1991:CC | setup | site | loops players for radar marks |
-| `HUD_PlayerShieldGauge_Update` | 2420:P0, 2440:P0, 2458:P0 | view | site | shield gauge shows player 0 and adds heal to player 0 |
-| `HUD_RadioDamage_Type` | 2572:P0 | view | site | player 0 radio damage |
-| `HUD_EdgeArrows_Draw` | 2852:P0, 2853:P0 | view | site | player 0 camera |
-| `HUD_Draw` | 3803:CC | setup | site | gCamCount != 1 draws the versus HUD |
-| `FoBase_ExplodeCs` | 3875:P0 | flow | site | Fortuna base explosion cutscene on player 0 |
-| `ActorTeamBoss_SlippyEscapeFromTiBoss` | 4079:P0, 4081:P0, 4082:P0, 4083:P0, 4091:P0, 4093:P0 | sim | site | wingman AI flies relative to player 0 |
-| `ActorTeamBoss_FlyAlongPlayer` | 4228:P0, 4230:P0, 4231:P0, 4232:P0, 4235:P0 | sim | site | wingmen fly alongside player 0 |
-| `ActorTeamBoss_SetAction` | 4312:P0 | flow | site | player 0 level complete |
-| `ActorTeamBoss_DmgEffect` | 4599:P0 | flow | site | player 0 level complete |
-| `ActorTeamBoss_UTurn` | 4783:P0 | sim | site | player 0 path height |
-| `ActorTeamBoss_Update` | 4895:P0, 4902:P0 | flow | site | player 0 level complete |
-| `Aquas_CsIntroActors_Update` | 4937:P0 | flow | site | Aquas intro on player 0 |
-| `Aquas_Effect363_Update` | 5480:P0 | view | site | bubbles around player 0 |
-| `Aquas_Effect363_Draw` | 5537:P0 | view | site | player 0 intro state |
-| `Venom1_LevelStart2` | 6155:P0 | flow | site | level start sets player 0 speed |
+| `HUD_TeamDownWrench_Draw` | 198:P0 | view | site | player 0 state |
+| `HUD_TeamShields_Draw` | 518:P0 | view | site | player 0 state |
+| `HUD_PauseScreen_Update` | 1486:P0, 1496:P0, 1608:P0, 1610:P0 | flow | site | pause menu retry and quit set player 0 state only |
+| `HUD_RadarMark_Arwing_Draw` | 1798:CC | setup | site | gCamCount != 1 as versus flag |
+| `HUD_RadarMark_Draw` | 1885:CC | setup | site | gCamCount != 1 as versus flag |
+| `HUD_RadarWindow_Draw` | 1965:CC | setup | site | gCamCount != 1 as versus flag |
+| `HUD_RadarMarks_Setup` | 1992:CC | setup | site | loops players for radar marks |
+| `HUD_PlayerShieldGauge_Update` | 2452:P0 | sim | site | gold ring heal goes to player 0; the gauge shows the local player (#30) |
+| `HUD_RadioDamage_Type` | 2584:P0 | view | site | player 0 radio damage |
+| `HUD_Draw` | 3819:CC | setup | site | gCamCount != 1 draws the versus HUD |
+| `FoBase_ExplodeCs` | 3891:P0 | flow | site | Fortuna base explosion cutscene on player 0 |
+| `ActorTeamBoss_SlippyEscapeFromTiBoss` | 4095:P0, 4097:P0, 4098:P0, 4099:P0, 4107:P0, 4109:P0 | sim | site | wingman AI flies relative to player 0 |
+| `ActorTeamBoss_FlyAlongPlayer` | 4244:P0, 4246:P0, 4247:P0, 4248:P0, 4251:P0 | sim | site | wingmen fly alongside player 0 |
+| `ActorTeamBoss_SetAction` | 4328:P0 | flow | site | player 0 level complete |
+| `ActorTeamBoss_DmgEffect` | 4615:P0 | flow | site | player 0 level complete |
+| `ActorTeamBoss_UTurn` | 4799:P0 | sim | site | player 0 path height |
+| `ActorTeamBoss_Update` | 4911:P0, 4918:P0 | flow | site | player 0 level complete |
+| `Aquas_CsIntroActors_Update` | 4953:P0 | flow | site | Aquas intro on player 0 |
+| `Aquas_Effect363_Update` | 5496:P0 | view | site | bubbles around player 0 |
+| `Aquas_Effect363_Draw` | 5553:P0 | view | site | player 0 intro state |
+| `Venom1_LevelStart2` | 6171:P0 | flow | site | level start sets player 0 speed |
 
 ### `src/engine/fox_play.c`
 
@@ -284,15 +278,15 @@ Basis per site: read 193, site 953, name 642.
 | `Player_Setup` | 4937:CC | setup | site | gCamCount == gPlayerNum + 1: HUD and hit counters reset only when the last player is set up |
 | `Player_UpdateTankJets` | 5477:CC, 5481:CC | setup | site | gCamCount == 1 as "not versus" for jet effects |
 | `Player_UpdateEffects` | 5523:CC | setup | site | loops gCamCount players |
-| `Player_Update` | 5896:MC, 5897:MC, 5898:MC | input | read | gInputHold/gInputPress/gControllerRumble taken from gMainController for every player; WP-14 replaces this |
-| `Player_Update` | 6130:CC | setup | site | gCamCount == 4: down in versus goes to VS_STANDBY, else fade out and restart level |
-| `Player_Update` | 6140:P0, 6209:P0 | flow | site | death restart resets gPlayer[0].zPath and path progress; boost check reads player 0 state for every player |
-| `Camera_SetStarfieldPos` | 6638:P0, 6650:P0 | view | site | starfield from player 0 camera |
-| `Camera_SetupLights` | 6733:P0 | view | site | lights depend on player 0 state |
-| `Play_UpdateLevel` | 6863:P0, 6864:P0, 6865:P0, 6866:P0, 6867:P0, 6880:P0, 6881:P0, 6896:P0, 6905:P0, 6906:P0, 6931:P0, 6936:P0, 6939:P0, 6942:P0, 6945:P0, 6948:P0, 6951:P0, 6961:P0, 6963:P0, 6965:P0, 6966:P0, 6968:P0, 6969:P0, 6971:P0, 6977:P0, 6981:P0, 6983:P0, 6989:P0, 6999:P0, 7005:P0, 7006:P0 | flow | site | per-level triggers on player 0: level complete, warp zone, Solar heat damage to player 0 only, Venom 2 / Aquas checks |
-| `Play_Main` | 7159:P0, 7160:P0, 7162:P0, 7163:P0, 7164:P0, 7200:P0, 7232:P0, 7233:P0 | flow | site | all-range z setup for player 0 only |
-| `Play_Main` | 7199:MC, 7222:MC, 7232:MC, 7252:MC | input | site | Start (intro skip, pause, unpause) and R while paused (toggles gShowReticles[0], no radio here) are read from gMainController only; versus reads R per controller |
-| `Play_Main` | 7212:CC | setup | site | intro skip resets gCamCount to 1; its sound cleanup loop is on CoopPlayers_Count() since WP-10 |
+| `Player_Update` | 5897:MC, 5898:MC, 5899:MC | input | read | gInputHold/gInputPress/gControllerRumble taken from gMainController for every player; WP-14 replaces this |
+| `Player_Update` | 6135:CC | setup | site | gCamCount == 4: down in versus goes to VS_STANDBY, else fade out and restart level |
+| `Player_Update` | 6145:P0, 6214:P0 | flow | site | death restart resets gPlayer[0].zPath and path progress; boost check reads player 0 state for every player |
+| `Camera_SetStarfieldPos` | 6643:P0, 6655:P0 | view | site | starfield from player 0 camera |
+| `Camera_SetupLights` | 6738:P0 | view | site | lights depend on player 0 state |
+| `Play_UpdateLevel` | 6868:P0, 6869:P0, 6870:P0, 6871:P0, 6872:P0, 6885:P0, 6886:P0, 6901:P0, 6910:P0, 6911:P0, 6936:P0, 6941:P0, 6944:P0, 6947:P0, 6950:P0, 6953:P0, 6956:P0, 6966:P0, 6968:P0, 6970:P0, 6971:P0, 6973:P0, 6974:P0, 6976:P0, 6982:P0, 6986:P0, 6988:P0, 6994:P0, 7004:P0, 7010:P0, 7011:P0 | flow | site | per-level triggers on player 0: level complete, warp zone, Solar heat damage to player 0 only, Venom 2 / Aquas checks |
+| `Play_Main` | 7164:P0, 7165:P0, 7167:P0, 7168:P0, 7169:P0, 7205:P0, 7237:P0, 7238:P0 | flow | site | all-range z setup for player 0 only |
+| `Play_Main` | 7204:MC, 7227:MC, 7237:MC, 7257:MC | input | site | Start (intro skip, pause, unpause) and R while paused (toggles gShowReticles[0], no radio here) are read from gMainController only; versus reads R per controller |
+| `Play_Main` | 7217:CC | setup | site | intro skip resets gCamCount to 1; its sound cleanup loop is on CoopPlayers_Count() since WP-10 |
 
 ### `src/engine/fox_radio.c`
 

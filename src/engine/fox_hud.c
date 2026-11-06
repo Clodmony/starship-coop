@@ -4,6 +4,7 @@
 #include "port/interpolation/FrameInterpolation.h"
 #include "port/hooks/Events.h"
 #include "port/mods/PortEnhancements.h"
+#include "port/coop/game/players.h" // COOP: the HUD shows the client's own player (#30)
 
 Vec3f D_801616A0;
 Vec3f D_801616B0;
@@ -136,7 +137,7 @@ void HUD_LivesCount1_Draw(f32 xPos, f32 yPos, s32 lifeCount) {
     RCP_SetupDL(&gMasterDisp, SETUPDL_78_OPTIONAL);
     gDPSetPrimColor(gMasterDisp++, 0, 0, 255, 255, 255, 255);
 
-    player = &gPlayer[0];
+    player = &gPlayer[CoopPlayers_LocalIndex()]; // COOP: was player 0 (#30)
 
     lifeIconIdx = 0; // default
     switch (player->form) {
@@ -936,7 +937,7 @@ void HUD_DrawLevelClearScreen(void) {
 void HUD_LivesCount2_Draw(f32 x, f32 y, s32 number) {
     u8* sLivesCounterTexs[] = { aArwingLifeIconTex, aLandmasterLifeIconTex, aBlueMarineLifeIconTex };
     u16* sLivesCounterTLUTs[] = { aArwingLifeIconTLUT, aLandmasterLifeIconTLUT, aBlueMarineLifeIconTLUT };
-    Player* player = &gPlayer[0];
+    Player* player = &gPlayer[CoopPlayers_LocalIndex()]; // COOP: was player 0 (#30)
     f32 x0;
     f32 x1;
     f32 x2;
@@ -1894,7 +1895,7 @@ void HUD_RadarMark_Draw(s32 type) {
                 }
             }
 
-            if ((playernum == gPlayerNum) && (gGameFrameCount & 2)) {
+            if ((playernum == CoopPlayers_HudIndex()) && (gGameFrameCount & 2)) { // COOP: was gPlayerNum (#30)
                 arwingMarkColor = (arwingMarkColor * 2) + 1;
             } else {
                 arwingMarkColor = arwingMarkColor * 2;
@@ -2016,6 +2017,17 @@ void HUD_RadarMarks_Setup(void) {
 
         if ((gGameFrameCount % 64) != 0) {
             gRadarMarks[i].type = 999;
+        }
+    }
+
+    // COOP: slots 1 to 3 belong to the wingmen's actors, so players 1 and up take slots no actor has (#30)
+    for (i = 1; (i < CoopPlayers_Count()) && CoopPlayers_IsCoop(); i++) {
+        if (!CoopPlayers_IsParked(i)) {
+            gRadarMarks[59 + i].enabled = true;
+            gRadarMarks[59 + i].type = i;
+            gRadarMarks[59 + i].yRot = gPlayer[i].yRot_114 + gPlayer[i].rot.y;
+            gRadarMarks[59 + i].pos.z = gPlayer[i].trueZpos;
+            gRadarMarks[59 + i].pos.x = gPlayer[i].pos.x;
         }
     }
 
@@ -2417,7 +2429,7 @@ void HUD_PlayerShieldGauge_Update(void) {
                 D_801617A4 = D_801617A8 = 1.0f;
             }
 
-            shields = gPlayer[0].shields;
+            shields = gPlayer[CoopPlayers_LocalIndex()].shields; // COOP: was player 0 (#30)
             D_801617AC = shields / ((256.0f * D_801617A8) - 1.0f);
 
             if (gGoldRingCount[0] >= 3) {
@@ -2455,7 +2467,7 @@ void HUD_PlayerShieldGauge_Update(void) {
 
             Math_SmoothStepToF(&D_801617A8, D_801617A4, 0.02f, 1000.0f, 0.001f);
 
-            shields = gPlayer[0].shields;
+            shields = gPlayer[CoopPlayers_LocalIndex()].shields; // COOP: was player 0 (#30)
             if (shields > (256.0f * D_801617A8) - 1.0f) {
                 shields = (256.0f * D_801617A8) - 1.0f;
             }
@@ -2849,8 +2861,8 @@ void HUD_EdgeArrows_Draw(s32 idx, bool arg1) {
 
     Matrix_Push(&gGfxMatrix);
 
-    if (gPlayer[0].alternateView) {
-        Matrix_RotateZ(gGfxMatrix, M_DTOR * gPlayer[0].camRoll, MTXF_APPLY);
+    if (gPlayer[CoopPlayers_LocalIndex()].alternateView) { // COOP: was player 0 (#30)
+        Matrix_RotateZ(gGfxMatrix, M_DTOR * gPlayer[CoopPlayers_LocalIndex()].camRoll, MTXF_APPLY);
     }
 
     if (D_800D1F88[idx]) {
@@ -2891,9 +2903,10 @@ void HUD_EdgeArrows_Update(void) {
     s32 i;
     s32 j;
 
-    if ((gPlayer[gPlayerNum].flags_228 != 0) && (gPlayer[gPlayerNum].pathChangeTimer == 0) &&
+    // COOP: was gPlayerNum (#30)
+    if ((gPlayer[CoopPlayers_HudIndex()].flags_228 != 0) && (gPlayer[CoopPlayers_HudIndex()].pathChangeTimer == 0) &&
         (gPlayState != PLAY_PAUSE)) {
-        j = gPlayer[gPlayerNum].flags_228;
+        j = gPlayer[CoopPlayers_HudIndex()].flags_228;
 
         for (i = 0; i < 12; i++) {
             if ((j & D_800D2048[i]) != D_800D2048[i]) {
@@ -3075,12 +3088,12 @@ void HUD_BoostGauge_Draw(f32 xPos, f32 yPos) {
         boostGaugeYpos[playerNum] = yPos;
     }
 
-    temp_fs0 = gPlayer[gPlayerNum].boostMeter * (1.0f / 90.0f);
+    temp_fs0 = gPlayer[CoopPlayers_HudIndex()].boostMeter * (1.0f / 90.0f); // COOP: was gPlayerNum (#30)
 
     temp_fv0 = 1.0f - temp_fs0;
     temp2 = sp68 * temp_fs0;
 
-    if (!gPlayer[gPlayerNum].boostCooldown) {
+    if (!gPlayer[CoopPlayers_HudIndex()].boostCooldown) { // COOP: was gPlayerNum
         Math_SmoothStepToF(&D_800D19AC[playerNum], 255.0f, 0.4f, 100.0f, 0.01f);
     } else {
         Math_SmoothStepToF(&D_800D19AC[playerNum], 100.0f, 0.4f, 100.0f, 0.01f);
@@ -3453,13 +3466,16 @@ void HUD_BombCounter_Draw(f32 x, f32 y) {
     x = OTRGetDimensionFromRightEdgeOverride(x);
 
     // Max bombs
-    if (gBombCount[gPlayerNum] > 9) {
-        gBombCount[gPlayerNum] = 9;
+    // COOP: for every player, the same on every client; gPlayerNum alone would be player 0 (#30)
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        if (gBombCount[i] > 9) {
+            gBombCount[i] = 9;
+        }
     }
 
     switch (sBombCounterState) {
         case BOMB_COUNTER_INIT:
-            sHudBombCount = gBombCount[gPlayerNum];
+            sHudBombCount = gBombCount[CoopPlayers_HudIndex()]; // COOP: was gPlayerNum
             sp68 = 0;
             sBombCounterState = BOMB_COUNTER_STATE_1;
             D_80161770 = D_80161774 = D_80161778 = 255.0f;
@@ -3467,7 +3483,7 @@ void HUD_BombCounter_Draw(f32 x, f32 y) {
             break;
 
         case BOMB_COUNTER_STATE_1:
-            temp_fv0 = gBombCount[gPlayerNum] - sHudBombCount;
+            temp_fv0 = gBombCount[CoopPlayers_HudIndex()] - sHudBombCount; // COOP: was gPlayerNum
             if (temp_fv0 > 0.0f) {
                 sHudBombCount++;
                 if (sHudBombCount > 5) {
@@ -3681,7 +3697,7 @@ void HUD_SinglePlayer(void) {
         }
         CALL_CANCELLABLE_EVENT(DrawLivesCounterHUDEvent) {
             if (gCurrentLevel != LEVEL_TRAINING) {
-                HUD_LivesCount2_Draw(248.0f, 11.0f, gLifeCount[gPlayerNum]);
+                HUD_LivesCount2_Draw(248.0f, 11.0f, gLifeCount[CoopPlayers_HudIndex()]); // COOP: was gPlayerNum
             }
         }
     }

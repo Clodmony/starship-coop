@@ -60,10 +60,18 @@ int32_t CoopPlayers_IsCoop(void) {
 }
 
 int32_t CoopPlayers_LocalIndex(void) {
-    if (!CoopPlayers_IsCoop() || (sLocalIndex >= CoopPlayers_Count())) {
+    if (!CoopPlayers_IsCoop() || (sLocalIndex >= CoopPlayers_Count()) || (sSlot[sLocalIndex] != COOP_SLOT_JOINED)) {
         return 0;
     }
     return sLocalIndex;
+}
+
+int32_t CoopPlayers_IsLocal(int32_t index) {
+    return !CoopPlayers_IsCoop() || (index == CoopPlayers_LocalIndex());
+}
+
+int32_t CoopPlayers_HudIndex(void) {
+    return CoopPlayers_IsCoop() ? CoopPlayers_LocalIndex() : gPlayerNum;
 }
 
 void CoopPlayers_SetLocalIndex(int32_t index) {
@@ -83,6 +91,8 @@ static void CoopPlayers_PlaceBesidePlayer0(s32 i) {
 
     *p = gPlayer[0];
     p->num = i;
+    p->sfx.srcPos = p->sfxSource; // the copy points at player 0's, and the engine sound keeps the pointer it is given
+    p->sfx.srcVel = p->sfxVel;
     p->pos.x += COOP_JOIN_OFFSET_X * i;
     p->pos.y += COOP_JOIN_OFFSET_Y * i;
     p->cam.eye.x += COOP_JOIN_OFFSET_X * i;
@@ -141,6 +151,7 @@ static void CoopPlayers_RejoinFromPlayer0(s32 i) {
 static void CoopPlayers_SetOut(s32 i) {
     sSlot[i] = COOP_SLOT_OUT;
     gPlayer[i].draw = false;
+    Audio_StopPlayerNoise(i);
 }
 
 // Nonzero while the level is in a section co-op players fly in: all-range (WP-11), or rails in an Arwing (WP-12). On
@@ -162,6 +173,7 @@ int32_t CoopPlayers_SkipUpdate(int32_t index) {
                 ((gPlayer[0].state != PLAYERSTATE_ACTIVE) && (gPlayer[0].state != PLAYERSTATE_U_TURN))) {
                 sSlot[index] = COOP_SLOT_AWAY;
                 gPlayer[index].draw = false;
+                Audio_StopPlayerNoise(index);
                 return 1;
             }
             return 0;
@@ -170,6 +182,7 @@ int32_t CoopPlayers_SkipUpdate(int32_t index) {
             if (CoopPlayers_SectionSupported() && (gPlayer[0].state == PLAYERSTATE_ACTIVE)) {
                 CoopPlayers_JoinFromPlayer0(index);
                 sSlot[index] = COOP_SLOT_JOINED;
+                Audio_StartPlayerNoise(index); // Player_Setup does this for player 0
             }
             return 1; // a player that joined this frame starts updating on the next one
 
@@ -177,6 +190,7 @@ int32_t CoopPlayers_SkipUpdate(int32_t index) {
             if (CoopPlayers_SectionSupported() && (gPlayer[0].state == PLAYERSTATE_ACTIVE)) {
                 CoopPlayers_RejoinFromPlayer0(index);
                 sSlot[index] = COOP_SLOT_JOINED;
+                Audio_StartPlayerNoise(index);
             }
             return 1;
 
