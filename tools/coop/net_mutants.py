@@ -17,8 +17,14 @@ fail with it. The run goes:
 3. For each break: write the broken source, build, run its scenarios. "caught" means every named scenario failed.
 4. Restore net_core.c and build once more, so the build directory holds an unbroken coop_net_test.
 
-The source is changed in place, because that file is what the coop_net_test target compiles. The original is kept in
-local/test-mutants/net_core.c.orig until it is restored; if a run was killed, the next run restores it first.
+The source is changed in place, because that file is what the coop_net_test target compiles, so a run guards it:
+
+- The original is kept in local/test-mutants/net_core.c.orig until it is restored.
+- If a run was killed, the next run restores the original first, but only when the source still holds a text a run
+  wrote. Anything else is someone's edit: the run stops and leaves both files for you to compare.
+- If the source changes during a run, the run stops and leaves the file as it finds it. Do not edit net_core.c while
+  a run is going.
+- Only one run at a time; a second one stops at once.
 
 Prints one line per break and a RESULT line, keeps logs in local/test-mutants/<stamp>/, and exits 0 only when the
 unbroken run passed and every break was caught.
@@ -27,6 +33,7 @@ The breaks come from the check done by hand for #42 (16 breaks, 20 break-and-tes
 bug in net_core.c: the old, broken text as the replacement, and the scenario that found it.
 """
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -37,6 +44,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "src" / "port" / "coop" / "net" / "net_core.c"
 NET_TEST = ROOT / "tools" / "coop" / "net_test.py"
 BACKUP = ROOT / "local" / "test-mutants" / "net_core.c.orig"
+LOCK = ROOT / "local" / "test-mutants" / "lock"
 sys.path.insert(0, str(ROOT / "tools" / "coop"))
 import net_test  # noqa: E402  (scenario names and how the test program is found)
 
@@ -203,11 +211,47 @@ class Runner:
         return results, details
 
 
+def take_lock():
+    """Hold an OS lock for the whole run, or return None if another run has it. The OS drops it when a run dies."""
+    LOCK.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(LOCK, "a+")
+    try:
+        if os.name == "nt":
+            import msvcrt
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    return handle
+
+
+def texts_a_run_writes(original):
+    """Every text a run from this original can leave in the source: the original and each break."""
+    texts = {original}
+    for _, find, replace, _ in BREAKS:
+        try:
+            texts.add(apply(original, find, replace))
+        except Stop:
+            pass
+    return texts
+
+
 def restore_leftover():
-    if BACKUP.exists():
-        write_source(BACKUP.read_text(encoding="utf-8", newline=""))
-        BACKUP.unlink()
-        print(f"restored {SOURCE.relative_to(ROOT).as_posix()} from a run that did not finish")
+    """Undo a killed run. Only a text the run wrote is replaced; anything else is someone's work and stays."""
+    if not BACKUP.exists():
+        return
+    original = BACKUP.read_bytes().decode("utf-8")
+    source = SOURCE.relative_to(ROOT).as_posix()
+    if read_source() not in texts_a_run_writes(original):
+        raise Stop(f"a run did not finish and {source} has changed since, so it was not touched. Compare it with "
+                   f"{BACKUP.relative_to(ROOT).as_posix()}, fix what needs fixing, then delete that backup")
+    write_source(original)
+    BACKUP.unlink()
+    print(f"restored {source} from a run that did not finish")
 
 
 def main():
@@ -231,7 +275,15 @@ def main():
         # Never write here: check.py may run while a full run has the source broken. The backup is the real source.
         text = BACKUP.read_bytes().decode("utf-8") if BACKUP.exists() else read_source()
     else:
-        restore_leftover()
+        lock = take_lock()  # kept until the process ends
+        if lock is None:
+            print("RESULT: FAILED, another net_mutants.py run is going in this checkout")
+            return 2
+        try:
+            restore_leftover()
+        except Stop as e:
+            print(f"RESULT: FAILED, {e}")
+            return 2
         text = read_source()
     all_names = [b[0] for b in BREAKS]
     names = args.only.split(",") if args.only else all_names
@@ -256,9 +308,11 @@ def main():
     runner = Runner(args, out)
     chosen = [b for b in BREAKS if b[0] in names]
     original = read_source()
+    expected = original  # what the source must hold; anything else is someone's edit and must not be overwritten
     lines = []
     survived = []
     mutated = False
+    disturbed = False
 
     def report(line):
         print(line, flush=True)
@@ -278,11 +332,14 @@ def main():
         report(f"ok        unbroken: {', '.join(tests)} pass ({time.monotonic() - started:.1f} s)")
 
         BACKUP.parent.mkdir(parents=True, exist_ok=True)
-        BACKUP.write_text(original, encoding="utf-8", newline="")
+        BACKUP.write_bytes(original.encode("utf-8"))
         for name, find, replace, tests in chosen:
             started = time.monotonic()
-            write_source(apply(original, find, replace))
+            if read_source() != expected:
+                raise Stop(f"{SOURCE.name} changed during the run")
+            expected = apply(original, find, replace)
             mutated = True
+            write_source(expected)
             ok, why = runner.build(name)
             if not ok:
                 # A break must compile and then fail its test; one that does not build tests nothing.
@@ -300,15 +357,25 @@ def main():
         report(f"RESULT: FAILED, {e}")
         return 1
     finally:
-        write_source(original)
-        if BACKUP.exists():
+        if not mutated:
+            BACKUP.unlink(missing_ok=True)
+        elif read_source() == expected:
+            write_source(original)
             BACKUP.unlink()
-        if mutated:
             ok, why = runner.build("restored")
             if not ok:
                 report(f"warning: the restored source {why}; rebuild coop_net_test before you trust it")
+        else:
+            disturbed = True
+            report(f"warning: {SOURCE.name} changed during the run, so it was left as it is. It may still hold a break: "
+                   f"compare it with {BACKUP.relative_to(ROOT).as_posix()}, then delete that backup")
         (out / "summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
         print(f"logs: {out}")
+
+    if disturbed:
+        report("RESULT: FAILED, the source changed during the run")
+        (out / "summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return 1
 
     caught = len(chosen) - len(survived)
     pairs = sum(len(b[3]) for b in chosen)
