@@ -2059,6 +2059,73 @@ Read at `a69c811a` (origin/coop).
 - Whether a player on such a link is better served by a longer linger time. It is a trade against a slot held by a
   client that already gave up.
 
+### 2026-11-06, #22, join flow: from the lobby into a level
+
+Identity: ROM US 1.0, on commit `d71979bf`, Linux, GCC, Debug, OpenGL on a software renderer, no window, 2 or 3 game
+clients, UDP over loopback, no input after the level start. The rules and the wire form are in PROTOCOL.md, section
+Level start. `python tools/coop/join_test.py` runs all of this.
+
+**Observed**
+
+- Real games ran the session for the first time here, and `CoopIdentity_FromGame` (`src/port/coop/session/identity_game.c`)
+  with it: two and three games of one build passed the handshake.
+- Two games that start from other seeds reach Corneria with the same seeds, the same team values and the same
+  characters, and their state hash is equal in every region on every compared frame: 1995 frames from the title
+  screen, 2001 with the host coming from the map, 2001 with three games. A client that keeps its own values differs on
+  level frame 0, in `rng` and `globals`, so the check can fail.
+- `gNextGameState = GSTATE_PLAY` goes to a level from any game state, as `src/overlays/ovl_i3/fox_a6.c:2927` does:
+  `Game_SetGameState` (`src/engine/fox_game.c:86`) runs right after `GamePreUpdateEvent` (`:352`, `:354`). It ran from
+  the title screen and from the map. `CoopLevelStart_Enter` uses it, so the host and a client take one path.
+- On the frames between that and `Play_Init` the game is in `GSTATE_PLAY` but `gGameFrameCount` still counts the screen
+  it came from: `Play_Init` clears it (`src/engine/fox_play.c:2879`), and `PLAY_STANDBY` then `PLAY_INIT` come first
+  (`:7173`, `:7179`). In the run looked at, five rows differ in `globals` there and nothing else. The first frame in
+  `PLAY_UPDATE` is where games can agree, so `join_test.py` compares from there.
+- `gRadioMsgId` is set by a radio line (`src/engine/fox_radio.c:128`, `src/overlays/ovl_menu/fox_title.c:3654`), read at
+  `src/engine/fox_radio.c:660`, and no level start clears it. With a host coming through the map's briefing, `globals`
+  differed from a client on the title screen on level frames 0 to 331 and was equal from 332 on. With the value in the
+  table the same run was equal on 2014 frames.
+- A level reads the save: Start in a level intro skips the intro only if `normalClear` is set for that planet
+  (`src/engine/fox_play.c:7198-7200`). No run here pressed Start, and every game had a fresh save.
+- `session_mutants.py` showed that `p->state == PEER_JOINED` could not be seen in the start guard: a roster slot only
+  holds value 1 for a joined peer, as `Host_Hello` sets it and `Host_Left` clears it. It is gone.
+- Bit 9 of the refusal reasons was in the test constant `0x04030204`, which stood for bits nobody uses. It is
+  `0x04030404` now.
+
+**Derived**
+
+- Every game entering from the message, the host's too, means no game's history counts. The host's own values go
+  through the same path as everyone else's, so a difference cannot hide on one side.
+- The values are what a level reads and level init does not set: the seeds (`Rand_Init` reads the clock at boot,
+  `src/engine/fox_game.c:58`), `gTeamDamage` and `gTeamEventActorIndex` (#67), the team and Star Wolf arrays, lives,
+  bombs, lasers, gold rings, `gExpertMode`, `gClearPlayerInfo` (`src/engine/fox_play.c:4925`), `gGreatFoxIntact`,
+  `gVenomHardClear` and `gRadioMsgId`. The list comes from reading and from the hash, so it covers what those two can
+  see.
+- The roster has to be taken with the level. If it went out as it is when the send happens, a client leaving in between
+  would give the host one player count and the others another.
+- `Rand_ZeroOne` re-seeds from the clock when a seed is 0 (`src/sys/sys_math.c:25`), which would part two games. No guard
+  is needed: 30269, 30307 and 30323 are prime, so a seed that is not 0 never becomes 0.
+- Picks race the start harmlessly: the host decides by arrival, and the level start says what each client holds.
+
+**Choices the owner can reverse** (from the coordinator's guidance and this code; not decided in a record)
+
+- The host does not start while a client that joined holds nothing. So nobody flies with nothing, and decision 0005 does
+  not have to say what such a client flies.
+- A client in the handshake holds the start up too, for 10000 ms at most.
+- Nobody joins once a level has started, and a client that leaves cannot come back. Late join has no design.
+- There is one level start per session, and nothing opens picks again.
+- A host's lives, bombs, team shields and the rest overwrite what a client has. That says nothing about lives or saves
+  as game rules, only that the games start equal.
+
+**Unknown**
+
+- Every level but Corneria. Levels with a phase and all-range levels have not run from a level start.
+- A client coming from anywhere but the title screen, for example the map, a level it plays alone or the pause menu.
+- What the next level does. The session takes one level start, and how a campaign goes on is open.
+- What happens in a level when a player leaves. It stays in the player count, and whether a computer wingman takes over
+  is open.
+- Whether a game state exists that neither the hash nor reading found, for example a `static` in an overlay.
+- Windows and macOS: none of this ran there.
+
 ### 2026-11-06, #58, characters through the session
 
 Read at `95962d04` (origin/coop). The rules and the wire form are in PROTOCOL.md, section Characters.
