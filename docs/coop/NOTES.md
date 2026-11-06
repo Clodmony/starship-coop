@@ -124,8 +124,7 @@ window. No CI run: nothing here was built by Actions, and nothing was run on Win
 
 **Derived**
 
-- An artifact without any `.o2r` cannot start by itself: whoever downloads it also needs `starship.o2r`, today from a
-  build of the repository (`docs/BUILDING.md`).
+- An artifact without any `.o2r` cannot start by itself, which is why the package now holds `starship.o2r` (next entry).
 - No ROM and no `sf64.o2r` is in the binary. The decompiled tables are, as in any build of this source: the check above
   samples, so it shows what is there, not that nothing else is.
 
@@ -134,7 +133,46 @@ window. No CI run: nothing here was built by Actions, and nothing was run on Win
 - Whether a CI build starts on a Linux other than the runner's: it is linked against Ubuntu 24.04's libraries.
 - Whether the Windows artifact starts. Windows is linked statically (`CMakeLists.txt`, `x64-windows-static`) and upstream
   ships the executable alone, so no DLLs are packaged; not run.
-- Whether the HUD textures in `port/assets/textures` come from the game's art.
+
+### 2026-11-06, #26, where the files in starship.o2r come from
+
+Compared locally with ROM US 1.0, with `sf64.o2r` and with all 51 compressed ROM segments decompressed. Only counts are
+kept here, no game data.
+
+**Decision**
+
+The owner accepted `starship.o2r` in the package, knowing the source of its textures stays unknown (PR #120).
+`tools/coop/package.py` packs exactly the 13 tracked files under `port/` itself, with no Torch build: four shaders and
+nine HUD textures, `sBoostGaugeArrow0` to `8`. Nothing else may go in, and the names are pinned, so a new file under
+`port/` stops the package until someone has looked at it.
+
+**Observed**
+
+- **Not ROM data.** No file, pixel block, row of a frame (55 tested) or small chunk (144 tested) of the nine textures is
+  in the ROM in either byte order, in a decompressed segment or in any of the 15,898 entries of `sf64.o2r`. The same
+  search found 200 of 200 real game textures.
+- **Source unknown.** All nine came in one upstream commit, `903cfc81` (2025-01-04, "Added an option to restore the old
+  boost gauge and fixed coin"), and have not changed since. That commit has no pull request and no description, and it
+  names no source image or tool. Upstream's tracker has nothing on it.
+- **The only statement of origin** is the tooltip of the option that uses them: "Restores the beta boost gauge that was
+  seen in some beta footage" (`src/port/ui/ImguiUI.cpp:637`).
+- The nine frames are one image, rotated: 23 of 91 opaque pixels are equal in all of them, and frame 0 is 94% equal to
+  frame 8 mirrored. A shape search over 1,608 of the 1,945 textures, which traced 11 of 12 rotated test sprites to their
+  source, found generic wedges and teardrops, none a needle on a hub.
+- The asset table entries around `D_1012290`, the gauge frame the same option draws, run back to back with no gap.
+- Upstream's own release workflow ships `starship.o2r` (`.github/workflows/main.yml`), and these files are public in
+  this repository and in upstream's.
+
+**Guess**
+
+- From the tooltip alone: the needle was redrawn from footage of the pre-release game. That would not be ROM data, but
+  it would reproduce the game's design.
+
+**Unknown**
+
+- Who made the source image, and from what.
+- Whether a rotated copy sits in ROM data no asset table lists: the search that covered it failed its own control.
+- Any redrawn or recoloured derivative: a shape search cannot rule one out.
 
 ### 2026-11-04, #1 (WP-01), Windows build
 
