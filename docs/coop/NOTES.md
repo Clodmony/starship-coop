@@ -105,13 +105,24 @@ Observed:
   line. Timed in 56 of them, the report took at most 0.08 s.
 - SIGSEGV sent by hand to a running game hung the same way in 2 of 2 tries, through the `exit(1)` of
   `Ship::ErrorHandler` (`libultraship/src/debug/CrashHandler.cpp:202`).
-- With the fix (`src/port/coop/test/stop_signal.c`), 60 of 60 games in `exit_test.py` ended with exit code 0, the
-  slowest 0.32 s after the signal: 18 without a replay, 3 each on SIGINT and SIGQUIT, 18 recording, 18 playing. All 36
-  with a replay kept their report, their closing hash line and, recording, whole frames.
+- The fix (`src/port/coop/test/stop_signal.c`) replaces the handler only in a test run: when `SF64_COOP_REPLAY_RECORD`,
+  `SF64_COOP_REPLAY_PLAY`, `SF64_COOP_HASH_LOG` or `SF64_COOP_TRACE` is set and not empty. These are read as the code
+  that uses them reads them (`src/port/coop/test/replay.c:283-284`, `src/port/coop/sync/state_hash.c:434`,
+  `src/port/coop/test/player_trace.c:31`).
+- With the fix, in `exit_test.py`, 25 of 25 test runs ended with exit code 0, the slowest 0.06 s after the signal: 5 each
+  without a replay, on SIGINT, on SIGQUIT, recording and playing. An earlier version without the gate did the same in
+  60 of 60, the slowest 0.32 s. All with a replay kept their report, their closing hash line and, recording, whole
+  frames.
+- The variables nine games really received, logged by a wrapper in place of the game: `replay.py`, `hash_check.py run`
+  and `probe`, `determinism.py` and `player_trace.py` each gave `SF64_COOP_REPLAY_RECORD` or `SF64_COOP_REPLAY_PLAY` and
+  `SF64_COOP_REPLAY_REPORT`, plus their own. None of those tools waited out its 15 s: each game took 6 or 7 s.
+- A plain game, with none of those variables, was still running 3 s after SIGTERM in 5 of 5 tries, as on `95962d04`
+  in 2 of 2. The version without the gate ended it with exit code 0 within 0.03 s, in 2 of 2.
 - `replay.py record --frames 60` took 20 s on `95962d04` and 5 s with the fix, in 3 of 3 tries each, which bears out the
-  guess in the #54 entry. `replay_test.py` took 123 s with the fix; its row in `tools/coop/README.md` says about 5
+  guess in the #54 entry. `replay_test.py` took 58 s with the fix; its row in `tools/coop/README.md` says about 5
   minutes.
-- A replay with co-op off, 3406 frames into Corneria, gave a hash log with the same 3406 lines on both builds.
+- A replay with co-op off, 3406 frames into Corneria, gave a hash log with the same 3406 lines on `95962d04` and on the
+  version without the gate.
 
 Derived:
 
@@ -130,6 +141,10 @@ Derived:
   `previous_recording` are file-scope and rebuilt each frame (`src/port/interpolation/FrameInterpolation.cpp:170-171`),
   which fits the 62nd run. So the fix leaves the handler with nothing to do but set a flag, and the game ends at the
   next frame through the path of a closed window (`src/port/Game.cpp:47-51`).
+- A plain game keeps all of this, as upstream does, so #71 is closed for the tools, not for a player who kills the game.
+  The real fix belongs in libultraship's handler.
+- A test run whose main loop is stuck no longer writes its report on SIGTERM: only the main loop reads the flag, where
+  the old `exit` ran the atexit handlers from the signal. Such a run ends through SIGKILL without a report. Not run.
 
 Guess:
 
