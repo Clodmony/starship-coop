@@ -109,13 +109,14 @@ class Repo:
 
     def stopped(self, *says):
         """What a new site must do: --check names it, a rerun writes nothing, only --accept turns it green."""
+        says += ("--accept",)  # every red step has to say the way out
         self.expect("--check", code=1, says=says)
         before = self.read(LIST)
         self.expect(code=1, says=says)
         if self.read(LIST) != before:
             self.failures.append("rerun: wrote the list past a new site")
         self.expect("--check", code=1, says=says)
-        self.expect("--accept", code=0, says=says)
+        self.expect("--accept", code=0, says=says[:-1])
         self.expect("--check", code=0, says=["sp-audit: OK"], lacks=["new site"])
 
     def rerun_is_enough(self):
