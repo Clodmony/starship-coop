@@ -3,6 +3,9 @@
 **Priority: online co-op.** Each player plays on their own PC. Local split screen is deferred until after the first
 release (see "Later").
 
+**Two players first.** M1 and M2 are for two players. [Decision 0005](decisions/0005-players-and-characters.md) allows
+up to four, so nothing built for M1 and M2 may block that, but three and four players stay under "Later".
+
 Each work package (WP) is one GitHub issue with the `type/work-package` label, and one branch and PR when someone
 takes it. The issue is the source of truth for who holds it and where it stands; this file only lists what exists and
 what depends on what. Update this file when a WP is added, split, moved or finished. WP ids never change, even when a
@@ -28,6 +31,12 @@ WP-21) run in parallel with the spike; neither waits for the other.
 | WP-06 | [#6](https://github.com/Clodmony/starship-coop/issues/6) | On-rails mechanics: how player position, path progress and camera interact | engine, research | | Findings in NOTES.md with sources |
 | WP-07 | [#7](https://github.com/Clodmony/starship-coop/issues/7) | Decide the game rules in DESIGN.md section 4 | design | WP-05 | Decision records merged |
 
+Research for later records under WP-07, opened from decision 0005:
+
+- Wingman events and routes: [#59](https://github.com/Clodmony/starship-coop/issues/59)
+- Wingman radio lines: [#60](https://github.com/Clodmony/starship-coop/issues/60)
+- How a downed wingman returns: [#61](https://github.com/Clodmony/starship-coop/issues/61)
+
 ## M1: Online co-op, first level
 
 Two players on two PCs fly Corneria together, start to finish, with matching state hashes.
@@ -45,14 +54,15 @@ Two players on two PCs fly Corneria together, start to finish, with matching sta
 | WP-21 | [#19](https://github.com/Clodmony/starship-coop/issues/19) | Session: host, join, handshake (build id, ROM version, sim CVars) | net | WP-20 | Mismatches are refused with a clear message |
 | WP-22 | [#20](https://github.com/Clodmony/starship-coop/issues/20) | Sync model implementation per decision 0002 | sync | WP-02, WP-10, WP-11, WP-12, WP-14 | Two clients finish Corneria with matching state hashes |
 | WP-23 | [#21](https://github.com/Clodmony/starship-coop/issues/21) | Desync detection and report: compare hashes, dump the first diverging frame | sync, test | WP-04, WP-22 | A forced desync is caught and reported with the frame number |
-| WP-24 | [#22](https://github.com/Clodmony/starship-coop/issues/22) | Join flow: lobby to level start for all players together | net, ui | WP-21 | Both players start the same level with the same seed |
-| WP-25 | [#23](https://github.com/Clodmony/starship-coop/issues/23) | ImGui co-op menu: host, join, status, ping | ui | WP-21 | Usable without editing config files |
+| WP-24 | [#22](https://github.com/Clodmony/starship-coop/issues/22) | Join flow: lobby to level start for all players together | net, ui | WP-21, WP-34 | Both players start the same level with the same seed and their chosen characters; a character already taken is refused |
+| WP-25 | [#23](https://github.com/Clodmony/starship-coop/issues/23) | ImGui co-op menu: host, join, status, ping | ui | WP-21, WP-34 | Usable without editing config files; a character already taken cannot be chosen |
+| WP-34 | [#58](https://github.com/Clodmony/starship-coop/issues/58) | Carry each player's character through the session | net | WP-21 | All clients agree on every player's character; a character already taken is refused; session tests cover both |
 
 ## M2: Online co-op, whole campaign
 
 | WP | Issue | Title | Area | Needs | Done when |
 |---|---|---|---|---|---|
-| WP-17 | [#15](https://github.com/Clodmony/starship-coop/issues/15) | Wingman replacement (if decided): player 2 as Falco | engine | WP-07, WP-11 | Radio and team shields consistent |
+| WP-17 | [#15](https://github.com/Clodmony/starship-coop/issues/15) | Wingman replacement: players 2-4 replace the chosen wingman | engine | WP-07, WP-11, WP-34 | Radio and team shields consistent, tested with two players |
 | WP-18 | [#16](https://github.com/Clodmony/starship-coop/issues/16) | Vehicles: Landmaster and Blue Marine levels with 2 players | engine | WP-11 | Titania and Aquas playable by script |
 | WP-26 | [#24](https://github.com/Clodmony/starship-coop/issues/24) | Steam relay transport (Spacewar app 480), no port forwarding | net | WP-20 | Two PCs connect through Steam |
 | WP-27 | [#25](https://github.com/Clodmony/starship-coop/issues/25) | Lag and loss testing with a chaos relay | test | WP-22 | Results with numbers in QA notes |
@@ -75,7 +85,7 @@ Deferred work packages keep their issues, in the GitHub milestone "Later".
 | WP-13 | [#11](https://github.com/Clodmony/starship-coop/issues/11) | Local split screen: cameras and viewports for 2 players on one PC | render | WP-10, WP-28 | Two viewports, each following its own player |
 | WP-15 | [#13](https://github.com/Clodmony/starship-coop/issues/13) | Local split screen: HUD per viewport | ui | WP-13 | Both HUDs drawn in their viewports |
 
-- Up to four players (versus mode already handles four `Player` structs).
+- Three and four players. Decision 0005 sets the rules, and versus mode already handles four `Player` structs.
 - Rollback instead of plain lockstep, if decision 0002 picks lockstep and input delay hurts.
 - Cross-platform play (Windows with Linux), if determinism holds across compilers.
 - Late join and reconnect.
