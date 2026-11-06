@@ -1042,7 +1042,7 @@ Unknown:
   `gLifeCount[0]`, `D_ctx_801779A8[0]`). Not counted here.
 - `src/port/` (enhancements, cheats, hooks) was out of scope.
 
-### 2026-11-06, #114, --check compares sites, not line numbers
+### 2026-11-06, #114, --check ignores only line numbers
 
 Read at `797c678b`. Python only: no ROM, no game run. The results on real code come from a scratch clone, the rest from
 `python tools/coop/sp_audit_test.py`.
@@ -1054,17 +1054,28 @@ Observed:
   failed `--check`. A docs-only commit on top failed the same way. This is the failure #114 derived from the code.
 - **Not every such pair merges.** Two branches that added a line at lines 85 and 1575 of the same file conflicted in the
   list instead of merging.
-- **After.** On that merged tree `--check` exits 0 and prints a note that a rerun would change the list. A plain rerun
-  writes it, and the note goes. A site added or removed in `fox_demo.c` still exits 1, and the last line names the command
-  to run: `--accept` for a new site, the plain rerun for a lost one.
+- **After.** On such a merged tree `--check` exits 0 and prints a note that only line numbers differ. A plain rerun
+  writes the list, and the note goes. A site added or removed in `fox_demo.c` still exits 1, and the last line names the
+  command to run: `--accept` for a new site, the plain rerun for a lost one.
 - **The key.** Sites are counted per file, function and pattern, so a site that moves to another function is not a moved
   line: it is lost there and new here, also under one verdict row with the row's count unchanged
   (`star-row-site-moved`). A renamed function goes the same way (`star-row-function-renamed`). Both stop the rerun until
   `--accept`, as they did since #73 for the new half.
-- **What `--check` no longer sees.** Everything in the list but those counts. A changed verdict row (`row-changed`) and
-  a new row after `--accept` (`no-row`) pass with the note, and the list shows the old verdict until a rerun. Errors in
-  the verdict file still fail: a site with no row, a row that matches no site, a bad verdict or basis. They do not
-  compare the list.
+- **What `--check` compares (owner decision on #114).** The list against what a rerun would write, both read by the same
+  parser: site counts, each site's verdict, basis and note, and every line outside the rows. A verdict and a note changed
+  in `sp-verdicts.tsv` for `fox_demo.c` each exited 1, named the site as `changed site: ... listed ..., now ...` and the
+  plain rerun, and a rerun cleared them. A new row after `--accept` does the same (`no-row`). Errors in the verdict file
+  still fail on their own: a site with no row, a row that matches no site, a bad verdict or basis.
+- **Hand edits and conflict markers.** Comparing verdicts alone would not close this: a marker in the summary touches no
+  verdict. The lines outside the rows close it. A hand edit of a row, the header or a summary count, and markers outside
+  the rows, each exit 1 (`hand-edit-*`, `conflict-markers-*`). On the real list: `changed text: listed '<<<<<<< HEAD'`.
+- **What `--check` still ignores.** Line numbers, and the order of rows and of sites in a row that follows from them. So a
+  wrong line number typed by hand passes with the note (`hand-edit-line-numbers`). A site that replaces another of the
+  same pattern in the same function passes without one (`known-gap-swap`).
+- **Two branches that each accept a site can still leave `coop` red.** Two green branches, one new `sim` site of
+  `gPlayer[0]` each, in `fox_360.c` and `fox_effect.c`, merged with no conflict. Both had written `1789 sites`, so `--check`
+  on the merge exits 1 with `changed text: listed '1789 sites in 407 functions in 43 files.', now '1790 sites ...`, until
+  a plain rerun. With only the sites compared, the same merge passed with the note. Moved lines cannot do this.
 - **A tracked file that is deleted but not committed.** `FileNotFoundError` before, from `--check`, `--todo` and the plain
   rerun. Now it is skipped. If the list has sites of it, a warning names the file and the sites count as lost; if not,
   nothing is said. A plain rerun then writes the list without them. Restoring the file afterwards shows them as new, so
@@ -1078,8 +1089,7 @@ Derived:
 - Two branches merge cleanly into a stale list only when both shift the same rows alike, so both edits sit in one gap
   between sites of a file. Otherwise the list conflicts. A branch that only moves lines can now leave the list alone, and
   then it has nothing to conflict with.
-- A hand edit of the list, or conflict markers outside the rows, passes `--check` with the note: nothing compares the
-  text any more.
+- Two branches that change verdicts can leave `coop` red the same way, if their list changes merge cleanly. Not run.
 
 Unknown:
 
