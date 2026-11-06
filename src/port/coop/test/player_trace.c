@@ -1,4 +1,5 @@
 #include "player_trace.h"
+#include "effect_probe.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -194,6 +195,7 @@ void CoopTrace_Init(void) {
     const char* steer = getenv("SF64_COOP_TRACE_STEER");
     const char* shields = getenv("SF64_COOP_TRACE_SHIELDS");
 
+    CoopEffectProbe_Init();
     if ((path == NULL) || (path[0] == '\0')) {
         return;
     }

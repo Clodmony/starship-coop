@@ -6,6 +6,7 @@
     python tools/coop/player_trace.py run   local/replays/corneria.sfcr --players 2   # play it, then check
     python tools/coop/player_trace.py check local/test-trace-<time>/trace.txt          # check an existing trace
     python tools/coop/player_trace.py shots --players 2                                # input by rule, who fired what
+    python tools/coop/player_trace.py effects --players 2                              # who an enemy effect can hit
 
 `run` makes a fresh folder under local/ (data files copied in, a config with only gCoopDebugPlayerCount set), then
 starts the game with SF64_COOP_REPLAY_PLAY (input replay, WP-03) and SF64_COOP_TRACE
@@ -68,6 +69,12 @@ the line, and what else it plays changes with a second player, so a silent limit
 must have equal state hashes on every frame, RNG included, so the draws behind a line repeat. Each run is one game: this
 says nothing about two clients.
 
+`effects` is the test for #100. It flies input by rule into Corneria, on rails or with --all-range in all-range, with
+SF64_COOP_EFFECT_PROBE (src/port/coop/test/effect_probe.h): each case of EFFECT_CASES places an effect on one player
+and the game runs it. Each case must hit the target and nobody else, or do what EFFECT_CASES says. Player 0 is the
+control: a case that does not hit it says nothing about the others. Only the spawn is forced, so this shows Corneria
+running the effects of other levels, not those levels.
+
 Stopping the game can cut the last line of the trace; only that line may be cut.
 """
 import argparse
@@ -85,7 +92,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools" / "coop"))
-from hash_check import describe, first_difference, read_log, write_generated_replay  # noqa: E402
+from hash_check import GENERATED_L_FRAME, describe, first_difference, read_log, write_generated_replay  # noqa: E402
 from replay import game_env, read_report  # noqa: E402
 from run_folder import make_run_folder  # noqa: E402
 EXE_CANDIDATES = [
@@ -148,6 +155,17 @@ LOW_SHIELDS = 40
 FULL_SHIELDS = 200
 LOW_LINES = range(20304, 20310)  # gMsg_ID_20304 to gMsg_ID_20309, as gRadioMsgId holds them
 
+# `effects`: what each case of sCases in src/port/coop/test/effect_probe.c must do to its target. "hit" is hit and no
+# deflection; "deflect" is deflected and not hit; "both" is both, as a barrel roll does not stop the second test in
+# Effect_Effect398_Update; "none" is neither; "hit-unless-p0" is none for player 0, hit for the others.
+EFFECT_CASES = {
+    "laser": "hit", "laser-roll": "deflect", "shot398": "hit", "shot398-roll": "both", "e347": "hit", "e376": "hit",
+    "e395": "hit", "e399": "hit", "me369": "hit", "me370": "hit", "me371": "hit", "bo397": "hit", "bo397-roll": "none",
+    "bo397-p0-roll": "hit-unless-p0", "zo374": "hit", "gorgon-beam": "hit", "out": "none",
+}
+EFFECT_ONE_TARGET = ("out",)  # the last player only
+EFFECT_FRAMES = 7600  # 17 cases, 2 players, 40 frames each, from all-range (about 5100) and with U-turns in between
+
 
 def find_exe(given):
     if given:
@@ -189,6 +207,8 @@ def play(args):
     if getattr(args, "shields", None):
         env["SF64_COOP_TRACE_SHIELDS"] = args.shields
         env["SF64_COOP_HASH_LOG"] = str(run_dir / "state-hash.txt")
+    if getattr(args, "effect_probe", False):
+        env["SF64_COOP_EFFECT_PROBE"] = str(run_dir / "effects.txt")
     print(f"player_trace: run folder {run_dir}")
     start = time.monotonic()
     proc = subprocess.Popen([str(exe)], cwd=run_dir, env=env)
@@ -795,6 +815,60 @@ def lowhealth(args):
     return 0 if ok else 1
 
 
+def effect_masks(rule, target):
+    """Return (hit, deflect) that `rule` of EFFECT_CASES asks of `target`."""
+    bit = 1 << target
+    if rule == "hit-unless-p0":
+        rule = "none" if target == 0 else "hit"
+    return {"hit": (bit, 0), "deflect": (0, bit), "both": (bit, bit), "none": (0, 0)}[rule]
+
+
+def check_effect_line(fields, count):
+    """Return (text, passed) for one line of the probe log."""
+    case, target = fields["case"], int(fields["target"])
+    hit, deflect = int(fields["hit"]), int(fields["deflect"])
+    want_hit, want_deflect = effect_masks(EFFECT_CASES[case], target)
+    damage = [int(v) for v in fields["damage"].split(",")]
+    shields = [int(v) for v in fields["shields"].split(",")]
+    # A hit with damage must come off the shields of that player, unless it was out and does not update.
+    took = all(shields[i] < 255 for i in range(count) if hit >> i & 1 and damage[i] > 0)
+    return (f"{case:<14} target {target}: hit {hit:04b} (want {want_hit:04b}), deflect {deflect:04b} "
+            f"(want {want_deflect:04b}), damage {damage}, shields {shields}",
+            hit == want_hit and deflect == want_deflect and took)
+
+
+def effects(args):
+    replay = ROOT / "local" / "test-trace-effects.sfcr"
+    write_generated_replay(replay, frames=args.frames, l_frame=GENERATED_L_FRAME if args.all_range else -1)
+    args.replay = str(replay)
+    args.no_checkpoints = True
+    args.effect_probe = True
+    if args.all_range:
+        args.cvar = args.cvar + ["gDebugJumpToAllRange=1"]
+    trace = play(args)
+    if trace is None:
+        return 1
+    log = trace.with_name("effects.txt")
+    lines = log.read_text().splitlines() if log.exists() else []
+    print(f"player_trace: {log}: {len(lines)} lines")
+    results = []
+    seen = set()
+    for line in lines:
+        if line == "effect done":
+            continue
+        fields = dict(kv.split("=", 1) for kv in line.split()[1:])
+        results.append(check_effect_line(fields, args.players))
+        seen.add((fields["case"], int(fields["target"])))
+    for case in EFFECT_CASES:
+        targets = [args.players - 1] if case in EFFECT_ONE_TARGET else range(args.players)
+        results += [(f"{case} target {t} did not run", False) for t in targets if (case, t) not in seen]
+    results.append(("the probe finished", "effect done" in lines))
+    ok = report_results(results)
+    extra = [r for r, good in results if not good]
+    print(f"player_trace: effects {'PASS' if ok else 'FAIL'}: {len(results) - len(extra)} of {len(results)} lines hold")
+    return 0 if ok else 1
+
+
 def add_check_options(parser):
     parser.add_argument("--players", type=int, default=2, help="players the trace must hold (default 2)")
     parser.add_argument("--min-move", type=float, default=5.0)
@@ -848,6 +922,13 @@ def main():
     w.add_argument("--min-limits", type=int, default=3, help="limits single player must reach (default 3)")
     w.add_argument("--players", type=int, default=2, help="players of the co-op runs (default 2)")
     w.add_argument("--cvar", action="append", default=[], metavar="NAME[=VALUE]", help="another CVar for every run")
+    e = sub.add_parser("effects", help="input by rule on Corneria: place each effect on each player, see who it hits")
+    e.add_argument("--exe")
+    e.add_argument("--timeout", type=int, default=900, help="seconds to wait for the replay report (default 900)")
+    e.add_argument("--frames", type=int, default=EFFECT_FRAMES, help=f"replay length (default {EFFECT_FRAMES})")
+    e.add_argument("--all-range", action="store_true", help="jump to all-range first (gDebugJumpToAllRange)")
+    e.add_argument("--cvar", action="append", default=[], metavar="NAME[=VALUE]", help="another CVar for the run")
+    add_check_options(e)
     args = ap.parse_args()
     if args.cmd == "shots":
         sys.exit(shots(args))
@@ -857,6 +938,8 @@ def main():
         sys.exit(rails(args))
     if args.cmd == "lowhealth":
         sys.exit(lowhealth(args))
+    if args.cmd == "effects":
+        sys.exit(effects(args))
     sys.exit(check_trace(Path(args.trace), args))
 
 

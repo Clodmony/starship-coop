@@ -25,6 +25,7 @@
 #include "assets/ast_zoness.h"
 #include "port/interpolation/FrameInterpolation.h"
 #include "port/mods/PortEnhancements.h"
+#include "port/coop/game/effects.h" // COOP: enemy effects against the other players (#100)
 #include "sf64_tagging.h"
 
 // rodata
@@ -1020,6 +1021,8 @@ void Effect_TimedSfx_Update(TimedSfx* this) {
 }
 
 bool func_effect_8007A774(Player* player, Effect* this, f32 arg2) {
+    CoopEffects_BoxHit(player->num, this, arg2); // COOP: the same test for the other players (#100)
+
     if ((fabsf(player->trueZpos - this->obj.pos.z) < arg2) && (fabsf(player->pos.x - this->obj.pos.x) < arg2) &&
         (fabsf(player->pos.y - this->obj.pos.y) < arg2) && (player->mercyTimer == 0)) {
         Player_ApplyDamage(player, 0, this->info.damage);
@@ -2276,6 +2279,7 @@ void Effect_Effect374_Update(Effect374* this) {
                     Player_ApplyDamage(gPlayer, 0, this->info.damage);
                 }
             }
+            CoopEffects_ColumnHit(this); // COOP: the same test for the other players (#100)
             break;
     }
 }
@@ -2960,6 +2964,8 @@ void Effect_Effect353_354_Update(Effect* this) {
         }
     }
 
+    CoopEffects_ShotHit(this); // COOP: the same test for the other players (#100)
+
     if (gGroundType == 4) {
         if (Ground_801B6AEC(this->obj.pos.x, this->obj.pos.y, this->obj.pos.z + gPathProgress) != 0) {
             Object_Kill(&this->obj, this->sfxSource);
@@ -3112,6 +3118,7 @@ void Effect_Effect398_Update(Effect398* this) {
                     Object_Kill(&this->obj, this->sfxSource);
                 }
             }
+            CoopEffects_ShotHit(this); // COOP: the same test for the other players (#100)
             break;
     }
 
@@ -3877,6 +3884,8 @@ void Effect_Effect395_Update(Effect395* this) {
                 Math_SmoothStepToF(&this->unk_60.y, 5.0f, 0.1f, 1.0f, 0.00001f);
                 Math_SmoothStepToF(&this->unk_60.z, 50.0f, 1.0f, 2.0f, 0.00001f);
             }
+
+            CoopEffects_BeamHit(this); // COOP: the same test for the other players (#100)
 
             velocity.x = velocity.y = 0.0f;
             velocity.z = fabsf(gPlayer[0].trueZpos - this->obj.pos.z);

@@ -6,6 +6,7 @@
 
 #include "global.h"
 #include "assets/ast_bolse.h"
+#include "port/coop/game/effects.h" // COOP: enemy effects against the other players (#100)
 #include "prevent_bss_reordering.h"
 
 extern s32 dummy200;
@@ -1829,6 +1830,8 @@ void Bolse_Effect397_Update(Effect397* this) {
         case 0:
             if (gPlayer[0].barrelRollAlpha == 0) {
                 func_effect_8007A774(gPlayer, this, 150.0f);
+            } else {
+                CoopEffects_BoxHit(0, this, 150.0f); // COOP: player 0's roll does not shield the others (#100)
             }
 
             Math_SmoothStepToF(&this->scale2, 30.0f, 1.0f, 10.0f, 0.0f);

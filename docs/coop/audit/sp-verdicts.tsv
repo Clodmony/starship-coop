@@ -152,10 +152,10 @@ src/engine/fox_effect.c	func_effect_8007E6B8	sim	site	enemy shot aimed at player
 src/engine/fox_effect.c	func_effect_8007E93C	sim	site	enemy shot aimed at player 0 camera
 src/engine/fox_effect.c	Effect_EnemyLaser	sim	site	enemy laser only spawned near player 0
 src/engine/fox_effect.c	func_effect_8007F20C	sim	site	only spawned near player 0 camera
-src/engine/fox_effect.c	Effect_Effect353_354_Update	sim	read	enemy projectile hits, deflects and knocks back player 0 only
-src/engine/fox_effect.c	Effect_Effect398_Update	sim	read	aims at, hits and knocks back player 0 only
-src/engine/fox_effect.c	Effect_Effect395_Update	sim	site	hits player 0 only; boss faces player 0 camera
-src/engine/fox_effect.c	Effect_Effect374_Update	sim	site	hits player 0 only
+src/engine/fox_effect.c	Effect_Effect353_354_Update	sim	read	enemy projectile hits, deflects and knocks back player 0; CoopEffects_ShotHit does the others (#100); wingman and roll reach still read player 0
+src/engine/fox_effect.c	Effect_Effect398_Update	sim	read	aims at player 0; hits and knocks back player 0, CoopEffects_ShotHit does the others (#100)
+src/engine/fox_effect.c	Effect_Effect395_Update	sim	site	tests player 0, CoopEffects_BeamHit does the others (#100); boss faces player 0 camera
+src/engine/fox_effect.c	Effect_Effect374_Update	sim	site	tests player 0, CoopEffects_ColumnHit does the others (#100)
 src/engine/fox_effect.c	Effect_Effect391_Update	view	site	faces player 0 camera
 src/engine/fox_effect.c	func_effect_80083D2C	sim	site	aims at player 0
 src/engine/fox_effect.c	Effect_Effect399_Update	view	site	faces player 0 camera
@@ -323,3 +323,24 @@ src/overlays/ovl_i3/fox_aq.c	Aquas_AqPearl_Update@shooter	ok	site	DMG_SRC_2 befo
 src/overlays/ovl_i3/fox_zo.c	Zoness_ZoBall_Update@shooter	ok	site	DMG_SRC_2 before Actor_Despawn: no player gets the kill
 src/overlays/ovl_i3/fox_zo.c	Zoness_ZoMine_Update@shooter	ok	site	DMG_SRC_2 before Actor_Despawn: no player gets the kill
 src/overlays/ovl_i6/fox_turret.c	Turret_SetupShot@shooter	ok	site	writes player->num
+#
+# --- a bare gPlayer as an argument means player 0 (#100); notes say what the site does in co-op
+src/engine/fox_display.c	Display_Update@gPlayer arg	ok	site	Turret_Draw(gPlayer) in LEVELMODE_TURRET, which nothing sets (include/sf64player.h: unused scrapped mode)
+src/engine/fox_effect.c	Effect_Effect347_Update@gPlayer arg	ok	read	func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0
+src/engine/fox_effect.c	Effect_Effect353_354_Update@gPlayer arg	ok	read	Player_ApplyDamage for player 0; CoopEffects_ShotHit right after it does the others (#100)
+src/engine/fox_effect.c	Effect_Effect374_Update@gPlayer arg	ok	read	Player_ApplyDamage for player 0; CoopEffects_ColumnHit right after it does the others (#100)
+src/engine/fox_effect.c	Effect_Effect376_Update@gPlayer arg	ok	read	func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0
+src/engine/fox_effect.c	Effect_Effect395_Update@gPlayer arg	ok	site	beam: Player_ApplyDamage for player 0, CoopEffects_BeamHit just before it does the others; func_effect_8007A774 tests them too (#100)
+src/engine/fox_effect.c	Effect_Effect398_Update@gPlayer arg	ok	read	Player_ApplyDamage for player 0, CoopEffects_ShotHit after it does the others; func_effect_8007A774 tests them too (#100)
+src/engine/fox_effect.c	Effect_Effect399_Update@gPlayer arg	ok	read	func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0
+src/engine/fox_play.c	Play_Init@gPlayer arg	setup	read	MEM_ARRAY_ALLOCATE(gPlayer, CoopPlayers_Count()): allocates every player, nothing to do
+src/engine/fox_play.c	Play_UpdateLevel@gPlayer arg	flow	site	Camera_Update360 for player 0 as Venom 2 ends: level complete is one player's (WP-16)
+src/overlays/ovl_i1/fox_co.c	Corneria_CoCarrier_Update@gPlayer arg	flow	site	Boss_CompleteLevel for player 0: level complete is one player's (WP-16)
+src/overlays/ovl_i2/fox_me.c	Meteo_Effect369_Update@gPlayer arg	ok	read	func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0
+src/overlays/ovl_i2/fox_me.c	Meteo_Effect370_Update@gPlayer arg	ok	read	func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0
+src/overlays/ovl_i2/fox_me.c	Meteo_Effect371_Update@gPlayer arg	ok	read	func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0
+src/overlays/ovl_i4/fox_bo.c	Bolse_8018E05C@gPlayer arg	sim	read	a beam of the base, not an effect: hits player 0 only, so player 2 flies through it. Open, not changed in #100
+src/overlays/ovl_i4/fox_bo.c	Bolse_Effect397_Update@gPlayer arg	ok	read	func_effect_8007A774 tests the others; each player's own roll counts, and player 0's roll no longer covers them (#100)
+src/overlays/ovl_i5/fox_ma.c	Macbeth_Effect380_Update@gPlayer arg	sim	read	right for now: Macbeth is rails in a Landmaster, where co-op players stay parked (CoopPlayers_SectionSupported); WP-18
+src/overlays/ovl_i5/fox_ti.c	Titania_TiBomb_Update@gPlayer arg	sim	read	right for now: an actor on Titania, rails in a Landmaster, where co-op players stay parked (CoopPlayers_SectionSupported); WP-18
+src/overlays/ovl_i6/fox_andross.c	Andross_AndBrain_Update@gPlayer arg	flow	site	Camera_Update360 for player 0 as the brain dies: level complete is one player's (WP-16)
