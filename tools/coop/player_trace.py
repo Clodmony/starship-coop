@@ -29,6 +29,7 @@ Stopping the game can cut the last line of the trace; only that line may be cut.
 import argparse
 import json
 import math
+import os
 import shutil
 import subprocess
 import sys
