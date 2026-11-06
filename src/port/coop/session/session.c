@@ -1,8 +1,12 @@
-// Co-op session and handshake (WP-21). Messages and their layout: docs/coop/PROTOCOL.md, ids 0x0010-0x0012.
+// Co-op session: handshake (WP-21) and characters (WP-34). Messages and their layout: docs/coop/PROTOCOL.md, ids
+// 0x0010-0x0015.
 //
 // Host, per peer: WAIT_HELLO from the transport's CONNECTED, then JOINED or REFUSED. A refused peer stays until the
 // refusal is acknowledged, the client goes, or COOP_SESSION_REFUSE_LINGER_MS pass; the transport's disconnect drops
 // unacknowledged messages, so leaving at once would lose the refusal. Client: CONNECTING, WAIT_ANSWER, ACTIVE, ENDED.
+//
+// The host holds the roster. Whatever a joined peer is owed goes out at the start of a poll, and stays owed while the
+// transport's window is full: a client may miss a roster that way, but not the last one.
 
 #ifdef USE_NETWORKING
 
@@ -32,6 +36,8 @@ typedef struct {
     PeerState state;
     uint32_t since;
     CoopIdentity identity;
+    bool rosterDue;      // owed the current roster
+    uint8_t refusedPick; // owed a refusal for this character, 0 if none
 } Peer;
 
 struct CoopSession {
@@ -39,8 +45,11 @@ struct CoopSession {
     bool isHost;
     CoopIdentity local;
     Peer peers[COOP_NET_MAX_PEERS];
+    CoopRoster roster; // client: what the host last sent, all NO_PLAYER before that
+    bool rosterEvent;  // host: a ROSTER event is owed after the JOINED or LEFT one
     ClientState client;
     uint32_t clientSince;
+    uint8_t player;  // client: our slot, from the welcome
     bool endPending; // client: an ENDED event is owed after the REFUSED one
     CoopSessionEnd pendingEnd;
     uint32_t ignored;
@@ -66,7 +75,12 @@ static CoopSession* Session_New(CoopTransport* transport, const CoopIdentity* id
 }
 
 CoopSession* CoopSession_Host(CoopTransport* transport, const CoopIdentity* identity) {
-    return Session_New(transport, identity, true);
+    CoopSession* s = Session_New(transport, identity, true);
+
+    if (s != NULL) {
+        s->roster.character[0] = COOP_CHARACTER_FOX;
+    }
+    return s;
 }
 
 CoopSession* CoopSession_Join(CoopTransport* transport, const CoopIdentity* identity, uint32_t nowMs) {
@@ -108,6 +122,38 @@ bool CoopSession_Send(CoopSession* s, int peer, uint16_t msgId, const void* data
     return s->t->ops->send(s->t, peer, msgId, data, size, lane);
 }
 
+// A host's client state never leaves CLIENT_CONNECTING, so a host cannot pick.
+bool CoopSession_Pick(CoopSession* s, CoopCharacter character) {
+    uint8_t wire = (uint8_t) character;
+
+    if (s->client != CLIENT_ACTIVE || character <= COOP_CHARACTER_FOX || character >= COOP_CHARACTER_COUNT) {
+        return false;
+    }
+    return s->t->ops->send(s->t, 0, COOP_MSG_SESSION_PICK, &wire, 1, COOP_NET_RELIABLE);
+}
+
+const CoopRoster* CoopSession_Roster(const CoopSession* s) {
+    if (s->isHost) {
+        return &s->roster;
+    }
+    return (s->client == CLIENT_ACTIVE && s->roster.character[0] == COOP_CHARACTER_FOX) ? &s->roster : NULL;
+}
+
+const char* CoopSession_CharacterName(uint8_t character) {
+    switch (character) {
+        case COOP_CHARACTER_FOX:
+            return "Fox";
+        case COOP_CHARACTER_FALCO:
+            return "Falco";
+        case COOP_CHARACTER_SLIPPY:
+            return "Slippy";
+        case COOP_CHARACTER_PEPPY:
+            return "Peppy";
+        default:
+            return "";
+    }
+}
+
 const char* CoopSession_EndText(CoopSessionEnd end) {
     switch (end) {
         case COOP_SESSION_END_REFUSED:
@@ -124,8 +170,8 @@ const char* CoopSession_EndText(CoopSessionEnd end) {
         case COOP_SESSION_END_NO_HANDSHAKE:
             return "Connected, but the handshake did not finish in time. The other side may run an older build.";
         case COOP_SESSION_END_BAD_MESSAGE:
-            return "The other side sent a handshake this game cannot read. Both players need the same Starship "
-                   "Co-op build.";
+            return "The other side sent a session message this game cannot read. Both players need the same "
+                   "Starship Co-op build.";
         default:
             return "";
     }
@@ -159,7 +205,68 @@ static void Event_Init(CoopSessionEvent* ev, CoopSessionEventType type, int peer
     ev->text = "";
 }
 
+// The same event and text on the host and on the client that asked.
+static void Event_PickRefused(CoopSession* s, int peer, uint8_t character, CoopSessionEvent* ev) {
+    Event_Init(ev, COOP_SESSION_EV_PICK_REFUSED, peer);
+    ev->character = character;
+    snprintf(s->text, sizeof(s->text), "%s is already taken.", CoopSession_CharacterName(character));
+    ev->text = s->text;
+}
+
+// True if a SESSION_PICK or SESSION_PICK_REFUSE holds one character and nothing else.
+static bool Character_Read(const CoopNetEvent* net) {
+    return net->size == 1 && net->data[0] >= COOP_CHARACTER_FOX && net->data[0] < COOP_CHARACTER_COUNT;
+}
+
 // ---- Host ----
+
+static void Host_RosterChanged(CoopSession* s) {
+    int i;
+
+    for (i = 0; i < COOP_NET_MAX_PEERS; i++) {
+        s->peers[i].rosterDue = true;
+    }
+    s->rosterEvent = true;
+}
+
+static bool Host_RosterEvent(CoopSession* s, CoopSessionEvent* ev) {
+    if (!s->rosterEvent) {
+        return false;
+    }
+    s->rosterEvent = false;
+    Event_Init(ev, COOP_SESSION_EV_ROSTER, 0);
+    return true;
+}
+
+// What a full window held back stays owed. A later change needs no queue: the roster that goes out is the current one.
+static void Host_SendOwed(CoopSession* s) {
+    int i;
+
+    for (i = 0; i < COOP_NET_MAX_PEERS; i++) {
+        Peer* p = &s->peers[i];
+
+        if (p->state != PEER_JOINED) {
+            continue;
+        }
+        if (p->refusedPick != 0 &&
+            s->t->ops->send(s->t, i, COOP_MSG_SESSION_PICK_REFUSE, &p->refusedPick, 1, COOP_NET_RELIABLE)) {
+            p->refusedPick = 0;
+        }
+        if (p->rosterDue && s->t->ops->send(s->t, i, COOP_MSG_SESSION_ROSTER, s->roster.character,
+                                            sizeof(s->roster.character), COOP_NET_RELIABLE)) {
+            p->rosterDue = false;
+        }
+    }
+}
+
+// A client that joined is gone. Its slot and its character are free at once; nothing is kept for its return.
+static void Host_Left(CoopSession* s, int peer, CoopSessionEnd end, CoopSessionEvent* ev) {
+    s->roster.character[peer + 1] = COOP_CHARACTER_NO_PLAYER;
+    Host_RosterChanged(s);
+    Event_Init(ev, COOP_SESSION_EV_LEFT, peer);
+    ev->end = end;
+    ev->text = CoopSession_EndText(ev->end);
+}
 
 static void Host_Refuse(CoopSession* s, int peer, uint32_t reasons, uint32_t nowMs, CoopSessionEvent* ev) {
     Peer* p = &s->peers[peer];
@@ -217,6 +324,8 @@ static void Host_Hello(CoopSession* s, int peer, const CoopNetEvent* net, uint32
         return;
     }
     p->state = PEER_JOINED;
+    s->roster.character[peer + 1] = COOP_CHARACTER_UNPICKED;
+    Host_RosterChanged(s);
     Event_Init(ev, COOP_SESSION_EV_JOINED, peer);
     ev->playerIndex = (uint8_t) (peer + 1);
     ev->diff = diff;
@@ -248,10 +357,38 @@ static bool Host_Tick(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) {
     return false;
 }
 
+// A character someone else holds, Fox included, is refused and the client stays; one it cannot have sent means a broken
+// peer, as with a hello that cannot be read. True if ev was filled in.
+static bool Host_Pick(CoopSession* s, int peer, const CoopNetEvent* net, CoopSessionEvent* ev) {
+    Peer* p = &s->peers[peer];
+    int i;
+
+    if (!Character_Read(net)) {
+        s->t->ops->disconnect(s->t, peer);
+        p->state = PEER_FREE;
+        Host_Left(s, peer, COOP_SESSION_END_BAD_MESSAGE, ev);
+        return true;
+    }
+    if (s->roster.character[peer + 1] == net->data[0]) {
+        return false;
+    }
+    for (i = 0; i < COOP_SESSION_PLAYERS; i++) {
+        if (s->roster.character[i] == net->data[0]) {
+            p->refusedPick = net->data[0];
+            Event_PickRefused(s, peer, net->data[0], ev);
+            return true;
+        }
+    }
+    s->roster.character[peer + 1] = net->data[0];
+    Host_RosterChanged(s);
+    return Host_RosterEvent(s, ev);
+}
+
 static bool Host_Poll(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) {
     CoopNetEvent net;
 
-    if (Host_Tick(s, nowMs, ev)) {
+    Host_SendOwed(s);
+    if (Host_RosterEvent(s, ev) || Host_Tick(s, nowMs, ev)) {
         return true;
     }
     while (s->t->ops->poll(s->t, &net)) {
@@ -272,9 +409,7 @@ static bool Host_Poll(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) {
 
                 p->state = PEER_FREE;
                 if (joined) {
-                    Event_Init(ev, COOP_SESSION_EV_LEFT, net.peer);
-                    ev->end = End_FromNet(net.end);
-                    ev->text = CoopSession_EndText(ev->end);
+                    Host_Left(s, net.peer, End_FromNet(net.end), ev);
                     return true;
                 }
                 break;
@@ -283,6 +418,12 @@ static bool Host_Poll(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) {
                 if (p->state == PEER_WAIT_HELLO && net.msgId == COOP_MSG_SESSION_HELLO) {
                     Host_Hello(s, net.peer, &net, nowMs, ev);
                     return true;
+                }
+                if (p->state == PEER_JOINED && net.msgId == COOP_MSG_SESSION_PICK) {
+                    if (Host_Pick(s, net.peer, &net, ev)) {
+                        return true;
+                    }
+                    break;
                 }
                 if (p->state == PEER_JOINED && net.msgId >= COOP_MSG_SESSION_END) {
                     Event_Init(ev, COOP_SESSION_EV_MESSAGE, net.peer);
@@ -309,6 +450,50 @@ static void Client_End(CoopSession* s, CoopSessionEnd end, CoopSessionEvent* ev)
     ev->text = CoopSession_EndText(end);
 }
 
+// After the welcome, a message from the host that cannot be read ends the session as a broken welcome does.
+static void Client_Broken(CoopSession* s, CoopSessionEvent* ev) {
+    s->t->ops->disconnect(s->t, 0);
+    Client_End(s, COOP_SESSION_END_BAD_MESSAGE, ev);
+}
+
+// True if data is a roster this client can be part of: Fox at player 0, everyone else free, without a character or a
+// wingman, no wingman twice, and our own slot taken.
+static bool Roster_Valid(const uint8_t* data, uint16_t size, uint8_t self) {
+    int i, j;
+
+    if (size != COOP_SESSION_PLAYERS || data[0] != COOP_CHARACTER_FOX || data[self] == COOP_CHARACTER_NO_PLAYER) {
+        return false;
+    }
+    for (i = 1; i < COOP_SESSION_PLAYERS; i++) {
+        if (data[i] == COOP_CHARACTER_FOX || data[i] >= COOP_CHARACTER_COUNT) {
+            return false;
+        }
+        for (j = 1; j < i; j++) {
+            if (data[i] > COOP_CHARACTER_FOX && data[i] == data[j]) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+static void Client_Roster(CoopSession* s, const CoopNetEvent* net, CoopSessionEvent* ev) {
+    if (!Roster_Valid(net->data, net->size, s->player)) {
+        Client_Broken(s, ev);
+        return;
+    }
+    memcpy(s->roster.character, net->data, sizeof(s->roster.character));
+    Event_Init(ev, COOP_SESSION_EV_ROSTER, 0);
+}
+
+static void Client_PickRefused(CoopSession* s, const CoopNetEvent* net, CoopSessionEvent* ev) {
+    if (!Character_Read(net)) {
+        Client_Broken(s, ev);
+        return;
+    }
+    Event_PickRefused(s, 0, net->data[0], ev);
+}
+
 static void Client_Answer(CoopSession* s, const CoopNetEvent* net, CoopSessionEvent* ev) {
     CoopIdentity* host = &s->peers[0].identity;
 
@@ -320,6 +505,7 @@ static void Client_Answer(CoopSession* s, const CoopNetEvent* net, CoopSessionEv
             return;
         }
         s->client = CLIENT_ACTIVE;
+        s->player = net->data[0];
         Event_Init(ev, COOP_SESSION_EV_JOINED, 0);
         ev->playerIndex = net->data[0];
         ev->diff = CoopIdentity_Compare(host, &s->local);
@@ -392,6 +578,14 @@ static bool Client_Poll(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) {
                 if (s->client == CLIENT_WAIT_ANSWER &&
                     (net.msgId == COOP_MSG_SESSION_WELCOME || net.msgId == COOP_MSG_SESSION_REFUSE)) {
                     Client_Answer(s, &net, ev);
+                    return true;
+                }
+                if (s->client == CLIENT_ACTIVE && net.msgId == COOP_MSG_SESSION_ROSTER) {
+                    Client_Roster(s, &net, ev);
+                    return true;
+                }
+                if (s->client == CLIENT_ACTIVE && net.msgId == COOP_MSG_SESSION_PICK_REFUSE) {
+                    Client_PickRefused(s, &net, ev);
                     return true;
                 }
                 if (s->client == CLIENT_ACTIVE && net.msgId >= COOP_MSG_SESSION_END) {

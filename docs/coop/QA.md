@@ -9,6 +9,9 @@ Every PR states the QA level it reached and how. Levels follow Co-op Anything:
 | `automated` | A scripted harness drove real game clients and checked shared state. Paste the summary. |
 | `verified-playthrough` | A full campaign was finished in co-op, written up with known issues. |
 
+`automated` needs at least two game clients sharing state. A run of one game is `none`, even when a script drove it and
+checked its state: the PR says what ran.
+
 Current project level: `none` (no co-op play yet; the transport has its own tests).
 
 ## Test identity
@@ -70,9 +73,10 @@ number of clients, transport.
    configured build directory but no ROM. WP-27 does the same with real game clients.
    Whether those scenarios can fail at all is checked by `python tools/coop/net_mutants.py`: it breaks one behaviour
    of `net_core.c` at a time and requires the named scenario to fail (#44). Run it after changing `net_core.c`.
-   `python tools/coop/session_mutants.py` does the same for `session.c` and `session_test.py` (#55), and
-   `python tools/coop/session_test.py --asan` runs the session tests under AddressSanitizer and UBSan (CI does, on
-   Linux); `session_mutants.py --asan` shows that run can fail.
+   `python tools/coop/session_mutants.py` does the same for `session.c` and `session_test.py` (#55; CI runs it on
+   Linux), and `python tools/coop/session_test.py --asan` runs the session tests under AddressSanitizer and UBSan (CI
+   does, on Linux); `session_mutants.py --asan` shows that run can fail. `python tools/coop/net_test.py --asan` does
+   the same for the transport tests (#75; CI does, on Linux).
 5. **Regression per bug.** Every desync fix comes with the replay that triggered it; every transport fix adds a
    break to `tools/coop/net_mutants.py`, every session fix one to `tools/coop/session_mutants.py`.
 
@@ -119,6 +123,18 @@ what ran:   python tools/coop/session_test.py, then with --asan; python tools/co
 result:     9/9 scenarios, plain and under AddressSanitizer and UBSan. All 129 session breaks caught (139 break-and-test
             pairs), all 3 sanitizer breaks caught, all 16 transport breaks caught (20 pairs). Handshake and transport
             only, not co-op play.
+```
+
+```
+date:       2026-11-06
+commit:     issue/58-session-characters (WP-34), on 95962d04
+identity:   no game, no ROM; Linux, GCC, Debug; 2 to 4 processes, UDP over loopback, chaos relay
+what ran:   python tools/coop/session_test.py, then with --asan; python tools/coop/session_mutants.py, then with --asan;
+            python tools/coop/net_test.py
+result:     12/12 scenarios, plain and under AddressSanitizer and UBSan, with three clients in characters, taken and
+            taken_bad_wifi. All 225 session breaks caught (238 break-and-test pairs), all 4 sanitizer breaks caught,
+            17/17 transport scenarios. Session only: nothing in the game calls it yet, and until WP-17 a character
+            changes nothing in a level.
 ```
 
 ```

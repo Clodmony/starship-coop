@@ -5,6 +5,7 @@
     python tools/coop/net_test.py --only lan,hell  # chosen scenarios
     python tools/coop/net_test.py --list
     python tools/coop/net_test.py --no-build --build-dir <dir>
+    python tools/coop/net_test.py --asan           # the same under AddressSanitizer and UBSan; not on Windows
 
 The game and its data are not involved, so no ROM is needed; the build directory only has to be configured
 (python tools/coop/build.py). Prints one line per scenario and a RESULT line, keeps every log in
@@ -347,8 +348,23 @@ SCENARIOS = {
 }
 
 
-def find_exe(build_dir, config):
-    name = "coop_net_test.exe" if IS_WINDOWS else "coop_net_test"
+def target(asan):
+    return "coop_net_test_asan" if asan else "coop_net_test"
+
+
+def sanitizer_report(folder):
+    """The line that says what a sanitizer found in a scenario's logs, or None; the report itself ends in stack frames.
+    A finding stops the program that made it, and a scenario does not watch every program to its end, so this also
+    covers those. CI keeps no logs, so the summary line must say it."""
+    for log in sorted(folder.glob("*.log")):
+        for line in log.read_text(encoding="utf-8", errors="replace").splitlines():
+            if "ERROR: AddressSanitizer" in line or "ERROR: LeakSanitizer" in line or "runtime error: " in line:
+                return f"{log.name}: {line}"
+    return None
+
+
+def find_exe(build_dir, config, asan=False):
+    name = target(asan) + (".exe" if IS_WINDOWS else "")
     for path in (build_dir / "coop-net-test" / name, build_dir / "coop-net-test" / config / name):
         if path.exists():
             return path
@@ -362,6 +378,7 @@ def main():
     ap.add_argument("--build-dir", type=Path, help="default: build/x64 on Windows, build-cmake elsewhere")
     ap.add_argument("--config", default="Debug", choices=["Debug", "Release", "RelWithDebInfo"])
     ap.add_argument("--no-build", action="store_true", help="use the coop_net_test already built")
+    ap.add_argument("--asan", action="store_true", help="use coop_net_test_asan: AddressSanitizer and UBSan")
     ap.add_argument("--seeds", type=int, default=200, help="seeds for the sim scenario")
     ap.add_argument("--out", type=Path, help="log folder, default local/test-net/<stamp>")
     args = ap.parse_args()
@@ -369,6 +386,9 @@ def main():
     if args.list:
         print("\n".join(SCENARIOS))
         return 0
+    if args.asan and IS_WINDOWS:
+        print("RESULT: FAILED, --asan needs GCC or Clang; MSVC has no UBSan")
+        return 2
     names = args.only.split(",") if args.only else list(SCENARIOS)
     unknown = [n for n in names if n not in SCENARIOS]
     if unknown:
@@ -388,16 +408,16 @@ def main():
         build_log = out / "build.log"
         with open(build_log, "w", encoding="utf-8") as log:
             code = subprocess.run(["cmake", "--build", str(build_dir), "--config", args.config, "--target",
-                                   "coop_net_test"], stdout=log, stderr=subprocess.STDOUT).returncode
+                                   target(args.asan)], stdout=log, stderr=subprocess.STDOUT).returncode
         if code != 0:
             tail = build_log.read_text(encoding="utf-8", errors="replace").strip().splitlines()[-8:]
             print("\n".join(tail))
-            print(f"RESULT: FAILED, coop_net_test did not build (log: {build_log})")
+            print(f"RESULT: FAILED, {target(args.asan)} did not build (log: {build_log})")
             return 1
 
-    exe = find_exe(build_dir, args.config)
+    exe = find_exe(build_dir, args.config, args.asan)
     if exe is None:
-        print(f"RESULT: FAILED, no coop_net_test in {build_dir}")
+        print(f"RESULT: FAILED, no {target(args.asan)} in {build_dir}")
         return 1
 
     lines = []
@@ -416,6 +436,10 @@ def main():
             failed.append(name)
         finally:
             run.stop_all()
+        report = sanitizer_report(run.folder) if args.asan else None
+        if report:
+            line = f"FAILED  {name}: {report}"
+            failed += [] if name in failed else [name]
         line += f" ({time.monotonic() - started:.1f} s)"
         print(line, flush=True)
         lines.append(line)
