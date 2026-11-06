@@ -49,9 +49,13 @@ number of clients, transport.
    of a level the game changes single values, hashes, changes them back and logs what the hash did
    (`SF64_COOP_HASH_PROBE`, `# probe` lines in the log). Each player, parked or flying, must change `players` and
    nothing else; two negative `iwork` numbers must differ; two foreign pointers must not; an active `gScenery360` slot
-   must show and a free one must not. Both hashes come from one frame of one process, so this does not need two runs
-   to agree. With `--players 1` (co-op off) it checks that single player kept the old rules for those two values.
-   `python tools/coop/hash_check.py diff <a> <b>` names the first differing frame and the regions that differ there.
+   must show and a free one must not. Every per-player array the hash covers, all four slots, must show for a player
+   in the level and not for anyone else, and so must each co-op slot. Both hashes come from one frame of one process,
+   so this does not need two runs to agree. With `--players 1` (co-op off) it checks that single player kept the old
+   rules: the arrays that are new in co-op must not show, `gLifeCount`, `gBombCount` and `gPlayerScores` must, in every
+   slot.
+   `python tools/coop/hash_check.py diff <a> <b>` compares every column of the two logs, names the first differing
+   frame and the regions that differ there. It compares the common frames: read its first line for the two lengths.
    `python tools/coop/replay.py play <replay> --hash-log` writes a log next to an ordinary playback.
    `python tools/coop/determinism.py <replay>` (WP-02, unattended, exit code 0 on `PASS`) plays the replay once alone
    and then six more times at once, each under a condition that can differ between machines: graphics backend,
@@ -89,6 +93,21 @@ result:     PASS on all four. Probes 2 players: player 1 14/14 (10 parked, 4 fly
             scenery360 5/5 twice. A = B on 5800/5800 frames with 1 and with 2 players; poke in player 2 at 5400 first
             seen at 5400 (players); poke in an actor at 5400 first seen at 5400 (actors). Co-op off: 5801/5801 log rows
             equal to a69c811a, every region. Same checks on the test commit 54837e0e: FAIL, quoted in the PR.
+```
+
+```
+date:       2026-11-06
+commit:     issue/67-hash-player-arrays at 14a353d2, on 95962d04
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window, 1 client per run, no transport,
+            input by rule (Corneria, all-range, 5800 frames)
+what ran:   python tools/coop/hash_check.py probe --players 2, probe --players 4, probe --players 1,
+            run --players 2 --poke-player 1, run; two plain 1-player runs of 95962d04 and of this commit, compared in
+            pairs with hash_check.py diff
+result:     PASS on all five. Per-player arrays, co-op slots, team arrays: all seen for players in the level, 14/14 and
+            4/4; parked players, players who do not exist and unread slots leave the hash alone. A = B on 5800/5800
+            frames with 1 and with 2 players; poke in player 2 at 5400 first seen at 5400 (players). Co-op off: no
+            difference on 5821 and on 5809 common rows, every column, each past the 5800 recorded frames. Same probe on
+            the test commit edca28d4: FAIL, 64 checks, quoted in the PR.
 ```
 
 ```

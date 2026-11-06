@@ -542,6 +542,150 @@ Unknown:
 
 ## Determinism
 
+### 2026-11-06, #67, state hash: per-player arrays, team arrays, co-op slots
+
+Identity: ROM US 1.0, branch `issue/67-hash-player-arrays` on top of `95962d04`, Linux, GCC, Debug, OpenGL on a software
+renderer, no window, one game per run, no transport. Input by rule (`tools/coop/hash_check.py`,
+`write_generated_replay`): 5800 frames, Corneria, into all-range. These runs are Corneria only, on one machine.
+
+Method: every array in `include/sf64context.h` with four slots, then every array the code indexes by player anywhere
+in `src/` and `include/` (`git grep` for `[gPlayerNum]`, `[player->num]`, `[this->num]`, `[this->playerNum]`,
+`[shot->sourceId]`, `[gMainController]`), then each read site of what that found. All of it read in this checkout.
+
+Hashed, in the `players` region, in co-op only (`sPlayerArrays`, `src/port/coop/sync/state_hash.c`):
+
+| Value | The simulation reads it at |
+|---|---|
+| `gLeftWingHealth`, `gRightWingHealth` | `src/engine/fox_play.c:940`, `:957`: the wing breaks at 0 |
+| `gLaserStrength` | `src/engine/fox_play.c:3173` which shot, `src/engine/fox_beam.c:671`, `:1023` what it does |
+| `gChargeTimers` | `src/engine/fox_play.c:3350`, `:3356`, `:3400`: charge and lock-on shot |
+| `gUturnDownTimers`, `gUturnBrakeTimers` | `src/engine/fox_play.c:5275-5288`: the U-turn input |
+| `gLoopDownTimers`, `gLoopBoostTimers` | `src/engine/fox_play.c:5143-5155`: the loop input |
+| `gLeftWingDebrisTimer`, `gRightWingDebrisTimer` | `src/engine/fox_play.c:240`, `:251`: spawn effects and draw random numbers |
+| `gHasShield`, `gShieldTimer`, `gShieldAlpha` | `src/engine/fox_play.c:1012`, `:5543`, `:934`: `gShieldAlpha` decides whether wings take damage |
+| the slot of each player | `src/port/coop/game/players.c`: parked or not decides what `Player_Update` and the camera run |
+
+Hashed, in the `globals` region, in co-op only (`sTeamArrays`). These hold one value per team member, and WP-17 puts
+human players in those slots. Only the slots listed count, and a probe checks that the others do not:
+
+| Value | Slots | The simulation reads it at |
+|---|---|---|
+| `gTeamDamage` | Falco to Peppy | `src/engine/fox_play.c:7029-7036`: pending damage, drained into `gTeamShields` by 2 a frame. No level start clears it. Two different amounts drain alike until the smaller one ends, and writing 0 can remove the difference for good (`src/engine/fox_360.c:1467`, `:1479`, `src/engine/fox_enmy2.c:2091`, `:3338`), so `gTeamShields` does not stand in for it |
+| `gSavedTeamShields` | Falco to Bill | `src/engine/fox_play.c:2935-2936` restored at level start, `:545-551` converted first |
+| `gPrevPlanetTeamShields` | Falco to Bill | `src/engine/fox_hud.c:1587-1591` restored on a retry. `src/engine/fox_play.c:4923` only writes it |
+| `D_ctx_80177C58` | Falco to Bill | `src/overlays/ovl_menu/fox_map.c:3626-3629`: `Map_RetryCourse` restores three arrays from it |
+| `gTeamEventActorIndex` | all 4 | `src/engine/fox_enmy2.c:1453` script target, `src/engine/fox_effect.c:2885-2886` shots against team actors. No level start clears it |
+| `D_enmy_Timer_80161670` | all 4 | `src/engine/fox_enmy2.c:2789`, `:2795` event conditions: is this team member being chased (`:3238-3239`) |
+
+Hashed before this entry, in the `globals` region, with co-op off too: `gLifeCount`, `gBombCount`, `gPlayerScores`.
+`gGoldRingCount` is hashed but is not per player: `[0]` is the count and `[1]` what the HUD has shown of it
+(`src/engine/fox_hud.c:364-365`).
+
+Not hashed, and why:
+
+| Value | Reason |
+|---|---|
+| `gRightWingFlashTimer`, `gLeftWingFlashTimer` | Only drawn (`src/engine/fox_display.c:529-582`); the simulation only counts them down (`src/engine/fox_play.c:5525-5534`) |
+| `gMuzzleFlashScale` | Only drawn (`src/engine/fox_display.c:1133-1203`), and decays (`src/engine/fox_play.c:5550`) |
+| `D_ctx_80177990`, `D_ctx_801779A8`, `gControllerRumbleTimers` | Rumble only (`src/engine/fox_play.c:5897-5907`); many writes use `gMainController`, which is local to a client |
+| `gControllerRumbleFlags`, `gControllerRumbleEnabled`, `gControllerRumble` | Rumble hardware (`src/sys/sys_joybus.c:111-132`) |
+| `gBoostButton`, `gBrakeButton`, `gShootButton`, `gBombButton` | Written once, the same constant on every client (`src/engine/fox_game.c:438-441`) |
+| `gVsLockOnTimers` | Stays 0 outside versus: its only non-zero write is under `gVersusMode` (`src/engine/fox_beam.c:1757-1766`) |
+| `gVsPoints`, `gVsKills`, `gHandicap`, `gPlayerForms`, `gPlayerInactive` | Read only in versus (`src/engine/fox_play.c:4580`, `:4745-4751`, `:5985-5986`, `src/engine/fox_versus.c`). `gPlayerInactive` also at `:6087`, `:6346`, reached only from `PLAYERSTATE_VS_STANDBY` |
+| `D_ctx_80177858`, `D_ctx_80177958`, `D_ctx_801783C0` | Written, never read (`src/engine/fox_context.c:144`, `:304`, `:316`) |
+| `gPlayerGlareAlphas`, `gPlayerGlareReds`, `gPlayerGlareGreens`, `gPlayerGlareBlues` | Written by draw code for the camera being drawn (`src/engine/fox_bg.c:1083-1115`), read by draw code (`src/engine/fox_game.c:566-591`) |
+| `gShowReticles`, `sReticleScales`, `sPlayersVisible`, `gLockOnTargetViewPos`, `D_display_801613B0`, `D_display_801613E0`, `D_display_80161418`, `D_display_80161518`, `D_display_80161548`, `D_display_801615A8`, `D_display_801615B8` | Draw state (`src/engine/fox_display.c`); what draw code does with them to hashed objects is under "Derived" |
+| `D_80161738`, `D_80161748`, `D_80161760`, `D_800D19AC`, `D_800D19E0`, `sVsSavedBombCount`, `sVsBombCountFlashTimer` | HUD state (`src/engine/fox_hud.c`) |
+| `sPlayerRespawnTimer`, `sPlayerDownFrames`, `sVsDisplayedScores`, `D_801787D8`, `D_801787E8`, `D_80178810`, `D_80178850`, `sPlayerFormOption` | Versus only (`src/engine/fox_versus.c:18-44`) |
+| `gSavedGoldRingCount` | One value, `[0]` only (`src/engine/fox_play.c:4677`): a checkpoint, not per player |
+| `gPlayerNum`, `gMainController` | Local to a client: `gPlayerNum` is `CoopPlayers_LocalIndex()` between player loops (`src/engine/fox_play.c:7046-7048`), and they would differ between clients with nothing wrong |
+| `gInputHold`, `gInputPress` | Pointers, and input is not state |
+| `gControllerHold`, `gControllerPress`, `gControllerPlugged` | Input, which is what lockstep exchanges; a wrong pad shows in `Player` on the next frame |
+| `gPlayerTurnRate`, `gPlayerTurnStickMod` | Scratch: set before each use in the same function (`src/engine/fox_play.c:3758-3759`, `:4001-4002`, `:4210-4211`, `:4377-4378`, `src/engine/fox_tank.c:404-405`, `src/overlays/ovl_i3/fox_aq.c:886`, `:908`) |
+| `gPathVelX`, `gPathVelY` | One value all players write, the step `xPath` and `yPath` took, which `Player` holds (`src/engine/fox_play.c:3676-3677`); read only for effect velocities, which are hashed (`src/engine/fox_effect.c:2459-2460`) |
+| `gCsCamEyeX` and friends | Scratch for the camera update, which ends in `Player.cam` (`src/engine/fox_play.c:6325-6328`) |
+| `gPrevPlanetSavedTeamShields` | Written, never read: every site is a store (`src/engine/fox_play.c:4923`, `src/overlays/ovl_menu/fox_map.c:1453`, `src/overlays/ovl_i1/fox_ve1.c:2517`, `src/overlays/ovl_i3/fox_a6.c:2912`, `src/overlays/ovl_i4/fox_bo.c:1663`, `src/overlays/ovl_i6/fox_ve2.c:117`, `:438`) |
+| Slot of Fox in the team shield arrays, slots of Fox, Katt and Bill in `gTeamDamage` | Not read as a team member's: the loops start at Falco (`src/engine/fox_play.c:2935`), `gTeamDamage` drains Falco to Peppy only (`:7029`), so a value there can stay from an old level for good |
+| `gMissionTeamStatus` | One value per mission, a bit per team member. Read for the ending, the ranking and the map (`src/overlays/ovl_ending/fox_end2.c:239-241`, `src/overlays/ovl_menu/fox_option.c:3999`, `src/overlays/ovl_menu/fox_map.c:5704`), not by play |
+| `gCsTeamTargetsX`, `gCsTeamTargetsY`, `gCsTeamTargetsZ` | Cutscene scratch worked out from `player->pos` and `gActors[0]` (`src/engine/fox_demo.c:1160-1186`); the actors that follow it are hashed |
+| `gTeamArrowsViewPos` | Draw state, by team member (`src/engine/fox_edisplay.c:1214`, `:1257`) |
+| `gStarWolfTeamAlive`, `gSavedStarWolfTeamAlive` | Enemies, not team members: no player goes there. Level state, like most globals the hash leaves out |
+| `D_ctx_80177C94` to `D_ctx_80177CC4` | Player 0 only: carried from Venom into Andross, and hashed once restored (`src/engine/fox_play.c:4690-4698`, `src/overlays/ovl_i1/fox_ve1.c:2524-2530`) |
+
+Inside hashed objects: `Actor.lockOnTimers[4]` and the same field of other objects are per player and covered with
+the object. `Player` is hashed whole.
+
+Observed (runs):
+
+- **The hash missed all of it.** On the test commit `edca28d4` (hash logic as on `95962d04`),
+  `hash_check.py probe --players 2` failed 64 checks. No per-player array showed for player 0 (0 of 14 probes) or for
+  player 2 in the level (0 of 4), no team array showed (0 of 14), and no slot showed (0 of 14, 0 of 10, 0 of 4).
+- **`gLifeCount`, `gBombCount` and `gPlayerScores` are hashed, as the issue said.** On the same commit each showed in
+  `globals` only, for player 0 (14 of 14) and for player 2 in the level (4 of 4).
+- **They also showed too much:** a parked player's slot and the slots of players who do not exist changed the hash
+  (0 of 10 and 0 of 14 as expected). No level start clears those slots (`gBombCount` only in `Player_ResetVsData`,
+  `gLifeCount` not at all; `gPlayerScores` only below `CoopPlayers_Count()`, `src/engine/fox_play.c:2953-2957`), so
+  a client that played versus or another co-op level first would differ from a fresh one.
+- **After the fix** (`14a353d2`): `probe --players 2` and `probe --players 4` pass. Each hashed value shows in its one
+  region for every player in the level (14 of 14 for player 0, 4 of 4 for the others), every team slot that counts
+  shows (14 of 14), and a parked player, a player who does not exist and a slot nobody reads leave the hash alone.
+- **Hashing them keeps two runs equal.** `run --players 2 --poke-player 1`: A and B equal on all 5800 recorded frames,
+  a poke in player 2 at 5400 first seen at 5400, in `players`. `run` with 1 player: the same, the poke seen in `actors`.
+- **Co-op off is unchanged.** `hash_check.py diff` of a plain 1-player run of `95962d04` and of this branch: no
+  difference on 5821 common rows in game state, level, total and all 12 regions, and the same for a second pair on
+  5809 rows. The logs end 8 and 13 rows apart, past the 5800 recorded frames, because the tool stops the game once the
+  report exists. `probe --players 1` passes before and after the fix: the arrays new in co-op do not show, and the
+  three older ones do, in all four slots.
+
+What changed (`src/port/coop/sync/state_hash.c`, accessor at the end of `src/port/coop/game/players.c`):
+
+- In co-op only: `sPlayerArrays` and the slots go into `players`, `sTeamArrays` into `globals`. No new region, so a log
+  keeps its columns.
+- In co-op a per-player slot counts only while its player is in the level, for the older three values as well. With
+  co-op off the bytes hashed are the same as before.
+- `hash_check.py diff` compares every column. It used to compare the frame and the total.
+
+What the hash cannot cover from `state_hash.c`, or cannot tell apart per player:
+
+- **Landmaster:** its state is one value for all players, not a slot each: `D_800C9F00`, `D_800C9F04`, `D_800C9F08`,
+  `D_800C9F10`, `D_800C9F14`, `D_800C9F20`, `D_800C9F24`, `D_800C9F28` (`src/engine/fox_tank.c:14-23`), read by the
+  simulation (`:449-450`, `:481`, `:878-881`, `:1129`). Not hashed. `extern` would reach them, but a value shared by
+  two tanks says nothing per player.
+- **Blue Marine:** the same in `D_i3_801C41B8` (`src/overlays/ovl_i3/fox_aq.c:202`, read in `Aquas_BlueMarineMove`,
+  `:896-942`). Not hashed.
+- Neither matters today: a co-op player joins only in all-range (`CoopPlayers_SkipUpdate`), so only player 0 drives
+  one. WP-18 has to give them a slot per player, and then they belong in `sPlayerArrays`.
+- `D_800C9F3C` is a function-local static (`src/engine/fox_tank.c:599`), which no other file can reach. It only keeps a
+  sound from restarting (`:666-671`, `:690`).
+- **Draw code writes into hashed objects, for the camera being drawn:** `sfxSource` of actors, bosses, items, scenery
+  and shots (`Object_SetSfxSourceToView`, `src/engine/fox_edisplay.c:1282`, `:1305`, `:1431`, `:1472`,
+  `src/engine/fox_beam.c:2376`), `Actor.iwork[24]` (`src/engine/fox_edisplay.c:1283`, read by the all-range AI at
+  `src/engine/fox_360.c:1233`), `Actor.lockOnTimers[gPlayerNum]` (`src/engine/fox_edisplay.c:1266`, `:1276-1277`) and
+  a kill of debris that was not drawn (`:1267-1269`). Every client draws player 0 today.
+- **`gPlayerNum` outside the player loops is the local player:** `HUD_BombCounter_Draw` clamps
+  `gBombCount[gPlayerNum]` (`src/engine/fox_hud.c:3456-3457`), the level clear screen adds to `gLifeCount[gPlayerNum]`
+  (`:1088-1092`), `Player_Setup` resets `gLaserStrength`, `gLifeCount` and `gBombCount` by it
+  (`src/engine/fox_play.c:4928-4931`).
+
+Derived:
+
+- Once WP-28 gives each client its own view, the draw writes above differ between two clients with nothing wrong, and
+  `iwork[24]` and `lockOnTimers` then change the simulation. WP-22 can rely on the hash as long as
+  `CoopPlayers_LocalIndex()` is 0 on every client, not after that, until these move out of draw code or out of the
+  hash.
+- The same goes for the `gPlayerNum` writes: the hash would show them, correctly, as a real difference.
+- The hash in co-op now depends on values no level start clears (`gTeamDamage`, `gTeamEventActorIndex`), and on the
+  saved team arrays. The simulation reads them, so that is right, but two clients with a different past differ there
+  from their first co-op frame. WP-24 has to start clients from the same values.
+- `sCoopPlayerCount` is not hashed as a value: it shows as the length of the `players` region.
+
+Unknown:
+
+- Levels other than Corneria: none was run, so whether any of these values ever differ between two clients there.
+- Whether the values actually moved in these runs: a probe flips a value, it does not say what the value was.
+- Whether a co-op player's values stay equal between two runs through a boss, a retry or a level change: not run.
+- Two real clients: everything here is one process.
+
 ### 2026-11-06, #53, state hash: every co-op player, negative numbers, free slots
 
 Identity: ROM US 1.0, branch `issue/53-hash-players` on top of `a69c811a`, Linux, GCC, Debug, OpenGL on a software
