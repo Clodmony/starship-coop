@@ -1294,6 +1294,132 @@ Found later (2026-11-06, while testing WP-11 by watching a 2-player Corneria run
   Verified: the owner watched a 2-player run over Corneria's water, graphics normal, no assertion; 1-player replay
   still PASS. That the assertion came from this underflow is a guess; it did not come back after the fix.
 
+### 2026-11-06, #10 (WP-12), player 2 on rails: who owns the path
+
+**Player 0 owns path progress.** The other players take the path from it every frame and write no path global
+(`CoopPlayers_FollowPath`, `src/port/coop/game/players.c`, called at the top of `Player_UpdatePath`). This is the shared
+path WP-06 proposed; DESIGN.md needs no change of plan. Why player 0:
+
+- Everything that hangs off the path already reads player 0 or the globals `Player_UpdatePath` writes: object loading
+  (`src/engine/fox_enmy.c:592-595`, `:630-633`), the x/y part of culling (`:2695-2697`), the path-turn items
+  (`:2550-2591`). With player 0 as the only writer none of those sites changes.
+- There is one world. Objects are drawn at `obj.pos.z + gPathProgress` and floor collision adds the same global, so two
+  progress values cannot both be right in one simulation. A rule over all players (the one in front, an average) would
+  jump when one of them goes down.
+- Player 0 is always there: the host, always Fox (decision 0005). Nothing has to hand the path over when a client leaves.
+- The price: only player 0's boost and brake change the speed of the level. The others still pull their own `camDist`
+  (towards -400 and 180), so they move ahead of and behind player 0, and `trueZpos`, shots and hit tests move with them.
+  How that feels: `unknown`, nobody has played it.
+
+What changed:
+
+- `CoopPlayers_SkipUpdate`: a waiting player joins when player 0 is `ACTIVE` on rails in an Arwing, as well as in
+  all-range. The Landmaster and the Blue Marine stay parked on rails (WP-18).
+- `CoopPlayers_FollowPath`: besides `zPath`, `xPath` and `yPath` a follower takes `pos.z`, `vel.z`, `baseSpeed`, the path
+  turn state and the view turn (`yRot_114`, `xRot_120`), because `Player_MoveArwingOnRails` rotates the flight vector
+  with them. The box sizes are copied once, at the join: the Landmaster uses `pathHeight` for its own jump
+  (`src/engine/fox_tank.c:679`). No level or player count is named anywhere; players 1 to 3 run the same code.
+- New slot `COOP_SLOT_AWAY`: a joined player whose section ends is parked, and comes back when player 0 flies again.
+  WP-11 sent it `OUT` for the rest of the level, which would have ended it at the cut from rails to all-range. It keeps
+  its own shields, wings, laser and bombs. `OUT` is now only for a player that went down.
+- `CoopPlayers_SelectInput`: player 0 reads `gMainController`, the others the pad with their index, so a replay can fly
+  player 2. Before, all of them read `gMainController` (`src/engine/fox_play.c:5892-5898`), so player 2 copied player
+  0's stick. `Camera_UpdateArwingOnRails` reads `gInputPress` too (`:6228-6229`), so the camera loop selects it per
+  player as well, and both loops put it back on the local player, as they do for `gPlayerNum`. With one controller
+  player 2 now flies straight on instead of copying. WP-14 replaces this with a real input source.
+- `src/port/coop/test/player_trace.c` logs the path globals, each player's path, `camDist`, shields, somersault and form.
+  `tools/coop/player_trace.py rails` is the test below; its `check` rules now expect the join on rails.
+
+Observed:
+
+- `player_trace.py rails --players 2` (ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; both
+  runs with `gInvincible`; player 0 fires, boosts and brakes, player 2 sweeps the stick, fires, boosts, brakes and
+  loops): the rail section is trace frames 1674 to 6198 in both runs, 4525 frames. `gPathProgress`, `gPathVelZ` and
+  `gPathTexScroll` equal single player on all 4525, largest difference 0.000. Progress 0 to 184448, 40.771 per frame,
+  speed between 20 and 70. Player 1 flew all 4525 frames on player 0's `zPath`, `xPath` and `yPath`, 2400 across in x,
+  1146 in y, on average 814 from player 0 in x, `camDist` -323 to 115, 7 loops. It parked one frame after player 0 went
+  to `START_360` and was active in all-range on frame 6441, the same frame as player 0.
+- The same with 4 players, all three extra players: path equal on all 4525 frames, all 60 rules pass. (On the first run
+  the box rule failed for players 1 and 2, and every frame it named was inside a loop, see below. The rule leaves loops
+  out now, and it passes on the same traces.)
+- With `CoopPlayers_FollowPath` returning 0 (a temporary build) the same test fails as WP-06 predicted. `gPathProgress`
+  matches single player on 26 of 4525 frames, largest difference 40889.953, 31.733 per frame instead of 40.771, the rail
+  section ends on frame 7414 instead of 6198, and `gPathTexScroll` is off by 143559, because both players add to it.
+- With extra players reading pad 0 and `AWAY` replaced by `OUT` (a temporary build): `looped 0 times` and `active in
+  all-range on frame None`.
+- Player 0's own x and y are not the same as in single player: up to 542.8 apart with 2 players, 418.8 with 4. Player 2
+  changes the RNG and what is left of the enemies, so player 0 is hit in other places. Derived: under `gInvincible` that
+  moves it without changing its speed; without it, a hit can cost player 0 boost on a different frame than in single
+  player, so an exact match is only to be expected in this test.
+- Level complete on rails (`gDebugLevelComplete`, L at replay frame 6000): `check` PASS, player 1 parked one frame after
+  player 0, at trace frame 2901.
+- Hash, two players, `hash_check.py run <rail replay> --players 2 --poke-frame 5400 --poke-player 1`: A and B equal on
+  all 10500 frames, the poke shows at exactly frame 5400, in `players`. These runs have no `gInvincible`, so they hold a
+  player 0 going down and a restart as well.
+- Co-op off: one plain 1-player run of `95962d04` and of this branch on the same replay, `hash_check.py diff`: 10512
+  common rows, no difference.
+- Player 2 going down on rails (no `gInvincible`, gdb sets `shields = 0` and `radioDamageTimer = 5` at trace frame 2500):
+  `check` PASS, out on that frame, drawn for that one frame, and the path went on with player 0 alone, 33754 to 47047
+  until player 0 went down at frame 2808. In the two restarts of the same run player 1 went down by itself from
+  collisions (frames 1545 and 1645), and player 0 flew on for 140 and 371 frames.
+- Player 0 going down on rails: player 1 parked, level restart, parked again, and back on frame 1 with full shields,
+  because a restart without a checkpoint is `ACTIVE` from frame 1. It is hidden on that frame: the copy takes player 0's
+  `draw`, which is still 0 there.
+- Player 2 is in player 0's view (gdb, frames 2300 and 2301): view space (-604, 225, -384) with player 0 at (47, 104,
+  -393), so beside it at nearly the same depth, and `sPlayersVisible[1]` is 1. `sPlayersVisible` of the local player
+  reads 0 between frames because `Display_Update` clears it at its end (`src/engine/fox_display.c:2103`, also upstream).
+- A path turn, forced because this route has none (gdb on player 0 at frame 2000: `xPathTarget` +1200, `pathChangeTimer`
+  60, `pathChangeYaw` -30): `xPath` went 0 to 1200 on both players, and across all three attempts of that run player 1
+  was off player 0's path on 0 of 4014 flying frames.
+- The cut from rails to all-range keeps what is the player's own (gdb at frame 6100: shields 100, bombs 7): after the
+  rejoin at 6441 it has shields 100, bombs 7 and its two broken wings, with player 0 at 3 bombs. Laser strength: not
+  shown. It was back to single on the next frame, because `Player_Shoot` does that to broken wings
+  (`src/engine/fox_play.c:3466-3469`). The rejoin does not touch that array, but this run does not prove it.
+
+- `Player_PerformLoop` moves `pos.z` like normal flight (`src/engine/fox_play.c:3983`), so a follower's loop has no z
+  travel: it goes up and comes down. A loop has a floor but no sides or top (`:3977-3982`; the box is in
+  `Player_MoveArwingOnRails`, `:4154-4173`), so any player can leave the box during one: up to 211 past the side in the
+  4-player run. The rail test leaves those frames out.
+- Stick up is nose down: `stick_y` above 0 takes an Arwing to the floor of the box (seen in the first test run).
+- Flying straight on with no stick input and A pressed, an Arwing is shot down at trace frame 3365, z -68228, about a
+  third of the way through the section. So the rail test sets `gInvincible` in both runs. Under it `damage` is 0, so the
+  boost penalty in `Player_UpdateEffects` (`dmgType >= 40`, `src/engine/fox_play.c:5600-5606`) stays off, which is why
+  path speed can match exactly while player 0 is hit in other places.
+- This route has no path turn: `xPath` and `yPath` stayed 0 for the whole section.
+- **Any player can collect a path item.** `Player_CheckItemCollect` sets `item->collected` for whoever flies through
+  (`src/engine/fox_play.c:1662-1669`), and `ItemPathChange_Update` then turns player 0's path
+  (`src/engine/fox_enmy.c:2547-2591`), which the others follow. That fits DESIGN.md section 4 item 4 ("whoever triggers
+  it; the whole team follows"), except that a split picks its side from player 0's position, not the collector's
+  (`:2555`, `:2575`). For WP-16.
+- There is no friendly fire on rails: shots are tested against players only in all-range (`src/engine/fox_beam.c:836`).
+- Enemy shots only test player 0: `func_effect_8007A774(gPlayer, ...)` (`src/engine/fox_effect.c:1396`, `:3015`,
+  `:3117`, `:3916`) and `Player_ApplyDamage(gPlayer, ...)` (`:2275`, `:2946`, `:3080`, `:3889`). A follower is hit by
+  what `Player_CollisionCheck` walks: scenery, actors, bosses. Those sites settle part of the WP-11 unknown.
+- Items credit the player who took them (`this->playerNum`, `src/engine/fox_enmy.c:2223-2340`). Kills do not:
+  `actor->dmgSource = shot->sourceId + 1` (`src/engine/fox_beam.c:696`), and only `AI360_FOX + 1` adds to `gHitCount`
+  (`src/engine/fox_enmy.c:1761`). For WP-16 (DESIGN.md section 4 item 5).
+- `gTeamLowHealthMsgTimer` counts once per player per frame (`src/engine/fox_play.c:5842`), so that radio timer runs
+  twice as fast with two players. For WP-17 and #60.
+
+For WP-28 (nothing changed there):
+
+- `Camera_Update` already runs for every joined player, so `gPlayer[1].cam` is kept up to date on rails, and the view in
+  `Display_Update` is built from `gPlayer[gPlayerNum]` with path fields that now match player 0's. That looking through
+  player 1 then just works is a guess; nothing has rendered it.
+- A player in cockpit view (C-up) draws the cockpit model and sets `sDrawCockpit` without checking it is the local
+  player (`src/engine/fox_display.c:755-758`), so player 2 in cockpit view would put the cockpit glass on player 0's
+  screen. Read, not run: the test input does not press C-up.
+- A hit on any player flashes the whole screen red (`gFillScreenAlpha`, `src/engine/fox_play.c:5562-5569`). The view
+  change sound plays for any player (`:5969-5971`), and every flying player writes `gShowHud` (`:5961`).
+
+Unknown:
+
+- Other rail levels (Meteo, Sector X and Y, Solar, Zoness, Area 6, Venom): players now join there too, not run. A warp
+  (`PLAYERSTATE_ENTER_WARP_ZONE`) and Corneria's other route are not run either.
+- Whether two Arwings look right on rails: nobody has watched it. The trace and the view positions above are all that
+  was read.
+- Boost and brake for player 2 only as `camDist`: see above.
+
 ### 2026-11-05, #9 (WP-11), player 2 in Corneria's all-range section
 
 Observed:

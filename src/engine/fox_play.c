@@ -3632,6 +3632,10 @@ void Player_UpdatePath(Player* player) {
     f32 temp_fv0_2;
     s32 temp_v0;
 
+    if (CoopPlayers_FollowPath(player)) { // COOP: player 0 owns the path, the others take it from there (WP-12)
+        return;
+    }
+
     player->zPathVel = -player->vel.z;
     player->zPath += -player->vel.z;
 
@@ -5893,6 +5897,7 @@ void Player_Update(Player* player) {
         gInputPress = &gControllerPress[gMainController];
         gControllerRumble = &gControllerRumbleFlags[gMainController];
     }
+    CoopPlayers_SelectInput(player->num); // COOP: each co-op player reads its own controller (WP-12)
 
     D_ctx_80177990[player->num] += (s32) D_ctx_801779A8[player->num];
     Math_SmoothStepToF(&D_ctx_801779A8[player->num], 0.0f, 1.0f, 1.5f, 0.0f);
@@ -7045,6 +7050,7 @@ void Play_Update(void) {
     }
     if (CoopPlayers_IsCoop()) { // COOP: the loop leaves gPlayerNum at the last player; point it at the local one
         gPlayerNum = CoopPlayers_LocalIndex();
+        CoopPlayers_SelectInput(gPlayerNum); // COOP: the same for the controller (WP-12)
     }
 
     Object_Update();
@@ -7056,10 +7062,12 @@ void Play_Update(void) {
             continue;
         }
         gPlayer[i].num = gPlayerNum = i;
+        CoopPlayers_SelectInput(i); // COOP: the on-rails camera reads the stick of its player (WP-12)
         Camera_Update(&gPlayer[i]);
     }
     if (CoopPlayers_IsCoop()) { // COOP: as above
         gPlayerNum = CoopPlayers_LocalIndex();
+        CoopPlayers_SelectInput(gPlayerNum);
     }
 
     gCameraShakeY = 0.0f;

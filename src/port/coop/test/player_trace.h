@@ -6,7 +6,9 @@
 // line is appended:
 //
 //   frame=<gGameFrameCount> level=<gCurrentLevel> mode=<gLevelMode> players=<n>
-//   p0=<state>,<csState>,<x>,<y>,<z>,<parked>,<draw> ...
+//   path=<gPathProgress> pathvel=<gPathVelZ> scroll=<gPathTexScroll>
+//   p0=<state>,<csState>,<x>,<y>,<z>,<parked>,<draw>,<zPath>,<camDist>,<xPath>,<yPath>,<pathWidth>,<shields>,
+//      <somersault>,<form> ...
 //
 // (all on one line) where x and y are pos.x and pos.y, z is trueZpos, parked is CoopPlayers_IsParked and draw is the
 // player's draw flag. tools read it to check what each player did without looking at the screen.

@@ -88,6 +88,22 @@ Newest first. One block per run that matters (a milestone, a release, a QA level
 
 ```
 date:       2026-11-06
+commit:     issue/10-rails-player2, game code at e3aaaa4a, on 95962d04
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window, 1 client per run, no transport,
+            input by rule (Corneria's rail section into all-range, 10500 frames), players 2 to 4 from the replay file
+what ran:   python tools/coop/player_trace.py rails --players 2, and --players 4; hash_check.py run <rail replay>
+            --players 2 --poke-frame 5400 --poke-player 1; one plain 1-player run of 95962d04 and of this commit,
+            compared with hash_check.py diff; player_trace.py run with input by rule into all-range; hash_check.py run
+            --players 2 --poke-player 1 and probe --players 2
+result:     PASS on all. Rail section 4525 frames, 2 and 4 players: gPathProgress, gPathVelZ and gPathTexScroll equal
+            single player on every frame, largest difference 0.000, path speed 20 to 70, section ends on the same frame.
+            Hash, 2 players on rails: A = B on 10500/10500 frames, poke in player 2 at 5400 first seen at 5400
+            (players). Co-op off: 10512/10512 common log rows equal to 95962d04. Before: player 1 parked for all 4598
+            rail frames, FAIL. Without CoopPlayers_FollowPath: gPathProgress matches on 26 of 4525 frames, FAIL.
+```
+
+```
+date:       2026-11-06
 commit:     issue/53-hash-players at 47a90af5, on a69c811a
 identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window, 1 client per run, no transport,
             input by rule (Corneria, all-range, 5800 frames)

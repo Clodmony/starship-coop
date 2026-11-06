@@ -37,14 +37,27 @@ int32_t CoopPlayers_LocalIndex(void);
 int32_t CoopPlayers_IsParked(int32_t index);
 
 // Call before Player_Update for player `index`; nonzero means skip it this frame. Brings a parked player in when its
-// section starts: in all-range mode, once player 0 is active (after the all-range cutscene), as a copy of player 0
-// placed beside it (WP-11). Players on rails stay parked (WP-12).
+// section starts: once player 0 is active on rails in an Arwing (WP-12) or in all-range mode (WP-11), as a copy of
+// player 0 placed beside it. It parks the player again when player 0 stops flying, for example in the cut from rails
+// to all-range, and brings it back when player 0 flies again.
 int32_t CoopPlayers_SkipUpdate(int32_t index);
+
+struct Player;
+
+// Call at the start of Player_UpdatePath. Nonzero means `player` is a co-op player other than player 0: it took player
+// 0's place on the path and Player_UpdatePath must return, because the rest would write the path globals and move the
+// path by this player's speed. The player keeps its own x and y inside the flight box and its own camDist, so boost
+// and brake move it ahead of and behind player 0 without changing the speed along the path.
+int32_t CoopPlayers_FollowPath(struct Player* player);
+
+// Points gInputHold, gInputPress and gControllerRumble at the controller of player `index`, in co-op only: player 0 has
+// gMainController, the others the controller with their index. Replays hold all four, so a replay can fly any player.
+// WP-14 replaces this with a real input source per player.
+void CoopPlayers_SelectInput(int32_t index);
 
 // Call at the start of Player_Down. Nonzero means a co-op player other than player 0 went down: it is taken out of
 // the level and Player_Down must return, because it also stops the music, plays the "player down" theme and starts
 // the fade to a level restart for everyone. Respawn rules are WP-16.
-struct Player;
 int32_t CoopPlayers_OnPlayerDown(struct Player* player);
 
 #define COOP_PLAYERS_DEBUG_CVAR "gCoopDebugPlayerCount"
