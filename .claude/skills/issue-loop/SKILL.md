@@ -72,6 +72,10 @@ Working data (probe scripts, PR and comment bodies, captures, test instances) li
 for example `local/scratch/<issue>/` and `local/test-<name>/`. Nothing from there goes into commits, issues or
 PRs: no usernames, local paths, tokens or game data.
 
+A parallel run of several worktrees shares one base build, ROM copy and lock files, which do not fit in one
+checkout's `local/`. Keep those in a scratch folder outside the repo, as your owner names it. The same rule holds:
+nothing from there goes into commits, issues or PRs.
+
 ## Probing
 
 Interactive probing is for debugging only. Put a probe in a script file and run it in one call; print only the
