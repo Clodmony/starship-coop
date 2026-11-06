@@ -447,6 +447,89 @@ Open questions for the record, nothing decided here:
 11. Who picks on the map (`gMainController`; DESIGN.md section 4, item 4)?
 12. `gMissionTeamStatus` and the ranking: does a human wingman count as a wingman there?
 
+### 2026-11-06, #86, who fired: shooter tests and dmgSource in co-op
+
+Identity: ROM US 1.0, game code at `4955ca69` on `797c678b`, Linux, GCC, Debug, OpenGL on a software renderer, no
+window, 1 client per run, no transport, input by rule. Red is `2b3ade53`, the same commits without the fix.
+
+Observed in the code:
+
+- Three things write a player into `dmgSource`: a shot (`src/engine/fox_beam.c:697`), a bomb or lock-on blast (`:1954`,
+  `:1961`, `:1976`) and a collision (`src/engine/fox_play.c:2191`, `src/engine/fox_tank.c:1422`). Upstream writes
+  index + 1.
+- Enemy code writes `DMG_SRC_2` in six places. Only one is a hit on a wingman: a seek-team missile
+  (`src/engine/fox_enmy.c:1645`). The other five come just before `Actor_Despawn`, so that no player gets the kill
+  (`src/overlays/ovl_i3/fox_aq.c:1802`, `:2520`, `src/overlays/ovl_i3/fox_zo.c:3522`, `:3630`, `:3648`).
+- `dmgSource` is read as: 1 for Fox, 1 to 4 for a versus player (`src/engine/fox_enmy.c:1757`), 2 or 100 for an enemy
+  (`src/engine/fox_hud.c:4569`), and 101 and up for an NPC. `<= AI360_PEPPY + 101` takes players and the team together
+  (`src/engine/fox_360.c:1145`). Nothing uses 5 to 99.
+- A wingman at a boss reads `dmgType` only with `work_048` at 0 (`src/engine/fox_hud.c:4862-4870`).
+- A broken wing sets that player's lasers to single when it next shoots (`src/engine/fox_play.c:3465-3468`).
+- The Shogun rule keeps its shooter in `boss->swork[19]` (`src/engine/fox_beam.c:1035`), read at
+  `src/overlays/ovl_i6/fox_sy.c:564` and `:602`. The audit pattern cannot see those two reads.
+
+Observed in runs (`player_trace.py shots --players 2`, Corneria all-range, 20 shots carried to wingmen with the radio
+free):
+
+| | red `2b3ade53` | fixed `4955ca69` |
+|---|---|---|
+| `dmgSource` of those hits | 2, on all 20 | 11, on all 20 |
+| Radio after them | an enemy-hit line on 19, line 2265 on 1 | no line on all 20 |
+| Missile hits on wingmen, radio free | 1, with its enemy-hit line | 4, each with its enemy-hit line |
+| Frames with two laser marks | 0 | 56 |
+
+- In the fixed run player 1's lasers went from 2 to 0 at frame 4383, player 0 stayed on 2, and the last frame with two
+  marks is 4360.
+- In that run the five missile hits stayed unread for 6, 53, 56, 58 and 69 frames. All 22 hits of carried shots, 20 of
+  them with the radio free, were read on the next frame.
+- With four players on the fixed build, 22 carried shots hit with the radio free, none with an enemy's `dmgSource` or
+  line. 4 missile hits had their line, and 202 frames had two marks.
+- A second fixed two-player run gave the same results. Its trace equals the first on all 5905 lines it holds; the first
+  has 23 more at its end.
+- The check on single lasers can fail. With the eight `(gLaserStrength[shot->sourceId] != LASERS_SINGLE)` tests in
+  `src/engine/fox_beam.c` reading `[0]`, player 1's lasers dropped at frame 4384 and frame 4399 still had two marks.
+- Co-op off, `hash_check.py diff` finds no difference between `797c678b` and the fix on two one-player replays: 9015
+  frames with player 0 sweeping and firing in all-range, 8003 through the rail section. With the trace on, the
+  all-range replay has 42 frames with two marks and one wingman hit with `dmgSource` 1, and matches the base hashes
+  too, so it reaches the changed ground test. The rail replay has 2 frames with one mark and no hit on a wingman.
+
+Derived:
+
+- Co-op needs its own values, because `DMG_SRC_2` cannot be taken back from enemy code: `CoopPlayers_DmgSource` gives
+  players 1 and up 10 + index. No rule tests those values, so the only behaviour it changes is the enemy-hit line of
+  `ActorTeamBoss_HandleDamage`. The other `AI360_FOX + 1` tests read the same before and after for these players.
+- Friendly-fire lines stay player 0's. Players 1 and up get no line, which is what indexes 2 and 3 already got. That
+  keeps the choice open, and adding them later is one test per site.
+
+Who owns each rule that stays as it was, with the verdict in `docs/coop/audit/sp-verdicts.tsv`:
+
+| Rule | Where | Owner |
+|---|---|---|
+| Hit count, drops and Star Wolf hits | `src/engine/fox_enmy.c:1761` | WP-16 (#14), DESIGN.md section 4 item 5 |
+| Sector Z missile bonus | `src/engine/fox_360.c:920` | WP-16 (#14) |
+| Shogun bonus | `src/engine/fox_beam.c:1035` | WP-16 (#14) |
+| Katina ally kills | `src/engine/fox_360.c:992` | WP-16 (#14) |
+| Saucerer takes only player 0's shots | `src/engine/fox_beam.c:1008` | WP-16 (#14), question 8 in the #59 entry |
+| Star Wolf dodges only player 0's shots, outside Venom 2 | `src/engine/fox_beam.c:809` | WP-16 (#14): it decides how fast they fall, and so Fortuna's route |
+| Friendly-fire and collision lines | `src/engine/fox_hud.c:4541`, `:4555`, `src/engine/fox_360.c:1147`, `:1172`, `src/engine/fox_enmy2.c:2257` | WP-17 (#15) |
+| Rescue of a wingman | `src/engine/fox_360.c:532`, `:626` | WP-17 (#15) |
+| Shots hit player 0 only, in all-range | `src/engine/fox_beam.c:838` | friendly fire, WP-07 (#7) |
+| Bomb and lock-on buttons of players 1 and up | `src/engine/fox_beam.c:2076`, `:1793` | WP-14 |
+
+A lock-on blast adds to `gHitCount` for any shooter (`src/engine/fox_beam.c:2284`), so that one count already includes
+players 1 and up. It is left as it is, for WP-16.
+
+Guess:
+
+- Player 1's lasers dropped at 4383 because a wing broke. The trace does not log wings.
+
+Unknown:
+
+- Whether Granga or the Carrier fired the missiles in these runs: both can (`src/overlays/ovl_i1/fox_co.c:406`,
+  `:1654`).
+- Anything outside Corneria. The Saucerer, Star Wolf and Shogun sites were read, not run.
+- Whether the friendly-fire lines would fit a human-flown wingman: their text was not read.
+
 ### 2026-11-06, #56, audit regenerated after WP-10 and WP-11
 
 Read at `a69c811a`. `python tools/coop/sp_audit.py --check` passes again. This moved line numbers and corrected the

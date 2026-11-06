@@ -298,7 +298,7 @@ src/engine/fox_beam.c	PlayerShot_CheckObjectHitbox@shooter	ok	site	sourceId < 4 
 src/engine/fox_beam.c	PlayerShot_CheckEventHitbox@shooter	ok	site	sourceId < 4 and gLaserStrength[sourceId]: every player, own lasers
 src/engine/fox_beam.c	PlayerShot_CheckActorHitbox@shooter	ok	site	sourceId < 4 and gLaserStrength[sourceId]: every player, own lasers
 src/engine/fox_beam.c	PlayerShot_ApplyDamageToActor@shooter	ok	read	damage by the shooter's own lasers; dmgSource through CoopPlayers_DmgSource since #86
-src/engine/fox_beam.c	PlayerShot_CollisionCheck@shooter	flow	site	open rules: Star Wolf dodges only player 0's shots outside Venom 2, only player 0 hurts the Saucerer (NOTES #59, question 8), shots hit player 0 only in all-range (friendly fire, #7), Shogun bonus only for sourceId 0 (fox_sy.c:564, :602, WP-16 #14)
+src/engine/fox_beam.c	PlayerShot_CollisionCheck@shooter	flow	site	open rules: Star Wolf dodges only player 0's shots outside Venom 2 and only player 0 hurts the Saucerer (WP-16 #14, NOTES #59 question 8), shots hit player 0 only in all-range (friendly fire, #7), Shogun bonus only for sourceId 0 (fox_sy.c:564, :602, WP-16 #14)
 src/engine/fox_beam.c	PlayerShot_DrawLaser@shooter	view	site	colour by NPC id; player colours in the versus branch
 src/engine/fox_beam.c	PlayerShot_DrawShot@shooter	view	site	player colours in versus branches
 src/engine/fox_beam.c	PlayerShot_UpdateBeam@shooter	ok	read	ground hit uses the shooter's own lasers and form since #86; :1696 tests NPC ids
