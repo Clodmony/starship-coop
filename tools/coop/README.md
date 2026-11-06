@@ -9,6 +9,7 @@ Starship. Run them from the repository root.
 | `python tools/coop/net_test.py` | Transport tests: a virtual network, then two real processes through the chaos relay. `--only a,b`, `--list`, `--no-build`. Needs a configured build directory, no ROM. Logs in `local/test-net/`. |
 | `python tools/coop/check.py` | Repository checks, also run by CI: no ROMs or asset archives tracked, no file over 5 MB, skills mirrored, unique protocol ids. Prints `ALL OK`. |
 | `python tools/coop/new_worktree.py <issue> <slug>` | Worktree plus branch `issue/<issue>-<slug>` from `origin/coop`, with submodules. |
+| `python tools/coop/sp_audit.py` | Single-player assumptions audit (WP-05): every `gPlayer[0]`, `gPlayer->`, `gMainController` and `gCamCount` site in the game code with its function and the verdict from `docs/coop/audit/sp-verdicts.tsv`; writes `docs/coop/audit/single-player.md`. `--check` fails when the list is stale or a site has no verdict, `--todo` lists functions without one. Rerun after an upstream sync. |
 | `python tools/coop/sync_skills.py` | Copies `.agents/skills` to `.claude/skills`. Edit skills in `.agents/skills` only. |
 | `python tools/coop/setup_labels.py <owner>/<repo>` | Creates the issue labels on GitHub (maintainers). |
 
