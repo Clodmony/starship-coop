@@ -1919,6 +1919,65 @@ Unknown:
 
 ## Networking
 
+### 2026-11-06, #24, Steam relay transport on a fake, what only a real run can settle
+
+Nothing here has run on Steam: no SDK on the machine, and a real run needs the owner's accounts. Everything below was
+checked against a fake (`tools/coop/steamtest/fake_steam.c`) and a mock library.
+
+**Observed** (Valve's public text, read on 2026-11-06):
+
+- "The same unreliable message may be received multiple times", and unreliable messages may be delivered out of order
+  "with respect to each other or with respect to reliable messages" (`ReceiveMessagesOnConnection` in
+  [isteamnetworkingsockets.h](https://github.com/ValveSoftware/GameNetworkingSockets/blob/master/include/steam/isteamnetworkingsockets.h)).
+- "There is no notification when a peer proactively closes the session", and sessions that time out from inactivity
+  post no callback either ([ISteamNetworkingMessages](https://partner.steamgames.com/doc/api/ISteamNetworkingMessages)).
+- A broken session gives `k_EResultNoConnection` on every send until `CloseSessionWithUser`, or until a send with
+  `k_nSteamNetworkingSend_AutoRestartBrokenSession`
+  ([isteamnetworkingmessages.h](https://github.com/ValveSoftware/GameNetworkingSockets/blob/master/include/steam/isteamnetworkingmessages.h)).
+- Order only holds within a channel: "Messages on different channels are not guaranteed to be received in the order
+  they were sent" (the page above).
+- The field order of `SteamNetworkingMessage_t`, the send flags (Unreliable 0, NoNagle 1, Reliable 8) and the
+  `EResult` values (OK 1, NoConnection 3, LimitExceeded 25) are in
+  [steamnetworkingtypes.h](https://github.com/ValveSoftware/GameNetworkingSockets/blob/master/include/steam/steamnetworkingtypes.h)
+  and steamclientpublic.h. That repository is the open source version of Steam's library, not the shipped one.
+- `nm -D` on 64-bit `libsteam_api.so` copies that current games ship: all 20 names in `steam_backend_flat.c` are
+  exported, `SteamAPI_SteamUser_v023` and `SteamAPI_SteamNetworkingMessages_SteamAPI_v002` included. Older copies are
+  not enough: one 64-bit copy lacked `SteamAPI_InitFlat` and the whole networking API, a 32-bit one had
+  `SteamAPI_SteamUser_v021` and no `SteamAPI_InitFlat`. The libraries were only read, never loaded.
+- The [hub's page](https://github.com/cranebeaker/coop-anything/blob/main/playbook/networking-steam-spacewar.md), not
+  checked here: `SteamNetworkingMessage_t` on 64-bit has `size` at 8 and the sender at 16 in `steam_api64.dll`. What it
+  confirmed with two accounts is the 32-bit library, where the sender is at 12.
+- Found by running: a peer can close right after its last messages, so a send can report the session gone while those
+  messages still wait to be read. Ending the link at that send lost them, goodbye included (seed 24 of 300 of
+  `clean_close`). A broken session now ends the link once everything that arrived has been read.
+- Found by running: under the `hell` profile the fake stayed silent for 8016 ms in one direction (seed 550 of 1000),
+  and the transport ended the link, correctly. With a limit of 30000 ms the same exchange finishes.
+
+**Derived:**
+
+- Decision 0004 says "without our layer", but three things cannot come from Steam: connections, "never delivered twice"
+  on the unreliable lane, and a `pending` that means something. So a small layer stays: no resends, no held messages.
+- A message goes straight from Steam to the caller of `poll`, so nothing here can overflow and the order is Steam's.
+- Running `net_core.c` over unreliable Steam messages would have been much less new code, with the same wire form and
+  tests. Decision 0004 rules it out. If the real run shows Steam's lanes cost more than they give, that needs a new
+  record.
+
+**Guess:**
+
+- The default keep-alive timeout of 5000 ms may be short for a relay that changes route: the hub's KeeperFX waits 20 s.
+
+**Unknown** (each needs a run on Steam with two accounts):
+
+- Whether the offsets in `steam_backend_flat.c` are right on the real library, on Linux and on Windows. A mock cannot
+  tell, as the hub warns.
+- Whether `steam_appid.txt` in the working directory works on Linux. The hub's evidence is from Windows.
+- How long Steam takes to find a route. `DEFAULT_CONNECT_MS` is 20000 on no evidence.
+- Whether a goodbye survives `SteamAPI_Shutdown` right after it. `lost_goodbye` shows the peer finds out either way.
+- Whether duplicates of unreliable messages happen in practice. The transport does not depend on the answer.
+- Whether the two accounts must be Steam friends. The hub's proof used friends.
+- Whether two PCs on one LAN go through the relay at all, or connect directly. The hub lists different networks as
+  still open.
+
 ### 2026-11-05, #18 (WP-20), UDP transport
 
 Identity: no game and no ROM involved, two or three processes on one machine, UDP over loopback. Commit `12329623` on
