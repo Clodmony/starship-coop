@@ -52,7 +52,7 @@ To play together, everyone needs the same id.
 
 There is nothing from the game in this folder: no ROM, no sf64.o2r, no starship.o2r. You need:
 
-- Your own Star Fox 64 ROM, US 1.0 or 1.1. On the first start the game asks for it and makes sf64.o2r next to itself.
+- Your own Star Fox 64 ROM, US 1.0 or 1.1. On the first start the game asks for it and makes sf64.o2r from it.
 - starship.o2r next to the game. The game stops at start without it (it holds the shaders). See docs/BUILDING.md in
   the repository for how to make it.
 {extra}"""
