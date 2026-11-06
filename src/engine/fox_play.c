@@ -22,6 +22,7 @@
 #include "assets/ast_area_6.h"
 #include "assets/ast_zoness.h"
 #include "port/hooks/Events.h"
+#include "port/coop/game/players.h" // COOP: player count apart from camera count (WP-10)
 
 extern float gCurrentScreenWidth;
 extern float gCurrentScreenHeight;
@@ -2606,7 +2607,7 @@ void Player_InitializeAll(void) {
     u8* ptr = (u8*) gPlayer;
     u32 i;
 
-    for (i = 0; i < gCamCount * sizeof(Player); i++, ptr++) {
+    for (i = 0; i < CoopPlayers_Count() * sizeof(Player); i++, ptr++) { // COOP: was gCamCount
         *ptr = 0;
     }
 }
@@ -2945,9 +2946,11 @@ void Play_Init(void) {
         gTeamShields[3] = 0;
     }
 
-    MEM_ARRAY_ALLOCATE(gPlayer, gCamCount);
+    // COOP: fix the player count for this level, then allocate and init that many players (was gCamCount)
+    CoopPlayers_LevelInit();
+    MEM_ARRAY_ALLOCATE(gPlayer, CoopPlayers_Count());
     Player_InitializeAll();
-    for (i = 0; i < gCamCount; i++) {
+    for (i = 0; i < CoopPlayers_Count(); i++) {
         gPlayer[i].state = PLAYERSTATE_INIT;
         gPlayerGlareAlphas[i] = D_ctx_801783C0[i] = 0;
         gControllerRumbleTimers[i] = 0;
@@ -4927,7 +4930,7 @@ void Player_Setup(Player* playerx) {
         gLifeCount[gPlayerNum] = 2;
         gBombCount[gPlayerNum] = 3;
         gGreatFoxIntact = true;
-        if (gCamCount == (gPlayerNum + 1)) {
+        if (CoopPlayers_Count() == (gPlayerNum + 1)) { // COOP: last player, was gCamCount
             D_hud_80161720[0] = 0.0f;
             D_hud_80161720[1] = 0.0f;
             D_hud_80161720[2] = 0.0f;
@@ -7030,18 +7033,24 @@ void Play_Update(void) {
         }
     }
 
-    for (i = 0; i < gCamCount; i++) {
+    for (i = 0; i < CoopPlayers_Count(); i++) { // COOP: was gCamCount
         gPlayer[i].num = gPlayerNum = i;
         Player_Update(&gPlayer[i]);
+    }
+    if (CoopPlayers_IsCoop()) { // COOP: the loop leaves gPlayerNum at the last player; point it at the local one
+        gPlayerNum = CoopPlayers_LocalIndex();
     }
 
     Object_Update();
     PlayerShot_UpdateAll();
     BonusText_Update();
 
-    for (i = 0; i < gCamCount; i++) {
+    for (i = 0; i < CoopPlayers_Count(); i++) { // COOP: was gCamCount
         gPlayer[i].num = gPlayerNum = i;
         Camera_Update(&gPlayer[i]);
+    }
+    if (CoopPlayers_IsCoop()) { // COOP: as above
+        gPlayerNum = CoopPlayers_LocalIndex();
     }
 
     gCameraShakeY = 0.0f;
@@ -7176,7 +7185,7 @@ void Play_Main(void) {
                 Audio_ClearVoice();
                 Audio_SetEnvSfxReverb(0);
                 Play_ClearObjectData();
-                for (i = 0; i < gCamCount; i++) {
+                for (i = 0; i < CoopPlayers_Count(); i++) { // COOP: was gCamCount
                     Audio_KillSfxBySource(gPlayer[i].sfxSource);
                     Audio_StopPlayerNoise(i);
                 }
