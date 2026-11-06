@@ -49,6 +49,13 @@ int32_t CoopPlayers_OnPlayerDown(struct Player* player);
 
 #define COOP_PLAYERS_DEBUG_CVAR "gCoopDebugPlayerCount"
 
+// The slot of player `index` as a plain number, for the state hash: a number has the same size on every compiler, an
+// enum need not. Which number means what is private to players.c.
+int32_t CoopPlayers_SlotState(int32_t index);
+
+// Test only: sets what CoopPlayers_SlotState returns. The state hash probe changes a slot, hashes and puts it back.
+void CoopPlayers_SetSlotState(int32_t index, int32_t state);
+
 #ifdef __cplusplus
 }
 #endif
