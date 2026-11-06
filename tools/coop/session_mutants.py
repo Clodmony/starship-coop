@@ -552,15 +552,32 @@ BREAKS = [
      LEVEL_UNPICKED.replace("i < COOP_SESSION_PLAYERS", "i < COOP_SESSION_PLAYERS - 1"), SIM),
 ]
 
+# Texts the sanitizer breaks use more than once.
+CLOSE = "s->t->ops->close(s->t);\n    free(s);"
+REFUSE_TEXT = ("CoopIdentity_Describe(reasons, &s->local, &p->identity, s->text, sizeof(s->text));\n    }\n"
+               "    ev->text = s->text;")
+PROCESSES = [name for name in session_test.SCENARIOS if name not in SIM]  # the scenarios that start real programs
+
 # Breaks that only a sanitizer can see: the program still behaves, it just touches memory it should not. These prove
 # the --asan run in CI can fail. Run them with --asan.
 SANITIZER_BREAKS = [
-    ("close_leaks_session", "s->t->ops->close(s->t);\n    free(s);", "s->t->ops->close(s->t);", SIM),
+    ("close_leaks_session", CLOSE, "s->t->ops->close(s->t);", SIM),
     ("refuse_read_past_end", REFUSE_READ, REFUSE_READ.replace("net->size < 4", "net->size < 2"), SIM),
     ("identity_peer_unchecked", "if (peer < 0 || peer >= COOP_NET_MAX_PEERS) {\n        return NULL;\n    }\n", "",
      SIM),
     ("roster_read_past_end", ROSTER_HEAD, ROSTER_HEAD.replace("size != COOP_SESSION_PLAYERS", "size < 1"), SIM),
     ("level_read_past_end", LEVEL_HEAD, LEVEL_HEAD.replace("size != LEVEL_START_SIZE", "size < 1"), SIM),
+    # One side alone, at its very end: its result file is written and looks right, so only its exit code can tell.
+    # session_test.py has no log scan like net_test.py --asan because it reads every exit (#92). A scenario that stops
+    # reading its host's exit, or that of all its clients, lets one of these two survive.
+    ("host_close_leaks", CLOSE, "s->t->ops->close(s->t);\n    if (!s->isHost) {\n        free(s);\n    }", PROCESSES),
+    ("client_close_leaks", CLOSE, "s->t->ops->close(s->t);\n    if (s->isHost) {\n        free(s);\n    }", PROCESSES),
+    # net_mutants.py's refuse_overruns_tx_packet for the session: after the refusal went out, so the client is content.
+    # Past the allocation, not past s->text: that is the last field, and the padding after it is still inside the
+    # allocation, so s->text[sizeof(s->text)] is a change no sanitizer sees.
+    ("refuse_reads_past_session", REFUSE_TEXT,
+     REFUSE_TEXT.replace("ev->text", "(void) ((volatile uint8_t*) s)[sizeof(*s)];\n    ev->text"),
+     ["build", "rom", "cvar", "two_clients", "refuse_hell"]),
 ]
 
 
