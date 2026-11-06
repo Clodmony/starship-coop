@@ -2102,6 +2102,50 @@ Read at `95962d04` (origin/coop). The rules and the wire form are in PROTOCOL.md
 - What happens in a level when a player leaves. The character is free in the roster at once, but until WP-17 it means
   nothing in the level, and whether a computer wingman takes over is open.
 
+### 2026-11-06, #23, the co-op menu: where it ticks, and what a window can see
+
+Read at `797c678b` (origin/coop). The window is `src/port/coop/ui/menu_window.cpp`, the logic `src/port/coop/ui/menu.c`.
+
+**Observed**
+
+- `Gui::DrawMenu` calls `Update()` on every registered window each frame, and only `Draw()` looks at whether it is
+  visible (`libultraship/src/window/gui/Gui.cpp`, `DrawMenu`; `GuiWindow.cpp`, `Draw`). So a window's `UpdateElement`
+  runs with the window closed, and that is where the session is polled. The menu bar is different: nothing of
+  `GameMenuBar` runs while it is hidden (`GuiMenuBar.cpp`, `Draw`).
+- A dropped frame skips all of it: `Fast3dWindow::DrawAndRunGraphicsCommands` returns before `gui->StartDraw()` when
+  `IsFrameReady` is false (`libultraship/src/graphic/Fast3D/Fast3dWindow.cpp:178`). The next frame polls what piled up,
+  so `CoopMenu_Tick` has to read until `CoopSession_Poll` returns false.
+- The game's frames and the gui run on one thread: `Graphics_ThreadUpdate` is called from `push_frame`, and that from
+  the loop in `src/port/Game.cpp:47`; the only `std::thread` in `src/port/Engine.cpp` is the audio one (`:444`).
+- The transport pings the moment a link connects (`l->nextPing = now`, `src/port/coop/net/net_core.c:235, :493`). So on
+  a good link both sides already have a round trip when the welcome is through, and a player rarely sees "not measured".
+  `coop_menu_test` has to hold back pongs to reach that state.
+- `rttMs` is 0 until the first pong, and a measured round trip of 0 ms reads the same (`Link_OnRtt`). The menu shows
+  both as not measured.
+- A client only knows its round trip to the host. The roster carries no ping, so a client has no number for another
+  client.
+
+**Derived**
+
+- The menu has one reader of session events, `Menu_OnEvent`. Whatever else needs them, WP-24 first, has to go through
+  that switch or the events are gone: `CoopSession_Poll` hands each one out once.
+- Ping is measured per frame on both ends, so it holds up to about two frames on top of the network (guess at the size,
+  not measured).
+
+**Choices the owner can reverse** (not decided in a record)
+
+- The port field starts at 46464, on both sides. Nothing depends on the number, and 0 on a host picks a free port.
+- The address and port are not kept between runs.
+- A client is shown the three wingmen and picks with one button each. A character held by someone else is greyed out
+  with that player's number.
+- While a pick is under way every choice is greyed out, so nothing can overtake it.
+
+**Unknown**
+
+- How the window looks to a person at a real screen, with a real mouse and at other window sizes.
+- Whether a host name that takes long to resolve is a problem in play: `CoopNetSdl_Connect` blocks on the lookup
+  (`src/port/coop/net/transport.h`), and the menu calls it on the game's thread.
+
 ### 2026-11-05, #19 (WP-21), session handshake: build, ROM, CVars
 
 Read at `1ec6c677` (origin/coop). The handshake code is in `src/port/coop/session/`, the wire form in PROTOCOL.md.

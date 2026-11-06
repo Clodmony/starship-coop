@@ -77,7 +77,12 @@ number of clients, transport.
    Linux), and `python tools/coop/session_test.py --asan` runs the session tests under AddressSanitizer and UBSan (CI
    does, on Linux); `session_mutants.py --asan` shows that run can fail. `python tools/coop/net_test.py --asan` does
    the same for the transport tests (#75; CI does, on Linux).
-5. **Regression per bug.** Every desync fix comes with the replay that triggered it; every transport fix adds a
+5. **The co-op menu (WP-25).** `python tools/coop/menu_test.py` checks the menu layer with no game: `sim` on the real
+   session in a virtual network, `udp` over real sockets. `python tools/coop/menu_test.py --game` starts three real
+   games with `SF64_COOP_TEST_MENU=<folder>` (`src/port/coop/test/menu_driver.h`), clicks the real ImGui widgets through
+   ImGui's input queue and reads back what each window holds, so it needs nobody at the screen. Neither says how the
+   window looks.
+6. **Regression per bug.** Every desync fix comes with the replay that triggered it; every transport fix adds a
    break to `tools/coop/net_mutants.py`, every session fix one to `tools/coop/session_mutants.py`.
 
 Running tests must never use or modify the owner's own `starship.cfg.json`, saves, `mods/` folder or running game.
