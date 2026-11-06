@@ -132,6 +132,8 @@ static void CoopTrace_OnSteerShot(IEvent* event) {
     }
 }
 
+static s32 sHeldShields[COOP_PLAYERS_MAX]; // 0: not held
+
 static void CoopTrace_OnGamePostUpdate(IEvent* event) {
     s32 i;
 
@@ -140,6 +142,7 @@ static void CoopTrace_OnGamePostUpdate(IEvent* event) {
     }
     fprintf(sTraceFile, "frame=%d level=%d mode=%d players=%d path=%.3f pathvel=%.3f scroll=%.3f", gGameFrameCount,
             gCurrentLevel, gLevelMode, CoopPlayers_Count(), gPathProgress, gPathVelZ, gPathTexScroll);
+    fprintf(sTraceFile, " lowmsg=%d radio=%d,%d", gTeamLowHealthMsgTimer, gRadioState, gRadioMsgId);
     for (i = 0; i < CoopPlayers_Count(); i++) {
         const Player* p = &gPlayer[i];
 
@@ -154,7 +157,7 @@ static void CoopTrace_OnGamePostUpdate(IEvent* event) {
     }
     CoopTrace_WriteShots();
     CoopTrace_WriteLocks();
-    fprintf(sTraceFile, " radio=%d,%d lasers=%d", gRadioState, gRadioMsgId, gLaserStrength[0]);
+    fprintf(sTraceFile, " lasers=%d", gLaserStrength[0]);
     for (i = 1; i < CoopPlayers_Count(); i++) {
         fprintf(sTraceFile, ",%d", gLaserStrength[i]);
     }
@@ -165,9 +168,31 @@ static void CoopTrace_OnGamePostUpdate(IEvent* event) {
     }
 }
 
+// Player_Update sends this event first, so the rest of the update reads the held value.
+static void CoopTrace_OnPlayerPreUpdate(IEvent* event) {
+    Player* player = ((PlayerPreUpdateEvent*) event)->player;
+
+    if ((player->num >= 0) && (player->num < COOP_PLAYERS_MAX) && (sHeldShields[player->num] > 0)) {
+        player->shields = sHeldShields[player->num];
+    }
+}
+
+static void CoopTrace_HoldShields(const char* text) {
+    s32 i;
+
+    for (i = 0; (i < COOP_PLAYERS_MAX) && (text[0] != '\0'); i++) {
+        char* end;
+
+        sHeldShields[i] = strtol(text, &end, 10);
+        text = (end[0] == ',') ? end + 1 : end;
+    }
+    REGISTER_LISTENER(PlayerPreUpdateEvent, CoopTrace_OnPlayerPreUpdate, EVENT_PRIORITY_NORMAL);
+}
+
 void CoopTrace_Init(void) {
     const char* path = getenv("SF64_COOP_TRACE");
     const char* steer = getenv("SF64_COOP_TRACE_STEER");
+    const char* shields = getenv("SF64_COOP_TRACE_SHIELDS");
 
     if ((path == NULL) || (path[0] == '\0')) {
         return;
@@ -182,5 +207,8 @@ void CoopTrace_Init(void) {
     if ((steer != NULL) && (atoi(steer) > 0)) {
         sSteerPeriod = atoi(steer);
         REGISTER_LISTENER(GamePreUpdateEvent, CoopTrace_OnSteerShot, EVENT_PRIORITY_NORMAL);
+    }
+    if ((shields != NULL) && (shields[0] != '\0')) {
+        CoopTrace_HoldShields(shields);
     }
 }

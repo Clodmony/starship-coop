@@ -106,6 +106,13 @@ int32_t CoopPlayers_DmgSource(int32_t sourceId);
 
 #define COOP_DMG_SRC_PLAYER 10 // 5 to 99 are free: 1 to 4 are versus players, 100 and up enemies and NPCs
 
+// Call at the start of Player_LowHealthMsg. Nonzero means `player` is a co-op player other than player 0 and
+// Player_LowHealthMsg must return: gTeamLowHealthMsgTimer is one timer, so it would step once per player. It stays on
+// player->num, never on CoopPlayers_LocalIndex: the line it leads to draws from the RNG, so every client has to take
+// this branch for the same player. That player 0's shields decide is a neutral pick, not a rule (NOTES.md, 2026-11-06,
+// #87); a later record can change it here.
+int32_t CoopPlayers_SkipLowHealthMsg(struct Player* player);
+
 #define COOP_PLAYERS_DEBUG_CVAR "gCoopDebugPlayerCount"
 
 // The slot of player `index` as a plain number, for the state hash: a number has the same size on every compiler, an

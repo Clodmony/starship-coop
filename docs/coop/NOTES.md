@@ -854,6 +854,76 @@ Unknown:
 - Why the `flow` group is not usable as a checklist yet: #56 does not say. 113 of its 326 sites have basis `name`.
 - Which physical pad lands on index 0: that is libultraship's mapping, not read here.
 
+### 2026-11-06, #87, low-health radio timer with several players
+
+Identity: ROM US 1.0, on commit `797c678b`, Linux, GCC, Debug, OpenGL in software, no window, one game per run, the
+second player from the replay file, no transport. Frames are level frames (`gGameFrameCount`). Runs: `player_trace.py
+lowhealth`, with `gInvincible` and shields held by `SF64_COOP_TRACE_SHIELDS`.
+
+Observed, before the change, two players, Corneria:
+
+- The timer rose 2.00 per frame while both flew (6484 on 3242 frames, rails). Limits on rails at 2155, 2635, 3116, 3596,
+  4077, 4557; in single player at 2635, 3596, 4557.
+- The players took turns at the limit. Where the timer ended the frame at 1 (2155, 3116, 4077), player 0's call reached
+  it and player 1's stepped it on; where it ended at 0 (2635, 3596, 4557), player 1's call reached it. With only player
+  1 low, lines started at 2635 and 3596; with only player 0 low, at 4077, as 2155 and 3116 met a busy radio.
+- One player alone steps it too: in all-range the timer rose 36 on the 37 frames that started with only player 1 active.
+
+Observed, in single player:
+
+- The timer steps once on every frame player 0 goes into active and on no other: 0 frames off, in every run. It stands
+  still in a U-turn (111 frames) and in the cut to all-range, as only the `PLAYERSTATE_ACTIVE` case calls
+  `Player_LowHealthMsg` (`src/engine/fox_play.c:5966`).
+
+Observed, about the radio, under gdb with a breakpoint on the `RAND_INT` line (`src/engine/fox_play.c:5854`), the fixed
+build, all-range, two players, 10000 replay frames:
+
+- Only player 0 low: four attempts, at 3099, 4282, 5576 and 6870, each with `player->num` 0. The radio was on state 6,
+  3, 2 and 0. Only the last played a line (id 20305).
+- Only player 1 low: no attempt. So a silent limit there is the check not firing, not the radio hiding a line.
+
+After the change, two players:
+
+- Rails: the timer rose 1.00 per frame (3248 on 3248 frames), 0 of 4925 frames off the original rate, equal to single
+  player on all 4912 frames of the same flight, limits at 2635, 3596, 4557 as in single player. With only player 0 low,
+  lines at 2635 and 3596, the two limits with the radio free. With only player 1 low, none at those same two.
+- All-range, 10200 replay frames: 0 of 7103 frames off the original rate, equal to single player on all 6753 frames of
+  the same flight. The timer stood still on the 37 frames that started with only player 1 active (172 with player 1
+  low). With only player 0 low, a line at 6870, its one limit with the radio free. With only player 1 low, none, with
+  the radio free at 4282.
+- Two runs of one game with player 0 low: state hash equal on 8007 frames on rails and 10204 in all-range, RNG included.
+- Co-op off: one replay on `797c678b` and on this change, no test switch: no difference on 8005 common frames. Shields
+  held low so that lines play, before and after the change: no difference on 8005 frames (rails) and 10223 (all-range).
+
+Choice, which no record covers: in co-op only player 0 goes through `Player_LowHealthMsg`, so only player 0's shields
+decide, and a low player 2 to 4 gets no line. It is neutral, not a rule: one player's game reads its one player, #60
+files these lines under reacting to Fox, and decision 0005 keeps player 0 as Fox. It is reversible in one function,
+`CoopPlayers_SkipLowHealthMsg` (`src/port/coop/game/players.c:239`). The radio question in decision 0005 and DESIGN.md
+section 4 item 7 are still open and can change it.
+
+Derived:
+
+- Whatever replaces that choice has to keep one step per frame and read only state every client shares. The branch here
+  reads `player->num` and the player count. `CoopPlayers_LocalIndex` would differ between clients, and the line draws
+  from the RNG (`src/engine/fox_play.c:5854`, then `Rand_ZeroOne` in the switch).
+- The draws come before `Radio_PlayMessage` can refuse the line (`src/engine/fox_radio.c:97`), so a refused line still
+  moves the RNG. The number of draws depends on `gTeamShields`, which is in the state hash.
+- These lines have priority 0: no line followed at `gRadioMsgPri` 1, and `func_radio_800BA7BC` refuses only a lower
+  priority (`src/engine/fox_radio.c:43-55`).
+- The timer itself is not in the state hash (`src/port/coop/sync/state_hash.c:310-337`), so a client whose timer drifted
+  would show only at the next limit that draws.
+
+Unknown:
+
+- Two clients: nothing here ran two clients. Each run is one game, so "the same draws on every client" is read from the
+  code, and shown only as two runs of one game with equal hashes, RNG included.
+- Why player 0's flight parts from single player late in all-range: its fourth limit came at 6759 with player 1 low and
+  6870 with player 0 low, one U-turn apart.
+- What else draws from the RNG depending on shields: on rails `low0` and `low1` first differ in `rng` at about frame
+  2189, before the first limit, with `players` and `effects` differing a frame earlier. So the RNG cannot show whether
+  the check ran.
+- Three and four players, other levels, and player 0 going down: not run.
+
 ### 2026-11-06, #60, which radio lines a wingman says on its own
 
 Read at `95962d04`; nothing was run. "Wingman" means Falco, Slippy and Peppy, the three a player can take (decision

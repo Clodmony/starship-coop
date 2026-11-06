@@ -316,6 +316,10 @@ int32_t CoopPlayers_OnPlayerDown(Player* player) {
     return 1;
 }
 
+int32_t CoopPlayers_SkipLowHealthMsg(Player* player) {
+    return (player->num > 0) && CoopPlayers_IsCoop();
+}
+
 int32_t CoopPlayers_SlotState(int32_t index) {
     if ((index < 0) || (index >= COOP_PLAYERS_MAX)) {
         return COOP_SLOT_JOINED;

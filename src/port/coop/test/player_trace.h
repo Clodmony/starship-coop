@@ -7,11 +7,12 @@
 //
 //   frame=<gGameFrameCount> level=<gCurrentLevel> mode=<gLevelMode> players=<n>
 //   path=<gPathProgress> pathvel=<gPathVelZ> scroll=<gPathTexScroll>
+//   lowmsg=<gTeamLowHealthMsgTimer> radio=<gRadioState>,<gRadioMsgId>
 //   p0=<state>,<csState>,<x>,<y>,<z>,<parked>,<draw>,<zPath>,<camDist>,<xPath>,<yPath>,<pathWidth>,<shields>,
 //      <somersault>,<form> ...
 //   tframe=<test pad frame> pad0=<hold button>,<hold x>,<hold y>,<press button>,<press x>,<press y> ... pad3=...
 //   shots=<id>:<owner>:<timer>:<exploded>;...  locks=<actors locked by player 0>,...,<by player 3>
-//   radio=<gRadioState>,<gRadioMsgId> lasers=<gLaserStrength per player>
+//   lasers=<gLaserStrength per player>
 //   [hits=<actor>:<aiType>:<dmgType>:<dmgSource>:<shooter>;...] [marks=<n>]
 //
 // (all on one line) where x and y are pos.x and pos.y, z is trueZpos, parked is CoopPlayers_IsParked and draw is the
@@ -28,6 +29,10 @@
 // SF64_COOP_TRACE_STEER=<frames> (test only, needs SF64_COOP_TRACE) is for replays, which cannot aim: at most once in
 // that many frames, while the radio is free, a flying shot of a player other than player 0 is carried to a wingman at
 // a boss. Everything from there on is the game's own collision and damage code.
+//
+// SF64_COOP_TRACE_SHIELDS=<player 0>,<player 1>,... holds those players' shields at those values while they update, so
+// a test can have one player low and not the other. 0 or nothing leaves a player alone. It changes the simulation, so
+// only a test sets it, and it only acts together with SF64_COOP_TRACE.
 
 #ifdef __cplusplus
 extern "C" {

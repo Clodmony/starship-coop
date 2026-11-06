@@ -32,7 +32,6 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import player_trace  # noqa: E402
 import replay as replay_tool  # noqa: E402
 
 
@@ -337,7 +336,7 @@ def cmd_probe(args):
 
 
 VIEW_SECTIONS = {  # name -> (frames, frame of the L press into all-range)
-    "rails": (player_trace.RAIL_FRAMES, None),
+    "rails": (None, None),  # None: player_trace.RAIL_FRAMES
     "all-range": (8000, GENERATED_L_FRAME),
 }
 
@@ -370,8 +369,10 @@ def check_views_differ(section, a_values, b_values):
 
 def view_section(section, exe, args):
     """Play one section with each local index. Returns a list of failures."""
+    import player_trace  # here, as player_trace imports this file
+
     frames, l_frame = VIEW_SECTIONS[section]
-    frames = args.frames or frames
+    frames = args.frames or frames or player_trace.RAIL_FRAMES
     replay = replay_tool.ROOT / "local" / f"test-hash-views-{section}.sfcr"
     player_trace.write_rail_replay(replay, frames, l_frame)
     # Flying by rule, player 0 would not live through the section, as in player_trace.py rails.
