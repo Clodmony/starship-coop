@@ -82,6 +82,63 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-06, #56, audit regenerated after WP-10 and WP-11
+
+Read at `a69c811a`. `python tools/coop/sp_audit.py --check` passes again. This moved line numbers and corrected the
+notes below; it is not a recheck. The verdicts stay a starting list: a sample of 45 found 5 wrong, and the `flow` group
+is not usable as a checklist yet.
+
+Counts now: 1788 sites in 407 functions in 43 files. By verdict: sim 1074, flow 326, view 223, ok 93, setup 53,
+input 19.
+
+Observed:
+
+- **Why two verdict rows matched no site.** WP-10 replaced the last `gCamCount` in `Player_InitializeAll`
+  (`src/engine/fox_play.c:2610`) and `Play_Update` (`fox_play.c:7039`, `:7054`) with `CoopPlayers_Count()`, and neither
+  function has any other pattern. The `// COOP: was gCamCount` comments are skipped. No site moved to another audited
+  function: the code stayed, and the choice of count went to `src/port/coop/game/players.c:45-50`, outside the audit's
+  scope. So both rows are gone; what `Player_InitializeAll`'s row said now stands in the `Play_Init` row. All game code
+  changes since the audit (`d653ee21`) are in `fox_play.c` and `fox_display.c`: 11 `gCamCount` sites went away (5 in
+  `Display_Update`, 2 in `Play_Init`, 2 in `Play_Update`, 1 in `Player_InitializeAll`, 1 in `Play_Main`), none came in.
+  The notes of the `Play_Init`, `Play_Main` and `Display_Update` rows still described those loops and were corrected.
+- **`gMainController` is not the controller that pressed Start.** It is written in two places only:
+  `Title_Setup` (`src/overlays/ovl_menu/fox_title.c:171`) and `Title_UpdateEntry` (`:240`, every title frame). Both
+  call `Title_CheckControllers` (`:388-400`), which returns the lowest index with `gControllerPlugged[i] == 1`, or -1.
+  It reads no button. All controller reads in `fox_title.c` use that index (`:884`, `:3374`, `:3405-3406`,
+  `:3446-3464`), so the title reads no other controller.
+- **On this port that index is always 0.** `Controller_UpdateInput` sets `gControllerPlugged[i] = osContGetStatus(i)`
+  for all four (`src/sys/sys_joybus.c:69`), and `osContGetStatus(x)` is defined as `true` (`:63`, `// LTODO: Fix this`).
+  It runs before `Game_Update` each frame (`src/sys/sys_main.c:241`, `:248`), so `Title_CheckControllers` returns 0
+  and its -1 is not reached. Read, not run.
+- `Title_Setup`'s old note also said every later read uses `gMainController`. Versus does not: `Player_Update` takes
+  `gInputHold`, `gInputPress` and `gControllerRumble` from `player->num` when `gVersusMode` is set
+  (`fox_play.c:5887-5895`), and pause reads R per controller (`fox_play.c:7234`).
+- **`Play_Main` has no radio input.** Its `gMainController` reads are Start (intro skip on a cleared level, `:7191`;
+  pause, `:7214`; unpause, `:7244`) and R while paused (`:7224`), which toggles `gShowReticles[0]`
+  (`fox_play.c:7226`; drawn at `src/engine/fox_display.c:2072`). The radio answer is C-right, in
+  `ActorAllRange_SpawnSupplies` (`src/engine/fox_360.c:667`) and the `EVC_PRESS_CRIGHT` event condition
+  (`src/engine/fox_enmy2.c:2695`); their rows were already right. The same mistake was in the `Play_Main` verdict row.
+- **A new site only shows as missing when no row covers it.** Tried with temporary sites, reverted afterwards.
+  Shown as missing (`--check` names it, `--todo` lists it, and it stays red after a rerun): a new function in
+  `fox_play.c`, `gPlayer->` in `Player_Update` (its rows are per pattern), a new tracked file. Not shown as missing:
+  a new function in `fox_co.c` (took `sim`, basis `name`, from the `ovl_i*` row) or `fox_demo.c` (took `flow`), and
+  `gPlayer[0]` added to `Player_CheckBounds360` (took that row's `setup` and a note that does not describe it). For
+  those, `--check` only calls the file stale and passes after a rerun. A file git does not track yet is not scanned:
+  `--check` stays green. 678 of the 1788 sites sit under a `*` row, in 21 files.
+
+Derived:
+
+- WP-14 cannot use `gMainController` to find who pressed Start, and on this port neither it nor
+  `gControllerPlugged` says which controllers exist.
+- After a rerun, the diff of `single-player.md` is the only place new sites show up. The generated header says so now.
+
+Unknown:
+
+- Which 5 verdicts the sample found wrong, beyond the notes #56 names, and how the verdicts outside the sample stand.
+  Nothing here rechecked them.
+- Why the `flow` group is not usable as a checklist yet: #56 does not say. 113 of its 326 sites have basis `name`.
+- Which physical pad lands on index 0: that is libultraship's mapping, not read here.
+
 ### 2026-11-05, #6 (WP-06), on-rails: player position, path progress, camera
 
 Read from the source only; nothing was run. Line numbers are for `origin/coop` at 1ec6c677.
@@ -195,7 +252,8 @@ Read from the source only; nothing was run. Line numbers are for `origin/coop` a
 
 Read at `d653ee21` (branch `coop`). Full list with a verdict per site: `docs/coop/audit/single-player.md`, generated
 by `python tools/coop/sp_audit.py` from `docs/coop/audit/sp-verdicts.tsv` (`--check` fails when it is stale or a site
-has no verdict). Rerun it after an upstream sync: line numbers move, and new sites show up as missing verdicts.
+has no verdict). Rerun it after an upstream sync: line numbers move, and new sites show up as missing verdicts
+[wrong, see 2026-11-06, #56].
 
 Counts: 1799 sites in 409 functions in 43 files. `gPlayer[0]` 1577, `gMainController` 146, `gCamCount` 73,
 `gPlayer->` 3. By verdict: sim 1074, flow 326, view 223, ok 93, setup 64, input 19.
@@ -225,9 +283,11 @@ Observed:
 - **Wingmen fly with player 0.** `src/engine/fox_360.c`, `ActorAllRange_Update` and `src/engine/fox_hud.c`,
   `ActorTeamBoss_FlyAlongPlayer`.
 - **One controller drives the game.** `gMainController` is set at the title screen to the controller that pressed
-  Start (`src/overlays/ovl_menu/fox_title.c:171`, `Title_CheckControllers`). `Player_Update` then reads
-  `gInputHold`/`gInputPress`/`gControllerRumble` from it for every player (`src/engine/fox_play.c:5886-5888`). Pause,
-  intro skip and the R-button radio (`Play_Main`), bomb detonation and charge-shot release (`src/engine/fox_beam.c`)
+  Start [wrong, see 2026-11-06, #56] (`src/overlays/ovl_menu/fox_title.c:171`, `Title_CheckControllers`).
+  `Player_Update` then reads `gInputHold`/`gInputPress`/`gControllerRumble` from it for every player
+  (`src/engine/fox_play.c:5886-5888`). Pause,
+  intro skip and the R-button radio [wrong, see 2026-11-06, #56] (`Play_Main`), bomb detonation and charge-shot
+  release (`src/engine/fox_beam.c`)
   read it directly too.
 - **Controller index used as player index.** Level code sets rumble with `D_ctx_801779A8[gMainController]` and
   `gControllerRumbleTimers[gMainController]` (for example `src/overlays/ovl_i3/fox_so.c:1652`), while the engine
