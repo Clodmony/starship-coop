@@ -55,8 +55,8 @@ Nothing in the online design may rule it out.
 ### Derived (reasoning, not yet tested)
 
 - Running a second `Player` in the campaign starts with separating "number of players" from "number of cameras",
-  because versus mode already updates and draws several players. On rails it also needs one shared path (NOTES.md,
-  2026-11-05, WP-06).
+  because versus mode already updates and draws several players. On rails it also needs one shared path, owned by
+  player 0 (NOTES.md, 2026-11-05, WP-06, and 2026-11-06, WP-12).
 - Game logic appears to tick at a fixed rate with interpolated rendering on top, which is what lockstep needs.
 - Because world state is in fixed arrays plus one bump-allocated buffer plus globals, a full state snapshot (for
   rollback or for a late join) is plausible in size. The arrays contain pointers, so a snapshot is only valid for the
@@ -67,8 +67,8 @@ Nothing in the online design may rule it out.
 - Whether the simulation is deterministic: same seeds plus same inputs giving the same state, on one machine, across
   machines with the same build, and across OS/compilers.
 - What else reads time or host state inside the simulation (audio timing, `osGetTime` callers, frame pacing).
-- What breaks with two players on rails in practice (the code reading is in NOTES.md, 2026-11-05, WP-06; not yet run
-  with a second player).
+- What breaks with two players on rails outside Corneria: only Corneria's rail section has been run with a second
+  player (NOTES.md, 2026-11-06, WP-12).
 - Which code assumes `gPlayer[0]` or a single player: cameras, HUD, radio, cutscenes, level-complete logic, warps.
 - How the Landmaster (Titania, Macbeth) and Blue Marine (Aquas) levels handle extra players.
 - Which port enhancements (CVars) change the simulation and must match between players. A first list from reading

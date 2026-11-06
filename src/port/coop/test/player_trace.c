@@ -15,11 +15,14 @@ static void CoopTrace_OnGamePostUpdate(IEvent* event) {
     if ((sTraceFile == NULL) || (gGameState != GSTATE_PLAY) || (gPlayer == NULL)) {
         return;
     }
-    fprintf(sTraceFile, "frame=%d level=%d mode=%d players=%d", gGameFrameCount, gCurrentLevel, gLevelMode,
-            CoopPlayers_Count());
+    fprintf(sTraceFile, "frame=%d level=%d mode=%d players=%d path=%.3f pathvel=%.3f scroll=%.3f", gGameFrameCount,
+            gCurrentLevel, gLevelMode, CoopPlayers_Count(), gPathProgress, gPathVelZ, gPathTexScroll);
     for (i = 0; i < CoopPlayers_Count(); i++) {
-        fprintf(sTraceFile, " p%d=%d,%d,%.1f,%.1f,%.1f,%d,%d", i, gPlayer[i].state, gPlayer[i].csState, gPlayer[i].pos.x,
-                gPlayer[i].pos.y, gPlayer[i].trueZpos, CoopPlayers_IsParked(i), gPlayer[i].draw);
+        const Player* p = &gPlayer[i];
+
+        fprintf(sTraceFile, " p%d=%d,%d,%.1f,%.1f,%.1f,%d,%d,%.3f,%.1f,%.3f,%.3f,%.1f,%d,%d,%d", i, p->state,
+                p->csState, p->pos.x, p->pos.y, p->trueZpos, CoopPlayers_IsParked(i), p->draw, p->zPath, p->camDist,
+                p->xPath, p->yPath, p->pathWidth, p->shields, p->somersault, p->form);
     }
     fputc('\n', sTraceFile);
     if ((gGameFrameCount % 60) == 0) {

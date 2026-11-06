@@ -7,12 +7,15 @@
 static s32 sCoopPlayerCount = 1;
 
 // Players 1 and up in co-op. A player that is not JOINED is parked: allocated but not updated, not given a camera
-// update and not drawn (its draw flag is 0). They start WAITING and join when the level reaches a section that
-// supports them (WP-11: all-range; rails are WP-12). A joined player that goes down, or whose section ends, is OUT
-// until the next Play_Init; when and how it comes back is a game rule (WP-07, WP-16).
+// update and not drawn (its draw flag is 0). They start WAITING and join when player 0 flies a section that supports
+// them (see CoopPlayers_SectionSupported). A joined player whose section ends is AWAY: it comes back with its own
+// shields, wings and weapons if player 0 flies again in this level (rails, the cut to all-range, all-range), and
+// otherwise stays parked until the next Play_Init. A joined player that goes down is OUT until the next Play_Init;
+// when and how it comes back is a game rule (WP-07, WP-16).
 typedef enum {
     COOP_SLOT_JOINED, // also every player outside co-op, and player 0
     COOP_SLOT_WAITING,
+    COOP_SLOT_AWAY,
     COOP_SLOT_OUT,
 } CoopSlot;
 
@@ -64,10 +67,8 @@ int32_t CoopPlayers_IsParked(int32_t index) {
     return sSlot[index] != COOP_SLOT_JOINED;
 }
 
-// Player i joins as a copy of player 0, set beside it. Player_Setup is not run for it: besides the player struct it
-// resets level-wide state (radio, music, the level start screen, intro flags), which would disturb player 0. So the
-// per-player arrays that Player_Setup fills for its player index are copied from player 0 instead.
-static void CoopPlayers_JoinFromPlayer0(s32 i) {
+// Player i becomes a copy of player 0, set beside it.
+static void CoopPlayers_PlaceBesidePlayer0(s32 i) {
     Player* p = &gPlayer[i];
 
     *p = gPlayer[0];
@@ -78,6 +79,13 @@ static void CoopPlayers_JoinFromPlayer0(s32 i) {
     p->cam.eye.y += COOP_JOIN_OFFSET_Y * i;
     p->cam.at.x += COOP_JOIN_OFFSET_X * i;
     p->cam.at.y += COOP_JOIN_OFFSET_Y * i;
+}
+
+// Player i joins for the first time in this Play_Init. Player_Setup is not run for it: besides the player struct it
+// resets level-wide state (radio, music, the level start screen, intro flags), which would disturb player 0. So the
+// per-player arrays that Player_Setup fills for its player index are copied from player 0 instead.
+static void CoopPlayers_JoinFromPlayer0(s32 i) {
+    CoopPlayers_PlaceBesidePlayer0(i);
 
 #define COPY_FROM_0(arr) (arr)[i] = (arr)[0]
     COPY_FROM_0(gLeftWingHealth);
@@ -103,9 +111,33 @@ static void CoopPlayers_JoinFromPlayer0(s32 i) {
 #undef COPY_FROM_0
 }
 
+// Player i comes back for the next section of the level. What it lost or picked up so far stays its own.
+static void CoopPlayers_RejoinFromPlayer0(s32 i) {
+    Player* p = &gPlayer[i];
+    s32 shields = p->shields;
+    s32 damage = p->damage;
+    s32 heal = p->heal;
+    s32 rightWing = p->arwing.rightWingState;
+    s32 leftWing = p->arwing.leftWingState;
+
+    CoopPlayers_PlaceBesidePlayer0(i);
+    p->shields = shields;
+    p->damage = damage;
+    p->heal = heal;
+    p->arwing.rightWingState = rightWing;
+    p->arwing.leftWingState = leftWing;
+}
+
 static void CoopPlayers_SetOut(s32 i) {
     sSlot[i] = COOP_SLOT_OUT;
     gPlayer[i].draw = false;
+}
+
+// Nonzero while the level is in a section co-op players fly in: all-range (WP-11), or rails in an Arwing (WP-12). On
+// rails the Landmaster and the Blue Marine are WP-18: they call Player_UpdatePath too, but nothing has run them.
+static s32 CoopPlayers_SectionSupported(void) {
+    return (gLevelMode == LEVELMODE_ALL_RANGE) ||
+           ((gLevelMode == LEVELMODE_ON_RAILS) && (gPlayer[0].form == FORM_ARWING));
 }
 
 int32_t CoopPlayers_SkipUpdate(int32_t index) {
@@ -114,19 +146,29 @@ int32_t CoopPlayers_SkipUpdate(int32_t index) {
     }
     switch (sSlot[index]) {
         case COOP_SLOT_JOINED:
-            // Leave with player 0: once it is no longer flying (level complete, down), this player's section is over.
-            if ((gPlayer[0].state != PLAYERSTATE_ACTIVE) && (gPlayer[0].state != PLAYERSTATE_U_TURN)) {
-                CoopPlayers_SetOut(index);
+            // Leave with player 0: once it is no longer flying (level complete, down, the cut from rails to all-range),
+            // this player's section is over.
+            if (!CoopPlayers_SectionSupported() ||
+                ((gPlayer[0].state != PLAYERSTATE_ACTIVE) && (gPlayer[0].state != PLAYERSTATE_U_TURN))) {
+                sSlot[index] = COOP_SLOT_AWAY;
+                gPlayer[index].draw = false;
                 return 1;
             }
             return 0;
 
         case COOP_SLOT_WAITING:
-            if ((gLevelMode == LEVELMODE_ALL_RANGE) && (gPlayer[0].state == PLAYERSTATE_ACTIVE)) {
+            if (CoopPlayers_SectionSupported() && (gPlayer[0].state == PLAYERSTATE_ACTIVE)) {
                 CoopPlayers_JoinFromPlayer0(index);
                 sSlot[index] = COOP_SLOT_JOINED;
             }
             return 1; // a player that joined this frame starts updating on the next one
+
+        case COOP_SLOT_AWAY:
+            if (CoopPlayers_SectionSupported() && (gPlayer[0].state == PLAYERSTATE_ACTIVE)) {
+                CoopPlayers_RejoinFromPlayer0(index);
+                sSlot[index] = COOP_SLOT_JOINED;
+            }
+            return 1;
 
         case COOP_SLOT_OUT:
         default:
@@ -134,6 +176,54 @@ int32_t CoopPlayers_SkipUpdate(int32_t index) {
             gPlayer[index].draw = false;
             return 1;
     }
+}
+
+// Player 0 owns the path: everything that hangs off it reads player 0 or the globals player 0 writes (object loading,
+// culling, path turns, floor collision, ground scroll), and it is the one player every client has. See NOTES.md, WP-12.
+int32_t CoopPlayers_FollowPath(Player* player) {
+    const Player* owner = &gPlayer[0];
+
+    if ((player->num <= 0) || !CoopPlayers_IsCoop()) {
+        return 0;
+    }
+    player->pos.z = owner->pos.z;
+    player->vel.z = owner->vel.z;
+    player->baseSpeed = owner->baseSpeed;
+    player->zPath = owner->zPath;
+    player->zPathVel = owner->zPathVel;
+    player->xPath = owner->xPath;
+    player->yPath = owner->yPath;
+    player->xPathTarget = owner->xPathTarget;
+    player->yPathTarget = owner->yPathTarget;
+    player->pathStep = owner->pathStep;
+    player->pathChangeTimer = owner->pathChangeTimer;
+    player->pathChangeYaw = owner->pathChangeYaw;
+    player->pathChangePitch = owner->pathChangePitch;
+    player->yRot_114 = owner->yRot_114;
+    player->xRot_120 = owner->xRot_120;
+
+    // The rest of Player_UpdatePath that is about the player itself.
+    player->trueZpos = player->pos.z + player->camDist;
+    player->bankAngle = player->rot.z + player->zRotBank + player->zRotBarrelRoll;
+    while (player->bankAngle > 360.0f) {
+        player->bankAngle -= 360.0f;
+    }
+    while (player->bankAngle < -360.0f) {
+        player->bankAngle += 360.0f;
+    }
+    return 1;
+}
+
+void CoopPlayers_SelectInput(int32_t index) {
+    s32 pad;
+
+    if (!CoopPlayers_IsCoop()) {
+        return;
+    }
+    pad = (index == 0) ? gMainController : index;
+    gInputHold = &gControllerHold[pad];
+    gInputPress = &gControllerPress[pad];
+    gControllerRumble = &gControllerRumbleFlags[pad];
 }
 
 int32_t CoopPlayers_OnPlayerDown(Player* player) {
