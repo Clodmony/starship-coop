@@ -245,6 +245,87 @@ GCC 16.2.1, Debug, graphics backend OpenGL, `USE_NETWORKING` on, `SDL_VIDEODRIVE
 - A boot with networking on under Windows or macOS. CI builds the game on Windows but does not start it.
 - Anything past the title screen.
 
+### 2026-11-05, #19 (WP-21), session handshake: build, ROM, CVars
+
+Read at `1ec6c677` (origin/coop). The handshake code is in `src/port/coop/session/`, the wire form in PROTOCOL.md.
+
+**Observed**
+
+- The ROM version the port knows is the game version of each archive. `Archive::Load` reads a file named `version`
+  from the archive: one byte of endianness, then a u32 (`libultraship/src/resource/archive/Archive.cpp:33-41`).
+  Torch writes that u32 as the ROM header CRC at offset 0x10 (`tools/Torch/src/Companion.cpp:1243-1251`,
+  `tools/Torch/src/n64/Cartridge.cpp:9-10`). Only archives that have a `version` file add to the list
+  (`ArchiveManager.cpp:266-268`); `starship.o2r` has none.
+- An `sf64.o2r` made from US 1.0 (SHA-1 `d8b10885...`) holds `01 76 92 4C A9`, so its version is `0x76924CA9`.
+- `src/port/Engine.h:7` names `0x94F1D5A7` as `SF64_VER_US`. That is not the US 1.0 value above, so
+  `GameEngine_HasVersion(SF64_VER_US)` is false with a US 1.0 archive.
+- The game does not know its git commit. The only version in the build is `PROJECT_VERSION` 2.0.0
+  (`CMakeLists.txt:4`). WP-21 adds `tools/coop/cmake/coop_build_id.cmake`, which writes the commit into a header on
+  every build.
+- CVars read by game code that change game state or game flow, so they must match (the table in
+  `src/port/coop/session/sim_cvars.c`):
+  - Damage and shots: `gInvincible` (`src/engine/fox_play.c:977, 5629, 6951`), `gUnbreakableWings`
+    (`fox_play.c:938, 955`), `gRapidFire` (`fox_play.c:3331, 3459`, `fox_beam.c:1789`, `fox_enmy.c:2849`,
+    `ovl_i3/fox_aq.c:1331`), `gLtoCharge` (`fox_play.c:3334, 3373`), `gRestoreBetaBombExplosion`
+    (`fox_beam.c:1320, 1350`).
+  - Input: `gInvertYAxis` multiplies `gInputPress->stick_y` inside the player update (`fox_play.c:3760, 4006`,
+    `fox_tank.c:385, 674`, `ovl_i3/fox_aq.c:809, 884`).
+  - Rules and flow: `gHit64FalcoDead`, `gHit64SlippyDead`, `gHit64PeppyDead` (`fox_play.c:2938-2944`),
+    `gHit64SelfDestruct` (`src/mods/hit64.c:7`), `gForceExpertMode` (`ovl_menu/fox_option.c:371`), `gLevelSelector`
+    (`fox_message.c:53`, `ovl_menu/fox_map.c:1893, 4116, 5528, 6107, 6751`), `gSfxJukebox` (`fox_option.c:400,
+    1665`), `gDebugEnding` (`ovl_menu/fox_title.c:3420`).
+  - Bug fixes in level code: `gSzMissileBug` (`ovl_i4/fox_sz.c:186`), `gSzActorFix` (`fox_sz.c:1901`, changes a loop
+    bound), `gMaCameraFix` (`ovl_i5/fox_ma.c:7012`, writes `gCsCamAtY`).
+  - Writes actor state although it looks visual: `gTeamFaces` sets `iwork[14]` (`fox_demo.c:106`,
+    `ovl_i2/fox_me.c:1920` and 13 more sites), `gDisableLOD` sets `iwork[KA_ACTOR_LOW_POLY]`
+    (`ovl_i4/fox_ka.c:2642`), `gDisableGorgonFlash` decides whether `gFillScreenAlpha` is set
+    (`fox_effect.c:3818`, `ovl_i3/fox_a6.c:837`).
+  - Radio and voice: `gVoiceLanguage` sets an audio channel's IO (`src/audio/audio_general.c:546, 2789`); the radio
+    reads audio state (`fox_radio.c:615-645`, WP-02). `gEnemyRedRadio` sets `radioRedBox` in a hook
+    (`src/port/mods/PortEnhancements.c:319`).
+  - Port enhancements in `src/port/mods/PortEnhancements.c`: `gInfiniteLives` (122), `gInfiniteBombs` (129),
+    `gHyperLaser` (136), `gScoreEditor` and `gScoreEditValue` (143-147, write `gHitCount`), `gSpawnerMod` (167),
+    `gInfiniteBoost` (196-212), `gLaserRangeMult` (218, scales a shot timer), `gRestoreBetaCoin` (227, 243),
+    `gRestoreBetaBoostGauge` (287, 309, 392), and the developer tools `gDebugSpeedControl` (18), `gDebugJumpToMap`
+    (39), `gDebugWarpZone` (62), `gDebugNoCollision` (88), `gDebugLevelComplete` (95), `gDebugJumpToAllRange` (112),
+    `gDebugPause`, `gLToDebugPause`, `gLToFrameAdvance` (173-184).
+  - Checkpoints per level: `gCheckpoint.<level>.Set`, `.gSavedGroundSurface`, `.gSavedPathProgress` (float),
+    `.gSavedObjectLoadIndex`, read at level start (`fox_play.c:4709-4716`).
+- Left out because they only change drawing or sound output: `gRadioCommBox.expand` (`fox_hud.c:213, 2279, 2656`,
+  `fox_radio.c:133, 746-811`, all positions of draw calls), `gDisableStarsInterpolation` (`fox_bg.c:255, 346`),
+  `gCockpitOpacity` (`fox_display.c:726`), the speaker positions and volumes in `src/audio/`, and the resolution,
+  HUD and window CVars in `src/port/`. WP-02 found no hash difference with another interpolation rate or window size.
+- The menu's "Set Checkpoint" writes `gCheckpoint.<level>.gSavedPathProgress` twice, first as an integer with
+  `gGroundSurface`, then as a float (`src/port/ui/ImguiUI.cpp:896-897`). `gSavedGroundSurface` is never written, so
+  the game reads its default (the current global) there. An upstream bug; harmless for the handshake, which reads
+  the same on both sides.
+- Test: `python tools/coop/session_test.py` gives 9/9 (Windows 11, MSVC 19.44, Debug). Three bugs put in on purpose
+  (CVars not compared, refusal not held until it arrives, platform refusing) each failed `coop_session_test sim`.
+
+**Derived**
+
+- US 1.0 and US 1.1 should give different versions, because Torch takes the header CRC of each ROM. Only US 1.0 was
+  seen.
+- A CVar that is not in the table and changes the game will not be caught by the handshake, only later by state
+  hashes (WP-23).
+
+**Guess**
+
+- `0x94F1D5A7` is US 1.1. Not checked; the text shows it as "US" together with the hex value.
+
+**Unknown**
+
+- Whether Windows and Linux builds compute the same game. Until it is checked, a different platform only warns.
+- CVars changed after the handshake, from the menu. Nothing stops that yet; WP-22 or WP-25 should lock the table
+  while a session runs.
+- Mods: an `.o2r` in `mods/` with a `version` file shows up in the ROM list, one without does not, and nothing
+  compares their content. `gEnhancements.Mods.AlternateAssets` (`src/port/Engine.cpp:263-469`) swaps assets; whether
+  any of them change the game is not checked.
+- The game glue `CoopIdentity_FromGame` (`src/port/coop/session/identity_game.c`) compiles and links into the game,
+  but nothing calls it yet and it has not run. WP-24 or WP-25 will call it when a session starts.
+- Builds without git get the build id `unknown`, and two of them count as the same build. Two `-dirty` builds of the
+  same commit also match, whatever their changes.
+
 ## Prior work
 
 ### 2026-11-01, triage

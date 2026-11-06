@@ -372,6 +372,15 @@ else()
 	)
 endif()
 
+# COOP: build id for the co-op handshake (git commit), rewritten on every build when it changes.
+add_custom_target(CoopBuildId
+    COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR} -DOUT=${CMAKE_BINARY_DIR}/coop/coop_build_id.h
+        -P ${CMAKE_SOURCE_DIR}/tools/coop/cmake/coop_build_id.cmake
+    BYPRODUCTS ${CMAKE_BINARY_DIR}/coop/coop_build_id.h
+)
+add_dependencies(${PROJECT_NAME} CoopBuildId)
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_BINARY_DIR}/coop)
+
 if(USE_NETWORKING)
     if(MSVC)
         vcpkg_install_packages(sdl2-net)
@@ -384,6 +393,8 @@ if(USE_NETWORKING)
     target_compile_definitions(${PROJECT_NAME} PRIVATE USE_NETWORKING)
     # COOP: test program for the transport, built on demand by tools/coop/net_test.py.
     add_subdirectory(tools/coop/nettest)
+    # COOP: test program for the session handshake, built on demand by tools/coop/session_test.py.
+    add_subdirectory(tools/coop/sessiontest)
 endif()
 
 option(USE_STANDALONE "Build as a standalone executable" OFF)
