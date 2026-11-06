@@ -36,7 +36,8 @@ int32_t CoopPlayers_LocalIndex(void);
 
 // Index of the player this client looks through: what Game_Draw draws, and what its camera, HUD and sound follow. The
 // local player while it flies; while that is parked, before it joins, in a cut or after it went down, player 0. The
-// simulation never reads it: outside Game_Draw gPlayerNum is 0 or the player being updated (src/port/coop/game/view.h).
+// simulation reads it only to pick the sounds a client plays, through CoopPlayers_IsViewed; what it hashes never depends
+// on it: outside Game_Draw gPlayerNum is 0 or the player being updated (src/port/coop/game/view.h).
 int32_t CoopPlayers_ViewIndex(void);
 
 // Nonzero when what player `index` does is for this client's eyes and ears: the player it looks through in co-op,
