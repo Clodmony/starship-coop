@@ -31,6 +31,11 @@ game's environment: a test game must be silent and have no window. A game that i
 opens a sound device. person starts replay.py record without --frames, the one run a person plays: that game must be
 left in real time, and this test then stops it. rates-real and rates-at-speed run hash_check.py rates, whose guard
 counts the draws a game really made: it must hold at real time and fail at speed, where no game interpolates.
+
+A game that does not draw logs so, and every scenario checks that against its tool (#147). The *-no-draw scenarios
+start a tool that needs pixels or interpolation with COOP_TOOLS_TAKE_DRAWING in its shell, so its games do not get them:
+its guard must fail the run and say so. draw-off-on runs hash_check.py draw, whose two runs must hash alike on every
+frame.
 """
 import argparse
 import os
@@ -63,6 +68,10 @@ TEST_SPEED = replay_tool.TEST_SPEED
 
 RATES = ["hash_check.py", "rates", "--rates", "30,60", "--section", "rails", "--players", "1", "--frames", str(FRAMES),
          "--timeout", TIMEOUT]  # a replay of its own, by rule; the file does not come into it
+BUILDS = ["hash_check.py", "builds", "--section", "rails", "--players", "1", "--frames", str(FRAMES),
+          "--timeout", TIMEOUT]  # as RATES
+DRAW = ["hash_check.py", "draw", "--section", "rails", "--players", "1", "--frames", str(FRAMES),
+        "--timeout", TIMEOUT]  # as RATES
 
 COMMANDS = {
     "replay": lambda file: ["replay.py", "play", file, "--timeout", TIMEOUT],
@@ -74,16 +83,24 @@ COMMANDS = {
     "real": lambda file: ["replay.py", "play", file, "--speed", "1", "--timeout", TIMEOUT],
     "rates": lambda file: RATES,
     "rates-speed": lambda file: [*RATES, "--speed", TEST_SPEED],
+    "builds": lambda file: BUILDS,
+    "draw": lambda file: DRAW,
+    "exit": lambda file: ["exit_test.py", "--only", "idle", "--repeat", "1"],
+    "version": lambda file: ["version_test.py", "--only", "label"],
 }
 # Speeds the games of a tool must log. No speed is real time.
 SPEEDS = {"replay": {TEST_SPEED}, "hash": {TEST_SPEED}, "det": set(), "det-audio": set(), "det-speed": {TEST_SPEED},
-          "trace": {TEST_SPEED}, "real": set(), "rates": set(), "rates-speed": {TEST_SPEED}}
+          "trace": {TEST_SPEED}, "real": set(), "rates": set(), "rates-speed": {TEST_SPEED}, "builds": set(),
+          "draw": {TEST_SPEED}, "exit": set(), "version": set()}
+# The tools whose games draw. No other game does: a test game counts frames (#147).
+DRAWN = {"det", "det-audio", "det-speed", "real", "rates", "rates-speed", "builds", "exit", "version"}
+SOME_DRAWN = {"draw"}  # one of each
 
 # name: replay file, tool, wanted exit code, wanted result line and frames played (replay.py prints those two), whether
 # the tool starts with variables left in the shell, whether the game must log a test switch, whether the tool starts
-# from a shell without SDL drivers, and what the tool must print
-Scenario = namedtuple("Scenario", "file tool code result frames leak switch bare says",
-                      defaults=(False, False, False, None))
+# from a shell without SDL drivers, what the tool must print, and whether its games lose their drawing
+Scenario = namedtuple("Scenario", "file tool code result frames leak switch bare says take",
+                      defaults=(False, False, False, None, False))
 SCENARIOS = {
     "whole": Scenario("whole", "replay", 0, "PASS", FRAMES),
     "header-only": Scenario("header-only", "replay", 1, "FAIL_NO_FRAMES", 0),
@@ -108,6 +125,14 @@ SCENARIOS = {
     "rates-real": Scenario("whole", "rates", 0, None, None),
     "rates-at-speed": Scenario("whole", "rates-speed", 1, None, None,
                                says="60 fps was not used: 1 draws a frame, not 2"),
+    "rates-no-draw": Scenario("whole", "rates", 1, None, None, take=True,
+                              says="60 fps was not used: 0 draws a frame, not 2"),
+    "det-no-draw": Scenario("whole", "det", 1, None, None, take=True, says="base did not draw"),
+    "builds-real": Scenario("whole", "builds", 0, None, None),
+    "builds-no-draw": Scenario("whole", "builds", 1, None, None, take=True, says="did not draw"),
+    "exit-no-draw": Scenario("whole", "exit", 1, None, None, take=True, says="game did not draw"),
+    "version-no-draw": Scenario("whole", "version", 1, None, None, take=True, says="the game did not draw"),
+    "draw-off-on": Scenario("whole", "draw", 0, None, None),
     "bare-replay": Scenario("whole", "replay", 0, "PASS", FRAMES, bare=True),
     "bare-hash": Scenario("whole", "hash", 0, None, None, bare=True),
     "bare-trace": Scenario("whole", "trace", 1, None, None, bare=True),  # no level in this replay: an empty trace
@@ -128,6 +153,7 @@ def left_in_shell(decoy):
         "SF64_COOP_TEST_AUDIO_SAMPLES": "low",
         "SF64_COOP_TEST_NO_FMA3": "1",
         "SF64_COOP_TEST_SPEED": "3",
+        "SF64_COOP_TEST_NO_DRAW": "0",
     }
 
 
@@ -143,7 +169,7 @@ class Bench:
             sys.exit(f"replay_test: {ARCHIVE} not found; run python tools/coop/build.py --assets first")
         self.runs = []
 
-    def tool(self, tag, command, leak=False, bare=False, watch=None):
+    def tool(self, tag, command, leak=False, bare=False, watch=None, take=False):
         """Run one tool with its own decoy. Returns (exit code, output, failures seen in any run). watch is called with
         the tool's process while it runs, and returns failures."""
         decoy = self.folder / f"decoy-{tag}"
@@ -153,6 +179,8 @@ class Bench:
         env["SHIP_HOME"] = str(decoy)
         if leak:
             env.update(left_in_shell(decoy))
+        if take:
+            env[replay_tool.TAKE_DRAWING] = "1"
         if sys.platform.startswith("linux"):
             env.update(SDL_VIDEODRIVER="offscreen", SDL_AUDIODRIVER="dummy", LIBGL_ALWAYS_SOFTWARE="1",
                        GALLIUM_DRIVER="llvmpipe")
@@ -243,6 +271,11 @@ def speeds_logged(output):
     return {speed for log in game_logs(output) for speed in re.findall(r"coop: test speed (\S+)", log)}
 
 
+def drawn_logged(output):
+    """What the games a tool started did, from their logs: a set of True for drew and False for did not."""
+    return {"coop: test no draw" not in log for log in game_logs(output)}
+
+
 def games_of(tool, exe):
     """The running games a tool started: {pid: their environment}. While the tool forks, /proc shows a process that is
     not the game yet and still has the tool's environment, so the process must run exe. For a moment of the exec it runs
@@ -303,7 +336,7 @@ def watch_person(bench):
 def check(bench, name, scenario, files):
     """Run one scenario. Returns its failures."""
     code, output, failures = bench.tool(name, COMMANDS[scenario.tool](str(files[scenario.file])), scenario.leak,
-                                        scenario.bare, watch_quiet(bench) if scenario.bare else None)
+                                        scenario.bare, watch_quiet(bench) if scenario.bare else None, scenario.take)
     if code != scenario.code:
         failures.append(f"exit code {code}, want {scenario.code}")
     if scenario.result is not None:
@@ -321,6 +354,9 @@ def check(bench, name, scenario, files):
         failures.append("game log shows a test switch" if not scenario.switch else "no test switch in the game log")
     if speeds_logged(output) != SPEEDS[scenario.tool]:
         failures.append(f"games ran at speed {sorted(speeds_logged(output))}, want {sorted(SPEEDS[scenario.tool])}")
+    drawn = {False} if scenario.take else {True, False} if scenario.tool in SOME_DRAWN else {scenario.tool in DRAWN}
+    if game_logs(output) and drawn_logged(output) != drawn:
+        failures.append(f"games drew: {sorted(drawn_logged(output))}, want {sorted(drawn)}")
     return failures
 
 

@@ -8,6 +8,8 @@
     python tools/coop/hash_check.py views                              # unattended; prints PASS or FAIL
     python tools/coop/hash_check.py builds --debug a/Starship --release b/Starship   # unattended; prints PASS or FAIL
     python tools/coop/hash_check.py rates --exe b/Starship             # unattended; prints PASS or FAIL
+    python tools/coop/hash_check.py draw                               # unattended; prints PASS or FAIL
+    python tools/coop/hash_check.py base --base a/Starship             # unattended; prints PASS or FAIL
 
 run plays the replay three times at once, each in a fresh folder under local/ (see tools/coop/replay.py):
   A and B  plain playback; their per-frame state hashes must be equal on every recorded frame.
@@ -30,10 +32,15 @@ rates plays one replay at several values of gInterpolationFPS, which no handshak
   it. Every run must hash like the first. A rate is the number of draws a game frame gets, and vsync can clamp it, so
   vsync is off and each run must log the draws its rate asks for (state_hash.c, "# draws", counted at the draw loop); a
   run that did not is a failure, not a pass at a lower rate. Input by rule, as for views.
+draw plays one replay with and without SF64_COOP_TEST_NO_DRAW, per section (#147): the draw code runs in both and the
+  renderer only gets its work in one, so the hash must not change. The run with the switch must log 0 draws and the
+  other run more, or the two would be the same run. Input by rule, as for views.
+base plays input by rule, with co-op off, on this build and on --base, the build before a change: the two must be equal
+  on every frame, which is what co-op off means. --base can be a build without any of the switches here.
 
 builds and rates run in real time: at test speed a game frame is drawn once, so no game would interpolate, and
-interpolation is what they are there to see (#141, #137). --speed on rates is for replay_test.py, which checks that a
-game at speed fails it.
+interpolation is what they are there to see (#141, #137). So they ask for drawing too, and each game must log what it
+drew. --speed on rates is for replay_test.py, which checks that a game at speed fails it.
 
 Exit code 0 on PASS (or no difference for diff), 1 otherwise.
 """
@@ -61,6 +68,7 @@ GENERATED_L_FRAME = 4840
 GENERATED_POKE_FRAME = 5400  # both players flying in all-range
 GENERATED_FRAMES = 5800
 GENERATED_SEEDS = (1234, 5678, 9012, 111, 222, 333)
+INTERPOLATED = 2  # draws of a game frame at real pacing, with 60 for gInterpolationFPS and a game of 30 frames a second
 
 # What a probe must show: target -> (hash changes?, the only region that may change).
 PROBE_RULES = {
@@ -186,7 +194,8 @@ def test_setup(args):
         if not replay.exists():
             sys.exit(f"hash: {replay} does not exist")
     else:
-        replay = replay_tool.ROOT / "local" / "test-hash-generated.sfcr"
+        # A folder of its own, as in section_setup: games that start while a second run writes this would read half.
+        replay = make_run_folder(replay_tool.ROOT / "local", "test-hash-generated-") / "input.sfcr"
         write_generated_replay(replay)
         cvars["gDebugJumpToAllRange"] = 1
     return replay, {"CVars": cvars} if cvars else None
@@ -451,6 +460,23 @@ def compare_runs(section, label, a, b, frames):
     return failures
 
 
+def read_draws(path):
+    """The most draws a game frame got in a run, from the "# draws" lines of its log; 0 if it holds none."""
+    counts = [int(line.split("count=")[1]) for line in
+              Path(path).read_text(encoding="utf-8", errors="replace").splitlines() if line.startswith("# draws ")]
+    return max(counts, default=0)
+
+
+def too_few_draws(label, run, want=INTERPOLATED):
+    """A run that asked for pixels or interpolation must have had them (#147): at real pacing with the frame rate of a
+    default config, a game frame takes INTERPOLATED draws. run is what play returned. Returns a list of failures."""
+    values = run[0]
+    if not values or "log" not in values:
+        return []  # no log: reported where the run is looked at
+    got = read_draws(values["log"])
+    return [] if got >= want else [f"{label} did not draw: {got} draws a frame, not {want}"]
+
+
 def build_section(section, debug, release, args):
     """Play one section on both Release runs and the Debug run. Returns a list of failures."""
     replay, frames, config = section_setup(section, "builds", args)
@@ -463,13 +489,15 @@ def build_section(section, debug, release, args):
 
     failures = [f"{section}: {tag} did not play through: {run[0].get('result') if run[0] else 'no report'}"
                 for (tag, _), run in zip(runs, (a, b, d)) if not played_through(run[0])]
+    for (tag, _), run in zip(runs, (a, b, d)):
+        failures += too_few_draws(f"{section}: {tag}", run)
     failures += compare_runs(section, "two Release runs", a, b, frames)
     failures += compare_runs(section, "Debug and Release", d, a, frames)
     return failures
 
 
 def cmd_builds(args):
-    debug, release = replay_tool.find_exe(args.debug), replay_tool.find_exe(args.release)
+    debug, release = replay_tool.find_exe(args.debug or args.exe), replay_tool.find_exe(args.release or args.exe)
     failures = []
     for section in VIEW_SECTIONS if args.section == "both" else (args.section,):
         failures += build_section(section, debug, release, args)
@@ -479,17 +507,10 @@ def cmd_builds(args):
     return 1 if failures else 0
 
 
-def read_draws(path):
-    """The most draws a game frame got in a run, from the "# draws" lines of its log; 0 if it holds none."""
-    counts = [int(line.split("count=")[1]) for line in
-              Path(path).read_text(encoding="utf-8", errors="replace").splitlines() if line.startswith("# draws ")]
-    return max(counts, default=0)
-
-
 def rate_section(section, exe, rates, args):
     """Play one section at every rate. Returns a list of failures."""
     replay, frames, config = section_setup(section, "rates", args)
-    speed = replay_tool.REAL_TIME if args.speed is None else {"SF64_COOP_TEST_SPEED": args.speed}
+    speed = replay_tool.REAL_TIME if args.speed is None else {**replay_tool.DRAWN, "SF64_COOP_TEST_SPEED": args.speed}
 
     def run(rate):
         rate_config = copy.deepcopy(config)
@@ -526,6 +547,53 @@ def cmd_rates(args):
     return 1 if failures else 0
 
 
+def draw_section(section, exe, args):
+    """Play one section with drawing and without. Returns a list of failures."""
+    replay, frames, config = section_setup(section, "draw", args)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        jobs = [pool.submit(play, replay, exe, args.timeout, f"draw-{section}-{tag}", env_extra=env, config=config)
+                for tag, env in (("off", None), ("on", replay_tool.DRAWN))]
+        off, on = [job.result() for job in jobs]
+
+    failures = [f"{section}: {tag} did not play through: {run[0].get('result') if run[0] else 'no report'}"
+                for tag, run in (("the run without drawing", off), ("the drawn run", on)) if not played_through(run[0])]
+    if off[0] and "log" in off[0] and read_draws(off[0]["log"]) != 0:
+        failures.append(f"{section}: the switch did nothing: {read_draws(off[0]['log'])} draws a frame, not 0")
+    failures += too_few_draws(f"{section}: the drawn run", on, want=1)
+    return failures + compare_runs(section, "with and without drawing", off, on, frames)
+
+
+def cmd_draw(args):
+    exe = replay_tool.find_exe(args.exe)
+    failures = []
+    for section in VIEW_SECTIONS if args.section == "both" else (args.section,):
+        failures += draw_section(section, exe, args)
+    for f in failures:
+        print(f"FAIL: {f}")
+    print("hash: FAIL" if failures else "hash: PASS")
+    return 1 if failures else 0
+
+
+def cmd_base(args):
+    exe, base = replay_tool.find_exe(args.exe), replay_tool.find_exe(args.base)
+    args.file, args.players = None, 1
+    replay, config = test_setup(args)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        jobs = [pool.submit(play, replay, build, args.timeout, f"base-{tag}", config=config)
+                for tag, build in (("before", base), ("after", exe))]
+        before, after = [job.result() for job in jobs]
+
+    failures = [f"{tag} did not play through: {run[0].get('result') if run[0] else 'no report'}"
+                for tag, run in (("the base build", before), ("this build", after)) if not played_through(run[0])]
+    failures += compare_runs("co-op off", "the base build and this one", before, after, GENERATED_FRAMES)
+    for f in failures:
+        print(f"FAIL: {f}")
+    print("hash: FAIL" if failures else "hash: PASS")
+    return 1 if failures else 0
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -552,8 +620,9 @@ def main():
     v.add_argument("--exe", help="Starship executable (default: newest build found)")
     v.add_argument("--timeout", type=float, default=1800, help="per run: give up after this many seconds")
     u = sub.add_parser("builds", help="play one replay on two Release runs and a Debug run and compare the hashes")
-    u.add_argument("--debug", required=True, help="Starship executable of the Debug build")
-    u.add_argument("--release", required=True, help="Starship executable of the Release build of the same commit")
+    u.add_argument("--debug", help="Starship executable of the Debug build")
+    u.add_argument("--release", help="Starship executable of the Release build of the same commit")
+    u.add_argument("--exe", help="for replay_test.py: one build as both, where the check of the draws is what it reads")
     u.add_argument("--section", choices=[*VIEW_SECTIONS, "both"], default="both", help="default: both")
     u.add_argument("--players", type=int, default=2, help="players, through gCoopDebugPlayerCount (default 2)")
     u.add_argument("--frames", type=int, help="replay length (default: what the section needs)")
@@ -568,9 +637,21 @@ def main():
     t.add_argument("--speed", help="anything but real time must fail this check (default: real time)")
     t.add_argument("--exe", help="Starship executable (default: newest build found)")
     t.add_argument("--timeout", type=float, default=3600, help="per run: give up after this many seconds")
+    w = sub.add_parser("draw", help="play one replay with and without drawing and compare the hashes")
+    w.add_argument("--section", choices=[*VIEW_SECTIONS, "both"], default="both", help="default: both")
+    w.add_argument("--players", type=int, default=2, help="players, through gCoopDebugPlayerCount (default 2)")
+    w.add_argument("--frames", type=int, help="replay length (default: what the section needs)")
+    w.add_argument("--exe", help="Starship executable (default: newest build found)")
+    w.add_argument("--timeout", type=float, default=1800, help="per run: give up after this many seconds")
+    e = sub.add_parser("base", help="play input by rule on the build before a change and this one, and compare")
+    e.add_argument("--base", required=True, help="Starship executable of the build before the change")
+    e.add_argument("--exe", help="Starship executable (default: newest build found)")
+    e.add_argument("--timeout", type=float, default=1800, help="per run: give up after this many seconds")
     args = p.parse_args()
+    if args.cmd == "builds" and not ((args.debug and args.release) or args.exe):
+        p.error("builds needs --debug and --release")
     commands = {"run": cmd_run, "diff": cmd_diff, "probe": cmd_probe, "views": cmd_views, "builds": cmd_builds,
-                "rates": cmd_rates}
+                "rates": cmd_rates, "draw": cmd_draw, "base": cmd_base}
     return commands[args.cmd](args)
 
 

@@ -43,6 +43,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import hash_check  # noqa: E402
+import hash_check  # noqa: E402
 import replay as replay_tool  # noqa: E402
 from run_folder import make_run_folder  # noqa: E402
 
@@ -111,6 +112,8 @@ def gdb_command(exe, fault):
 def start_game(exe, run, scenario, replay):
     # Real time, unlike game_env (#137): this test waits on the clock, not on frames, so speed gains it little. Without
     # the frame limit a signal also lands inside a frame more often, and FAULT_AFTER runs out during the boot logo.
+    # Drawing too (#147): a stop or a crash has to find the game as it finds a player's, most often in the renderer.
+    # No variable asks for that, as plain must stay without any: check_files reads what a game drew.
     env = {k: v for k, v in os.environ.items() if not k.startswith("SF64_COOP_")}
     env.update(SHIP_HOME=str(run), SDL_VIDEODRIVER="offscreen", SDL_AUDIODRIVER="dummy", LIBGL_ALWAYS_SOFTWARE="1",
                GALLIUM_DRIVER="llvmpipe")
@@ -123,6 +126,8 @@ def start_game(exe, run, scenario, replay):
         env["SF64_COOP_REPLAY_REPORT"] = str(run / "replay-report.txt")
     if scenario.mode != "plain":
         env["SF64_COOP_HASH_LOG"] = str(run / "state-hash.txt")
+    if os.environ.get(replay_tool.TAKE_DRAWING):
+        env["SF64_COOP_TEST_NO_DRAW"] = replay_tool.NO_DRAW
     if scenario.fault is not None:
         with open(run / "gdb.txt", "wb") as out:
             return subprocess.Popen(gdb_command(exe, scenario.fault), cwd=run, env=env, stdin=subprocess.DEVNULL,
@@ -259,6 +264,8 @@ def check_files(run, scenario, replay):
         frames = int(end.group(1))
     elif int(end.group(1)) != frames:
         failures.append(f"hash log says {end.group(1)} frames, the report {frames}")
+    if log.exists():
+        failures += hash_check.too_few_draws("game", ({"log": log},), want=1)
     return failures, frames
 
 
