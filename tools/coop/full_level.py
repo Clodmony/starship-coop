@@ -17,6 +17,9 @@ A replay cannot see, and flying by rule player 0 is shot down halfway through th
   C        One more game, the same replay with one bit of player 2 flipped in all-range: the hash must first differ
            at exactly that frame, or two equal logs would say nothing.
 
+B draws and A does not (#147): the draw code runs in both, so what the renderer gets must not reach the hash. The other
+games here do not draw either, as no game from game_env does.
+
 A, B and C run at once. The frames and level states the run reached come from the checkpoints in the replay, and each
 player's frames, shields and downs from the pilot's trace. A run where a player goes down still counts, and says so.
 Everything stays in a fresh local/test-full-level-* folder and in local/test-replay-*. A replay holds raw structs, so it
@@ -169,12 +172,14 @@ def compare(args, exe, replay, found, pilot_rows):
     print(f"full_level: runs A, B and C (poke in player {args.players - 1} at frame {poke}) at once")
     with ThreadPoolExecutor(max_workers=3) as pool:
         jobs = [pool.submit(hash_check.play, replay, exe, args.timeout, "full-a", config=config),
-                pool.submit(hash_check.play, replay, exe, args.timeout, "full-b", config=config),
+                # Drawing: the hash of a whole level must not depend on it (#147). A is the same run without.
+                pool.submit(hash_check.play, replay, exe, args.timeout, "full-b", config=config,
+                            env_extra=replay_tool.DRAWN),
                 pool.submit(hash_check.play, replay, exe, args.timeout, "full-c", poke, config=config,
                             env_extra={"SF64_COOP_HASH_POKE_PLAYER": str(args.players - 1)})]
         (a_values, names, a_rows), (b_values, _, b_rows), (_, _, c_rows) = [job.result() for job in jobs]
 
-    failures = []
+    failures = hash_check.too_few_draws("run B", (b_values,), want=1)
     for tag, values in (("A", a_values), ("B", b_values)):
         result = values.get("result") if values else "no report"
         if result != "PASS":
@@ -195,7 +200,8 @@ def compare(args, exe, replay, found, pilot_rows):
     if diff is not None:
         failures.append(f"A and B differ: {hash_check.describe(names, diff)}")
     else:
-        print(f"full_level: A and B equal on all {frames} frames: state, level, total and {len(names)} regions")
+        print(f"full_level: A and B equal on all {frames} frames: state, level, total and {len(names)} regions; "
+              f"{hash_check.read_draws(a_values['log'])} and {hash_check.read_draws(b_values['log'])} draws a frame")
     if pilot_rows is not None:
         diff = hash_check.first_difference(pilot_rows, a_rows, frames)
         if diff is not None:

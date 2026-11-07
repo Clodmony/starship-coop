@@ -188,6 +188,8 @@ SCENARIOS = {
                            "test-trace-2p-"),
     "exit": tool_scenario(lambda b: ["exit_test.py", "--only", "plain", "--repeat", "1", "--exe", b.exe], LOCAL,
                           "test-exit-"),
+    "all": tool_scenario(lambda b: ["test_all.py", "--no-build", "--only", "rails-2", "--exe", b.exe], LOCAL,
+                         "test-all-"),
     "net": tool_scenario(lambda b: ["net_test.py", "--no-build", "--build-dir", b.empty], LOCAL / "test-net"),
     "session": tool_scenario(lambda b: ["session_test.py", "--no-build", "--build-dir", b.empty],
                              LOCAL / "test-session"),

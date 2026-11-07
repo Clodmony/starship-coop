@@ -486,7 +486,8 @@ void GameEngine::RunCommands(Gfx* Commands, const std::vector<std::unordered_map
 
     CoopTestSwitches_NoteDraws((int) mtx_replacements.size()); // COOP: for the "# draws" lines of the hash log (#137)
     for (const auto& m : mtx_replacements) {
-        wnd->DrawAndRunGraphicsCommands(Commands, m);
+        // COOP: Commands, unless a test asks for an empty list: see SF64_COOP_TEST_NO_DRAW in switches.h (#147)
+        wnd->DrawAndRunGraphicsCommands(CoopTestSwitches_ListToDraw(Commands), m);
         interpreter->mInterpolationIndex++;
     }
 

@@ -78,6 +78,8 @@ class Game(join_test.LevelLog):
         (self.run / "starship.cfg.json").write_text(json.dumps(config, indent=4), encoding="utf-8")
         env = replay.game_env(self.run)
         env["SF64_COOP_TEST_MENU"] = str(self.run)
+        # See join_test.py: on a quiet machine a Release game with no limit never showed a client's ping (#147).
+        env["SF64_COOP_TEST_SPEED"] = replay.MEETING_SPEED
         env.update(env_extra or {})
         if seeds is not None:
             join_test.write_replay(self.run / "input.sfcr", LEVEL_REPLAY_FRAMES, seeds, press_until)
