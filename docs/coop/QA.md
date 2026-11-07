@@ -163,10 +163,10 @@ number of clients, transport.
    configured build directory but no ROM. WP-27 does the same with real game clients.
    Whether those scenarios can fail at all is checked by `python tools/coop/net_mutants.py`: it breaks one behaviour
    of `net_core.c` at a time and requires the named scenario to fail (#44). Run it after changing `net_core.c`.
-   `python tools/coop/session_mutants.py` does the same for `session.c` and `session_test.py` (#55; CI runs it on
-   Linux), and `python tools/coop/session_test.py --asan` runs the session tests under AddressSanitizer and UBSan (CI
+   `python tools/coop/session_mutants.py` does the same for `session.c` and `session_test.py` (#55; `test_all.py` runs
+   it), and `python tools/coop/session_test.py --asan` runs the session tests under AddressSanitizer and UBSan (`test_all.py`
    does, on Linux); `session_mutants.py --asan` shows that run can fail. `python tools/coop/net_test.py --asan` does
-   the same for the transport tests (#75; CI does, on Linux), and `net_mutants.py --asan` shows that run can fail
+   the same for the transport tests (#75; `test_all.py` does), and `net_mutants.py --asan` shows that run can fail
    (#92).
    The Steam relay transport (WP-26) runs without Steam: `python tools/coop/steam_test.py` puts it on a fake of
    `ISteamNetworkingMessages` in a virtual network (no SDK, no ROM, no sockets), with the chaos relay's profiles, and

@@ -20,7 +20,7 @@ Branches: `main` is an unchanged mirror of upstream Starship; `coop` is the co-o
    - `README.md`: keep ours. `.gitignore`: keep both sides.
    - Anything else: prefer upstream unless a co-op change is clearly involved; ask the owner if unsure.
 6. `git submodule update --init --recursive`, then bring the single-player audit up to date. Do this before the build:
-   the build runs `check.py`, which fails while the audit is stale, and so does `Co-op checks`.
+   the build runs `check.py`, which fails while the audit is stale.
    - Run `python tools/coop/sp_audit.py`. With no new site it rewrites `docs/coop/audit/single-player.md`.
    - A site the list does not have stops it: it writes nothing and names each new site with the row it would take its
      verdict from, or `no verdict row`. Read those sites, fix or add their rows in `docs/coop/audit/sp-verdicts.tsv`,

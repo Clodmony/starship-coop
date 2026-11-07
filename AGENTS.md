@@ -90,6 +90,6 @@ Background reading from the hub: [decomp and recomp](https://github.com/cranebea
 - `src/port/hooks/`: the port's event system (`DEFINE_EVENT` / `CALL_EVENT`).
 - `src/engine/`, `src/overlays/`: the decompiled game. `include/`: its headers.
 - `docs/coop/`: design, roadmap, protocol, QA, notes, decisions.
-- `tools/coop/`: Python tools for every OS. `build.py` builds and checks (run it before every push; CI runs the same
-  script), `check.py` runs the repo checks alone.
+- `tools/coop/`: Python tools for every OS. `build.py` builds and checks (run it before every push), `test_all.py` runs every test (run it before a merge; CI is off, see
+  docs/coop/MAINTAINING.md), `check.py` runs the repo checks alone.
 - `.agents/skills/`: skills for this repo (mirrored to `.claude/skills/` by `python tools/coop/sync_skills.py`).

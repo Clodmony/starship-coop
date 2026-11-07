@@ -18,8 +18,8 @@ The repository is **public**. Applied (re-apply if it is ever recreated):
 - Labels: `python tools/coop/setup_labels.py Clodmony/starship-coop`.
 - Milestones `M0` to `M3` plus `Later`, and one issue per work package, linked from `docs/coop/ROADMAP.md`.
 - Ruleset `coop` on the default branch (`.github/rulesets/coop.json`): no deletion, no force push, changes only
-  through pull requests with 1 approval from a code owner and stale approvals dismissed, required status check
-  `Co-op checks`. Repository admins may bypass it for pull requests only, so a sole maintainer can merge their own
+  through pull requests with 1 approval from a code owner and stale approvals dismissed. It required the status check
+  `Co-op checks` until CI was turned off (below). Repository admins may bypass it for pull requests only, so a sole maintainer can merge their own
   PRs; direct pushes stay blocked.
 - Ruleset `upstream-mirror` on `main` (`.github/rulesets/upstream-mirror.json`): no deletion, no force push, and
   only repository admins can update it, by fast-forward from upstream.
@@ -36,7 +36,11 @@ Do not rename a branch that is the head of an open PR: GitHub closes the PR (tha
 
 ## CI
 
-Local builds are the development loop (`python tools/coop/build.py`); CI is the final check on pull requests.
+**Off since 2026-11-07, by the owner's choice:** waiting for GitHub CI only slowed development. Both co-op workflows are
+disabled in the repository settings, not deleted, and the `coop` ruleset no longer requires `Co-op checks`. Local runs
+are the check: `python tools/coop/build.py` before a push, `python tools/coop/test_all.py` before a merge. To turn CI on
+again: `gh workflow enable "Co-op checks"`, `gh workflow enable "Co-op build"`, and add `Co-op checks` back as a required
+status check of the `coop` ruleset (`.github/rulesets/coop.json`). What the workflows do when on:
 
 | Workflow | File | Runs | Jobs |
 |---|---|---|---|
@@ -48,8 +52,8 @@ Nothing runs on `main`: upstream's own workflows are disabled (below), and ours 
 Upstream's workflows (`GenerateBuilds` in `main.yml`, and the `Linux`, `Windows`, `MacOS`, `Switch` validation
 workflows) are **disabled in the repository settings**, not deleted, so their files stay identical to upstream and
 upstream syncs do not conflict. `GenerateBuilds` built four platforms on every push to any branch, which is too much
-for a project with many contributors. Re-enable one for a release build with `gh workflow enable <name>`. Test builds
-come from `Co-op build` instead: a run whose tests of the build pass leaves `starship-coop-<id>-linux-x64` and
+for a project with many contributors. Re-enable one for a release build with `gh workflow enable <name>`. With CI on,
+test builds come from `Co-op build` instead: a run whose tests of the build pass leaves `starship-coop-<id>-linux-x64` and
 `-windows-x64` on its Actions page for 14 days, `<id>` being the id the game shows. They hold no ROM and no `sf64.o2r`;
 `starship.o2r` is in them because the game cannot start without it, packed from the tracked `port/` files. The owner
 accepted that, and a new file under `port/` stops `package.py` until someone has looked at it (NOTES.md, 2026-11-06,
@@ -109,7 +113,7 @@ git submodule update --init --recursive
 - `README.md`: keep ours. Upstream's README is linked from it.
 - `.gitignore`: keep both.
 - Bring the single-player audit up to date before the build: `build.py` runs `check.py`, which fails while the audit
-  is stale, and so does `Co-op checks`. Run `python tools/coop/sp_audit.py`. With no new site it rewrites
+  is stale. Run `python tools/coop/sp_audit.py`. With no new site it rewrites
   `docs/coop/audit/single-player.md`. A site the list does not have stops it: it writes nothing and names each new site
   with the row it would take its verdict from, or `no verdict row`. Read those sites, fix or add their rows in
   `docs/coop/audit/sp-verdicts.tsv`, then run `python tools/coop/sp_audit.py --accept`, which takes them in. That
