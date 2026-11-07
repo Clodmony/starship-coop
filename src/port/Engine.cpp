@@ -511,7 +511,8 @@ void GameEngine::ProcessGfxCommands(Gfx* commands) {
     int fps = target_fps;
     int original_fps = 60 / gVIsPerFrame;
 
-    // COOP: at test speed each game frame is drawn once; 1 without SF64_COOP_TEST_SPEED, see switches.h (#137)
+    // COOP: at test speed each game frame is drawn once, so interpolation does not run and such a test cannot see it. A
+    // stack underflow there corrupted the RNG seeds in Release (#141), so determinism.py keeps real pacing (#137).
     if (target_fps == 20 || original_fps > target_fps || CoopTestSwitches_Speed() > 1) {
         fps = original_fps;
     }
