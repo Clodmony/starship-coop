@@ -64,13 +64,13 @@ mutants.Runner.scenarios = lambda self, tests, label: ({t: "ok" for t in tests},
 sys.argv = ["mutants.py", "--out", str(mutants.FOLDER / "out")]
 sys.exit(mutants.main("test_all_test", lambda args: table))
 """
-# Notes when it started and ended, for the lanes.
+# Notes when it started and ended, for the lanes, in a file of its own: appends from several processes to one file can
+# overwrite each other on Windows and lose a line (#168).
 TIMED = """
 import sys, time
-with open(sys.argv[1], 'a') as out:
-    out.write(f'{sys.argv[2]} {time.monotonic()} ')
-    time.sleep(0.4)
-    out.write(f'{time.monotonic()}\\n')
+start = time.monotonic()
+time.sleep(0.4)
+open(sys.argv[1], 'w').write(f'{sys.argv[2]} {start} {time.monotonic()}\\n')
 """
 
 
@@ -182,16 +182,18 @@ def scenario_failed_not_run(bench):
 
 
 def scenario_lanes(bench):
-    times = bench.work / "times.txt"
-    plan = [step(f"serial-{i}", "serial", TIMED, times, "serial") for i in range(3)]
-    plan += [step(f"game-{i}", "game", TIMED, times, "game") for i in range(6)]
+    times = bench.work / "times"
+    times.mkdir()
+    names = [(f"serial-{i}", "serial") for i in range(3)] + [(f"game-{i}", "game") for i in range(6)]
+    plan = [step(name, lane, TIMED, times / f"{name}.txt", lane) for name, lane in names]
     code, output = bench.run(plan, "--lanes", 2)
     want_result(code, output, 0, "PASS, 10/10 steps ok")
+    lines = [(times / f"{name}.txt").read_text(encoding="utf-8").split() for name, _ in names]
+    want(all(len(fields) == 3 for fields in lines), f"a step did not note its times: {lines!r}")
 
     def most_at_once(lanes):
         points = []
-        for line in times.read_text(encoding="utf-8").splitlines():
-            lane, start, end = line.split()
+        for lane, start, end in lines:
             if lane in lanes:
                 points += [(float(start), 1), (float(end), -1)]
         running = peak = 0
