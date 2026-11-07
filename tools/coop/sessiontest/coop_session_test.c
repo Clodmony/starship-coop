@@ -6,7 +6,7 @@
 //       before the welcome, three clients picking characters and starting a level. Then the session on a scripted
 //       transport: every failure and time-out on demand, to the millisecond. Prints one line, exits 0 on PASS.
 //   coop_session_test host --port-file F [--clients N] [--players N] [identity options] [--out FILE] [--max-seconds S]
-//                          [--eager N] [--start-level N] [--start-with N]
+//                          [--eager N] [--start-level N] [--start-with N] [--any-platform 1]
 //   coop_session_test client --connect HOST:PORT [--pick NAME]... [--players N] [identity options] [--out FILE]
 //                            [--max-seconds S] [--eager N] [--pick-delay-ms N] [--wait-level 1]
 //       Real processes over UDP. Each writes what happened as JSON. --eager sends N game messages straight into the
@@ -15,7 +15,8 @@
 //       the next one after each refusal. With --players a client stays until the first N players all hold a
 //       character, and the JSON has that roster. --pick-delay-ms waits that long before each pick. --start-level has
 //       the host try to start that level on every loop once --start-with clients (default: all of them) have joined,
-//       and count the tries that fail. --wait-level has a client stay until a level has started.
+//       and count the tries that fail. --wait-level has a client stay until a level has started. --any-platform is
+//       the test switch of CoopSession_AnyPlatform.
 //
 // Identity options: --build TEXT --platform TEXT --rom HEX (repeat for several archives) --cvar NAME=VALUE (repeat).
 // Defaults: build "test-build", this machine's platform, ROM US 1.0, every CVar at its default.
@@ -454,6 +455,14 @@ static void Sim_Run(const Setup* in, Outcome* out) {
     CoopSession_Close(host);
 }
 
+// What Run_Pair expects the host to refuse, apart from the session's own idea of it.
+static uint32_t sRefuses = COOP_ID_DIFF_REFUSE;
+
+static void Set_AnyPlatform(bool on) {
+    CoopSession_AnyPlatform(on);
+    sRefuses = on ? COOP_ID_DIFF_BUILD | COOP_ID_DIFF_ROM | COOP_ID_DIFF_CVARS : COOP_ID_DIFF_REFUSE;
+}
+
 static void Run_Pair(const char* name, const CoopIdentity* host, const CoopIdentity* client, uint32_t loss,
                      uint64_t seed, Outcome* out) {
     Setup s;
@@ -467,7 +476,7 @@ static void Run_Pair(const char* name, const CoopIdentity* host, const CoopIdent
     s.latencyMs = loss ? 40 : 5;
     s.seed = seed;
     // In a run that ends in a refusal, nothing may get through at all. A match may let the last ones in.
-    s.eager = (CoopIdentity_Compare(host, client) & COOP_ID_DIFF_REFUSE) != 0;
+    s.eager = (CoopIdentity_Compare(host, client) & sRefuses) != 0;
     Sim_Run(&s, out);
 }
 
@@ -573,13 +582,25 @@ static void Sim_Mismatches(void) {
     snprintf(b.platform, sizeof(b.platform), "Linux x86-64 GCC 13.2");
     snprintf(a.platform, sizeof(a.platform), "Windows x86-64 MSVC 1944");
     Run_Pair("platform", &a, &b, 0, 9, &o);
-    Check_Joined("platform", &o, COOP_ID_DIFF_PLATFORM, false);
-    EXPECT(strstr(o.client[0].text, "Warning: host runs Windows x86-64 MSVC 1944, joining player runs Linux") != NULL,
-           "platform", "no platform warning");
+    Check_Refused("platform", &o, COOP_ID_DIFF_PLATFORM,
+                  "Different platforms: host Windows x86-64 MSVC 1944, joining player Linux x86-64 GCC 13.2.");
 
     snprintf(b.build, sizeof(b.build), "other-build");
     Run_Pair("platform_build", &a, &b, 0, 10, &o);
-    Check_Refused("platform_build", &o, COOP_ID_DIFF_BUILD | COOP_ID_DIFF_PLATFORM, "Warning: host runs");
+    Check_Refused("platform_build", &o, COOP_ID_DIFF_BUILD | COOP_ID_DIFF_PLATFORM, "Different platforms: host");
+
+    // The test switch passes a difference in platform alone, and both players read it. Off again, it refuses again.
+    Set_AnyPlatform(true);
+    Run_Pair("switch_build", &a, &b, 0, 11, &o);
+    Check_Refused("switch_build", &o, COOP_ID_DIFF_BUILD | COOP_ID_DIFF_PLATFORM, "Different platforms: host");
+    snprintf(b.build, sizeof(b.build), "%s", a.build);
+    Run_Pair("switch", &a, &b, 0, 12, &o);
+    Check_Joined("switch", &o, COOP_ID_DIFF_PLATFORM, false);
+    EXPECT(strstr(o.client[0].text, "Different platforms: host Windows x86-64 MSVC 1944, joining player Linux") != NULL,
+           "switch", "both players should read what differs");
+    Set_AnyPlatform(false);
+    Run_Pair("switch_off", &a, &b, 0, 13, &o);
+    Check_Refused("switch_off", &o, COOP_ID_DIFF_PLATFORM, "Different platforms: host");
 }
 
 // The outcome must not depend on the link: a refusal arrives through loss too, and so does a welcome. The one limit
@@ -1685,6 +1706,7 @@ static void Script_ClientRefused(void) {
         const char* needle;
     } cases[] = {
         { COOP_ID_DIFF_BUILD, "Different game builds: host other-build, joining player test-build" },
+        { COOP_ID_DIFF_PLATFORM, "Different platforms: host " },
         { COOP_SESSION_REFUSE_MALFORMED, "could not read this game's handshake" },
         { 0, "did not finish in time" },
         // All four bytes count: bit 2 is a reason, and the others are not ours to drop.
@@ -1776,8 +1798,8 @@ static void Script_ClientJoined(void) {
         Drain(s, SCRIPT_T0 + 1, &side);
         EXPECT(side.joined == 1 && side.playerIndex == player, name, "the client did not take its player index");
         EXPECT(side.diff == COOP_ID_DIFF_PLATFORM, name, "the client did not compare the host's identity");
-        EXPECT(strstr(side.text, "Warning: host runs Other platform, joining player runs") != NULL, name,
-               "wrong warning");
+        EXPECT(strstr(side.text, "Different platforms: host Other platform, joining player ") != NULL, name,
+               "wrong text");
         seen = CoopSession_PeerIdentity(s, 0);
         EXPECT(seen != NULL && CoopIdentity_Compare(seen, &host) == 0, name, "the host's identity is wrong");
         EXPECT(CoopSession_PeerIdentity(s, 1) == NULL, name, "a client has one peer");
@@ -3423,7 +3445,7 @@ static int Sim_Main(void) {
     dropped = Sim_Lossy(40);
     dropped += Sim_CharactersLossy(20);
     dropped += Sim_LevelStartLossy(20);
-    printf("sim: PASS identity, 12 mismatch cases, two clients, broken, silent and raw peers, scripted transport, "
+    printf("sim: PASS identity, 15 mismatch cases, two clients, broken, silent and raw peers, scripted transport, "
            "characters, level start, 120 lossy runs (dropped %u datagrams)\n",
            (unsigned) dropped);
     return 0;
@@ -3748,6 +3770,8 @@ int main(int argc, char** argv) {
             o.maxSeconds = (uint32_t) atoi(value);
         } else if (strcmp(key, "--eager") == 0) {
             o.eager = (uint32_t) atoi(value);
+        } else if (strcmp(key, "--any-platform") == 0) {
+            CoopSession_AnyPlatform(atoi(value) != 0);
         } else if (strcmp(key, "--players") == 0) {
             o.players = (uint32_t) atoi(value);
         } else if (strcmp(key, "--pick-delay-ms") == 0) {

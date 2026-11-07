@@ -1,7 +1,7 @@
 # 0002: Sync model: lockstep or host authority
 
-- Status: Proposed
-- Date: 2026-11-01, outcome proposed 2026-11-06
+- Status: Accepted
+- Date: 2026-11-01, outcome proposed 2026-11-06, accepted by the owner 2026-11-07
 - Issue: #2 (WP-02, determinism spike)
 
 ## Context
@@ -16,13 +16,14 @@ Observed (see DESIGN.md section 2 for sources):
 - Randomness comes from `Rand_ZeroOne`, seeded from the clock at boot, with a Linux/Switch-only re-seed from the clock
   when a seed hits 0.
 
-WP-02 asks whether the simulation is deterministic given the same seeds and inputs. What follows is what is known so
-far. Run details are in NOTES.md, under the issue each row names.
+WP-02 asks whether the simulation is deterministic given the same seeds and inputs. What follows is what was known
+when the owner decided. Run details are in NOTES.md, under the issue each row names.
 
 ### Measured
 
-Every run is one game process without transport, ROM US 1.0, drawing player 0. "2 players" means two `Player` structs
-in that one process, both fed from one replay file. Each row compares runs of one build on one PC.
+Every run is one game process without transport, ROM US 1.0. "2 players" means two `Player` structs in that one
+process, both fed from one replay file. Each row compares runs on one PC, of one build unless it says otherwise, drawing
+player 0 unless it says otherwise.
 
 | Build | Input | Hash | Result | Source |
 |---|---|---|---|---|
@@ -30,6 +31,10 @@ in that one process, both fed from one replay file. Each row compares runs of on
 | Linux, GCC, Debug | By rule: Corneria, debug jump to all-range. 1 and 2 players, 5800 frames | With #53 and #67 | `hash_check.py run`: two runs equal on every frame | #67, `14a353d2` |
 | Linux, GCC, Debug | By rule: rail section into all-range, with a player going down and a restart. 2 players, 10500 frames | With #53 | Two runs equal on every frame | #10, `e3aaaa4a` |
 | Linux, GCC, Debug | By rule: L to level complete. 2 players, 12007 frames | With #53 | Two runs equal on every frame both logs hold | #53, `47a90af5` |
+| Linux, GCC, Debug | By rule: rails, and all-range. 2 players, 10500 and 8000 frames, drawing player 0 and player 1 | With #53 and #67 | `hash_check.py views`: the two equal on every frame, total and all 12 regions, the cameras apart | #96, `66df1cac` |
+| Linux, GCC, Debug | Pilot's recording: all of Corneria from level start to the map, no debug switch. 2 players, 14384 frames | With #53 and #67 | `full_level.py`: two runs equal on every frame, replay `PASS` | #142, `dab18fc5` |
+| Linux, GCC, Release and Debug | By rule: rails, and all-range. 2 players, 10500 and 8000 frames | With #53 and #67 | `hash_check.py builds`: two Release runs, and Debug against Release, equal on every frame | #141, `57db0c76` |
+| Linux, GCC, Release | By rule: the same two. 30, 60, 120, 144 and 360 fps | With #53 and #67 | `hash_check.py rates`: all five equal on every frame, each with the draws its rate asks for | #141, `57db0c76` |
 
 The six Windows variants ran at once: the defaults again, OpenGL, window size and frame pacing, two fixed audio sample
 counts, and C runtime math without FMA3.
@@ -38,66 +43,80 @@ Observed, the hash:
 
 - Two-player runs before #53 did not hash player 2. No run before #67 hashed the 13 per-player arrays, the co-op slots
   or the 6 team arrays, and a single-player log still leaves those out. So in rows 1, 3 and 4 a difference there shows
-  only once it reaches something hashed. Only row 2, with 2 players, covers all of it.
+  only once it reaches something hashed. Row 2 and the rows after row 4, with 2 players, cover all of it.
 - `hash_check.py probe` shows that the hash can see a value, not what the value was in these runs.
+- A hash on one PC only sees a stray write that lands on hashed memory. #141's write was found because GCC at `-O2` put
+  the RNG seeds under `sInterpolationMatrixStack`. In a Debug build the same write hit unused memory and no hash showed
+  it, and a different compiler lays memory out differently.
 
 Observed, the handshake:
 
-- A different build, ROM or simulation CVar refuses the connection. A different platform only warns
-  (`CoopIdentity_Compare`, `src/port/coop/session/identity.c:78`, PROTOCOL.md rule 2). The owner's note on #55 keeps it
-  that way for now: revisit when this record is accepted, before WP-22 (#20) relies on it.
+- A different build, ROM or simulation CVar refused the connection. A different platform only warned, as the owner
+  decided on #55, to be revisited when this record was accepted, before WP-22 (#20) relies on it. It refuses now, see
+  "Platform rule" under Decision.
 - The build is the git commit (`tools/coop/cmake/coop_build_id.cmake`), the platform is OS, CPU and compiler with its
-  version (`CoopIdentity_Platform`, `identity.c:12`). Neither names the build type, so a Debug and a Release build of
-  one commit match. Read, not run.
+  version (`CoopIdentity_Platform`, `src/port/coop/session/identity.c:12`). Neither names the build type, so a Debug
+  and a Release build of one commit match. Read, not run. #141's runs give no reason to tell them apart: the two
+  computed the same game.
 
-Observed by reading, not run (#96, open and being worked on, so its result may change this record):
+Observed by running (#96, NOTES.md 2026-11-06), the camera drawn:
 
-- Draw code writes state that is hashed, and some of it the simulation reads: `iwork[24]`
-  (`src/engine/fox_edisplay.c:1283`, read by the all-range AI at `src/engine/fox_360.c:1233`),
-  `lockOnTimers[gPlayerNum]` (`src/engine/fox_edisplay.c:1266`), `sfxSource`, and `gRadioState` (`Radio_Draw`, called at
-  `src/engine/fox_game.c:569`, read by AI code at `src/engine/fox_360.c:1705`).
-- Per-player arrays are written by `gPlayerNum` outside the player loops, where it is the local player
-  (`src/engine/fox_hud.c:1089`, `:3456-3457`, `src/engine/fox_play.c:4932-4935`, set at `:7052` and `:7069`).
-- Every client draws player 0 today, because `CoopPlayers_LocalIndex` returns 0 (`src/port/coop/game/players.c:59-61`).
-  The design needs one camera per client (DESIGN.md section 3, WP-28).
+- Before its fix, one replay drawn with player 0 and with player 1 split one frame after Corneria starts, and the RNG
+  region differed later, so the two clients no longer played the same game. Draw code frees what it does not see, holds
+  game logic and feeds boss AI.
+- After it, the two are equal on every frame in the rows above, and every client runs the draw code of every object
+  (`src/port/coop/game/view.h`). Other levels are #129. #142's whole level with player 1 drawn, once and by hand: hash
+  log equal to player 0's on all 14384 frames, the cameras apart on 79 of 112 sampled frames.
+
+Observed by running (#141, NOTES.md 2026-11-07), a Release build:
+
+- Two Release runs of one build differed. Frame interpolation wrote below its own matrix stack, onto the RNG seeds, and
+  the clock re-seed in `Rand_ZeroOne` then made each run its own. Upstream has the bug. With the fix in
+  `src/port/interpolation/FrameInterpolation.cpp`, the last two rows above hold.
+- Before that fix, 30 against 60 fps differed too, so a client's refresh rate changed the game.
 
 Derived:
 
 - On one PC with one build, the hashed state followed from inputs and seeds in every run above, all of them in
   Corneria. The Windows variants show that start time, CPU load, graphics backend, frame pacing and audio timing did
   not change it.
-- **No run above covers the setup co-op needs.** All of them draw player 0. With one camera per client the hash will
-  differ at the least, and where a value reaches the AI the simulation itself can diverge (#96). That goes against the
-  Derived point in DESIGN.md section 2 that logic ticks apart from rendering. It is a risk to A and C, not to B, where
-  only the host's simulation counts.
-- The clock re-seed in `Rand_ZeroOne` did not get in the way: a non-zero seed never reaches 0, because the moduli are
-  prime (`src/sys/sys_math.c:24-31`, #53). It is still a clock read inside the simulation on Linux, and it fires if a
-  seed starts at 0 or something writes one. Upstream's comment says something does; nobody has looked into what.
-- Clients with a different past differ from their first co-op frame: no level start clears `gTeamDamage` or
-  `gTeamEventActorIndex` (#67).
+- Rendering is not apart from the simulation: draw code runs game logic (#96), and a stray write in the draw path did
+  reach the RNG seeds (#141). Neither parts two clients in the runs above, but the risk stays. It is a risk to A and C,
+  not to B, where only the host's simulation counts.
+- `gInterpolationFPS` is local and may differ between clients. It does not go into the handshake, and `hash_check.py
+  rates` is what shows that it may: all five rates computed the same game on Linux Release, in Corneria.
+- The clock re-seed in `Rand_ZeroOne` no longer fires in these runs: a non-zero seed never reaches 0, because the moduli
+  are prime (`src/sys/sys_math.c:24-31`, #53). It is still a clock read inside the simulation on Linux, and it fires if a
+  seed starts at 0 or something writes one. #141 found what wrote one on GCC builds, the write above, which is what
+  upstream's comment means by something corrupting the seeds, at least there. Whether anything else does is unknown.
+- Clients with a different past would differ from their first co-op frame: no level start clears `gTeamDamage` or
+  `gTeamEventActorIndex` (#67). The host's level start now carries them, and the seeds
+  (`src/port/coop/game/level_start.c`, #22).
 
 Guess:
 
 - A second PC with the same binary gives the same hashes: it changes the CPU and the drivers, and the no-FMA3 and
   backend variants changed nothing. No second PC was involved.
 - Windows and Linux differ somewhere: each uses its own C runtime's `sinf` and `cosf` (`__sinf`, `__cosf`,
-  `src/port/Engine.cpp:668-674`).
+  `src/port/Engine.cpp:676-683`).
 - A difference found in another level would be a bug to fix, not a reason to leave lockstep.
 
 Unknown, because it was not run:
 
-- **Two machines.** No run on two machines with the same build. That half of #2 stays open.
-- **Two clients.** No two game clients have shared state, and no sync message exists yet (the range 0x0040-0x007F in
-  PROTOCOL.md is empty). So the input delay at real latency is unknown too.
+- **Two machines.** No run on two machines with the same build. That half of #2 stays open, and it is a named condition
+  below.
+- **Two clients.** Two and three game clients have started one level together and stayed equal with no input after it
+  (`join_test.py`, #22). None has played together: no sync message exists yet (the range 0x0040-0x007F in PROTOCOL.md is
+  empty). So the input delay at real latency is unknown too.
 - **Other levels.** Only Corneria: no other all-range level, no Landmaster or Blue Marine, no space level, no Andross.
-  No Linux row above is a whole level played to its end without a debug switch.
-- **Other builds.** Debug only, on both OSes: no Release build has a recorded game run. One compiler per OS: MSVC on
-  Windows, GCC on Linux. `determinism.py` has a recorded result on Windows only.
+- **Other builds.** No Windows Release run: `hash_check.py builds` and `rates` have run on Linux only (#145), and MSVC
+  lays memory out its own way, so a stray write there can land somewhere else. A named condition below. One compiler
+  per OS: MSVC on Windows, GCC on Linux. `determinism.py` has a recorded result on Windows only.
 - **Windows against Linux.** Never compared: the runs above used different input. Whether two hash logs can be compared
   at all is open too, because the hash runs over raw bytes, padding included
   (`src/port/coop/sync/state_hash.c:3`, `:16`).
-- **Whether #96 is a real divergence,** how soon it shows, and how many more draw-path writes exist. Its list comes from
-  a sweep of per-player state, not of draw code.
+- **Stray writes nothing hashes.** Whether another one exists: a hash cannot see it, on one PC or on two. #145 lists the
+  stray reads and writes #141 came across.
 
 ## Options
 
@@ -129,13 +148,12 @@ rest as puppets.
 
 Lockstep as in A, plus the host sending a full snapshot when hashes diverge. Same-build only.
 
-## Proposed decision
+## Decision
 
-Choose **A**, deterministic lockstep, for v1, provided #96 leaves it standing:
+**A, deterministic lockstep, for v1.** The owner accepted this on 2026-11-07, on #2.
 
 - Every client runs the whole simulation. Only inputs travel, plus a state hash per frame to detect desyncs.
-- A session needs the same build, ROM and simulation CVars, which the handshake already enforces, and the same
-  platform, which it does not enforce yet (see "Platform rule").
+- A session needs the same build, ROM, simulation CVars and platform, and the handshake enforces all four.
 - C stays the fallback for rare desyncs, as the first draft said. It is not part of WP-22: it needs a snapshot format
   and fragmentation (decision 0004), and no desync has been seen that calls for it.
 
@@ -143,63 +161,72 @@ Why A: every run so far points that way, and nothing measured calls for B. B's c
 that holds across builds or code per actor for 406 object ids, plus client-side prediction. A's open risks are named
 above, and each has a test that can show it.
 
-This proposal rests on one-PC evidence. The first draft of this record set a stricter rule, kept here so the change
-stays visible: "If two runs with the same seeds and inputs stay identical over a full level on one machine and between
-two machines with the same build: choose **A** for v1, same build and same platform required, with C as the fallback
-for rare desyncs. Otherwise choose **B**." The one-machine half is met on Windows, in Corneria, with the hash of that
-time. The two-machine half is not met.
+### What it rests on
+
+This decision rests on one-PC evidence. All three points the proposal asked for are met on Linux with GCC, in Corneria:
+
+1. **#96 left A standing.** One replay played with local index 0 and with index 1 is equal on every frame, the writes
+   have their verdicts, and DESIGN.md section 2 says what was found. Other levels are #129.
+2. **A full level on the current hash.** Two runs of one build through all of Corneria with 2 players, no debug switch,
+   equal on every frame: `tools/coop/full_level.py` (#142, PR #143).
+3. **A Release build.** Two Release runs, and Debug against Release on the same commit, equal on every frame:
+   `hash_check.py builds`, and `rates` for the frame rate (#141, PR #144). They differed at first, and the cause was
+   found and removed. The two computed the same game, so the build type stays out of the identity.
+
+### Conditions before a first public release
+
+1. **The two-machine run:** the same build on two machines, equal on every frame. #2 stays open for it.
+2. **Windows Release:** `hash_check.py builds` and `rates` run there (#145). The fix of #141 removes that mechanism on
+   Windows too, but nobody has run it, and a different compiler lays memory out differently.
+
+A difference that cannot be found and removed reopens the choice through a new record. WP-22 does not wait for these:
+it needs the one-PC half of WP-02.
+
+Not conditions, because they limit A rather than rule it out: other levels, which no test has reached yet, a second
+compiler on one OS, Windows against Linux, and real latency. Each stays a stated gap until its work package runs it.
 
 ### Platform rule
 
 A needs every client to compute the same game, and no run has compared two platforms. So the same platform is a
-requirement of v1, and cross-platform play stays under "Later" in ROADMAP.md. While this record is Proposed nothing
-changes: a platform difference keeps only warning, as the owner decided on #55.
+requirement of v1, and cross-platform play stays under "Later" in ROADMAP.md.
 
-Proposed for acceptance, and the owner's to decide: a platform difference refuses the connection, like a different
-build, unless a comparison has shown by then that the two platforms compute the same game. Under A a warning lets two
-players start a session that may desync with nothing they can do about it.
+A platform difference refuses the connection, like a different build, unless a comparison has shown by then that the
+two platforms compute the same game. This replaces the warning the owner decided on #55: under A a warning lets two
+players start a session that may desync with nothing they can do about it. The platform is OS, CPU and compiler with its
+version, compared as text.
 
-PROTOCOL.md gives one reason for the warning: the first two-PC tests run Windows against Linux. A refusal would not
+A test switch may pass the refusal, for a real cross-platform test: `SF64_COOP_TEST_ANY_PLATFORM` on the host
+(`src/port/coop/test/switches.h`). A difference in anything else still refuses.
+
+PROTOCOL.md gave one reason for the old warning: the first two-PC tests run Windows against Linux. The refusal does not
 block that comparison, which needs two hash logs and no session: input by rule is the same file on both
-(`write_generated_replay`, `tools/coop/hash_check.py:127`; not tried across OSes). Only a real session across platforms
-would need a test switch past the refusal.
+(`write_generated_replay`, `tools/coop/hash_check.py`; not tried across OSes). Only a real session across platforms needs
+the switch.
 
-### What would make this record acceptable
+### What would change this decision
 
-All of this runs on one PC, which fits the owner's preference at this stage:
-
-1. **#96 has a result that leaves A standing.** Its test plays one replay with local index 0 and with index 1, and any
-   difference in the hash logs has a written reason. Every write has its verdict, and DESIGN.md section 2 says what
-   was found.
-2. **A full level on the current hash.** Two runs of one build through all of Corneria with 2 players, no debug switch,
-   equal on every frame. The Windows run is older than #53 and #67, and the Linux runs stop short of that.
-3. **A Release build.** Two Release runs equal on every frame, and one comparison of Debug against Release on the same
-   commit. CI builds Release (`.github/workflows/coop-build.yml:89`), and so does a package (`docs/BUILDING.md:33`). If
-   the two differ, the build type goes into the identity, so that the handshake tells them apart.
-
-The **two-machine run** is not on that list. That is a change from the first draft, so it is the owner's call:
-
-- Recommended: accept on the three points above and keep the two-machine run as a named condition of A. #2 stays open
-  for it, it has to pass before a first public release, and a difference that cannot be found and removed reopens the
-  choice through a new record. WP-22 can then start once its other needs are met.
-- Otherwise: the first draft's rule stands, this record stays Proposed until a two-machine run, and WP-22 may only
-  prototype against it (`decisions/README.md`).
-
-Not needed to accept, because they limit A rather than rule it out: other levels, which no test has reached yet, a
-second compiler, Windows against Linux, and real latency. Each stays a stated gap until its work package runs it.
-
-### What would change this proposal
-
-- #96 shows that the simulation diverges by camera, and the writes cannot leave the draw path without a large change
-  to game code: A with one camera per client is in doubt, and B has to be weighed again.
+- A level beyond Corneria diverges by camera, and the writes cannot leave the draw path without a large change to game
+  code (#129): A with one camera per client is in doubt, and B has to be weighed again.
 - Two runs of one build differ, on one PC or on two machines, and the cause cannot be found and removed: **B**, as the
   first draft said.
 - Windows and Linux differ: nothing changes, that is what the same-platform term is for.
 - Input delay is not playable at real latency: rollback, under "Later" in ROADMAP.md, comes before B.
 
-## Consequences
+### How the rule changed
 
-If accepted as proposed.
+The first draft of this record set a stricter rule, kept here so the change stays visible: "If two runs with the same
+seeds and inputs stay identical over a full level on one machine and between two machines with the same build: choose
+**A** for v1, same build and same platform required, with C as the fallback for rare desyncs. Otherwise choose **B**."
+
+The proposal of 2026-11-06 chose A provided #96 left it standing. It named the three one-PC points above as what would
+make the record acceptable, and took the two-machine run off that list, as a change from the first draft for the owner
+to call: accept on the three points and keep the run as a named condition, or keep the first draft's rule, with the
+record Proposed until a two-machine run and WP-22 only prototyping against it.
+
+The owner took the first route on 2026-11-07, added Windows Release as a second named condition after #141, and decided
+the platform rule, which the proposal had left open.
+
+## Consequences
 
 Easier:
 
@@ -212,21 +239,20 @@ Harder:
 - Every client has to compute the same game bit for bit. One missed write is a desync of the session, not a glitch on
   one actor. Nothing the simulation touches may read a clock, use unsynced randomness or depend on the local player.
 - Each frame waits for every player's input, so one late message stalls everyone (decision 0004).
-- All players need the same build on the same platform, so they update together and cross-platform play waits.
+- All players need the same build on the same platform, so they update together and cross-platform play waits. Two
+  players who build one commit themselves need the same compiler version too.
 - Until C exists, a desync has no repair beyond its report. What a session does after one is open (WP-23).
 - Late join and reconnect need a state transfer, which stays under "Later" in ROADMAP.md.
 
 Next:
 
-- #96 before WP-28 (#30) changes `CoopPlayers_LocalIndex`.
 - WP-22 (#20): input exchange, frame-stamped, ids from 0x0040-0x007F.
 - WP-23 (#21): compare hashes between clients. Until then every gap under "Unknown" stays silent in play.
-- WP-24 (#22): a session starts after boot (#3), the host's seeds reach every client, none of them 0, and every client
-  starts from the same values, including those no level start clears (#67).
-- `Rand_ZeroOne`: the re-seed fixed or disabled in co-op, marked `// COOP:` (`src/sys/sys_math.c:24-28`).
+- The two conditions above, before a first public release: #2 and #145.
+- `Rand_ZeroOne`: the re-seed fixed or disabled in co-op, marked `// COOP:` (`src/sys/sys_math.c:24-28`). It tests
+  `sRandSeed2` twice and never `sRandSeed3`, so a seed 3 of 0 is not caught (#145).
 - The CVar table from WP-21: nothing has tested it against state hashes yet (DESIGN.md section 2).
 
-On acceptance these change with the record: `decisions/README.md`, DESIGN.md sections 2 and 5, and ROADMAP.md, where
-WP-22 needs WP-02 (only its one-PC half, on the recommended route). If the platform rule changes: PROTOCOL.md rule 2,
-`COOP_ID_DIFF_PLATFORM` and `COOP_ID_DIFF_REFUSE` with the comment at `src/port/coop/session/identity.h:4-5`, and the
-`platform` scenario in `tools/coop/session_test.py:191`.
+These changed with this record: `decisions/README.md`, DESIGN.md sections 2 and 5, ROADMAP.md, where WP-22 needs only
+the one-PC half of WP-02, PROTOCOL.md rule 2, `COOP_ID_DIFF_PLATFORM` and `COOP_ID_DIFF_REFUSE` with the comment in
+`src/port/coop/session/identity.h`, and the `platform` scenario in `tools/coop/session_test.py`.

@@ -33,6 +33,7 @@ EAGER = 3  # game messages each side pushes past the session in a refused handsh
 REFUSE_STARTED = 1 << 9  # COOP_SESSION_REFUSE_STARTED
 LEVEL, PHASE = 5, 1  # what the bots start: TEST_PHASE in coop_session_test.c
 LEVEL_VALUES = 87  # COOP_LEVEL_START_VALUES
+WINDOWS, LINUX = "Windows x86-64 MSVC 1944", "Linux x86-64 GCC 13.2"  # two platforms, as CoopIdentity_Platform writes
 
 
 def pair(run, host_args=(), client_args=(), via=None, seconds=60, seed=SEED):
@@ -220,9 +221,13 @@ def sc_cvar(run, args):
 
 
 def sc_platform(run, args):
-    text = joined(run, ["--platform", "Windows x86-64 MSVC 1944"], ["--platform", "Linux x86-64 GCC 13.2"],
-                  DIFF_PLATFORM)
-    expect(text.startswith("Warning: host runs Windows"), f"no platform warning: {text!r}")
+    return refused(run, ["--platform", WINDOWS], ["--platform", LINUX], DIFF_PLATFORM,
+                   f"Different platforms: host {WINDOWS}, joining player {LINUX}")
+
+
+def sc_platform_switch(run, args):
+    text = joined(run, ["--platform", WINDOWS, "--any-platform", 1], ["--platform", LINUX], DIFF_PLATFORM)
+    expect(text.startswith(f"Different platforms: host {WINDOWS}"), f"no platform text: {text!r}")
     return text
 
 
@@ -318,6 +323,7 @@ SCENARIOS = {
     "rom": sc_rom,
     "cvar": sc_cvar,
     "platform": sc_platform,
+    "platform_switch": sc_platform_switch,
     "two_clients": sc_two_clients,
     "characters": sc_characters,
     "taken": sc_taken,

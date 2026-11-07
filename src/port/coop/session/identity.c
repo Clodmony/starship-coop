@@ -355,7 +355,9 @@ size_t CoopIdentity_Describe(uint32_t diff, const CoopIdentity* host, const Coop
         }
     }
     if (diff & COOP_ID_DIFF_PLATFORM) {
-        T_Add(&t, "Warning: host runs %s, joining player runs %s. Not tested yet: the two games may drift apart.\n",
+        T_Add(&t,
+              "Different platforms: host %s, joining player %s. Two platforms may compute different games, so both "
+              "need the same one.\n",
               host->platform, joiner->platform);
     }
     // No trailing newline.
