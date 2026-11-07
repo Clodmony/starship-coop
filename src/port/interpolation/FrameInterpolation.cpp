@@ -307,12 +307,21 @@ struct InterpolateCtx {
                         case Op::Marker:
                             break;
 
+                        // COOP: a Push and its Pop can sit in different paths (Push before OpenChild, Pop before
+                        // CloseChild, as in Option_DrawMenuCard) and each only replays if the old frame has its own
+                        // match, so a new screen can replay more Pops than Pushes. Below the stack that writes over
+                        // whatever the linker put there: in a GCC Release build, the RNG seeds (#141). Nothing reads
+                        // this stack back, so stopping at its ends changes no matrix drawn.
                         case Op::MatrixPush:
-                            Matrix_Push(&gInterpolationMatrix);
+                            if (gInterpolationMatrix < std::end(sInterpolationMatrixStack) - 1) {
+                                Matrix_Push(&gInterpolationMatrix);
+                            }
                             break;
 
                         case Op::MatrixPop:
-                            Matrix_Pop(&gInterpolationMatrix);
+                            if (gInterpolationMatrix > sInterpolationMatrixStack) {
+                                Matrix_Pop(&gInterpolationMatrix);
+                            }
                             break;
 
                      // Unused on SF64
