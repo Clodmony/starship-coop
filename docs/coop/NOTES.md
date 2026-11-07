@@ -2925,6 +2925,44 @@ Unknown:
 - `gScenery360` is only hashed in `LEVELMODE_ALL_RANGE`; Andross allocates it mid-level
   (`src/overlays/ovl_i6/fox_andross.c:4055`), where it may not be hashed.
 
+### 2026-11-07, #2, decision 0002 accepted: what a platform refusal looks like
+
+Identity: ROM US 1.0, on commit `f4c2d778`, Linux, GCC, Debug, OpenGL on a software renderer, no window, one or two game
+clients over loopback, with `coop_session_test` as the other side of each. No two games: two games on one PC never
+differ in platform.
+
+Observed:
+
+- `python tools/coop/menu_test.py --game --only game_platform`, in a real game. The host's window reads `A player was
+  refused.`, then `Different platforms: host <platform>, joining player Other platform. Two platforms may compute
+  different games, so both need the same one.` It stays at `1 of 4 players`.
+- The joining player's window reads the same line with the sides the other way round, and goes back to `Not in a
+  session.`
+- `SF64_COOP_TEST_ANY_PLATFORM=1` reaches a plain game, with no replay: `CoopReplay_Init` runs the switches at boot
+  (`src/port/coop/test/replay.c:340`). The log has its `coop: test switch` line, the same client gets in, the window reads
+  `Player 2 joined.` and the same line, and the client's JOINED event holds bit 3.
+- Without it the host refuses that client, and with the old rule in `Host_Hello` the scenario fails at the client that
+  should have been refused. Both were run.
+- Old and new handshake against each other, `coop_session_test` built before and after the change. Two builds: reasons 9,
+  so bit 0 as well, and each side reads the build line. Same build id on both, which no two real builds have: reasons 8
+  alone, and the old client reads the text for a handshake that did not finish.
+
+Derived:
+
+- `COOP_PROTOCOL_VERSION` stays 4. No message layout changes: the hello, the welcome and the refusal hold what they held,
+  and bit 3 already had its meaning. What is new is bit 3 alone, and two builds that differ also differ in bit 0, so a
+  build with the old rule never meets it. A bump would only swap the handshake's text for "another version".
+- The platform is compared as text, compiler version included (`CoopIdentity_Platform`, `CoopIdentity_Compare`). So two
+  players who build one commit with two versions of GCC are refused. One package for everyone is not.
+- The switch is the host's alone, because only the host decides. A client needs nothing set, and reads what differs
+  either way, as it compares the host's identity on the welcome.
+
+Unknown:
+
+- A real session between two platforms: never run. The switch has only let in a bot that claims another platform.
+- How the text looks in the window: the driver reads the text, not the pixels. `TextWrapped` draws it
+  (`src/port/coop/ui/menu_window.cpp:65`).
+
 ### 2026-11-04, #2 (WP-02), determinism spike on one PC
 
 Identity: ROM US 1.0, branch `issue/2-determinism` on top of `e8c4e6a2` (#40), Windows 11, MSVC 19.44 (VS 2022 Build

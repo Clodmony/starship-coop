@@ -15,8 +15,8 @@ Work packages inside a milestone can run in parallel unless "needs" says otherwi
 
 ## Critical path
 
-WP-01 build → WP-03 replay + WP-04 state hash → **WP-02 determinism spike → decision 0002 (sync model)** → WP-22 sync
-→ two players finish Corneria online. The engine work (WP-10, WP-11, WP-12, WP-28) and the network work (WP-20,
+WP-01 build → WP-03 replay + WP-04 state hash → **WP-02 determinism spike → decision 0002 (sync model, accepted:
+lockstep)** → WP-22 sync → two players finish Corneria online. The engine work (WP-10, WP-11, WP-12, WP-28) and the network work (WP-20,
 WP-21) run in parallel with the spike; neither waits for the other.
 
 ## M0: Project and research
@@ -52,7 +52,7 @@ Two players on two PCs fly Corneria together, start to finish, with matching sta
 | WP-19 | [#17](https://github.com/Clodmony/starship-coop/issues/17) | Bosses, cutscenes, level intro and level complete with 2 players | engine | WP-11 | Corneria start to finish, both players, scripted |
 | WP-20 | [#18](https://github.com/Clodmony/starship-coop/issues/18) | Transport interface + SDL2_net implementation behind `USE_NETWORKING` | net | WP-01 | Two processes exchange framed messages; loss and lag tested |
 | WP-21 | [#19](https://github.com/Clodmony/starship-coop/issues/19) | Session: host, join, handshake (build id, ROM version, sim CVars) | net | WP-20 | Mismatches are refused with a clear message |
-| WP-22 | [#20](https://github.com/Clodmony/starship-coop/issues/20) | Sync model implementation per decision 0002 | sync | WP-02, WP-10, WP-11, WP-12, WP-14 | Two clients finish Corneria with matching state hashes |
+| WP-22 | [#20](https://github.com/Clodmony/starship-coop/issues/20) | Sync model implementation per decision 0002 | sync | WP-02 (its one-PC half), WP-10, WP-11, WP-12, WP-14 | Two clients finish Corneria with matching state hashes |
 | WP-23 | [#21](https://github.com/Clodmony/starship-coop/issues/21) | Desync detection and report: compare hashes, dump the first diverging frame | sync, test | WP-04, WP-22 | A forced desync is caught and reported with the frame number |
 | WP-24 | [#22](https://github.com/Clodmony/starship-coop/issues/22) | Join flow: lobby to level start for all players together | net, ui | WP-21, WP-34 | Both players start the same level with the same seed and their chosen characters; a character already taken is refused |
 | WP-25 | [#23](https://github.com/Clodmony/starship-coop/issues/23) | ImGui co-op menu: host, join, status, ping | ui | WP-21, WP-34 | Usable without editing config files; a character already taken cannot be chosen |
@@ -68,6 +68,10 @@ Two players on two PCs fly Corneria together, start to finish, with matching sta
 | WP-27 | [#25](https://github.com/Clodmony/starship-coop/issues/25) | Lag and loss testing with a chaos relay | test | WP-22 | Results with numbers in QA notes |
 
 ## M3: Release
+
+[Decision 0002](decisions/0002-sync-model.md) names two conditions before a first public release: the two-machine run
+([#2](https://github.com/Clodmony/starship-coop/issues/2)), and `hash_check.py builds` and `rates` on Windows Release
+([#145](https://github.com/Clodmony/starship-coop/issues/145)).
 
 | WP | Issue | Title | Area | Needs | Done when |
 |---|---|---|---|---|---|
@@ -86,6 +90,7 @@ Deferred work packages keep their issues, in the GitHub milestone "Later".
 | WP-15 | [#13](https://github.com/Clodmony/starship-coop/issues/13) | Local split screen: HUD per viewport | ui | WP-13 | Both HUDs drawn in their viewports |
 
 - Three and four players. Decision 0005 sets the rules, and versus mode already handles four `Player` structs.
-- Rollback instead of plain lockstep, if decision 0002 picks lockstep and input delay hurts.
-- Cross-platform play (Windows with Linux), if determinism holds across compilers.
+- Rollback instead of plain lockstep, if input delay hurts (decision 0002).
+- Cross-platform play (Windows with Linux), if determinism holds across compilers. Until a comparison shows that, a
+  platform difference refuses the connection (decision 0002).
 - Late join and reconnect.
