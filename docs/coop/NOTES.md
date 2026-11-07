@@ -412,6 +412,28 @@ Unknown:
 - A crash before `src/port/Engine.cpp:301` keeps upstream's path. The run with no driver above is the only such crash
   seen, and it ended by itself.
 
+### 2026-11-07, #156, a recording with --frames on Windows
+
+Observed (Windows 11, MSVC v143, Debug, US 1.0):
+
+- Before the fix (`origin/coop` at `b8ba3d28`): `replay.py record <file> --frames 120` printed
+  `replay: no report written (exit code 1)` and `FAILED`. A recording wrote its report only from its `atexit` handler
+  (`CoopReplay_OnExit`, `src/port/coop/test/replay.c`), and `stop_game` ends the game with `Popen.terminate`, on
+  Windows `TerminateProcess`. `stop_signal.c`, which turns a stop into a clean exit, is Linux only (#71 entry above).
+- After the fix: the same command printed `RECORDED` with `recorded_frames: 120`, and `replay.py play` of that file
+  `PASS`. `replay_test.py`: 32/34 scenarios; the two others (`exit-no-draw`, `version-no-draw`) end after 0 s in a
+  Linux-only tool (`exit_test.py` reads `signal.SIGQUIT`; `version_test.py` prints `version: Linux only`).
+
+Derived:
+
+- A report a tool needs must be written while the game runs, not at exit: on Windows a tool cannot end the game in a
+  way that runs exit handlers. Playback already did so (`CoopReplay_FinishPlayback`). Recording now does too when
+  `SF64_COOP_REPLAY_RECORD_FRAMES` gives the length, so the file holds exactly that many frames.
+
+Unknown:
+
+- The fix on Linux: not run there. The path is the same code on both systems.
+
 ### 2026-11-04, #1 (WP-01), Linux build
 
 Identity: ROM US 1.0 (SHA-1 `d8b1088520f7c5f81433292a9258c1184afa1457`, `config.yml:34`), commit `ba0781d7`, Linux,
