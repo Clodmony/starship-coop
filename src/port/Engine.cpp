@@ -47,6 +47,8 @@
 #include "port/coop/test/view_trace.h"   // COOP: what a client shows and hears, for tests (#30)
 #include "port/coop/test/stop_signal.h"  // COOP: clean exit on SIGTERM in test runs (#71)
 #include "port/coop/test/join_driver.h" // COOP: scripted join flow for tests (WP-24)
+#include "port/coop/test/lockstep_driver.h" // COOP: scripted input in a session, for tests (#20)
+#include "port/coop/sync/lockstep_game.h"   // COOP: frames in lockstep (#20)
 #include "port/coop/ui/menu_window.h"     // COOP: the co-op menu starts levels (#126)
 #include "port/coop/game/input_game.h"    // COOP: an input source per player (WP-14)
 
@@ -317,6 +319,8 @@ void GameEngine::Create() {
     CoopTrace_Init(); // COOP: no-op unless SF64_COOP_TRACE is set (WP-11)
     CoopViewTrace_Init(); // COOP: no-op unless SF64_COOP_VIEW_TRACE is set (#30)
     CoopJoinDriver_Init(); // COOP: no-op unless SF64_COOP_JOIN_* is set (WP-24)
+    CoopSyncGame_Init();   // COOP: does nothing until a session starts a level (#20)
+    CoopLockstepDriver_Init(); // COOP: no-op unless SF64_COOP_LOCKSTEP_* is set (#20)
     CoopUi::Listen();      // COOP: does nothing on a frame without a co-op session (#126)
     CoopInput_Init(); // COOP: does nothing until a co-op level starts (WP-14)
 }
@@ -345,7 +349,9 @@ void GameEngine::StartFrame() const {
             break;
         }
         case KbScancode::LUS_KB_F4: {
-            gNextGameState = GSTATE_BOOT;
+            if (!CoopSyncGame_IsOn()) { // COOP: one game cannot reset alone in a session (#20)
+                gNextGameState = GSTATE_BOOT;
+            }
             break;
         }
         default:

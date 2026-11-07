@@ -90,6 +90,8 @@ def all_steps():
         Step("menu", SERIAL, ["menu_test.py", "--game"], "both", "game"),
         Step("input", SERIAL, ["input_test.py"], "both", "game"),
         Step("join", SERIAL, ["join_test.py"], "exe", "game"),
+        Step("lockstep", SERIAL, ["lockstep_test.py"], "both", "game"),
+        Step("lockstep-full", SERIAL, ["lockstep_test.py", "--only", "full"], "both", "game"),
         Step("version", SERIAL, ["version_test.py"], "exe", "game", True),
         Step("net-asan", SERIAL, ["net_test.py", "--asan"], "build", "net", True),
         Step("session-asan", SERIAL, ["session_test.py", "--asan"], "build", "net", True),
@@ -99,6 +101,7 @@ def all_steps():
         Step("session-mutants-asan", SERIAL, ["session_mutants.py", "--asan"], "build", "net", True),
         Step("net-mutants", SERIAL, ["net_mutants.py"], "build", "net"),
         Step("net-mutants-asan", SERIAL, ["net_mutants.py", "--asan"], "build", "net", True),
+        Step("lockstep-mutants", SERIAL, ["lockstep_mutants.py"], "build", "net"),
         Step("steam-mutants", SERIAL, ["steam_mutants.py"], "build", "net"),
     ]
     # Longest first, so no lane is left with a long one at the end. exit-test goes last all the same: it waits on the

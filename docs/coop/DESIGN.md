@@ -43,6 +43,8 @@ Nothing in the online design may rule it out.
   called at boot (`src/engine/fox_game.c:58`). On Linux and Switch, `Rand_ZeroOne` re-runs `Rand_Init()` when a seed
   is 0 (a workaround marked `LTODO` in the code). That condition checks `sRandSeed2` twice and never `sRandSeed3`.
   What zeroed a seed on GCC builds was frame interpolation (NOTES.md, 2026-11-07, #141).
+  In co-op that re-seed is off, as the clock would part the clients (#20). Each game frame also has one audio frame, and
+  a frame held for input has none: audio frames on held frames parted the clients (NOTES.md, 2026-11-07, #20).
   A separate seeded generator exists: `Rand_SetSeed` / `Rand_ZeroOneSeeded`.
 - **The port has an event system** for hooking game code without editing it: `DEFINE_EVENT` / `CALL_EVENT` in
   `src/port/hooks/impl/EventSystem.h`, events in `src/port/hooks/list/` (`GamePreUpdateEvent`,

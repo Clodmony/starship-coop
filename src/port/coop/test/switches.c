@@ -13,6 +13,7 @@
 
 #include "port/coop/game/players.h"
 #include "port/coop/session/session.h"
+#include "port/coop/sync/lockstep_game.h"
 
 // Sample counts per audio update, chosen each update from the output device's fill level
 // (src/port/Engine.cpp:363-364, :387-388).
@@ -53,6 +54,22 @@ static int CoopTestSwitches_IsSet(const char* value) {
     return (value != NULL) && (value[0] != '\0') && (strcmp(value, "0") != 0);
 }
 
+void CoopTestSwitches_StartSeeds(int* values) {
+    const char* seeds = getenv("SF64_COOP_TEST_START_SEEDS");
+    char* at = (char*) seeds;
+    int i;
+
+    if (!CoopTestSwitches_IsSet(seeds)) {
+        return;
+    }
+    for (i = 0; i < 6; i++) {
+        values[i] = (int) strtol(at, &at, 10);
+        if (*at == ',') {
+            at++;
+        }
+    }
+}
+
 void CoopTestSwitches_Init(void) {
     const char* speed = getenv("SF64_COOP_TEST_SPEED");
     const char* noFma3 = getenv("SF64_COOP_TEST_NO_FMA3");
@@ -60,6 +77,7 @@ void CoopTestSwitches_Init(void) {
     const char* localIndex = getenv("SF64_COOP_TEST_LOCAL_INDEX");
     const char* noDraw = getenv("SF64_COOP_TEST_NO_DRAW");
     const char* anyPlatform = getenv("SF64_COOP_TEST_ANY_PLATFORM");
+    const char* noLockstep = getenv("SF64_COOP_TEST_NO_LOCKSTEP");
 
     if (CoopTestSwitches_IsSet(noDraw)) {
         sNoDraw = 1;
@@ -99,6 +117,11 @@ void CoopTestSwitches_Init(void) {
     if (CoopTestSwitches_IsSet(localIndex)) {
         CoopPlayers_SetLocalIndex(atoi(localIndex));
         LUSLOG_INFO("coop: test switch: local player index %d", atoi(localIndex));
+    }
+
+    if (CoopTestSwitches_IsSet(noLockstep)) {
+        CoopSyncGame_SetOff(true);
+        LUSLOG_INFO("coop: test switch: no lockstep%s", "");
     }
 
 #ifdef USE_NETWORKING

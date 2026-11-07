@@ -20,6 +20,10 @@
 // One more, for a real session between two platforms, which the handshake otherwise refuses (decision 0002):
 //   SF64_COOP_TEST_ANY_PLATFORM=1     on the host: a client that differs in platform and nothing else gets in, and
 //                                     both players read what differs (CoopSession_AnyPlatform).
+// And for tests of lockstep (src/port/coop/sync/lockstep_game.h, #20):
+//   SF64_COOP_TEST_INPUT_DELAY=<n>    frames of input delay in place of COOP_LOCKSTEP_INPUT_DELAY
+//   SF64_COOP_TEST_NO_LOCKSTEP=1      a level start starts no lockstep, so a run can show what it is there for
+//   SF64_COOP_TEST_START_SEEDS=<a,b,c,d,e,f>  host: the level starts from these seeds, whatever frame Start came on
 // With none of them set, nothing changes.
 
 #ifdef __cplusplus
@@ -31,6 +35,8 @@ union Gfx* CoopTestSwitches_ListToDraw(union Gfx* commands); // commands, or an 
 void CoopTestSwitches_NoteDraws(int draws); // called at the draw loop with the draws of this game frame
 int CoopTestSwitches_TakeMostDraws(void);   // the most draws a game frame got since the last call
 void CoopTestSwitches_Init(void);
+// Host: what a level start carries for the RNG, in the order of level_start.c, if SF64_COOP_TEST_START_SEEDS says so.
+void CoopTestSwitches_StartSeeds(int* values);
 
 #ifdef __cplusplus
 }

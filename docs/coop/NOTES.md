@@ -2243,6 +2243,121 @@ Unknown:
 - The radio mouth at speed: it could move by a frame and no hash would say.
 - Windows and macOS: not run. `gfx_dxgi.cpp:995` multiplies a frame stamp by the target rate, untested at this rate.
 
+### 2026-11-07, #20 (WP-22), lockstep: two clients through all of Corneria
+
+Identity: ROM US 1.0, branch `issue/20-lockstep`, Linux, GCC, Debug and Release, OpenGL on a software renderer, no window,
+2 or 3 game clients, each in its own run folder, UDP over loopback, input delay 3 frames. One machine, Corneria only. The
+wire form is in PROTOCOL.md, section Lockstep. `python tools/coop/lockstep_test.py` runs all of this.
+
+**How the flight was made.** Each client flies its own player. `src/port/coop/test/lockstep_driver.h` writes port 0 before
+the input layer reads the local controller, so what it decides is stamped, delayed, sent and read back as a pad's input
+is. A pilot on each client (#142) flew the level live, with its input 3 frames late. Each game logs every player's input
+per frame, and that log is the plain feed of every run after it. A feed line is the input for its frame, so the driver
+reads ahead by the delay and any delay gives the same flight.
+
+**Observed (runs)**
+
+| Run | Result |
+|---|---|
+| `full`, pilot on each client | Level start to the map in 9394 frames, neither player went down, both clients equal on every frame, every region. Player 0 flew 6083 game frames and ended on 147 shields, player 1 6085 and 107 |
+| `full`, plain feed | Equal on all 9394 frames, and equal to the flight |
+| `full`, poke | One bit of player 1 flipped on the client only at frame 7394: first difference at exactly 7394, in `players` |
+| `menu --feed` | Host, join, pick and Start with real widgets, then the whole level: equal on 9446 frames, the client looked through player 1 |
+| `release --feed` | Two Release clients equal on 9446 frames, and equal to two Debug clients |
+| `rates --feed` | Release at real time, one client at 60 and one at 120 fps, vsync off: equal on 9446 frames, 343 s. The most draws a game frame got were 4 and 8 |
+| `audio --feed` | One client at high audio sample counts and one at low: equal on 9446 frames |
+| `steer` | 2700 frames equal. The host looked through player 0 and the client through player 1 |
+| `three` | Three games, input through the host to the other client: equal on 2700 frames, each through its own player |
+| `lag` | Through the chaos relay. `good_wifi`: equal on 2700 frames, the host held 4 frames for 1075 ms. `bad_wifi`: equal, 302 frames for 11352 ms |
+| `delay` | Delay 1 and delay 6: equal between clients and between the two runs |
+| `slow` | A client 150 ms late every 40 frames: equal on 2700 frames, the host held 459 frames for 11699 ms |
+| `pause` | Client pauses, host resumes, host pauses, client resumes: both clients paused on the same 80 frames, each span as pressed |
+| `sim` | `lockstep.c` alone, 2 to 4 players, down to 30 % loss: 2310946 checks. `lockstep_mutants.py`: 22 of 22 breaks caught |
+
+Losing a player, the games still running afterwards each time:
+
+| Run | What happened |
+|---|---|
+| `left`, `host_left` | A game killed: the other ended the session after 10 to 11 s and said who stopped sending input |
+| `leave` | Leave clicked in the real window: the other player's closed window came up by itself with `Player 2 left, so the session is over` |
+| `stall` | Input stopped with the connection up: ended after 11 s, 2 frames past where the input stopped |
+| `frozen` | `SIGSTOP`: the host ended the session after 11 s. The game went on after `SIGCONT`, and found the session over |
+
+Each fix taken out again, one at a time, on this branch, and what the same scenario then said:
+
+| Taken out | Result |
+|---|---|
+| No lockstep (`control`) | Differs at level frame 1698, in `players` and `globals` |
+| `Rand_ZeroOne` still re-seeds in co-op | With seed 1 zeroed on both clients at frame 1000, differs at level frame 1024, in `effects` and `rng` |
+| Intro skip still reads the save | Host with Corneria cleared presses Start: differs at level frame 301 |
+| Audio frames still run on held frames | Differs at level frame 2453, in `globals` |
+| `gMainController` not set at the level start | The client reads team-wide input from slot 1 |
+| `playerIndex` not passed on | The client never looks through player 1 |
+| Pause on player 0 only | Paused on 40 frames, not 80. On `14a3f7de`, `view_check.py`'s new rule: `paused rows per pause on client 0 and 1: [15], [15]` |
+
+For #129:
+
+- **Radio.** It does follow the sound thread, and that is what a held frame has to respect: see the table above. With one
+  audio frame per game frame, which `push_frame` now holds to, the radio stayed in step in every run here, at different
+  sample counts too. `gRadioState` and `gTeamLowHealthMsgTimer` were equal on all 9334 trace rows of a flight, by hand, with
+  the timer ranging from 0 to 960.
+- **Katina, other levels, effect slots.** Not run, not counted.
+
+Observed (reads and a crash):
+
+- `gMainController` comes from `Title_CheckControllers` on every title frame (`src/overlays/ovl_menu/fox_title.c:171`,
+  `:240`), so it is the first port with a controller on that PC. Slot 0 is player 0's on every client, so the level start
+  now sets it to 0.
+- The logo counts its second with `Timer_CreateTask(..., Timer_Increment, &gGameState, 1)` (`src/engine/fox_game.c:404`). A level
+  start inside that second turns `GSTATE_PLAY` into `GSTATE_ENDING`, and the game crashed in `Background_DrawStarfield`. Only a
+  script clicks that fast. `CoopMenuGame_OnGamePreUpdate` now waits for the logo. The join driver always did.
+- F4 and the menu's Reset write `gNextGameState` from outside any input (`src/port/Engine.cpp`, `src/port/ui/ImguiUI.cpp`).
+  Both are ignored while lockstep runs.
+- Read, the saves: in a level only the intro skip reads `gSaveFile` (`src/engine/fox_play.c`). The map reads it 24 times
+  (`src/overlays/ovl_menu/fox_map.c`), and `fox_hud.c:1306-1320` writes it at level clear.
+
+**Derived**
+
+- A frame has to wait in `push_frame`, not in a listener: a wait inside a frame cannot draw, so the window would hang, and
+  the audio frame sits outside `Graphics_ThreadUpdate`. A frame that cannot run calls `Graphics_PushFrame` on the last
+  display list, as the debugger's pause does. Before that it looks again every ms for up to 16 ms, so a message that is
+  nearly here costs no frame.
+- Frame 0 has to be the first frame after `Play_Init`, not the level start: games reach it after a different number of
+  frames, and only from there on do they agree (#22).
+- A client's first `delay` frames go out like any others. That is the barrier at the start, with no message of its own.
+- Clients stay within the delay of each other, as nobody can run a frame before everyone has made its input. So the ring
+  needs little, and `sim` checks that bound on every step.
+- A pause needs no message of its own. Start is already frame-stamped input on every client, and a second message would have
+  to agree on a frame by the same means.
+
+**Choices the owner can reverse** (from the brief or this code; not decided in a record)
+
+- Input delay 3 frames, 100 ms, for every session. Nobody has flown it. It only hides latency up to that much: the host
+  held 302 frames on `bad_wifi`.
+- Any player's Start pauses and resumes. The cursor, retry and quit of the pause menu stay on player 0, and so does Start
+  in the all-range intros (`fox_bo.c:342`, `fox_fo.c:309`, `fox_ve2.c:146`).
+- In co-op nobody skips a level intro, on the host either, as the skip reads a save the clients do not share. The rule for
+  saves is proposed in decision 0009, and carrying the host's bit in the level start would fit it.
+- One player lost ends the session for everyone. Nothing lets three players go on as two.
+- After the end the level goes on in each game, the others idle: what Leave already did (#126).
+- A wait shows in the co-op window after a second, and it ends after 10 s, 60 s before frame 0.
+- In co-op a zero seed stays zero, as it does on Windows. The other platforms never had the re-seed.
+
+**Guess**
+
+- Hold and redraw looks like a frozen picture with the sound gone. Nobody has seen or heard it.
+
+**Unknown**
+
+- Two machines, real latency, Windows, macOS: every run here is one PC over loopback, and `lag` is a relay on that PC.
+- Every level but Corneria, the map beyond 60 frames, a second level in one session, the title screen after a game over,
+  where `gMainController` is set again for each client.
+- Saves that differ on the map: every whole-level run started from fresh saves.
+- A simulation CVar changed during a session: the handshake compares them once.
+- Whether the transport's 5000 ms in the menu holds through a level load (#132). A game waiting at frame 0 polls all
+  the time, so it will see a peer that loads for longer as gone.
+- Effect slots over a long session (#129).
+
 ### 2026-11-07, #148, a test game that starts in a level: what it leaves out
 
 Identity: ROM US 1.0, branch `issue/148-test-start-level`, on `14a3f7de`, Linux, GCC, Debug, OpenGL on a software renderer,

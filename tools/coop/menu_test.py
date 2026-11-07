@@ -86,7 +86,8 @@ class Game(join_test.LevelLog):
             env.update({"SF64_COOP_REPLAY_PLAY": str(self.run / "input.sfcr"),
                         "SF64_COOP_REPLAY_REPORT": str(self.run / "replay-report.txt"),
                         "SF64_COOP_HASH_LOG": str(self.run / "state-hash.txt"),
-                        "SF64_COOP_JOIN_WATCH": "1", "SF64_COOP_JOIN_REPORT": str(self.report_path)})
+                        "SF64_COOP_JOIN_WATCH": "1", "SF64_COOP_JOIN_REPORT": str(self.report_path),
+                        "SF64_COOP_LOCKSTEP_REPORT": str(self.run / "lockstep-report.txt")})
         if platform.system() == "Linux":
             for key, value in (("SDL_VIDEODRIVER", "offscreen"), ("SDL_AUDIODRIVER", "dummy"),
                                ("LIBGL_ALWAYS_SOFTWARE", "1"), ("GALLIUM_DRIVER", "llvmpipe")):
@@ -375,7 +376,7 @@ def in_level(game):
 
 def frames_logged(game):
     with open(game.run / "state-hash.txt", "rb") as f:
-        return sum(1 for _ in f)
+        return sum(1 for line in f if not line.startswith(b"#"))  # the log holds notes too, such as "# draws"
 
 
 def open_windows(games):
