@@ -140,6 +140,7 @@ class Client(join_test.LevelLog):
         replay = self.run / "input.sfcr"
         join_test.write_replay(replay, REPLAY_FRAMES, join_test.SEEDS.get(name, join_test.SEEDS["client0"]))
         self.env = replay_tool.game_env(self.run)
+        self.env["SF64_COOP_TEST_SPEED"] = replay_tool.MEETING_SPEED  # games that meet over sockets, as in join_test.py
         self.env.update({
             "SF64_COOP_REPLAY_PLAY": str(replay),
             "SF64_COOP_REPLAY_REPORT": str(self.run / "replay-report.txt"),
