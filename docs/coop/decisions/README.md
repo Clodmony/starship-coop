@@ -15,3 +15,7 @@ One file per architecture decision: `NNNN-short-title.md`, numbered in order. Co
 | [0003](0003-branch-layout.md) | Branch layout: `coop` integrates, `main` mirrors upstream | Accepted |
 | [0004](0004-transport.md) | Transport: UDP on SDL2_net with our own reliability layer | Accepted |
 | [0005](0005-players-and-characters.md) | Players and characters: player 1 is Fox, players 2-4 pick a wingman | Accepted |
+| [0006](0006-human-flown-wingman.md) | What a human-flown wingman is: the character's shields follow the player | Proposed |
+| [0007](0007-lives-and-respawn.md) | Lives and respawn: a shared pool, players 2-4 return while Fox flies | Proposed |
+| [0008](0008-routes-and-score.md) | Routes, warps, hit count and medals | Proposed |
+| [0009](0009-vehicles-cutscenes-save.md) | Vehicles, cutscene timing and save | Proposed |

@@ -53,6 +53,55 @@ each other apart. A datagram with a bad checksum, a bad magic or a size that doe
   nothing valid for 5000 ms ends with a timeout. A goodbye is sent three times and not acknowledged.
 - **Not provided:** encryption, peer authentication, IPv6.
 
+## Transport over Steam
+
+Decided in [0004](decisions/0004-transport.md): the same interface on Steam's own reliability, without our layer. The
+code is `src/port/coop/net/transport_steam.c`, in the game with `-DUSE_STEAM_RELAY=ON` (off by default, no SDK needed;
+nothing in the game calls it yet). Peers are SteamIDs, frames go through `ISteamNetworkingMessages` on channel 0, as
+app 480. The ids are the ones in the registry, with a shorter header. There is no checksum: a damaged frame is left to
+Steam, and every frame is still read as untrusted. A frame holds at most 16 + 1176 bytes.
+
+| Offset | Size | Field |
+|---|---|---|
+| 0 | 2 | Magic `0x4353` |
+| 2 | 1 | `COOP_PROTOCOL_VERSION` |
+| 3 | 1 | Flags. Bit 0: reliable lane |
+| 4 | 2 | Message id |
+| 6 | 2 | Payload size |
+| 8 | 4 | Connection id, the nonce in the client's connect request |
+| 12 | 2 | Sequence number of this message on its lane |
+| 14 | 2 | Ack: how many reliable messages have arrived here |
+| 16 | size | Payload |
+
+The first 12 bytes keep their meaning in every version, and so does the refuse message. A frame with a bad magic or a
+size that does not match is dropped unread and counted in `badDatagrams`.
+
+The lanes promise what they promise on UDP. What differs, and why:
+
+- **Reliable lane:** Steam resends and orders. Sequence numbers only check that: a duplicate is dropped, and a hole
+  ends the connection with a timeout, because a session that restarted under us has lost messages for good. Up to 128
+  messages in flight per direction, then `send` returns false; so it does when Steam's own queue is full.
+- **Ack:** the count rides on every frame, so `stats.pending` means "has not arrived yet", which `session.c` waits for
+  before it drops a refused client. `ACK` goes out alone when there is nothing else to send. It may be lost: the next
+  frame repeats it, a ping at the latest.
+- **Unreliable lane:** Steam can lose or reorder a message, and can also deliver it twice ("The same unreliable message
+  may be received multiple times"), so duplicates are dropped here exactly as on UDP.
+- **Which lane:** `CONNECT_REQUEST`, `CONNECT_ACCEPT`, `CONNECT_REFUSE` and `DISCONNECT` go on the reliable lane.
+  Unreliable frames can overtake reliable ones and nothing resends what a client dropped, so the accept has to stay
+  ahead of the host's first message, and the goodbye behind its last. `PING`, `PONG` and `ACK` are unreliable.
+- **Connecting:** the client repeats `CONNECT_REQUEST` every 1000 ms until the host accepts or refuses, or the timeout
+  passes: `timeoutMs`, or 20000 ms if that is 0, because Steam needs time to find a route. The host accepts every
+  session, or nobody new could reach it, and keeps peers apart by SteamID and connection id. A client accepts only its
+  host. Steam names the sender, so a client goes by the SteamID as well as the connection id. Connecting to an empty
+  SteamID or to your own fails at once: one user cannot talk to itself.
+- **Staying connected:** as on UDP, a ping every 250 ms and a timeout after 5000 ms of silence. Steam says nothing when
+  a peer closes on purpose, and a session that broke stays broken until it is closed. So a link also ends with a
+  timeout when Steam reports the session failed, or when a send finds it gone, and the session is then closed. That
+  happens after everything that had arrived has been read, so the end still comes after the last message.
+- **Goodbye:** sent once, on the reliable lane, and the session stays open: closing it would throw the goodbye away.
+  Steam ends unused sessions by itself.
+- **Not provided:** lobbies and invites. The client needs the host's SteamID.
+
 ## Session handshake
 
 The code is in `src/port/coop/session/`. All three messages go on the reliable lane.

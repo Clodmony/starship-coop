@@ -94,6 +94,14 @@ number of clients, transport.
    does, on Linux); `session_mutants.py --asan` shows that run can fail. `python tools/coop/net_test.py --asan` does
    the same for the transport tests (#75; CI does, on Linux), and `net_mutants.py --asan` shows that run can fail
    (#92).
+   The Steam relay transport (WP-26) runs without Steam: `python tools/coop/steam_test.py` puts it on a fake of
+   `ISteamNetworkingMessages` in a virtual network (no SDK, no ROM, no sockets), with the chaos relay's profiles, and
+   then runs its real backend on a mock Steam library in two processes. `--asan` runs it under AddressSanitizer and
+   UBSan, and `python tools/coop/steam_mutants.py` shows the scenarios can fail. This proves the transport keeps its
+   promises under the rules Steam documents, not that Steam behaves that way. A real run takes two PCs and two Steam
+   accounts, so it is the owner's to start: `python tools/coop/steam_test.py --live host --library <steam library>`,
+   then `--live client --library <steam library> --connect <the SteamID the host printed>`. Its result files hold
+   SteamIDs, so they stay in `local/`.
 5. **The co-op menu (WP-25).** `python tools/coop/menu_test.py` checks the menu layer with no game: `sim` on the real
    session in a virtual network, `udp` over real sockets. `python tools/coop/menu_test.py --game` starts three real
    games with `SF64_COOP_TEST_MENU=<folder>` (`src/port/coop/test/menu_driver.h`), clicks the real ImGui widgets through

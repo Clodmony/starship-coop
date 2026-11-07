@@ -13,6 +13,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 GAME_DATA = re.compile(r"\.(z64|n64|v64|u64|o2r|otr)$", re.IGNORECASE)
+# The Steamworks SDK sits behind an agreement: its headers and libraries stay out, the transport loads the player's own.
+STEAM_SDK = re.compile(r"(^|/)((lib)?steam_api(64)?\.(dll|lib|so|dylib)|sdkencryptedappticket\w*\.\w+|"
+                       r"steam_api\w*\.(h|json)|isteam\w+\.h|steamnetworkingtypes\.h|steam_appid\.txt)$",
+                       re.IGNORECASE)
 MAX_BYTES = 5 * 1024 * 1024
 
 
@@ -47,6 +51,10 @@ def main():
     if bad:
         failures.append("game data tracked (ROMs or asset archives):\n  " + "\n  ".join(bad))
 
+    bad = [t for t in tracked if STEAM_SDK.search(t)]
+    if bad:
+        failures.append("Steamworks SDK files tracked:\n  " + "\n  ".join(bad))
+
     # 2. No large files (asset dumps, builds, recordings).
     for t in tracked:
         p = ROOT / t
@@ -65,7 +73,7 @@ def main():
         failures.append("duplicate message ids in docs/coop/PROTOCOL.md: " + ", ".join(dups))
 
     # 5. Mutation checks: every break must still match the source it guards (no build, no write).
-    for tool in ("net_mutants.py", "session_mutants.py"):
+    for tool in ("net_mutants.py", "session_mutants.py", "steam_mutants.py"):
         mut = run_tool(tool, "--check")
         if mut.returncode != 0:
             failures.append(f"tools/coop/{tool} --check failed; update the break that guards the code you changed:\n  "
