@@ -12,6 +12,7 @@
 // only valid for the same build on the same platform.
 
 #include "replay.h"
+#include "pilot.h"
 #include "switches.h"
 #include "test_pad.h"
 
@@ -80,6 +81,7 @@ static s64 sLevelCompleteFrame = -1;
 static s32 sLevelCompleteLevel = -1;
 static bool sLiveLocal = false;
 static ReplayFrame sPlaying; // the frame being played, for the input source below
+static FILE* sPilotFile = NULL; // what the pilot flew, as a replay (pilot.h)
 
 static void CoopReplay_TakeCheckpoint(ReplayCheckpoint* cp) {
     memset(cp, 0, sizeof(*cp));
@@ -171,6 +173,10 @@ static void CoopReplay_FinishPlayback(const char* failure) {
         fclose(sFile);
         sFile = NULL;
     }
+    if (sPilotFile != NULL) {
+        fclose(sPilotFile);
+        sPilotFile = NULL;
+    }
     CoopInput_ClearSources();
     if (failure != NULL) {
         result = failure;
@@ -228,6 +234,9 @@ static bool CoopReplay_StartPlay(void) {
     sSeededRandSeed1 = header.seeds[3];
     sSeededRandSeed2 = header.seeds[4];
     sSeededRandSeed3 = header.seeds[5];
+    if (sPilotFile != NULL) {
+        fwrite(&header, sizeof(header), 1, sPilotFile);
+    }
     return true;
 }
 
@@ -305,6 +314,13 @@ static void CoopReplay_OnGamePreUpdate(IEvent* event) {
         sMismatchWant = frame.cp;
         sMismatchGot = cp;
     }
+    if (CoopPilot_IsOn()) {
+        CoopPilot_Fly(frame.hold, frame.press);
+        frame.cp = cp;
+        if (sPilotFile != NULL) {
+            fwrite(&frame, sizeof(frame), 1, sPilotFile);
+        }
+    }
     sPlaying = frame;
     if (!CoopPlayers_IsCoop()) {
         memcpy(gControllerHold, frame.hold, sizeof(frame.hold));
@@ -318,6 +334,7 @@ void CoopReplay_Init(void) {
     const char* playPath = getenv("SF64_COOP_REPLAY_PLAY");
     const char* reportPath = getenv("SF64_COOP_REPLAY_REPORT");
     const char* liveLocal = getenv("SF64_COOP_REPLAY_LIVE_LOCAL");
+    const char* pilotPath = getenv("SF64_COOP_PILOT");
 
     // Test switches (WP-02) apply before the first game frame, with or without a replay.
     CoopTestSwitches_Init();
@@ -341,6 +358,10 @@ void CoopReplay_Init(void) {
         CoopReplay_WriteReport(sMode == REPLAY_RECORD ? "record" : "play", "ERROR_OPEN_FILE");
         sMode = REPLAY_OFF;
         return;
+    }
+    if ((sMode == REPLAY_PLAY) && (pilotPath != NULL) && (pilotPath[0] != '\0')) {
+        sPilotFile = fopen(pilotPath, "wb");
+        CoopPilot_Init();
     }
     // Listeners run in ascending priority (src/port/hooks/impl/EventSystem.cpp:27-29), so LOW runs first: the input
     // and the restored seeds are in place before any other listener, such as the input layer (WP-14) and the state hash
