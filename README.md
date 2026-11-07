@@ -10,6 +10,51 @@ PC.
 Starship Co-op is a fork of Starship. It contains no copyrighted assets: like Starship, it builds its game data from
 your own US 1.0 or US 1.1 Star Fox 64 ROM on first launch.
 
+## Current state
+
+Last updated 2026-11-07. For the live list see the [open issues](https://github.com/Clodmony/starship-coop/issues) and
+the [roadmap](docs/coop/ROADMAP.md).
+
+**Two people cannot play together yet.** The games do not exchange inputs on `coop` so far. That is
+[WP-22](https://github.com/Clodmony/starship-coop/issues/20), in progress. The first goal is two players on two PCs
+flying all of Corneria with matching state.
+
+### What works
+
+Everything here is tested by scripts, on Corneria, on Linux. Nobody has played it, and nothing has run between two PCs.
+
+| Area | State |
+|---|---|
+| Players | Up to 4 Arwings fly Corneria on rails and in all-range, started by a debug setting. Landmaster and Blue Marine sections keep extra players parked |
+| Input | Each player has their own input source: a controller or a replay |
+| View | Camera, HUD and sound follow your own player, and the other player is an Arwing with a shield bar. Only a test switch picks your player so far |
+| Network | UDP transport with its own reliability, session handshake with build, ROM and platform checks, character choice |
+| Menu | Co-op menu with host, join, characters, status and ping, and starting a level for everyone together |
+| Steam relay | Built, off by default, tested on a fake Steam only |
+| Determinism | Two runs of one build match on every frame through all of Corneria, and Release, Debug and frame rates from 30 to 360 match too |
+| Sync model | [Decision 0002](docs/coop/decisions/0002-sync-model.md) is accepted: deterministic lockstep |
+| Tests | Replays, a state hash per frame, deliberate-break tests and uncapped, silent test games. See [tools/coop](tools/coop/README.md) |
+
+### In progress
+
+- [WP-22](https://github.com/Clodmony/starship-coop/issues/20): lockstep input exchange, any player can pause, a clean end when a player leaves
+- [#147](https://github.com/Clodmony/starship-coop/issues/147): faster tests without the final drawing, one command for all tests, Release runs
+- [#148](https://github.com/Clodmony/starship-coop/issues/148): test games that start straight in a level
+
+### What is open
+
+| What | Where |
+|---|---|
+| Desync reports for players | [WP-23](https://github.com/Clodmony/starship-coop/issues/21) |
+| A run on two PCs, and Windows Release | [#2](https://github.com/Clodmony/starship-coop/issues/2), [#145](https://github.com/Clodmony/starship-coop/issues/145): needed before a first public release |
+| Real Steam test | [WP-26](https://github.com/Clodmony/starship-coop/issues/24): needs two PCs and two Steam accounts |
+| Lag and loss testing | [WP-27](https://github.com/Clodmony/starship-coop/issues/25) |
+| Game rules: lives, respawn, routes, score | Decisions [0006](docs/coop/decisions/0006-human-flown-wingman.md) to [0009](docs/coop/decisions/0009-vehicles-cutscenes-save.md) are Proposed, then [WP-16](https://github.com/Clodmony/starship-coop/issues/14) and [WP-17](https://github.com/Clodmony/starship-coop/issues/15) |
+| Other levels, vehicles, bosses and cutscenes | [WP-18](https://github.com/Clodmony/starship-coop/issues/16), [WP-19](https://github.com/Clodmony/starship-coop/issues/17), [#129](https://github.com/Clodmony/starship-coop/issues/129), [#136](https://github.com/Clodmony/starship-coop/issues/136) |
+| macOS build | [WP-01](https://github.com/Clodmony/starship-coop/issues/1) |
+| Local split screen | [WP-13](https://github.com/Clodmony/starship-coop/issues/11), [WP-15](https://github.com/Clodmony/starship-coop/issues/13) |
+| Player docs and a full campaign run | [WP-31](https://github.com/Clodmony/starship-coop/issues/27), [WP-32](https://github.com/Clodmony/starship-coop/issues/28) |
+
 ## Goal
 
 | | Planned |
@@ -19,8 +64,8 @@ your own US 1.0 or US 1.1 Star Fox 64 ROM on first launch.
 | What is shared | The whole level: enemies, bosses, items, wingmen, route choices, the story |
 | Save | The host's save file; clients do not touch their own |
 
-None of this works yet. The open design questions are in [docs/coop/DESIGN.md](docs/coop/DESIGN.md), and the choice
-of sync model is still open in [decision 0002](docs/coop/decisions/0002-sync-model.md).
+This is the plan, not the current state. The open design questions are in [docs/coop/DESIGN.md](docs/coop/DESIGN.md). The sync model is
+deterministic lockstep, see [decision 0002](docs/coop/decisions/0002-sync-model.md).
 
 ## Building
 

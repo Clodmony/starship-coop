@@ -42,6 +42,7 @@ Nothing in the online design may rule it out.
 - **Randomness:** `Rand_ZeroOne` uses three seeds set by `Rand_Init()` from `osGetTime()` (`src/sys/sys_math.c`),
   called at boot (`src/engine/fox_game.c:58`). On Linux and Switch, `Rand_ZeroOne` re-runs `Rand_Init()` when a seed
   is 0 (a workaround marked `LTODO` in the code). That condition checks `sRandSeed2` twice and never `sRandSeed3`.
+  What zeroed a seed on GCC builds was frame interpolation (NOTES.md, 2026-11-07, #141).
   A separate seeded generator exists: `Rand_SetSeed` / `Rand_ZeroOneSeeded`.
 - **The port has an event system** for hooking game code without editing it: `DEFINE_EVENT` / `CALL_EVENT` in
   `src/port/hooks/impl/EventSystem.h`, events in `src/port/hooks/list/` (`GamePreUpdateEvent`,
@@ -50,7 +51,8 @@ Nothing in the online design may rule it out.
 - **Networking hook in the build:** `USE_NETWORKING` in `CMakeLists.txt` links SDL2_net and defines `USE_NETWORKING`.
   Upstream hard-sets it off; this fork turns it on for desktop builds (WP-20).
 - **Render rate is separate from game rate:** the interpolation frame count is derived from `gInterpolationFPS` and
-  `gVIsPerFrame` (`src/port/Engine.cpp`, `GetInterpolationFPS` and the function after it).
+  `gVIsPerFrame` (`src/port/Engine.cpp`, `GetInterpolationFPS` and the function after it). It is local and may differ
+  between clients: 30, 60, 120, 144 and 360 fps computed the same game (`hash_check.py rates`, Corneria, Linux Release).
 - **Draw code is part of the simulation.** It frees objects, runs game logic and feeds boss AI, and two clients of one
   replay that drew different cameras split one frame after Corneria starts (NOTES.md, 2026-11-06, #96).
 
@@ -60,15 +62,19 @@ Nothing in the online design may rule it out.
   because versus mode already updates and draws several players. On rails it also needs one shared path, owned by
   player 0 (NOTES.md, 2026-11-05, WP-06, and 2026-11-06, WP-12).
 - Lockstep still holds with one camera per client, because in co-op every client runs all draw code and the camera
-  drawn feeds nothing (`src/port/coop/game/view.h`). Shown on Corneria only; other levels are #129.
+  drawn feeds nothing (`src/port/coop/game/view.h`). Shown on Corneria only; other levels are #129. That does not keep
+  the simulation apart from rendering, as a stray write on the draw side did reach it: frame interpolation wrote below
+  its own matrix stack, onto the RNG seeds of a GCC Release build (NOTES.md, 2026-11-07, #141). A hash on one PC only
+  sees such a write when it lands on hashed memory.
 - Because world state is in fixed arrays plus one bump-allocated buffer plus globals, a full state snapshot (for
   rollback or for a late join) is plausible in size. The arrays contain pointers, so a snapshot is only valid for the
   same build on the same platform.
 
 ### Unknown (each is a research task in the roadmap)
 
-- Whether the simulation is deterministic: same seeds plus same inputs giving the same state, on one machine, across
-  machines with the same build, and across OS/compilers.
+- Whether the simulation is deterministic across machines with the same build, and across OS and compilers. On one PC
+  it was, in Corneria, on Windows with MSVC in Debug and on Linux with GCC in Debug and Release: same seeds and same
+  inputs gave the same state ([decision 0002](decisions/0002-sync-model.md), table Measured).
 - What else reads time or host state inside the simulation (audio timing, `osGetTime` callers, frame pacing).
 - What breaks with two players on rails outside Corneria: only Corneria's rail section has been run with a second
   player (NOTES.md, 2026-11-06, WP-12).
@@ -119,4 +125,8 @@ Each needs a decision record before code depends on it. Proposals in brackets.
 
 ## 5. Sync model
 
-Open, see [decision 0002](decisions/0002-sync-model.md). The determinism spike in the roadmap decides it.
+Deterministic lockstep, [decision 0002](decisions/0002-sync-model.md), accepted on one-PC evidence. Every client runs
+the whole simulation. Only inputs travel, plus a state hash per frame to detect desyncs, so all clients need the same
+build, ROM, simulation CVars and platform, and a platform difference refuses the connection until a comparison has shown
+that the two compute the same game. Before a first public release: the two-machine run, and `hash_check.py builds` and
+`rates` on Windows Release (#145). A difference that cannot be found and removed reopens the choice through a new record.

@@ -78,7 +78,7 @@ typedef struct {
     int peer;            // transport peer index; a client has the host at 0
     uint8_t playerIndex; // JOINED: the player slot, 0 for the host and 1 to 3 for clients in join order of slots
     uint8_t character;   // PICK_REFUSED: the CoopCharacter that was asked for
-    uint32_t diff;       // JOINED: warnings (COOP_ID_DIFF_PLATFORM). REFUSED: the reasons.
+    uint32_t diff;       // JOINED: what differs, see CoopSession_AnyPlatform. REFUSED: the reasons.
     CoopSessionEnd end;  // REFUSED on a client, ENDED, LEFT
     const char* text;    // for the player, "" if there is nothing to say; valid until the next Poll
     uint16_t msgId;      // MESSAGE
@@ -88,6 +88,11 @@ typedef struct {
 } CoopSessionEvent;
 
 typedef struct CoopSession CoopSession;
+
+// Test switch for a real session between two platforms (decision 0002): a host lets in a client that differs in
+// platform and nothing else, and JOINED says what differs on both sides. Only the host's switch counts, and it holds
+// for every session of this process. The game sets it from SF64_COOP_TEST_ANY_PLATFORM (src/port/coop/test/switches.h).
+void CoopSession_AnyPlatform(bool on);
 
 // The session takes over the transport and closes it in CoopSession_Close. identity is copied.
 CoopSession* CoopSession_Host(CoopTransport* transport, const CoopIdentity* identity);

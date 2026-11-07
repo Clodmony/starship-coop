@@ -17,6 +17,9 @@
 //   SF64_COOP_TEST_AUDIO_SAMPLES=high always had enough, or never had enough, buffered; src/port/Engine.cpp:387-388).
 //   SF64_COOP_TEST_LOCAL_INDEX=<i>    in co-op this client looks through player i (CoopPlayers_SetLocalIndex), which
 //                                     two clients of one session would do. It changes what is drawn, not the input.
+// One more, for a real session between two platforms, which the handshake otherwise refuses (decision 0002):
+//   SF64_COOP_TEST_ANY_PLATFORM=1     on the host: a client that differs in platform and nothing else gets in, and
+//                                     both players read what differs (CoopSession_AnyPlatform).
 // With none of them set, nothing changes.
 
 #ifdef __cplusplus
