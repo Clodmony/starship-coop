@@ -1989,6 +1989,75 @@ Unknown:
   session hands out `playerIndex` (`session.h`), and the join flow (WP-24) has to pass it on.
 - Player 1's own lock-on mark: not shown. Slot 0 belongs to player 0, and the draw code only fills that slot on rails.
 
+### 2026-11-06, #137, what a test game waits for, and what it does not run at speed
+
+Identity: ROM US 1.0, on commit `62ed1e94` with `origin/coop` at `f2ca32fc`, Linux, GCC, Debug, OpenGL in software, no
+window. Other issues built and tested on the same machine throughout, so each time below comes with its load average.
+
+Observed:
+
+- One game of 5800 frames, input by rule through Corneria's rails into all-range: 239 s at real pacing (load 13), 33 s
+  with `SF64_COOP_TEST_SPEED=max` and `LP_NUM_THREADS=3` (185 frames a second, load 10), and 10 s with drawing cut out
+  by a patch that is not in the tree (658 frames a second, load 9). The hash log is equal on every common frame.
+- The same game runs at what the machine leaves it: 95 to 102 s with four at once and the default thread count (load
+  47). At load 26 to 34 a limit of 2, 4, 8 and 16 times gave 58, 62, 65 and 85 frames a second, and no limit 94.
+- Three games at once, started together, in turn with the default thread count and `LP_NUM_THREADS=3`: 45.3 and 74.5 s
+  on average against 42.3 and 55.4 s, 76.7 and 80.3 s of CPU per game against 69.6 and 77.5 s. Five at once was not to
+  be had, as other work held slots: rounds of 4+1 and 3+2 games ran at different loads and compare nothing.
+- Frame interpolation, counted under gdb over 3400 replay frames: 3437 calls of `FrameInterpolation_Interpolate` in 3437
+  drawn frames at real pacing, 15838 in 3443 with `determinism.py`'s `window` settings, and 0 in 3821 at test speed
+  (`src/port/Engine.cpp:516-518`).
+- The boot logo waits 1000 ms on `SDL_GetTicks` (`src/engine/fox_game.c:404`, `src/port/Engine.cpp:705`, `:738`), before
+  replay frame 0 (`src/port/coop/test/replay.c:253`). The counts above put 37 drawn frames before frame 0 at real pacing
+  and 421 at test speed. `FAULT_AFTER` in `exit_test.py` counts calls from the start, so at speed the fault landed at
+  frame 36 to 143 instead of 269 to 271.
+- `imgui.ini` comes 5 s after ImGui starts (`IniSavingRate`), counted in `io.DeltaTime`, which is wall-clock time. Each
+  game of `exit_test.py` waits for that and up to `MAX_DELAY` more: 48 games took 386 s at load 31, and the signal
+  landed at frames 124 to 165.
+- With "ready" moved to the first line of the hash log, `exit_test.py` took 222 s at speed and 284 s at real time, but
+  at real pacing the signal landed at frames 6 to 47. Of 36 `crash-record` and `crash-play` games at real pacing one
+  hung in the crash handler until its SIGALRM, at frame 8 with no report. Of 36 at speed one ended with a report of 222
+  frames and a hash log of 221. That change is not in the tree.
+- `GameEngine_GetInterpolationFrameCount` reads the CVars, not the switch (`src/port/Engine.cpp:568`). With
+  `gInterpolationFPS` 144 and vsync off it said 5 in both cases, with 0 interpolation calls at test speed and 16786 at
+  real pacing. Its six callers only write display lists from locals (`src/engine/fox_bg.c:1426`,
+  `src/overlays/ovl_ending/fox_end2.c:462`), so no game state follows it. It does not show what a game drew.
+- `view_check.py` runs four games and took 111 s at load 15 to 25, games of 46 to 65 s. The same four through
+  `hash_check.py views` took 396 s at load 31 to 47, games of 168 to 222 s.
+- `join_test.py` passed 5/5 three times at speed, in 115 to 135 s against 527 s, and `menu_test.py --game` 3/3 three
+  times, in 63 to 77 s against 156 s. Their budgets in frames held, and nothing there needed real time.
+- During an exec, `/proc/<pid>/exe` shows the new program while `/proc/<pid>/environ` is still empty: 5744 such reads in
+  6000 starts of a small program. A check that reads a game's environment has to look again.
+
+Derived:
+
+- A game at speed does not run frame interpolation, so no tool at speed can see a bug there, and one has reached the RNG
+  seeds in Release (#141). `determinism.py` keeps it on, and `speed` against its base is interpolation off against on.
+- The renderer is what limits a quiet machine: 185 against 658 frames a second. Under load the limit is what the other
+  games leave. That fits the 755 s of `view_check.py` in a run of five lanes: nothing on its path waits on the clock.
+- Audio takes no wall-clock time from the game: its thread is locked to the frame, and sequences move per update
+  (`src/audio/audio_synthesis.c:665-669`). This answers the guess in the 2026-11-04 entry of #2 from reading, not from a
+  run. A sample count can only change a note's `finished` (`src/audio/audio_synthesis.c:1168-1169`,
+  `src/audio/audio_playback.c:349-350`), which only feeds `gRadioMouthTimer` (`src/engine/fox_radio.c:662-668`), and
+  that is drawn, not hashed. `gRadioState` and `gRadioMsgId` are hashed (`src/port/coop/sync/state_hash.c:408-409`).
+- At speed the audio buffer stays full, so a game renders `samples_low` every time, as the variant `audio-low` does.
+  What `SDLAudioPlayer::Play` drops above 6000 (`libultraship/src/audio/SDLAudioPlayer.cpp:38`) is output only.
+- A replay and the hash log count frames apart, in two listeners of `GamePreUpdateEvent`
+  (`src/port/coop/test/replay.c:348`, `src/port/coop/sync/state_hash.c:679`). A crash between them leaves them one
+  apart, at any speed.
+
+Guess:
+
+- The hang at frame 8 was the crash handler on a lock the game held while it was still loading, as in the entry of #71.
+  No stack was taken.
+
+Unknown:
+
+- How often the off-by-one and the hang happen at the ready point the tree has. Neither showed in the one run there.
+- Whether `speed` against base shows #141's bug on a Release build: only Debug ran here.
+- The radio mouth at speed: it could move by a frame and no hash would say.
+- Windows and macOS: not run. `gfx_dxgi.cpp:995` multiplies a frame stamp by the target rate, untested at this rate.
+
 ### 2026-11-05, #8 (WP-10), player count apart from camera count
 
 Observed:

@@ -72,16 +72,19 @@ number of clients, transport.
    and then six more times at once, each under a condition that can differ between machines: graphics backend,
    window and frame pacing, audio timing (`SF64_COOP_TEST_AUDIO_SAMPLES`) and C runtime math without FMA3
    (`SF64_COOP_TEST_NO_FMA3`, `src/port/coop/test/switches.h`). Every run's hash must equal the first run's on every
-   recorded frame. `--only opengl,no-fma3` picks variants. These runs are in real time, as pacing and audio timing are
-   what they vary. The variant `speed` plays as the other tools do, with no frame limit, and has to give the same hash
-   (#137); without a replay file the tool plays input by rule, through Corneria's rails into all-range.
-   Tests count frames, so the tools run a game with `SF64_COOP_TEST_SPEED=max`, silent and on Linux without a window
-   (`game_env` in `tools/coop/replay.py`). A tool that needs wall-clock time passes `REAL_TIME` and says why.
+   recorded frame. `--only opengl,no-fma3` picks variants.
    `python tools/coop/input_test.py` (WP-14, unattended, exit code 0 on `PASS`) checks who steers whom. `SF64_COOP_TEST_PAD=<file>`
    makes the game attach an SDL virtual gamepad that presses what the file says (`src/port/coop/test/test_pad.h`), so
    the live local controller is tested on the road a real pad takes, with nobody at the controls.
    `SF64_COOP_REPLAY_LIVE_LOCAL=1` makes a replay fly every player but the local one (`src/port/coop/test/replay.h`).
    The `unit` scenario is the only test of a local index other than 0, until the game can have one.
+   `determinism.py` runs in real time, as pacing and audio timing are what it varies. Its variant `speed` plays as the
+   other tools do, with no frame limit, and has to give the same hash (#137); without a replay file the tool plays input
+   by rule, through Corneria's rails into all-range. Tests count frames, so the tools run a game with
+   `SF64_COOP_TEST_SPEED=max`, silent and on Linux without a window (`game_env` in `tools/coop/replay.py`). A tool that
+   needs wall-clock time keeps real time and says why. At test speed each game frame is drawn once, so frame
+   interpolation does not run and those tools cannot see it. `determinism.py` is the test that plays with it on, and
+   `speed` against its base is interpolation off against on.
 3. **Two clients on one machine.** Two Starship processes with their own config, save and log folders (never the
    owner's), connected over loopback, both fed replays. `python tools/coop/join_test.py` (WP-24, unattended, exit code
    0 only when everything passed) takes two or three games from the lobby into a level through the scripted flow in
