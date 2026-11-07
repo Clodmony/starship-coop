@@ -48,6 +48,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import replay as replay_tool  # noqa: E402
+from run_folder import make_run_folder  # noqa: E402
 
 
 # Buttons as OSContPad.button holds them.
@@ -388,7 +389,9 @@ def section_setup(section, name, args):
 
     frames, l_frame = VIEW_SECTIONS[section]
     frames = args.frames or frames or player_trace.RAIL_FRAMES
-    replay = replay_tool.ROOT / "local" / f"test-hash-{name}-{section}.sfcr"
+    # A folder of its own: a game reads the replay when its turn comes, which can be minutes after this, and another run
+    # of this tool can start in between (#104).
+    replay = make_run_folder(replay_tool.ROOT / "local", f"test-hash-{name}-{section}-") / "input.sfcr"
     player_trace.write_rail_replay(replay, frames, l_frame)
     # Flying by rule, player 0 would not live through the section, as in player_trace.py rails.
     cvars = {"gCoopDebugPlayerCount": args.players, "gInvincible": 1}
