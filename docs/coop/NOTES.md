@@ -2343,8 +2343,8 @@ Unknown:
 
 ### 2026-11-07, #147, what a game gets from the renderer, and what test lanes are worth
 
-Identity: ROM US 1.0, on commits `e0f25422` to `29dff2be`, and from "merged with #148" on `086e3ea7`, Linux, GCC, Debug and
-for `builds` Release, OpenGL in software, no window. Other issues built and tested on the same machine, so each time comes
+Identity: ROM US 1.0, on commits `e0f25422` to `29dff2be`, and from "merged with #148" on `086e3ea7` to `21f45dd5`, Linux,
+GCC, Debug and Release, OpenGL in software, no window. Other issues built and tested on the same machine, so each time comes
 with its load average. Times of steps under `--game-wrap` include the wait for a slot.
 
 Observed:
@@ -2384,7 +2384,8 @@ Observed:
 - A first run of every step with 5 lanes took 41m39s at load 4 to 43, all of it `hash_check.py rates`, which started first
   and plays in real time. `menu_test.py --game` took 835 s in that run, 13 minutes of it waiting for a slot, as five lanes
   and the machine's other work held all five. It ran for 38 s.
-- Every step, merged with #148, 4 lanes: 21m17s at load 4 to 30, of which `hash_check.py rates` on the rails is 18m27s.
+- Every step, merged with #148, 4 lanes, `21f45dd5`: Debug 45 of 45 in 23m50s at load 3 to 31, Release 45 of 45 in 19m39s at
+  load 1 to 23. `hash_check.py rates` on the rails is 18m33s and 14m39s of that, at real pacing.
 - Release with no drawing plays 5800 frames in 5 s or less, against 15 s in Debug. Tools that count frames passed there. Two
   games meeting over a socket did not: `join_test.py` gave 0 of 5 with no limit, with `the host never tried to start`, 4
   of 5 with drawing, 5 of 5 at `SF64_COOP_TEST_SPEED=8` and 2 of 5 at 16; Debug with no limit gave 5 of 5. Some failures were
@@ -2405,7 +2406,7 @@ Observed:
   in that handler too, 1 game of 36, with no report.
 - `build.py --config Release --build-dir build-release` beside a Debug `build-cmake` on `e0f25422`: both `build.ninja` files
   link `libultraship/src/libultraship.a`. After the Release build it held 0 objects with debug info, and after the next Debug
-  build 244. Each change of folder compiled the 124 objects of libultraship again. In this order,, each
+  build 244. Each change of folder compiled the 124 objects of libultraship again. In this order each
   game linked what it should. That differs from the 2026-11-06 entry of #141, which saw ninja not rebuild them.
 - With `libultraship` in the build folder: 244 and 0 objects with debug info, each in its own folder, and 0 objects
   compiled when one folder is built after the other. A clean submodule builds, so nothing needs the old place.

@@ -102,7 +102,7 @@ def all_steps():
         Step("steam-mutants", SERIAL, ["steam_mutants.py"], "build", "net"),
     ]
     # Longest first, so no lane is left with a long one at the end. exit-test goes last all the same: it waits on the
-    # clock, so it costs no time there, and with a load this high a game can hang in the crash handler (docs/coop/NOTES.md).
+    # clock, so it costs no time there, and under load a game can hang in the crash handler (docs/coop/NOTES.md).
     game = [
         ("rates-rails", ["hash_check.py", "rates", "--section", "rails"], "exe", False),
         ("rates-all-range", ["hash_check.py", "rates", "--section", "all-range"], "exe", False),
