@@ -2243,6 +2243,104 @@ Unknown:
 - The radio mouth at speed: it could move by a frame and no hash would say.
 - Windows and macOS: not run. `gfx_dxgi.cpp:995` multiplies a frame stamp by the target rate, untested at this rate.
 
+### 2026-11-07, #148, a test game that starts in a level: what it leaves out
+
+Identity: ROM US 1.0, branch `issue/148-test-start-level`, on `14a3f7de`, Linux, GCC, Debug, OpenGL on a software renderer,
+no window, one game per run, no transport. Corneria, and Sector X where it says so. The switch and the tools are in
+`docs/coop/QA.md`, in the table of who plays which start.
+
+How a start in the level goes. `src/port/coop/test/start_level.c` waits for the first frame in `GSTATE_TITLE`, as
+`GSTATE_INIT` sets `gClearPlayerInfo`, the lives and the button maps (`src/engine/fox_game.c:421`, `:425`, `:440`). It then
+calls `Map_Setup_Menu` (`src/overlays/ovl_menu/fox_map.c:1570`), which is what a new game does on the map, and
+`CoopLevelStart_Enter` from #22, with the values the game holds, so with no roster. Past the intro it presses Start, with
+`normalClear` set for that frame, as nothing else ends an intro (`src/engine/fox_play.c:7208-7224`).
+
+Observed, frames of a replay and a hash log, which still count from `GSTATE_START`:
+
+| | Through the menus | Straight in | Past the intro |
+|---|---|---|---|
+| `GSTATE_PLAY` from | 3096 | 5 | 5 |
+| `Play_Init` runs on (`# level` in the log) | 3100 | 9 | 9, and again on 12 |
+| Level frame 0 | 3101 | 10 | 10 |
+| Player 0 `ACTIVE` | 4775 | 1684 | 14 |
+
+Sector X: player 0 `ACTIVE` at 353 with its intro, 14 past it.
+
+- From the seeds a game from the menus entered with, `hash_check.py start --players 2`: two starts in the level equal on all
+  2709 frames, and each equal to the game from the menus in every region and the total on 2699 level frames, through the
+  intro, the rails and the jump into all-range. By hand, 1 player, A only: equal on 7000 level frames.
+- `Map_Setup_Menu` is what makes that so. A throwaway build without it: `menus and start A differ 1 frames into the level`,
+  region `globals`, with 2 players.
+- With 1 player `scenery360` differs from the jump into all-range on, on 921 of 2699 frames, and nothing else does. The hash
+  only reads free `gScenery360` slots with co-op off (`src/port/coop/sync/state_hash.c:350`), and `Memory_Allocate` does not
+  clear (`src/sys/sys_memory.c:12`): `Play_Init` sets `obj.status` and nothing else in a free slot
+  (`src/engine/fox_play.c:2961-2964`), so they hold what a screen before left in level memory. With 2 players those slots are
+  out of the hash and the same frames are equal.
+- Field by field, in a dump of all of `.data` and `.bss` of each game at the entry to `Play_Init` and when it returns, same
+  replay, 1 player, by symbol. Each value is the same in both unless the table says otherwise:
+
+| Value | Through the menus | Straight in |
+|---|---|---|
+| RNG seeds, all six | what the menus' draws left | the header of the replay, so `START_SEEDS` for tools that start in the level |
+| `gTeamShields`, `gSavedTeamShields`, `gPrevPlanetTeamShields`, `gPrevPlanetSavedTeamShields`, `D_ctx_80177C58` | same | same, by `Map_Setup_Menu` |
+| `gLifeCount`, `gBombCount`, `gLaserStrength`, `gGoldRingCount`, `gHitCount`, `gTotalHits`, `gPlayerScores` | same | same |
+| `gExpertMode`, the only difficulty here: no `gDifficulty` in this tree | same | same |
+| `gTeamDamage`, `gTeamEventActorIndex`, `D_enmy_Timer_80161670`, `gStarWolfTeamAlive`, the rest of `level_start.c`'s table (#67) | same | same |
+| `gMissionNumber`, `gMainController`, `gRadioMsgId`, `gRadioState` | same | same |
+| `sCurrentPlanetId`, no `gCurrentPlanet` in this tree | Corneria | Corneria, in every level: only the map reads it, and it sets it from `gCurrentLevel` on the way back (`fox_map.c:1465`) |
+| `gRadioMsg`, `gRadioMsgCharIndex`, `gRadioPrintPosX`, `gRadioPrintPosY`, `gCurrentRadioPortrait`, `gRadioMsgRadioId` | what the briefing left | 0. `Player_Setup` clears the last two (`fox_play.c:4615`) |
+| `gCsCamEyeZ` | 10.0 | 0 |
+| `gOptionMenuStatus` | 2 | 0, and a level only writes it (`fox_play.c:6165`, `fox_hud.c:1528`) |
+| `gStarPrevX`, `gStarPrevY`, `gStarOffsetsX`, `gStarOffsetsY`, `gStarFillColors`, the matrix stacks, `gGfxPools`, `sMemoryBuffer` | what the screens before left | 0, or a pointer into another place |
+| `gSysFrameCount` | 3772 | 681: since boot, and the logo waits on the clock, so it differs between runs too |
+| `gMapState`, `gTitleState`, `gPlanetPathStatus`, and 181 statics of the title, option and map code | those screens' | their boot values |
+| 38 audio values: sequence players, heap, caches, `sAudioResetMsg` | as the map's music leaves them | as the title's start leaves them |
+| Region `players` to `globals` of the state hash, from level frame 1 | equal, with `scenery360` as above | |
+
+- Past the intro against through it, dumps at the first `ACTIVE` frame of each. Equal: `gPathProgress` 0, shields 255,
+  `gGroundSurface` water, `gLevelStartStatusScreenTimer` 79, `gBgColor`, `gMissionStatus`. Apart: player 0 at x 0.1, y 347
+  against 0, 350; `gGameFrameCount` 1674 against 1; `gCsFrameCount` 1672 against 0; `gObjectLoadIndex` 1 against 0;
+  `gLoadLevelObjects` 1 against 0; `gRadioMsgId` 2050 against 0; the seeds, `gActors`, `gEffects`, `gPathTexScroll`, the
+  lights and the camera.
+- `first_attempt` in `player_trace.py` took the second `Play_Init` of a start past the intro for a restart and dropped the
+  whole flight: `solo: 0 limits`. The frame count starts over there, with nobody flown yet.
+- `player_trace.py shots` exited 0 on a `FAIL`, as it had no return value. Fixed here.
+
+Derived:
+
+- A start in the level from `START_SEEDS` is the game the menus give, shifted by 3091 frames: same input, same hash. So
+  `rails`, `probe` and `view_check.py` lost the menus and nothing else, and their old frames and numbers still hold: the rail
+  section is 4525 frames, as in the QA result of #10.
+- A start past the intro is another flight, of a level as a player gets it on a planet they have cleared. Nothing here
+  checks it against the intro's flight, and it has to pass each tool's rules on its own. It did on the first run for all but
+  `lowhealth`, whose failure was the tool's.
+- `gGameFrameCount` differs by 1673 past the intro, so anything that goes by it runs in another phase there. A tool that cares
+  about that belongs on `level`.
+- Coverage. What a start in the level does not run stays with these, and nothing else plays it:
+
+| Left out | Still played by |
+|---|---|
+| Title, option menu, map, briefing, their RNG draws and draw code | `determinism.py`, `full_level.py`, `hash_check.py builds` and `rates`; `join_test.py` and `menu_test.py` for the title and `game_level_map` for the map |
+| Those screens with frame interpolation, where #141 was | `determinism.py` in Debug, `hash_check.py builds` and `rates` in Release |
+| `Map_PlayLevel`, the map's own way in | `determinism.py`, `full_level.py`, `wingman_check.py sitout` and `chain` |
+| The level's intro | every tool on `menus` or `level`. `level` covers it with 2 players, and `full_level.py` with the whole level |
+| A second player parked through an intro | `player_trace.py rails`, `hash_check.py probe`, `view_check.py` |
+
+Guess:
+
+- The other 18 levels start the same way, as nothing in the switch knows a level. Sector X did.
+
+Unknown:
+
+- A level other than Corneria and Sector X from this switch. `gMissionNumber` stays 0 there, where a real game would be further
+  on, and whether a level reads it was not checked.
+- The map after a level that started this way: no tool does that. `sitout` and `chain` keep the whole path, so their first
+  level comes from the map.
+- Audio: 38 values differ and no hash holds them. Nothing read here takes game state from them; whether a level sounds the
+  same is not looked at.
+- Whether a free `gScenery360` slot is ever read: `fox_hud.c:2184` reads slot 0 without its status in Sector Y.
+- Windows and macOS: not run, on any start.
+
 ### 2026-11-05, #8 (WP-10), player count apart from camera count
 
 Observed:

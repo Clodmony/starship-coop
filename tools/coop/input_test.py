@@ -6,8 +6,8 @@
     python tools/coop/input_test.py --list
     python tools/coop/input_test.py --no-build --exe <file>
 
-Each game scenario starts one game in a fresh folder under local/ with its own SHIP_HOME and flies Corneria's rail
-section. The live local controller is a scripted gamepad (src/port/coop/test/test_pad.h). It goes through SDL and
+Each game scenario starts one game in a fresh folder under local/ with its own SHIP_HOME, past Corneria's intro
+(replay.py, Start), and flies its rail section. The live local controller is a scripted gamepad (src/port/coop/test/test_pad.h). It goes through SDL and
 libultraship to port 0, as a real pad does. At the same time pad 0 of the replay and port 1 of the machine say something
 else on purpose: those are the decoys, and nobody may follow them. The checks read the pads and the flight of every
 player from the per-frame trace (src/port/coop/test/player_trace.h).
@@ -47,13 +47,14 @@ BUTTON_R = 0x0010  # R_TRIG
 BUTTON_Z = 0x2000  # Z_TRIG
 SHOT_BOMB, SHOT_LOCK_SEARCH = 3, 4  # include/sf64player.h
 
-# Up to INPUT_START both the gamepad and pad 0 of the replay press A every 30 frames, which gets through the menus into
-# Corneria; player 0 is active about frame 4775. Then each repeats CYCLE frames, always steering the other way.
-MENU_START = 60
-INPUT_START = 4800
+# The game starts past Corneria's intro: who steers whom is the same with or without one (replay.py, Start). Frames of a
+# rule below count from when player 0 flies. From INPUT_START the gamepad and pad 0 of the replay each repeat CYCLE
+# frames, always steering the other way.
+START = replay_tool.FLYING
+INPUT_START = 25
 CYCLE = 240
-FRAMES = 6000
-MIN_FLOWN = FRAMES - INPUT_START - 100
+FRAMES = START.frame(1225)
+MIN_FLOWN = 1100
 STICK = 80
 PRESS_FRAMES = 5  # a press has to outlast the two frames a gamepad takes to reach the game
 MAX_LAG = 6  # frames from a gamepad step to gControllerHold[0]; two on the runs in NOTES.md (#68)
@@ -67,22 +68,21 @@ Shot = namedtuple("Shot", "id owner timer exploded")
 Frame = namedtuple("Frame", "tframe row pads shots locks")
 
 
-def pad_rule(frame):
-    """(button, stick_x, stick_y) of the gamepad on `frame`."""
-    if frame < INPUT_START:
-        button = BUTTON_A if frame >= MENU_START and frame % 30 < PRESS_FRAMES else 0
-        return button, 0, 0
-    t = (frame - INPUT_START) % CYCLE
+def pad_rule(flight):
+    """(button, stick_x, stick_y) of the gamepad, `flight` frames after player 0 flies."""
+    if flight < INPUT_START:
+        return 0, 0, 0
+    t = (flight - INPUT_START) % CYCLE
     button = (BUTTON_A if t % 40 < PRESS_FRAMES else 0) | (BUTTON_R if 60 <= t < 75 else 0)
     return button, STICK if t < CYCLE // 2 else -STICK, 0
 
 
-def decoy_rule(frame):
-    """(button, stick_x, stick_y) of pad 0 of the replay on `frame`: the gamepad's way through the menus, then the
-    other way, with a button the gamepad never presses."""
-    if frame < INPUT_START:
-        return (BUTTON_A if frame >= MENU_START and frame % 30 == 0 else 0), 0, 0
-    _, stick_x, _ = pad_rule(frame)
+def decoy_rule(flight):
+    """(button, stick_x, stick_y) of pad 0 of the replay: the other way from the gamepad, with a button the gamepad never
+    presses."""
+    if flight < INPUT_START:
+        return 0, 0, 0
+    _, stick_x, _ = pad_rule(flight)
     return BUTTON_Z, -stick_x, 0
 
 
@@ -91,33 +91,31 @@ PORT1_DECOY = (BUTTON_A | BUTTON_R, -70, 30)  # port 1 from INPUT_START on
 # `shots`: player 1 charges in long holds of A, with nobody on pad 0 holding A meanwhile. Then one bomb. A bomb can only
 # go off by button below shot timer 25, 5 frames after it left (src/engine/fox_beam.c, PlayerShot_UpdateBomb). Player 0
 # presses B first, while its own bomb cannot leave because the team has one bomb slot, and player 1 after that.
-CHARGE_START = 4850
+CHARGE_START = 75
 CHARGE_HOLD = 150
 CHARGE_GAP = 50
-CHARGE_END = 5500
-BOMB_LAUNCH = 5600
-BOMB_DECOY = 5610
-BOMB_OWNER = 5618
+CHARGE_END = 725
+BOMB_LAUNCH = 825
+BOMB_DECOY = 835
+BOMB_OWNER = 843
 # Frames with a search shot of player 1 in flight. No shot leaves while a lock-on holds (Player_CanLockOn), so this depends
 # on what there is to lock on to. Before WP-14 it was 0: the shot died on the frame it left unless player 0 held A.
 MIN_SEARCH_FRAMES = 20
 LOCK_RELEASE = 25  # frames a lock-on may outlast its owner's A: lockOnTimers starts at 20 and runs down once a frame
 
 
-def shots_lead(frame):
-    """Pad 0 of `shots`: the menus, then nothing but B at BOMB_DECOY."""
-    if frame < INPUT_START:
-        return (BUTTON_A if frame >= MENU_START and frame % 30 == 0 else 0), 0, 0
-    return (BUTTON_B if frame == BOMB_DECOY else 0), 0, 0
+def shots_lead(flight):
+    """Pad 0 of `shots`: nothing but B at BOMB_DECOY."""
+    return (BUTTON_B if flight == BOMB_DECOY else 0), 0, 0
 
 
-def shots_pad(frame, pad):
+def shots_pad(flight, pad):
     """Pad 1 of `shots`, the others idle."""
     if pad != 1:
         return 0, 0, 0
-    if CHARGE_START <= frame < CHARGE_END and (frame - CHARGE_START) % (CHARGE_HOLD + CHARGE_GAP) < CHARGE_HOLD:
+    if CHARGE_START <= flight < CHARGE_END and (flight - CHARGE_START) % (CHARGE_HOLD + CHARGE_GAP) < CHARGE_HOLD:
         return BUTTON_A, 0, 0
-    return (BUTTON_B if frame in (BOMB_LAUNCH, BOMB_OWNER) else 0), 0, 0
+    return (BUTTON_B if flight in (BOMB_LAUNCH, BOMB_OWNER) else 0), 0, 0
 
 
 def write_pad_script(path, frames):
@@ -125,11 +123,11 @@ def write_pad_script(path, frames):
     lines = []
     last = None
     for frame in range(frames):
-        now = pad_rule(frame)
+        now = pad_rule(frame - START.active)
         if now != last:
             lines.append((frame, 0, *now))
             last = now
-    lines.append((INPUT_START, 1, *PORT1_DECOY))
+    lines.append((START.frame(INPUT_START), 1, *PORT1_DECOY))
     lines.sort(key=lambda step: step[:2])
     path.write_text("".join(f"{f} {port} {b:x} {x} {y}\n" for f, port, b, x, y in lines), encoding="utf-8")
 
@@ -193,7 +191,7 @@ def run_replay_game(s, players, replay, pad_script, live_local):
         env["SF64_COOP_REPLAY_LIVE_LOCAL"] = "1"
     config = {"CVars": {"gCoopDebugPlayerCount": players, "gInvincible": 1}}
     values, run, seconds = replay_tool.run_game("play", replay, s.args.exe, s.args.timeout, tag=f"input-{s.name}",
-                                                env_extra=env, config=config)
+                                                env_extra=env, config=config, start=START)
     result = values["result"] if values else "none"
     s.check(f"replay played through in {seconds:.0f}s: {result} (no checkpoints in it, so FAIL_MISMATCH is expected)",
             result == "FAIL_MISMATCH")
@@ -207,9 +205,10 @@ def run_plain_game(s, players, pad_script):
     config = {"CVars": {"gCoopDebugPlayerCount": players, "gInvincible": 1}}
     (run / "starship.cfg.json").write_text(json.dumps(config, indent=4), encoding="utf-8")
     env = replay_tool.game_env(run)
+    env.update(START.env)
     env["SF64_COOP_TEST_PAD"] = str(pad_script)
     env["SF64_COOP_TRACE"] = str(trace)
-    start = time.monotonic()
+    began = time.monotonic()
     proc = subprocess.Popen([str(exe)], cwd=run, env=env)
     try:
         reached = wait_for_trace(proc, trace, FRAMES, s.args.timeout)
@@ -222,21 +221,22 @@ def run_plain_game(s, players, pad_script):
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait()
-    s.check(f"game reached frame {FRAMES} by itself in {time.monotonic() - start:.0f}s", reached)
+    s.check(f"game reached frame {FRAMES} by itself in {time.monotonic() - began:.0f}s", reached)
     return parse_trace(trace) if trace.exists() else [], run
 
 
 def flown(frames, count):
     """Frames from INPUT_START to the end of the replay with every player flying."""
-    return [f for f in frames if INPUT_START <= f.tframe < FRAMES and
+    return [f for f in frames if START.frame(INPUT_START) <= f.tframe < FRAMES and
             all(p.state == ACTIVE and not p.parked for p in f.row.players[:count])]
 
 
 def same_as_rule(pad, frame, rule):
     """Hold and press as write_rail_replay stores them: the same stick in both, press has the buttons that went down."""
-    button, x, y = rule(frame)
+    flight = frame - START.active
+    button, x, y = rule(flight)
     return (pad.button, pad.x, pad.y) == (button, x, y) and \
-        (pad.press_button, pad.press_x, pad.press_y) == (button & ~rule(frame - 1)[0], x, y)
+        (pad.press_button, pad.press_x, pad.press_y) == (button & ~rule(flight - 1)[0], x, y)
 
 
 def same_stick(seen, pushed):
@@ -246,18 +246,23 @@ def same_stick(seen, pushed):
     return (seen > 0) == (pushed > 0) and abs(seen) >= STICK_MIN
 
 
+def script_at(f, lag):
+    """What the gamepad's script said `lag` frames before f."""
+    return pad_rule(f.tframe - lag - START.active)
+
+
 def measure_lag(rows, port=0):
     """Frames between the script and the pad of player 0: the lag at which the buttons match best."""
     def misses(lag):
-        return sum(1 for f in rows if rows and f.pads[port].button != pad_rule(f.tframe - lag)[0])
+        return sum(1 for f in rows if rows and f.pads[port].button != script_at(f, lag)[0])
     return min(range(MAX_LAG + 1), key=misses)
 
 
 def check_follows_gamepad(s, rows, player):
     """Player `player` has what the gamepad pressed, some frames later, and none of what the replay's pad 0 says."""
     lag = measure_lag(rows, player)
-    wrong_button = [f.tframe for f in rows if f.pads[player].button != pad_rule(f.tframe - lag)[0]]
-    wrong_stick = [f.tframe for f in rows if not same_stick(f.pads[player].x, pad_rule(f.tframe - lag)[1])]
+    wrong_button = [f.tframe for f in rows if f.pads[player].button != script_at(f, lag)[0]]
+    wrong_stick = [f.tframe for f in rows if not same_stick(f.pads[player].x, script_at(f, lag)[1])]
     s.check(f"player {player} buttons are the gamepad's, {lag} frames later, on {len(rows) - len(wrong_button)} of "
             f"{len(rows)} frames", bool(rows) and not wrong_button)
     s.check(f"player {player} stick is the gamepad's on {len(rows) - len(wrong_stick)} of {len(rows)} frames",
@@ -301,7 +306,7 @@ def check_flies_right_way(s, rows, player, lag):
     """The stick moves the ship: over each half cycle player `player` goes the way the gamepad pushes."""
     halves = {}
     for f in rows:
-        t = f.tframe - lag - INPUT_START
+        t = f.tframe - lag - START.frame(INPUT_START)
         if t >= 0 and t % (CYCLE // 2) >= SETTLE:
             halves.setdefault(t // (CYCLE // 2), []).append(f)
     right = wrong = 0
@@ -309,7 +314,7 @@ def check_flies_right_way(s, rows, player, lag):
         if len(part) < 2:
             continue
         moved = offset(part[-1], player) - offset(part[0], player)
-        pushed = pad_rule(part[0].tframe - lag)[1]
+        pushed = script_at(part[0], lag)[1]
         if (moved > 0) == (pushed > 0):
             right += 1
         else:
@@ -324,8 +329,8 @@ def sweep(rows, player):
 
 
 def replay_rule(pad):
-    def rule(frame):
-        return decoy_rule(frame) if pad == 0 else rail_pad(frame, pad)
+    def rule(flight):
+        return decoy_rule(flight) if pad == 0 else rail_pad(flight, pad)
     return rule
 
 
@@ -397,7 +402,8 @@ def scenario_shots(s):
     bomb = [f for f in rows if any(shot.id == SHOT_BOMB and shot.owner == 1 for shot in f.shots)]
     went_off = next((f.tframe for f in bomb if any(shot.id == SHOT_BOMB and shot.exploded for shot in f.shots)), None)
     s.check(f"the bomb of player 1 left at {bomb[0].tframe if bomb else None}, went off at {went_off}: "
-            f"its owner pressed B at {BOMB_OWNER}, player 0 at {BOMB_DECOY}", went_off == BOMB_OWNER)
+            f"its owner pressed B at {START.frame(BOMB_OWNER)}, player 0 at {START.frame(BOMB_DECOY)}",
+            went_off == START.frame(BOMB_OWNER))
 
     locked = [f for f in rows if f.locks[1] > 0]
     released = [f.tframe for f in rows if f.locks[1] > 0 and not f.pads[1].button & BUTTON_A]
@@ -449,8 +455,8 @@ def main():
         args.pad_script = folder / "pad.txt"
         args.shots_replay = folder / "shots.sfcr"
         args.pad_script_empty = folder / "pad-empty.txt"
-        write_rail_replay(args.replay, FRAMES, lead=decoy_rule)
-        write_rail_replay(args.shots_replay, FRAMES, lead=shots_lead, pad_rule=shots_pad)
+        write_rail_replay(args.replay, FRAMES, lead=decoy_rule, start=START)
+        write_rail_replay(args.shots_replay, FRAMES, lead=shots_lead, pad_rule=shots_pad, start=START)
         write_pad_script(args.pad_script, FRAMES)
         args.pad_script_empty.write_text("", encoding="utf-8")  # only the frame count of the test pad, no steps
 
