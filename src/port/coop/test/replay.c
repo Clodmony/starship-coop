@@ -13,6 +13,7 @@
 
 #include "replay.h"
 #include "pilot.h"
+#include "start_level.h"
 #include "switches.h"
 #include "test_pad.h"
 
@@ -147,6 +148,7 @@ static void CoopReplay_WriteReport(const char* mode, const char* result) {
     CoopReplay_TakeCheckpoint(&now);
     CoopReplay_FormatCheckpoint(got, sizeof(got), &now);
     fprintf(f, "mode=%s\n", mode);
+    fprintf(f, "start=%s\n", CoopTestStart_Name());
     fprintf(f, "frames=%u\n", sFrame);
     fprintf(f, "recorded_frames=%u\n", sRecordedFrames);
     fprintf(f, "first_mismatch=%lld\n", (long long) sFirstMismatch);
