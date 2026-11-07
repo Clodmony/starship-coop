@@ -12,7 +12,7 @@ Every PR states the QA level it reached and how. Levels follow Co-op Anything:
 `automated` needs at least two game clients sharing state. A run of one game is `none`, even when a script drove it and
 checked its state: the PR says what ran.
 
-Current project level: `none` (no co-op play yet; the transport has its own tests).
+Current project level: `automated`. Two real game clients in one session, on one PC, stay equal on every frame through all of Corneria (`python tools/coop/lockstep_test.py`). Nobody has played it, and it has not run on two PCs.
 
 ## Test identity
 
@@ -97,6 +97,27 @@ number of clients, transport.
    needs wall-clock time keeps real time and says why. At test speed each game frame is drawn once, so frame
    interpolation does not run and those tools cannot see it. `determinism.py` and `hash_check.py builds` and `rates`
    are the tests that play with it on, and `speed` against the base of `determinism.py` is interpolation off against on.
+   Most tools do not test the menus, so a game can skip them (#148): `SF64_COOP_TEST_START_LEVEL=<level>` goes straight to
+   a level and `SF64_COOP_TEST_START_SKIP_INTRO=1` past its intro too (`src/port/coop/test/start_level.h`). `Start` in
+   `tools/coop/replay.py` holds these three, with Corneria's frames, and input by rule counts from when player 0 flies, so
+   one rule fits all three:
+
+   | Start | Level frame 0 | Player 0 flies | Who plays it |
+   |---|---|---|---|
+   | `menus` | 3101 | 4775 | `determinism.py`, `full_level.py`, `join_test.py`, `menu_test.py`, `exit_test.py`, `replay_test.py`, `hash_check.py builds` and `rates`, `wingman_check.py sitout` and `chain` |
+   | `level` | 10 | 1684 | `hash_check.py probe`, `player_trace.py rails`, `view_check.py` |
+   | `flying` | 10 | 14 | `hash_check.py run` and `views`, `player_trace.py shots`, `lowhealth` and `effects`, `input_test.py`, `wingman_check.py alive` and `down` (in Sector X) |
+
+   A level's intro is real simulation, and only `menus` and `level` run it. `level` from `START_SEEDS` is the game `menus`
+   plays, frame for frame: `python tools/coop/hash_check.py start` (#148, unattended, exit code 0 on `PASS`) plays through
+   the menus, starts twice in the level from the seeds that game entered it with, and needs the two starts equal on every
+   frame and each equal to the game from the menus in every region from level frame 1 on (with `--players 1` but for
+   `scenery360`, whose free slots hold what earlier screens left). `flying` is another flight: what it leaves out is in
+   NOTES.md, 2026-11-07, #148. `determinism.py`, `full_level.py`, `join_test.py` and `menu_test.py`
+   keep the whole path from boot, and fail on a game that started in a level (`hash_check.whole_path_problem`), as
+   `replay_test.py` shows for the first two. `builds` and `rates` keep it as well: frame interpolation first went wrong in
+   the option menu (#141), and only they play it in Release and at many rates. A replay with checkpoints holds the frames it
+   was made on, so it plays from where it was made, wherever the tool's own input by rule would start.
 3. **Two clients on one machine.** Two Starship processes with their own config, save and log folders (never the
    owner's), connected over loopback, both fed replays. `python tools/coop/join_test.py` (WP-24, unattended, exit code
    0 only when everything passed) takes two or three games from the lobby into a level through the scripted flow in

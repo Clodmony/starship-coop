@@ -8,6 +8,12 @@
     python tools/coop/hash_check.py views                              # unattended; prints PASS or FAIL
     python tools/coop/hash_check.py builds --debug a/Starship --release b/Starship   # unattended; prints PASS or FAIL
     python tools/coop/hash_check.py rates --exe b/Starship             # unattended; prints PASS or FAIL
+    python tools/coop/hash_check.py start --players 2                  # unattended; prints PASS or FAIL
+
+Input by rule starts where replay.py's Start says. run and views play it past Corneria's intro, probe through it, as a
+parked player needs one, and builds and rates through the menus: frame interpolation first went wrong in the option menu
+(#141), and these two are the only tools to run it in Release or at many rates. run --start and probe --start pick
+another. A replay file plays from where it was made.
 
 run plays the replay three times at once, each in a fresh folder under local/ (see tools/coop/replay.py):
   A and B  plain playback; their per-frame state hashes must be equal on every recorded frame.
@@ -34,6 +40,12 @@ rates plays one replay at several values of gInterpolationFPS, which no handshak
 builds and rates run in real time: at test speed a game frame is drawn once, so no game would interpolate, and
 interpolation is what they are there to see (#141, #137). --speed on rates is for replay_test.py, which checks that a
 game at speed fails it.
+start is what a start in the level leaves different from coming through the menus (#148). It plays Corneria through the
+menus, takes the seeds that game entered the level with, and plays the same input twice from those seeds, starting in
+the level. The two starts in the level must be equal from their first frame to their last, and each must equal the game
+from the menus in every region from level frame 1 on. With --players 1 region scenery360 is left out, and the tool says
+how often it differed: see cmd_start. It also says if START_SEEDS in replay.py no longer are those seeds; that is not a
+failure, as then only the tools' flights change. What the hash cannot see is in docs/coop/NOTES.md.
 
 Exit code 0 on PASS (or no difference for diff), 1 otherwise.
 """
@@ -41,6 +53,7 @@ import argparse
 import copy
 import math
 import os
+import re
 import struct
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -55,12 +68,13 @@ from run_folder import make_run_folder  # noqa: E402
 BUTTON_A = 0x8000
 BUTTON_L = 0x0020
 
-# Input by rule: A every 30 frames gets through the menus into Corneria (the level starts about frame 3100) and keeps
-# firing there, L jumps to all-range with CVar gDebugJumpToAllRange, and co-op players join a little later.
-GENERATED_L_FRAME = 4840
-GENERATED_POKE_FRAME = 5400  # both players flying in all-range
-GENERATED_FRAMES = 5800
-GENERATED_SEEDS = (1234, 5678, 9012, 111, 222, 333)
+# Input by rule: replay.py's Start.fires on pad 0, L jumps to all-range with CVar gDebugJumpToAllRange, and co-op
+# players join a little later. Frames here count from when player 0 flies, so they fit every Start.
+GENERATED_L = 65
+GENERATED_POKE = 625  # both players flying in all-range
+GENERATED_END = 1025
+
+WHOLE_PATH_FRAMES = 20  # a game started in a level shows a title screen for one frame
 
 # What a probe must show: target -> (hash changes?, the only region that may change).
 PROBE_RULES = {
@@ -144,14 +158,16 @@ def cmd_diff(args):
     return 1
 
 
-def write_generated_replay(path, frames=GENERATED_FRAMES, l_frame=GENERATED_L_FRAME):
-    """Write a replay from the rule above. It holds no checkpoints, so playback reports FAIL_MISMATCH at frame 0 and
-    plays on; the layout is ReplayHeader and ReplayFrame in src/port/coop/test/replay.c."""
-    data = bytearray(b"SFCR" + struct.pack("<III6i", 2, 20, 204, *GENERATED_SEEDS))
+def write_generated_replay(path, frames=None, l_at=GENERATED_L, start=replay_tool.MENUS, seeds=None):
+    """Write a replay from the rule above, for a game that starts at start: frames long, by default to GENERATED_END,
+    with L at l_at, counted from when player 0 flies, or none. It holds no checkpoints, so playback reports
+    FAIL_MISMATCH at frame 0 and plays on; the layout is ReplayHeader and ReplayFrame in src/port/coop/test/replay.c."""
+    data = bytearray(b"SFCR" + struct.pack("<III6i", 2, 20, 204, *(seeds or start.seeds)))
     idle = bytes(20)
-    for frame in range(frames):
-        button = BUTTON_A if frame >= 60 and frame % 30 == 0 else 0
-        if frame == l_frame:
+    for frame in range(start.frame(GENERATED_END) if frames is None else frames):
+        flight = frame - start.active
+        button = BUTTON_A if start.fires(flight) else 0
+        if flight == l_at:
             button |= BUTTON_L
         pads = struct.pack("<H18x", button) + idle * 3
         data += struct.pack("<I", frame) + pads + pads + bytes(40)
@@ -162,9 +178,9 @@ def write_generated_replay(path, frames=GENERATED_FRAMES, l_frame=GENERATED_L_FR
     temp.replace(path)
 
 
-def play(replay, exe, timeout, tag, poke=None, env_extra=None, config=None):
+def play(replay, exe, timeout, tag, poke=None, env_extra=None, config=None, start=None):
     values, run, elapsed = replay_tool.run_game("play", replay, exe, timeout, hash_log=True, poke=poke, tag=tag,
-                                                env_extra=env_extra, config=config)
+                                                env_extra=env_extra, config=config, start=start)
     log = run / "state-hash.txt"
     result = values.get("result") if values else "NO_REPORT"
     print(f"hash: run {tag}: replay {result}, {elapsed:.0f}s, log {log}")
@@ -177,8 +193,10 @@ def play(replay, exe, timeout, tag, poke=None, env_extra=None, config=None):
 
 
 def test_setup(args):
-    """Return (replay, config) for a run: the given file, or input by rule with what that needs."""
+    """Return (replay, config, start) for a run: the given file, or input by rule with what that needs. start is
+    args.start for input by rule; a file plays from where it was made."""
     cvars = {}
+    start = None
     if args.players != 1:
         cvars["gCoopDebugPlayerCount"] = args.players
     if args.file:
@@ -186,10 +204,27 @@ def test_setup(args):
         if not replay.exists():
             sys.exit(f"hash: {replay} does not exist")
     else:
-        replay = replay_tool.ROOT / "local" / "test-hash-generated.sfcr"
-        write_generated_replay(replay)
+        start = replay_tool.STARTS[args.start]
+        # A folder of its own: the tools of two scenarios can run at once, on different starts.
+        replay = make_run_folder(replay_tool.ROOT / "local", f"test-hash-{start.name}-") / "input.sfcr"
+        write_generated_replay(replay, start=start)
         cvars["gDebugJumpToAllRange"] = 1
-    return replay, {"CVars": cvars} if cvars else None
+    return replay, {"CVars": cvars} if cvars else None, start
+
+
+def whole_path_problem(states, through=(replay_tool.GS_TITLE,)):
+    """What is wrong with a game that has to come the whole way from boot, or None. states are (frame, game state), or
+    longer rows that start with those, of a hash log or a replay. Every state in through must come before the first
+    level frame, for long enough to be that screen and not the frames a start in the level goes through."""
+    level = next((row[0] for row in states if row[1] == replay_tool.GS_PLAY), None)
+    if level is None:
+        return None
+    for screen in through:
+        frames = sum(1 for row in states if row[0] < level and row[1] == screen)
+        if frames < WHOLE_PATH_FRAMES:
+            return (f"started in the level: {frames} frames of game state {screen} before the level at frame {level}, "
+                    f"this test keeps the whole path from boot (#148)")
+    return None
 
 
 def played_through(values):
@@ -200,13 +235,13 @@ def played_through(values):
 
 def cmd_run(args):
     exe = replay_tool.find_exe(args.exe)
-    replay, config = test_setup(args)
+    replay, config, start = test_setup(args)
     lenient = args.file is None or args.players != 1
     failures = []
 
     poke = args.poke_frame
     if poke is None and args.file is None:
-        poke = GENERATED_POKE_FRAME
+        poke = start.frame(GENERATED_POKE)
     if poke is None:
         # Default: the middle of the replay. Any frame works, because the poked bytes (gActors) are hashed in every
         # game state.
@@ -217,9 +252,10 @@ def cmd_run(args):
     # The three runs are independent (own folders, same replay), so they run at the same time: running them in a row
     # would take three times as long.
     with ThreadPoolExecutor(max_workers=3) as pool:
-        a_job = pool.submit(play, replay, exe, args.timeout, "hash-a", config=config)
-        b_job = pool.submit(play, replay, exe, args.timeout, "hash-b", config=config)
-        c_job = pool.submit(play, replay, exe, args.timeout, "hash-c", poke, env_extra=poke_env, config=config)
+        a_job = pool.submit(play, replay, exe, args.timeout, "hash-a", config=config, start=start)
+        b_job = pool.submit(play, replay, exe, args.timeout, "hash-b", config=config, start=start)
+        c_job = pool.submit(play, replay, exe, args.timeout, "hash-c", poke, env_extra=poke_env, config=config,
+                            start=start)
         a_values, names, a_rows = a_job.result()
         b_values, _, b_rows = b_job.result()
         c_values, _, c_rows = c_job.result()
@@ -335,10 +371,11 @@ def check_probes(probes, players):
 
 def cmd_probe(args):
     exe = replay_tool.find_exe(args.exe)
-    replay, config = test_setup(args)
+    replay, config, start = test_setup(args)
     print(f"hash: probe run, {args.players} player(s), every {args.period} frames")
     values, run, elapsed = replay_tool.run_game("play", replay, exe, args.timeout, hash_log=True, tag="hash-probe",
-                                                env_extra={"SF64_COOP_HASH_PROBE": str(args.period)}, config=config)
+                                                env_extra={"SF64_COOP_HASH_PROBE": str(args.period)}, config=config,
+                                                start=start)
     log = run / "state-hash.txt"
     print(f"hash: replay {values.get('result') if values else 'NO_REPORT'}, {elapsed:.0f}s, log {log}")
     if not played_through(values) or not log.exists():
@@ -351,9 +388,9 @@ def cmd_probe(args):
     return 1 if failures else 0
 
 
-VIEW_SECTIONS = {  # name -> (frames, frame of the L press into all-range)
-    "rails": (None, None),  # None: player_trace.RAIL_FRAMES
-    "all-range": (8000, GENERATED_L_FRAME),
+VIEW_SECTIONS = {  # name -> (frames from when player 0 flies, when L goes into all-range)
+    "rails": (None, None),  # None: player_trace.RAIL_FLIGHT
+    "all-range": (3225, GENERATED_L),
 }
 
 
@@ -383,29 +420,30 @@ def check_views_differ(section, a_values, b_values):
     return failures
 
 
-def section_setup(section, name, args):
-    """Return (replay, frames, config) for one section of VIEW_SECTIONS, played by rule."""
+def section_setup(section, name, args, start):
+    """Return (replay, frames, config) for one section of VIEW_SECTIONS, played by rule from start."""
     import player_trace  # here, as player_trace imports this file
 
-    frames, l_frame = VIEW_SECTIONS[section]
-    frames = args.frames or frames or player_trace.RAIL_FRAMES
+    flight, l_at = VIEW_SECTIONS[section]
+    frames = args.frames or start.frame(flight or player_trace.RAIL_FLIGHT)
     # A folder of its own: a game reads the replay when its turn comes, which can be minutes after this, and another run
     # of this tool can start in between (#104).
     replay = make_run_folder(replay_tool.ROOT / "local", f"test-hash-{name}-{section}-") / "input.sfcr"
-    player_trace.write_rail_replay(replay, frames, l_frame)
+    player_trace.write_rail_replay(replay, frames, l_at, start=start)
     # Flying by rule, player 0 would not live through the section, as in player_trace.py rails.
     cvars = {"gCoopDebugPlayerCount": args.players, "gInvincible": 1}
-    if l_frame is not None:
+    if l_at is not None:
         cvars["gDebugJumpToAllRange"] = 1
     return replay, frames, {"CVars": cvars}
 
 
 def view_section(section, exe, args):
     """Play one section with each local index. Returns a list of failures."""
-    replay, frames, config = section_setup(section, "views", args)
+    start = replay_tool.FLYING
+    replay, frames, config = section_setup(section, "views", args, start)
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        jobs = [pool.submit(play, replay, exe, args.timeout, f"view-{section}-{index}", config=config,
+        jobs = [pool.submit(play, replay, exe, args.timeout, f"view-{section}-{index}", config=config, start=start,
                             env_extra={"SF64_COOP_TEST_LOCAL_INDEX": str(index)}) for index in (0, 1)]
         (a_values, names, a_rows), (b_values, _, b_rows) = [job.result() for job in jobs]
 
@@ -453,12 +491,13 @@ def compare_runs(section, label, a, b, frames):
 
 def build_section(section, debug, release, args):
     """Play one section on both Release runs and the Debug run. Returns a list of failures."""
-    replay, frames, config = section_setup(section, "builds", args)
+    start = replay_tool.MENUS  # see the top of this file
+    replay, frames, config = section_setup(section, "builds", args, start)
     runs = (("release-a", release), ("release-b", release), ("debug", debug))
 
     with ThreadPoolExecutor(max_workers=len(runs)) as pool:
         jobs = [pool.submit(play, replay, exe, args.timeout, f"build-{section}-{tag}", env_extra=replay_tool.REAL_TIME,
-                            config=config) for tag, exe in runs]
+                            config=config, start=start) for tag, exe in runs]
         a, b, d = [job.result() for job in jobs]
 
     failures = [f"{section}: {tag} did not play through: {run[0].get('result') if run[0] else 'no report'}"
@@ -488,13 +527,15 @@ def read_draws(path):
 
 def rate_section(section, exe, rates, args):
     """Play one section at every rate. Returns a list of failures."""
-    replay, frames, config = section_setup(section, "rates", args)
+    start = replay_tool.MENUS  # see the top of this file
+    replay, frames, config = section_setup(section, "rates", args, start)
     speed = replay_tool.REAL_TIME if args.speed is None else {"SF64_COOP_TEST_SPEED": args.speed}
 
     def run(rate):
         rate_config = copy.deepcopy(config)
         rate_config["CVars"].update({"gInterpolationFPS": rate, "gVsyncEnabled": 0})
-        return play(replay, exe, args.timeout, f"rate-{section}-{rate}", env_extra=speed, config=rate_config)
+        return play(replay, exe, args.timeout, f"rate-{section}-{rate}", env_extra=speed, config=rate_config,
+                    start=start)
 
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
         runs = list(pool.map(run, rates))
@@ -526,6 +567,92 @@ def cmd_rates(args):
     return 1 if failures else 0
 
 
+def read_level_line(path):
+    """(frame, seeds) of the first "# level" line of a hash log, the frame Play_Init ran on, or None."""
+    for line in Path(path).read_text(encoding="utf-8", errors="replace").splitlines():
+        match = re.match(r"# level frame=(\d+) seeds=(\S+)", line)
+        if match:
+            return int(match[1]), tuple(int(seed) for seed in match[2].split(","))
+    return None
+
+
+def without_region(rows, at):
+    """Rows with one region and the total left out of the comparison."""
+    return [(frame, state, level, "", [*regions[:at], "", *regions[at + 1:]])
+            for frame, state, level, _, regions in rows]
+
+
+def start_played(name, values, rows, start):
+    """Return (failures, frame Play_Init ran on, seeds) for a run of cmd_start."""
+    level = None if values is None or "log" not in values else read_level_line(values["log"])
+    if rows is None or not played_through(values) or level is None:
+        return [f"{name} did not reach a level: {values.get('result') if values else 'no report'}"], None, None
+    if level[0] + 1 != start.level:
+        # The input would no longer land where replay.py says.
+        return [f"{name}: level frame 0 at frame {level[0] + 1}, replay.py says {start.level}"], None, None
+    return [], *level
+
+
+def cmd_start(args):
+    exe = replay_tool.find_exe(args.exe)
+    menus, level = replay_tool.MENUS, replay_tool.LEVEL
+    work = make_run_folder(replay_tool.ROOT / "local", "test-hash-start-")
+    config = {"CVars": {"gCoopDebugPlayerCount": args.players, "gDebugJumpToAllRange": 1}}
+    frames = args.frames or GENERATED_END
+
+    write_generated_replay(work / "menus.sfcr", menus.frame(frames), start=menus)
+    menu_values, names, menu_rows = play(work / "menus.sfcr", exe, args.timeout, "start-menus", config=config,
+                                         start=menus)
+    failures, menu_level, seeds = start_played("the game from the menus", menu_values, menu_rows, menus)
+    if failures:
+        print(f"FAIL: {failures[0]}\nhash: FAIL")
+        return 1
+    print(f"hash: through the menus Corneria starts at frame {menu_level + 1}, from seeds {seeds}")
+    if seeds != replay_tool.START_SEEDS:
+        print(f"hash: note: replay.py's START_SEEDS are {replay_tool.START_SEEDS}, so the tools fly another flight")
+
+    write_generated_replay(work / "level.sfcr", level.frame(frames), start=level, seeds=seeds)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        jobs = [pool.submit(play, work / "level.sfcr", exe, args.timeout, tag, config=config, start=level)
+                for tag in ("start-a", "start-b")]
+        (a_values, _, a_rows), (b_values, _, b_rows) = [job.result() for job in jobs]
+
+    failures, a_level, a_seeds = start_played("start A", a_values, a_rows, level)
+    more, _, _ = start_played("start B", b_values, b_rows, level)
+    failures += more
+    if not failures:
+        recorded = level.frame(frames)
+        print(f"hash: start A enters level frame 0 at frame {a_level + 1}, from seeds {a_seeds}")
+        failures += compare_runs("start", "two starts in the level", (a_values, names, a_rows),
+                                 (b_values, names, b_rows), recorded)
+        if a_seeds != seeds:
+            failures.append(f"start A entered from seeds {a_seeds}, not {seeds}")
+        # From level frame 1: on the frame Play_Init runs, gGameFrameCount still counts the screen a game came from.
+        menu_level_rows = [row for row in menu_rows if row[0] > menu_level]
+        shifted = [(row[0] + menu_level - a_level, *row[1:]) for row in a_rows if row[0] > a_level]
+        limit = recorded - a_level
+        if args.players == 1:
+            # Only here the hash reads free gScenery360 slots (HashScenery360), and level memory is not cleared: they
+            # hold what the screens before left there, and from the menus that is more than nothing.
+            at = names.index("scenery360")
+            apart = sum(1 for a, b in zip(menu_level_rows[:limit], shifted[:limit]) if a[4][at] != b[4][at])
+            print(f"hash: with one player free gScenery360 slots count: that region differs on {apart} frames, and is "
+                  f"left out")
+            menu_level_rows, shifted = without_region(menu_level_rows, at), without_region(shifted, at)
+        diff = first_difference(menu_level_rows, shifted, limit)
+        if diff is not None:
+            failures.append(f"menus and start A differ {diff[0] + 1} frames into the level: {describe(names, diff)}")
+        elif min(len(menu_level_rows), len(shifted)) < limit - 1:
+            failures.append(f"only {min(len(menu_level_rows), len(shifted))} level frames to compare, not {limit - 1}")
+        else:
+            what = f"{len(names) - 1} regions" if args.players == 1 else f"total and {len(names)} regions"
+            print(f"hash: menus and start A equal on {limit - 1} level frames: state, level, {what}")
+    for failure in failures:
+        print(f"FAIL: {failure}")
+    print("hash: FAIL" if failures else "hash: PASS")
+    return 1 if failures else 0
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -536,6 +663,7 @@ def main():
     r.add_argument("--timeout", type=float, default=1800, help="per run: give up after this many seconds")
     r.add_argument("--poke-frame", type=int, help="frame for run C (default: middle of the replay)")
     r.add_argument("--poke-player", type=int, help="run C flips a bit of this player (0 is the first), not of an actor")
+    r.add_argument("--start", choices=replay_tool.STARTS, default="flying", help="input by rule: where the game starts")
     d = sub.add_parser("diff", help="compare two hash logs")
     d.add_argument("a")
     d.add_argument("b")
@@ -545,6 +673,7 @@ def main():
     b.add_argument("--period", type=int, default=200, help="frames between probes (default 200)")
     b.add_argument("--exe", help="Starship executable (default: newest build found)")
     b.add_argument("--timeout", type=float, default=900, help="give up after this many seconds")
+    b.add_argument("--start", choices=replay_tool.STARTS, default="level", help="input by rule: where the game starts")
     v = sub.add_parser("views", help="play one replay with local index 0 and 1 and compare the hashes")
     v.add_argument("--section", choices=[*VIEW_SECTIONS, "both"], default="both", help="default: both")
     v.add_argument("--players", type=int, default=2, help="players, through gCoopDebugPlayerCount (default 2)")
@@ -568,9 +697,14 @@ def main():
     t.add_argument("--speed", help="anything but real time must fail this check (default: real time)")
     t.add_argument("--exe", help="Starship executable (default: newest build found)")
     t.add_argument("--timeout", type=float, default=3600, help="per run: give up after this many seconds")
+    s = sub.add_parser("start", help="what a start in the level leaves different from coming through the menus")
+    s.add_argument("--players", type=int, default=2, help="players, through gCoopDebugPlayerCount (default 2)")
+    s.add_argument("--frames", type=int, help=f"frames from when player 0 flies (default {GENERATED_END})")
+    s.add_argument("--exe", help="Starship executable (default: newest build found)")
+    s.add_argument("--timeout", type=float, default=900, help="per run: give up after this many seconds")
     args = p.parse_args()
     commands = {"run": cmd_run, "diff": cmd_diff, "probe": cmd_probe, "views": cmd_views, "builds": cmd_builds,
-                "rates": cmd_rates}
+                "rates": cmd_rates, "start": cmd_start}
     return commands[args.cmd](args)
 
 
