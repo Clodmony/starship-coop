@@ -102,6 +102,8 @@ if(CMAKE_SYSTEM_NAME MATCHES "^(Windows|Linux|Darwin)$")
 else()
     set(USE_NETWORKING OFF)
 endif()
+# COOP: Steam relay transport (WP-26), off by default. It needs no SDK to build: the library is loaded at run time.
+option(USE_STEAM_RELAY "Build the Steam relay transport for co-op (needs USE_NETWORKING)" OFF)
 set(SKIP_XCODE_VERSION_CHECK ON)
 
 # Add compile definitions for the target
@@ -395,6 +397,18 @@ if(USE_NETWORKING)
     add_subdirectory(tools/coop/nettest)
     # COOP: test program for the session handshake, built on demand by tools/coop/session_test.py.
     add_subdirectory(tools/coop/sessiontest)
+    # COOP: test program for the co-op menu, built on demand by tools/coop/menu_test.py.
+    add_subdirectory(tools/coop/menutest)
+    # COOP: test program for the input sources, built on demand by tools/coop/input_test.py.
+    add_subdirectory(tools/coop/inputtest)
+    # COOP: test program for the Steam relay transport, built on demand by tools/coop/steam_test.py. It runs on a fake
+    # Steam, so it is there with USE_STEAM_RELAY off too. Nothing in the game calls the transport yet, so only its two
+    # files need the switch; a work package that calls it makes this a target_compile_definitions.
+    add_subdirectory(tools/coop/steamtest)
+    if(USE_STEAM_RELAY)
+        set_source_files_properties(src/port/coop/net/transport_steam.c src/port/coop/net/steam_backend_flat.c
+            PROPERTIES COMPILE_DEFINITIONS USE_STEAM_RELAY)
+    endif()
 endif()
 
 option(USE_STANDALONE "Build as a standalone executable" OFF)

@@ -13,11 +13,20 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 GAME_DATA = re.compile(r"\.(z64|n64|v64|u64|o2r|otr)$", re.IGNORECASE)
+# The Steamworks SDK sits behind an agreement: its headers and libraries stay out, the transport loads the player's own.
+STEAM_SDK = re.compile(r"(^|/)((lib)?steam_api(64)?\.(dll|lib|so|dylib)|sdkencryptedappticket\w*\.\w+|"
+                       r"steam_api\w*\.(h|json)|isteam\w+\.h|steamnetworkingtypes\.h|steam_appid\.txt)$",
+                       re.IGNORECASE)
 MAX_BYTES = 5 * 1024 * 1024
 
 
 def git(*args):
     return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
+
+
+def run_tool(name, *args):
+    return subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "coop" / name), *args],
+                          cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
 
 
 def dirs_differ(a: Path, b: Path):
@@ -42,6 +51,10 @@ def main():
     if bad:
         failures.append("game data tracked (ROMs or asset archives):\n  " + "\n  ".join(bad))
 
+    bad = [t for t in tracked if STEAM_SDK.search(t)]
+    if bad:
+        failures.append("Steamworks SDK files tracked:\n  " + "\n  ".join(bad))
+
     # 2. No large files (asset dumps, builds, recordings).
     for t in tracked:
         p = ROOT / t
@@ -60,12 +73,34 @@ def main():
         failures.append("duplicate message ids in docs/coop/PROTOCOL.md: " + ", ".join(dups))
 
     # 5. Mutation checks: every break must still match the source it guards (no build, no write).
-    for tool in ("net_mutants.py", "session_mutants.py"):
-        mut = subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "coop" / tool), "--check"],
-                             cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
+    for tool in ("net_mutants.py", "session_mutants.py", "steam_mutants.py"):
+        mut = run_tool(tool, "--check")
         if mut.returncode != 0:
             failures.append(f"tools/coop/{tool} --check failed; update the break that guards the code you changed:\n  "
                             + "\n  ".join((mut.stdout + mut.stderr).strip().splitlines()))
+
+    # 6. Script reader: its level and command tables must still match the game source (no build, no ROM).
+    reader = subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "coop" / "script_reader_test.py")],
+                            cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
+    if reader.returncode != 0:
+        failures.append("tools/coop/script_reader_test.py failed:\n  "
+                        + "\n  ".join(reader.stdout.strip().splitlines()))
+
+    # 7. Run folders: each test tool gets a folder of its own, however close together runs start.
+    folders = subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "coop" / "run_folder_test.py")],
+                             cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
+    if folders.returncode != 0:
+        failures.append("tools/coop/run_folder_test.py failed:\n  "
+                        + "\n  ".join((folders.stdout + folders.stderr).strip().splitlines()))
+
+    # 8. Single-player audit: the list must match the code, and the tool must still pass its own tests.
+    for args in (("sp_audit.py", "--check"), ("sp_audit_test.py",)):
+        audit = run_tool(*args)
+        lines = (audit.stdout + audit.stderr).strip().splitlines()
+        if audit.returncode != 0:
+            failures.append(f"tools/coop/{' '.join(args)} failed:\n  " + "\n  ".join(lines))
+        else:  # the result, and any warning; a passed scenario says nothing new
+            print("\n".join(f"info: {line}" for line in lines if not line.endswith(": ok")))
 
     # Info: where the fork diverges from upstream game code.
     grep = git("grep", "-n", "COOP:", "--", "src", "include", ":!src/port/coop")

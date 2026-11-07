@@ -6,6 +6,8 @@
 #include "port/interpolation/FrameInterpolation.h"
 #include "port/hooks/list/EngineEvent.h"
 #include "port/mods/PortEnhancements.h"
+#include "port/coop/game/players.h" // COOP: the local player is drawn (#96)
+#include "port/coop/game/view.h"    // COOP
 
 f32 gNextVsViewScale;
 f32 gVsViewScale;
@@ -516,7 +518,9 @@ void Game_Update(void) {
                 break;
         }
 
-        Game_Draw(0);
+        CoopView_BeginDraw();                // COOP (#96)
+        Game_Draw(CoopPlayers_ViewIndex());  // COOP: was 0; the same outside co-op (#96)
+        CoopView_EndDraw();                  // COOP
 
         if (gCamCount == 2) {
             Game_InitViewport(&gMasterDisp, gCamCount, 1);
@@ -563,8 +567,10 @@ void Game_Update(void) {
         if (gCamCount == 1) {
             Graphics_FillRectangle(&gMasterDisp, OTRGetRectDimensionFromLeftEdge(0), 0,
                                    OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH - 1), SCREEN_HEIGHT - 1,
-                                   gPlayerGlareReds[0], gPlayerGlareGreens[0], gPlayerGlareBlues[0],
-                                   gPlayerGlareAlphas[0]);
+                                   gPlayerGlareReds[CoopPlayers_ViewIndex()], // COOP: the glare is per camera (#30)
+                                   gPlayerGlareGreens[CoopPlayers_ViewIndex()],
+                                   gPlayerGlareBlues[CoopPlayers_ViewIndex()],
+                                   gPlayerGlareAlphas[CoopPlayers_ViewIndex()]);
             if ((gDrawMode == DRAW_PLAY) || (gDrawMode == DRAW_ENDING)) {
                 Radio_Draw();
                 if (gShowHud) {
@@ -608,6 +614,7 @@ void Game_Update(void) {
                                    OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH), SCREEN_HEIGHT, gFillScreenRed,
                                    gFillScreenGreen, gFillScreenBlue, gFillScreenAlpha);
         }
+        CoopView_DrawHitFlash(); // COOP: a hit shows on the client of the player hit (#30)
         Audio_dummy_80016A50();
 
         // @port: @event: Call GamePostUpdateEvent

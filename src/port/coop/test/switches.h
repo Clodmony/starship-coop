@@ -11,6 +11,8 @@
 //                                     their code path for CPUs without FMA3 (_set_FMA3_enable(0)).
 //   SF64_COOP_TEST_AUDIO_SAMPLES=low  every audio update renders the low sample count (as if the output device
 //   SF64_COOP_TEST_AUDIO_SAMPLES=high always had enough, or never had enough, buffered; src/port/Engine.cpp:387-388).
+//   SF64_COOP_TEST_LOCAL_INDEX=<i>    in co-op this client looks through player i (CoopPlayers_SetLocalIndex), which
+//                                     two clients of one session would do. It changes what is drawn, not the input.
 // With none of them set, nothing changes.
 
 #ifdef __cplusplus

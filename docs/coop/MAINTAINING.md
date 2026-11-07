@@ -40,7 +40,7 @@ Local builds are the development loop (`python tools/coop/build.py`); CI is the 
 
 | Workflow | File | Runs | Jobs |
 |---|---|---|---|
-| `Co-op checks` | `coop-checks.yml` | every PR, every push to `coop` | repo checks, seconds |
+| `Co-op checks` | `coop-checks.yml` | every PR, every push to `coop` | repo checks with the single-player audit and its tests, seconds |
 | `Co-op build` | `coop-build.yml` | PRs and pushes to `coop` that touch code, CMake files or submodules; manual | Linux and Windows, both through `tools/coop/build.py` |
 
 Nothing runs on `main`: upstream's own workflows are disabled (below), and ours only exist on `coop`.
@@ -48,8 +48,12 @@ Nothing runs on `main`: upstream's own workflows are disabled (below), and ours 
 Upstream's workflows (`GenerateBuilds` in `main.yml`, and the `Linux`, `Windows`, `MacOS`, `Switch` validation
 workflows) are **disabled in the repository settings**, not deleted, so their files stay identical to upstream and
 upstream syncs do not conflict. `GenerateBuilds` built four platforms on every push to any branch, which is too much
-for a project with many contributors. Re-enable one for a release build with `gh workflow enable <name>`; release
-builds are WP-30. As of 2026-11-01 upstream's macOS jobs target the `macos-14` runner image, which GitHub retires on
+for a project with many contributors. Re-enable one for a release build with `gh workflow enable <name>`. Test builds
+come from `Co-op build` instead: a run whose tests of the build pass leaves `starship-coop-<id>-linux-x64` and
+`-windows-x64` on its Actions page for 14 days, `<id>` being the id the game shows. They hold no ROM and no `sf64.o2r`;
+`starship.o2r` is in them because the game cannot start without it, packed from the tracked `port/` files. The owner
+accepted that, and a new file under `port/` stops `package.py` until someone has looked at it (NOTES.md, 2026-11-06,
+#26). As of 2026-11-01 upstream's macOS jobs target the `macos-14` runner image, which GitHub retires on
 2026-11-02, so they need an upstream fix (or our own release workflow) before macOS builds work again.
 
 ```sh
@@ -104,8 +108,14 @@ git submodule update --init --recursive
   code. `git grep -n "COOP:"` before and after must list the same places (plus any new ones you had to add).
 - `README.md`: keep ours. Upstream's README is linked from it.
 - `.gitignore`: keep both.
-- Build, run the single-player replay checks from `docs/coop/QA.md` once they exist, rerun
-  `python tools/coop/sp_audit.py` and read its diff (CI fails while the audit is stale), then open the PR into `coop`.
+- Bring the single-player audit up to date before the build: `build.py` runs `check.py`, which fails while the audit
+  is stale, and so does `Co-op checks`. Run `python tools/coop/sp_audit.py`. With no new site it rewrites
+  `docs/coop/audit/single-player.md`. A site the list does not have stops it: it writes nothing and names each new site
+  with the row it would take its verdict from, or `no verdict row`. Read those sites, fix or add their rows in
+  `docs/coop/audit/sp-verdicts.tsv`, then run `python tools/coop/sp_audit.py --accept`, which takes them in. That
+  records that the sites were shown, not that the verdicts fit. `matches no site` means a row has no sites left: delete
+  the row and rerun. Read the diff of the list.
+- Build, run the single-player replay checks from `docs/coop/QA.md` once they exist, then open the PR into `coop`.
 - Merge sync PRs with a **merge commit**, not squash, so upstream history stays intact and the next sync is clean.
 
 ## Sending fixes upstream
