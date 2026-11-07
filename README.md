@@ -38,7 +38,7 @@ Everything here is tested by scripts, on Corneria, on Linux. Nobody has played i
 
 ### In progress
 
-Nothing is being built right now. The next step is the first test on two PCs.
+Nothing is being built right now. The next step is the first test on two PCs: see [TWO_PC_TEST.md](docs/coop/TWO_PC_TEST.md).
 
 ### What is open
 
