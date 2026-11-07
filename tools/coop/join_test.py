@@ -82,10 +82,17 @@ class LevelLog:
         """Hash rows before the level, then from the frame after Play_Init on, without their frame numbers. In between
         the game is in GSTATE_PLAY but gGameFrameCount still counts the screen it came from."""
         names, rows = hash_check.read_log(self.run / "state-hash.txt")
+        self.check_whole_path(rows)
         running = said(self.report(), "level_running")
         expect(running, f"{self.name}'s game never got to the level")
         first = int(running[0]["frame"])
         return names, [r for r in rows if r[1] != GSTATE_PLAY], [r[1:] for r in rows if r[0] >= first]
+
+    def check_whole_path(self, rows=None):
+        """This test keeps the whole way from boot, and a game that started in the level fails it (#148)."""
+        rows = hash_check.read_log(self.run / "state-hash.txt")[1] if rows is None else rows
+        problem = hash_check.whole_path_problem(rows)
+        expect(problem is None, f"{self.name}: {problem}")
 
     def report(self):
         return read_report(self.report_path)
@@ -129,6 +136,7 @@ def play(folder, exe, frames, picks, host_env=None, client_env=None, press_until
     for game in [host, *clients]:
         game.thread.join()
         expect(game.run is not None, f"{game.name}: no run")
+        game.check_whole_path()
     return host, clients
 
 

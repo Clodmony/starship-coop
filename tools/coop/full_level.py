@@ -28,6 +28,9 @@ only plays on the build that made it. About 3 minutes, each game runs for as lon
 It runs at test speed (game_env in replay.py), the pilot too: it reads game state once a frame and never the clock, so a
 frame is the same frame at any speed, and its log must still equal the plain runs' on every frame (#137).
 
+It keeps the whole path from boot, through the menus and the map: no faster start may take a whole level's run from it
+(#148), so a game or a --replay that reaches the level any other way fails.
+
 Exit code 0 on PASS, 1 otherwise. --by-rule shows why a pilot is needed, so it fails when the level is not finished.
 """
 import argparse
@@ -54,6 +57,7 @@ MAP_TAIL = 60  # frames kept after the map comes up
 POKE_AFTER = 300  # frames into all-range for run C: both players fly
 ORDER = (("level start", None), ("player 0 active", ACTIVE), ("the cut to all-range", START_360),
          ("level complete", LEVEL_COMPLETE))
+WHOLE_PATH = (replay_tool.GS_TITLE, replay_tool.GS_MENU, replay_tool.GS_MAP)  # as in determinism.py
 
 
 def read_checkpoints(path):
@@ -121,7 +125,7 @@ def config_for(players):
 
 def rule_replay(work, frames):
     rule = work / "rule.sfcr"
-    hash_check.write_generated_replay(rule, frames=frames, l_frame=-1)
+    hash_check.write_generated_replay(rule, frames=frames, l_at=None)
     return rule
 
 
@@ -133,7 +137,11 @@ def fly(args, exe, work):
            "SF64_COOP_TRACE": str(trace)}
     print(f"full_level: pilot, {args.frames} frames at most, {args.players} players")
     values, _, rows = hash_check.play(rule_replay(work, args.frames), exe, args.timeout, "full-pilot", env_extra=env,
-                                      config=config_for(args.players))
+                                      config=config_for(args.players), start=replay_tool.MENUS)
+    problem = rows and hash_check.whole_path_problem(rows, WHOLE_PATH)
+    if problem:
+        print(f"full_level: FAIL, the pilot's game {problem}")
+        return None
     if not flown.exists():
         print("full_level: FAIL, the pilot wrote no replay (does this build have src/port/coop/test/pilot.c?)")
         return None
@@ -182,6 +190,9 @@ def compare(args, exe, replay, found, pilot_rows):
             print(f"full_level: run {tag}: replay PASS, every checkpoint of {frames} frames matched")
     if a_rows is None or b_rows is None or c_rows is None:
         return failures + ["a run wrote no hash log"]
+    failures += [f"run {tag}: {problem}" for tag, problem in (("A", hash_check.whole_path_problem(a_rows, WHOLE_PATH)),
+                                                              ("B", hash_check.whole_path_problem(b_rows, WHOLE_PATH)))
+                 if problem]
     if min(len(a_rows), len(b_rows)) < frames:
         return failures + [f"hash logs shorter than the replay ({len(a_rows)}, {len(b_rows)} < {frames} frames)"]
 
@@ -246,6 +257,10 @@ def main():
     pilot_rows = None
     if args.replay:
         replay = Path(args.replay).resolve()
+        problem = hash_check.whole_path_problem([(c[0], c[1]) for c in read_checkpoints(replay)], WHOLE_PATH)
+        if problem:
+            print(f"full_level: FAIL, this replay {problem}")
+            return 1
         states = level_states(read_checkpoints(replay))
         print_states(states)
         found, missing = milestones(states)

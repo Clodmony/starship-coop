@@ -36,6 +36,11 @@ A game that does not draw logs so, and every scenario checks that against its to
 start a tool that needs pixels or interpolation with COOP_TOOLS_TAKE_DRAWING in its shell, so its games do not get them:
 its guard must fail the run and say so. draw-off-on runs hash_check.py draw, whose two runs must hash alike on every
 frame.
+
+The level-* scenarios are about a game that starts straight in a level (#148). A second recording is made that way, and
+level-whole and level-hash play it with no word about where it starts: the file says. level-wrong-start plays the
+recording from the menus in a level, which must not pass. level-det and level-full give the file made in a level to the
+tools that keep the whole path from boot, which must refuse it.
 """
 import argparse
 import os
@@ -70,7 +75,7 @@ RATES = ["hash_check.py", "rates", "--rates", "30,60", "--section", "rails", "--
          "--timeout", TIMEOUT]  # a replay of its own, by rule; the file does not come into it
 BUILDS = ["hash_check.py", "builds", "--section", "rails", "--players", "1", "--frames", str(FRAMES),
           "--timeout", TIMEOUT]  # as RATES
-DRAW = ["hash_check.py", "draw", "--section", "rails", "--players", "1", "--frames", str(FRAMES),
+DRAW = ["hash_check.py", "draw", "--section", "rails", "--start", "level", "--players", "1", "--frames", str(FRAMES),
         "--timeout", TIMEOUT]  # as RATES
 
 COMMANDS = {
@@ -81,6 +86,8 @@ COMMANDS = {
     "det-speed": lambda file: ["determinism.py", file, "--only", "speed", "--timeout", TIMEOUT],
     "trace": lambda file: ["player_trace.py", "run", file, "--players", "1", "--timeout", TIMEOUT],
     "real": lambda file: ["replay.py", "play", file, "--speed", "1", "--timeout", TIMEOUT],
+    "wrong-start": lambda file: ["replay.py", "play", file, "--start", "level", "--timeout", TIMEOUT],
+    "full": lambda file: ["full_level.py", "--replay", file, "--timeout", TIMEOUT],
     "rates": lambda file: RATES,
     "rates-speed": lambda file: [*RATES, "--speed", TEST_SPEED],
     "builds": lambda file: BUILDS,
@@ -90,8 +97,8 @@ COMMANDS = {
 }
 # Speeds the games of a tool must log. No speed is real time.
 SPEEDS = {"replay": {TEST_SPEED}, "hash": {TEST_SPEED}, "det": set(), "det-audio": set(), "det-speed": {TEST_SPEED},
-          "trace": {TEST_SPEED}, "real": set(), "rates": set(), "rates-speed": {TEST_SPEED}, "builds": set(),
-          "draw": {TEST_SPEED}, "exit": set(), "version": set()}
+          "trace": {TEST_SPEED}, "real": set(), "wrong-start": {TEST_SPEED}, "full": set(), "rates": set(),
+          "rates-speed": {TEST_SPEED}, "builds": set(), "draw": {TEST_SPEED}, "exit": set(), "version": set()}
 # The tools whose games draw. No other game does: a test game counts frames (#147).
 DRAWN = {"det", "det-audio", "det-speed", "real", "rates", "rates-speed", "builds", "exit", "version"}
 SOME_DRAWN = {"draw"}  # one of each
@@ -136,6 +143,11 @@ SCENARIOS = {
     "bare-replay": Scenario("whole", "replay", 0, "PASS", FRAMES, bare=True),
     "bare-hash": Scenario("whole", "hash", 0, None, None, bare=True),
     "bare-trace": Scenario("whole", "trace", 1, None, None, bare=True),  # no level in this replay: an empty trace
+    "level-whole": Scenario("in-level", "replay", 0, "PASS", FRAMES, switch=True),
+    "level-hash": Scenario("in-level", "hash", 0, None, None, switch=True),
+    "level-wrong-start": Scenario("whole", "wrong-start", 1, "FAIL_MISMATCH", FRAMES, switch=True),
+    "level-det": Scenario("in-level", "det", 1, None, None, switch=True, says="started in the level"),
+    "level-full": Scenario("in-level", "full", 1, None, None, says="started in the level"),
     "person": None,
 }
 if not sys.platform.startswith("linux"):  # the check reads /proc, and only Linux gets the offscreen driver
@@ -154,6 +166,7 @@ def left_in_shell(decoy):
         "SF64_COOP_TEST_NO_FMA3": "1",
         "SF64_COOP_TEST_SPEED": "3",
         "SF64_COOP_TEST_NO_DRAW": "0",
+        "SF64_COOP_TEST_START_LEVEL": "0",
     }
 
 
@@ -217,14 +230,14 @@ class Bench:
                 shutil.rmtree(folder, ignore_errors=True)
 
 
-def make_replays(bench):
-    """Record a replay nobody plays and write it whole and damaged. Returns the files by name, or None."""
-    recording = bench.folder / "recording.sfcr"
-    code, _, failures = bench.tool("record", ["replay.py", "record", str(recording), "--frames", str(FRAMES),
-                                              "--timeout", TIMEOUT])
+def record(bench, name, extra=()):
+    """Record a replay nobody plays. Returns (its bytes, the size of a frame), or None."""
+    recording = bench.folder / f"{name}.sfcr"
+    code, _, failures = bench.tool(name, ["replay.py", "record", str(recording), "--frames", str(FRAMES),
+                                          "--timeout", TIMEOUT, *extra])
     data = recording.read_bytes() if recording.exists() else b""
     if len(data) < HEADER_SIZE:
-        print(f"replay_test: recording failed (exit code {code}); see {bench.folder / 'record.log'}")
+        print(f"replay_test: recording failed (exit code {code}); see {bench.folder / f'{name}.log'}")
         return None
     frame_size = struct.unpack_from("<I", data, 12)[0]
     if code != 0 or len(data) < HEADER_SIZE + FRAMES * frame_size:
@@ -232,6 +245,15 @@ def make_replays(bench):
         return None
     for failure in failures:
         print(f"replay_test: while recording: {failure}")
+    return data, frame_size
+
+
+def make_replays(bench):
+    """Record replays nobody plays and write them whole and damaged. Returns the files by name, or None."""
+    menus, in_level = record(bench, "record"), record(bench, "record-level", ["--start", "level"])
+    if menus is None or in_level is None:
+        return None
+    data, frame_size = menus
 
     # The game stops a little after FRAMES, so cut to exactly that many. A frame ends with its checkpoint.
     whole = data[:HEADER_SIZE + FRAMES * frame_size]
@@ -247,6 +269,7 @@ def make_replays(bench):
         "cut-mismatch": bytes(changed[:cut_at]),
         "short-header": data[:8],
         "empty-file": b"",
+        "in-level": in_level[0][:HEADER_SIZE + FRAMES * in_level[1]],
     }
     files = {}
     for name, content in contents.items():

@@ -634,6 +634,13 @@ static void CoopStateHash_OnGamePreUpdate(IEvent* event) {
         fprintf(sLog, "# draws frame=%u count=%d\n", sFrame, CoopTestSwitches_TakeMostDraws());
     }
 
+    // Test only: Play_Init runs on this frame, from these seeds. tools/coop/hash_check.py start lines two logs up here,
+    // and a game that starts straight in a level starts from them (start_level.h). A restart logs another line.
+    if ((gGameState == GSTATE_PLAY) && (gPlayState == PLAY_INIT)) {
+        fprintf(sLog, "# level frame=%u seeds=%d,%d,%d,%d,%d,%d\n", sFrame, sRandSeed1, sRandSeed2, sRandSeed3,
+                sSeededRandSeed1, sSeededRandSeed2, sSeededRandSeed3);
+    }
+
     CoopStateHash_Compute(&hash);
     fprintf(sLog, "%u %d %d %016llx", sFrame, (s32) gGameState, (s32) gCurrentLevel, (unsigned long long) hash.total);
     for (i = 0; i < COOP_HASH_REGION_COUNT; i++) {

@@ -67,9 +67,10 @@ number of clients, transport.
    game's 30) and 360 (the top of the menu's slider). Vsync is off, because it clamps the rate without a word, and a run
    that did not log the draws its rate asks for fails (`# draws` lines in the log).
    `python tools/coop/hash_check.py draw` (unattended, exit code 0 on `PASS`) plays the same two sections with and
-   without `SF64_COOP_TEST_NO_DRAW`, and both must hash alike on every frame, with no draws in one and draws in the other
-   (#147). `python tools/coop/hash_check.py base --base <exe>` (unattended, exit code 0 on `PASS`) plays input by rule with
-   co-op off on this build and on the build before a change, and they must hash alike on every frame.
+   without `SF64_COOP_TEST_NO_DRAW`, from each of the three starts below, and both must hash alike on every frame, with no
+   draws in one and draws in the other (#147). `python tools/coop/hash_check.py base --base <exe>` (unattended, exit code 0
+   on `PASS`) plays input by rule through the menus with co-op off on this build and on the build before a change, and they
+   must hash alike on every frame.
    `python tools/coop/view_check.py` (unattended, exit code 0 on `PASS`) plays the same two clients with buttons and
    pokes that give the two players different numbers, and checks what each one shows and hears from a view trace
    (`src/port/coop/test/view_trace.h`): camera, shield gauge, bomb counter, cockpit, hit flash, shield bar, sound, pause.
@@ -101,6 +102,27 @@ number of clients, transport.
    needs wall-clock time keeps real time and says why. At test speed each game frame is drawn once, so frame
    interpolation does not run and those tools cannot see it. `determinism.py` and `hash_check.py builds` and `rates`
    are the tests that play with it on, and `speed` against the base of `determinism.py` is interpolation off against on.
+   Most tools do not test the menus, so a game can skip them (#148): `SF64_COOP_TEST_START_LEVEL=<level>` goes straight to
+   a level and `SF64_COOP_TEST_START_SKIP_INTRO=1` past its intro too (`src/port/coop/test/start_level.h`). `Start` in
+   `tools/coop/replay.py` holds these three, with Corneria's frames, and input by rule counts from when player 0 flies, so
+   one rule fits all three:
+
+   | Start | Level frame 0 | Player 0 flies | Who plays it |
+   |---|---|---|---|
+   | `menus` | 3101 | 4775 | `determinism.py`, `full_level.py`, `join_test.py`, `menu_test.py`, `exit_test.py`, `replay_test.py`, `hash_check.py builds` and `rates`, `wingman_check.py sitout` and `chain` |
+   | `level` | 10 | 1684 | `hash_check.py probe`, `player_trace.py rails`, `view_check.py` |
+   | `flying` | 10 | 14 | `hash_check.py run` and `views`, `player_trace.py shots`, `lowhealth` and `effects`, `input_test.py`, `wingman_check.py alive` and `down` (in Sector X) |
+
+   A level's intro is real simulation, and only `menus` and `level` run it. `level` from `START_SEEDS` is the game `menus`
+   plays, frame for frame: `python tools/coop/hash_check.py start` (#148, unattended, exit code 0 on `PASS`) plays through
+   the menus, starts twice in the level from the seeds that game entered it with, and needs the two starts equal on every
+   frame and each equal to the game from the menus in every region from level frame 1 on (with `--players 1` but for
+   `scenery360`, whose free slots hold what earlier screens left). `flying` is another flight: what it leaves out is in
+   NOTES.md, 2026-11-07, #148. `determinism.py`, `full_level.py`, `join_test.py` and `menu_test.py`
+   keep the whole path from boot, and fail on a game that started in a level (`hash_check.whole_path_problem`), as
+   `replay_test.py` shows for the first two. `builds` and `rates` keep it as well: frame interpolation first went wrong in
+   the option menu (#141), and only they play it in Release and at many rates. A replay with checkpoints holds the frames it
+   was made on, so it plays from where it was made, wherever the tool's own input by rule would start.
    A test game does not draw either (`SF64_COOP_TEST_NO_DRAW`, #147): its draw code runs, as that is part of the
    simulation, and the renderer gets an empty display list, while ImGui, the window, the swap and the frame limit go on.
    A tool that needs pixels or interpolation asks for them (`DRAWN`, `REAL_TIME`), says why, and fails if it did not get
