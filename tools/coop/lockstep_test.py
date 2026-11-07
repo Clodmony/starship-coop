@@ -37,7 +37,7 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   menu      the whole way through the real menu, with real widgets.
   full      all of Corneria: pilots fly it live, one on each client, then plain runs repeat what they flew. Takes a while.
   audio     the plain run with the two clients at different audio sample counts, as a radio line follows the sound thread.
-  release   the plain run on a Release build (--release-exe), which has to hash as the Debug run did.
+  release   the plain run on a Release build (--release-exe) and on Debug: all four clients have to hash alike.
   rates     the plain run at real time, with the two clients at different gInterpolationFPS.
 
 Prints one line per scenario and a RESULT line, exits 0 only when everything passed. Needs a build with assets.
@@ -325,9 +325,11 @@ def sc_three(args, folder):
             game.close()
     host, a, b = games
     equal = (compare(host, a, SHORT_FRAMES), compare(host, b, SHORT_FRAMES))
-    views = [{player for _, player in view_of(game)} for game in games]
-    expect(2 in views[2] and 1 in views[1] and views[0] == {0}, f"who looked through whom: {views}")
-    return f"three games: {equal[0]} frames equal, each looking through its own player"
+    expect({player for _, player in view_of(host)} == {0}, "the host looked through someone else")
+    for game in (a, b):
+        own = int(join_test.said(game.report(), "joined")[0]["player"])  # whoever joined first is player 1
+        expect(own in {player for _, player in view_of(game)}, f"{game.name} never looked through player {own}")
+    return f"three games: {equal[0]} and {equal[1]} frames equal, each looking through its own player"
 
 
 def sc_control(args, folder):
@@ -727,9 +729,18 @@ def sc_audio(args, folder):
 
 
 def sc_release(args, folder):
+    """Two Release clients, and the same flight on two Debug clients: all four have to hash alike."""
     expect(args.feed and args.release_exe, "needs --feed and --release-exe")
-    host, client = plain(args, folder, args.feed, args.feed_frames, exe=Path(args.release_exe).resolve())
-    return f"Release: {compare(host, client, args.feed_frames)} frames equal; {played(host)}, {played(client)}"
+    frames = args.feed_frames
+    host, client = plain(args, folder / "release", args.feed, frames, exe=Path(args.release_exe).resolve())
+    equal = compare(host, client, frames)
+    debug_host, debug_client = plain(args, folder / "debug", args.feed, frames)
+    compare(debug_host, debug_client, frames)
+    names, _, release_rows = host.rows()
+    _, _, debug_rows = debug_host.rows()
+    difference = join_test.first_difference(names, release_rows[:frames], debug_rows[:frames])
+    expect(difference is None, f"Release and Debug differ at {difference}")
+    return f"two Release clients: {equal} frames equal, and equal to two Debug clients; {played(host)}, {played(client)}"
 
 
 def sc_rates(args, folder):

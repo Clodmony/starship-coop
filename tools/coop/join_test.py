@@ -11,9 +11,9 @@ folders are never the owner's and no controller reaches it. The replays start fr
 apart until the level start: a pass has to come from the session, and each scenario checks that they were apart. The
 scripted join flow is src/port/coop/test/join_driver.h; the games report through it and write a state hash log.
 
-What counts is the hash log from the first frame after Play_Init on, frame by frame, every region. No lockstep runs
-(WP-22) and a frame has no owner, so this works because no game gets input after its level start. Prints one line per
-scenario and a RESULT line, exits 0 only when everything passed. Needs a build with assets.
+What counts is the hash log from the first frame after Play_Init on, frame by frame, every region. No game gets input
+after its level start here: tools/coop/lockstep_test.py plays one with input. Prints one line per scenario and a RESULT
+line, exits 0 only when everything passed. Needs a build with assets.
 """
 import argparse
 import struct
