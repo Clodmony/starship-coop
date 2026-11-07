@@ -1989,6 +1989,100 @@ Unknown:
   session hands out `playerIndex` (`session.h`), and the join flow (WP-24) has to pass it on.
 - Player 1's own lock-on mark: not shown. Slot 0 belongs to player 0, and the draw code only fills that slot on rails.
 
+### 2026-11-07, #141, frame interpolation wrote below its matrix stack, onto the RNG seeds
+
+Identity: ROM US 1.0, on commit `f2ca32fc`, Linux, GCC, Release (`-O2 -DNDEBUG`) and Debug, OpenGL in software, no
+window, one game per run, input by rule, 2 players in that game unless it says 1. Upstream is `3322643f`.
+
+Observed:
+
+- The hash log's frame column is `sFrame`: one per `Game_Update`, from the first `GSTATE_START`
+  (`src/port/coop/sync/state_hash.c:608`, `:643`). `gGameFrameCount` counts something else: each screen zeroes it
+  (`src/overlays/ovl_menu/fox_title.c:166`, `fox_option.c:431`, `fox_map.c:1282`, `src/engine/fox_play.c:2879`). Log frame
+  154 is in the option menu (gamestate 3 runs from 129 to 184), so a trace of `gGameFrameCount` 125 to 165 could not see
+  it and caught the map instead.
+- `Rand_Init` is inlined into `Rand_ZeroOne` at `-O2` (`src/sys/sys_math.c:26`; `call osGetTime` sits in its disassembly).
+  A breakpoint on `Rand_Init` does not see that reseed, so "fired once, at boot" held for the out-of-line copy only.
+  `Graphics_InitializeTask` is inlined the same way into `Graphics_ThreadUpdate`.
+- A hardware watchpoint on the seeds, on the unmodified Release binary: frame 134, main thread, `Matrix_RotateX` called
+  from `interpolate_branch` writes `0x80000000` (`-0.0f`) at `sInterpolationMatrixStack - 0x40`. Rows 1 and 2 of that
+  matrix are `sAudioTasks`, `gCurrentTask`, `sSeededRandSeed2`, `sSeededRandSeed1`, `sRandSeed3` and `sRandSeed2`.
+- Every RNG call traced in two runs, equal up to the second call of frame 153: seeds `10368 -2147483648 -2147483648`, then
+  `17326 0 0`, then a third call that starts from different values in each run (`-262 -28015 -14625`, `1462 1505 14779`).
+  `INT_MIN * 172` wraps to 0, which is what `Rand_ZeroOne` reseeds on (`src/sys/sys_math.c:25`).
+- The unfixed Release at `gInterpolationFPS` 30, which runs no interpolated draw: two runs equal, and equal to Debug on the
+  1201 common frames. 1200 frames were played.
+- `Matrix_Push` and `Matrix_Pop` of the replay only run if the old frame has an op of that kind at that index
+  (`src/port/interpolation/FrameInterpolation.cpp:301`), and each is counted apart. `Option_DrawMenuCard` records its Push
+  in the parent path and its Pop in the child (`src/overlays/ovl_menu/fox_option.c:3492-3508`). On a screen's first frame
+  the old frame has no such Push, and the new child replays against itself, Pop included: one slot down per card. On
+  Debug, frame 134's Pops walk from slot 1 down to -5 in child paths of 5 items.
+- `Interpolate` runs 0, 1, 3 and 11 times a game frame at 30, 60, 120 and 360 fps (`src/port/Engine.cpp:524`), and the
+  stack pointer is reset once a game frame (`src/sys/sys_main.c:155`), so what is left over adds up. Full rails replay,
+  10500 frames, unfixed: lowest slot -94 at 60 fps and -282 at 120, both on the map, highest 13 at both. `gGfxMatrix` and
+  `gCalcMatrix` stayed within 0 to 7.
+- `gInterpolationFPS=120` alone ran at 60 here: vsync clamps it (`src/port/Engine.cpp:556-559`). With `gVsyncEnabled` 0 the
+  game used 120. The hash log now holds a `# draws` line to show which it was.
+- Below the stack, Release has `sys_main.c`'s globals: at 120 fps 42 variables, from the seeds through every message queue
+  and `gSegments` into `gGfxPools`. Debug has the unused end of `sCalcMatrixStack`, whose real depth is 7 of 4096, so no
+  live value. Above the stack, Release has `sCalcMatrixStack` and Debug has `sMemoryBuffer`, which is level memory; the
+  highest slot seen is 13 of 4096.
+- Upstream has it. On an unmodified `3322643f` Release, with A pressed from gdb by the same rule, the same write comes at
+  the same frame 134. In an empty folder, on its first boot, that binary showed no such write, though `Interpolate` ran.
+  The same binary wrote once a config file was there. `797c678b` differs at frame 154 too.
+- After the fix: `hash_check.py builds`, Release against Release and Debug against Release, equal on all 10500 rails and
+  8000 all-range frames. With 1 player, unfixed Debug against fixed Debug and fixed Debug against fixed Release, equal on
+  the 10504 common frames. At a real 360 fps the stack stayed within 0 to 13.
+- `hash_check.py rates` on the fixed Release: 30, 60, 120, 144 and 360 fps equal on all 10500 rails and 8000 all-range
+  frames, each with the draws its rate asks for. On unfixed logic, 30 against 60 and 120 fps differs at frame 135.
+- Nothing reads the replayed stack back: `Matrix_GetCurrent` is only called by `FrameInterpolation_RecordMatrixToMtx`, which
+  has no callers, and the matrices the renderer gets come from what was recorded. A hash of all of them, per frame, unfixed
+  Debug against fixed Debug: 0 of 3401 frames differ, 1844036 matrices, over the menu and the map.
+- Game code reads the frame rate through `GameEngine_GetInterpolationFrameCount`: five times in `src/engine/fox_bg.c`
+  (`:1426`, `:1546`, `:1653`, `:1746`, `:1821`) and once in `src/overlays/ovl_ending/fox_end2.c:462`. Each only sets how many
+  commands go into the display list, and `gDPSetTileSizeInterp` writes the 3 its callers step over
+  (`src/port/GBIMiddleware.cpp:21-28`). `masterDL` peaked at 4892 of 19968 at 360 fps, in the map; only Corneria ran.
+- AddressSanitizer on the fixed build, full replay: rails at 60 and at a real 120 fps, all-range at 60. The same 6 reports
+  each time, none in the matrix or interpolation code. Writes: `Map_PlayLevel` and `Play_Setup` on `D_ctx_8017782C`, which is
+  `s32` in `include/sf64context.h:12` and `bool` in `src/engine/fox_context.c:10`, upstream too. The next variable is 4 bytes
+  on in both builds, so the 3 extra bytes are padding. Reads: that same variable, `D_menu_801B6934` past its end
+  (`src/overlays/ovl_menu/fox_map.c:2123`, which sets a text fade), and a sample's end in `AudioSynth_ProcessNote`.
+
+Derived:
+
+- One cause explains both numbers in the issue. Frame 135 is the row after the write: the seeds differ from Debug's from
+  there. Frame 154 is the row after the reseed: two Release runs differ from there. The clock is what makes them differ,
+  which is why a run under gdb, without address randomisation, repeats it.
+- This is what upstream's comment means by "something corrupts the seeds" (`src/sys/sys_math.c:22`), at least on GCC builds.
+- Debug is safe by layout, not by design: GCC emits `.bss` in reverse order at `-O2`, so the same underflow meets other
+  neighbours. A second compiler has its own order. On Windows it is not known what was hit, only that the writes happened
+  wherever the same ops ran.
+- Before the fix a client's refresh rate changed the game: 30 against 60 fps differs at frame 135. Rate is local and no
+  handshake compares it, so two clients at different rates could desync in the menu, before any level.
+- The clamp changes which slot a matrix lands in, and nothing reads that slot, so the simulation and the picture stay as
+  they were wherever the stack did not leave its array.
+
+Guess:
+
+- 360 fps unfixed would reach about slot -1034, 66 KB below the stack: 94 times 11 draws. Not run.
+
+Unknown:
+
+- Why the first boot in an empty folder did not write. It no longer matters for the seeds.
+- Windows Release, and any second compiler: not run. Other levels: not run. Levels with two scrolling surfaces (`fox_bg.c`,
+  Aquas) would put more into `masterDL`.
+- Whether the `Map_Prologue_Update` read changes what a player sees. It does not reach the hash in these runs.
+
+For anyone repeating this:
+
+- A hash region can differ one frame after the write that caused it: the row of frame N is the state before frame N.
+- `build.py --build-dir` does not separate two builds of one worktree: `libultraship/libImGui.a`, `libstb.a` and
+  `src/libultraship.a` are written into the source tree, and ninja will not rebuild them for the other folder. A build with
+  other flags then links the wrong archive. Touching that build's objects makes it archive them again.
+- AddressSanitizer stops the game once 25 different places have reported (`suppress_equal_pcs`), so an exit code 1 with no
+  crash is not the end of the game. `src/audio/` has `__SANITIZE_ADDRESS__` blocks of its own that crash on the audio thread
+  (`aLoadBufferImpl`) and that no shipped build runs: compile with `-U__SANITIZE_ADDRESS__`.
+
 ### 2026-11-07, #142, all of Corneria with two players: how a replay got through
 
 Identity: ROM US 1.0, branch `issue/142-full-corneria` at `dab18fc5`, on `f2ca32fc`, Linux, GCC, Debug, OpenGL on a

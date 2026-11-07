@@ -625,6 +625,12 @@ static void CoopStateHash_OnGamePreUpdate(IEvent* event) {
                 gPlayCamEye.y, gPlayCamEye.z);
     }
 
+    // Test only: how many draws a game frame gets. Vsync can clamp gInterpolationFPS without a word, so
+    // tools/coop/hash_check.py rates reads this to know a run really used the rate it asked for.
+    if ((sFrame % VIEW_LOG_PERIOD) == 0) {
+        fprintf(sLog, "# draws frame=%u count=%u\n", sFrame, GameEngine_GetInterpolationFrameCount());
+    }
+
     CoopStateHash_Compute(&hash);
     fprintf(sLog, "%u %d %d %016llx", sFrame, (s32) gGameState, (s32) gCurrentLevel, (unsigned long long) hash.total);
     for (i = 0; i < COOP_HASH_REGION_COUNT; i++) {
