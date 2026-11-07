@@ -49,7 +49,9 @@ NO_SHADER = "Failed to load default fragment shader"  # libultraship, gfx_opengl
 
 
 def shot_env(shot):
+    # Real time: SHOT_SWAP counts swaps, and the boot logo that must be over by then waits on the clock.
     return {
+        **replay_tool.REAL_TIME,
         "SDL_VIDEODRIVER": "offscreen", "SDL_AUDIODRIVER": "dummy", "LIBGL_ALWAYS_SOFTWARE": "1",
         "GALLIUM_DRIVER": "llvmpipe", "LD_PRELOAD": str(WORK / "frame_shot.so"),
         "SF64_COOP_SHOT_FRAME": str(SHOT_SWAP), "SF64_COOP_SHOT_FILE": str(shot),

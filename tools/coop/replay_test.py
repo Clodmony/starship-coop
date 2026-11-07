@@ -23,11 +23,20 @@ reaches the game: a file in the decoy, a test switch line in the game's log, or 
 its poke went to a player the run does not have. pass-audio is the other side: a variable a tool sets on purpose still
 gets through, and that line does show up in the log. SF64_COOP_HASH_PROBE is not among them, as it acts only in a level
 and this replay never reaches one.
+
+Every game logs the speed it runs at, so every scenario checks that its tool used the right one (#137): TEST_SPEED, or
+real time for determinism.py without its speed variant and for replay.py --speed 1 (real-time). The bare-* scenarios
+(Linux) start a tool from a shell without any SDL driver, as one typed by hand, and read the driver from each running
+game's environment: a test game must be silent and have no window. A game that is not gets SIGKILL on sight, before it
+opens a sound device. person starts replay.py record without --frames, the one run a person plays: that game must be
+left in real time, and this test then stops it. rates-real and rates-at-speed run hash_check.py rates, whose guard
+counts the draws a game really made: it must hold at real time and fail at speed, where no game interpolates.
 """
 import argparse
 import os
 import re
 import shutil
+import signal
 import struct
 import subprocess
 import sys
@@ -48,18 +57,33 @@ TOGETHER = 3  # tools in same-second: three starts within a second cover at most
 CHANGED_FRAME = 20  # frame whose checkpoint is changed in mismatch and cut-mismatch
 TIMEOUT = "120"  # per game run; a run takes about 20 s
 RUN_FOLDER = re.compile(r"test-(?:replay|trace)-[a-z0-9-]*?\d{8}-\d{6}(?:-\d+)?")  # as the tools name them
+QUIET = {"SDL_AUDIODRIVER": "dummy", "SDL_VIDEODRIVER": "offscreen", "LIBGL_ALWAYS_SOFTWARE": "1",
+         "GALLIUM_DRIVER": "llvmpipe"}  # what game_env gives a test game on Linux
+TEST_SPEED = replay_tool.TEST_SPEED
+
+RATES = ["hash_check.py", "rates", "--rates", "30,60", "--section", "rails", "--players", "1", "--frames", str(FRAMES),
+         "--timeout", TIMEOUT]  # a replay of its own, by rule; the file does not come into it
 
 COMMANDS = {
     "replay": lambda file: ["replay.py", "play", file, "--timeout", TIMEOUT],
     "hash": lambda file: ["hash_check.py", "run", file, "--timeout", TIMEOUT],
     "det": lambda file: ["determinism.py", file, "--only", "base-2", "--timeout", TIMEOUT],
     "det-audio": lambda file: ["determinism.py", file, "--only", "audio-low", "--timeout", TIMEOUT],
+    "det-speed": lambda file: ["determinism.py", file, "--only", "speed", "--timeout", TIMEOUT],
     "trace": lambda file: ["player_trace.py", "run", file, "--players", "1", "--timeout", TIMEOUT],
+    "real": lambda file: ["replay.py", "play", file, "--speed", "1", "--timeout", TIMEOUT],
+    "rates": lambda file: RATES,
+    "rates-speed": lambda file: [*RATES, "--speed", TEST_SPEED],
 }
+# Speeds the games of a tool must log. No speed is real time.
+SPEEDS = {"replay": {TEST_SPEED}, "hash": {TEST_SPEED}, "det": set(), "det-audio": set(), "det-speed": {TEST_SPEED},
+          "trace": {TEST_SPEED}, "real": set(), "rates": set(), "rates-speed": {TEST_SPEED}}
 
 # name: replay file, tool, wanted exit code, wanted result line and frames played (replay.py prints those two), whether
-# the tool starts with variables left in the shell, and whether the game must log a test switch
-Scenario = namedtuple("Scenario", "file tool code result frames leak switch", defaults=(False, False))
+# the tool starts with variables left in the shell, whether the game must log a test switch, whether the tool starts
+# from a shell without SDL drivers, and what the tool must print
+Scenario = namedtuple("Scenario", "file tool code result frames leak switch bare says",
+                      defaults=(False, False, False, None))
 SCENARIOS = {
     "whole": Scenario("whole", "replay", 0, "PASS", FRAMES),
     "header-only": Scenario("header-only", "replay", 1, "FAIL_NO_FRAMES", 0),
@@ -79,7 +103,19 @@ SCENARIOS = {
     "leak-hash": Scenario("whole", "hash", 0, None, None, leak=True),
     "leak-trace": Scenario("whole", "trace", 1, None, None, leak=True),  # no level in this replay: an empty trace
     "pass-audio": Scenario("whole", "det-audio", 0, None, None, switch=True),
+    "det-speed": Scenario("whole", "det-speed", 0, None, None),
+    "real-time": Scenario("whole", "real", 0, "PASS", FRAMES),
+    "rates-real": Scenario("whole", "rates", 0, None, None),
+    "rates-at-speed": Scenario("whole", "rates-speed", 1, None, None,
+                               says="60 fps was not used: 1 draws a frame, not 2"),
+    "bare-replay": Scenario("whole", "replay", 0, "PASS", FRAMES, bare=True),
+    "bare-hash": Scenario("whole", "hash", 0, None, None, bare=True),
+    "bare-trace": Scenario("whole", "trace", 1, None, None, bare=True),  # no level in this replay: an empty trace
+    "person": None,
 }
+if not sys.platform.startswith("linux"):  # the check reads /proc, and only Linux gets the offscreen driver
+    for name in ("bare-replay", "bare-hash", "bare-trace", "person"):
+        del SCENARIOS[name]
 
 
 def left_in_shell(decoy):
@@ -91,6 +127,7 @@ def left_in_shell(decoy):
         "SF64_COOP_HASH_POKE_PLAYER": "1",
         "SF64_COOP_TEST_AUDIO_SAMPLES": "low",
         "SF64_COOP_TEST_NO_FMA3": "1",
+        "SF64_COOP_TEST_SPEED": "3",
     }
 
 
@@ -106,8 +143,9 @@ class Bench:
             sys.exit(f"replay_test: {ARCHIVE} not found; run python tools/coop/build.py --assets first")
         self.runs = []
 
-    def tool(self, tag, command, leak=False):
-        """Run one tool with its own decoy. Returns (exit code, output, failures seen in any run)."""
+    def tool(self, tag, command, leak=False, bare=False, watch=None):
+        """Run one tool with its own decoy. Returns (exit code, output, failures seen in any run). watch is called with
+        the tool's process while it runs, and returns failures."""
         decoy = self.folder / f"decoy-{tag}"
         decoy.mkdir()
         shutil.copy2(self.archive, decoy / ARCHIVE)
@@ -118,14 +156,20 @@ class Bench:
         if sys.platform.startswith("linux"):
             env.update(SDL_VIDEODRIVER="offscreen", SDL_AUDIODRIVER="dummy", LIBGL_ALWAYS_SOFTWARE="1",
                        GALLIUM_DRIVER="llvmpipe")
+        if bare:
+            for key in QUIET:
+                env.pop(key, None)
         log = self.folder / f"{tag}.log"
+        failures = []
         with log.open("w", encoding="utf-8") as out:
-            code = subprocess.run([sys.executable, "-u", str(ROOT / "tools" / "coop" / command[0]), *command[1:],
-                                   "--exe", str(self.exe)],
-                                  cwd=ROOT, env=env, stdout=out, stderr=subprocess.STDOUT).returncode
+            proc = subprocess.Popen([sys.executable, "-u", str(ROOT / "tools" / "coop" / command[0]), *command[1:],
+                                     "--exe", str(self.exe)],
+                                    cwd=ROOT, env=env, stdout=out, stderr=subprocess.STDOUT)
+            if watch is not None:
+                failures += watch(proc)
+            code = proc.wait()
         output = log.read_text(encoding="utf-8", errors="replace")
 
-        failures = []
         wrote = sorted(p.name for p in decoy.iterdir() if p.name != ARCHIVE)
         if wrote:
             failures.append(f"game wrote into SHIP_HOME: {', '.join(wrote)}")
@@ -183,15 +227,83 @@ def make_replays(bench):
     return files
 
 
+def game_logs(output):
+    """The text of the log of every game the tool started."""
+    logs = [ROOT / "local" / run / "logs" / "Starship.log" for run in set(RUN_FOLDER.findall(output))]
+    return [log.read_text(encoding="utf-8", errors="replace") for log in logs if log.exists()]
+
+
 def switch_logged(output):
     """Whether a game the tool started logged a test switch (src/port/coop/test/switches.c)."""
-    logs = [ROOT / "local" / run / "logs" / "Starship.log" for run in set(RUN_FOLDER.findall(output))]
-    return any("coop: test switch" in log.read_text(encoding="utf-8", errors="replace") for log in logs if log.exists())
+    return any("coop: test switch" in log for log in game_logs(output))
+
+
+def speeds_logged(output):
+    """The speeds the games a tool started logged (src/port/coop/test/switches.c)."""
+    return {speed for log in game_logs(output) for speed in re.findall(r"coop: test speed (\S+)", log)}
+
+
+def games_of(tool, exe):
+    """The running games a tool started: {pid: their environment}. While the tool forks, /proc shows a process that is
+    not the game yet and still has the tool's environment, so the process must run exe. For a moment of the exec it runs
+    exe and has no environment at all: that is not a game without drivers either, so it counts from the next look."""
+    found = {}
+    for pid in filter(str.isdigit, os.listdir("/proc")):
+        try:
+            parent = int(Path(f"/proc/{pid}/stat").read_text().rpartition(")")[2].split()[1])
+            if parent == tool.pid and os.readlink(f"/proc/{pid}/exe") == str(exe):
+                data = Path(f"/proc/{pid}/environ").read_bytes()
+                if data:
+                    pairs = data.decode("utf-8", "replace").split("\0")
+                    found[int(pid)] = dict(pair.partition("=")[::2] for pair in pairs)
+        except (OSError, ValueError, IndexError):
+            pass  # it ended while we looked
+    return found
+
+
+def watch_quiet(bench):
+    """Returns the check of a bare-* scenario: every game has the drivers of QUIET, looked at as it starts."""
+    def watch(tool):
+        failures = []
+        seen = set()
+        while tool.poll() is None:
+            for pid, env in games_of(tool, bench.exe).items():
+                if pid not in seen:
+                    seen.add(pid)
+                    wrong = {key: env.get(key) for key, value in QUIET.items() if env.get(key) != value}
+                    if wrong:
+                        os.kill(pid, signal.SIGKILL)  # Only a game this test's tool started: it would make sound.
+                        failures.append(f"game started with {wrong}")
+            time.sleep(0.02)
+        return failures if seen else ["no game seen"]
+    return watch
+
+
+def watch_person(bench):
+    """Returns the check of person: the game runs in real time. Nobody is there to close it, so this stops it once it
+    has written its config, which the run folder check wants to see."""
+    def watch(tool):
+        end = time.monotonic() + int(TIMEOUT)
+        while tool.poll() is None and time.monotonic() < end:
+            games = games_of(tool, bench.exe)
+            if games:
+                pid, env = next(iter(games.items()))
+                while tool.poll() is None and time.monotonic() < end:
+                    if Path(f"/proc/{pid}/cwd/starship.cfg.json").exists():
+                        break
+                    time.sleep(0.1)
+                os.kill(pid, signal.SIGTERM)  # Only the game this test's tool started.
+                speed = env.get("SF64_COOP_TEST_SPEED")
+                return [f"a game a person plays runs at speed {speed}"] if speed is not None else []
+            time.sleep(0.02)
+        return ["no game seen"]
+    return watch
 
 
 def check(bench, name, scenario, files):
     """Run one scenario. Returns its failures."""
-    code, output, failures = bench.tool(name, COMMANDS[scenario.tool](str(files[scenario.file])), scenario.leak)
+    code, output, failures = bench.tool(name, COMMANDS[scenario.tool](str(files[scenario.file])), scenario.leak,
+                                        scenario.bare, watch_quiet(bench) if scenario.bare else None)
     if code != scenario.code:
         failures.append(f"exit code {code}, want {scenario.code}")
     if scenario.result is not None:
@@ -203,8 +315,21 @@ def check(bench, name, scenario, files):
         played = int(frames[-1]) if frames else None
         if played != scenario.frames:
             failures.append(f"{played} frames played, want {scenario.frames}")
+    if scenario.says is not None and scenario.says not in output:
+        failures.append(f"tool did not say: {scenario.says}")
     if switch_logged(output) != scenario.switch:
         failures.append("game log shows a test switch" if not scenario.switch else "no test switch in the game log")
+    if speeds_logged(output) != SPEEDS[scenario.tool]:
+        failures.append(f"games ran at speed {sorted(speeds_logged(output))}, want {sorted(SPEEDS[scenario.tool])}")
+    return failures
+
+
+def check_person(bench):
+    """Start a recording for a person to play. Returns its failures."""
+    recording = bench.folder / "person.sfcr"
+    _, output, failures = bench.tool("person", ["replay.py", "record", str(recording)], watch=watch_person(bench))
+    if speeds_logged(output):
+        failures.append(f"game logged speed {sorted(speeds_logged(output))}")
     return failures
 
 
@@ -232,7 +357,8 @@ def main():
 
     if args.list:
         for name, s in SCENARIOS.items():
-            print(f"{name}: {s.file} replay through {s.tool}, wants exit code {s.code}"
+            print(f"{name}: a recording for a person to play, real time" if s is None else
+                  f"{name}: {s.file} replay through {s.tool}, wants exit code {s.code}"
                   + (f" and {s.result}" if s.result else ""))
         return 0
     chosen = list(SCENARIOS) if not args.only else [s.strip() for s in args.only.split(",") if s.strip()]
@@ -252,6 +378,8 @@ def main():
         began = time.monotonic()
         if name == "same-second":
             failures = check_together(bench, name, files)
+        elif name == "person":
+            failures = check_person(bench)
         else:
             failures = check(bench, name, SCENARIOS[name], files)
         return failures, time.monotonic() - began

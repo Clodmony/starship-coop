@@ -40,6 +40,7 @@
 #include "audio/GameAudio.h"
 #include "port/patches/DisplayListPatch.h"
 #include "port/mods/PortEnhancements.h"
+#include "port/coop/test/switches.h" // COOP: run tests faster than real time (#137)
 #include "port/coop/test/replay.h" // COOP: input replay for tests (WP-03)
 #include "port/coop/sync/state_hash.h" // COOP: state hash log for tests (WP-04)
 #include "port/coop/test/player_trace.h" // COOP: per-frame player log for tests (WP-11)
@@ -477,6 +478,7 @@ void GameEngine::RunCommands(Gfx* Commands, const std::vector<std::unordered_map
 
     interpreter->mInterpolationIndex = 0;
 
+    CoopTestSwitches_NoteDraws((int) mtx_replacements.size()); // COOP: for the "# draws" lines of the hash log (#137)
     for (const auto& m : mtx_replacements) {
         wnd->DrawAndRunGraphicsCommands(Commands, m);
         interpreter->mInterpolationIndex++;
@@ -510,7 +512,9 @@ void GameEngine::ProcessGfxCommands(Gfx* commands) {
     int fps = target_fps;
     int original_fps = 60 / gVIsPerFrame;
 
-    if (target_fps == 20 || original_fps > target_fps) {
+    // COOP: at test speed each game frame is drawn once, so interpolation does not run and such a test cannot see it. A
+    // stack underflow there corrupted the RNG seeds in Release (#141), so determinism.py keeps real pacing (#137).
+    if (target_fps == 20 || original_fps > target_fps || CoopTestSwitches_Speed() > 1) {
         fps = original_fps;
     }
 
@@ -533,7 +537,7 @@ void GameEngine::ProcessGfxCommands(Gfx* commands) {
     time -= fps;
 
     if (wnd != nullptr) {
-        wnd->SetTargetFps(fps);
+        wnd->SetTargetFps(fps * CoopTestSwitches_Speed()); // COOP: 1 without SF64_COOP_TEST_SPEED (#137)
         wnd->SetMaximumFrameLatency(CVarGetInteger("gRenderParallelization", 1) ? 2 : 1);
     }
 

@@ -11,6 +11,10 @@ is set in the shell. The game is told what to do through the SF64_COOP_REPLAY_* 
 (src/port/coop/test/replay.h). Playback exits 0 on PASS, 1 otherwise: only a whole file can pass, so a file with no
 frames or a cut last frame fails. python tools/coop/replay_test.py tests all this.
 
+A game started from here makes no sound, opens no window on Linux and runs at TEST_SPEED: see game_env. Only record
+without --frames runs as a person plays it. To watch a playback, set SDL_VIDEODRIVER and SDL_AUDIODRIVER in the shell
+and pass --speed 1.
+
 A replay file holds raw structs: it only plays back on the same build and platform it was recorded on.
 """
 import argparse
@@ -36,6 +40,9 @@ EXE_CANDIDATES = [
 ]
 DATA_FILES = ["sf64.o2r", "starship.o2r", "gamecontrollerdb.txt"]
 HEADER_SIZE = 40  # ReplayHeader in src/port/coop/test/replay.c
+TEST_SPEED = "max"  # no frame limit for a test game: every test here counts frames, not seconds (#137)
+REAL_TIME = {"SF64_COOP_TEST_SPEED": "1"}  # as env_extra, for a run that needs wall-clock time; say why next to it
+RENDER_THREADS = "3"  # for a software renderer: with its default, games side by side slow each other down (#137)
 
 
 def find_exe(given):
@@ -88,12 +95,24 @@ def read_report(path):
     return values if "result" in values else None
 
 
-def game_env(run):
+def game_env(run, person_plays=False):
     """The environment for a game in folder run: this one with SHIP_HOME at that folder and without any SF64_COOP_*
-    variable, as one left in the shell would change a test with no sign in its result. The caller adds what the run
-    needs."""
+    variable, as one left in the shell would change a test with no sign in its result.
+
+    A test game is silent and has no window, also from a bare shell: a driver the shell sets still wins. The offscreen
+    driver is for Linux only, as the default backend on Windows draws into a real window, and so are software rendering
+    and RENDER_THREADS. It runs at TEST_SPEED, which env_extra can replace (REAL_TIME). With person_plays someone needs
+    to see, hear and fly the game, so it gets none of that. The caller adds what the run needs."""
     env = {key: value for key, value in os.environ.items() if not key.startswith("SF64_COOP_")}
     env["SHIP_HOME"] = str(run)
+    if not person_plays:
+        env.setdefault("SDL_AUDIODRIVER", "dummy")
+        if sys.platform.startswith("linux"):
+            env.setdefault("SDL_VIDEODRIVER", "offscreen")
+            env.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")  # off the GPU other programs on this PC share
+            env.setdefault("GALLIUM_DRIVER", "llvmpipe")
+            env.setdefault("LP_NUM_THREADS", RENDER_THREADS)
+        env["SF64_COOP_TEST_SPEED"] = TEST_SPEED
     return env
 
 
@@ -111,7 +130,7 @@ def run_game(mode, replay, exe, timeout, hash_log=False, poke=None, tag=None, en
     if config is not None:
         (run / "starship.cfg.json").write_text(json.dumps(config, indent=4), encoding="utf-8")
     report = run / "replay-report.txt"
-    env = game_env(run)
+    env = game_env(run, person_plays=mode == "record" and frames is None)
     env["SF64_COOP_REPLAY_RECORD" if mode == "record" else "SF64_COOP_REPLAY_PLAY"] = str(replay)
     env["SF64_COOP_REPLAY_REPORT"] = str(report)
     if hash_log:
@@ -169,6 +188,8 @@ def main():
                    help="playback and record --frames: give up after this many seconds")
     p.add_argument("--frames", type=int, help="record: stop after this many frames, so nobody has to close the window")
     p.add_argument("--hash-log", action="store_true", help="also write state-hash.txt into the run folder (WP-04)")
+    p.add_argument("--speed", help=f"times real time, 1 for real time, max for no limit (default {TEST_SPEED}; record "
+                                   "without --frames always runs in real time)")
     args = p.parse_args()
 
     exe = find_exe(args.exe)
@@ -177,7 +198,9 @@ def main():
         sys.exit(f"replay: {replay} does not exist")
     replay.parent.mkdir(parents=True, exist_ok=True)
 
-    values, run, elapsed = run_game(args.mode, replay, exe, args.timeout, hash_log=args.hash_log, frames=args.frames)
+    speed = None if args.speed is None else {"SF64_COOP_TEST_SPEED": args.speed}
+    values, run, elapsed = run_game(args.mode, replay, exe, args.timeout, hash_log=args.hash_log, frames=args.frames,
+                                    env_extra=speed)
     if values is None:
         print(f"replay: FAILED ({elapsed:.0f}s)")
         return 1

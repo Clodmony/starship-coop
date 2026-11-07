@@ -90,6 +90,13 @@ number of clients, transport.
    the live local controller is tested on the road a real pad takes, with nobody at the controls.
    `SF64_COOP_REPLAY_LIVE_LOCAL=1` makes a replay fly every player but the local one (`src/port/coop/test/replay.h`).
    The `unit` scenario is the only test of a local index other than 0, until the game can have one.
+   `determinism.py` runs in real time, as pacing and audio timing are what it varies. Its variant `speed` plays as the
+   other tools do, with no frame limit, and has to give the same hash (#137); without a replay file the tool plays input
+   by rule, through Corneria's rails into all-range. Tests count frames, so the tools run a game with
+   `SF64_COOP_TEST_SPEED=max`, silent and on Linux without a window (`game_env` in `tools/coop/replay.py`). A tool that
+   needs wall-clock time keeps real time and says why. At test speed each game frame is drawn once, so frame
+   interpolation does not run and those tools cannot see it. `determinism.py` and `hash_check.py builds` and `rates`
+   are the tests that play with it on, and `speed` against the base of `determinism.py` is interpolation off against on.
 3. **Two clients on one machine.** Two Starship processes with their own config, save and log folders (never the
    owner's), connected over loopback, both fed replays. `python tools/coop/join_test.py` (WP-24, unattended, exit code
    0 only when everything passed) takes two or three games from the lobby into a level through the scripted flow in

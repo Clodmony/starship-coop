@@ -3,6 +3,7 @@
 
     python tools/coop/determinism.py local/replays/corneria.sfcr
     python tools/coop/determinism.py local/replays/corneria.sfcr --only opengl,no-fma3
+    python tools/coop/determinism.py --only speed      # input by rule, Corneria's rails into all-range
 
 Plays one replay with the per-frame state hash (tools/coop/hash_check.py) under conditions that can differ between
 two machines running the same build, and compares every run's hash log with a baseline:
@@ -15,6 +16,16 @@ two machines running the same build, and compares every run's hash log with a ba
                                 audio rendered with a fixed sample count per update
                                 (SF64_COOP_TEST_AUDIO_SAMPLES, src/port/coop/test/switches.h)
                       no-fma3   C runtime math without FMA3 (SF64_COOP_TEST_NO_FMA3, Windows x64 only)
+                      speed     faster than real time, as every other test tool runs (SF64_COOP_TEST_SPEED, #137)
+
+All but speed run in real time, which is what this tool compares: frame pacing and the audio device's fill level follow
+wall-clock time, and at test speed each game frame is drawn once and the audio buffer stays full, so those variants
+would no longer vary them. Frame interpolation only runs in real time too, and a bug there can reach the game state: a
+stack underflow in it corrupted the RNG seeds in Release (#141). So this tool stays the one that plays as a person
+does, and speed against base is interpolation off against on. replay_test.py fails if these games log a speed.
+
+Without a replay file it plays input by rule (hash_check.py, write_generated_replay). Such a replay has no checkpoints,
+so a run there only has to play through.
 
 Each run gets a fresh folder under local/ (see tools/coop/replay.py); the owner's config, saves and mods are never
 used. A run passes when its replay passes and its hash equals the baseline on every recorded frame. Exit code 0 when
@@ -39,22 +50,31 @@ VARIANTS = {
     "audio-low": ({"SF64_COOP_TEST_AUDIO_SAMPLES": "low"}, None),
     "audio-high": ({"SF64_COOP_TEST_AUDIO_SAMPLES": "high"}, None),
     "no-fma3": ({"SF64_COOP_TEST_NO_FMA3": "1"}, None),
+    "speed": ({"SF64_COOP_TEST_SPEED": replay_tool.TEST_SPEED}, None),
 }
 if sys.platform != "win32":
     del VARIANTS["no-fma3"]
 
 
 def play(replay, exe, timeout, name, env_extra=None, config=None):
-    values, names, rows = hash_check.play(replay, exe, timeout, f"det-{name}", env_extra=env_extra, config=config)
+    env = {**replay_tool.REAL_TIME, **(env_extra or {})}  # why: see the top of this file
+    values, names, rows = hash_check.play(replay, exe, timeout, f"det-{name}", env_extra=env, config=config)
     return name, values, names, rows
 
 
-def check(name, values, rows, base_rows, names, recorded):
+def with_variant(config, variant):
+    """The run's config with a variant's on top, CVars from both."""
+    if not config or not variant:
+        return config or variant
+    return {**config, **variant, "CVars": {**config.get("CVars", {}), **variant.get("CVars", {})}}
+
+
+def check(name, values, rows, base_rows, names, recorded, played):
     """Return a list of failure strings for one run (empty when it passes)."""
     if rows is None:
         return [f"{name}: no hash log written"]
     failures = []
-    if not values or values.get("result") != "PASS":
+    if not played(values):
         failures.append(f"{name}: replay did not pass: {values.get('result') if values else 'no report'}")
     if len(rows) < recorded:
         failures.append(f"{name}: hash log shorter than the replay ({len(rows)} < {recorded} frames)")
@@ -66,16 +86,18 @@ def check(name, values, rows, base_rows, names, recorded):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("file", help="replay file (from tools/coop/replay.py record)")
+    p.add_argument("file", nargs="?", help="replay file (from tools/coop/replay.py record); default: input by rule")
     p.add_argument("--exe", help="Starship executable (default: newest build found)")
     p.add_argument("--timeout", type=float, default=2400, help="per run: give up after this many seconds")
     p.add_argument("--only", help="comma-separated variants for phase 2 (default: all: " + ", ".join(VARIANTS) + ")")
     args = p.parse_args()
 
     exe = replay_tool.find_exe(args.exe)
-    replay = Path(args.file).resolve()
-    if not replay.exists():
-        sys.exit(f"det: {replay} does not exist")
+    args.players = 1
+    replay, config = hash_check.test_setup(args)
+    played = hash_check.played_through
+    if args.file is not None:
+        played = lambda values: bool(values) and values.get("result") == "PASS"  # noqa: E731
     chosen = list(VARIANTS) if not args.only else [v.strip() for v in args.only.split(",") if v.strip()]
     unknown = [v for v in chosen if v not in VARIANTS]
     if unknown:
@@ -83,8 +105,8 @@ def main():
 
     start = time.monotonic()
     print("det: phase 1: base, alone")
-    _, base_values, names, base_rows = play(replay, exe, args.timeout, "base")
-    if base_rows is None or not base_values or base_values.get("result") != "PASS":
+    _, base_values, names, base_rows = play(replay, exe, args.timeout, "base", config=config)
+    if base_rows is None or not played(base_values):
         print(f"det: base run failed: {base_values.get('result') if base_values else 'no report'}")
         print("det: FAIL")
         return 1
@@ -93,12 +115,13 @@ def main():
 
     print(f"det: phase 2: {', '.join(chosen)}, together")
     with ThreadPoolExecutor(max_workers=len(chosen)) as pool:
-        jobs = [pool.submit(play, replay, exe, args.timeout, name, *VARIANTS[name]) for name in chosen]
+        jobs = [pool.submit(play, replay, exe, args.timeout, name, VARIANTS[name][0],
+                            with_variant(config, VARIANTS[name][1])) for name in chosen]
         results = [job.result() for job in jobs]
 
     failures = []
     for name, values, _, rows in results:
-        f = check(name, values, rows, base_rows, names, recorded)
+        f = check(name, values, rows, base_rows, names, recorded, played)
         print(f"det: {name}: {'FAIL' if f else 'PASS'}" + ("" if f else f" (equal to base on all {recorded} frames)"))
         failures += f
 

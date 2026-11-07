@@ -20,7 +20,10 @@ A replay cannot see, and flying by rule player 0 is shot down halfway through th
 A, B and C run at once. The frames and level states the run reached come from the checkpoints in the replay, and each
 player's frames, shields and downs from the pilot's trace. A run where a player goes down still counts, and says so.
 Everything stays in a fresh local/test-full-level-* folder and in local/test-replay-*. A replay holds raw structs, so it
-only plays on the build that made it. About 20 minutes at real time, each game runs for as long as the level takes.
+only plays on the build that made it. About 3 minutes, each game runs for as long as the level takes.
+
+It runs at test speed (game_env in replay.py), the pilot too: it reads game state once a frame and never the clock, so a
+frame is the same frame at any speed, and its log must still equal the plain runs' on every frame (#137).
 
 Exit code 0 on PASS, 1 otherwise. --by-rule shows why a pilot is needed, so it fails when the level is not finished.
 """
