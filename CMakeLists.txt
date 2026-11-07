@@ -277,7 +277,8 @@ include_directories(
   ${dr_libs_SOURCE_DIR}
 )
 
-add_subdirectory(libultraship ${CMAKE_CURRENT_SOURCE_DIR}/libultraship)
+# COOP: in the build folder, not the source tree: two folders with other flags shared these archives (#147)
+add_subdirectory(libultraship ${CMAKE_CURRENT_BINARY_DIR}/libultraship)
 add_dependencies(${PROJECT_NAME} libultraship)
 target_link_libraries(${PROJECT_NAME} PRIVATE libultraship)
 
