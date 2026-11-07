@@ -73,7 +73,7 @@ def main():
         failures.append("duplicate message ids in docs/coop/PROTOCOL.md: " + ", ".join(dups))
 
     # 5. Mutation checks: every break must still match the source it guards (no build, no write).
-    for tool in ("net_mutants.py", "session_mutants.py", "steam_mutants.py", "lockstep_mutants.py"):
+    for tool in ("net_mutants.py", "session_mutants.py", "steam_mutants.py", "lockstep_mutants.py", "desync_mutants.py"):
         mut = run_tool(tool, "--check")
         if mut.returncode != 0:
             failures.append(f"tools/coop/{tool} --check failed; update the break that guards the code you changed:\n  "

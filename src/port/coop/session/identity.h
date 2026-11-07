@@ -58,6 +58,9 @@ size_t CoopIdentity_Describe(uint32_t diff, const CoopIdentity* host, const Coop
 // A name for a ROM version, for example "US 1.0", or NULL if it is not known.
 const char* CoopIdentity_RomName(uint32_t version);
 
+// One line for a report: the build, the platform, the ROMs and how many simulation CVars it carries. Nothing personal.
+void CoopIdentity_Line(const CoopIdentity* id, char* out, size_t cap);
+
 #ifdef __cplusplus
 }
 #endif

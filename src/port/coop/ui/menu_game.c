@@ -48,7 +48,24 @@ static void Link_Fail(const char* text) {
     CoopMenu_Fail(sMenu, text);
 }
 
-static const CoopSyncLink sLink = { Link_Send, Link_Pump, Link_Fail };
+// For a desync report: this game's identity from the menu's backend, a peer's as the session holds it.
+static void Link_Identity(int peer, char* out, size_t cap) {
+    const CoopIdentity* id = NULL;
+    CoopIdentity own;
+
+    out[0] = '\0';
+    if (peer < 0) {
+        sMenu->backend->identity(&own);
+        id = &own;
+    } else if (sMenu->session != NULL) {
+        id = CoopSession_PeerIdentity(sMenu->session, peer);
+    }
+    if (id != NULL) {
+        CoopIdentity_Line(id, out, cap);
+    }
+}
+
+static const CoopSyncLink sLink = { Link_Send, Link_Pump, Link_Fail, Link_Identity };
 
 void CoopMenuGame_EnterLevel(const CoopLevelStart* start) {
     CoopLevelStart_Enter(start);
