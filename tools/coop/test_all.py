@@ -101,13 +101,14 @@ def all_steps():
         Step("net-mutants-asan", SERIAL, ["net_mutants.py", "--asan"], "build", "net", True),
         Step("steam-mutants", SERIAL, ["steam_mutants.py"], "build", "net"),
     ]
-    game = [  # longest first, so no lane is left with a long one at the end
+    # Longest first, so no lane is left with a long one at the end. exit-test goes last all the same: it waits on the
+    # clock, so it costs no time there, and with a load this high a game can hang in the crash handler (docs/coop/NOTES.md).
+    game = [
         ("rates-rails", ["hash_check.py", "rates", "--section", "rails"], "exe", False),
         ("rates-all-range", ["hash_check.py", "rates", "--section", "all-range"], "exe", False),
         ("builds", ["hash_check.py", "builds"], "other", False),
         ("determinism", ["determinism.py"], "exe", False),
         ("view-check", ["view_check.py"], "exe", False),
-        ("exit-test", ["exit_test.py"], "exe", True),
         ("wingman", ["wingman_check.py", "all"], "exe", True),
         ("full-level", ["full_level.py"], "exe", False),
         ("lowhealth-allrange", ["player_trace.py", "lowhealth", "--players", "2", "--section", "all-range"], "exe",
@@ -128,6 +129,7 @@ def all_steps():
         ("hash-start-1", ["hash_check.py", "start", "--players", "1"], "exe", False),
         ("hash-probe-2", ["hash_check.py", "probe", "--players", "2"], "exe", False),
         ("hash-probe-1", ["hash_check.py", "probe", "--players", "1"], "exe", False),
+        ("exit-test", ["exit_test.py"], "exe", True),
     ]
     return steps + [Step(name, GAME, command, takes, "game", only_linux) for name, command, takes, only_linux in game]
 

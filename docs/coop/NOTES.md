@@ -2398,10 +2398,11 @@ Observed:
 - Stopping `test_all.py` during `net_mutants.py` left a break in `net_core.c` and its backup: SIGTERM ended `mutants.py`
   outside its `finally`. The `tree` step named it. With a handler the source is back, and `test_all_test.py` stops a run at
   that moment: `stop-mutants` fails without the handler.
-- `exit_test.py`, `crash-segv`, 1 of 48 games in one run: the game wrote its whole crash log, with `Signal: 11` and a stack
-  from `SyncFramerateWithTime` (`nanosleep`), did not exit, and ended on its alarm at 5.02 s. The check read a log without
-  those lines; the file has them now. It ran with no test switch but the hash log, so drawing and at real pacing. The same
-  scenario alone: 12 of 12. #137 saw a hang in that handler too, 1 game of 36.
+- `exit_test.py`, in two runs of `test_all.py` at load up to 32: the first game of `crash-segv` wrote no crash log and ended
+  on its alarm at 5.02 s, exit code -14, with its hash log whole. That tool sets no test switch but the hash log, so the
+  game draws at real pacing. Two earlier runs at load up to 43 had no such game. The scenario alone: 12 of 12. `crash-segv`
+  and `crash-abrt`, 25 of each, on this build and on `e0f25422` side by side, load 2 to 4: 50 of 50 on both. #137 saw a hang
+  in that handler too, 1 game of 36, with no report.
 - `build.py --config Release --build-dir build-release` beside a Debug `build-cmake` on `e0f25422`: both `build.ninja` files
   link `libultraship/src/libultraship.a`. After the Release build it held 0 objects with debug info, and after the next Debug
   build 244. Each change of folder compiled the 124 objects of libultraship again. In this order,, each
@@ -2422,11 +2423,13 @@ Derived:
 Guess:
 
 - Above four lanes the machine's other work is the limit, not the lanes. Unknown on a quiet machine.
+- The crash handler stops on a lock the game held, as `src/port/coop/test/stop_signal.c:65` says it can, and under load a
+  signal lands in a busy frame more often than in the frame limit's sleep. So `test_all.py` runs `exit_test.py` last.
 
 Unknown:
 
 - Why #141 saw ninja keep the other folder's archive. The cause is gone with the shared folder either way.
-- What the crash handler waits for in that 1 game of 48, and whether it is the hang #137 saw.
+- What the crash handler waits for in those games, and why both were the first of `crash-segv`.
 - Why that Steam mutant shows in Debug and not in Release. Guess: memory released too early still holds the message there.
 - A build of libultraship in the build folder on Windows and macOS: not run here, CI's Windows job will show.
 
