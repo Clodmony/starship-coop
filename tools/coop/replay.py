@@ -100,15 +100,17 @@ def game_env(run, person_plays=False):
     variable, as one left in the shell would change a test with no sign in its result.
 
     A test game is silent and has no window, also from a bare shell: a driver the shell sets still wins. The offscreen
-    driver is for Linux only, as the default backend on Windows draws into a real window, and so is RENDER_THREADS. It
-    runs at TEST_SPEED, which env_extra can replace (REAL_TIME). With person_plays someone needs to see, hear and fly
-    the game, so it gets none of that. The caller adds what the run needs."""
+    driver is for Linux only, as the default backend on Windows draws into a real window, and so are software rendering
+    and RENDER_THREADS. It runs at TEST_SPEED, which env_extra can replace (REAL_TIME). With person_plays someone needs
+    to see, hear and fly the game, so it gets none of that. The caller adds what the run needs."""
     env = {key: value for key, value in os.environ.items() if not key.startswith("SF64_COOP_")}
     env["SHIP_HOME"] = str(run)
     if not person_plays:
         env.setdefault("SDL_AUDIODRIVER", "dummy")
         if sys.platform.startswith("linux"):
             env.setdefault("SDL_VIDEODRIVER", "offscreen")
+            env.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")  # off the GPU other programs on this PC share
+            env.setdefault("GALLIUM_DRIVER", "llvmpipe")
             env.setdefault("LP_NUM_THREADS", RENDER_THREADS)
         env["SF64_COOP_TEST_SPEED"] = TEST_SPEED
     return env

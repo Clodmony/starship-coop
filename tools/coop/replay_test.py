@@ -57,7 +57,8 @@ TOGETHER = 3  # tools in same-second: three starts within a second cover at most
 CHANGED_FRAME = 20  # frame whose checkpoint is changed in mismatch and cut-mismatch
 TIMEOUT = "120"  # per game run; a run takes about 20 s
 RUN_FOLDER = re.compile(r"test-(?:replay|trace)-[a-z0-9-]*?\d{8}-\d{6}(?:-\d+)?")  # as the tools name them
-QUIET = {"SDL_AUDIODRIVER": "dummy", "SDL_VIDEODRIVER": "offscreen"}  # what game_env gives a test game on Linux
+QUIET = {"SDL_AUDIODRIVER": "dummy", "SDL_VIDEODRIVER": "offscreen", "LIBGL_ALWAYS_SOFTWARE": "1",
+         "GALLIUM_DRIVER": "llvmpipe"}  # what game_env gives a test game on Linux
 TEST_SPEED = replay_tool.TEST_SPEED
 
 RATES = ["hash_check.py", "rates", "--rates", "30,60", "--section", "rails", "--players", "1", "--frames", str(FRAMES),
