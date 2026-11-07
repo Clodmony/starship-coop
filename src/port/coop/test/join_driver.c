@@ -117,9 +117,6 @@ static void Session_Open(void) {
     CoopTransport* t;
 
     sTried = true;
-    if (Env_Text("SF64_COOP_JOIN_MAIN_PORT") != NULL) {
-        gMainController = atoi(Env_Text("SF64_COOP_JOIN_MAIN_PORT"));
-    }
     config.timeoutMs = JOIN_TIMEOUT_MS;
     CoopIdentity_FromGame(&id);
     if (sPortFile != NULL) {
@@ -249,6 +246,10 @@ static void Session_Event(const CoopSessionEvent* ev) {
             break;
         case COOP_SESSION_EV_LEVEL_START:
             Report_LevelStart(ev->levelStart);
+            // Here and not earlier: the title screen sets it on every frame (src/overlays/ovl_menu/fox_title.c:171).
+            if (Env_Text("SF64_COOP_JOIN_MAIN_PORT") != NULL) {
+                gMainController = atoi(Env_Text("SF64_COOP_JOIN_MAIN_PORT"));
+            }
             if (sKeepOwn) {
                 Enter_KeepOwn(ev->levelStart);
             } else {
