@@ -64,7 +64,11 @@ number of clients, transport.
    and then six more times at once, each under a condition that can differ between machines: graphics backend,
    window and frame pacing, audio timing (`SF64_COOP_TEST_AUDIO_SAMPLES`) and C runtime math without FMA3
    (`SF64_COOP_TEST_NO_FMA3`, `src/port/coop/test/switches.h`). Every run's hash must equal the first run's on every
-   recorded frame. `--only opengl,no-fma3` picks variants.
+   recorded frame. `--only opengl,no-fma3` picks variants. These runs are in real time, as pacing and audio timing are
+   what they vary. The variant `speed` plays as the other tools do, with no frame limit, and has to give the same hash
+   (#137); without a replay file the tool plays input by rule, through Corneria's rails into all-range.
+   Tests count frames, so the tools run a game with `SF64_COOP_TEST_SPEED=max`, silent and on Linux without a window
+   (`game_env` in `tools/coop/replay.py`). A tool that needs wall-clock time passes `REAL_TIME` and says why.
 3. **Two clients on one machine.** Two Starship processes with their own config, save and log folders (never the
    owner's), connected over loopback, both fed replays.
 4. **Network conditions (WP-27).** Lag, loss and reordering between the clients with a chaos relay, as in the hub's
