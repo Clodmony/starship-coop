@@ -277,7 +277,8 @@ include_directories(
   ${dr_libs_SOURCE_DIR}
 )
 
-add_subdirectory(libultraship ${CMAKE_CURRENT_SOURCE_DIR}/libultraship)
+# COOP: in the build folder, not the source tree: two folders with other flags shared these archives (#147)
+add_subdirectory(libultraship ${CMAKE_CURRENT_BINARY_DIR}/libultraship)
 add_dependencies(${PROJECT_NAME} libultraship)
 target_link_libraries(${PROJECT_NAME} PRIVATE libultraship)
 
@@ -401,6 +402,10 @@ if(USE_NETWORKING)
     add_subdirectory(tools/coop/menutest)
     # COOP: test program for the input sources, built on demand by tools/coop/input_test.py.
     add_subdirectory(tools/coop/inputtest)
+    # COOP: test program for lockstep, built on demand by tools/coop/lockstep_test.py.
+    add_subdirectory(tools/coop/locksteptest)
+    # COOP: test program for the desync check, built on demand by tools/coop/lockstep_test.py.
+    add_subdirectory(tools/coop/desynctest)
     # COOP: test program for the Steam relay transport, built on demand by tools/coop/steam_test.py. It runs on a fake
     # Steam, so it is there with USE_STEAM_RELAY off too. Nothing in the game calls the transport yet, so only its two
     # files need the switch; a work package that calls it makes this a target_compile_definitions.

@@ -12,9 +12,9 @@ is set in the shell. The game is told what to do through the SF64_COOP_REPLAY_* 
 frames or a cut last frame fails. A game that ends on its own with a code other than 0 crashed, whatever its report
 says: the result is then CRASH (#116). python tools/coop/replay_test.py and crash_test.py test all this.
 
-A game started from here makes no sound, opens no window on Linux and runs at TEST_SPEED: see game_env. Only record
-without --frames runs as a person plays it. To watch a playback, set SDL_VIDEODRIVER and SDL_AUDIODRIVER in the shell
-and pass --speed 1.
+A game started from here makes no sound, opens no window on Linux, runs at TEST_SPEED and does not draw: see game_env.
+Only record without --frames runs as a person plays it. To watch a playback, set SDL_VIDEODRIVER and SDL_AUDIODRIVER in
+the shell and pass --speed 1: --speed draws, as a game at a speed someone picked is there to be seen.
 
 A replay file holds raw structs: it only plays back on the same build and platform it was recorded on.
 
@@ -47,7 +47,11 @@ EXE_CANDIDATES = [
 DATA_FILES = ["sf64.o2r", "starship.o2r", "gamecontrollerdb.txt"]
 HEADER_SIZE = 40  # ReplayHeader in src/port/coop/test/replay.c
 TEST_SPEED = "max"  # no frame limit for a test game: every test here counts frames, not seconds (#137)
-REAL_TIME = {"SF64_COOP_TEST_SPEED": "1"}  # as env_extra, for a run that needs wall-clock time; say why next to it
+NO_DRAW = "1"  # a test game runs its draw code and hands the renderer nothing: the hash does not see that (#147)
+DRAWN = {"SF64_COOP_TEST_NO_DRAW": "0"}  # as env_extra, for a run that needs pixels; say why, and check it got them
+REAL_TIME = {"SF64_COOP_TEST_SPEED": "1", **DRAWN}  # as env_extra, for a run that needs the clock; say why next to it
+MEETING_SPEED = "8"  # for games that meet over sockets: see join_test.py
+TAKE_DRAWING = "COOP_TOOLS_TAKE_DRAWING"  # set in a tool's shell, its games never draw: replay_test.py tests its guards
 RENDER_THREADS = "3"  # for a software renderer: with its default, games side by side slow each other down (#137)
 
 # include/sf64thread.h, include/sf64player.h
@@ -177,8 +181,9 @@ def game_env(run, person_plays=False):
 
     A test game is silent and has no window, also from a bare shell: a driver the shell sets still wins. The offscreen
     driver is for Linux only, as the default backend on Windows draws into a real window, and so are software rendering
-    and RENDER_THREADS. It runs at TEST_SPEED, which env_extra can replace (REAL_TIME). With person_plays someone needs
-    to see, hear and fly the game, so it gets none of that. The caller adds what the run needs."""
+    and RENDER_THREADS. It runs at TEST_SPEED and does not draw, which env_extra can replace (REAL_TIME, DRAWN). With
+    person_plays someone needs to see, hear and fly the game, so it gets none of that. The caller adds what the run
+    needs."""
     env = {key: value for key, value in os.environ.items() if not key.startswith("SF64_COOP_")}
     env["SHIP_HOME"] = str(run)
     if not person_plays:
@@ -189,6 +194,7 @@ def game_env(run, person_plays=False):
             env.setdefault("GALLIUM_DRIVER", "llvmpipe")
             env.setdefault("LP_NUM_THREADS", RENDER_THREADS)
         env["SF64_COOP_TEST_SPEED"] = TEST_SPEED
+        env["SF64_COOP_TEST_NO_DRAW"] = NO_DRAW
     return env
 
 
@@ -218,6 +224,8 @@ def run_game(mode, replay, exe, timeout, hash_log=False, poke=None, tag=None, en
         if poke is not None:
             env["SF64_COOP_HASH_POKE"] = str(poke)
     env.update(env_extra or {})
+    if os.environ.get(TAKE_DRAWING):
+        env["SF64_COOP_TEST_NO_DRAW"] = NO_DRAW
 
     print(f"replay: {mode} {replay}")
     print(f"replay: exe {exe}")
@@ -298,8 +306,8 @@ def main():
                    help="playback and record --frames: give up after this many seconds")
     p.add_argument("--frames", type=int, help="record: stop after this many frames, so nobody has to close the window")
     p.add_argument("--hash-log", action="store_true", help="also write state-hash.txt into the run folder (WP-04)")
-    p.add_argument("--speed", help=f"times real time, 1 for real time, max for no limit (default {TEST_SPEED}; record "
-                                   "without --frames always runs in real time)")
+    p.add_argument("--speed", help=f"times real time, 1 for real time, max for no limit (default {TEST_SPEED}, with no "
+                                   "drawing; record without --frames always runs in real time)")
     p.add_argument("--start", choices=STARTS, help="where the game starts (default: record menus, play where the file "
                                                    "was made)")
     args = p.parse_args()
@@ -310,7 +318,7 @@ def main():
         sys.exit(f"replay: {replay} does not exist")
     replay.parent.mkdir(parents=True, exist_ok=True)
 
-    speed = None if args.speed is None else {"SF64_COOP_TEST_SPEED": args.speed}
+    speed = None if args.speed is None else {"SF64_COOP_TEST_SPEED": args.speed, **DRAWN}
     values, run, elapsed = run_game(args.mode, replay, exe, args.timeout, hash_log=args.hash_log, frames=args.frames,
                                     env_extra=speed, start=STARTS.get(args.start))
     if values is None:

@@ -12,7 +12,7 @@ Every PR states the QA level it reached and how. Levels follow Co-op Anything:
 `automated` needs at least two game clients sharing state. A run of one game is `none`, even when a script drove it and
 checked its state: the PR says what ran.
 
-Current project level: `none` (no co-op play yet; the transport has its own tests).
+Current project level: `automated`. Two real game clients in one session, on one PC, stay equal on every frame through all of Corneria (`python tools/coop/lockstep_test.py`). Nobody has played it, and it has not run on two PCs.
 
 ## Test identity
 
@@ -66,6 +66,11 @@ number of clients, transport.
    `gInterpolationFPS`, which no handshake compares: 30 (no interpolated draw), 60, 120, 144 (not a multiple of the
    game's 30) and 360 (the top of the menu's slider). Vsync is off, because it clamps the rate without a word, and a run
    that did not log the draws its rate asks for fails (`# draws` lines in the log).
+   `python tools/coop/hash_check.py draw` (unattended, exit code 0 on `PASS`) plays the same two sections with and
+   without `SF64_COOP_TEST_NO_DRAW`, from each of the three starts below, and both must hash alike on every frame, with no
+   draws in one and draws in the other (#147). `python tools/coop/hash_check.py base --base <exe>` (unattended, exit code 0
+   on `PASS`) plays input by rule through the menus with co-op off on this build and on the build before a change, and they
+   must hash alike on every frame.
    `python tools/coop/view_check.py` (unattended, exit code 0 on `PASS`) plays the same two clients with buttons and
    pokes that give the two players different numbers, and checks what each one shows and hears from a view trace
    (`src/port/coop/test/view_trace.h`): camera, shield gauge, bomb counter, cockpit, hit flash, shield bar, sound, pause.
@@ -73,6 +78,10 @@ number of clients, transport.
    read back from OpenGL, and such pictures are game art, so they stay local and are deleted after reading.
    `python tools/coop/hash_check.py diff <a> <b>` compares every column of the two logs, names the first differing
    frame and the regions that differ there. It compares the common frames: read its first line for the two lengths.
+   `python tools/coop/desync_report.py diff <a> <b>` (WP-23) does the same for two desync reports, the files a game
+   writes into its own folder when two clients went out of step (`docs/coop/PROTOCOL.md`, Desync check): it checks each
+   dump against the region hashes in its header, then names the regions that differ and the first value that does, by
+   chunk and byte offset. `show <report>` prints one report's header and what its dump holds.
    `python tools/coop/replay.py play <replay> --hash-log` writes a log next to an ordinary playback.
    `python tools/coop/determinism.py <replay>` (WP-02, unattended, exit code 0 on `PASS`) plays the replay once alone
    and then six more times at once, each under a condition that can differ between machines: graphics backend,
@@ -81,7 +90,7 @@ number of clients, transport.
    recorded frame. `--only opengl,no-fma3` picks variants.
    `python tools/coop/full_level.py` (#142, unattended, exit code 0 on `PASS`) is a whole level with 2 players: a pilot
    that reads game state (`src/port/coop/test/pilot.h`) flies Corneria from level start to the map once and writes a
-   replay, which two games then play with no pilot. `gCoopDebugPlayerCount` is the only CVar set, as there is no other
+   replay, which two games then play with no pilot, one of them drawing and one not (#147). `gCoopDebugPlayerCount` is the only CVar set, as there is no other
    way yet to have a second player without a session. Both must `PASS` every checkpoint, and their hash logs must equal
    each other's and the pilot's on every frame. A third game flips a bit of player 2 in all-range, and that must show at
    exactly its frame. Each run is one game: this says nothing about two clients.
@@ -118,11 +127,36 @@ number of clients, transport.
    `replay_test.py` shows for the first two. `builds` and `rates` keep it as well: frame interpolation first went wrong in
    the option menu (#141), and only they play it in Release and at many rates. A replay with checkpoints holds the frames it
    was made on, so it plays from where it was made, wherever the tool's own input by rule would start.
+   A test game does not draw either (`SF64_COOP_TEST_NO_DRAW`, #147): its draw code runs, as that is part of the
+   simulation, and the renderer gets an empty display list, while ImGui, the window, the swap and the frame limit go on.
+   A tool that needs pixels or interpolation asks for them (`DRAWN`, `REAL_TIME`), says why, and fails if it did not get
+   them: `determinism.py`, `hash_check.py builds` and `rates`, `exit_test.py`, `version_test.py`. `replay_test.py` shows
+   each of those fails without.
+   `python tools/coop/test_all.py` (#147, unattended) runs every test here in lanes, on a Debug build or with
+   `--config Release` on a Release build in a folder of its own. Exit code 0 only when every step ran and passed.
 3. **Two clients on one machine.** Two Starship processes with their own config, save and log folders (never the
    owner's), connected over loopback, both fed replays. `python tools/coop/join_test.py` (WP-24, unattended, exit code
    0 only when everything passed) takes two or three games from the lobby into a level through the scripted flow in
    `src/port/coop/test/join_driver.h`. Each game starts from other seeds, and its hash log must then equal the host's
    on every frame from the first frame in the level. `control` lets a client keep its own values and must differ.
+   `python tools/coop/lockstep_test.py` (WP-22, unattended, exit code 0 only when everything passed) is two clients
+   playing one game in lockstep. Each game takes its input from `src/port/coop/test/lockstep_driver.h`, which writes
+   port 0, so from there on input goes the road a pad's goes. The hash logs from the first frame in the level and a log of
+   every player's input per frame must be equal on every frame; `control` runs the same with no lockstep and must
+   differ. `sim` is `lockstep.c` alone in a virtual network, and `python tools/coop/lockstep_mutants.py` shows that can
+   fail. The rest are in the tool: steering, three games, pause, what a save or a zero seed could do, a slow client, lag
+   through the chaos relay, another input delay, and every way of losing a player, through the join driver and through
+   the real menu. `--only full` flies all of Corneria with a pilot on each client, repeats the flight with plain games,
+   and flips a bit on one client, which must show at exactly its frame. Its log feeds `--only menu,release,rates,audio
+   --feed <log>`: the same flight through the real menu, on a Release build, and with the clients at different
+   `gInterpolationFPS` or audio sample counts.
+   The desync check (WP-23) is tested there too: `desync_sim` is `desync.c` alone in a virtual network
+   (`tools/coop/desynctest`), and `python tools/coop/desync_mutants.py` shows that can fail. `desync` flips a bit of
+   player 2 on one client, on rails and in all-range: both games must write a report naming that frame, the pair and
+   the region `players`, end the session within a few frames with the text for the player, and `desync_report.py diff`
+   on the two reports must name `gPlayer[1]`. `desync_three` does it with a third game that stays in step, and
+   `desync_control` with `SF64_COOP_TEST_NO_DESYNC_CHECK`: the hashes differ and nobody says so. The poke in `full`
+   is checked the same way, and every scenario that compares two games also checks that neither wrote a report.
 4. **Network conditions (WP-27).** Lag, loss and reordering between the clients with a chaos relay, as in the hub's
    [network chaos testing](https://github.com/cranebeaker/coop-anything/blob/main/playbook/network-chaos-testing.md).
    The transport on its own already runs through that relay: `python tools/coop/net_test.py` (WP-20), which needs a

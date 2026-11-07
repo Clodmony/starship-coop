@@ -12,6 +12,7 @@
 #include <Fast3D/interpreter.h>
 #include "port/Engine.h"
 #include "port/notification/notification.h"
+#include "port/coop/sync/lockstep_game.h" // COOP: one game cannot reset alone in a session (#20)
 #include "port/coop/ui/menu_window.h" // COOP: the co-op menu (WP-25)
 #include "port/coop/ui/version_label.h" // COOP: build id in the menu bar (#26)
 #include "utils/StringHelper.h"
@@ -567,7 +568,7 @@ void DrawMenuBarIcon() {
 
 void DrawGameMenu() {
     if (UIWidgets::BeginMenu("Starship")) {
-        if (UIWidgets::MenuItem("Reset", "F4")) {
+        if (UIWidgets::MenuItem("Reset", "F4") && !CoopSyncGame_IsOn()) { // COOP: as for the key, see StartFrame (#20)
             gNextGameState = GSTATE_BOOT;
         }
 #if !defined(__SWITCH__) && !defined(__WIIU__)

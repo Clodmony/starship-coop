@@ -1,5 +1,6 @@
 #include "sys.h"
 #include "prevent_bss_reordering.h"
+#include "port/coop/game/players.h" // COOP: no clock in a co-op game (decision 0002)
 
 s32 sSeededRandSeed3;
 s32 sRandSeed1;
@@ -22,7 +23,8 @@ f32 Rand_ZeroOne(void) {
     // LTODO: On these platforms, something corrupts the seeds, causing one of them to be 0.
     // This is a workaround to circumvent this issue, that needs to be fixed.
 #if defined(__SWITCH__) || defined(__linux__)
-    if ((sRandSeed1 == 0) || (sRandSeed2 == 0) || (sRandSeed2 == 0)) {
+    // COOP: never in co-op. The clock would part the clients, and every other platform leaves a zero seed alone too.
+    if (!CoopPlayers_IsCoop() && ((sRandSeed1 == 0) || (sRandSeed2 == 0) || (sRandSeed2 == 0))) {
         Rand_Init();
     }
 #endif
