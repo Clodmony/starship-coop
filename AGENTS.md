@@ -82,6 +82,7 @@ Background reading from the hub: [decomp and recomp](https://github.com/cranebea
 2. Write a hand-off comment on the issue: what is done, what was verified and how, what is left, the next concrete
    step, and anything that surprised you. Facts with sources, guesses labelled as guesses.
 3. Add durable findings (how the game works) to `docs/coop/NOTES.md` in the same PR.
+4. If your PR finishes a work package or changes what is open, update "Current state" in `README.md` in the same PR.
 
 ## Where things are
 
