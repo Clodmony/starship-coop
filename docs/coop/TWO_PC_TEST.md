@@ -53,7 +53,15 @@ and that a desync, if one happens, is caught and reported.
 - **If the game reports a desync:** it says so on screen, names the frame and what differs, and tells you where its
   report file is: `coop-desync-<frame>-player<n>.txt`. Keep the file from **both** PCs.
   `python tools/coop/desync_report.py diff <a> <b>` compares the two.
-- **Logs:** `logs/Starship.log` from the game folder on both PCs. Logs can hold your user name in file paths, so send
+- **The co-op logs:** `coop-log-<session start>-player1.txt` and `-player2.txt` from the game folder, where its config
+  and saves are. Each game writes its own and gets the other player's during the session, so one PC's folder normally
+  holds both; send both folders' files anyway, as the last lines may not have crossed before the session closed. They
+  hold the session, the ping and resends every 5 seconds, every frame held and for how long, the desync check, pauses,
+  players going down, a state line per player each second, and the game's own warnings. The home folder and the user
+  name are taken out before a line is written or sent. `python tools/coop/coop_log.py merge <folder a> <folder b>`
+  puts them into one timeline; `--category lockstep,desync` narrows it. Set `SF64_COOP_LOG=verbose` before the
+  game starts for every held frame and every hash message.
+- **Logs:** `logs/Starship.log` from the game folder on both PCs. These can hold your user name in file paths, so send
   them directly, not in a public issue, unless you have checked them.
 - **How it felt:** each frame waits for both players' input, with an input delay of 3 frames (about 100 ms). Did the
   controls feel late? Did the game stutter or wait? What ping did the menu show?

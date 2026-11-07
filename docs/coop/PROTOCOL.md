@@ -332,6 +332,29 @@ What does not fit:
   ends the session.
 - Before this game has reached frame 0, both are dropped.
 
+## Co-op log
+
+#172: every game writes a log of the session into its own folder, `coop-log-<session start>-player<n>.txt`, and streams
+its lines to every other player, so every folder ends up with one file per player. The code is `src/port/coop/log/`;
+`session.c` drives it from its poll, and `tools/coop/coop_log.py` merges the files into one timeline. A line is
+`YYYY-MM-DD HH:MM:SS.mmm <lockstep frame or -> <level or -> <category> <text>`.
+
+`DIAG_LOG` goes on the reliable lane, after the welcome, and nothing waits for it:
+
+- A client sends its own lines to the host; the host writes what it gets into that player's file and passes it on to
+  its other clients with the origin byte of the sender, so a client takes the origin from the message and a host from
+  the peer it came from. A batch holds whole lines of one origin, at most 1176 bytes in all.
+- At most one batch per peer every 50 ms (`COOP_LOG_SEND_MS`), and none while that peer has 32 or more reliable messages
+  in flight (`COOP_LOG_MAX_PENDING`): the window is 128, and `SYNC_HASH` and the session's own messages come first. So a
+  slow or lost peer costs log lines, never a frame.
+- Lines queued for a peer wait in 32 KB per peer. A line that finds the queue full is dropped and counted, and the next
+  batch that leaves is followed by a line that says how many; what is still queued when the session closes gets one more
+  send and is then dropped, counted in the `log closed` line.
+- A batch that cannot be read (size, origin out of range, the receiver's own index as origin) is dropped and counted,
+  never the end of a session: a log is not worth one. Bytes outside printable ASCII become `?`.
+- Before a line is written or sent, the home folder becomes `~`, the user name `<user>` and any IPv4 address `<ip>`.
+  Nothing in the log names a peer's address: a player is "player 2".
+
 ## Id ranges
 
 | Range | Area |
@@ -368,3 +391,4 @@ What does not fit:
 | 0x00C1 | `TEST_UNRELIABLE` | both | test pattern, only sent by `coop_net_test` | WP-20 |
 | 0x00C2 | `TEST_DONE` | both | none, only sent by `coop_net_test` | WP-20 |
 | 0x00C3 | `TEST_SESSION` | both | the text `session test`, only sent by `coop_session_test` | WP-21 |
+| 0x00C4 | `DIAG_LOG` | both | u8 origin player (0 to 3), u8 flags (0), then lines of that player's co-op log, each ending in `\n`, see Co-op log | #172 |

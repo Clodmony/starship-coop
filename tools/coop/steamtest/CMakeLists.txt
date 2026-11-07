@@ -17,6 +17,7 @@ foreach(COOP_TARGET ${COOP_STEAM_TEST_TARGETS})
         ${CMAKE_SOURCE_DIR}/src/port/coop/net/transport_steam.c
         ${CMAKE_SOURCE_DIR}/src/port/coop/session/identity.c
         ${CMAKE_SOURCE_DIR}/src/port/coop/session/session.c
+        ${CMAKE_SOURCE_DIR}/src/port/coop/log/coop_log.c
         ${CMAKE_SOURCE_DIR}/src/port/coop/session/sim_cvars.c
     )
     target_include_directories(${COOP_TARGET} PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR})
