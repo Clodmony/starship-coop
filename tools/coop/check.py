@@ -114,6 +114,12 @@ def main():
         else:  # the result, and any warning; a passed scenario says nothing new
             print("\n".join(f"info: {line}" for line in lines if not line.endswith(": ok")))
 
+    # 11. Crashes: a crashed game fails the run in every test tool (#116; a stand-in for the game, no build, no ROM).
+    crash = run_tool("crash_test.py")
+    if crash.returncode != 0:
+        failures.append("tools/coop/crash_test.py failed:\n  "
+                        + "\n  ".join((crash.stdout + crash.stderr).strip().splitlines()))
+
     # Info: where the fork diverges from upstream game code.
     grep = git("grep", "-n", "COOP:", "--", "src", "include", ":!src/port/coop")
     markers = len(grep.stdout.splitlines()) if grep.returncode == 0 else 0

@@ -96,7 +96,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools" / "coop"))
 from hash_check import GENERATED_L, describe, first_difference, read_log, write_generated_replay  # noqa: E402
-from replay import FLYING as PAST_INTRO, LEVEL, MENUS, check_start, game_env, read_report, recorded_start  # noqa: E402
+from replay import FLYING as PAST_INTRO, LEVEL, MENUS, check_start, crashed, game_env, read_report, recorded_start  # noqa: E402,E501
+from replay import stop_game  # noqa: E402
 from run_folder import make_run_folder  # noqa: E402
 EXE_CANDIDATES = [
     "build/x64/Release/Starship.exe",
@@ -219,24 +220,22 @@ def play(args):
     start = time.monotonic()
     proc = subprocess.Popen([str(exe)], cwd=run_dir, env=env)
     report = None
+    ended_itself = True
     try:
         while report is None and proc.poll() is None and time.monotonic() - start < args.timeout:
             time.sleep(1)
             report = read_report(report_path)
     finally:
-        if proc.poll() is None:
-            # Only the process this script started.
-            proc.terminate()
-            try:
-                proc.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait()
+        ended_itself = stop_game(proc)
     elapsed = time.monotonic() - start
     report = report or read_report(report_path)
     if report is None:
         print(f"player_trace: FAIL, no replay report after {elapsed:.0f}s (exit code {proc.returncode}); "
               f"the game crashed, hung or does not have the replay code")
+        return None
+    if crashed(proc, ended_itself):
+        print(f"player_trace: FAIL, CRASH: the game ended on its own with exit code {proc.returncode}, after its "
+              f"report said {report['result']}")
         return None
     check_start(report, start_at)
     result = report["result"]
