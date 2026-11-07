@@ -139,7 +139,7 @@ SCENARIOS = {
     "builds-no-draw": Scenario("whole", "builds", 1, None, None, take=True, says="did not draw"),
     "exit-no-draw": Scenario("whole", "exit", 1, None, None, take=True, says="game did not draw"),
     "version-no-draw": Scenario("whole", "version", 1, None, None, take=True, says="the game did not draw"),
-    "draw-off-on": Scenario("whole", "draw", 0, None, None),
+    "draw-off-on": Scenario("whole", "draw", 0, None, None, switch=True),  # the switch of a start in the level
     "bare-replay": Scenario("whole", "replay", 0, "PASS", FRAMES, bare=True),
     "bare-hash": Scenario("whole", "hash", 0, None, None, bare=True),
     "bare-trace": Scenario("whole", "trace", 1, None, None, bare=True),  # no level in this replay: an empty trace

@@ -2343,9 +2343,9 @@ Unknown:
 
 ### 2026-11-07, #147, what a game gets from the renderer, and what test lanes are worth
 
-Identity: ROM US 1.0, on commits `e0f25422` to `29dff2be`, Linux, GCC, Debug and for `builds` Release, OpenGL in software,
-no window. Other issues built and tested on the same machine, so each time comes with its load average. Times of steps
-under `--game-wrap` include the wait for a slot.
+Identity: ROM US 1.0, on commits `e0f25422` to `29dff2be`, and from "merged with #148" on `086e3ea7`, Linux, GCC, Debug and
+for `builds` Release, OpenGL in software, no window. Other issues built and tested on the same machine, so each time comes
+with its load average. Times of steps under `--game-wrap` include the wait for a slot.
 
 Observed:
 
@@ -2370,17 +2370,28 @@ Observed:
 - `hash_check.py draw`, 2 players: 30 s against 62 s on the rails, equal on all 10500 frames, 23 s against 44 s in
   all-range, equal on all 8000. `full_level.py` with game B drawing: A and B equal on all 14384 frames, with 0 and 1 draws a
   frame, and the pilot's run equal to A. `hash_check.py base` against `e0f25422`: equal on all 5800 frames.
+- Merged with #148, no drawing and a start in the level for the first time together, `hash_check.py draw` with 2 players:
+  equal with and without drawing on all 10500 and 8000 frames from `menus`, 7409 and 4909 from `level`, 5739 and 3239 from
+  `flying`, rails and all-range. `hash_check.py start`, which plays with no drawing: `PASS` with 2 players and with 1.
 - Render threads with drawing off, three games at once, three rounds of `LP_NUM_THREADS` 0, 1, 2 and 3 in turn, load 10 to
   24: 17 to 22 s a game at every value, and in the last two rounds, load 10 to 18, 17 to 18 s. CPU per game in those rounds
   17.4 and 17.5 s for 0 and 1, 18.6 to 18.9 s for 2 and 3. An earlier pass, all of 3 and then all of 1, gave 28 and 18 s at
   load about 25; taken in turn that gap is gone.
-- Lanes with drawing off: the 15 steps of `test_all.py` that count frames, under five shared slots, took 7m53s, 5m36s,
+- Lanes with drawing off, before #148: the 15 steps of `test_all.py` that count frames, under five shared slots, took 7m53s, 5m36s,
   4m56s and 5m41s with 2, 3, 4 and 5 lanes (load 23 to 25, 10 to 22, 16 to 30 and 18 to 27). The same 15 steps on the build
   of `e0f25422`, which cannot skip drawing, took 14m30s with 4 lanes (load 15 to 26). `full_level.py` alone took 234 s
   against 870 s.
 - A first run of every step with 5 lanes took 41m39s at load 4 to 43, all of it `hash_check.py rates`, which started first
   and plays in real time. `menu_test.py --game` took 835 s in that run, 13 minutes of it waiting for a slot, as five lanes
   and the machine's other work held all five. It ran for 38 s.
+- Every step, merged with #148, 4 lanes: 21m17s at load 4 to 30, of which `hash_check.py rates` on the rails is 18m27s.
+- Stopping `test_all.py` during `net_mutants.py` left a break in `net_core.c` and its backup: SIGTERM ended `mutants.py`
+  outside its `finally`. The `tree` step named it. With a handler the source is back, and `test_all_test.py` stops a run at
+  that moment: `stop-mutants` fails without the handler.
+- `exit_test.py`, `crash-segv`, 1 of 48 games in one run: the game wrote its whole crash log, with `Signal: 11` and a stack
+  from `SyncFramerateWithTime` (`nanosleep`), did not exit, and ended on its alarm at 5.02 s. The check read a log without
+  those lines; the file has them now. It ran with no test switch but the hash log, so drawing and at real pacing. The same
+  scenario alone: 12 of 12. #137 saw a hang in that handler too, 1 game of 36.
 - `build.py --config Release --build-dir build-release` beside a Debug `build-cmake` on `e0f25422`: both `build.ninja` files
   link `libultraship/src/libultraship.a`. After the Release build it held 0 objects with debug info, and after the next Debug
   build 244. Each change of folder compiled the 124 objects of libultraship again. In this order,, each
@@ -2405,6 +2416,7 @@ Guess:
 Unknown:
 
 - Why #141 saw ninja keep the other folder's archive. The cause is gone with the shared folder either way.
+- What the crash handler waits for in that 1 game of 48, and whether it is the hang #137 saw.
 - A build of libultraship in the build folder on Windows and macOS: not run here, CI's Windows job will show.
 
 ### 2026-11-05, #8 (WP-10), player count apart from camera count
