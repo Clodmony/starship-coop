@@ -29,7 +29,8 @@ real time for determinism.py without its speed variant and for replay.py --speed
 (Linux) start a tool from a shell without any SDL driver, as one typed by hand, and read the driver from each running
 game's environment: a test game must be silent and have no window. A game that is not gets SIGKILL on sight, before it
 opens a sound device. person starts replay.py record without --frames, the one run a person plays: that game must be
-left in real time, and this test then stops it.
+left in real time, and this test then stops it. rates-real and rates-at-speed run hash_check.py rates, whose guard
+counts the draws a game really made: it must hold at real time and fail at speed, where no game interpolates.
 """
 import argparse
 import os
@@ -59,6 +60,9 @@ RUN_FOLDER = re.compile(r"test-(?:replay|trace)-[a-z0-9-]*?\d{8}-\d{6}(?:-\d+)?"
 QUIET = {"SDL_AUDIODRIVER": "dummy", "SDL_VIDEODRIVER": "offscreen"}  # what game_env gives a test game on Linux
 TEST_SPEED = replay_tool.TEST_SPEED
 
+RATES = ["hash_check.py", "rates", "--rates", "30,60", "--section", "rails", "--players", "1", "--frames", str(FRAMES),
+         "--timeout", TIMEOUT]  # a replay of its own, by rule; the file does not come into it
+
 COMMANDS = {
     "replay": lambda file: ["replay.py", "play", file, "--timeout", TIMEOUT],
     "hash": lambda file: ["hash_check.py", "run", file, "--timeout", TIMEOUT],
@@ -67,15 +71,18 @@ COMMANDS = {
     "det-speed": lambda file: ["determinism.py", file, "--only", "speed", "--timeout", TIMEOUT],
     "trace": lambda file: ["player_trace.py", "run", file, "--players", "1", "--timeout", TIMEOUT],
     "real": lambda file: ["replay.py", "play", file, "--speed", "1", "--timeout", TIMEOUT],
+    "rates": lambda file: RATES,
+    "rates-speed": lambda file: [*RATES, "--speed", TEST_SPEED],
 }
 # Speeds the games of a tool must log. No speed is real time.
 SPEEDS = {"replay": {TEST_SPEED}, "hash": {TEST_SPEED}, "det": set(), "det-audio": set(), "det-speed": {TEST_SPEED},
-          "trace": {TEST_SPEED}, "real": set()}
+          "trace": {TEST_SPEED}, "real": set(), "rates": set(), "rates-speed": {TEST_SPEED}}
 
 # name: replay file, tool, wanted exit code, wanted result line and frames played (replay.py prints those two), whether
-# the tool starts with variables left in the shell, whether the game must log a test switch, and whether the tool starts
-# from a shell without SDL drivers
-Scenario = namedtuple("Scenario", "file tool code result frames leak switch bare", defaults=(False, False, False))
+# the tool starts with variables left in the shell, whether the game must log a test switch, whether the tool starts
+# from a shell without SDL drivers, and what the tool must print
+Scenario = namedtuple("Scenario", "file tool code result frames leak switch bare says",
+                      defaults=(False, False, False, None))
 SCENARIOS = {
     "whole": Scenario("whole", "replay", 0, "PASS", FRAMES),
     "header-only": Scenario("header-only", "replay", 1, "FAIL_NO_FRAMES", 0),
@@ -97,6 +104,9 @@ SCENARIOS = {
     "pass-audio": Scenario("whole", "det-audio", 0, None, None, switch=True),
     "det-speed": Scenario("whole", "det-speed", 0, None, None),
     "real-time": Scenario("whole", "real", 0, "PASS", FRAMES),
+    "rates-real": Scenario("whole", "rates", 0, None, None),
+    "rates-at-speed": Scenario("whole", "rates-speed", 1, None, None,
+                               says="60 fps was not used: 1 draws a frame, not 2"),
     "bare-replay": Scenario("whole", "replay", 0, "PASS", FRAMES, bare=True),
     "bare-hash": Scenario("whole", "hash", 0, None, None, bare=True),
     "bare-trace": Scenario("whole", "trace", 1, None, None, bare=True),  # no level in this replay: an empty trace
@@ -251,7 +261,7 @@ def games_of(tool, exe):
 
 
 def watch_quiet(bench):
-    """Returns the check of a bare-* scenario: every game has the drivers of QUIET. It looks at each game at its start."""
+    """Returns the check of a bare-* scenario: every game has the drivers of QUIET, looked at as it starts."""
     def watch(tool):
         failures = []
         seen = set()
@@ -304,6 +314,8 @@ def check(bench, name, scenario, files):
         played = int(frames[-1]) if frames else None
         if played != scenario.frames:
             failures.append(f"{played} frames played, want {scenario.frames}")
+    if scenario.says is not None and scenario.says not in output:
+        failures.append(f"tool did not say: {scenario.says}")
     if switch_logged(output) != scenario.switch:
         failures.append("game log shows a test switch" if not scenario.switch else "no test switch in the game log")
     if speeds_logged(output) != SPEEDS[scenario.tool]:

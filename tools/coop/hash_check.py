@@ -28,8 +28,12 @@ builds plays one replay on two runs of a Release build and one of a Debug build 
   views. Give each build as its own --debug and --release: a build folder holds one build type.
 rates plays one replay at several values of gInterpolationFPS, which no handshake compares, so two clients can differ in
   it. Every run must hash like the first. A rate is the number of draws a game frame gets, and vsync can clamp it, so
-  vsync is off and each run must log the draws its rate asks for (state_hash.c, "# draws"); a run that did not is a
-  failure, not a pass at a lower rate. Input by rule, as for views.
+  vsync is off and each run must log the draws its rate asks for (state_hash.c, "# draws", counted at the draw loop); a
+  run that did not is a failure, not a pass at a lower rate. Input by rule, as for views.
+
+builds and rates run in real time: at test speed a game frame is drawn once, so no game would interpolate, and
+interpolation is what they are there to see (#141, #137). --speed on rates is for replay_test.py, which checks that a
+game at speed fails it.
 
 Exit code 0 on PASS (or no difference for diff), 1 otherwise.
 """
@@ -450,8 +454,8 @@ def build_section(section, debug, release, args):
     runs = (("release-a", release), ("release-b", release), ("debug", debug))
 
     with ThreadPoolExecutor(max_workers=len(runs)) as pool:
-        jobs = [pool.submit(play, replay, exe, args.timeout, f"build-{section}-{tag}", config=config)
-                for tag, exe in runs]
+        jobs = [pool.submit(play, replay, exe, args.timeout, f"build-{section}-{tag}", env_extra=replay_tool.REAL_TIME,
+                            config=config) for tag, exe in runs]
         a, b, d = [job.result() for job in jobs]
 
     failures = [f"{section}: {tag} did not play through: {run[0].get('result') if run[0] else 'no report'}"
@@ -482,11 +486,12 @@ def read_draws(path):
 def rate_section(section, exe, rates, args):
     """Play one section at every rate. Returns a list of failures."""
     replay, frames, config = section_setup(section, "rates", args)
+    speed = replay_tool.REAL_TIME if args.speed is None else {"SF64_COOP_TEST_SPEED": args.speed}
 
     def run(rate):
         rate_config = copy.deepcopy(config)
         rate_config["CVars"].update({"gInterpolationFPS": rate, "gVsyncEnabled": 0})
-        return play(replay, exe, args.timeout, f"rate-{section}-{rate}", config=rate_config)
+        return play(replay, exe, args.timeout, f"rate-{section}-{rate}", env_extra=speed, config=rate_config)
 
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
         runs = list(pool.map(run, rates))
@@ -557,6 +562,7 @@ def main():
     t.add_argument("--players", type=int, default=2, help="players, through gCoopDebugPlayerCount (default 2)")
     t.add_argument("--frames", type=int, help="replay length (default: what the section needs)")
     t.add_argument("--jobs", type=int, default=3, help="games at a time (default 3)")
+    t.add_argument("--speed", help="anything but real time must fail this check (default: real time)")
     t.add_argument("--exe", help="Starship executable (default: newest build found)")
     t.add_argument("--timeout", type=float, default=3600, help="per run: give up after this many seconds")
     args = p.parse_args()

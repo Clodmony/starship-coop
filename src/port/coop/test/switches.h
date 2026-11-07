@@ -20,6 +20,8 @@ extern "C" {
 #endif
 
 int CoopTestSwitches_Speed(void); // factor for the frame limiter: 1 unless SF64_COOP_TEST_SPEED asks for more
+void CoopTestSwitches_NoteDraws(int draws); // called at the draw loop with the draws of this game frame
+int CoopTestSwitches_TakeMostDraws(void);   // the most draws a game frame got since the last call
 void CoopTestSwitches_Init(void);
 
 #ifdef __cplusplus

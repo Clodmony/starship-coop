@@ -37,6 +37,7 @@
 #include "global.h"
 #include "port/hooks/Events.h"
 #include "port/coop/game/players.h"
+#include "port/coop/test/switches.h"
 
 // src/sys/sys_math.c
 extern s32 sRandSeed1;
@@ -625,10 +626,12 @@ static void CoopStateHash_OnGamePreUpdate(IEvent* event) {
                 gPlayCamEye.y, gPlayCamEye.z);
     }
 
-    // Test only: how many draws a game frame gets. Vsync can clamp gInterpolationFPS without a word, so
-    // tools/coop/hash_check.py rates reads this to know a run really used the rate it asked for.
+    // Test only: the most draws a game frame got since the last line, counted at the draw loop. Vsync and test speed
+    // can both keep a game from gInterpolationFPS without a word, and GameEngine_GetInterpolationFrameCount reads only
+    // the CVars, so tools/coop/hash_check.py rates reads this to know a run really used its rate. The most, as a rate
+    // that does not divide evenly gives frames of different counts, and this line lands on the same ones.
     if ((sFrame % VIEW_LOG_PERIOD) == 0) {
-        fprintf(sLog, "# draws frame=%u count=%u\n", sFrame, GameEngine_GetInterpolationFrameCount());
+        fprintf(sLog, "# draws frame=%u count=%d\n", sFrame, CoopTestSwitches_TakeMostDraws());
     }
 
     CoopStateHash_Compute(&hash);

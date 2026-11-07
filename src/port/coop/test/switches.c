@@ -21,9 +21,23 @@ extern unsigned short samples_low;
 #define SPEED_NO_LIMIT 100000
 
 static int sSpeed = 1;
+static int sMostDraws = 0;
 
 int CoopTestSwitches_Speed(void) {
     return sSpeed;
+}
+
+void CoopTestSwitches_NoteDraws(int draws) {
+    if (draws > sMostDraws) {
+        sMostDraws = draws;
+    }
+}
+
+int CoopTestSwitches_TakeMostDraws(void) {
+    int most = sMostDraws;
+
+    sMostDraws = 0;
+    return most;
 }
 
 static int CoopTestSwitches_IsSet(const char* value) {

@@ -478,6 +478,7 @@ void GameEngine::RunCommands(Gfx* Commands, const std::vector<std::unordered_map
 
     interpreter->mInterpolationIndex = 0;
 
+    CoopTestSwitches_NoteDraws((int) mtx_replacements.size()); // COOP: for the "# draws" lines of the hash log (#137)
     for (const auto& m : mtx_replacements) {
         wnd->DrawAndRunGraphicsCommands(Commands, m);
         interpreter->mInterpolationIndex++;
