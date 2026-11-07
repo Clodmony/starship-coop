@@ -205,8 +205,9 @@ def run_game(mode, replay, exe, timeout, hash_log=False, poke=None, tag=None, en
     run folder (src/port/coop/sync/state_hash.h); poke flips one byte of game state at that frame. env_extra adds
     environment variables (for example the test switches in src/port/coop/test/switches.h); config is a dict written
     as the run folder's starship.cfg.json before the game starts (graphics backend, window size, CVars). With frames a
-    recording stops once the file holds that many; it can hold more, as the game writes in blocks and this looks once a
-    second. start is where the game starts: a Start, by default where the replay was made, and for a recording MENUS. A
+    recording holds exactly that many: the game stops recording there and writes its report while it runs
+    (SF64_COOP_REPLAY_RECORD_FRAMES), which this waits for, as for a playback. A report written at exit would be lost
+    on Windows, where stopping the game runs no exit handler (#156). start is where the game starts: a Start, by default where the replay was made, and for a recording MENUS. A
     game that says it started elsewhere ends with result WRONG_START, as an input by rule plays on either way.
     """
     start = start or (recorded_start(replay) if mode == "play" else MENUS)
@@ -217,6 +218,8 @@ def run_game(mode, replay, exe, timeout, hash_log=False, poke=None, tag=None, en
     env = game_env(run, person_plays=mode == "record" and frames is None)
     env["SF64_COOP_REPLAY_RECORD" if mode == "record" else "SF64_COOP_REPLAY_PLAY"] = str(replay)
     env["SF64_COOP_REPLAY_REPORT"] = str(report)
+    if mode == "record" and frames is not None:
+        env["SF64_COOP_REPLAY_RECORD_FRAMES"] = str(frames)
     env.update(start.env)
     if hash_log:
         env["SF64_COOP_HASH_LOG"] = str(run / "state-hash.txt")
@@ -237,12 +240,10 @@ def run_game(mode, replay, exe, timeout, hash_log=False, poke=None, tag=None, en
     values = None
     try:
         while True:
-            if mode == "play":
+            if mode == "play" or frames is not None:
                 values = read_report(report)
                 if values is not None:
                     break
-            elif frames is not None and replay_frame_count(replay) >= frames:
-                break
             if (mode == "play" or frames is not None) and time.monotonic() - began > timeout:
                 print("replay: timeout")
                 break
