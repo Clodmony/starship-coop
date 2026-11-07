@@ -23,6 +23,7 @@
 #include "assets/ast_zoness.h"
 #include "port/hooks/Events.h"
 #include "port/coop/game/players.h" // COOP: player count apart from camera count (WP-10)
+#include "port/coop/sync/lockstep_game.h" // COOP: whether a session runs the frames (#20)
 
 extern float gCurrentScreenWidth;
 extern float gCurrentScreenHeight;
@@ -7205,7 +7206,8 @@ void Play_Main(void) {
                 Play_Update();
             }
 
-            if ((gControllerPress[gMainController].button & START_BUTTON) &&
+            // COOP: not in a session, as the save is each client's own and would part them (#20)
+            if (!CoopSyncGame_IsOn() && (gControllerPress[gMainController].button & START_BUTTON) &&
                 (gPlayer[0].state == PLAYERSTATE_LEVEL_INTRO) &&
                 gSaveFile.save.data.planet[sSaveSlotFromLevel[gCurrentLevel]].normalClear) {
                 Audio_ClearVoice();
@@ -7228,7 +7230,7 @@ void Play_Main(void) {
                 Versus_Main();
             }
 
-            if ((gControllerPress[gMainController].button & START_BUTTON) && gPauseEnabled) {
+            if (CoopPlayers_PausePressed() && gPauseEnabled) { // COOP: any player can pause (#20)
                 Audio_PlayPauseSfx(1);
                 gPlayState = PLAY_PAUSE;
                 D_ctx_80177868 = 4;
@@ -7258,7 +7260,7 @@ void Play_Main(void) {
                 }
             }
 
-            if ((D_ctx_80177868 == 4) && (gControllerPress[gMainController].button & START_BUTTON) && gPauseEnabled) {
+            if ((D_ctx_80177868 == 4) && CoopPlayers_PausePressed() && gPauseEnabled) { // COOP: any player (#20)
                 Audio_PlayPauseSfx(0);
                 gPlayState = PLAY_UPDATE;
                 gDrawMode = DRAW_PLAY;

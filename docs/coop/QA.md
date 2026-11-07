@@ -12,7 +12,7 @@ Every PR states the QA level it reached and how. Levels follow Co-op Anything:
 `automated` needs at least two game clients sharing state. A run of one game is `none`, even when a script drove it and
 checked its state: the PR says what ran.
 
-Current project level: `none` (no co-op play yet; the transport has its own tests).
+Current project level: `automated`. Two real game clients in one session, on one PC, stay equal on every frame through all of Corneria (`python tools/coop/lockstep_test.py`). Nobody has played it, and it has not run on two PCs.
 
 ## Test identity
 
@@ -123,6 +123,17 @@ number of clients, transport.
    0 only when everything passed) takes two or three games from the lobby into a level through the scripted flow in
    `src/port/coop/test/join_driver.h`. Each game starts from other seeds, and its hash log must then equal the host's
    on every frame from the first frame in the level. `control` lets a client keep its own values and must differ.
+   `python tools/coop/lockstep_test.py` (WP-22, unattended, exit code 0 only when everything passed) is two clients
+   playing one game in lockstep. Each game takes its input from `src/port/coop/test/lockstep_driver.h`, which writes
+   port 0, so from there on input goes the road a pad's goes. The hash logs from the first frame in the level and a log of
+   every player's input per frame must be equal on every frame; `control` runs the same with no lockstep and must
+   differ. `sim` is `lockstep.c` alone in a virtual network, and `python tools/coop/lockstep_mutants.py` shows that can
+   fail. The rest are in the tool: steering, three games, pause, what a save or a zero seed could do, a slow client, lag
+   through the chaos relay, another input delay, and every way of losing a player, through the join driver and through
+   the real menu. `--only full` flies all of Corneria with a pilot on each client, repeats the flight with plain games,
+   and flips a bit on one client, which must show at exactly its frame. Its log feeds `--only menu,release,rates,audio
+   --feed <log>`: the same flight through the real menu, on a Release build, and with the clients at different
+   `gInterpolationFPS` or audio sample counts.
 4. **Network conditions (WP-27).** Lag, loss and reordering between the clients with a chaos relay, as in the hub's
    [network chaos testing](https://github.com/cranebeaker/coop-anything/blob/main/playbook/network-chaos-testing.md).
    The transport on its own already runs through that relay: `python tools/coop/net_test.py` (WP-20), which needs a

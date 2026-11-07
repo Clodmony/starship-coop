@@ -12,10 +12,10 @@
 //   - Every other player follows its source. With no source, or nothing from it this frame, the player idles.
 //   - Nothing else reaches a slot: ports 1 to 3 of this PC are dropped, and a slot with no player in it stays empty.
 //
-// A source is a replay file today (src/port/coop/test/replay.c) and the network later: the sync layer calls
-// CoopInput_SetSource for each remote player and sends what CoopInput_Controller returns. Neither the game nor this
-// file changes for that. Replay frames and network frames carry the same thing, the pair the sender's player used, so
-// a receiver has nothing to work out again and cannot work it out differently.
+// A source is a replay file (src/port/coop/test/replay.c) or the network: in a session lockstep (src/port/coop/sync/
+// lockstep_game.c) is the source of every player, the local one too, and sends what CoopInput_Controller returns. Replay
+// frames and network frames carry the same thing, the pair the sender's player used, so a receiver has nothing to work
+// out again and cannot work it out differently.
 
 #include <libultra/controller.h>
 #include <stdint.h>

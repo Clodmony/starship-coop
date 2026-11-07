@@ -184,6 +184,22 @@ void CoopMenu_Leave(CoopMenu* m) {
     }
 }
 
+void CoopMenu_Fail(CoopMenu* m, const char* text) {
+    if (m->session != NULL) {
+        Menu_Say(m, "%s", text);
+        m->lost = m->levelStarted;
+        Menu_EndSession(m);
+    }
+}
+
+bool CoopMenu_WantsEyes(CoopMenu* m) {
+    int32_t player;
+    bool lost = m->lost;
+
+    m->lost = false;
+    return lost || (m->session != NULL && m->backend->waiting(&player) != 0);
+}
+
 static void Menu_OnEvent(CoopMenu* m, const CoopSessionEvent* ev) {
     const CoopRoster* roster;
 
@@ -205,13 +221,22 @@ static void Menu_OnEvent(CoopMenu* m, const CoopSessionEvent* ev) {
             }
             break;
         case COOP_SESSION_EV_LEFT:
-            Menu_Say(m, "Player %d left. %s", ev->peer + 2, ev->text);
+            if (m->levelStarted) {
+                char text[COOP_SESSION_TEXT];
+
+                // Every frame needs every player's input, so nobody can carry on without this one.
+                snprintf(text, sizeof(text), "Player %d left, so the session is over. %s", ev->peer + 2, ev->text);
+                CoopMenu_Fail(m, text);
+            } else {
+                Menu_Say(m, "Player %d left. %s", ev->peer + 2, ev->text);
+            }
             break;
         case COOP_SESSION_EV_ENDED:
             // After a refusal the REFUSED event has already said more than this one can.
             if (ev->end != COOP_SESSION_END_REFUSED) {
                 Menu_Say(m, "%s", ev->text);
             }
+            m->lost = m->levelStarted;
             Menu_EndSession(m);
             break;
         case COOP_SESSION_EV_ROSTER:
@@ -235,8 +260,9 @@ static void Menu_OnEvent(CoopMenu* m, const CoopSessionEvent* ev) {
             m->backend->enterLevel(ev->levelStart);
             break;
         case COOP_SESSION_EV_MESSAGE:
-            // Nothing above the session range is for the menu yet. This switch has no default, so the compiler names a
-            // new event.
+            // Nothing above the session range is for the menu. This switch has no default, so the compiler names a new
+            // event.
+            m->backend->message(ev->peer, ev->msgId, ev->data, ev->size);
             break;
     }
 }
@@ -326,7 +352,15 @@ void CoopMenu_View(const CoopMenu* m, CoopMenuView* out) {
     snprintf(out->startLabel, sizeof(out->startLabel), "%s",
              out->canStart ? "Start the level" : "Start the level (every player has to choose first)");
     if (m->levelStarted) {
-        snprintf(out->level, sizeof(out->level), "The level has started.");
+        int32_t player = 0;
+        uint32_t waited = m->backend->waiting(&player);
+
+        if (waited != 0) {
+            snprintf(out->level, sizeof(out->level), "Waiting for player %d (%u s).", (int) player + 1,
+                     (unsigned) (waited / 1000));
+        } else {
+            snprintf(out->level, sizeof(out->level), "The level has started.");
+        }
     } else if (m->phase == COOP_MENU_JOINED) {
         snprintf(out->level, sizeof(out->level), "Waiting for the host to start the level.");
     }

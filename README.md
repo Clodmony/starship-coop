@@ -15,9 +15,9 @@ your own US 1.0 or US 1.1 Star Fox 64 ROM on first launch.
 Last updated 2026-11-07. For the live list see the [open issues](https://github.com/Clodmony/starship-coop/issues) and
 the [roadmap](docs/coop/ROADMAP.md).
 
-**Two people cannot play together yet.** The games do not exchange inputs on `coop` so far. That is
-[WP-22](https://github.com/Clodmony/starship-coop/issues/20), in progress. The first goal is two players on two PCs
-flying all of Corneria with matching state.
+**Two real games now stay in step through all of Corneria, on one PC.** Scripts fly both, over the real session, and
+their state matches on every frame. It has not run on two PCs yet, and nobody has played it. The first goal is two
+players on two PCs flying all of Corneria with matching state.
 
 ### What works
 
@@ -26,20 +26,18 @@ Everything here is tested by scripts, on Corneria, on Linux. Nobody has played i
 | Area | State |
 |---|---|
 | Players | Up to 4 Arwings fly Corneria on rails and in all-range, started by a debug setting. Landmaster and Blue Marine sections keep extra players parked |
-| Input | Each player has their own input source: a controller or a replay |
-| View | Camera, HUD and sound follow your own player, and the other player is an Arwing with a shield bar. Only a test switch picks your player so far |
+| Input | Each player has their own input source: a controller, a replay or the network |
+| View | Camera, HUD and sound follow your own player, and the other player is an Arwing with a shield bar |
 | Network | UDP transport with its own reliability, session handshake with build, ROM and platform checks, character choice |
 | Menu | Co-op menu with host, join, characters, status and ping, and starting a level for everyone together |
 | Steam relay | Built, off by default, tested on a fake Steam only |
 | Determinism | Two runs of one build match on every frame through all of Corneria, and Release, Debug and frame rates from 30 to 360 match too |
-| Sync model | [Decision 0002](docs/coop/decisions/0002-sync-model.md) is accepted: deterministic lockstep |
-| Tests | Replays, a state hash per frame, deliberate-break tests and uncapped, silent test games. See [tools/coop](tools/coop/README.md) |
+| Lockstep | [Decision 0002](docs/coop/decisions/0002-sync-model.md) is built: inputs go over the network, every frame waits for every player, any player can pause, and a lost player ends the session cleanly |
+| Tests | Replays, a state hash per frame, deliberate-break tests, and uncapped, silent test games that can start straight in a level. See [tools/coop](tools/coop/README.md) |
 
 ### In progress
 
-- [WP-22](https://github.com/Clodmony/starship-coop/issues/20): lockstep input exchange, any player can pause, a clean end when a player leaves
 - [#147](https://github.com/Clodmony/starship-coop/issues/147): faster tests without the final drawing, one command for all tests, Release runs
-- [#148](https://github.com/Clodmony/starship-coop/issues/148): test games that start straight in a level
 
 ### What is open
 

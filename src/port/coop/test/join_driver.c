@@ -19,6 +19,8 @@
 #include "port/coop/game/players.h"
 #include "port/coop/session/identity_game.h"
 #include "port/coop/session/session.h"
+#include "port/coop/sync/lockstep_game.h"
+#include "port/coop/test/switches.h"
 #include "port/hooks/Events.h"
 
 // src/sys/sys_math.c
@@ -54,6 +56,7 @@ static bool sStartTaken = false;
 static bool sStartRefusedSaid = false;
 static bool sEntered = false;
 static bool sRunningSaid = false;
+static s32 sSelf = 0;
 
 static void Report(const char* format, ...) {
     va_list args;
@@ -100,6 +103,12 @@ static void Pick_Next(void) {
         Report("pick character=%s", Character_Word(sPicks[sNextPick]));
         CoopSession_Pick(sSession, (CoopCharacter) sPicks[sNextPick++]);
     }
+}
+
+static const char* Env_Text(const char* name) {
+    const char* value = getenv(name);
+
+    return ((value != NULL) && (value[0] != '\0')) ? value : NULL;
 }
 
 static void Session_Open(void) {
@@ -164,6 +173,25 @@ static void Report_LevelStart(const CoopLevelStart* start) {
            Character_Word(start->roster[2]), Character_Word(start->roster[3]), values);
 }
 
+static bool Link_Send(int peer, uint16_t msgId, const void* data, uint16_t size, CoopNetLane lane) {
+    return (sSession != NULL) && CoopSession_Send(sSession, peer, msgId, data, size, lane);
+}
+
+static void Session_Pump(void);
+
+static void Session_End(void) {
+    CoopSyncGame_End();
+    CoopSession_Close(sSession);
+    sSession = NULL;
+}
+
+static void Link_Fail(const char* text) {
+    Report("ended text=%s", text);
+    Session_End();
+}
+
+static const CoopSyncLink sLink = { Link_Send, Session_Pump, Link_Fail };
+
 // The control: everything Enter does but the values, so the two games go to one level from what they each brought.
 static void Enter_KeepOwn(const CoopLevelStart* start) {
     CoopLevelStart own;
@@ -180,6 +208,7 @@ static void Session_Event(const CoopSessionEvent* ev) {
                 sJoined++;
             } else {
                 Report("joined player=%u", ev->playerIndex);
+                sSelf = ev->playerIndex;
                 Pick_Next();
             }
             break;
@@ -189,9 +218,18 @@ static void Session_Event(const CoopSessionEvent* ev) {
         case COOP_SESSION_EV_LEFT:
             sJoined--;
             Report("left text=%s", ev->text);
+            if (sEntered) {
+                Link_Fail(ev->text); // a level needs every player, as the menu has it
+            }
             break;
         case COOP_SESSION_EV_ENDED:
             Report("ended text=%s", ev->text);
+            if (sEntered) {
+                Session_End();
+            }
+            break;
+        case COOP_SESSION_EV_MESSAGE:
+            CoopSyncGame_Receive(ev->peer, ev->msgId, ev->data, ev->size);
             break;
         case COOP_SESSION_EV_ROSTER: {
             const CoopRoster* r = CoopSession_Roster(sSession);
@@ -208,12 +246,17 @@ static void Session_Event(const CoopSessionEvent* ev) {
             break;
         case COOP_SESSION_EV_LEVEL_START:
             Report_LevelStart(ev->levelStart);
+            // Here and not earlier: the title screen sets it on every frame (src/overlays/ovl_menu/fox_title.c:171).
+            if (Env_Text("SF64_COOP_JOIN_MAIN_PORT") != NULL) {
+                gMainController = atoi(Env_Text("SF64_COOP_JOIN_MAIN_PORT"));
+            }
             if (sKeepOwn) {
                 Enter_KeepOwn(ev->levelStart);
             } else {
                 CoopLevelStart_Enter(ev->levelStart);
             }
             sEntered = true;
+            CoopSyncGame_Begin(&sLink, ev->levelStart->roster, sSelf, sPortFile != NULL);
             break;
         default:
             break;
@@ -243,6 +286,7 @@ static void Host_TryStart(void) {
         Team_Poke();
     }
     CoopLevelStart_FromGame(&start, (u8) sLevel, 0);
+    CoopTestSwitches_StartSeeds(start.values);
     sStartTaken = CoopSession_StartLevel(sSession, &start);
     if (!sStartTaken && !sStartRefusedSaid) {
         sStartRefusedSaid = true;
@@ -270,15 +314,22 @@ static void Report_Running(void) {
     Values_Word(damage, sizeof(damage), gTeamDamage, ARRAY_COUNT(gTeamDamage));
     Values_Word(event, sizeof(event), gTeamEventActorIndex, ARRAY_COUNT(gTeamEventActorIndex));
     Report("level_running frame=%u level=%d phase=%d players=%d characters=%s,%s,%s,%s seeds=%s team_damage=%s "
-           "team_event=%s",
+           "team_event=%s main=%d",
            (unsigned) sFrame, (int) gCurrentLevel, (int) gLevelPhase, (int) CoopPlayers_Count(),
            Character_Word(CoopPlayers_Character(0)), Character_Word(CoopPlayers_Character(1)),
-           Character_Word(CoopPlayers_Character(2)), Character_Word(CoopPlayers_Character(3)), word, damage, event);
+           Character_Word(CoopPlayers_Character(2)), Character_Word(CoopPlayers_Character(3)), word, damage, event,
+           (int) gMainController);
+}
+
+static void Session_Pump(void) {
+    CoopSessionEvent ev;
+
+    while ((sSession != NULL) && CoopSession_Poll(sSession, SDL_GetTicks(), &ev)) {
+        Session_Event(&ev);
+    }
 }
 
 static void CoopJoinDriver_OnGamePreUpdate(IEvent* event) {
-    CoopSessionEvent ev;
-
     (void) event;
     if (!sFrameStarted) {
         if (gGameState != GSTATE_START) {
@@ -297,20 +348,15 @@ static void CoopJoinDriver_OnGamePreUpdate(IEvent* event) {
     if (!sTried) {
         Session_Open();
     }
+    Report_Running();
     if (sSession == NULL) {
         return;
     }
-    while (CoopSession_Poll(sSession, SDL_GetTicks(), &ev)) {
-        Session_Event(&ev);
+    Session_Pump();
+    if (sSession != NULL) {
+        Host_TryStart();
     }
-    Host_TryStart();
     Report_Running();
-}
-
-static const char* Env_Text(const char* name) {
-    const char* value = getenv(name);
-
-    return ((value != NULL) && (value[0] != '\0')) ? value : NULL;
 }
 
 void CoopJoinDriver_Init(void) {
