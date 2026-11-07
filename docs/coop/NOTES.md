@@ -2083,6 +2083,83 @@ For anyone repeating this:
   crash is not the end of the game. `src/audio/` has `__SANITIZE_ADDRESS__` blocks of its own that crash on the audio thread
   (`aLoadBufferImpl`) and that no shipped build runs: compile with `-U__SANITIZE_ADDRESS__`.
 
+### 2026-11-07, #142, all of Corneria with two players: how a replay got through
+
+Identity: ROM US 1.0, branch `issue/142-full-corneria` at `dab18fc5`, on `f2ca32fc`, Linux, GCC, Debug, OpenGL on a
+software renderer, no window, one game per run, no transport. `gCoopDebugPlayerCount` 2 is the only CVar set, as nothing
+else gives a second player without a session. No debug switch. Corneria only, on one machine.
+
+How the input was made. A replay cannot see, so three ways were weighed:
+
+| Way | Verdict |
+|---|---|
+| A route worked out from the trace | Could do the rails, where the world repeats. Not the boss: it walks to random points, and a run has to hit one small box on it. |
+| A search that keeps what survives | Every try starts at boot, as there are no save states, so one try costs a whole run. A boss needs aim, not luck. |
+| A recording by a script that reads state | Chosen, `src/port/coop/test/pilot.h`. It only runs while recording: it leaves a plain replay, and the two runs that count have no pilot in them. |
+
+So "no debug switch" could be met. A run with deaths or one named switch was not needed.
+
+Observed, `python tools/coop/full_level.py`. Replay frames, with input by rule through the menus:
+
+| Frame | State |
+|---|---|
+| 3101 | Level start |
+| 4775 | Player 0 active on rails, player 1 joins |
+| 9392 | The cut to all-range (`PLAYERSTATE_START_360`) |
+| 9634 | Both active in all-range |
+| 12989 | Granga beaten: `PLAYERSTATE_LEVEL_COMPLETE` |
+| 14322 | `PLAYERSTATE_NEXT` |
+| 14324 | The map |
+
+- Neither player went down. Shields were 115 and 207 going into all-range, 27 and 167 at level complete. Player 0 flew
+  7972 game frames, player 1 7974.
+- Two plain runs of the 14384 frames: replay `PASS`, so every checkpoint matched, and state hashes equal on every frame.
+  The pilot's own run is equal to them too. A bit flipped in player 2 at frame 9934 first showed at exactly 9934, in region
+  `players`.
+- The same flight at real time and with the frame limit off (#137's switch, in a local build) gave a replay file equal
+  byte for byte.
+- The same replay with `SF64_COOP_TEST_LOCAL_INDEX=1`, the other client of one session, once and by hand: replay `PASS`, and
+  its hash log equal to index 0's on all 14384 frames, the boss fight included. The two cameras differed on 79 of 112
+  sampled frames: the 79 that looked through player 1.
+- Flown by rule, the same level in 16000 frames: player 0 went down 3 times, and no level complete.
+- A player at 0 shields flies on. `Player_Down` needs `shields <= 0` while `radioDamageTimer` runs
+  (`src/engine/fox_play.c:5734`). A hit sets that timer to 4 (`:996`), and its damage drains at 2 a frame
+  (`Player_UpdateShields`, `:5631`), so a hit of 20 that ends at 0 can outlast the timer. In one early run a player flew
+  1268 frames like that and then got shields back. Only the next hit ends it.
+- What took shields on rails, from what was next to the ship: enemy lasers for 20 and scenery for 40. Flying at 560 still
+  met arches and buildings, and on one frame both players, 400 apart, next to one arch.
+- Hills have no hitbox. `OBJ_SCENERY_CO_BUMP_1` to `_5` are `gNoHitbox` (`src/engine/fox_edata_info.c:120-124`) and collide
+  by mesh (`src/engine/fox_play.c:1972`). In one run both players were hit at height 656 with a hill the only solid thing
+  near them.
+- Every Granga state takes its target from `gPlayer[0]` (`src/overlays/ovl_i1/fox_co.c:784`, `:830`, `:851`, `:876`,
+  `:901`), and only the backpack ends the fight (`:169`). Read: it walks towards player 0, so a second player can have its
+  back.
+- The arms launch the missiles and the gun the plasma, each only while it stands (`fox_co.c:428`, `:449`). The lasers do
+  not depend on any part (`:442-443`).
+- A hit on a leg stops Granga where it is (`fox_co.c:335`), and a leg shot off drops it (`:290`, `:313`). In this run it
+  lay in one place from about game frame 8100, and all 13 backpack hits came after that, up to game frame 9888.
+
+Derived:
+
+- Point 2 of decision 0002 is met on Linux, in a Debug build, for 2 players in one game.
+- The pilot writes nothing but pads: a run with it hashes equal to runs without it, on every frame. So its replay is as
+  good as a recording of a person.
+- A replay only fits one build, and the pilot is what carries over: a new build gets a new replay from one run. When a
+  change to the game makes the pilot lose, the tool fails and names what it did not reach.
+- This is one flight, not a rate. Every run of one build repeats it, so repeats say nothing about how well the pilot flies.
+  Small changes moved the outcome a lot: a version where player 0 only circled and player 1 broke off at 700 lost both
+  players with Granga alive.
+
+Guess:
+
+- Rails in other levels should go about as well, as the pilot reads hitboxes, not a route. It has no plan for another boss.
+
+Unknown:
+
+- Whether the pilot can win alone: `--players 1` was not run. Granga faces a lone player 0 when it walks.
+- The Carrier route: never flown. It needs all seven arches and Falco up (#59).
+- Any other level, a Release build (#141), Windows, two machines, two clients.
+
 ### 2026-11-06, #137, what a test game waits for, and what it does not run at speed
 
 Identity: ROM US 1.0, on commit `62ed1e94` with `origin/coop` at `f2ca32fc`, Linux, GCC, Debug, OpenGL in software, no

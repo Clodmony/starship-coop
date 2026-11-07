@@ -8,6 +8,8 @@
 //   SF64_COOP_REPLAY_REPORT=<file>  where to write the result line (default: replay-report.txt)
 //   SF64_COOP_REPLAY_LIVE_LOCAL=1   in co-op, with SF64_COOP_REPLAY_PLAY: the local player stays on the live controller
 //                                   and the replay flies the others (WP-14). Outside co-op it changes nothing.
+//   SF64_COOP_PILOT=<file>          with SF64_COOP_REPLAY_PLAY: a pilot flies the players and <file> gets what it flew,
+//                                   as a replay (pilot.h)
 // With none of them set, no listener is registered and the game runs unchanged.
 //
 // The report ends with result=<value>. Recording: RECORDED. Playback: PASS, FAIL_MISMATCH (a checkpoint differs),
