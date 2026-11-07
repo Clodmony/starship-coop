@@ -7,6 +7,7 @@
 #include "global.h"
 #include "assets/ast_bolse.h"
 #include "port/coop/game/effects.h" // COOP: enemy effects against the other players (#100)
+#include "port/coop/game/hits.h"    // COOP: the base's beam against the other players (#136)
 #include "prevent_bss_reordering.h"
 
 extern s32 dummy200;
@@ -891,6 +892,7 @@ s32 Bolse_8018E05C(BoBase* this, s32 index) {
         }
         ret = true;
     }
+    CoopHits_BolseBeam(this, temp_fs1, var_fs0, temp_fs2, temp_fs3, temp_fs4); // COOP: the other players (#136)
 
     Matrix_Pop(&gGfxMatrix);
 

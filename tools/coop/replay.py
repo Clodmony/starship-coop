@@ -9,7 +9,8 @@ Every run gets a fresh folder under local/ (config, save and logs start empty) a
 recording and its playback start from the same state and the owner's own setup is never touched, even when SHIP_HOME
 is set in the shell. The game is told what to do through the SF64_COOP_REPLAY_* environment variables
 (src/port/coop/test/replay.h). Playback exits 0 on PASS, 1 otherwise: only a whole file can pass, so a file with no
-frames or a cut last frame fails. python tools/coop/replay_test.py tests all this.
+frames or a cut last frame fails. A game that ends on its own with a code other than 0 crashed, whatever its report
+says: the result is then CRASH (#116). python tools/coop/replay_test.py and crash_test.py test all this.
 
 A game started from here makes no sound, opens no window on Linux, runs at TEST_SPEED and does not draw: see game_env.
 Only record without --frames runs as a person plays it. To watch a playback, set SDL_VIDEODRIVER and SDL_AUDIODRIVER in
@@ -205,8 +206,9 @@ def run_game(mode, replay, exe, timeout, hash_log=False, poke=None, tag=None, en
     run folder (src/port/coop/sync/state_hash.h); poke flips one byte of game state at that frame. env_extra adds
     environment variables (for example the test switches in src/port/coop/test/switches.h); config is a dict written
     as the run folder's starship.cfg.json before the game starts (graphics backend, window size, CVars). With frames a
-    recording stops once the file holds that many; it can hold more, as the game writes in blocks and this looks once a
-    second. start is where the game starts: a Start, by default where the replay was made, and for a recording MENUS. A
+    recording holds exactly that many: the game stops recording there and writes its report while it runs
+    (SF64_COOP_REPLAY_RECORD_FRAMES), which this waits for, as for a playback. A report written at exit would be lost
+    on Windows, where stopping the game runs no exit handler (#156). start is where the game starts: a Start, by default where the replay was made, and for a recording MENUS. A
     game that says it started elsewhere ends with result WRONG_START, as an input by rule plays on either way.
     """
     start = start or (recorded_start(replay) if mode == "play" else MENUS)
@@ -217,6 +219,8 @@ def run_game(mode, replay, exe, timeout, hash_log=False, poke=None, tag=None, en
     env = game_env(run, person_plays=mode == "record" and frames is None)
     env["SF64_COOP_REPLAY_RECORD" if mode == "record" else "SF64_COOP_REPLAY_PLAY"] = str(replay)
     env["SF64_COOP_REPLAY_REPORT"] = str(report)
+    if mode == "record" and frames is not None:
+        env["SF64_COOP_REPLAY_RECORD_FRAMES"] = str(frames)
     env.update(start.env)
     if hash_log:
         env["SF64_COOP_HASH_LOG"] = str(run / "state-hash.txt")
@@ -235,14 +239,13 @@ def run_game(mode, replay, exe, timeout, hash_log=False, poke=None, tag=None, en
     proc = subprocess.Popen([str(exe)], cwd=run, env=env)
 
     values = None
+    ended_itself = True
     try:
         while True:
-            if mode == "play":
+            if mode == "play" or frames is not None:
                 values = read_report(report)
                 if values is not None:
                     break
-            elif frames is not None and replay_frame_count(replay) >= frames:
-                break
             if (mode == "play" or frames is not None) and time.monotonic() - began > timeout:
                 print("replay: timeout")
                 break
@@ -250,19 +253,17 @@ def run_game(mode, replay, exe, timeout, hash_log=False, poke=None, tag=None, en
                 break
             time.sleep(1)
     finally:
-        if proc.poll() is None:
-            # Only the process this script started.
-            proc.terminate()
-            try:
-                proc.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                proc.kill()
+        ended_itself = stop_game(proc)
 
     if values is None:
         time.sleep(1)
         values = read_report(report)
     if values is None:
         print(f"replay: no report written (exit code {proc.returncode}); see {run / 'logs'}")
+    elif crashed(proc, ended_itself):
+        print(f"replay: the game ended on its own with exit code {proc.returncode}, after its report said "
+              f"{values['result']}; see {run / 'logs'}")
+        values = {**values, "result": "CRASH", "exit_code": str(proc.returncode)}
     else:
         check_start(values, start)
     return values, run, time.monotonic() - began
@@ -274,6 +275,27 @@ def check_start(values, start):
     if said != start.report:
         print(f"replay: this game started at {said}, not at {start.report}")
         values["result"] = "WRONG_START"
+
+
+def stop_game(proc):
+    """Stop a game this script started, if it still runs. Returns whether it had already ended on its own."""
+    if proc.poll() is not None:
+        return True
+    # Only the process this script started.
+    proc.terminate()
+    try:
+        proc.wait(timeout=15)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+    return False
+
+
+def crashed(proc, ended_itself):
+    """Whether a game that stop_game has seen to the end crashed (#116). A crashed test game still writes its report,
+    which can say RECORDED or PASS, and then ends with exit code 1 (src/port/coop/test/stop_signal.c), or with what
+    the system gives a crash. A game stopped by stop_game did not crash, although on Windows its code is 1 too."""
+    return ended_itself and proc.returncode != 0
 
 
 def main():

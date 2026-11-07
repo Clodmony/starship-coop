@@ -1,5 +1,6 @@
 #include "global.h"
 #include "port/coop/game/players.h" // COOP: whose sound it is (#30)
+#include "port/coop/game/hits.h"    // COOP: hits on the other players (#136)
 #include "assets/ast_corneria.h"
 #include "assets/ast_sector_x.h"
 #include "assets/ast_sector_y.h"
@@ -3116,6 +3117,7 @@ void TexturedLine_Update(TexturedLine* this) {
                 }
             }
         }
+        CoopHits_TexturedLine(this - gTexturedLines); // COOP: the same test for the other players (#136)
         if (((this->posAA.z + gPathProgress) > 1000.0f) && (gLevelMode != LEVELMODE_ALL_RANGE)) {
             this->mode = 0;
         }

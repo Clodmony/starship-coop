@@ -9,12 +9,15 @@
 #include "global.h"
 #include "port/coop/game/players.h"
 #include "port/coop/sync/lockstep_game.h"
+#include "port/coop/test/menu_driver.h"
 #include "port/coop/test/switches.h"
 #include "port/hooks/Events.h"
 
 static CoopMenu* sMenu = NULL;
 
 static void CoopMenuGame_OnGamePreUpdate(IEvent* event) {
+    uint32_t now;
+
     (void) event;
     // The logo adds 1 to gGameState after a second of real time (Timer_CreateTask in Game_Update). A level start in
     // that second would turn GSTATE_PLAY into GSTATE_ENDING, so nothing reaches the game before that is over. A window
@@ -22,7 +25,10 @@ static void CoopMenuGame_OnGamePreUpdate(IEvent* event) {
     if ((gGameState >= GSTATE_BOOT) && (gGameState <= GSTATE_LOGO_WAIT)) {
         return;
     }
-    CoopMenu_Tick(sMenu, SDL_GetTicks());
+    now = SDL_GetTicks();
+    // Times the gaps the other games see, for menu_test.py; nothing without SF64_COOP_TEST_MENU.
+    CoopMenuDriver_Tick(now, sMenu->session != NULL);
+    CoopMenu_Tick(sMenu, now);
 }
 
 void CoopMenuGame_Listen(CoopMenu* menu) {
@@ -40,8 +46,13 @@ static bool Link_Send(int peer, uint16_t msgId, const void* data, uint16_t size,
     return (sMenu->session != NULL) && CoopSession_Send(sMenu->session, peer, msgId, data, size, lane);
 }
 
+// A frame that waits for input pumps the session from here, so this is a session tick too: without the driver's
+// tick a lockstep wait would read as a stall, though the other games hear from this one the whole time.
 static void Link_Pump(void) {
-    CoopMenu_Tick(sMenu, SDL_GetTicks());
+    uint32_t now = SDL_GetTicks();
+
+    CoopMenuDriver_Tick(now, sMenu->session != NULL);
+    CoopMenu_Tick(sMenu, now);
 }
 
 static void Link_Fail(const char* text) {

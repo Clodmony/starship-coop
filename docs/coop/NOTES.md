@@ -9,6 +9,34 @@ Private notes (your paths, your PC, your logs) go in `local/`, not here.
 
 ## Build and run
 
+### 2026-11-07, #116, how a crashed test game looks to the tools
+
+Identity: no game run; `tools/coop/crash_test.py` with a stand-in for the game, Windows 11, Python 3, on `issue/116`.
+
+Observed:
+
+- A test game writes its replay report from an atexit handler also when it crashes (`src/port/coop/test/replay.c`,
+  `CoopReplay_OnExit`): `RECORDED` when it records, `FAIL_INCOMPLETE` during a playback. Then it ends with exit code
+  1 on Linux (`src/port/coop/test/stop_signal.c`, `CoopStopSignal_OnExit`, #98).
+- A playback that reached its end writes `PASS` and keeps running until the tool stops it (`replay.c`,
+  `CoopReplay_FinishPlayback` sets `REPLAY_DONE`, nothing exits).
+- Before #116, `replay.py record --frames` and `play` ended with exit code 0 for a game that wrote a passing report
+  and then ended with code 1 (`crash_test.py`, `play-crash` and `record-crash`, before the fix).
+- On Windows, `Popen.terminate` ends a process with code 1, the same code as a crash on Linux.
+
+Derived:
+
+- The report alone cannot tell a crash: the tools read how the game ended. A game that ends on its own with a code
+  other than 0 crashed; one the tool stopped did not (`crashed` and `stop_game` in `tools/coop/replay.py`).
+
+Unknown:
+
+- The exit code of a crashed game on Windows and macOS: `stop_signal.c` is Linux only, and a real crash was not made
+  there. Any code other than 0 counts.
+- On Windows a test game still opens a window: the offscreen driver is Linux only (`game_env`, #137).
+- On Windows `record --frames` never writes its report, with or without this change (#156), so `replay_test.py`
+  fails there at its first step. `play` of an existing replay passed with the real game.
+
 ### 2026-11-06, #54, what SHIP_HOME reaches, and how a replay file can end
 
 Identity: ROM US 1.0, on commit `a69c811a`, Linux, GCC, Debug, OpenGL in software, no window.
@@ -384,6 +412,28 @@ Unknown:
 - A crash before `src/port/Engine.cpp:301` keeps upstream's path. The run with no driver above is the only such crash
   seen, and it ended by itself.
 
+### 2026-11-07, #156, a recording with --frames on Windows
+
+Observed (Windows 11, MSVC v143, Debug, US 1.0):
+
+- Before the fix (`origin/coop` at `b8ba3d28`): `replay.py record <file> --frames 120` printed
+  `replay: no report written (exit code 1)` and `FAILED`. A recording wrote its report only from its `atexit` handler
+  (`CoopReplay_OnExit`, `src/port/coop/test/replay.c`), and `stop_game` ends the game with `Popen.terminate`, on
+  Windows `TerminateProcess`. `stop_signal.c`, which turns a stop into a clean exit, is Linux only (#71 entry above).
+- After the fix: the same command printed `RECORDED` with `recorded_frames: 120`, and `replay.py play` of that file
+  `PASS`. `replay_test.py`: 32/34 scenarios; the two others (`exit-no-draw`, `version-no-draw`) end after 0 s in a
+  Linux-only tool (`exit_test.py` reads `signal.SIGQUIT`; `version_test.py` prints `version: Linux only`).
+
+Derived:
+
+- A report a tool needs must be written while the game runs, not at exit: on Windows a tool cannot end the game in a
+  way that runs exit handlers. Playback already did so (`CoopReplay_FinishPlayback`). Recording now does too when
+  `SF64_COOP_REPLAY_RECORD_FRAMES` gives the length, so the file holds exactly that many frames.
+
+Unknown:
+
+- The fix on Linux: not run there. The path is the same code on both systems.
+
 ### 2026-11-04, #1 (WP-01), Linux build
 
 Identity: ROM US 1.0 (SHA-1 `d8b1088520f7c5f81433292a9258c1184afa1457`, `config.yml:34`), commit `ba0781d7`, Linux,
@@ -428,6 +478,62 @@ Unknown:
 - Release config and macOS: not tried in this session.
 
 ## Engine and players
+
+### 2026-11-07, #136, other hits that only reach player 0
+
+Line numbers are for `issue/136-hits-any-player` on `coop` at `da44a18a`. Windows 11, MSVC v143, Debug, US 1.0 ROM.
+
+Observed, with `player_trace.py effects --players 2` on Corneria, on rails and with `--all-range`:
+
+- 40 of 40 lines hold in both sections, the 34 of #100 and 6 new ones. `texline` hits whichever player it is placed
+  on, through the real `TexturedLine_Update`. `bo-beam` and `and-reach` hit player 1 and not player 0: they call
+  `CoopHits_BolseBeam` and `CoopHits_AndrossReach` alone, as neither boss is on Corneria.
+- The first rails run failed `and-reach` for target 0: both players lost 40 shields from frame 3208, two frames
+  before the case was placed, and were pushed down 20 a frame. Scenery, not the test, and the heal let it hit again.
+  The probe now reads the two direct cases in the same frame as the call.
+- Running the rails and all-range runs at once made the all-range run place no case: both write
+  `local/test-trace-effects.sfcr`. Run them one after the other.
+- `replay.py play local/replays/corneria.sfcr`, one player: PASS, level complete at frame 11747.
+- With `gInterpolationFPS=20` and vsync off the game stopped in Corneria's intro at frame 600 and the run timed out
+  (exit code 1), before any probe case. No stack was taken.
+
+Read, in this checkout:
+
+- `TexturedLine_Update` tests `gPlayer[gPlayerNum]` and damages `gPlayer[0]` (`src/engine/fox_enmy.c:3092-3118`).
+  Lines that hurt are made by event scripts (`src/engine/fox_enmy2.c:1402`), Titania and Andross. A hit ends a line
+  of mode below 100. `CoopHits_TexturedLine` follows the upstream test (`src/engine/fox_enmy.c:3120`).
+- The Bolse base's beam (`src/overlays/ovl_i4/fox_bo.c:838-899`) tests player 0 only; the co-op test follows it
+  (`:895`) with the same rotation, offsets and length.
+- `Andross_8018D0D8` tests player 0 in x and y only; the co-op test follows it (`src/overlays/ovl_i6/fox_andross.c:1696`).
+- Not changed, with their reason:
+  - Macbeth (`src/overlays/ovl_i5/fox_ma.c:1671`, `:3572`, `:3621`, `:5888`) and Titania
+    (`src/overlays/ovl_i5/fox_ti.c:979`) are Landmaster levels, where co-op players stay parked
+    (`src/port/coop/game/players.c:195-198`). WP-18 (#16).
+  - The Andross escape explosions follow and kill player 0 (`src/overlays/ovl_i6/fox_andross.c:741-756`;
+    `include/sf64object.h:606`): a cutscene, WP-19 (#17).
+  - The Andross brain catches player 0 when close (`src/overlays/ovl_i6/fox_andross.c:815-821`) and drains it in state
+    11 (`:884-896`). It holds one player, so which one is a choice no record makes yet.
+  - Bare `gPlayer` outside a call: `src/engine/fox_beam.c:838` is friendly fire, an open rule (decision 0007, #7);
+    `:1762` and `:2026` are versus only; `src/engine/fox_hud.c:5012` reads player 0's intro; `src/engine/fox_play.c:2607`
+    clears every player.
+  - `Effect_Move` culls from player 0's camera on rails (`src/engine/fox_enmy.c:2797-2808`).
+- The abort of #100: `FrameInterpolation_ShouldInterpolateFrame(true)` sets recording on whatever it was
+  (`src/port/interpolation/FrameInterpolation.cpp:426-429`), and 23 places in `src/` call it. Recording is off for a
+  whole frame when the camera jumps or the game pauses or unpauses (`src/engine/fox_display.c:1922-1929`), and on every
+  frame at 20 FPS (`src/port/interpolation/FrameInterpolation.cpp:442`). The PC menu offers 30 and up
+  (`src/port/ui/ImguiUI.cpp:390`).
+
+Derived:
+
+- On a pause or unpause with a state 1 Effect374 or an Effect382 drawn, the close after it pops the root path
+  (`src/engine/fox_edisplay.c:2058`), and the next recorded call reads an empty vector. Same shape as #100's abort.
+- The 20 FPS stop fits the same pattern in another of the 23 places. Not shown: no stack.
+
+Unknown:
+
+- Whether a pause over a Zoness column aborts in play. Not run.
+- What stopped the 20 FPS run.
+- Bolse and Andross in their own levels with two players. Not run: no test can start there yet (#148).
 
 ### 2026-11-06, #12, input source per player: who steers whom
 
@@ -2669,6 +2775,63 @@ Unknown:
 - Whether Windows and Linux compute the same game: still never run. The first such session, with the desync check on,
   is the next step on #171.
 
+### 2026-11-08, #172, the co-op log: one file per player, streamed to every player
+
+Identity: ROM US 1.0, branch `issue/172-coop-log`, Linux, GCC, Debug, OpenGL on a software renderer, no window, 2 game
+clients, each in its own run folder, UDP over loopback, input delay 3 frames. One machine, Corneria only. The wire form is
+in PROTOCOL.md, section Co-op log; `python tools/coop/lockstep_test.py --only log` runs the check named below.
+
+**What it is.** A session opens a log in the game's own folder, `coop-log-<session start>-player<n>.txt`, and every line
+has the wall clock, the lockstep frame, the level and a category (`src/port/coop/log/coop_log.h`). The session writes
+its events where they happen (`session.c`: host, join, refusal with reasons and both identities, picks, roster, level
+start, leave, end), lockstep its start, every hold of 200 ms or more, a stall and a summary every 10 s
+(`lockstep_game.c`), the desync check its start, the frames compared every 300 frames and a desync with the report's
+path (`desync_game.c`), and the transport's counters go in every 5 s per peer. The game glue (`log_game.c`) adds state,
+level and mode changes, pause, a player's state changing or being parked, a state line per player every second, and the
+warnings and errors of the game's own log, through a spdlog sink added from port code (`log_spdlog.cpp`). During the
+session each game streams its lines in `DIAG_LOG` to the host, and the host passes them on, so every folder ends with
+every player's file; `tools/coop/coop_log.py merge` makes one timeline of them.
+
+**Observed (runs)**
+
+| Run | Result |
+|---|---|
+| `log` | Two games, 2700 lockstep frames, hashes equal on every frame with the streaming on, 16 s. Each folder held `player1` and `player2`; each game's own log had 52 lines, the host got 49 of the client's and the client 48 of the host's, the rest still queued when the test told the games to quit. 30 batches one way and 29 the other, 0 lines dropped for a full queue. Ping, resends and duplicates every 5 s: `ping 0 ms (0 to 9) ... resent 0, duplicates 0` over loopback |
+| `log`, privacy | Every file: no home folder, no user name, no IPv4 address; the file header shows the game folder as `~/...` |
+| `log`, the tool | `coop_log.py merge <host folder> <client folder>` orders 101 lines by time, each once though both folders hold both files; `--category session,desync` narrows it |
+| `coop_log_test.py` | Parsing, order by time and by frame, the filters, an offset, a line held twice: 14 checks, from `check.py` |
+| `check.py` | All OK, with three breaks of `session_mutants.py` updated to the new text around `CoopSession_Close`, `CoopSession_Host` and the end of `Client_Poll` |
+
+A line of the state category, as written: `2026-11-08 00:37:47.608 2419 Corneria state player 2 active shields 255 pos
+664 364 -27067 path -27067 speed 40.0`. The test game's lockstep and desync lines said `frame 2395: 0 frames held for
+0 ms so far` and `frame 2400: 2400 frames compared with a peer, 0 unchecked`.
+
+**Derived**
+
+- `session.c` is the one place both the menu and the join driver run through, so the log hooks into its poll: the events
+  go in as they come out, `DIAG_LOG` is taken there and never reaches the session's owner, and the pump runs once per
+  poll. The three test programs that compile `session.c` (menutest, sessiontest, steamtest) link `coop_log.c` with no
+  context, and the log stays closed there.
+- A client knows its player index only at the welcome, so its lines before that wait in memory and the file opens then;
+  the first run of this branch opened the client's file at once as `joiner`, which is now what a client that is never
+  welcomed gets.
+- A test game quits on SIGTERM without closing its session, so the closing line comes from an `atexit` handler, with
+  nothing sent: every line before it is flushed as written. That is why the other folder lacks the last two or three
+  lines in the table above: they were queued when the process left.
+- The rate limit is one datagram per peer every 50 ms with fewer than 32 reliable messages in flight: `SYNC_HASH` and
+  the session's messages keep the window, and the quiet level makes about 4 lines a second, well under the limit.
+- The `net` category has no lost-packet count: the transport counts resends and duplicates, not losses, so the line
+  says `resent`.
+
+**Unknown**
+
+- No warning or error of the game's own log came up during the run, so the spdlog sink has been built and linked but
+  not seen to deliver a line. `SF64_COOP_LOG=verbose` and the CVar `gCoopLogVerbose` were not run either.
+- Two PCs, Windows, a peer that leaves or stalls, three players and a desync in the log: the owner asked for one short
+  run (2026-11-08); `left`, `stall` and `desync` of `lockstep_test.py` ran with the log on in earlier branches only
+  without it.
+- What the log costs at real time with a window: the test games run at speed 8 with no draw.
+
 ### 2026-11-05, #8 (WP-10), player count apart from camera count
 
 Observed:
@@ -3552,6 +3715,42 @@ Unknown:
   bit by design. Either way the run shows no difference for this replay.
 
 ## Networking
+
+### 2026-11-07, #132, how long a level load stalls the session, and the menu's time-out
+
+Identity: ROM US 1.0, branch `issue/132-menu-timeout` from `coop` `da44a18a`, Windows 11, MSVC v143, Debug, the
+graphics backend the test config leaves at its default, three games on one PC with windows.
+
+Observed:
+
+- The menu ticks the session once per game frame, from `GamePreUpdateEvent` with `SDL_GetTicks()`
+  (`src/port/coop/ui/menu_game.c`). While a frame takes long, nothing is sent or read, so the other games hear
+  nothing for at least that long.
+- `menu_driver` now times the gaps between those ticks while a session is open (`menu-stall.txt`,
+  `src/port/coop/test/menu_driver.h`). In `menu_test.py`'s `game_level`, the longest gap in each of the three games
+  was 160, 164 and 167 ms, all at the same tick (345 or 346), which is the level start. Before it, no gap was over
+  42 ms. `game_leave` gave 166 ms.
+- `menu_test.py --game` had not run on Windows before: the driver writes its state file in text mode, so each line
+  ends in CR LF there, and the test never saw the `end` line. It then failed with "no Co-op entry in the menu bar".
+  Fixed in the test's reader.
+- The join watch writes `level_running` once per run (`sRunningSaid`, `src/port/coop/test/join_driver.c`), so a
+  second level start in the same run does not show in the report.
+
+Derived:
+
+- 167 ms is about 30 times below the 5000 ms transport default, on this PC. The menu now passes its own
+  `COOP_MENU_TIMEOUT_MS` (10000 ms, `src/port/coop/ui/menu.h`), and `sim` checks that both host and client get it.
+
+Guess:
+
+- A first load from a slow disk, or a PC far slower than this one, stalls longer. Nothing here measured either.
+- On Windows, holding a window's title bar to drag it may stop the game loop for as long as it is held. Not tried.
+
+Unknown:
+
+- The longest stall on Linux with software rendering, and on a cold disk cache.
+- What the game itself does with a player who left during a level: `game_leave` only shows the session and the
+  menus stay right and every game keeps running. The rules belong to WP-16 (#14).
 
 ### 2026-11-06, #24, Steam relay transport on a fake, what only a real run can settle
 

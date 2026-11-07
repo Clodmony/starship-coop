@@ -6,6 +6,8 @@
 //   SF64_COOP_REPLAY_RECORD=<file>  record controller input per game frame into <file>
 //   SF64_COOP_REPLAY_PLAY=<file>    play <file> back instead of the live controllers
 //   SF64_COOP_REPLAY_REPORT=<file>  where to write the result line (default: replay-report.txt)
+//   SF64_COOP_REPLAY_RECORD_FRAMES=<n>  with SF64_COOP_REPLAY_RECORD: stop recording after <n> frames and write the
+//                                   report then, while the game runs (#156). Without it the report is written at exit.
 //   SF64_COOP_REPLAY_LIVE_LOCAL=1   in co-op, with SF64_COOP_REPLAY_PLAY: the local player stays on the live controller
 //                                   and the replay flies the others (WP-14). Outside co-op it changes nothing.
 //   SF64_COOP_PILOT=<file>          with SF64_COOP_REPLAY_PLAY: a pilot flies the players and <file> gets what it flew,

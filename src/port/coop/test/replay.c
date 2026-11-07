@@ -75,6 +75,7 @@ static const char* sReportPath = "replay-report.txt";
 static bool sStarted = false;
 static u32 sFrame = 0;
 static u32 sRecordedFrames = 0;
+static u32 sRecordFrames = 0; // SF64_COOP_REPLAY_RECORD_FRAMES, 0 for none
 static s64 sFirstMismatch = -1;
 static ReplayCheckpoint sMismatchWant;
 static ReplayCheckpoint sMismatchGot;
@@ -302,6 +303,15 @@ static void CoopReplay_OnGamePreUpdate(IEvent* event) {
             fflush(sFile);
         }
         sFrame++;
+        // The report is written here, not at exit: on Windows a tool can only end the game with TerminateProcess,
+        // which runs no atexit handler (#156).
+        if ((sRecordFrames != 0) && (sFrame >= sRecordFrames)) {
+            fclose(sFile);
+            sFile = NULL;
+            sRecordedFrames = sFrame;
+            CoopReplay_WriteReport("record", "RECORDED");
+            sMode = REPLAY_DONE;
+        }
         return;
     }
 
@@ -335,6 +345,7 @@ void CoopReplay_Init(void) {
     const char* recordPath = getenv("SF64_COOP_REPLAY_RECORD");
     const char* playPath = getenv("SF64_COOP_REPLAY_PLAY");
     const char* reportPath = getenv("SF64_COOP_REPLAY_REPORT");
+    const char* recordFrames = getenv("SF64_COOP_REPLAY_RECORD_FRAMES");
     const char* liveLocal = getenv("SF64_COOP_REPLAY_LIVE_LOCAL");
     const char* pilotPath = getenv("SF64_COOP_PILOT");
 
@@ -349,6 +360,9 @@ void CoopReplay_Init(void) {
     if ((recordPath != NULL) && (recordPath[0] != '\0')) {
         sFile = fopen(recordPath, "wb");
         sMode = REPLAY_RECORD;
+        if ((recordFrames != NULL) && (recordFrames[0] != '\0')) {
+            sRecordFrames = (u32) strtoul(recordFrames, NULL, 10);
+        }
     } else if ((playPath != NULL) && (playPath[0] != '\0')) {
         sFile = fopen(playPath, "rb");
         sMode = REPLAY_PLAY;

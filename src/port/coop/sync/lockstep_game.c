@@ -13,6 +13,7 @@
 #include "global.h"
 #include "port/coop/game/input.h"
 #include "port/coop/game/players.h"
+#include "port/coop/log/coop_log.h"
 #include "port/coop/net/protocol.h"
 #include "port/hooks/Events.h"
 #include "desync.h"
@@ -31,6 +32,9 @@ extern void Graphics_PushFrame(Gfx* data);
 #define SYNC_TEXT_SIZE 192
 // A desync names the frame, the level, the players, the regions and the report's path (desync_game.c).
 #define SYNC_DESYNC_TEXT_SIZE 1536
+// The co-op log (#172): a hold this long is worth a line at the quiet level, and a summary comes this often.
+#define SYNC_LOG_HOLD_MS 200
+#define SYNC_LOG_SUMMARY_MS 10000
 
 typedef enum {
     SYNC_OFF,
@@ -48,6 +52,14 @@ static bool sMuted = false;
 static bool sNoExchange = false;
 static uint32_t sHeldFrames = 0;
 static uint32_t sHeldMs = 0;
+static int32_t sWaitPlayer = -1;
+static uint32_t sSummaryMs = 0;
+
+// Lockstep cannot go on: the log hears why, then the session's owner.
+static void Sync_Fail(const char* text) {
+    CoopLog_Write(COOP_LOG_ERROR, false, "%s", text);
+    sLink.fail(text);
+}
 
 static int32_t Source_Read(void* user, int32_t player, CoopInputFrame* out) {
     (void) user;
@@ -85,6 +97,9 @@ static void Sync_Start(void) {
     CoopInput_SetLocalSource(&sSource);
     CoopDesyncGame_Begin(&desync, sConfig.self, sConfig.host, sConfig.present, sConfig.delay);
     sState = SYNC_RUNNING;
+    sSummaryMs = SDL_GetTicks();
+    CoopLog_Write(COOP_LOG_LOCKSTEP, false, "lockstep started at frame 0: input delay %u frames, players 0x%x, %s",
+                  (unsigned) sConfig.delay, (unsigned) sConfig.present, sConfig.host ? "host" : "client");
 }
 
 // A desync that is complete ends the session with its text, as a lost player does (WP-23).
@@ -92,7 +107,7 @@ static void Sync_CheckDesync(void) {
     char text[SYNC_DESYNC_TEXT_SIZE];
 
     if ((sState == SYNC_RUNNING) && CoopDesyncGame_Check(SDL_GetTicks(), text, sizeof(text))) {
-        sLink.fail(text);
+        Sync_Fail(text);
     }
 }
 
@@ -100,7 +115,9 @@ static void Sync_Stalled(int32_t player) {
     char text[SYNC_TEXT_SIZE];
 
     snprintf(text, sizeof(text), "Player %d stopped sending input, so the session is over.", (int) player + 1);
-    sLink.fail(text);
+    CoopLog_Write(COOP_LOG_LOCKSTEP, false, "stall: no input from player %d for %u ms at frame %u", (int) player + 1,
+                  (unsigned) (SDL_GetTicks() - sLockstep.progressMs), (unsigned) sLockstep.frame);
+    Sync_Fail(text);
 }
 
 // True when this frame can run.
@@ -124,6 +141,9 @@ static bool Sync_FrameIsReady(void) {
         if (!sWaiting) {
             sWaiting = true;
             sWaitSinceMs = now;
+            sWaitPlayer = CoopLockstep_Waiting(&sLockstep);
+            CoopLog_Write(COOP_LOG_LOCKSTEP, true, "frame %u waits for player %d", (unsigned) sLockstep.frame,
+                          (int) sWaitPlayer + 1);
         }
         stalled = CoopLockstep_StalledOn(&sLockstep, now);
         if (stalled >= 0) {
@@ -155,7 +175,11 @@ int32_t CoopSyncGame_HoldFrame(void) {
         return 1;
     }
     if (sWaiting) {
-        sHeldMs += SDL_GetTicks() - sWaitSinceMs;
+        uint32_t held = SDL_GetTicks() - sWaitSinceMs;
+
+        sHeldMs += held;
+        CoopLog_Write(COOP_LOG_LOCKSTEP, held < SYNC_LOG_HOLD_MS, "frame %u held %u ms for player %d",
+                      (unsigned) sLockstep.frame, (unsigned) held, (int) sWaitPlayer + 1);
     }
     sWaiting = false;
     return 0;
@@ -165,10 +189,17 @@ int32_t CoopSyncGame_HoldFrame(void) {
 static void CoopSyncGame_OnGamePreUpdate(IEvent* event) {
     (void) event;
     if (sState == SYNC_RUNNING) {
+        uint32_t now = SDL_GetTicks();
+
         // The state this frame starts from, hashed before anything of the frame runs, then the frame's input.
-        CoopDesyncGame_Frame(sLockstep.frame, SDL_GetTicks());
-        CoopLockstep_Advance(&sLockstep, CoopInput_Controller(), SDL_GetTicks());
+        CoopDesyncGame_Frame(sLockstep.frame, now);
+        CoopLockstep_Advance(&sLockstep, CoopInput_Controller(), now);
         Sync_CheckDesync();
+        if (now - sSummaryMs >= SYNC_LOG_SUMMARY_MS) {
+            sSummaryMs = now;
+            CoopLog_Write(COOP_LOG_LOCKSTEP, false, "frame %u: %u frames held for %u ms so far",
+                          (unsigned) sLockstep.frame, (unsigned) sHeldFrames, (unsigned) sHeldMs);
+        }
     }
 }
 
@@ -220,7 +251,7 @@ void CoopSyncGame_Receive(int peer, uint16_t msgId, const uint8_t* data, uint16_
     }
     if (CoopDesync_IsMessage(msgId)) {
         if (!CoopDesyncGame_Receive(peer, msgId, data, size, SDL_GetTicks())) {
-            sLink.fail("Another player sent a state hash that could not be read, so the session is over.");
+            Sync_Fail("Another player sent a state hash that could not be read, so the session is over.");
         }
         Sync_CheckDesync();
         return;
@@ -229,13 +260,15 @@ void CoopSyncGame_Receive(int peer, uint16_t msgId, const uint8_t* data, uint16_
         return;
     }
     if (!CoopLockstep_Receive(&sLockstep, peer, data, size, SDL_GetTicks())) {
-        sLink.fail("Another player sent input that could not be read, so the session is over.");
+        Sync_Fail("Another player sent input that could not be read, so the session is over.");
     }
 }
 
 void CoopSyncGame_End(void) {
     if (sState == SYNC_RUNNING) {
         CoopInput_ClearSources();
+        CoopLog_Write(COOP_LOG_LOCKSTEP, false, "lockstep ended at frame %u: %u frames held for %u ms in all",
+                      (unsigned) sLockstep.frame, (unsigned) sHeldFrames, (unsigned) sHeldMs);
     }
     CoopDesyncGame_End();
     sState = SYNC_OFF;

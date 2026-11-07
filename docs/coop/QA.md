@@ -183,7 +183,10 @@ number of clients, transport.
    `game_level_map` scenarios (#126) go on to the Start button and compare the state hash logs from the first frame after
    `Play_Init`, as `join_test.py` does. Its `game_platform` scenario reads what the menu shows both players for a
    platform warning (decision 0010), against `coop_session_test` as the other side, because two games on one PC never
-   differ in platform. Neither says how the window looks.
+   differ in platform. Its `game_leave` scenario (#132) has player 2 leave during a level, checks that the session ends
+   for everyone while every game keeps running (lockstep, #160), then holds a second session in the same games, starts
+   a level again and checks that all three players stay past the time-out. `game_level` and `game_leave` print the
+   longest stall of the session tick that any game saw. Neither says how the window looks.
 6. **Regression per bug.** Every desync fix comes with the replay that triggered it; every transport fix adds a
    break to `tools/coop/net_mutants.py`, every session fix one to `tools/coop/session_mutants.py`.
 

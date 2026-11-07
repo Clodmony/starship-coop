@@ -94,6 +94,7 @@ src/port/coop/
   sync/      the sync model from decision 0002 (input exchange + state hashes, or host snapshots)
   game/      game glue: player count apart from camera count, player 2+ spawn, input routing, HUD, rules
   ui/        ImGui menu entries: host, join, status (the menubar is in src/port/ui/ImguiUI.cpp)
+  log/       the co-op log of a session, one file per player, streamed between the players (#172)
   test/      replay files, state hashing, harness hooks used by tools/coop/
 ```
 

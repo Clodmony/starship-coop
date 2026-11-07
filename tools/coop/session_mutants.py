@@ -115,8 +115,10 @@ SIM = ["sim"]
 BREAKS = [
     # Creating, closing, asking.
     ("no_null_transport_check", "if (transport == NULL) {\n        return NULL;\n    }\n", "", SIM),
-    ("close_null_session", "if (s == NULL) {\n        return;\n    }\n    s->t->ops->close(s->t);",
-     "s->t->ops->close(s->t);", SIM),
+    ("close_null_session", "if (s == NULL) {\n        return;\n    }\n    CoopLog_Write(COOP_LOG_SESSION, false, "
+     "\"session closed\");\n    CoopLog_End(s->nowMs, Log_Send, s);\n    s->t->ops->close(s->t);",
+     "CoopLog_Write(COOP_LOG_SESSION, false, \"session closed\");\n    CoopLog_End(s->nowMs, Log_Send, s);\n"
+     "    s->t->ops->close(s->t);", SIM),
     ("close_keeps_transport", "s->t->ops->close(s->t);\n    free(s);", "free(s);", SIM),
     ("identity_host_any_state", "return s->peers[peer].state == PEER_JOINED ? &s->peers[peer].identity : NULL;",
      "return &s->peers[peer].identity;", SIM),
@@ -323,15 +325,17 @@ BREAKS = [
     ("client_message_no_size", CLIENT_MESSAGE, CLIENT_MESSAGE.replace(MESSAGE_SIZE, ""), SIM),
     ("client_message_no_data", CLIENT_MESSAGE, CLIENT_MESSAGE.replace(MESSAGE_DATA, ""), SIM),
     ("client_ignored_uncounted", "s->ignored++;\n                break;\n            default:\n                break;\n"
-     "        }\n    }\n    return false;\n}\n\nbool CoopSession_Poll",
+     "        }\n    }\n    return false;\n}\n\n// ---- The co-op log",
      "break;\n            default:\n                break;\n        }\n    }\n    return false;\n}\n\n"
-     "bool CoopSession_Poll", SIM),
+     "// ---- The co-op log", SIM),
 
     # Characters: who may ask, and for what.
     ("host_is_not_fox", "s->roster.character[0] = COOP_CHARACTER_FOX;",
      "s->roster.character[0] = COOP_CHARACTER_FALCO;", SIM),
-    ("host_null_unchecked", "if (s != NULL) {\n        s->roster.character[0] = COOP_CHARACTER_FOX;\n    }",
-     "s->roster.character[0] = COOP_CHARACTER_FOX;", SIM),
+    ("host_null_unchecked", "if (s != NULL) {\n        s->roster.character[0] = COOP_CHARACTER_FOX;\n"
+     "        CoopLog_Begin(true, 0);\n        Log_Identity(\"hosting a session; this game\", identity);\n    }",
+     "s->roster.character[0] = COOP_CHARACTER_FOX;\n        CoopLog_Begin(true, 0);\n"
+     "        Log_Identity(\"hosting a session; this game\", identity);", SIM),
     ("pick_before_welcome", PICK_GUARD, PICK_GUARD.replace("s->client != CLIENT_ACTIVE || ", ""), SIM),
     ("pick_fox", PICK_GUARD, PICK_GUARD.replace("character <= COOP", "character < COOP"), SIM),
     ("pick_no_low_bound", PICK_GUARD, PICK_GUARD.replace("character <= COOP_CHARACTER_FOX ||\n        ", ""), SIM),

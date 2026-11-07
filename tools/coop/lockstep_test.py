@@ -44,12 +44,15 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             region, write a report, and the session ends; desync_report.py names the flipped value.
   desync_control the same with SF64_COOP_TEST_NO_DESYNC_CHECK: the hashes differ and nobody says so.
   desync_three a third game that stays in step hears which two differed, and writes its report too.
+  log       the co-op log (#172): each game's folder holds its own log and the other player's, streamed during the
+            session; the hash stays equal with streaming on; nothing personal is in the files; coop_log.py merges them.
 
 Every scenario that compares two games also checks that neither wrote a desync report (WP-23).
 
 Prints one line per scenario and a RESULT line, exits 0 only when everything passed. Needs a build with assets.
 """
 import argparse
+import getpass
 import json
 import math
 import os
@@ -65,6 +68,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(ROOT / "tools" / "coop" / "chaos"))
+import coop_log  # noqa: E402
 import desync_report  # noqa: E402
 import full_level  # noqa: E402
 import hash_check  # noqa: E402
@@ -911,6 +915,68 @@ def sc_desync_three(args, folder):
             f"differs from the host's")
 
 
+def coop_logs(game):
+    """{player: path} of the one session of co-op logs in a game's folder."""
+    found = coop_log.log_files(game.run)
+    expect(len(found) == 1, f"{game.name} holds {len(found)} sessions of co-op logs, want 1")
+    return next(iter(found.values()))
+
+
+def check_private(game, files):
+    """Nothing personal in any log file: no home folder, no user name, no address; the home folder shows as ~."""
+    home = str(Path.home())
+    user = getpass.getuser()
+    for player, path in sorted(files.items()):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        expect(home not in text, f"{game.name}'s log of player {player} holds the home folder")
+        expect(re.search(rf"(?<![\w]){re.escape(user)}(?![\w])", text) is None,
+               f"{game.name}'s log of player {player} holds the user name")
+        expect(re.search(r"(?<![\w.])\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?![\w.])", text) is None,
+               f"{game.name}'s log of player {player} holds an IP address")
+        expect("~/" in text or "~\\" in text, f"{game.name}'s log of player {player} never shows the home folder as ~")
+
+
+def sc_log(args, folder):
+    """Every folder holds every player's log, the received copy is the sender's own, the hash stays equal with the
+    streaming on, and the merge tool orders them."""
+    host, client = run_short(args, folder)
+    frames = compare(host, client, SHORT_FRAMES)
+    files = {game: coop_logs(game) for game in (host, client)}
+    for game in (host, client):
+        expect(set(files[game]) == {1, 2},
+               f"{game.name} holds logs of players {sorted(files[game], key=lambda p: p or 0)}, want 1 and 2")
+        check_private(game, files[game])
+    received = 0
+    for own_game, other_game, player in ((host, client, 1), (client, host, 2)):
+        own = [line.format() for line in coop_log.read_lines(files[own_game][player], player)]
+        got = [line.format() for line in coop_log.read_lines(files[other_game][player], player)]
+        expect(len(own) >= 40, f"player {player}'s own log has only {len(own)} lines")
+        missing = [line for line in got if line not in own]
+        expect(not missing, f"{other_game.name} holds a line of player {player} that player never wrote: "
+                            f"{missing[0] if missing else ''}")
+        expect(got == [line for line in own if line in set(got)], f"player {player}'s lines arrived out of order")
+        expect(len(got) >= 0.8 * len(own), f"{other_game.name} got {len(got)} of player {player}'s {len(own)} lines")
+        categories = {line.category for line in coop_log.read_lines(files[own_game][player], player)}
+        want = {"session", "net", "lockstep", "desync", "game", "state", "log"}
+        expect(want <= categories, f"player {player}'s log lacks {sorted(want - categories)}")
+        texts = "\n".join(own)
+        for phrase in ("lockstep started at frame 0", "level start: level 0", "desync check on", "log closed"):
+            expect(phrase in texts, f"player {player}'s log never says `{phrase}`")
+        # A test game is told to quit, so its last lines may still be queued; none may have been lost to a full queue.
+        closed = [line for line in own if "log closed" in line][-1]
+        expect("0 lines dropped for full queues" in closed, f"player {player}'s log: {closed}")
+        received += len(got)
+    session, merged = coop_log.merge([host.run, client.run])
+    expect({line.player for line in merged} == {1, 2}, "the merge lacks a player")
+    times = [line.time for line in merged]
+    expect(times == sorted(times), "the merged timeline is out of order")
+    done = subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "coop" / "coop_log.py"), "merge", str(host.run),
+                           str(client.run), "--category", "session,desync"], capture_output=True, text=True)
+    expect(done.returncode == 0 and "level start" in done.stdout, f"coop_log.py merge failed: {done.stdout[-300:]}")
+    return (f"same hash on {frames} frames with streaming on; both folders hold both logs, {received} lines received, "
+            f"{len(merged)} in the merged timeline of session {session}; nothing personal in them")
+
+
 SCENARIOS = {
     "sim": sc_sim,
     "desync_sim": sc_desync_sim,
@@ -936,6 +1002,7 @@ SCENARIOS = {
     "desync": sc_desync,
     "desync_control": sc_desync_control,
     "desync_three": sc_desync_three,
+    "log": sc_log,
 }
 LONG = ("full", "audio", "release", "rates")
 
