@@ -4,11 +4,13 @@
     python tools/coop/version_test.py                # unattended; prints PASS or FAIL
     python tools/coop/version_test.py --exe <file>   # that build; its id comes from coop/coop_build_id.h next to it
     python tools/coop/version_test.py --list
+    python tools/coop/version_test.py --only label   # just that one
 
 Each scenario starts one game with the menu bar open, in its own folder, without a window and off the GPU, and captures
 one shown frame with versiontest/frame_shot.c. The check reads the pixels of that frame, so it sees what a player sees:
 
-  label   The right end of the menu bar shows "Co-op <id>", with <id> the first 8 characters of the id the handshake compares. The menu font has
+  label   The game drew, as a player sees it (#147). The right end of the menu bar shows "Co-op <id>", with <id> the
+          first 8 characters of the id the handshake compares. The menu font has
           fixed-width cells, and a character looks the same in every cell, so the cells of the label must repeat exactly
           as the characters of the text do. The same frame must not pass for an id with another pattern. This is not
           OCR: it tells a right id from a wrong one, it does not spell one out.
@@ -19,7 +21,8 @@ one shown frame with versiontest/frame_shot.c. The check reads the pixels of tha
           that file must stop at its first shader, which shows the file is what lets it start.
 
 Needs a build with assets (python tools/coop/build.py --assets) or --exe, and a C compiler. Exit code 0 when every
-scenario holds, 1 otherwise. Everything lands under local/test-*: deleted when all hold, kept for reading when one fails.
+scenario holds, 1 otherwise. Everything lands under local/test-version-*, one folder a run: deleted when all hold, kept
+for reading when one fails.
 """
 import argparse
 import json
@@ -33,13 +36,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import package as package_tool  # noqa: E402
 import replay as replay_tool  # noqa: E402
+from run_folder import make_run_folder  # noqa: E402
 
 ROOT = replay_tool.ROOT
-WORK = ROOT / "local" / "test-version"
+WORK = None  # this run's folder, from main: replay_test.py runs this tool beside test_all.py's own run of it
 SHOT_SWAP = 240     # the boot logo is over and the menu bar is drawn
 RECORD_FRAMES = 300  # the game stops after the capture: recorded frames start later than swaps
 TIMEOUT = 180
 BAR_ROWS = 24       # the menu bar is opaque for these rows at the default font
+BAR_EDGE = 2        # rows under it that can still be its border
 LABEL_ID = 8        # characters of the id the label shows (src/port/coop/ui/version_label.cpp)
 CELL = 7            # width of a character of the menu font
 LABEL_PREFIX = "Co-op "  # src/port/coop/ui/version_label.cpp
@@ -49,7 +54,8 @@ NO_SHADER = "Failed to load default fragment shader"  # libultraship, gfx_opengl
 
 
 def shot_env(shot):
-    # Real time: SHOT_SWAP counts swaps, and the boot logo that must be over by then waits on the clock.
+    # Real time: SHOT_SWAP counts swaps, and the boot logo that must be over by then waits on the clock. It draws too
+    # (REAL_TIME, #147): the frame has to be what a player sees, and game_drawn fails it if it is not.
     return {
         **replay_tool.REAL_TIME,
         "SDL_VIDEODRIVER": "offscreen", "SDL_AUDIODRIVER": "dummy", "LIBGL_ALWAYS_SOFTWARE": "1",
@@ -81,6 +87,13 @@ def read_frame(shot):
     magic, size, depth, pixels = data.split(b"\n", 3)
     w, h = (int(v) for v in size.split())
     return (w, h, pixels) if magic == b"P6" and depth == b"255" else None
+
+
+def game_drawn(frame):
+    """True when the game reached the frame: with no drawing (#147) all under the menu bar is one colour."""
+    w, _, pixels = frame
+    below = pixels[(BAR_ROWS + BAR_EDGE) * w * 3:]
+    return len({below[i:i + 3] for i in range(0, len(below), 3)}) > 1
 
 
 def bar_rows(frame):
@@ -138,6 +151,8 @@ def scenario_label(exe, build_id):
         return False, "no frame captured", None, None
     if frame[0] != WIDE:
         return False, f"frame is {frame[0]} wide, asked for {WIDE}", None, None
+    if not game_drawn(frame):
+        return False, "the game did not draw: the frame is one colour under the menu bar", None, None
     rows = bar_rows(frame)
     text = LABEL_PREFIX + build_id[:LABEL_ID]
     columns = text_columns(rows, WIDE)
@@ -241,6 +256,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--exe", help="Starship executable (default: newest build found)")
     p.add_argument("--list", action="store_true", help="print the scenarios and stop")
+    p.add_argument("--only", choices=["label"], help="just this scenario (narrow needs the frame of label)")
     args = p.parse_args()
     if args.list:
         print("label\nnarrow\npackaged")
@@ -248,9 +264,10 @@ def main():
     if sys.platform != "linux":
         sys.exit("version: Linux only")
 
+    global WORK
     exe = replay_tool.find_exe(args.exe)
     build_id = package_tool.read_build_id(exe.parent)
-    WORK.mkdir(parents=True, exist_ok=True)
+    WORK = make_run_folder(ROOT / "local", "test-version-")
     source = Path(__file__).resolve().parent / "versiontest" / "frame_shot.c"
     subprocess.run([os.environ.get("CC", "cc"), "-shared", "-fPIC", "-O1", "-o", str(WORK / "frame_shot.so"), str(source),
                     "-ldl"], check=True)
@@ -259,11 +276,12 @@ def main():
     results = []
     passed, detail, wide, label_x = scenario_label(exe, build_id)
     results.append(("label", passed, detail))
-    if wide is None:
-        results.append(("narrow", False, "needs the frame of label"))
-    else:
-        results.append(("narrow", *scenario_narrow(exe, wide, label_x)))
-    results.append(("packaged", *scenario_packaged(exe, build_id)))
+    if args.only is None:
+        if wide is None:
+            results.append(("narrow", False, "needs the frame of label"))
+        else:
+            results.append(("narrow", *scenario_narrow(exe, wide, label_x)))
+        results.append(("packaged", *scenario_packaged(exe, build_id)))
 
     for name, passed, detail in results:
         print(f"version: {name}: {'ok' if passed else 'FAIL'}: {detail}")

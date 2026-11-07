@@ -48,6 +48,8 @@ typedef struct {
     void (*levelStart)(CoopLevelStart* out);         // host: what to start, from this game as it is now
     void (*enterLevel)(const CoopLevelStart* start); // every game: go there; comes from inside CoopMenu_Tick
     void (*sessionEnded)(void);                      // the session is over, however it went
+    void (*message)(int peer, uint16_t msgId, const uint8_t* data, uint16_t size); // above the session range
+    uint32_t (*waiting)(int32_t* player); // how many ms the game has been waiting for that player, 0 if it is not
 } CoopMenuBackend;
 
 typedef struct {
@@ -59,6 +61,7 @@ typedef struct {
     uint8_t self;        // our player index
     uint8_t pendingPick; // the CoopCharacter we asked for and got no answer on, 0 if none
     bool levelStarted;   // the session said so: nothing left to pick or start
+    bool lost;           // a session ended in a level, and the player has not been shown why yet
     char message[COOP_SESSION_TEXT];
 } CoopMenu;
 
@@ -103,6 +106,11 @@ bool CoopMenu_Pick(CoopMenu* m, uint8_t character);
 bool CoopMenu_Start(CoopMenu* m);
 // Close the session, if there is one.
 void CoopMenu_Leave(CoopMenu* m);
+// A level cannot go on as a session: close it, and show text to the player.
+void CoopMenu_Fail(CoopMenu* m, const char* text);
+// True when the player has to see this window now, with it closed too: the game waits, or a session was lost in a
+// level.
+bool CoopMenu_WantsEyes(CoopMenu* m);
 // Once per frame, whatever the window shows. The level start comes out of here, so call it where a game can enter one.
 void CoopMenu_Tick(CoopMenu* m, uint32_t nowMs);
 void CoopMenu_View(const CoopMenu* m, CoopMenuView* out);

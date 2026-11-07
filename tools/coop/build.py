@@ -5,7 +5,7 @@ Works the same on Linux, macOS and Windows (PowerShell or cmd). CI runs this scr
 means the same steps as CI.
 
     python tools/coop/build.py                   # Debug build + checks
-    python tools/coop/build.py --config Release
+    python tools/coop/build.py --config Release --build-dir build-release   # beside Debug; a folder holds one config
     python tools/coop/build.py --quiet           # full output to <build dir>/coop-build.log, summary only
     python tools/coop/build.py --assets          # also build sf64.o2r (needs baserom.z64) and starship.o2r
 
@@ -15,6 +15,7 @@ as in docs/BUILDING.md. Pass --ninja on Windows to use Ninja from a VS developer
 import argparse
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -28,7 +29,8 @@ IS_WINDOWS = platform.system() == "Windows"
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--config", default="Debug", choices=["Debug", "Release", "RelWithDebInfo"])
-    p.add_argument("--build-dir", type=Path, help="default: build/x64 on Windows, build-cmake elsewhere")
+    p.add_argument("--build-dir", type=Path, help="default: build/x64 on Windows, build-cmake elsewhere. A second "
+                                                  "folder holds a second config beside the first, nothing is shared")
     p.add_argument("--ninja", action="store_true", help="use Ninja on Windows (needs a VS developer prompt)")
     p.add_argument("--clean", action="store_true", help="delete the build directory first")
     p.add_argument("--jobs", type=int, help="parallel build jobs (default: all cores)")
@@ -72,6 +74,14 @@ def submodules_ready():
     return (ROOT / "libultraship" / "CMakeLists.txt").exists() and (ROOT / "tools" / "Torch" / "CMakeLists.txt").exists()
 
 
+def configured_as(build_dir):
+    """The config a folder of a single-config generator was made for, or None for a new folder or Visual Studio."""
+    cache = build_dir / "CMakeCache.txt"
+    text = cache.read_text(encoding="utf-8", errors="replace") if cache.exists() else ""
+    found = re.search(r"^CMAKE_BUILD_TYPE:STRING=(\S+)$", text, re.MULTILINE)
+    return found.group(1) if found else None
+
+
 def main():
     args = parse_args()
     if shutil.which("cmake") is None:
@@ -86,6 +96,10 @@ def main():
     build_dir = build_dir if build_dir.is_absolute() else ROOT / build_dir
     if args.clean and build_dir.exists():
         shutil.rmtree(build_dir)
+    held = None if use_vs else configured_as(build_dir)
+    if held not in (None, args.config):
+        print(f"build: FAILED, {build_dir} holds a {held} build: give {args.config} its own --build-dir, or use --clean")
+        return 1
 
     runner = Runner(build_dir / "coop-build.log", args.quiet)
     started = time.monotonic()

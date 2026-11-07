@@ -4,11 +4,12 @@
     python tools/coop/view_check.py                     # unattended; prints PASS or FAIL
     python tools/coop/view_check.py --section rails     # or all-range; default both
 
-Plays one replay per section twice, with SF64_COOP_TEST_LOCAL_INDEX 0 and 1: two clients of one session. Input by rule
-flies both players (player_trace.py), and buttons and pokes give them different numbers, so a client that shows the
-wrong player shows the wrong number. Each game writes a view trace (src/port/coop/test/view_trace.h) and a state hash
-log. The trace says what the client holds to show, not what reached the screen: the HUD numbers without a value of their
-own (lives, the boost gauge) and the look of everything are for a picture, see docs/coop/QA.md.
+Plays one replay per section twice, with SF64_COOP_TEST_LOCAL_INDEX 0 and 1: two clients of one session. Each game
+starts straight in Corneria, before its intro (replay.py, Start). Input by rule flies both players (player_trace.py),
+and buttons and pokes give them different numbers, so a client that shows the wrong player shows the wrong number. Each
+game writes a view trace (src/port/coop/test/view_trace.h) and a state hash log. The trace says what the client holds to
+show, not what reached the screen: the HUD numbers without a value of their own (lives, the boost gauge) and the look of
+everything are for a picture, see docs/coop/QA.md.
 
 Rules, on the frames they talk about:
 
@@ -27,8 +28,9 @@ Rules, on the frames they talk about:
                   the player is parked
   sound-source    all-range: a client's own player sounds from in front of its camera
   player-down     all-range: when player 1 goes down its client looks through player 0, and its engine is off
-  pause           pause is part of the shared game: player 0's pad pauses both clients on the same frames, player 1's
-                  pad pauses neither
+  pause           pause is part of the shared game, and any player can: player 1's Start pauses both clients on the
+                  same frames and player 0's resumes, then player 0's Start pauses, player 1's B does nothing, as the
+                  pause menu stays player 0's, and its B resumes
   hash            both clients played one game, pokes and all
 
 Exit code 0 on PASS, 1 otherwise.
@@ -55,7 +57,8 @@ SFX_VIEW_IN = 0x4900002C  # NA_SE_VIEW_MOVE_IN
 SFX_SHIELD_WARNING = 0x49008010  # NA_SE_SHIELD_WARNING0
 FORM_NONE = 255  # include/sf64player.h, what sPlayerNoise holds while a player has no engine sound
 
-LEVEL_START = 3101  # the replay frame of level frame 0: pressing A every 30 frames reaches Corneria there
+# Through the intro, not past it: what a client looks through while its player waits is part of what this checks.
+START = replay_tool.LEVEL
 ACTIVE = 1680  # level frame by which player 0 flies Corneria's rails
 
 # The level frames things happen on. Pads press on the frame given; pokes land after it.
@@ -69,17 +72,22 @@ HIT_LOW = ACTIVE + 770
 FLASH_FRAMES = 20
 BOMB_STEP_FRAMES = 3
 BESIDE_CAMERA = 0.05
-PRESS_P1_START = ACTIVE + 800  # must do nothing
-PRESS_P0_START = ACTIVE + 830
+PRESS_P1_START = ACTIVE + 800  # pauses both clients
+PRESS_P0_START = ACTIVE + 830  # resumes: Start works for any player, both ways
+PRESS_P0_PAUSE = ACTIVE + 845
+PRESS_P1_MENU = ACTIVE + 855  # B, in the pause menu: must do nothing
 PRESS_P0_RESUME = ACTIVE + 870  # B, in the pause menu
+PAUSE_SPANS = 2
+PAUSE_MIN_ROWS = 15
 ALL_RANGE_NUMBERS = 2300  # both players fly all-range by then
 ALL_RANGE_DOWN = 3060  # player 1 is ACTIVE here; a U-turn has no down check
 
 SHIELDS_P0, SHIELDS_P1 = 200, 120
 BOMBS_P0, BOMBS_P1 = 5, 7
 
-# Section -> (replay frames, frame of the L press into all-range). All-range ends up with both players flying again.
-SECTIONS = {"rails": (LEVEL_START + ACTIVE + 930, None), "all-range": (6300, hash_check.GENERATED_L_FRAME)}
+# Section -> (replay frames, when L goes into all-range, from when player 0 flies). All-range ends up with both players
+# flying again.
+SECTIONS = {"rails": (START.level + ACTIVE + 930, None), "all-range": (START.frame(1525), hash_check.GENERATED_L)}
 TIMEOUT = 1500
 
 Client = namedtuple("Client", "index rows by_frame")
@@ -320,11 +328,24 @@ def rule_player_down(clients):
     return good, f"{len(after) - len(wrong)} of {len(after)} frames after the poke: out, looks through player 0, engine off"
 
 
+def pause_spans(client):
+    """How many rows each pause of a client lasted, in order."""
+    spans = []
+    last = False
+    for row in client.rows:
+        if row.paused:
+            if not last:
+                spans.append(0)
+            spans[-1] += 1
+        last = row.paused
+    return spans
+
+
 def rule_pause(clients):
-    counts = [sum(1 for row in client.rows if row.paused) for client in clients]
-    early = [sum(1 for row in client.rows if row.paused and row.frame < PRESS_P0_START - 2) for client in clients]
-    good = counts[0] >= 20 and counts[0] == counts[1] and not any(early)
-    return good, f"paused rows on client 0 and 1: {counts[0]}, {counts[1]}; before player 0's press: {early[0]}, {early[1]}"
+    spans = [pause_spans(client) for client in clients]
+    early = [sum(1 for row in client.rows if row.paused and row.frame < PRESS_P1_START - 2) for client in clients]
+    good = (len(spans[0]) == PAUSE_SPANS and spans[0] == spans[1] and min(spans[0]) >= PAUSE_MIN_ROWS and not any(early))
+    return good, f"paused rows per pause on client 0 and 1: {spans[0]}, {spans[1]}; before the first press: {early[0]}, {early[1]}"
 
 
 RULES = {
@@ -354,14 +375,14 @@ RULES = {
 }
 
 
-def extra_buttons(frame, pad):
+def extra_buttons(flight, pad):
     """The presses of the rails section, on top of the input by rule."""
-    level = frame - LEVEL_START
+    level = START.frame(flight) - START.level
     if pad == 1 and level in PRESS_P1_VIEW or pad == 0 and level in PRESS_P0_VIEW:
         return BUTTON_C_UP
-    if pad == 1 and level == PRESS_P1_START or pad == 0 and level == PRESS_P0_START:
+    if pad == 1 and level == PRESS_P1_START or pad == 0 and level in (PRESS_P0_START, PRESS_P0_PAUSE):
         return BUTTON_START
-    if pad == 0 and level == PRESS_P0_RESUME:
+    if pad == 0 and level == PRESS_P0_RESUME or pad == 1 and level == PRESS_P1_MENU:
         return BUTTON_B
     return 0
 
@@ -378,17 +399,19 @@ def pokes(section):
 
 def play_section(section, exe, args):
     """Play one section with each local index. Returns a list of failures."""
-    frames, l_frame = SECTIONS[section]
+    frames, l_at = SECTIONS[section]
     replay = replay_tool.ROOT / "local" / f"test-view-{section}.sfcr"
-    player_trace.write_rail_replay(replay, frames, l_frame, extra=extra_buttons if section == "rails" else None)
+    player_trace.write_rail_replay(replay, frames, l_at, extra=extra_buttons if section == "rails" else None,
+                                   start=START)
     cvars = {"gCoopDebugPlayerCount": 2, "gInvincible": 1}
-    if l_frame is not None:
+    if l_at is not None:
         cvars["gDebugJumpToAllRange"] = 1
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         jobs = [pool.submit(hash_check.play, replay, exe, args.timeout, f"view-{section}-{index}",
-                            config={"CVars": cvars},
-                            env_extra={"SF64_COOP_TEST_LOCAL_INDEX": str(index), "SF64_COOP_VIEW_TRACE": "view-trace.txt",
+                            config={"CVars": cvars}, start=START,
+                            env_extra={"SF64_COOP_TEST_LOCAL_INDEX": str(index),
+                                       "SF64_COOP_VIEW_TRACE": "view-trace.txt",
                                        "SF64_COOP_VIEW_POKE": pokes(section)}) for index in (0, 1)]
         results = [job.result() for job in jobs]
 

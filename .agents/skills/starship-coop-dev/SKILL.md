@@ -26,6 +26,8 @@ Studio 2022) on Windows. Upstream's manual steps are in `docs/BUILDING.md`.
   without it. Code in `src/port/coop/net/` sits inside `#ifdef USE_NETWORKING`.
 - `python tools/coop/net_test.py` tests the transport: a virtual network, then two real processes through the chaos
   relay. It needs a configured build directory but no ROM.
+- `python tools/coop/test_all.py` runs every test in lanes, unattended, with a short summary and one `RESULT` line.
+  `--config Release` does the same on a Release build in `build-release`. Read `tools/coop/README.md` for what it needs.
 - Several worktrees can build at once; each has its own `build-cmake/`. Builds are heavy; avoid running more than the
   machine has memory for.
 

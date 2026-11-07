@@ -2243,6 +2243,391 @@ Unknown:
 - The radio mouth at speed: it could move by a frame and no hash would say.
 - Windows and macOS: not run. `gfx_dxgi.cpp:995` multiplies a frame stamp by the target rate, untested at this rate.
 
+### 2026-11-07, #20 (WP-22), lockstep: two clients through all of Corneria
+
+Identity: ROM US 1.0, branch `issue/20-lockstep`, Linux, GCC, Debug and Release, OpenGL on a software renderer, no window,
+2 or 3 game clients, each in its own run folder, UDP over loopback, input delay 3 frames. One machine, Corneria only. The
+wire form is in PROTOCOL.md, section Lockstep. `python tools/coop/lockstep_test.py` runs all of this.
+
+**How the flight was made.** Each client flies its own player. `src/port/coop/test/lockstep_driver.h` writes port 0 before
+the input layer reads the local controller, so what it decides is stamped, delayed, sent and read back as a pad's input
+is. A pilot on each client (#142) flew the level live, with its input 3 frames late. Each game logs every player's input
+per frame, and that log is the plain feed of every run after it. A feed line is the input for its frame, so the driver
+reads ahead by the delay and any delay gives the same flight.
+
+**Observed (runs)**
+
+| Run | Result |
+|---|---|
+| `full`, pilot on each client | Level start to the map in 9394 frames, neither player went down, both clients equal on every frame, every region. Player 0 flew 6083 game frames and ended on 147 shields, player 1 6085 and 107 |
+| `full`, plain feed | Equal on all 9394 frames, and equal to the flight |
+| `full`, poke | One bit of player 1 flipped on the client only at frame 7394: first difference at exactly 7394, in `players` |
+| `menu --feed` | Host, join, pick and Start with real widgets, then the whole level: equal on 9446 frames, the client looked through player 1 |
+| `release --feed` | Two Release clients equal on 9446 frames, and equal to two Debug clients |
+| `rates --feed` | Release at real time, one client at 60 and one at 120 fps, vsync off: equal on 9446 frames, 343 s. The most draws a game frame got were 4 and 8 |
+| `audio --feed` | One client at high audio sample counts and one at low: equal on 9446 frames |
+| `steer` | 2700 frames equal. The host looked through player 0 and the client through player 1 |
+| `three` | Three games, input through the host to the other client: equal on 2700 frames, each through its own player |
+| `lag` | Through the chaos relay. `good_wifi`: equal on 2700 frames, the host held 4 frames for 1075 ms. `bad_wifi`: equal, 302 frames for 11352 ms |
+| `delay` | Delay 1 and delay 6: equal between clients and between the two runs |
+| `slow` | A client 150 ms late every 40 frames: equal on 2700 frames, the host held 459 frames for 11699 ms |
+| `pause` | Client pauses, host resumes, host pauses, client resumes: both clients paused on the same 80 frames, each span as pressed |
+| `sim` | `lockstep.c` alone, 2 to 4 players, down to 30 % loss: 2310946 checks. `lockstep_mutants.py`: 22 of 22 breaks caught |
+
+Losing a player, the games still running afterwards each time:
+
+| Run | What happened |
+|---|---|
+| `left`, `host_left` | A game killed: the other ended the session after 10 to 11 s and said who stopped sending input |
+| `leave` | Leave clicked in the real window: the other player's closed window came up by itself with `Player 2 left, so the session is over` |
+| `stall` | Input stopped with the connection up: ended after 11 s, 2 frames past where the input stopped |
+| `frozen` | `SIGSTOP`: the host ended the session after 11 s. The game went on after `SIGCONT`, and found the session over |
+
+Each fix taken out again, one at a time, on this branch, and what the same scenario then said:
+
+| Taken out | Result |
+|---|---|
+| No lockstep (`control`) | Differs at level frame 1698, in `players` and `globals` |
+| `Rand_ZeroOne` still re-seeds in co-op | With seed 1 zeroed on both clients at frame 1000, differs at level frame 1024, in `effects` and `rng` |
+| Intro skip still reads the save | Host with Corneria cleared presses Start: differs at level frame 301 |
+| Audio frames still run on held frames | Differs at level frame 2453, in `globals` |
+| `gMainController` not set at the level start | The client reads team-wide input from slot 1 |
+| `playerIndex` not passed on | The client never looks through player 1 |
+| Pause on player 0 only | Paused on 40 frames, not 80. On `14a3f7de`, `view_check.py`'s new rule: `paused rows per pause on client 0 and 1: [15], [15]` |
+
+For #129:
+
+- **Radio.** It does follow the sound thread, and that is what a held frame has to respect: see the table above. With one
+  audio frame per game frame, which `push_frame` now holds to, the radio stayed in step in every run here, at different
+  sample counts too. `gRadioState` and `gTeamLowHealthMsgTimer` were equal on all 9334 trace rows of a flight, by hand, with
+  the timer ranging from 0 to 960.
+- **Katina, other levels, effect slots.** Not run, not counted.
+
+Observed (reads and a crash):
+
+- `gMainController` comes from `Title_CheckControllers` on every title frame (`src/overlays/ovl_menu/fox_title.c:171`,
+  `:240`), so it is the first port with a controller on that PC. Slot 0 is player 0's on every client, so the level start
+  now sets it to 0.
+- The logo counts its second with `Timer_CreateTask(..., Timer_Increment, &gGameState, 1)` (`src/engine/fox_game.c:404`). A level
+  start inside that second turns `GSTATE_PLAY` into `GSTATE_ENDING`, and the game crashed in `Background_DrawStarfield`. Only a
+  script clicks that fast. `CoopMenuGame_OnGamePreUpdate` now waits for the logo. The join driver always did.
+- F4 and the menu's Reset write `gNextGameState` from outside any input (`src/port/Engine.cpp`, `src/port/ui/ImguiUI.cpp`).
+  Both are ignored while lockstep runs.
+- Read, the saves: in a level only the intro skip reads `gSaveFile` (`src/engine/fox_play.c`). The map reads it 24 times
+  (`src/overlays/ovl_menu/fox_map.c`), and `fox_hud.c:1306-1320` writes it at level clear.
+
+**Derived**
+
+- A frame has to wait in `push_frame`, not in a listener: a wait inside a frame cannot draw, so the window would hang, and
+  the audio frame sits outside `Graphics_ThreadUpdate`. A frame that cannot run calls `Graphics_PushFrame` on the last
+  display list, as the debugger's pause does. Before that it looks again every ms for up to 16 ms, so a message that is
+  nearly here costs no frame.
+- Frame 0 has to be the first frame after `Play_Init`, not the level start: games reach it after a different number of
+  frames, and only from there on do they agree (#22).
+- A client's first `delay` frames go out like any others. That is the barrier at the start, with no message of its own.
+- Clients stay within the delay of each other, as nobody can run a frame before everyone has made its input. So the ring
+  needs little, and `sim` checks that bound on every step.
+- A pause needs no message of its own. Start is already frame-stamped input on every client, and a second message would have
+  to agree on a frame by the same means.
+
+**Choices the owner can reverse** (from the brief or this code; not decided in a record)
+
+- Input delay 3 frames, 100 ms, for every session. Nobody has flown it. It only hides latency up to that much: the host
+  held 302 frames on `bad_wifi`.
+- Any player's Start pauses and resumes. The cursor, retry and quit of the pause menu stay on player 0, and so does Start
+  in the all-range intros (`fox_bo.c:342`, `fox_fo.c:309`, `fox_ve2.c:146`).
+- In co-op nobody skips a level intro, on the host either, as the skip reads a save the clients do not share. The rule for
+  saves is proposed in decision 0009, and carrying the host's bit in the level start would fit it.
+- One player lost ends the session for everyone. Nothing lets three players go on as two.
+- After the end the level goes on in each game, the others idle: what Leave already did (#126).
+- A wait shows in the co-op window after a second, and it ends after 10 s, 60 s before frame 0.
+- In co-op a zero seed stays zero, as it does on Windows. The other platforms never had the re-seed.
+
+**Guess**
+
+- Hold and redraw looks like a frozen picture with the sound gone. Nobody has seen or heard it.
+
+**Unknown**
+
+- Two machines, real latency, Windows, macOS: every run here is one PC over loopback, and `lag` is a relay on that PC.
+- Every level but Corneria, the map beyond 60 frames, a second level in one session, the title screen after a game over,
+  where `gMainController` is set again for each client.
+- Saves that differ on the map: every whole-level run started from fresh saves.
+- A simulation CVar changed during a session: the handshake compares them once.
+- Whether the transport's 5000 ms in the menu holds through a level load (#132). A game waiting at frame 0 polls all
+  the time, so it will see a peer that loads for longer as gone.
+- Effect slots over a long session (#129).
+
+### 2026-11-07, #148, a test game that starts in a level: what it leaves out
+
+Identity: ROM US 1.0, branch `issue/148-test-start-level`, on `14a3f7de`, Linux, GCC, Debug, OpenGL on a software renderer,
+no window, one game per run, no transport. Corneria, and Sector X where it says so. The switch and the tools are in
+`docs/coop/QA.md`, in the table of who plays which start.
+
+How a start in the level goes. `src/port/coop/test/start_level.c` waits for the first frame in `GSTATE_TITLE`, as
+`GSTATE_INIT` sets `gClearPlayerInfo`, the lives and the button maps (`src/engine/fox_game.c:421`, `:425`, `:440`). It then
+calls `Map_Setup_Menu` (`src/overlays/ovl_menu/fox_map.c:1570`), which is what a new game does on the map, and
+`CoopLevelStart_Enter` from #22, with the values the game holds, so with no roster. Past the intro it presses Start, with
+`normalClear` set for that frame, as nothing else ends an intro (`src/engine/fox_play.c:7208-7224`).
+
+Observed, frames of a replay and a hash log, which still count from `GSTATE_START`:
+
+| | Through the menus | Straight in | Past the intro |
+|---|---|---|---|
+| `GSTATE_PLAY` from | 3096 | 5 | 5 |
+| `Play_Init` runs on (`# level` in the log) | 3100 | 9 | 9, and again on 12 |
+| Level frame 0 | 3101 | 10 | 10 |
+| Player 0 `ACTIVE` | 4775 | 1684 | 14 |
+
+Sector X: player 0 `ACTIVE` at 353 with its intro, 14 past it.
+
+- From the seeds a game from the menus entered with, `hash_check.py start --players 2`: two starts in the level equal on all
+  2709 frames, and each equal to the game from the menus in every region and the total on 2699 level frames, through the
+  intro, the rails and the jump into all-range. By hand, 1 player, A only: equal on 7000 level frames.
+- `Map_Setup_Menu` is what makes that so. A throwaway build without it: `menus and start A differ 1 frames into the level`,
+  region `globals`, with 2 players.
+- With 1 player `scenery360` differs from the jump into all-range on, on 921 of 2699 frames, and nothing else does. The hash
+  only reads free `gScenery360` slots with co-op off (`src/port/coop/sync/state_hash.c:350`), and `Memory_Allocate` does not
+  clear (`src/sys/sys_memory.c:12`): `Play_Init` sets `obj.status` and nothing else in a free slot
+  (`src/engine/fox_play.c:2961-2964`), so they hold what a screen before left in level memory. With 2 players those slots are
+  out of the hash and the same frames are equal.
+- Field by field, in a dump of all of `.data` and `.bss` of each game at the entry to `Play_Init` and when it returns, same
+  replay, 1 player, by symbol. Each value is the same in both unless the table says otherwise:
+
+| Value | Through the menus | Straight in |
+|---|---|---|
+| RNG seeds, all six | what the menus' draws left | the header of the replay, so `START_SEEDS` for tools that start in the level |
+| `gTeamShields`, `gSavedTeamShields`, `gPrevPlanetTeamShields`, `gPrevPlanetSavedTeamShields`, `D_ctx_80177C58` | same | same, by `Map_Setup_Menu` |
+| `gLifeCount`, `gBombCount`, `gLaserStrength`, `gGoldRingCount`, `gHitCount`, `gTotalHits`, `gPlayerScores` | same | same |
+| `gExpertMode`, the only difficulty here: no `gDifficulty` in this tree | same | same |
+| `gTeamDamage`, `gTeamEventActorIndex`, `D_enmy_Timer_80161670`, `gStarWolfTeamAlive`, the rest of `level_start.c`'s table (#67) | same | same |
+| `gMissionNumber`, `gMainController`, `gRadioMsgId`, `gRadioState` | same | same |
+| `sCurrentPlanetId`, no `gCurrentPlanet` in this tree | Corneria | Corneria, in every level: only the map reads it, and it sets it from `gCurrentLevel` on the way back (`fox_map.c:1465`) |
+| `gRadioMsg`, `gRadioMsgCharIndex`, `gRadioPrintPosX`, `gRadioPrintPosY`, `gCurrentRadioPortrait`, `gRadioMsgRadioId` | what the briefing left | 0. `Player_Setup` clears the last two (`fox_play.c:4615`) |
+| `gCsCamEyeZ` | 10.0 | 0 |
+| `gOptionMenuStatus` | 2 | 0, and a level only writes it (`fox_play.c:6165`, `fox_hud.c:1528`) |
+| `gStarPrevX`, `gStarPrevY`, `gStarOffsetsX`, `gStarOffsetsY`, `gStarFillColors`, the matrix stacks, `gGfxPools`, `sMemoryBuffer` | what the screens before left | 0, or a pointer into another place |
+| `gSysFrameCount` | 3772 | 681: since boot, and the logo waits on the clock, so it differs between runs too |
+| `gMapState`, `gTitleState`, `gPlanetPathStatus`, and 181 statics of the title, option and map code | those screens' | their boot values |
+| 38 audio values: sequence players, heap, caches, `sAudioResetMsg` | as the map's music leaves them | as the title's start leaves them |
+| Region `players` to `globals` of the state hash, from level frame 1 | equal, with `scenery360` as above | |
+
+- Past the intro against through it, dumps at the first `ACTIVE` frame of each. Equal: `gPathProgress` 0, shields 255,
+  `gGroundSurface` water, `gLevelStartStatusScreenTimer` 79, `gBgColor`, `gMissionStatus`. Apart: player 0 at x 0.1, y 347
+  against 0, 350; `gGameFrameCount` 1674 against 1; `gCsFrameCount` 1672 against 0; `gObjectLoadIndex` 1 against 0;
+  `gLoadLevelObjects` 1 against 0; `gRadioMsgId` 2050 against 0; the seeds, `gActors`, `gEffects`, `gPathTexScroll`, the
+  lights and the camera.
+- `first_attempt` in `player_trace.py` took the second `Play_Init` of a start past the intro for a restart and dropped the
+  whole flight: `solo: 0 limits`. The frame count starts over there, with nobody flown yet.
+- `player_trace.py shots` exited 0 on a `FAIL`, as it had no return value. Fixed here.
+
+Derived:
+
+- A start in the level from `START_SEEDS` is the game the menus give, shifted by 3091 frames: same input, same hash. So
+  `rails`, `probe` and `view_check.py` lost the menus and nothing else, and their old frames and numbers still hold: the rail
+  section is 4525 frames, as in the QA result of #10.
+- A start past the intro is another flight, of a level as a player gets it on a planet they have cleared. Nothing here
+  checks it against the intro's flight, and it has to pass each tool's rules on its own. It did on the first run for all but
+  `lowhealth`, whose failure was the tool's.
+- `gGameFrameCount` differs by 1673 past the intro, so anything that goes by it runs in another phase there. A tool that cares
+  about that belongs on `level`.
+- Coverage. What a start in the level does not run stays with these, and nothing else plays it:
+
+| Left out | Still played by |
+|---|---|
+| Title, option menu, map, briefing, their RNG draws and draw code | `determinism.py`, `full_level.py`, `hash_check.py builds` and `rates`; `join_test.py` and `menu_test.py` for the title and `game_level_map` for the map |
+| Those screens with frame interpolation, where #141 was | `determinism.py` in Debug, `hash_check.py builds` and `rates` in Release |
+| `Map_PlayLevel`, the map's own way in | `determinism.py`, `full_level.py`, `wingman_check.py sitout` and `chain` |
+| The level's intro | every tool on `menus` or `level`. `level` covers it with 2 players, and `full_level.py` with the whole level |
+| A second player parked through an intro | `player_trace.py rails`, `hash_check.py probe`, `view_check.py` |
+
+Guess:
+
+- The other 18 levels start the same way, as nothing in the switch knows a level. Sector X did.
+
+Unknown:
+
+- A level other than Corneria and Sector X from this switch. `gMissionNumber` stays 0 there, where a real game would be further
+  on, and whether a level reads it was not checked.
+- The map after a level that started this way: no tool does that. `sitout` and `chain` keep the whole path, so their first
+  level comes from the map.
+- Audio: 38 values differ and no hash holds them. Nothing read here takes game state from them; whether a level sounds the
+  same is not looked at.
+- Whether a free `gScenery360` slot is ever read: `fox_hud.c:2184` reads slot 0 without its status in Sector Y.
+- Windows and macOS: not run, on any start.
+
+### 2026-11-07, #21 (WP-23), desync detection and report
+
+Identity: ROM US 1.0, branch `issue/21-desync-report`, Linux, GCC, Debug and Release, OpenGL on a software renderer, no window,
+2 or 3 game clients, each in its own run folder, UDP over loopback, input delay 3 frames. One machine, Corneria only. The
+wire form is in PROTOCOL.md, section Desync check; `python tools/coop/lockstep_test.py --only desync_sim,desync,desync_control,desync_three`
+runs the checks named below, and `full`, `release` and `rates` the long ones.
+
+**What it is.** Every client hashes its state on every lockstep frame, before the frame runs: the same `CoopStateHash_Compute`
+the hash log writes, so a desync named here is a difference the test tools would show too. The totals of the last 10
+frames go to the games a client talks to in `SYNC_HASH`, on the reliable lane; the receiver compares them with its own.
+The first differing frame is the desync. Both sides of it send their hash of that frame region by region (`SYNC_DESYNC`),
+write a report into the game's own folder, tell the player, and end the session the way a lost player does
+(`src/port/coop/sync/desync.c`, `desync_game.c`, `desync_report.c`). Each game also keeps a dump of the last 64 frames'
+hashed bytes, in named chunks, so its report holds the state of that frame as hashed, and
+`tools/coop/desync_report.py diff` names the first value that differs between two reports.
+
+**Observed (runs)**
+
+| Run | Result |
+|---|---|
+| `desync`, rails | A bit of player 2's `pos.x` flipped on the client at frame 2000: both games named frame 2000, players 1 and 2, region `players`, and ended the session at frame 2009. `desync_report.py diff`: both dumps verified against their hashes; `players: gPlayer[1] differs in 1 of 1264 bytes, first at +116: b2 vs b3` |
+| `desync`, all-range | L at 1800 with `gDebugJumpToAllRange`, the bit flipped at 2400: named at 2400, `all-range` in the report and the text, same chunk and offset |
+| `full`, poke | The plain repeat of the pilots' flight with the bit flipped at 7394, in all-range: the hash logs first differ at 7394, both reports name 7394 and `players`, verified, `gPlayer[1]` at +116 |
+| `desync_three` | Player 3 flips the bit: the host and player 3 named players 1 and 3 and read the desync text; player 2's report has the host's hashes and `regions differing: none` |
+| `desync_control` | The same bit with `SF64_COOP_TEST_NO_DESYNC_CHECK=1` on both: hash logs differ from frame 2000 on, no report, no end, `done` at 2400 |
+| `full`, flight and plain | Pilot on each client to the map, 9394 frames equal, and the plain repeat equal to the flight: no report, no text |
+| `release --feed`, `rates --feed` | Two Release clients 9540 frames equal and equal to two Debug clients; 60 and 120 fps at real time equal: no report either |
+| `steer` to `menu` | The 15 short game scenarios of `lockstep_test.py`, with the check on in every session: all pass, no report, lag, a slow client, a stall and a frozen client included |
+| `desync_sim` | `desync.c` alone, 2 to 4 players, with lag, a peer 16 frames ahead, a peer that never answers, a far-away peer, messages that do not fit: 3385 checks. `desync_mutants.py`: 25 of 25 breaks caught |
+| Co-op off | One replay by rule, `flying`, one player, on a Debug build of `b69b193d` and on this branch: `no difference on the 1050 common frames`, every column |
+
+The report of the rails run, head: `player: 2 of 2, client`, both identity lines, `frame: 2000`, `pair: players 1 and 2`,
+`regions differing: players`, `frames checked: 2010, unchecked: 0`, both hash lines, and a dump of 396 chunks, 101586
+bytes; the file is about 210 KB.
+
+**Observed, the cost.** A frame's hash and dump is FNV-1a over about 101,600 bytes plus a copy of them: 396 chunks for
+2 players in Corneria. On this PC, loaded, that is 180 to 240 µs a frame measured on its own, under 1 % of a game frame at
+30 a second. The ring of 64 dumps takes about 8 MB, allocated when lockstep starts and freed with the session.
+
+**Derived**
+
+- Hash per frame, send every 10: the decision asks for a hash per frame and the frame number of the desync, and the
+  message, not the hash, is the cost. One `SYNC_HASH` a frame would double lockstep's datagram rate for 8 bytes; a batch
+  every 10 frames is one datagram, and a desync is still named within a third of a second plus a round trip. The ring
+  has to hold what the slowest client can still ask about: a peer is at most `COOP_LOCKSTEP_MAX_DELAY` frames ahead when
+  its batch leaves, plus the batch, plus a resend or two, so 64.
+- A frame the receiver has not run yet waits in the message: lockstep lets a peer run ahead by the input delay, so a
+  batch can name frames this game reaches a moment later. A frame it no longer holds counts as unchecked and never as a
+  desync: no false alarm from a slow link, only a gap the report counts.
+- Both sides find the desync by themselves, from each other's batches, so a report exists on both even if the other
+  side's `SYNC_DESYNC` is lost; the regions then read `unknown`. A game outside the pair waits the grace out before
+  it ends, or the host would see it leave before the pair had exchanged. A session that ends for another reason while a
+  desync is found still writes its report.
+- The dump holds exactly the bytes the hash saw, pointers normalised, and the tool recomputes every region hash from it
+  before it compares, so a report cannot claim a state it did not hash.
+- The frame named is the lockstep frame: 0 is the first frame in `PLAY_UPDATE`, as the lockstep log and
+  `lockstep_test.py`'s level rows count, so a poke at feed frame F shows as frame F.
+
+**Choices the owner can reverse** (from the brief or this code; not decided in a record)
+
+- **After a desync the session ends**, with the text above, the level going on in each game alone. Smallest honest
+  behaviour: there is no repair until host correction (decision 0002, option C) exists, and playing on would have each
+  player in a different game that looks like one. Alternatives: play on with a warning, or build C.
+- `COOP_DESYNC_PERIOD` 10 frames, `COOP_DESYNC_RING` 64, `COOP_DESYNC_GRACE_MS` 1000.
+- The report is a text file with the dump in hex, about 210 KB, in the game's own folder, named by frame and player.
+
+**Observed, a game outside the pair.** In `desync_three` the host and player 3 read the desync text and ended within
+9 frames of the flipped bit. Player 2, in step with the host, waits the grace out, and the host closed first: it read
+`The other player closed the connection.`, and its report, with the host's hashes and `regions differing: none`, was
+written as the session went away. That is why the identity lines are taken when lockstep starts: the first run of it
+had `other game: unknown` there.
+
+**Unknown**
+
+- Two machines, real latency, Windows: every run here is one PC over loopback.
+- Anything beyond Corneria, and a desync that is not a flipped bit of a player: no real desync has been seen yet.
+- What a report looks like for a difference in `scenery360` or in a free actor slot: the chunk names say where, not what
+  the field is called.
+
+### 2026-11-07, #147, what a game gets from the renderer, and what test lanes are worth
+
+Identity: ROM US 1.0, on commits `e0f25422` to `29dff2be`, and from "merged with #148" on `086e3ea7` to `21f45dd5`, Linux,
+GCC, Debug and Release, OpenGL in software, no window. Other issues built and tested on the same machine, so each time comes
+with its load average. Times of steps under `--game-wrap` include the wait for a slot.
+
+Observed:
+
+- A drawn frame is `Fast3dWindow::DrawAndRunGraphicsCommands` (`libultraship/src/graphic/Fast3D/Fast3dWindow.cpp:174`): ImGui
+  starts, the interpreter's `StartFrame`, `Run` on the display list, ImGui ends, the interpreter's `EndFrame`.
+- The game reads what the first half leaves: `mCurDimensions.aspect_ratio` is set in `Interpreter::StartFrame`
+  (`libultraship/src/graphic/Fast3D/interpreter.cpp:4248`) from what `Gui::CalculateGameViewport` wrote, and
+  `OTRGetDimensionFromRightEdge` and the rest read it (`src/port/Engine.cpp:771-799`), for the HUD among others
+  (`src/engine/fox_hud.c:2065`). `Interpreter::Init` does not set it, so a game that skips that call never gets a value.
+- The frame limit is in `SwapBuffersBegin` (`libultraship/src/graphic/Fast3D/backends/gfx_sdl2.cpp:685`), reached from
+  `Interpreter::EndFrame`, and `imgui.ini` and the widgets `menu_test.py --game` clicks live in `gui->StartDraw` and
+  `EndDraw`. The switch hands `Run` a list that only ends, so all of that goes on, and `menu_test.py --game` passes with
+  it.
+- What `Run` does besides drawing, read in `interpreter.cpp`: it rewrites two kinds of command in the list it runs
+  (`:3016`, `:3397`), and `src` has no line that reads a command back. `G_READFB` writes to CPU memory (`:3515`), and
+  no game code sends one. Nothing in `src` calls `GfxGetPixelDepth`. `gSPInvalidateTexCache` is a command in the list,
+  so it only reaches the texture cache, which only `Run` reads. `gfx_texture_cache_clear` stays in `RunCommands`
+  (`src/port/Engine.cpp:492`), and `mInterpolationIndex`, set there too, is read by nothing else in `src`.
+- One game of 5800 frames, input by rule through Corneria's rails into all-range, single runs at load 7 to 10: 32 s and
+  62 s of CPU with drawing, 15 s and 17.5 s with an empty list, 12 s and 11.4 s with the whole draw call skipped. The hash
+  log of the three is equal on all 5911 common frames.
+- `hash_check.py draw`, 2 players: 30 s against 62 s on the rails, equal on all 10500 frames, 23 s against 44 s in
+  all-range, equal on all 8000. `full_level.py` with game B drawing: A and B equal on all 14384 frames, with 0 and 1 draws a
+  frame, and the pilot's run equal to A. `hash_check.py base` against `e0f25422`: equal on all 5800 frames.
+- Merged with #148, no drawing and a start in the level for the first time together, `hash_check.py draw` with 2 players:
+  equal with and without drawing on all 10500 and 8000 frames from `menus`, 7409 and 4909 from `level`, 5739 and 3239 from
+  `flying`, rails and all-range. `hash_check.py start`, which plays with no drawing: `PASS` with 2 players and with 1.
+- Render threads with drawing off, three games at once, three rounds of `LP_NUM_THREADS` 0, 1, 2 and 3 in turn, load 10 to
+  24: 17 to 22 s a game at every value, and in the last two rounds, load 10 to 18, 17 to 18 s. CPU per game in those rounds
+  17.4 and 17.5 s for 0 and 1, 18.6 to 18.9 s for 2 and 3. An earlier pass, all of 3 and then all of 1, gave 28 and 18 s at
+  load about 25; taken in turn that gap is gone.
+- Lanes with drawing off, before #148: the 15 steps of `test_all.py` that count frames, under five shared slots, took
+  7m53s, 5m36s, 4m56s and 5m41s with 2, 3, 4 and 5 lanes (load 23 to 25, 10 to 22, 16 to 30 and 18 to 27). The same 15
+  steps on the build of `e0f25422`, which cannot skip drawing, took 14m30s with 4 lanes (load 15 to 26). `full_level.py`
+  alone took 234 s against 870 s.
+- A first run of every step with 5 lanes took 41m39s at load 4 to 43, all of it `hash_check.py rates`, which started first
+  and plays in real time. `menu_test.py --game` took 835 s in that run, 13 minutes of it waiting for a slot, as five lanes
+  and the machine's other work held all five. It ran for 38 s.
+- Every step, merged with #148, 4 lanes, `21f45dd5`: Debug 45 of 45 in 23m50s at load 3 to 31, Release 45 of 45 in 19m39s at
+  load 1 to 23. `hash_check.py rates` on the rails is 18m33s and 14m39s of that, at real pacing.
+- Release with no drawing plays 5800 frames in 5 s or less, against 15 s in Debug. Tools that count frames passed there. Two
+  games meeting over a socket did not: `join_test.py` gave 0 of 5 with no limit, with `the host never tried to start`, 4
+  of 5 with drawing, 5 of 5 at `SF64_COOP_TEST_SPEED=8` and 2 of 5 at 16; Debug with no limit gave 5 of 5. Some failures were
+  #148's guard, with a client 1 to 11 frames on the title: it comes that way, as the host starts as soon as it is there.
+  `menu_test.py --game` with no limit passed once at load 15 and failed `game` 3 of 3 at load 2 to 8, with no client's ping
+  shown; at 8, 3 of 3 passed. So those two run at `MEETING_SPEED`.
+- What Release cannot run: `exit_test.py` `fault-main` and `fault-stuck`, as `push_frame` is inlined and gdb's stop in it
+  never comes; `wingman_check.py` `alive`, `down` and `sitout`, as gdb has no lines to stop on. And `steam_mutants.py`
+  `message_released_too_early` survives on `lan`, 3 runs of 3, where Debug catches it. `test_all.py` leaves those out and says
+  so. Everything else in it passed.
+- Stopping `test_all.py` during `net_mutants.py` left a break in `net_core.c` and its backup: SIGTERM ended `mutants.py`
+  outside its `finally`. The `tree` step named it. With a handler the source is back, and `test_all_test.py` stops a run at
+  that moment: `stop-mutants` fails without the handler.
+- `exit_test.py`, in two runs of `test_all.py` at load up to 32: the first game of `crash-segv` wrote no crash log and ended
+  on its alarm at 5.02 s, exit code -14, with its hash log whole. That tool sets no test switch but the hash log, so the
+  game draws at real pacing. Two earlier runs at load up to 43 had no such game. The scenario alone: 12 of 12. `crash-segv`
+  and `crash-abrt`, 25 of each, on this build and on `e0f25422` side by side, load 2 to 4: 50 of 50 on both. #137 saw a hang
+  in that handler too, 1 game of 36, with no report.
+- `build.py --config Release --build-dir build-release` beside a Debug `build-cmake` on `e0f25422`: both `build.ninja` files
+  link `libultraship/src/libultraship.a`. After the Release build it held 0 objects with debug info, and after the next Debug
+  build 244. Each change of folder compiled the 124 objects of libultraship again. In this order each
+  game linked what it should. That differs from the 2026-11-06 entry of #141, which saw ninja not rebuild them.
+- With `libultraship` in the build folder: 244 and 0 objects with debug info, each in its own folder, and 0 objects
+  compiled when one folder is built after the other. A clean submodule builds, so nothing needs the old place.
+
+Derived:
+
+- Cutting at the display list and not at the draw call leaves every value the game can read as it is, for 3 of the 20 s
+  that skipping the call saves on that game. The game's own draw code still runs, so what #96 found holds with the switch
+  on.
+- A hash that is equal over a whole level with and without drawing means no hashed state depends on the renderer on those
+  frames. It says nothing about levels nobody flew: `full_level.py` and `hash_check.py draw` keep checking that.
+- With drawing off the render threads hardly matter, as a frame has next to nothing to render, so `RENDER_THREADS` stays.
+- Four lanes is the fastest on this machine with five slots: a serial step that starts a game needs the fifth.
+
+Guess:
+
+- Above four lanes the machine's other work is the limit, not the lanes. Unknown on a quiet machine.
+- The crash handler stops on a lock the game held, as `src/port/coop/test/stop_signal.c:65` says it can, and under load a
+  signal lands in a busy frame more often than in the frame limit's sleep. So `test_all.py` runs `exit_test.py` last.
+
+Unknown:
+
+- Why #141 saw ninja keep the other folder's archive. The cause is gone with the shared folder either way.
+- What the crash handler waits for in those games, and why both were the first of `crash-segv`.
+- Why that Steam mutant shows in Debug and not in Release. Guess: memory released too early still holds the message there.
+- A build of libultraship in the build folder on Windows and macOS: not run here, CI's Windows job will show.
+
 ### 2026-11-05, #8 (WP-10), player count apart from camera count
 
 Observed:

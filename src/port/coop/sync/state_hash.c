@@ -97,6 +97,8 @@ static const PlayerArray sPlayerArrays[] = {
 };
 
 static FILE* sLog = NULL;
+static CoopStateDump* sDump = NULL;         // while ComputeDump runs
+static const uint64_t* sDumpRegions = NULL; // its out->region, to name the region of a chunk from its hash pointer
 static bool sStarted = false;
 static u32 sFrame = 0;
 static s64 sPokeFrame = -1;
@@ -113,7 +115,28 @@ static void Fnv(uint64_t* h, const void* data, size_t size) {
     }
 }
 
-#define HASH_VAR(h, var) Fnv((h), &(var), sizeof(var))
+// Every hashed value or element goes through here, so a dump holds exactly the bytes the hash saw (WP-23).
+static void HashNamed(uint64_t* h, const char* name, int32_t index, const void* data, size_t size) {
+    Fnv(h, data, size);
+    if (sDump != NULL) {
+        CoopStateDump* d = sDump;
+
+        if ((d->used + size > d->cap) || (d->count >= d->chunkCap)) {
+            d->overflow = true;
+            return;
+        }
+        memcpy(d->bytes + d->used, data, size);
+        d->chunks[d->count].name = name;
+        d->chunks[d->count].index = index;
+        d->chunks[d->count].region = (uint8_t) (h - sDumpRegions);
+        d->chunks[d->count].size = (uint32_t) size;
+        d->chunks[d->count].offset = (uint32_t) d->used;
+        d->count++;
+        d->used += size;
+    }
+}
+
+#define HASH_VAR(h, var) HashNamed((h), #var, -1, &(var), sizeof(var))
 
 // One value per team member, beyond gTeamShields, that the simulation reads. WP-17 puts human players in these slots.
 // Only the slots from `first` up to `end` are read as a team member's: gTeamDamage drains for Falco to Peppy
@@ -228,17 +251,17 @@ static void ClearPlayerViewState(Player* player) {
 }
 
 // A per-player array, slot by slot. With co-op off that is the same bytes in the same order as hashing the array whole.
-static void HashPerPlayer(uint64_t* h, const void* array, size_t size) {
+static void HashPerPlayer(uint64_t* h, const char* name, const void* array, size_t size) {
     static const u8 sEmpty[sizeof(s32)] = { 0 };
     const u8* value = (const u8*) array;
     s32 i;
 
     for (i = 0; i < COOP_PLAYERS_MAX; i++, value += size) {
-        Fnv(h, PlayerValuesCount(i) ? value : sEmpty, size);
+        HashNamed(h, name, i, PlayerValuesCount(i) ? value : sEmpty, size);
     }
 }
 
-#define HASH_PER_PLAYER(h, array) HashPerPlayer((h), (array), sizeof((array)[0]))
+#define HASH_PER_PLAYER(h, array) HashPerPlayer((h), #array, (array), sizeof((array)[0]))
 
 static void HashPlayers(uint64_t* h) {
     Player copy;
@@ -252,7 +275,7 @@ static void HashPlayers(uint64_t* h) {
         copy.sfx.srcPos = NULL;
         copy.sfx.srcVel = NULL;
         ClearPlayerViewState(&copy);
-        HASH_VAR(h, copy);
+        HashNamed(h, "gPlayer", i, &copy, sizeof(copy));
     }
 }
 
@@ -261,11 +284,11 @@ static void HashPlayerArrays(uint64_t* h) {
     s32 i;
 
     for (i = 0; i < ARRAY_COUNT(sPlayerArrays); i++) {
-        HashPerPlayer(h, sPlayerArrays[i].array, sPlayerArrays[i].size);
+        HashPerPlayer(h, sPlayerArrays[i].name, sPlayerArrays[i].array, sPlayerArrays[i].size);
     }
     for (i = 0; i < CoopPlayers_Count(); i++) {
         slot = CoopPlayers_SlotState(i);
-        HASH_VAR(h, slot);
+        HashNamed(h, "slot", i, &slot, sizeof(slot));
     }
 }
 
@@ -275,7 +298,7 @@ static void HashTeamArrays(uint64_t* h) {
 
     for (i = 0; i < ARRAY_COUNT(sTeamArrays); i++) {
         team = &sTeamArrays[i];
-        Fnv(h, &team->array[team->first], (team->end - team->first) * sizeof(s32));
+        HashNamed(h, team->name, team->first, &team->array[team->first], (team->end - team->first) * sizeof(s32));
     }
 }
 
@@ -295,33 +318,33 @@ static void HashActors(uint64_t* h) {
         for (k = 0; k < ARRAY_COUNT(copy.iwork); k++) {
             copy.iwork[k] = (uintptr_t) NormalizeWord(copy.iwork[k]);
         }
-        HASH_VAR(h, copy);
+        HashNamed(h, "gActors", i, &copy, sizeof(copy));
     }
 }
 
 // Objects whose only pointers are in ObjectInfo.
-#define HASH_INFO_ARRAY(h, Type, array, count) \
-    do {                                       \
-        Type copy_;                            \
-        s32 i_;                                \
-        for (i_ = 0; i_ < (count); i_++) {     \
-            copy_ = (array)[i_];               \
-            ClearInfoPointers(&copy_.info);    \
-            HASH_VAR((h), copy_);              \
-        }                                      \
+#define HASH_INFO_ARRAY(h, Type, array, count)                 \
+    do {                                                       \
+        Type copy_;                                            \
+        s32 i_;                                                \
+        for (i_ = 0; i_ < (count); i_++) {                     \
+            copy_ = (array)[i_];                               \
+            ClearInfoPointers(&copy_.info);                    \
+            HashNamed((h), #array, i_, &copy_, sizeof(copy_)); \
+        }                                                      \
     } while (0)
 
 // The same, for objects that also have a sound position.
-#define HASH_SOUND_ARRAY(h, Type, array, count) \
-    do {                                        \
-        Type copy_;                             \
-        s32 i_;                                 \
-        for (i_ = 0; i_ < (count); i_++) {      \
-            copy_ = (array)[i_];                \
-            ClearInfoPointers(&copy_.info);     \
-            ClearViewState(copy_.sfxSource);    \
-            HASH_VAR((h), copy_);               \
-        }                                       \
+#define HASH_SOUND_ARRAY(h, Type, array, count)                \
+    do {                                                       \
+        Type copy_;                                            \
+        s32 i_;                                                \
+        for (i_ = 0; i_ < (count); i_++) {                     \
+            copy_ = (array)[i_];                               \
+            ClearInfoPointers(&copy_.info);                    \
+            ClearViewState(copy_.sfxSource);                   \
+            HashNamed((h), #array, i_, &copy_, sizeof(copy_)); \
+        }                                                      \
     } while (0)
 
 static void HashEffects(uint64_t* h) {
@@ -333,7 +356,7 @@ static void HashEffects(uint64_t* h) {
         ClearInfoPointers(&copy.info);
         copy.unk_74 = NULL;
         ClearViewState(copy.sfxSource);
-        HASH_VAR(h, copy);
+        HashNamed(h, "gEffects", i, &copy, sizeof(copy));
     }
 }
 
@@ -350,7 +373,7 @@ static void HashScenery360(uint64_t* h) {
         if (CoopPlayers_IsCoop() && (copy.obj.status == OBJ_FREE)) {
             memset(&copy, 0, sizeof(copy));
         }
-        HASH_VAR(h, copy);
+        HashNamed(h, "gScenery360", i, &copy, sizeof(copy));
     }
 }
 
@@ -366,7 +389,7 @@ static void HashItems(uint64_t* h) {
         if (CoopPlayers_IsCoop() && (copy.obj.id == OBJ_ITEM_METEO_WARP)) {
             copy.obj.rot.y = 0.0f;
         }
-        HASH_VAR(h, copy);
+        HashNamed(h, "gItems", i, &copy, sizeof(copy));
     }
 }
 
@@ -377,7 +400,7 @@ static void HashShots(uint64_t* h) {
     for (i = 0; i < ARRAY_COUNT(gPlayerShots); i++) {
         copy = gPlayerShots[i];
         ClearViewState(copy.sfxSource);
-        HASH_VAR(h, copy);
+        HashNamed(h, "gPlayerShots", i, &copy, sizeof(copy));
     }
 }
 
@@ -410,7 +433,7 @@ static void HashGlobals(uint64_t* h) {
     HASH_VAR(h, gRadioMsgId);
 }
 
-void CoopStateHash_Compute(CoopStateHash* out) {
+static void Compute(CoopStateHash* out) {
     uint64_t* r = out->region;
     s32 i;
 
@@ -451,6 +474,36 @@ void CoopStateHash_Compute(CoopStateHash* out) {
 
     out->total = FNV_OFFSET;
     Fnv(&out->total, r, sizeof(out->region));
+}
+
+void CoopStateHash_Compute(CoopStateHash* out) {
+    Compute(out);
+}
+
+size_t CoopStateHash_DumpBytes(void) {
+    size_t bytes = COOP_PLAYERS_MAX * sizeof(Player) + sizeof(gActors) + sizeof(gBosses) + sizeof(gEffects) +
+                   sizeof(gItems) + sizeof(gScenery) + sizeof(gSprites) + SCENERY360_COUNT * sizeof(Scenery360) +
+                   sizeof(gPlayerShots) + sizeof(gTexturedLines) + sizeof(gBonusText) + sizeof(gRadarMarks);
+    s32 i;
+
+    for (i = 0; i < ARRAY_COUNT(sPlayerArrays); i++) {
+        bytes += COOP_PLAYERS_MAX * sPlayerArrays[i].size;
+    }
+    for (i = 0; i < ARRAY_COUNT(sTeamArrays); i++) {
+        bytes += sTeamArrays[i].count * sizeof(s32);
+    }
+    return bytes + 1024; // the slots, the seeds and HashGlobals take far less
+}
+
+void CoopStateHash_ComputeDump(CoopStateHash* out, CoopStateDump* dump) {
+    dump->used = 0;
+    dump->count = 0;
+    dump->overflow = false;
+    sDump = dump;
+    sDumpRegions = out->region;
+    Compute(out);
+    sDump = NULL;
+    sDumpRegions = NULL;
 }
 
 const char* CoopStateHash_RegionName(CoopHashRegion region) {
@@ -634,6 +687,13 @@ static void CoopStateHash_OnGamePreUpdate(IEvent* event) {
         fprintf(sLog, "# draws frame=%u count=%d\n", sFrame, CoopTestSwitches_TakeMostDraws());
     }
 
+    // Test only: Play_Init runs on this frame, from these seeds. tools/coop/hash_check.py start lines two logs up here,
+    // and a game that starts straight in a level starts from them (start_level.h). A restart logs another line.
+    if ((gGameState == GSTATE_PLAY) && (gPlayState == PLAY_INIT)) {
+        fprintf(sLog, "# level frame=%u seeds=%d,%d,%d,%d,%d,%d\n", sFrame, sRandSeed1, sRandSeed2, sRandSeed3,
+                sSeededRandSeed1, sSeededRandSeed2, sSeededRandSeed3);
+    }
+
     CoopStateHash_Compute(&hash);
     fprintf(sLog, "%u %d %d %016llx", sFrame, (s32) gGameState, (s32) gCurrentLevel, (unsigned long long) hash.total);
     for (i = 0; i < COOP_HASH_REGION_COUNT; i++) {
@@ -644,6 +704,10 @@ static void CoopStateHash_OnGamePreUpdate(IEvent* event) {
     // process without running atexit, so anything still buffered would be lost (seen in WP-02).
     fflush(sLog);
     sFrame++;
+}
+
+void CoopStateHash_PokeNow(void) {
+    sPokeFrame = sFrame;
 }
 
 static void CoopStateHash_OnExit(void) {

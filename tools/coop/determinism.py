@@ -16,16 +16,21 @@ two machines running the same build, and compares every run's hash log with a ba
                                 audio rendered with a fixed sample count per update
                                 (SF64_COOP_TEST_AUDIO_SAMPLES, src/port/coop/test/switches.h)
                       no-fma3   C runtime math without FMA3 (SF64_COOP_TEST_NO_FMA3, Windows x64 only)
-                      speed     faster than real time, as every other test tool runs (SF64_COOP_TEST_SPEED, #137)
+                      speed     faster than real time (SF64_COOP_TEST_SPEED, #137), and drawing
+                      no-draw   as every other test tool runs: faster than real time, no drawing (#147)
 
-All but speed run in real time, which is what this tool compares: frame pacing and the audio device's fill level follow
-wall-clock time, and at test speed each game frame is drawn once and the audio buffer stays full, so those variants
-would no longer vary them. Frame interpolation only runs in real time too, and a bug there can reach the game state: a
-stack underflow in it corrupted the RNG seeds in Release (#141). So this tool stays the one that plays as a person
-does, and speed against base is interpolation off against on. replay_test.py fails if these games log a speed.
+All but speed and no-draw run in real time, which is what this tool compares: frame pacing and the audio device's fill
+level follow wall-clock time, and at test speed each game frame is drawn once and the audio buffer stays full, so those
+variants would no longer vary them. Frame interpolation only runs in real time too, and a bug there can reach the game
+state: a stack underflow in it corrupted the RNG seeds in Release (#141). So this tool stays the one that plays as a
+person does, and speed against base is interpolation off against on. replay_test.py fails if these games log a speed.
+A game that did not make the draws its variant asks for fails, whatever its hash says.
 
 Without a replay file it plays input by rule (hash_check.py, write_generated_replay). Such a replay has no checkpoints,
 so a run there only has to play through.
+
+This tool keeps the whole path from boot, through the menus and the map, as they are simulation too and no faster start
+may take them from it (#148): a game that reaches a level any other way fails it, and so does a replay made in a level.
 
 Each run gets a fresh folder under local/ (see tools/coop/replay.py); the owner's config, saves and mods are never
 used. A run passes when its replay passes and its hash equals the baseline on every recorded frame. Exit code 0 when
@@ -51,14 +56,19 @@ VARIANTS = {
     "audio-high": ({"SF64_COOP_TEST_AUDIO_SAMPLES": "high"}, None),
     "no-fma3": ({"SF64_COOP_TEST_NO_FMA3": "1"}, None),
     "speed": ({"SF64_COOP_TEST_SPEED": replay_tool.TEST_SPEED}, None),
+    "no-draw": ({"SF64_COOP_TEST_SPEED": replay_tool.TEST_SPEED,
+                 "SF64_COOP_TEST_NO_DRAW": replay_tool.NO_DRAW}, None),
 }
 if sys.platform != "win32":
     del VARIANTS["no-fma3"]
+SPEED_DRAWS = 1  # draws of a game frame at test speed, which has no frame interpolation
+WHOLE_PATH = (replay_tool.GS_TITLE, replay_tool.GS_MENU, replay_tool.GS_MAP)  # on the way to a level
 
 
-def play(replay, exe, timeout, name, env_extra=None, config=None):
+def play(replay, exe, timeout, name, start, env_extra=None, config=None):
     env = {**replay_tool.REAL_TIME, **(env_extra or {})}  # why: see the top of this file
-    values, names, rows = hash_check.play(replay, exe, timeout, f"det-{name}", env_extra=env, config=config)
+    values, names, rows = hash_check.play(replay, exe, timeout, f"det-{name}", env_extra=env, config=config,
+                                          start=start)
     return name, values, names, rows
 
 
@@ -74,6 +84,11 @@ def check(name, values, rows, base_rows, names, recorded, played):
     if rows is None:
         return [f"{name}: no hash log written"]
     failures = []
+    if name != "no-draw":
+        want = SPEED_DRAWS if name == "speed" else hash_check.INTERPOLATED
+        failures += hash_check.too_few_draws(name, (values,), want)
+    elif values and hash_check.read_draws(values["log"]):
+        failures.append(f"{name}: drew all the same")
     if not played(values):
         failures.append(f"{name}: replay did not pass: {values.get('result') if values else 'no report'}")
     if len(rows) < recorded:
@@ -94,7 +109,8 @@ def main():
 
     exe = replay_tool.find_exe(args.exe)
     args.players = 1
-    replay, config = hash_check.test_setup(args)
+    args.start = replay_tool.MENUS.name
+    replay, config, start = hash_check.test_setup(args)
     played = hash_check.played_through
     if args.file is not None:
         played = lambda values: bool(values) and values.get("result") == "PASS"  # noqa: E731
@@ -103,11 +119,20 @@ def main():
     if unknown:
         sys.exit(f"det: unknown variant(s) {', '.join(unknown)}; known: {', '.join(VARIANTS)}")
 
-    start = time.monotonic()
+    began = time.monotonic()
     print("det: phase 1: base, alone")
-    _, base_values, names, base_rows = play(replay, exe, args.timeout, "base", config=config)
+    _, base_values, names, base_rows = play(replay, exe, args.timeout, "base", start, config=config)
+    problem = base_rows and hash_check.whole_path_problem(base_rows, WHOLE_PATH)
+    if problem:
+        print(f"FAIL: base: {problem}\ndet: FAIL")
+        return 1
     if base_rows is None or not played(base_values):
         print(f"det: base run failed: {base_values.get('result') if base_values else 'no report'}")
+        print("det: FAIL")
+        return 1
+    no_draws = hash_check.too_few_draws("base", (base_values,))
+    if no_draws:
+        print(f"FAIL: {no_draws[0]}")
         print("det: FAIL")
         return 1
     recorded = int(base_values.get("recorded_frames", len(base_rows)))
@@ -115,7 +140,7 @@ def main():
 
     print(f"det: phase 2: {', '.join(chosen)}, together")
     with ThreadPoolExecutor(max_workers=len(chosen)) as pool:
-        jobs = [pool.submit(play, replay, exe, args.timeout, name, VARIANTS[name][0],
+        jobs = [pool.submit(play, replay, exe, args.timeout, name, start, VARIANTS[name][0],
                             with_variant(config, VARIANTS[name][1])) for name in chosen]
         results = [job.result() for job in jobs]
 
@@ -128,7 +153,7 @@ def main():
     for f in failures:
         print(f"FAIL: {f}")
     print(f"det: {len(chosen) - len({f.split(':')[0] for f in failures})}/{len(chosen)} variants equal to base, "
-          f"{time.monotonic() - start:.0f}s")
+          f"{time.monotonic() - began:.0f}s")
     print("det: FAIL" if failures else "det: PASS")
     return 1 if failures else 0
 

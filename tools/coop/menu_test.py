@@ -80,13 +80,16 @@ class Game(join_test.LevelLog):
         (self.run / "starship.cfg.json").write_text(json.dumps(config, indent=4), encoding="utf-8")
         env = replay.game_env(self.run)
         env["SF64_COOP_TEST_MENU"] = str(self.run)
+        # See join_test.py: on a quiet machine a Release game with no limit never showed a client's ping (#147).
+        env["SF64_COOP_TEST_SPEED"] = replay.MEETING_SPEED
         env.update(env_extra or {})
         if seeds is not None:
             join_test.write_replay(self.run / "input.sfcr", LEVEL_REPLAY_FRAMES, seeds, press_until)
             env.update({"SF64_COOP_REPLAY_PLAY": str(self.run / "input.sfcr"),
                         "SF64_COOP_REPLAY_REPORT": str(self.run / "replay-report.txt"),
                         "SF64_COOP_HASH_LOG": str(self.run / "state-hash.txt"),
-                        "SF64_COOP_JOIN_WATCH": "1", "SF64_COOP_JOIN_REPORT": str(self.report_path)})
+                        "SF64_COOP_JOIN_WATCH": "1", "SF64_COOP_JOIN_REPORT": str(self.report_path),
+                        "SF64_COOP_LOCKSTEP_REPORT": str(self.run / "lockstep-report.txt")})
         if platform.system() == "Linux":
             for key, value in (("SDL_VIDEODRIVER", "offscreen"), ("SDL_AUDIODRIVER", "dummy"),
                                ("LIBGL_ALWAYS_SOFTWARE", "1"), ("GALLIUM_DRIVER", "llvmpipe")):
@@ -377,7 +380,7 @@ def in_level(game):
 
 def frames_logged(game):
     with open(game.run / "state-hash.txt", "rb") as f:
-        return sum(1 for _ in f)
+        return sum(1 for line in f if not line.startswith(b"#"))  # the log holds notes too, such as "# draws"
 
 
 def longest_stall(game):

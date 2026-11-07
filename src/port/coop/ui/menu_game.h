@@ -18,8 +18,13 @@ extern "C" {
 void CoopMenuGame_Listen(CoopMenu* menu);
 // CoopMenuBackend.levelStart: the first level of the campaign, the only one run so far (docs/coop/NOTES.md, #126).
 void CoopMenuGame_Level(CoopLevelStart* out);
+// CoopMenuBackend.enterLevel: goes there, and from there on the frames of this game are in lockstep with the others.
+void CoopMenuGame_EnterLevel(const CoopLevelStart* start);
 // CoopMenuBackend.sessionEnded: the next level is the game's own again, with no roster to count players from.
 void CoopMenuGame_SessionEnded(void);
+// CoopMenuBackend.message and .waiting: what sync needs from the session, and what the window tells the player.
+void CoopMenuGame_Message(int peer, uint16_t msgId, const uint8_t* data, uint16_t size);
+uint32_t CoopMenuGame_Waiting(int32_t* player);
 
 #ifdef __cplusplus
 }

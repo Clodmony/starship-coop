@@ -283,8 +283,24 @@ static uint16_t Sim_Port(CoopTransport* t) {
     return sNet.lastPort != 0 ? sNet.lastPort : SIM_PORT;
 }
 
-static const CoopMenuBackend sSimBackend = { Sim_Host,       Sim_Connect, Sim_Port,     Id_Test,
-                                             Level_FromGame, Level_Enter, Session_Ended };
+static void Sync_Message(int peer, uint16_t msgId, const uint8_t* data, uint16_t size) {
+    (void) peer;
+    (void) msgId;
+    (void) data;
+    (void) size;
+}
+
+// In the game this says how long a frame has waited for a player. Here the tests decide.
+static uint32_t sWaitingMs = 0;
+static int32_t sWaitingFor = 0;
+
+static uint32_t Sync_Waiting(int32_t* player) {
+    *player = sWaitingFor;
+    return sWaitingMs;
+}
+
+static const CoopMenuBackend sSimBackend = { Sim_Host,    Sim_Connect,   Sim_Port,     Id_Test,     Level_FromGame,
+                                             Level_Enter, Session_Ended, Sync_Message, Sync_Waiting };
 
 static void Sim_Reset(uint32_t latencyMs) {
     int n;
@@ -1128,6 +1144,58 @@ static void Test_LevelPickInFlight(void) {
     Menus_Close();
 }
 
+// Every frame needs every player, so one who goes takes the session along, and the window has to say so by itself.
+static void Test_LevelLost(void) {
+    const CoopMenuView* v;
+
+    sScenario = "level_lost";
+    Menus_Init(20);
+    Start_Three();
+    EXPECT(!CoopMenu_WantsEyes(HOST), "the window wants the player's eyes before anything happened");
+    EXPECT(CoopMenu_Start(HOST), "Start did nothing");
+    Run(500);
+    EXPECT(!CoopMenu_WantsEyes(HOST), "the window wants the player's eyes in a level that runs");
+
+    sWaitingFor = 2;
+    sWaitingMs = 3400;
+    Expect_Has(View(HOST)->level, "Waiting for player 3 (3 s)", "a long wait says nothing");
+    EXPECT(CoopMenu_WantsEyes(HOST), "the window stays away while the game waits");
+    sWaitingMs = 0;
+    Expect_Has(View(HOST)->level, "The level has started", "the wait is still shown");
+    EXPECT(!CoopMenu_WantsEyes(HOST), "the window wants the player's eyes after the wait");
+
+    CoopMenu_Leave(B);
+    EXPECT(sSessionsEnded == 1, "the one who left did not end its own session");
+    EXPECT(!CoopMenu_WantsEyes(B), "leaving on purpose brings the window up");
+    Run(500);
+    EXPECT(sSessionsEnded == 3, "a level went on as a session without a player");
+    v = View(HOST);
+    EXPECT(v->phase == COOP_MENU_IDLE, "the host still holds a session");
+    Expect_Has(v->message, "Player 3 left, so the session is over", "the host is not told");
+    v = View(A);
+    EXPECT(v->phase == COOP_MENU_IDLE, "the client still holds a session");
+    Expect_Has(v->message, "closed the connection", "the other client is not told");
+    EXPECT(CoopMenu_WantsEyes(HOST) && !CoopMenu_WantsEyes(HOST), "the host's window does not come up, once");
+    EXPECT(CoopMenu_WantsEyes(A) && !CoopMenu_WantsEyes(A), "the client's window does not come up, once");
+    Menus_Close();
+
+    // CoopMenu_Fail is what sync calls when a player stops sending, and it needs no event from the session.
+    Menus_Init(20);
+    Start_Host();
+    Join(A);
+    Pick(A, FALCO);
+    EXPECT(CoopMenu_Start(HOST), "Start did nothing");
+    Run(500);
+    CoopMenu_Fail(A, "Player 1 stopped sending input, so the session is over.");
+    Expect_Has(View(A)->message, "stopped sending input", "the client is not told");
+    EXPECT(CoopMenu_WantsEyes(A), "the window does not come up");
+    Run(500);
+    EXPECT(View(HOST)->phase == COOP_MENU_IDLE, "the host still holds a session");
+    CoopMenu_Fail(HOST, "no session here");
+    EXPECT(View(HOST)->message[0] != 'n', "a menu without a session took a failure");
+    Menus_Close();
+}
+
 // Whoever ends a session, the game hears it once, and the next session starts from nothing.
 static void Test_LevelEnds(void) {
     const CoopMenuView* v;
@@ -1189,6 +1257,7 @@ static int Run_Sim(void) {
     Test_StartButton();
     Test_LevelStart();
     Test_LevelPickInFlight();
+    Test_LevelLost();
     Test_LevelEnds();
     printf("PASS: 24 scenarios\n");
     return 0;
@@ -1196,8 +1265,9 @@ static int Run_Sim(void) {
 
 // ---- Real UDP ----
 
-static const CoopMenuBackend sUdpBackend = { CoopNetSdl_Host, CoopNetSdl_Connect, CoopNetSdl_Port, Id_Test,
-                                             Level_FromGame,  Level_Enter,        Session_Ended };
+static const CoopMenuBackend sUdpBackend = { CoopNetSdl_Host, CoopNetSdl_Connect, CoopNetSdl_Port,
+                                             Id_Test,         Level_FromGame,     Level_Enter,
+                                             Session_Ended,   Sync_Message,       Sync_Waiting };
 
 typedef bool (*Until)(void);
 
