@@ -2,6 +2,7 @@
 
 #include <Fast3D/interpreter.h>
 #include "Engine.h"
+#include "port/coop/sync/lockstep_game.h" // COOP: a frame waits for every player's input (#20)
 #include "port/coop/test/stop_signal.h" // COOP: clean exit on SIGTERM in test runs (#71)
 
 extern "C" {
@@ -22,6 +23,9 @@ void Graphics_PushFrame(Gfx* data) {
 extern "C" void Timer_Update();
 
 void push_frame() {
+    if (CoopSyncGame_HoldFrame()) { // COOP: no game frame and no audio frame without every player's input (#20)
+        return;
+    }
     Graphics_ThreadUpdate();
     GameEngine::StartAudioFrame();
     GameEngine::Instance->StartFrame();

@@ -56,8 +56,8 @@ int32_t CoopPlayers_IsViewed(int32_t index);
 // simulation (lives, the bomb limit, the pause menu), so what it only shows comes from here. gPlayerNum outside co-op.
 int32_t CoopPlayers_HudIndex(void);
 
-// Asks for a local player. 0 until something calls this: SF64_COOP_TEST_LOCAL_INDEX (src/port/coop/test/switches.h)
-// for now. The join flow (WP-24) passes the playerIndex the session gives a client.
+// Asks for a local player. 0 until something calls this: lockstep with the playerIndex the session gave this client
+// (src/port/coop/sync/lockstep_game.h), or SF64_COOP_TEST_LOCAL_INDEX (src/port/coop/test/switches.h).
 void CoopPlayers_SetLocalIndex(int32_t index);
 
 // Nonzero while player `index` is parked: allocated, but not updated, not given a camera update and not drawn.
@@ -112,6 +112,11 @@ int32_t CoopPlayers_DmgSource(int32_t sourceId);
 // this branch for the same player. That player 0's shields decide is a neutral pick, not a rule (NOTES.md, 2026-11-06,
 // #87); a later record can change it here.
 int32_t CoopPlayers_SkipLowHealthMsg(struct Player* player);
+
+// Nonzero when Start went down on this frame for whoever may pause or resume: any player in co-op, by the owner's
+// decision on #12, gMainController otherwise. The pad slots hold every player's input on every client (input.h), so all
+// of them pause on the same frame. What the pause menu does next stays on player 0, as gInputPress does.
+int32_t CoopPlayers_PausePressed(void);
 
 #define COOP_PLAYERS_DEBUG_CVAR "gCoopDebugPlayerCount"
 

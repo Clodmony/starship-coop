@@ -16,6 +16,8 @@ local/test-wingman-<scenario>/. Nothing else is needed: no recording, no person.
 
 How a run gets there, none of it new game code:
 
+  - alive and down start straight in Sector X, past its intro (replay.py, Start): only the level counts in them. sitout
+    and chain keep the whole path, as what the map does between two levels is what they test.
   - gLevelSelector and gSkipBriefing: START skips the prologue, the D-pad picks a level on the map, A starts it. Both go
     through Map_PlayLevel and Play_Setup as any level start does. It skips the course menu, whose "go on" writes the
     same store (fox_map.c:3525-3528, :6763-6765).
@@ -26,7 +28,7 @@ How a run gets there, none of it new game code:
   - gInvincible, as a run flies straight on and would be shot down.
 
 gdb stops on the lines of the game that matter, found by searching the source, so a line that moves is followed. Each
-run also stops on Map_PlayLevel: that stop must show in the log, or the silence about the other lines proves nothing.
+run also stops on Play_Init: that stop must show in the log, or the silence about the other lines proves nothing.
 The frames below hold for this game on one build; when the game changes they can drift, and the run fails on what it did
 not reach instead of passing. Linux only, as it needs gdb. About 3 minutes, more on a loaded machine.
 """
@@ -64,13 +66,16 @@ PAST_SCRIPT_94 = SCRIPT_94_PATH + 2000.0
 
 CVARS = {"gLevelSelector": 1, "gSkipBriefing": 1, "gDebugWarpZone": 1, "gInvincible": 1}
 
+# Sector X, past its intro: 14 frames in, as for Corneria, and no input.
+IN_SECTOR_X = replay_tool.Start("sector-x", LEVEL_SECTOR_X, True, replay_tool.FLYING.level, replay_tool.FLYING.active,
+                                replay_tool.START_SEEDS)
+
 # Menus to the map, then the prologue skipped. On the map R moves one mission on: Meteo, Fortuna, Sector X.
 TO_MAP = {frame: BUTTON_A for frame in range(60, 190, 30)}
 TO_MAP[240] = BUTTON_START
 START = 420
-# A level by the first press: Meteo at 300, Sector X three presses on.
+# A level by the first press: Meteo at 300.
 TO_METEO = {**TO_MAP, 300: BUTTON_RIGHT, START: BUTTON_A}
-TO_SECTOR_X = {**TO_MAP, 300: BUTTON_RIGHT, 330: BUTTON_RIGHT, 360: BUTTON_RIGHT, START: BUTTON_A}
 # Meteo and its warp take until about 4806, the map's own move until about 5142. Then two presses to Sector X.
 THEN_SECTOR_X = {**TO_METEO, 1500: BUTTON_L, 5300: BUTTON_RIGHT, 5330: BUTTON_RIGHT, 5400: BUTTON_A}
 # Sector X's warp ends on the map at about 9579, the map is idle from about 9915. A starts Sector X once more.
@@ -80,7 +85,7 @@ GDB_SCRIPT = """set pagination off
 set confirm off
 handle SIGPIPE pass nostop noprint
 handle SIGTERM pass nostop noprint
-break Map_PlayLevel
+break Play_Init
 commands
 silent
 printf "START level=%d\\n", gCurrentLevel
@@ -113,7 +118,7 @@ def line_after(path, text):
 
 def write_replay(path, frames, presses):
     """Write input by rule: the layout is in hash_check.write_generated_replay, this one presses what it is told."""
-    data = bytearray(b"SFCR" + struct.pack("<III6i", 2, 20, 204, *hash_check.GENERATED_SEEDS))
+    data = bytearray(b"SFCR" + struct.pack("<III6i", 2, 20, 204, *replay_tool.GENERATED_SEEDS))
     idle = bytes(20)
     for frame in range(frames):
         pads = struct.pack("<H18x", presses.get(frame, 0)) + idle * 3
@@ -268,8 +273,9 @@ def check_chain(checks, rows, stops):
 
 
 SCENARIOS = {
-    "alive": dict(frames=6400, presses=TO_SECTOR_X, poke=None, gdb=True, check=check_alive),
-    "down": dict(frames=6400, presses=TO_SECTOR_X, poke=f"{LEVEL_SECTOR_X},3000,2,-1", gdb=True, check=check_down),
+    "alive": dict(frames=5650, presses={}, poke=None, gdb=True, check=check_alive, start=IN_SECTOR_X),
+    "down": dict(frames=5650, presses={}, poke=f"{LEVEL_SECTOR_X},3000,2,-1", gdb=True, check=check_down,
+                 start=IN_SECTOR_X),
     "sitout": dict(frames=11800, presses=THEN_SECTOR_X, poke=f"{LEVEL_METEO},100,2,-1", gdb=True, check=check_sitout),
     "chain": dict(frames=10700, presses=THEN_THIRD_LEVEL, poke=f"{LEVEL_METEO},100,1,-1", gdb=False, check=check_chain),
 }
@@ -298,9 +304,9 @@ def run(name, exe, timeout):
     env = {"SF64_COOP_TEAM_TRACE": str(folder / "team-trace.txt")}
     if scenario["poke"]:
         env["SF64_COOP_TEAM_POKE"] = scenario["poke"]
-    start = gdb_wrapper(folder, exe) if scenario["gdb"] else exe
-    values, _, elapsed = replay_tool.run_game("play", replay, start, timeout, tag=f"wingman-{name}", env_extra=env,
-                                              config={"CVars": CVARS})
+    game = gdb_wrapper(folder, exe) if scenario["gdb"] else exe
+    values, _, elapsed = replay_tool.run_game("play", replay, game, timeout, tag=f"wingman-{name}", env_extra=env,
+                                              config={"CVars": CVARS}, start=scenario.get("start", replay_tool.MENUS))
     result = values.get("result") if values else "NO_REPORT"
     # A replay by rule holds no checkpoints, so FAIL_MISMATCH at frame 0 is what playing it through looks like.
     print(f"wingman: {name}: replay {result} after {elapsed:.0f}s")

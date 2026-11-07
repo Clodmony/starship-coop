@@ -11,9 +11,9 @@ folders are never the owner's and no controller reaches it. The replays start fr
 apart until the level start: a pass has to come from the session, and each scenario checks that they were apart. The
 scripted join flow is src/port/coop/test/join_driver.h; the games report through it and write a state hash log.
 
-What counts is the hash log from the first frame after Play_Init on, frame by frame, every region. No lockstep runs
-(WP-22) and a frame has no owner, so this works because no game gets input after its level start. Prints one line per
-scenario and a RESULT line, exits 0 only when everything passed. Needs a build with assets.
+What counts is the hash log from the first frame after Play_Init on, frame by frame, every region. No game gets input
+after its level start here: tools/coop/lockstep_test.py plays one with input. Prints one line per scenario and a RESULT
+line, exits 0 only when everything passed. Needs a build with assets.
 """
 import argparse
 import struct
@@ -82,10 +82,17 @@ class LevelLog:
         """Hash rows before the level, then from the frame after Play_Init on, without their frame numbers. In between
         the game is in GSTATE_PLAY but gGameFrameCount still counts the screen it came from."""
         names, rows = hash_check.read_log(self.run / "state-hash.txt")
+        self.check_whole_path(rows)
         running = said(self.report(), "level_running")
         expect(running, f"{self.name}'s game never got to the level")
         first = int(running[0]["frame"])
         return names, [r for r in rows if r[1] != GSTATE_PLAY], [r[1:] for r in rows if r[0] >= first]
+
+    def check_whole_path(self, rows=None):
+        """This test keeps the whole way from boot, and a game that started in the level fails it (#148)."""
+        rows = hash_check.read_log(self.run / "state-hash.txt")[1] if rows is None else rows
+        problem = hash_check.whole_path_problem(rows)
+        expect(problem is None, f"{self.name}: {problem}")
 
     def report(self):
         return read_report(self.report_path)
@@ -99,11 +106,17 @@ class Game(LevelLog):
         self.report_path = folder / f"{name}.report"
         replay = folder / f"{name}.sfcr"
         write_replay(replay, frames, SEEDS[name], press_until)
-        env = {**env, "SF64_COOP_JOIN_REPORT": str(self.report_path)}
+        # The report keeps port 0 empty in the level (lockstep_driver.h), so that no pad on this PC reaches a game.
+        env = {**env, "SF64_COOP_JOIN_REPORT": str(self.report_path),
+               "SF64_COOP_LOCKSTEP_REPORT": str(folder / f"{name}.lockstep")}
         self.run = None
         self.thread = threading.Thread(target=self.play, args=(replay, exe, frames, env))
 
     def play(self, replay, exe, frames, env):
+        # A frame limit, as the join takes wall-clock time and the replay is counted in frames. With none, a Release
+        # game that does not draw plays all of it in 5 s, before a client has joined (#147): 0 of 5 scenarios, and 2 of
+        # 5 at 16.
+        env = {"SF64_COOP_TEST_SPEED": replay_tool.MEETING_SPEED, **env}
         _, self.run, _ = replay_tool.run_game("play", replay, exe, max(600, frames), hash_log=True, tag=self.name,
                                               env_extra=env)
 
@@ -129,6 +142,7 @@ def play(folder, exe, frames, picks, host_env=None, client_env=None, press_until
     for game in [host, *clients]:
         game.thread.join()
         expect(game.run is not None, f"{game.name}: no run")
+        game.check_whole_path()
     return host, clients
 
 

@@ -17,6 +17,9 @@ A replay cannot see, and flying by rule player 0 is shot down halfway through th
   C        One more game, the same replay with one bit of player 2 flipped in all-range: the hash must first differ
            at exactly that frame, or two equal logs would say nothing.
 
+B draws and A does not (#147): the draw code runs in both, so what the renderer gets must not reach the hash. The other
+games here do not draw either, as no game from game_env does.
+
 A, B and C run at once. The frames and level states the run reached come from the checkpoints in the replay, and each
 player's frames, shields and downs from the pilot's trace. A run where a player goes down still counts, and says so.
 Everything stays in a fresh local/test-full-level-* folder and in local/test-replay-*. A replay holds raw structs, so it
@@ -24,6 +27,9 @@ only plays on the build that made it. About 3 minutes, each game runs for as lon
 
 It runs at test speed (game_env in replay.py), the pilot too: it reads game state once a frame and never the clock, so a
 frame is the same frame at any speed, and its log must still equal the plain runs' on every frame (#137).
+
+It keeps the whole path from boot, through the menus and the map: no faster start may take a whole level's run from it
+(#148), so a game or a --replay that reaches the level any other way fails.
 
 Exit code 0 on PASS, 1 otherwise. --by-rule shows why a pilot is needed, so it fails when the level is not finished.
 """
@@ -51,6 +57,7 @@ MAP_TAIL = 60  # frames kept after the map comes up
 POKE_AFTER = 300  # frames into all-range for run C: both players fly
 ORDER = (("level start", None), ("player 0 active", ACTIVE), ("the cut to all-range", START_360),
          ("level complete", LEVEL_COMPLETE))
+WHOLE_PATH = (replay_tool.GS_TITLE, replay_tool.GS_MENU, replay_tool.GS_MAP)  # as in determinism.py
 
 
 def read_checkpoints(path):
@@ -118,7 +125,7 @@ def config_for(players):
 
 def rule_replay(work, frames):
     rule = work / "rule.sfcr"
-    hash_check.write_generated_replay(rule, frames=frames, l_frame=-1)
+    hash_check.write_generated_replay(rule, frames=frames, l_at=None)
     return rule
 
 
@@ -130,7 +137,11 @@ def fly(args, exe, work):
            "SF64_COOP_TRACE": str(trace)}
     print(f"full_level: pilot, {args.frames} frames at most, {args.players} players")
     values, _, rows = hash_check.play(rule_replay(work, args.frames), exe, args.timeout, "full-pilot", env_extra=env,
-                                      config=config_for(args.players))
+                                      config=config_for(args.players), start=replay_tool.MENUS)
+    problem = rows and hash_check.whole_path_problem(rows, WHOLE_PATH)
+    if problem:
+        print(f"full_level: FAIL, the pilot's game {problem}")
+        return None
     if not flown.exists():
         print("full_level: FAIL, the pilot wrote no replay (does this build have src/port/coop/test/pilot.c?)")
         return None
@@ -161,12 +172,14 @@ def compare(args, exe, replay, found, pilot_rows):
     print(f"full_level: runs A, B and C (poke in player {args.players - 1} at frame {poke}) at once")
     with ThreadPoolExecutor(max_workers=3) as pool:
         jobs = [pool.submit(hash_check.play, replay, exe, args.timeout, "full-a", config=config),
-                pool.submit(hash_check.play, replay, exe, args.timeout, "full-b", config=config),
+                # Drawing: the hash of a whole level must not depend on it (#147). A is the same run without.
+                pool.submit(hash_check.play, replay, exe, args.timeout, "full-b", config=config,
+                            env_extra=replay_tool.DRAWN),
                 pool.submit(hash_check.play, replay, exe, args.timeout, "full-c", poke, config=config,
                             env_extra={"SF64_COOP_HASH_POKE_PLAYER": str(args.players - 1)})]
         (a_values, names, a_rows), (b_values, _, b_rows), (_, _, c_rows) = [job.result() for job in jobs]
 
-    failures = []
+    failures = hash_check.too_few_draws("run B", (b_values,), want=1)
     for tag, values in (("A", a_values), ("B", b_values)):
         result = values.get("result") if values else "no report"
         if result != "PASS":
@@ -177,6 +190,9 @@ def compare(args, exe, replay, found, pilot_rows):
             print(f"full_level: run {tag}: replay PASS, every checkpoint of {frames} frames matched")
     if a_rows is None or b_rows is None or c_rows is None:
         return failures + ["a run wrote no hash log"]
+    failures += [f"run {tag}: {problem}" for tag, problem in (("A", hash_check.whole_path_problem(a_rows, WHOLE_PATH)),
+                                                              ("B", hash_check.whole_path_problem(b_rows, WHOLE_PATH)))
+                 if problem]
     if min(len(a_rows), len(b_rows)) < frames:
         return failures + [f"hash logs shorter than the replay ({len(a_rows)}, {len(b_rows)} < {frames} frames)"]
 
@@ -184,7 +200,8 @@ def compare(args, exe, replay, found, pilot_rows):
     if diff is not None:
         failures.append(f"A and B differ: {hash_check.describe(names, diff)}")
     else:
-        print(f"full_level: A and B equal on all {frames} frames: state, level, total and {len(names)} regions")
+        print(f"full_level: A and B equal on all {frames} frames: state, level, total and {len(names)} regions; "
+              f"{hash_check.read_draws(a_values['log'])} and {hash_check.read_draws(b_values['log'])} draws a frame")
     if pilot_rows is not None:
         diff = hash_check.first_difference(pilot_rows, a_rows, frames)
         if diff is not None:
@@ -240,6 +257,10 @@ def main():
     pilot_rows = None
     if args.replay:
         replay = Path(args.replay).resolve()
+        problem = hash_check.whole_path_problem([(c[0], c[1]) for c in read_checkpoints(replay)], WHOLE_PATH)
+        if problem:
+            print(f"full_level: FAIL, this replay {problem}")
+            return 1
         states = level_states(read_checkpoints(replay))
         print_states(states)
         found, missing = milestones(states)

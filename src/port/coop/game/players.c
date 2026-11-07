@@ -320,6 +320,20 @@ int32_t CoopPlayers_SkipLowHealthMsg(Player* player) {
     return (player->num > 0) && CoopPlayers_IsCoop();
 }
 
+int32_t CoopPlayers_PausePressed(void) {
+    s32 i;
+
+    if (!CoopPlayers_IsCoop()) {
+        return gControllerPress[gMainController].button & START_BUTTON;
+    }
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        if (gControllerPress[i].button & START_BUTTON) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int32_t CoopPlayers_SlotState(int32_t index) {
     if ((index < 0) || (index >= COOP_PLAYERS_MAX)) {
         return COOP_SLOT_JOINED;
