@@ -60,6 +60,12 @@ number of clients, transport.
    `python tools/coop/hash_check.py views` (unattended, exit code 0 on `PASS`) plays one replay with
    `SF64_COOP_TEST_LOCAL_INDEX` 0 and 1, in Corneria's rails and its all-range section: two clients of one session, who
    draw different cameras and must still hash alike on every frame. It names the first differing frame and regions.
+   `python tools/coop/hash_check.py builds --debug <exe> --release <exe>` (unattended, exit code 0 on `PASS`) plays the
+   same two sections on two Release runs and a Debug run of one commit, and all three must hash alike on every frame.
+   `python tools/coop/hash_check.py rates --exe <exe>` (unattended, exit code 0 on `PASS`) does the same across
+   `gInterpolationFPS`, which no handshake compares: 30 (no interpolated draw), 60, 120, 144 (not a multiple of the
+   game's 30) and 360 (the top of the menu's slider). Vsync is off, because it clamps the rate without a word, and a run
+   that did not log the draws its rate asks for fails (`# draws` lines in the log).
    `python tools/coop/view_check.py` (unattended, exit code 0 on `PASS`) plays the same two clients with buttons and
    pokes that give the two players different numbers, and checks what each one shows and hears from a view trace
    (`src/port/coop/test/view_trace.h`): camera, shield gauge, bomb counter, cockpit, hit flash, shield bar, sound, pause.
