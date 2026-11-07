@@ -34,9 +34,9 @@ typedef struct {
 
 typedef struct {
     CoopLockstep lockstep;
-    bool up;           // sends and runs frames
-    bool dead;         // says nothing any more
-    uint32_t startMs;  // gets to the level at this time
+    bool up;          // sends and runs frames
+    bool dead;        // says nothing any more
+    uint32_t startMs; // gets to the level at this time
     uint32_t nextFrameMs;
     uint32_t frameMs;
     uint32_t started;
@@ -265,7 +265,8 @@ static void Sc_Network(int players, const Network* net, uint32_t frames, uint32_
     World_Reset(players, net, seed);
     Check(World_Run(frames, COOP_LOCKSTEP_INPUT_DELAY, limitMs), "the frames were not reached", sLastFrame, sNow);
     for (i = 0; i < players; i++) {
-        Check(CoopLockstep_StalledOn(&sNodes[i].lockstep, sNow) < 0, "a stall on a working network", (uint32_t) i, sNow);
+        Check(CoopLockstep_StalledOn(&sNodes[i].lockstep, sNow) < 0, "a stall on a working network", (uint32_t) i,
+              sNow);
     }
 }
 
@@ -444,7 +445,8 @@ static void Sc_Malformed(void) {
     n = Put_Block(m, Put_Header(m, 1), 1, 0, 1);
     Check(!CoopLockstep_Receive(&sNodes[1].lockstep, 0, m, n, 0), "a client taking its own input from outside", 0, 0);
     n = Put_Block(m, Put_Header(m, 1), 2, 0, 1);
-    Check(CoopLockstep_Receive(&sNodes[1].lockstep, 0, m, n, 0), "a client refusing another's input from the host", 0, 0);
+    Check(CoopLockstep_Receive(&sNodes[1].lockstep, 0, m, n, 0), "a client refusing another's input from the host", 0,
+          0);
     n = Put_Block(m, Put_Header(m, 1), 3, 0, 1);
     Check(!CoopLockstep_Receive(&sNodes[1].lockstep, 0, m, n, 0), "a client taking a player who is not there", 0, 0);
     n = Put_Block(m, Put_Header(m, 1), 200, 0, 1);
@@ -457,9 +459,9 @@ typedef struct {
 } Scenario;
 
 static const Scenario sScenarios[] = {
-    { "clean", Sc_Clean },     { "lossy", Sc_Lossy },         { "hell", Sc_Hell },           { "slow", Sc_Slow },
-    { "late_start", Sc_LateStart }, { "never_starts", Sc_NeverStarts }, { "stall", Sc_Stall }, { "delays", Sc_Delays },
-    { "malformed", Sc_Malformed },
+    { "clean", Sc_Clean }, { "lossy", Sc_Lossy },          { "hell", Sc_Hell },
+    { "slow", Sc_Slow },   { "late_start", Sc_LateStart }, { "never_starts", Sc_NeverStarts },
+    { "stall", Sc_Stall }, { "delays", Sc_Delays },        { "malformed", Sc_Malformed },
 };
 
 int main(int argc, char** argv) {
@@ -480,6 +482,7 @@ int main(int argc, char** argv) {
         failed += (sFailures != 0);
         ran++;
     }
-    printf("RESULT: %u/%u scenarios passed, %u checks\n", (unsigned) (ran - failed), (unsigned) ran, (unsigned) sChecks);
+    printf("RESULT: %u/%u scenarios passed, %u checks\n", (unsigned) (ran - failed), (unsigned) ran,
+           (unsigned) sChecks);
     return (failed == 0) ? 0 : 1;
 }

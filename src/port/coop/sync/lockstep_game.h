@@ -56,11 +56,12 @@ int32_t CoopSyncGame_Frame(void);
 uint32_t CoopSyncGame_Waiting(int32_t* player);
 
 // Test only. What `player` does on the current frame; the input delay in use; a send that goes nowhere from now on,
-// with the connection left up; frame 0 without the input exchange, as a control.
+// with the connection left up; the frames that had to wait and the ms they took, since the game started; no lockstep at
+// all, as a control.
 void CoopSyncGame_Read(int32_t player, void* frame);
 uint32_t CoopSyncGame_Delay(void);
 void CoopSyncGame_Mute(void);
-uint32_t CoopSyncGame_HeldFrames(void); // frames that had to go around again, and the ms it took, since the game started
+uint32_t CoopSyncGame_HeldFrames(void);
 uint32_t CoopSyncGame_HeldMs(void);
 void CoopSyncGame_SetOff(bool off);
 

@@ -26,8 +26,8 @@ constexpr size_t kPortSize = 6;
 constexpr float kMenuButtonWidth = 200.0f;
 const char* const kWindowCvar = "gCoopMenuWindow";
 
-const CoopMenuBackend kBackend = { CoopNetSdl_Host,           CoopNetSdl_Connect,  CoopNetSdl_Port,
-                                   CoopIdentity_FromGame,     CoopMenuGame_Level,  CoopMenuGame_EnterLevel,
+const CoopMenuBackend kBackend = { CoopNetSdl_Host,           CoopNetSdl_Connect,   CoopNetSdl_Port,
+                                   CoopIdentity_FromGame,     CoopMenuGame_Level,   CoopMenuGame_EnterLevel,
                                    CoopMenuGame_SessionEnded, CoopMenuGame_Message, CoopMenuGame_Waiting };
 
 CoopMenu sMenu;

@@ -104,7 +104,8 @@ bool CoopMenu_Start(CoopMenu* m);
 void CoopMenu_Leave(CoopMenu* m);
 // A level cannot go on as a session: close it, and show text to the player.
 void CoopMenu_Fail(CoopMenu* m, const char* text);
-// True when the player has to see this window now, with it closed too: the game waits, or a session was lost in a level.
+// True when the player has to see this window now, with it closed too: the game waits, or a session was lost in a
+// level.
 bool CoopMenu_WantsEyes(CoopMenu* m);
 // Once per frame, whatever the window shows. The level start comes out of here, so call it where a game can enter one.
 void CoopMenu_Tick(CoopMenu* m, uint32_t nowMs);

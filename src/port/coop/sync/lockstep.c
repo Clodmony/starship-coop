@@ -7,7 +7,8 @@
 // The first frame each player still lacks at the sender, and how many blocks follow.
 #define HEADER_SIZE (4 * COOP_PLAYERS_MAX + 1)
 #define BLOCK_HEADER_SIZE 6
-#define MESSAGE_SIZE (HEADER_SIZE + COOP_PLAYERS_MAX * (BLOCK_HEADER_SIZE + COOP_LOCKSTEP_BLOCK_FRAMES * COOP_LOCKSTEP_FRAME_SIZE))
+#define MESSAGE_SIZE \
+    (HEADER_SIZE + COOP_PLAYERS_MAX * (BLOCK_HEADER_SIZE + COOP_LOCKSTEP_BLOCK_FRAMES * COOP_LOCKSTEP_FRAME_SIZE))
 
 _Static_assert(MESSAGE_SIZE <= COOP_NET_MAX_MESSAGE, "a SYNC_INPUT has to fit one datagram");
 _Static_assert(COOP_LOCKSTEP_RING > 2 * COOP_LOCKSTEP_MAX_DELAY + COOP_LOCKSTEP_BLOCK_FRAMES / 2,
@@ -210,7 +211,8 @@ bool CoopLockstep_Receive(CoopLockstep* l, int peer, const uint8_t* data, uint16
         first = Get32(&in[1]);
         count = in[5];
         in += BLOCK_HEADER_SIZE;
-        if ((count == 0) || (count > COOP_LOCKSTEP_BLOCK_FRAMES) || ((uint32_t) (end - in) < count * COOP_LOCKSTEP_FRAME_SIZE)) {
+        if ((count == 0) || (count > COOP_LOCKSTEP_BLOCK_FRAMES) ||
+            ((uint32_t) (end - in) < count * COOP_LOCKSTEP_FRAME_SIZE)) {
             return false;
         }
         // A client speaks for itself, and only the host speaks for the others.

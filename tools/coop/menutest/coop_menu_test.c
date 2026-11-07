@@ -293,9 +293,8 @@ static uint32_t Sync_Waiting(int32_t* player) {
     return sWaitingMs;
 }
 
-static const CoopMenuBackend sSimBackend = { Sim_Host,       Sim_Connect, Sim_Port,      Id_Test,
-                                             Level_FromGame, Level_Enter, Session_Ended, Sync_Message,
-                                             Sync_Waiting };
+static const CoopMenuBackend sSimBackend = { Sim_Host,    Sim_Connect,   Sim_Port,     Id_Test,     Level_FromGame,
+                                             Level_Enter, Session_Ended, Sync_Message, Sync_Waiting };
 
 static void Sim_Reset(uint32_t latencyMs) {
     int n;
@@ -1256,9 +1255,9 @@ static int Run_Sim(void) {
 
 // ---- Real UDP ----
 
-static const CoopMenuBackend sUdpBackend = { CoopNetSdl_Host, CoopNetSdl_Connect, CoopNetSdl_Port, Id_Test,
-                                             Level_FromGame,  Level_Enter,        Session_Ended,   Sync_Message,
-                                             Sync_Waiting };
+static const CoopMenuBackend sUdpBackend = { CoopNetSdl_Host, CoopNetSdl_Connect, CoopNetSdl_Port,
+                                             Id_Test,         Level_FromGame,     Level_Enter,
+                                             Session_Ended,   Sync_Message,       Sync_Waiting };
 
 typedef bool (*Until)(void);
 

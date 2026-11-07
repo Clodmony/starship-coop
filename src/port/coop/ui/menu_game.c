@@ -16,9 +16,9 @@ static CoopMenu* sMenu = NULL;
 
 static void CoopMenuGame_OnGamePreUpdate(IEvent* event) {
     (void) event;
-    // The logo adds 1 to gGameState after a second of real time (Timer_CreateTask in Game_Update). A level start in that
-    // second would turn GSTATE_PLAY into GSTATE_ENDING, so nothing reaches the game before that is over. A window opens
-    // that fast only for a script, and the session waits for less than the transport's timeout.
+    // The logo adds 1 to gGameState after a second of real time (Timer_CreateTask in Game_Update). A level start in
+    // that second would turn GSTATE_PLAY into GSTATE_ENDING, so nothing reaches the game before that is over. A window
+    // opens that fast only for a script, and the session waits for less than the transport's timeout.
     if ((gGameState >= GSTATE_BOOT) && (gGameState <= GSTATE_LOGO_WAIT)) {
         return;
     }

@@ -40,10 +40,10 @@ typedef struct {
     // One SYNC_INPUT to a peer. Lost or refused is the same to this code: the next send repeats it.
     bool (*send)(void* user, int peer, const void* data, uint16_t size);
     void* user;
-    int32_t self;    // our player index
-    bool host;       // player n is then the client at transport peer n - 1; a client has the host at peer 0
+    int32_t self;     // our player index
+    bool host;        // player n is then the client at transport peer n - 1; a client has the host at peer 0
     uint32_t present; // bit i: player i is in the level
-    uint32_t delay;  // COOP_LOCKSTEP_INPUT_DELAY, unless a test asks for another one
+    uint32_t delay;   // COOP_LOCKSTEP_INPUT_DELAY, unless a test asks for another one
 } CoopLockstepConfig;
 
 typedef struct {

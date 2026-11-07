@@ -22,8 +22,9 @@
 // Report lines, each a word and key=value pairs: `joined player=N`, `pick character=Falco`, `roster a b c d`,
 // `pick_refused character=Falco`, `refused text=...`, `left`, `ended text=...`, `start_refused`, then
 // `level_start frame=N level=N phase=N roster=a,b,c,d values=...` when the session says so and `level_running frame=N
-// level=N phase=N players=N characters=a,b,c,d seeds=... team_damage=... team_event=... main=N` on the first frame after
-// Play_Init. Until then gGameFrameCount still counts the screen the game came from, so that is where games can agree.
+// level=N phase=N players=N characters=a,b,c,d seeds=... team_damage=... team_event=... main=N` on the first frame
+// after Play_Init. Until then gGameFrameCount still counts the screen the game came from, so that is where games can
+// agree.
 
 #ifdef __cplusplus
 extern "C" {
