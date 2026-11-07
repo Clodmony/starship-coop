@@ -73,6 +73,12 @@ number of clients, transport.
    window and frame pacing, audio timing (`SF64_COOP_TEST_AUDIO_SAMPLES`) and C runtime math without FMA3
    (`SF64_COOP_TEST_NO_FMA3`, `src/port/coop/test/switches.h`). Every run's hash must equal the first run's on every
    recorded frame. `--only opengl,no-fma3` picks variants.
+   `python tools/coop/full_level.py` (#142, unattended, exit code 0 on `PASS`) is a whole level with 2 players: a pilot
+   that reads game state (`src/port/coop/test/pilot.h`) flies Corneria from level start to the map once and writes a
+   replay, which two games then play with no pilot. `gCoopDebugPlayerCount` is the only CVar set, as there is no other
+   way yet to have a second player without a session. Both must `PASS` every checkpoint, and their hash logs must equal
+   each other's and the pilot's on every frame. A third game flips a bit of player 2 in all-range, and that must show at
+   exactly its frame. Each run is one game: this says nothing about two clients.
    `python tools/coop/input_test.py` (WP-14, unattended, exit code 0 on `PASS`) checks who steers whom. `SF64_COOP_TEST_PAD=<file>`
    makes the game attach an SDL virtual gamepad that presses what the file says (`src/port/coop/test/test_pad.h`), so
    the live local controller is tested on the road a real pad takes, with nobody at the controls.
