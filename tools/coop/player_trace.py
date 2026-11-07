@@ -32,16 +32,19 @@ rules and exits 0 when all hold:
   - a parked player is hidden. One frame is allowed: Player_Update draws a player again on the frame it goes down,
   - after every restart it is parked, or flying on the frame player 0 is.
 
-`rails` is the test for WP-12. It plays one replay by rule (see write_rail_replay: pad 0 gets through the menus, fires,
-boosts and brakes, the other pads fly stick sweeps, boost, brake and a loop) with one player and with --players at the
-same time, checks the second trace as above, and compares the two on every frame player 0 flies Corneria's rail section
-with both: gPathProgress, gPathVelZ and gPathTexScroll must match single player, the section must end on the same frame,
-and each extra player must have covered --min-sweep units of x, stayed in the flight box, boosted and braked (its
-camDist only) and looped. Both runs set gInvincible: flying by rule, player 0 is shot down half way through the section.
+Each test by rule below starts its game straight in Corneria (replay.py, Start): `rails` before the intro, the others
+past it. `run` plays a file from where it was made.
 
-`shots` is the test for #86. It plays one replay by rule into Corneria's all-range section (see shot_input: pad 0 gets
-through the menus and stops firing, the other pads sweep and fire) with gHyperLaser, so every player starts with
-upgraded lasers, and with SF64_COOP_TRACE_STEER, because a replay cannot aim at a wingman. Then it checks the trace:
+`rails` is the test for WP-12. It plays one replay by rule (see write_rail_replay: pad 0 fires, boosts and brakes, the
+other pads fly stick sweeps, boost, brake and a loop) with one player and with --players at the same time, checks the
+second trace as above, and compares the two on every frame player 0 flies Corneria's rail section with both:
+gPathProgress, gPathVelZ and gPathTexScroll must match single player, the section must end on the same frame, and each
+extra player must have covered --min-sweep units of x, stayed in the flight box, boosted and braked (its camDist only)
+and looped. Both runs set gInvincible: flying by rule, player 0 is shot down half way through the section.
+
+`shots` is the test for #86. It plays one replay by rule into Corneria's all-range section (see write_shot_replay: pad 0
+does not fire, the other pads sweep and fire) with gHyperLaser, so every player starts with upgraded lasers, and with
+SF64_COOP_TRACE_STEER, because a replay cannot aim at a wingman. Then it checks the trace:
 
   - at least --min-hits shots of players 1 and up hit a wingman while the radio was free; none of those hits holds an
     enemy's dmgSource or starts an enemy-hit line,
@@ -92,8 +95,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools" / "coop"))
-from hash_check import GENERATED_L_FRAME, describe, first_difference, read_log, write_generated_replay  # noqa: E402
-from replay import game_env, read_report  # noqa: E402
+from hash_check import GENERATED_L, describe, first_difference, read_log, write_generated_replay  # noqa: E402
+from replay import FLYING as PAST_INTRO, LEVEL, MENUS, check_start, game_env, read_report, recorded_start  # noqa: E402
 from run_folder import make_run_folder  # noqa: E402
 EXE_CANDIDATES = [
     "build/x64/Release/Starship.exe",
@@ -124,33 +127,34 @@ BUTTON_C_LEFT = 0x0002  # gBoostButton, src/engine/fox_game.c
 BUTTON_C_DOWN = 0x0004  # gBrakeButton
 BUTTON_L = 0x0020
 
-# Input by rule for `rails`. Pad 0 presses A every 30 frames: that gets through the menus into Corneria, where player 0
-# is active at about frame 4775, and keeps firing there. From RAIL_INPUT_START all pads repeat RAIL_CYCLE frames:
-# rail_lead on pad 0, rail_pad on the others.
-RAIL_INPUT_START = 4800
+# Input by rule counts from when player 0 flies, and each test here says where its game starts (replay.py, Start): rails
+# through the intro, as the players who wait out of it are what it tests, and shots, lowhealth and effects past it.
+#
+# Input by rule for `rails`. Pad 0 presses A as Start.fires says, and from RAIL_INPUT_START all pads repeat RAIL_CYCLE
+# frames: rail_lead on pad 0, rail_pad on the others.
+RAIL_INPUT_START = 25
 RAIL_CYCLE = 600
-RAIL_FRAMES = 10500
-RAIL_SEEDS = (1234, 5678, 9012, 111, 222, 333)
+RAIL_FLIGHT = 5725  # the rail section and into all-range
 RAIL_REPLAY_HEADER = 40  # ReplayHeader in src/port/coop/test/replay.c
 RAIL_SETTLE = 100  # frames of the section left out of the speed check: the level starts with its own boost
 
 # Input by rule for `shots`: pad 0 stops firing before player 0 flies and presses L for all-range (CVar
 # gDebugJumpToAllRange), the other pads fire from SHOT_INPUT_START on.
-SHOT_LEAD_STOP = 4700
-SHOT_L_FRAME = 4840
-SHOT_INPUT_START = 5000
-SHOT_FRAMES = 9000
+SHOT_LEAD_STOP = -75
+SHOT_L_AT = 65
+SHOT_INPUT_START = 225
+SHOT_FLIGHT = 4225
 BUTTON_L = 0x0020
 
 # dmgSource and radio lines of ActorTeamBoss_HandleDamage, src/engine/fox_hud.c
 DMG_ENEMY = (2, 100)  # DMG_SRC_2, DMG_SRC_100
 ENEMY_LINES = (20030, 20040, 20050)
 
-# `lowhealth`. Player_LowHealthMsg (src/engine/fox_play.c) plays a line under 64 shields, at most every 961 frames, and
-# player 0 is active at about replay frame 4775: 8000 frames hold three limits at the original rate. All-range needs
-# more: flying straight ends in a U-turn every 500 frames or so, the timer stands still for its 111 frames, and the
-# first limit that finds the radio free with two players comes at about replay frame 9970.
-LOW_FRAMES = {"rails": 8000, "all-range": 10200}
+# `lowhealth`. Player_LowHealthMsg (src/engine/fox_play.c) plays a line under 64 shields, at most every 961 frames:
+# 3225 frames of flight hold three limits at the original rate. All-range needs more: flying straight ends in a U-turn
+# every 500 frames or so, the timer stands still for its 111 frames, and the first limit that finds the radio free with
+# two players comes late.
+LOW_FLIGHT = {"rails": 3225, "all-range": 5425}
 LOW_SHIELDS = 40
 FULL_SHIELDS = 200
 LOW_LINES = range(20304, 20310)  # gMsg_ID_20304 to gMsg_ID_20309, as gRadioMsgId holds them
@@ -164,7 +168,7 @@ EFFECT_CASES = {
     "bo397-p0-roll": "hit-unless-p0", "zo374": "hit", "gorgon-beam": "hit", "out": "none",
 }
 EFFECT_ONE_TARGET = ("out",)  # the last player only
-EFFECT_FRAMES = 7600  # 17 cases, 2 players, 40 frames each, from all-range (about 5100) and with U-turns in between
+EFFECT_FLIGHT = 2825  # 17 cases, 2 players, 40 frames each, from all-range (325 in) and with U-turns in between
 
 
 def find_exe(given):
@@ -198,7 +202,9 @@ def play(args):
     (run_dir / "starship.cfg.json").write_text(json.dumps({"CVars": cvars}))
 
     report_path = run_dir / "replay-report.txt"
+    start_at = getattr(args, "start", None) or recorded_start(replay)
     env = game_env(run_dir)
+    env.update(start_at.env)
     env["SF64_COOP_REPLAY_PLAY"] = str(replay)
     env["SF64_COOP_REPLAY_REPORT"] = str(report_path)
     env["SF64_COOP_TRACE"] = str(run_dir / "trace.txt")
@@ -232,6 +238,7 @@ def play(args):
         print(f"player_trace: FAIL, no replay report after {elapsed:.0f}s (exit code {proc.returncode}); "
               f"the game crashed, hung or does not have the replay code")
         return None
+    check_start(report, start_at)
     result = report["result"]
     print(f"player_trace: replay finished after {elapsed:.0f}s: {result}")
     if result != "PASS" and not (result == "FAIL_MISMATCH" and (args.players > 1 or args.no_checkpoints)):
@@ -323,11 +330,14 @@ def frames_flown_on(rows, i):
 
 
 def first_attempt(rows):
-    """Only the first attempt at the level: the frame count starts over after a restart."""
+    """Only the first attempt at the level: the frame count starts over after a restart. It also does when Start ends an
+    intro, as a game started past its intro has it do. Nobody has flown then, so what came before is left out."""
     first = []
     for r in rows:
         if first and r.frame < first[-1].frame:
-            break
+            if any(row.players[0].state in FLYING for row in first):
+                break
+            first = []
         first.append(r)
     return first
 
@@ -443,16 +453,17 @@ def rail_sweep(t, period, reach):
     return reach * (2 * phase - half) // half if phase < half else reach * (3 * half - 2 * phase) // half
 
 
-def rail_pad(frame, index):
-    """(button, stick_x, stick_y) of extra player `index` on `frame`: sweeps both ways, then boost, brake and a loop.
+def rail_pad(flight, index):
+    """(button, stick_x, stick_y) of extra player `index`, `flight` frames after player 0 flies: sweeps both ways, then
+    boost, brake and a loop.
 
     Each player's sweep has its own phase, so no two fly the same line. Player_ArwingBoost starts a loop when the stick
     goes below -50 and boost is pressed within the next few frames (src/engine/fox_play.c, gLoopDownTimers and
     gLoopBoostTimers).
     """
-    if frame < RAIL_INPUT_START:
+    if flight < RAIL_INPUT_START:
         return 0, 0, 0
-    t = (frame - RAIL_INPUT_START) % RAIL_CYCLE
+    t = (flight - RAIL_INPUT_START) % RAIL_CYCLE
     stick_x = rail_sweep(t + 50 * index, 200, 70)
     stick_y = rail_sweep(t + 30 * index, 300, 40)
     button = BUTTON_A if t % 20 == 0 else 0
@@ -467,11 +478,11 @@ def rail_pad(frame, index):
     return button, stick_x, stick_y
 
 
-def rail_lead(frame):
-    """Buttons of player 0 on `frame`, past the menus: a boost and a brake every cycle, so that the speed along the path
-    changes and a player who does not follow it shows."""
-    t = (frame - RAIL_INPUT_START) % RAIL_CYCLE
-    if frame < RAIL_INPUT_START:
+def rail_lead(flight):
+    """Buttons of player 0, `flight` frames after it flies: a boost and a brake every cycle, so that the speed along the
+    path changes and a player who does not follow it shows."""
+    t = (flight - RAIL_INPUT_START) % RAIL_CYCLE
+    if flight < RAIL_INPUT_START:
         return 0
     if 200 <= t < 225:
         return BUTTON_C_LEFT
@@ -480,18 +491,19 @@ def rail_lead(frame):
     return 0
 
 
-def write_pads(path, frames, pad_input):
+def write_pads(path, frames, pad_input, start=MENUS):
     """Write a replay in the layout of ReplayHeader and ReplayFrame in src/port/coop/test/replay.c: no checkpoints, so
-    playback reports FAIL_MISMATCH at frame 0 and plays on. pad_input(frame, pad) gives (button, stick_x, stick_y). Hold
-    and press pads get the same stick; press holds the buttons that went down on this frame."""
-    data = bytearray(b"SFCR" + struct.pack("<III6i", 2, 20, 204, *RAIL_SEEDS))
+    playback reports FAIL_MISMATCH at frame 0 and plays on. pad_input(flight, pad) gives (button, stick_x, stick_y), with
+    flight counted from when player 0 flies in a game that starts at start. Hold and press pads get the same stick; press
+    holds the buttons that went down on this frame."""
+    data = bytearray(b"SFCR" + struct.pack("<III6i", 2, 20, 204, *start.seeds))
     assert len(data) == RAIL_REPLAY_HEADER
     last = [0, 0, 0, 0]
     for frame in range(frames):
         hold = bytearray()
         press = bytearray()
         for pad in range(4):
-            button, stick_x, stick_y = pad_input(frame, pad)
+            button, stick_x, stick_y = pad_input(frame - start.active, pad)
             hold += struct.pack("<Hbb16x", button, stick_x, stick_y)
             press += struct.pack("<Hbb16x", button & ~last[pad], stick_x, stick_y)
             last[pad] = button
@@ -503,30 +515,31 @@ def write_pads(path, frames, pad_input):
     temp.replace(path)
 
 
-def rail_input(frame, pad):
+def rail_input(flight, pad, start):
     if pad == 0:
-        return (BUTTON_A if frame >= 60 and frame % 30 == 0 else 0) | rail_lead(frame), 0, 0
-    return rail_pad(frame, pad)
+        return (BUTTON_A if start.fires(flight) else 0) | rail_lead(flight), 0, 0
+    return rail_pad(flight, pad)
 
 
-def write_rail_replay(path, frames, l_frame=None, lead=None, pad_rule=rail_pad, extra=None):
-    """Write the input for `rails`. l_frame adds one L on pad 0 (with CVar gDebugJumpToAllRange, the jump to all-range).
-    lead(frame), if given, is (button, stick_x, stick_y) of pad 0 in place of the rule for `rails`, and
-    pad_rule(frame, pad) the same for the other pads. extra(frame, pad) gives buttons to add."""
-    def pad_input(frame, pad):
+def write_rail_replay(path, frames, l_at=None, lead=None, pad_rule=rail_pad, extra=None, start=MENUS):
+    """Write the input for `rails`, frames long, for a game that starts at start. Everything else counts from when player
+    0 flies. l_at adds one L on pad 0 (with CVar gDebugJumpToAllRange, the jump to all-range). lead(flight), if given, is
+    (button, stick_x, stick_y) of pad 0 in place of the rule for `rails`, and pad_rule(flight, pad) the same for the other
+    pads. extra(flight, pad) gives buttons to add."""
+    def pad_input(flight, pad):
         if pad == 0 and lead is not None:
-            button, stick_x, stick_y = lead(frame)
+            button, stick_x, stick_y = lead(flight)
         elif pad == 0:
-            button, stick_x, stick_y = rail_input(frame, pad)
-            if frame == l_frame:
+            button, stick_x, stick_y = rail_input(flight, pad, start)
+            if flight == l_at:
                 button |= BUTTON_L
         else:
-            button, stick_x, stick_y = pad_rule(frame, pad)
+            button, stick_x, stick_y = pad_rule(flight, pad)
         if extra is not None:
-            button |= extra(frame, pad)
+            button |= extra(flight, pad)
         return button, stick_x, stick_y
 
-    write_pads(path, frames, pad_input)
+    write_pads(path, frames, pad_input, start)
 
 
 def compare_path(solo, coop, args):
@@ -591,7 +604,9 @@ def check_rail_flight(rows, i, args):
 
 def rails(args):
     replay = ROOT / "local" / "test-trace-rails.sfcr"
-    write_rail_replay(replay, args.frames)
+    args.start = LEVEL
+    args.frames = args.frames or args.start.frame(RAIL_FLIGHT)
+    write_rail_replay(replay, args.frames, start=args.start)
     args.replay = str(replay)
     args.no_checkpoints = True
     args.cvar = args.cvar + ["gInvincible=1"]  # flying by rule, player 0 would not live through the whole section
@@ -614,24 +629,24 @@ def rails(args):
     return 0 if ok else 1
 
 
-def shot_pad(frame, index):
-    """(button, stick_x, stick_y) of extra player `index` on `frame`: slow sweeps, a shot every 8 frames."""
-    if frame < SHOT_INPUT_START:
+def shot_pad(flight, index):
+    """(button, stick_x, stick_y) of extra player `index`, `flight` frames after player 0 flies: slow sweeps, a shot
+    every 8 frames."""
+    if flight < SHOT_INPUT_START:
         return 0, 0, 0
-    t = frame - SHOT_INPUT_START
+    t = flight - SHOT_INPUT_START
     return (BUTTON_A if t % 8 == 0 else 0), rail_sweep(t + 90 * index, 360, 50), rail_sweep(t + 40 * index, 240, 40)
 
 
-def shot_input(frame, pad):
-    if pad == 0:
-        return (BUTTON_A if 60 <= frame < SHOT_LEAD_STOP and frame % 30 == 0 else 0) | \
-            (BUTTON_L if frame == SHOT_L_FRAME else 0), 0, 0
-    return shot_pad(frame, pad)
-
-
-def write_shot_replay(path, frames):
+def write_shot_replay(path, frames, start):
     """Write the input for `shots`."""
-    write_pads(path, frames, shot_input)
+    def shot_input(flight, pad):
+        if pad == 0:
+            return (BUTTON_A if flight < SHOT_LEAD_STOP and start.fires(flight) else 0) | \
+                (BUTTON_L if flight == SHOT_L_AT else 0), 0, 0
+        return shot_pad(flight, pad)
+
+    write_pads(path, frames, shot_input, start)
 
 
 def read_hits(rows):
@@ -678,7 +693,9 @@ def check_shots(rows, args):
 
 def shots(args):
     replay = ROOT / "local" / "test-trace-shots.sfcr"
-    write_shot_replay(replay, args.frames)
+    args.start = PAST_INTRO
+    args.frames = args.frames or args.start.frame(SHOT_FLIGHT)
+    write_shot_replay(replay, args.frames, args.start)
     args.replay = str(replay)
     args.no_checkpoints = True
     args.cvar = args.cvar + ["gDebugJumpToAllRange=1", "gInvincible=1", "gHyperLaser=1"]
@@ -689,6 +706,7 @@ def shots(args):
     print(f"player_trace: trace {trace}")
     ok = report_results(check_shots(parse(trace), args))
     print(f"player_trace: shots {'PASS' if ok else 'FAIL'}")
+    return 0 if ok else 1
 
 
 def low_limits(rows):
@@ -767,12 +785,13 @@ def lowhealth(args):
     replay = ROOT / "local" / f"test-trace-lowhealth-{args.section}.sfcr"
     args.no_checkpoints = True
     args.cvar = args.cvar + ["gInvincible=1"]  # shields stay where SF64_COOP_TRACE_SHIELDS holds them
-    args.frames = args.frames or LOW_FRAMES[args.section]
+    args.start = PAST_INTRO
+    args.frames = args.frames or args.start.frame(LOW_FLIGHT[args.section])
     if args.section == "all-range":
-        write_generated_replay(replay, args.frames)
+        write_generated_replay(replay, args.frames, start=args.start)
         args.cvar = args.cvar + ["gDebugJumpToAllRange=1"]
     else:
-        write_rail_replay(replay, args.frames)
+        write_rail_replay(replay, args.frames, start=args.start)
     args.replay = str(replay)
 
     extra = set(range(1, args.players))
@@ -839,7 +858,9 @@ def check_effect_line(fields, count):
 
 def effects(args):
     replay = ROOT / "local" / "test-trace-effects.sfcr"
-    write_generated_replay(replay, frames=args.frames, l_frame=GENERATED_L_FRAME if args.all_range else -1)
+    args.start = PAST_INTRO
+    args.frames = args.frames or args.start.frame(EFFECT_FLIGHT)
+    write_generated_replay(replay, frames=args.frames, l_at=GENERATED_L if args.all_range else None, start=args.start)
     args.replay = str(replay)
     args.no_checkpoints = True
     args.effect_probe = True
@@ -894,7 +915,7 @@ def main():
     t = sub.add_parser("rails", help="input by rule on Corneria's rails: N players against one player")
     t.add_argument("--exe")
     t.add_argument("--timeout", type=int, default=900, help="seconds to wait for each replay report (default 900)")
-    t.add_argument("--frames", type=int, default=RAIL_FRAMES, help=f"replay length (default {RAIL_FRAMES})")
+    t.add_argument("--frames", type=int, help=f"replay length (default {RAIL_FLIGHT} past when player 0 flies)")
     t.add_argument("--min-rail", type=int, default=4000, help="rail frames both runs must share (default 4000)")
     t.add_argument("--min-sweep", type=float, default=600.0, help="x range each extra player must cover (default 600)")
     t.add_argument("--max-path-diff", type=float, default=0.0,
@@ -906,7 +927,7 @@ def main():
     h = sub.add_parser("shots", help="input by rule in all-range: what the shots of players 1 and up count as")
     h.add_argument("--exe")
     h.add_argument("--timeout", type=int, default=900, help="seconds to wait for the replay report (default 900)")
-    h.add_argument("--frames", type=int, default=SHOT_FRAMES, help=f"replay length (default {SHOT_FRAMES})")
+    h.add_argument("--frames", type=int, help=f"replay length (default {SHOT_FLIGHT} past when player 0 flies)")
     h.add_argument("--steer", type=int, default=150, help="frames between shots carried to a wingman (default 150)")
     h.add_argument("--min-hits", type=int, default=5, help="wingman hits by players the run must hold (default 5)")
     h.add_argument("--min-enemy", type=int, default=1, help="enemy-hit lines the run must hold (default 1)")
@@ -916,7 +937,8 @@ def main():
     w = sub.add_parser("lowhealth", help="the low-health radio timer: N players against one player")
     w.add_argument("--exe")
     w.add_argument("--timeout", type=int, default=900, help="seconds to wait for each replay report (default 900)")
-    w.add_argument("--frames", type=int, help="replay length (default 8000 on rails, 10200 in all-range)")
+    w.add_argument("--frames", type=int, help="replay length (default 3225 past when player 0 flies on rails, 5425 in "
+                                              "all-range)")
     w.add_argument("--section", choices=("rails", "all-range"), default="rails",
                    help="where to fly: Corneria's rails, or all-range with gDebugJumpToAllRange (default rails)")
     w.add_argument("--min-limits", type=int, default=3, help="limits single player must reach (default 3)")
@@ -925,7 +947,7 @@ def main():
     e = sub.add_parser("effects", help="input by rule on Corneria: place each effect on each player, see who it hits")
     e.add_argument("--exe")
     e.add_argument("--timeout", type=int, default=900, help="seconds to wait for the replay report (default 900)")
-    e.add_argument("--frames", type=int, default=EFFECT_FRAMES, help=f"replay length (default {EFFECT_FRAMES})")
+    e.add_argument("--frames", type=int, help=f"replay length (default {EFFECT_FLIGHT} past when player 0 flies)")
     e.add_argument("--all-range", action="store_true", help="jump to all-range first (gDebugJumpToAllRange)")
     e.add_argument("--cvar", action="append", default=[], metavar="NAME[=VALUE]", help="another CVar for the run")
     add_check_options(e)

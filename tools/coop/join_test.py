@@ -82,6 +82,8 @@ class LevelLog:
         """Hash rows before the level, then from the frame after Play_Init on, without their frame numbers. In between
         the game is in GSTATE_PLAY but gGameFrameCount still counts the screen it came from."""
         names, rows = hash_check.read_log(self.run / "state-hash.txt")
+        problem = hash_check.whole_path_problem(rows)
+        expect(problem is None, f"{self.name}: {problem}")
         running = said(self.report(), "level_running")
         expect(running, f"{self.name}'s game never got to the level")
         first = int(running[0]["frame"])

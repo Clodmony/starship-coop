@@ -27,6 +27,9 @@ does, and speed against base is interpolation off against on. replay_test.py fai
 Without a replay file it plays input by rule (hash_check.py, write_generated_replay). Such a replay has no checkpoints,
 so a run there only has to play through.
 
+This tool keeps the whole path from boot, through the menus and the map, as they are simulation too and no faster start
+may take them from it (#148): a game that reaches a level any other way fails it, and so does a replay made in a level.
+
 Each run gets a fresh folder under local/ (see tools/coop/replay.py); the owner's config, saves and mods are never
 used. A run passes when its replay passes and its hash equals the baseline on every recorded frame. Exit code 0 when
 every run passes, 1 otherwise.
@@ -54,11 +57,12 @@ VARIANTS = {
 }
 if sys.platform != "win32":
     del VARIANTS["no-fma3"]
+WHOLE_PATH = (replay_tool.GS_TITLE, replay_tool.GS_MENU, replay_tool.GS_MAP)  # a run must pass these on its way to a level
 
 
-def play(replay, exe, timeout, name, env_extra=None, config=None):
+def play(replay, exe, timeout, name, start, env_extra=None, config=None):
     env = {**replay_tool.REAL_TIME, **(env_extra or {})}  # why: see the top of this file
-    values, names, rows = hash_check.play(replay, exe, timeout, f"det-{name}", env_extra=env, config=config)
+    values, names, rows = hash_check.play(replay, exe, timeout, f"det-{name}", env_extra=env, config=config, start=start)
     return name, values, names, rows
 
 
@@ -94,7 +98,8 @@ def main():
 
     exe = replay_tool.find_exe(args.exe)
     args.players = 1
-    replay, config = hash_check.test_setup(args)
+    args.start = replay_tool.MENUS.name
+    replay, config, start = hash_check.test_setup(args)
     played = hash_check.played_through
     if args.file is not None:
         played = lambda values: bool(values) and values.get("result") == "PASS"  # noqa: E731
@@ -105,17 +110,21 @@ def main():
 
     start = time.monotonic()
     print("det: phase 1: base, alone")
-    _, base_values, names, base_rows = play(replay, exe, args.timeout, "base", config=config)
+    _, base_values, names, base_rows = play(replay, exe, args.timeout, "base", start, config=config)
     if base_rows is None or not played(base_values):
         print(f"det: base run failed: {base_values.get('result') if base_values else 'no report'}")
         print("det: FAIL")
+        return 1
+    problem = hash_check.whole_path_problem(base_rows, WHOLE_PATH)
+    if problem:
+        print(f"FAIL: base: {problem}\ndet: FAIL")
         return 1
     recorded = int(base_values.get("recorded_frames", len(base_rows)))
     print(f"det: base: {len(base_rows)} frames hashed, {recorded} recorded")
 
     print(f"det: phase 2: {', '.join(chosen)}, together")
     with ThreadPoolExecutor(max_workers=len(chosen)) as pool:
-        jobs = [pool.submit(play, replay, exe, args.timeout, name, VARIANTS[name][0],
+        jobs = [pool.submit(play, replay, exe, args.timeout, name, start, VARIANTS[name][0],
                             with_variant(config, VARIANTS[name][1])) for name in chosen]
         results = [job.result() for job in jobs]
 
