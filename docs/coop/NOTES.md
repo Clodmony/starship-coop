@@ -2243,6 +2243,72 @@ Unknown:
 - The radio mouth at speed: it could move by a frame and no hash would say.
 - Windows and macOS: not run. `gfx_dxgi.cpp:995` multiplies a frame stamp by the target rate, untested at this rate.
 
+### 2026-11-07, #147, what a game gets from the renderer, and what test lanes are worth
+
+Identity: ROM US 1.0, on commits `e0f25422` to `29dff2be`, Linux, GCC, Debug and for `builds` Release, OpenGL in software,
+no window. Other issues built and tested on the same machine, so each time comes with its load average. Times of steps
+under `--game-wrap` include the wait for a slot.
+
+Observed:
+
+- A drawn frame is `Fast3dWindow::DrawAndRunGraphicsCommands` (`libultraship/src/graphic/Fast3D/Fast3dWindow.cpp:174`): ImGui
+  starts, the interpreter's `StartFrame`, `Run` on the display list, ImGui ends, the interpreter's `EndFrame`.
+- The game reads what the first half leaves: `mCurDimensions.aspect_ratio` is set in `Interpreter::StartFrame`
+  (`libultraship/src/graphic/Fast3D/interpreter.cpp:4248`) from what `Gui::CalculateGameViewport` wrote, and
+  `OTRGetDimensionFromRightEdge` and the rest read it (`src/port/Engine.cpp:771-799`), for the HUD among others
+  (`src/engine/fox_hud.c:2065`). `Interpreter::Init` does not set it, so a game that skips that call never gets a value.
+- The frame limit is in `SwapBuffersBegin` (`libultraship/src/graphic/Fast3D/backends/gfx_sdl2.cpp:685`), reached from
+  `Interpreter::EndFrame`, and `imgui.ini` and the widgets `menu_test.py --game` clicks live in `gui->StartDraw` and
+  `EndDraw`. The switch hands `Run` a list that only ends, so all of that goes on, and `menu_test.py --game` passes with
+  it.
+- What `Run` does besides drawing, read in `interpreter.cpp`: it rewrites two kinds of command in the list it runs
+  (`:3016`, `:3397`), and `src` has no line that reads a command back. `G_READFB` writes to CPU memory (`:3515`), and
+  no game code sends one. Nothing in `src` calls `GfxGetPixelDepth`. `gSPInvalidateTexCache` is a command in the list,
+  so it only reaches the texture cache, which only `Run` reads. `gfx_texture_cache_clear` stays in `RunCommands`
+  (`src/port/Engine.cpp:492`), and `mInterpolationIndex`, set there too, is read by nothing else in `src`.
+- One game of 5800 frames, input by rule through Corneria's rails into all-range, single runs at load 7 to 10: 32 s and
+  62 s of CPU with drawing, 15 s and 17.5 s with an empty list, 12 s and 11.4 s with the whole draw call skipped. The hash
+  log of the three is equal on all 5911 common frames.
+- `hash_check.py draw`, 2 players: 30 s against 62 s on the rails, equal on all 10500 frames, 23 s against 44 s in
+  all-range, equal on all 8000. `full_level.py` with game B drawing: A and B equal on all 14384 frames, with 0 and 1 draws a
+  frame, and the pilot's run equal to A. `hash_check.py base` against `e0f25422`: equal on all 5800 frames.
+- Render threads with drawing off, three games at once, three rounds of `LP_NUM_THREADS` 0, 1, 2 and 3 in turn, load 10 to
+  24: 17 to 22 s a game at every value, and in the last two rounds, load 10 to 18, 17 to 18 s. CPU per game in those rounds
+  17.4 and 17.5 s for 0 and 1, 18.6 to 18.9 s for 2 and 3. An earlier pass, all of 3 and then all of 1, gave 28 and 18 s at
+  load about 25; taken in turn that gap is gone.
+- Lanes with drawing off: the 15 steps of `test_all.py` that count frames, under five shared slots, took 7m53s, 5m36s,
+  4m56s and 5m41s with 2, 3, 4 and 5 lanes (load 23 to 25, 10 to 22, 16 to 30 and 18 to 27). The same 15 steps on the build
+  of `e0f25422`, which cannot skip drawing, took 14m30s with 4 lanes (load 15 to 26). `full_level.py` alone took 234 s
+  against 870 s.
+- A first run of every step with 5 lanes took 41m39s at load 4 to 43, all of it `hash_check.py rates`, which started first
+  and plays in real time. `menu_test.py --game` took 835 s in that run, 13 minutes of it waiting for a slot, as five lanes
+  and the machine's other work held all five. It ran for 38 s.
+- `build.py --config Release --build-dir build-release` beside a Debug `build-cmake` on `e0f25422`: both `build.ninja` files
+  link `libultraship/src/libultraship.a`. After the Release build it held 0 objects with debug info, and after the next Debug
+  build 244. Each change of folder compiled the 124 objects of libultraship again. In this order,, each
+  game linked what it should. That differs from the 2026-11-06 entry of #141, which saw ninja not rebuild them.
+- With `libultraship` in the build folder: 244 and 0 objects with debug info, each in its own folder, and 0 objects
+  compiled when one folder is built after the other. A clean submodule builds, so nothing needs the old place.
+
+Derived:
+
+- Cutting at the display list and not at the draw call leaves every value the game can read as it is, for 3 of the 20 s
+  that skipping the call saves on that game. The game's own draw code still runs, so what #96 found holds with the switch
+  on.
+- A hash that is equal over a whole level with and without drawing means no hashed state depends on the renderer on those
+  frames. It says nothing about levels nobody flew: `full_level.py` and `hash_check.py draw` keep checking that.
+- With drawing off the render threads hardly matter, as a frame has next to nothing to render, so `RENDER_THREADS` stays.
+- Four lanes is the fastest on this machine with five slots: a serial step that starts a game needs the fifth.
+
+Guess:
+
+- Above four lanes the machine's other work is the limit, not the lanes. Unknown on a quiet machine.
+
+Unknown:
+
+- Why #141 saw ninja keep the other folder's archive. The cause is gone with the shared folder either way.
+- A build of libultraship in the build folder on Windows and macOS: not run here, CI's Windows job will show.
+
 ### 2026-11-05, #8 (WP-10), player count apart from camera count
 
 Observed:
