@@ -105,12 +105,21 @@ static void Pick_Next(void) {
     }
 }
 
+static const char* Env_Text(const char* name) {
+    const char* value = getenv(name);
+
+    return ((value != NULL) && (value[0] != '\0')) ? value : NULL;
+}
+
 static void Session_Open(void) {
     CoopNetConfig config = { 0 };
     CoopIdentity id;
     CoopTransport* t;
 
     sTried = true;
+    if (Env_Text("SF64_COOP_JOIN_MAIN_PORT") != NULL) {
+        gMainController = atoi(Env_Text("SF64_COOP_JOIN_MAIN_PORT"));
+    }
     config.timeoutMs = JOIN_TIMEOUT_MS;
     CoopIdentity_FromGame(&id);
     if (sPortFile != NULL) {
@@ -304,10 +313,11 @@ static void Report_Running(void) {
     Values_Word(damage, sizeof(damage), gTeamDamage, ARRAY_COUNT(gTeamDamage));
     Values_Word(event, sizeof(event), gTeamEventActorIndex, ARRAY_COUNT(gTeamEventActorIndex));
     Report("level_running frame=%u level=%d phase=%d players=%d characters=%s,%s,%s,%s seeds=%s team_damage=%s "
-           "team_event=%s",
+           "team_event=%s main=%d",
            (unsigned) sFrame, (int) gCurrentLevel, (int) gLevelPhase, (int) CoopPlayers_Count(),
            Character_Word(CoopPlayers_Character(0)), Character_Word(CoopPlayers_Character(1)),
-           Character_Word(CoopPlayers_Character(2)), Character_Word(CoopPlayers_Character(3)), word, damage, event);
+           Character_Word(CoopPlayers_Character(2)), Character_Word(CoopPlayers_Character(3)), word, damage, event,
+           (int) gMainController);
 }
 
 static void Session_Pump(void) {
@@ -346,12 +356,6 @@ static void CoopJoinDriver_OnGamePreUpdate(IEvent* event) {
         Host_TryStart();
     }
     Report_Running();
-}
-
-static const char* Env_Text(const char* name) {
-    const char* value = getenv(name);
-
-    return ((value != NULL) && (value[0] != '\0')) ? value : NULL;
 }
 
 void CoopJoinDriver_Init(void) {

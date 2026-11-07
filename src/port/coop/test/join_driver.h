@@ -13,6 +13,8 @@
 //   SF64_COOP_JOIN_START_FRAME=<n>   host: not before this frame, counted as in the state hash log
 //   SF64_COOP_JOIN_POKE_TEAM=1       host: test only, gives the values no level start clears something to carry
 //   SF64_COOP_JOIN_KEEP_OWN=1        client: test only, goes to the level but keeps its own values, as a control
+//   SF64_COOP_JOIN_MAIN_PORT=<n>     test only: gMainController before the level, as the title screen of a PC with its
+//                                    first controller on another port leaves it
 //   SF64_COOP_JOIN_WATCH=1           no session of its own: reports `level_running` for a level the co-op menu started,
 //                                    for tools/coop/menu_test.py
 // With none set, no listener is registered and the game runs unchanged.
@@ -20,7 +22,7 @@
 // Report lines, each a word and key=value pairs: `joined player=N`, `pick character=Falco`, `roster a b c d`,
 // `pick_refused character=Falco`, `refused text=...`, `left`, `ended text=...`, `start_refused`, then
 // `level_start frame=N level=N phase=N roster=a,b,c,d values=...` when the session says so and `level_running frame=N
-// level=N phase=N players=N characters=a,b,c,d seeds=... team_damage=... team_event=...` on the first frame after
+// level=N phase=N players=N characters=a,b,c,d seeds=... team_damage=... team_event=... main=N` on the first frame after
 // Play_Init. Until then gGameFrameCount still counts the screen the game came from, so that is where games can agree.
 
 #ifdef __cplusplus

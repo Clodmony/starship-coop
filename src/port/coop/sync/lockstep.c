@@ -84,12 +84,10 @@ void CoopLockstep_Read(const CoopLockstep* l, uint32_t frame, int32_t player, Co
     Pad_Get(&in[4], &out->press);
 }
 
-// Who gets what. A host passes on everyone's input to everyone but its owner, a client only has its own to give.
-static bool Link_Carries(const CoopLockstep* l, int link, int32_t player) {
-    if (!l->config.host) {
-        return player == l->config.self;
-    }
-    return Is_Present(l, player) && (player != Link_Player(l, link));
+// Who gets what. A host passes on everyone's input, a client only has its own to give. Nothing goes back to its owner
+// even so: an owner holds every frame of its own, and its messages say that.
+static bool Link_Carries(const CoopLockstep* l, int32_t player) {
+    return l->config.host ? Is_Present(l, player) : (player == l->config.self);
 }
 
 static void Link_Send(CoopLockstep* l, int link, uint32_t nowMs) {
@@ -108,7 +106,7 @@ static void Link_Send(CoopLockstep* l, int link, uint32_t nowMs) {
         uint32_t count;
         uint32_t i;
 
-        if (!Link_Carries(l, link, player) || (first >= newest)) {
+        if (!Link_Carries(l, player) || (first >= newest)) {
             continue;
         }
         // Older frames are gone from the ring. Nothing should still ask for them; the other end then waits for a stall.
@@ -238,7 +236,7 @@ bool CoopLockstep_Receive(CoopLockstep* l, int peer, const uint8_t* data, uint16
     // What came in from one client is news for the others.
     if (l->config.host && (memcmp(before, l->next, sizeof(before)) != 0)) {
         for (i = 0; i < COOP_NET_MAX_PEERS; i++) {
-            l->links[i].dirty = l->links[i].open && (i != peer);
+            l->links[i].dirty = l->links[i].dirty || (l->links[i].open && (i != peer));
         }
     }
     CoopLockstep_Tick(l, nowMs);

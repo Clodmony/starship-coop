@@ -445,6 +445,10 @@ static void Sc_Malformed(void) {
     Check(!CoopLockstep_Receive(&sNodes[1].lockstep, 0, m, n, 0), "a client taking its own input from outside", 0, 0);
     n = Put_Block(m, Put_Header(m, 1), 2, 0, 1);
     Check(CoopLockstep_Receive(&sNodes[1].lockstep, 0, m, n, 0), "a client refusing another's input from the host", 0, 0);
+    n = Put_Block(m, Put_Header(m, 1), 3, 0, 1);
+    Check(!CoopLockstep_Receive(&sNodes[1].lockstep, 0, m, n, 0), "a client taking a player who is not there", 0, 0);
+    n = Put_Block(m, Put_Header(m, 1), 200, 0, 1);
+    Check(!CoopLockstep_Receive(&sNodes[1].lockstep, 0, m, n, 0), "a client taking a player that cannot be", 0, 0);
 }
 
 typedef struct {

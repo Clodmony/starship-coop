@@ -6,7 +6,7 @@
     python tools/coop/lockstep_test.py --only steer,pause
     python tools/coop/lockstep_test.py --only full         # all of Corneria, about 10 minutes
     python tools/coop/lockstep_test.py --list
-    python tools/coop/lockstep_test.py --only release --feed <lockstep log> --release-exe <Starship>
+    python tools/coop/lockstep_test.py --only release,rates,audio,menu --feed <lockstep log of full> --release-exe <Starship>
 
 Every game gets a fresh folder under local/ with its own SHIP_HOME, plays a replay with no input so no controller reaches
 it, and takes its input from src/port/coop/test/lockstep_driver.h, which writes port 0 before the input layer reads the
@@ -19,6 +19,7 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   sim       src/port/coop/sync/lockstep.c alone, in a virtual network with loss, lag, reordering and duplicates, for two to
             four players (tools/coop/locksteptest).
   steer     each client flies its own player. Hashes equal, each game looks through its own player.
+  three     the same with three games, so that input goes through the host to the other client.
   control   the same run with SF64_COOP_TEST_NO_LOCKSTEP: it must differ, or this test says nothing.
   pause     Start on either client pauses both on the same frame, Start on either resumes.
   save      a host whose save has Corneria cleared presses Start in the level intro: no client skips it, as the skip reads
@@ -35,6 +36,7 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   frozen    a client stops dead (SIGSTOP): the session ends on the transport's timeout, and it can be thawed.
   menu      the whole way through the real menu, with real widgets.
   full      all of Corneria: pilots fly it live, one on each client, then plain runs repeat what they flew. Takes a while.
+  audio     the plain run with the two clients at different audio sample counts, as a radio line follows the sound thread.
   release   the plain run on a Release build (--release-exe), which has to hash as the Debug run did.
   rates     the plain run at real time, with the two clients at different gInterpolationFPS.
 
@@ -169,15 +171,17 @@ class Client(join_test.LevelLog):
         self.log.close()
 
 
-def session(args, folder, host_env=None, client_env=None, both=None, config=None, client_config=None, client_port=None):
-    """A host and a client through the join driver, on their way to a level. Returns them started."""
+def session(args, folder, host_env=None, client_env=None, both=None, config=None, client_config=None, client_port=None,
+            clients=1):
+    """A host and its clients through the join driver, on their way to a level. Returns them started: with one client as
+    (host, client), with more as (host, client, client, ...)."""
     folder.mkdir(parents=True, exist_ok=True)
     port_file = folder / "port"
     env = dict(both or {})
     env["SF64_COOP_TEST_START_SEEDS"] = SEEDS
-    host = Client(args, folder, "host", {**env, "SF64_COOP_JOIN_PORT_FILE": str(port_file), "SF64_COOP_JOIN_CLIENTS": "1",
-                                         "SF64_COOP_JOIN_LEVEL": "0", "SF64_COOP_JOIN_START_FRAME": str(START_FRAME),
-                                         **(host_env or {})})
+    host = Client(args, folder, "host", {**env, "SF64_COOP_JOIN_PORT_FILE": str(port_file),
+                                         "SF64_COOP_JOIN_CLIENTS": str(clients), "SF64_COOP_JOIN_LEVEL": "0",
+                                         "SF64_COOP_JOIN_START_FRAME": str(START_FRAME), **(host_env or {})})
     host.start(config)
     deadline = time.monotonic() + 180
     while not (port_file.exists() and port_file.read_text(encoding="utf-8").strip()):
@@ -186,10 +190,12 @@ def session(args, folder, host_env=None, client_env=None, both=None, config=None
     port = port_file.read_text(encoding="utf-8").strip()
     if client_port is not None:
         port = client_port(port)
-    client = Client(args, folder, "client0", {**env, "SF64_COOP_JOIN_CONNECT": f"127.0.0.1:{port}",
-                                              "SF64_COOP_JOIN_PICKS": "falco", **(client_env or {})})
-    client.start(client_config if client_config is not None else config)
-    return host, client
+    games = [host]
+    for n, pick in zip(range(clients), ("falco", "slippy", "peppy")):
+        games.append(Client(args, folder, f"client{n}", {**env, "SF64_COOP_JOIN_CONNECT": f"127.0.0.1:{port}",
+                                                         "SF64_COOP_JOIN_PICKS": pick, **(client_env or {})}))
+        games[-1].start(client_config if client_config is not None else config)
+    return tuple(games)
 
 
 def wait_for(games, word, seconds, what=None):
@@ -267,14 +273,24 @@ def run_short(args, folder, script=sway, frames=SHORT_FRAMES, host_env=None, cli
 
 # ---- Scenarios. Each returns the text for its summary line. ----
 
+def find_sim(build_dir, config):
+    """The test program of `sim`, in a build folder: a Visual Studio build puts it under the configuration."""
+    for path in (build_dir / "coop-lockstep-test" / "coop_lockstep_test",
+                 build_dir / "coop-lockstep-test" / config / "coop_lockstep_test.exe"):
+        if path.exists():
+            return path
+    return None
+
+
 def sc_sim(args, folder):
     folder.mkdir(parents=True, exist_ok=True)
-    build = replay_tool.ROOT / "build-cmake"
+    build = Path(args.build_dir).resolve() if args.build_dir else ROOT / "build-cmake"
     if not args.no_build:
-        done = subprocess.run(["cmake", "--build", str(build), "--target", "coop_lockstep_test"], capture_output=True,
-                              text=True)
+        done = subprocess.run(["cmake", "--build", str(build), "--config", args.config, "--target", "coop_lockstep_test"],
+                              capture_output=True, text=True)
         expect(done.returncode == 0, f"could not build coop_lockstep_test: {done.stdout[-400:]}")
-    program = build / "coop-lockstep-test" / "coop_lockstep_test"
+    program = find_sim(build, args.config)
+    expect(program is not None, f"no coop_lockstep_test in {build}")
     done = subprocess.run([str(program)], capture_output=True, text=True, timeout=300)
     (folder / "sim.log").write_text(done.stdout + done.stderr, encoding="utf-8")
     expect(done.returncode == 0, f"coop_lockstep_test failed: {done.stdout[-600:]}")
@@ -282,14 +298,36 @@ def sc_sim(args, folder):
 
 
 def sc_steer(args, folder):
-    host, client = run_short(args, folder)
+    # A PC whose first controller sits on port 1 reads team-wide input from there unless the level start says otherwise.
+    host, client = run_short(args, folder, client_env={"SF64_COOP_JOIN_MAIN_PORT": "1"})
     frames = compare(host, client, SHORT_FRAMES)
+    main = join_test.said(client.report(), "level_running")[0]["main"]
+    expect(main == "0", f"the client reads team-wide input from slot {main}")
     views = {name: {player for frame, player in view_of(game)} for name, game in (("host", host), ("client", client))}
     expect(1 in views["client"], f"the client never looked through player 1: {views['client']}")
     expect(views["host"] == {0}, f"the host looked through {views['host']}")
     moved = flown(client)
     expect(moved[0] > 500 and moved[1] > 500, f"a player did not fly: moved {moved}")
     return f"same hash on {frames} frames, moved {moved[0]:.0f} and {moved[1]:.0f}; {played(host)}, {played(client)}"
+
+
+def sc_three(args, folder):
+    """Client input that has to go through the host to reach the other client."""
+    folder.mkdir(parents=True, exist_ok=True)
+    feed = folder / "feed.txt"
+    write_feed(feed, SHORT_FRAMES + 16, sway)
+    games = session(args, folder, both={"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(SHORT_FRAMES)},
+                    clients=2)
+    try:
+        wait_for(list(games), "done", 900)
+    finally:
+        for game in games:
+            game.close()
+    host, a, b = games
+    equal = (compare(host, a, SHORT_FRAMES), compare(host, b, SHORT_FRAMES))
+    views = [{player for _, player in view_of(game)} for game in games]
+    expect(2 in views[2] and 1 in views[1] and views[0] == {0}, f"who looked through whom: {views}")
+    return f"three games: {equal[0]} frames equal, each looking through its own player"
 
 
 def sc_control(args, folder):
@@ -462,7 +500,8 @@ def relay(folder, target, profile):
     info = folder / "relay.json"
     proc = subprocess.Popen([sys.executable, "-I", str(ROOT / "tools" / "coop" / "chaos" / "chaos.py"), "relay",
                              "--target", f"127.0.0.1:{target}", "--profile", profile, "--seed", "20",
-                             "--info-file", str(info), "--log", str(folder / "packets.jsonl")])
+                             "--info-file", str(info), "--log", str(folder / "packets.jsonl")],
+                            stdout=subprocess.DEVNULL)
     deadline = time.monotonic() + 20
     while time.monotonic() < deadline:
         if info.exists() and info.read_text(encoding="utf-8"):
@@ -679,6 +718,14 @@ def sc_leave(args, folder):
         client.close()
 
 
+def sc_audio(args, folder):
+    """Radio lines follow the sound thread (#129), and how much a client renders per audio update is its own business."""
+    expect(args.feed, "needs --feed")
+    host, client = plain(args, folder, args.feed, args.feed_frames, host_env={"SF64_COOP_TEST_AUDIO_SAMPLES": "high"},
+                         client_env={"SF64_COOP_TEST_AUDIO_SAMPLES": "low"})
+    return f"high and low audio samples: {compare(host, client, args.feed_frames)} frames equal"
+
+
 def sc_release(args, folder):
     expect(args.feed and args.release_exe, "needs --feed and --release-exe")
     host, client = plain(args, folder, args.feed, args.feed_frames, exe=Path(args.release_exe).resolve())
@@ -701,6 +748,7 @@ def sc_rates(args, folder):
 SCENARIOS = {
     "sim": sc_sim,
     "steer": sc_steer,
+    "three": sc_three,
     "control": sc_control,
     "pause": sc_pause,
     "save": sc_save,
@@ -715,10 +763,11 @@ SCENARIOS = {
     "frozen": sc_frozen,
     "menu": sc_menu,
     "full": sc_full,
+    "audio": sc_audio,
     "release": sc_release,
     "rates": sc_rates,
 }
-LONG = ("full", "release", "rates")
+LONG = ("full", "audio", "release", "rates")
 
 
 def main():
@@ -728,6 +777,9 @@ def main():
     ap.add_argument("--only", help="scenarios, comma-separated")
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--no-build", action="store_true", help="do not build coop_lockstep_test")
+    ap.add_argument("--build-dir", help="where to find coop_lockstep_test (default: build-cmake)")
+    ap.add_argument("--config", default="Debug", help="for a build with several configurations")
+    ap.add_argument("--out", help="folder for the logs (default: a new one under local/)")
     ap.add_argument("--feed", help="a lockstep log of `full`, for the scenarios that repeat a flight")
     ap.add_argument("--level-seconds", type=float, default=2400, help="give up on a whole level after this long")
     ap.add_argument("--profiles", default="good_wifi", help="for `lag`: chaos relay profiles, comma-separated")
@@ -736,15 +788,16 @@ def main():
     if args.list:
         print("\n".join(SCENARIOS))
         return 0
-    args.exe = replay_tool.find_exe(args.exe)
     names = args.only.split(",") if args.only else [name for name in SCENARIOS if name not in LONG]
+    if names != ["sim"]:
+        args.exe = replay_tool.find_exe(args.exe)
     if args.feed:
         args.feed = Path(args.feed).resolve()
         args.feed_frames = len(args.feed.read_text(encoding="utf-8").splitlines())
     for name in names:
         if name not in SCENARIOS:
             sys.exit(f"lockstep: no scenario {name}")
-    root = replay_tool.ROOT / "local" / f"test-lockstep-{time.strftime('%Y%m%d-%H%M%S')}"
+    root = Path(args.out) if args.out else replay_tool.ROOT / "local" / f"test-lockstep-{time.strftime('%Y%m%d-%H%M%S')}"
     passed = 0
     for name in names:
         started = time.monotonic()
