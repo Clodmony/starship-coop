@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <libultra/gbi.h>
 #include <libultraship/luslog.h>
 
 #include "port/coop/game/players.h"
@@ -25,13 +26,19 @@ extern unsigned short samples_low;
 
 static int sSpeed = 1;
 static int sMostDraws = 0;
+static int sNoDraw = 0;
+static Gfx sNothingToDraw[] = { gsSPEndDisplayList() };
 
 int CoopTestSwitches_Speed(void) {
     return sSpeed;
 }
 
+Gfx* CoopTestSwitches_ListToDraw(Gfx* commands) {
+    return sNoDraw ? sNothingToDraw : commands;
+}
+
 void CoopTestSwitches_NoteDraws(int draws) {
-    if (draws > sMostDraws) {
+    if (!sNoDraw && (draws > sMostDraws)) {
         sMostDraws = draws;
     }
 }
@@ -68,8 +75,14 @@ void CoopTestSwitches_Init(void) {
     const char* noFma3 = getenv("SF64_COOP_TEST_NO_FMA3");
     const char* audioSamples = getenv("SF64_COOP_TEST_AUDIO_SAMPLES");
     const char* localIndex = getenv("SF64_COOP_TEST_LOCAL_INDEX");
+    const char* noDraw = getenv("SF64_COOP_TEST_NO_DRAW");
     const char* anyPlatform = getenv("SF64_COOP_TEST_ANY_PLATFORM");
     const char* noLockstep = getenv("SF64_COOP_TEST_NO_LOCKSTEP");
+
+    if (CoopTestSwitches_IsSet(noDraw)) {
+        sNoDraw = 1;
+        LUSLOG_INFO("coop: test no draw%s", "");
+    }
 
     if (CoopTestSwitches_IsSet(speed)) {
         sSpeed = (strcmp(speed, "max") == 0) ? SPEED_NO_LIMIT : atoi(speed);

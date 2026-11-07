@@ -93,7 +93,19 @@ def main():
         failures.append("tools/coop/run_folder_test.py failed:\n  "
                         + "\n  ".join((folders.stdout + folders.stderr).strip().splitlines()))
 
-    # 8. Single-player audit: the list must match the code, and the tool must still pass its own tests.
+    # 8. test_all.py: on made-up steps, an exit code of 0 must only ever mean that everything ran and passed.
+    runner = subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "coop" / "test_all_test.py")],
+                            cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
+    if runner.returncode != 0:
+        failures.append("tools/coop/test_all_test.py failed:\n  "
+                        + "\n  ".join((runner.stdout + runner.stderr).strip().splitlines()))
+
+    # 9. Build folders: libultraship's archives belong to one build folder, or a second config shares them.
+    cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+    if "add_subdirectory(libultraship ${CMAKE_CURRENT_BINARY_DIR}/libultraship)" not in cmake:
+        failures.append("CMakeLists.txt: libultraship must build in the build folder, not in the source tree (#147)")
+
+    # 10. Single-player audit: the list must match the code, and the tool must still pass its own tests.
     for args in (("sp_audit.py", "--check"), ("sp_audit_test.py",)):
         audit = run_tool(*args)
         lines = (audit.stdout + audit.stderr).strip().splitlines()

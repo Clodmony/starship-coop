@@ -26,6 +26,7 @@ unbroken run passed and every break was caught.
 import argparse
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -207,6 +208,7 @@ def restore_leftover(table):
 def main(description, make_table, add_options=None):
     ap = argparse.ArgumentParser(description=description)
     ap.add_argument("--only", help="comma separated break names")
+    ap.add_argument("--skip", default="", help="comma separated break names to leave out")
     ap.add_argument("--list", action="store_true", help="print the breaks and their scenarios, then stop")
     ap.add_argument("--check", action="store_true", help="only check that every pattern matches once; no build")
     ap.add_argument("--build-dir", type=Path, help="default: build/x64 on Windows, build-cmake elsewhere")
@@ -247,7 +249,9 @@ def main(description, make_table, add_options=None):
     rows = table.known if args.check else table.breaks
     all_names = [b[0] for b in rows]
     names = args.only.split(",") if args.only else all_names
-    unknown = [n for n in names if n not in all_names]
+    skipped = [n for n in args.skip.split(",") if n]
+    unknown = [n for n in [*names, *skipped] if n not in all_names]
+    names = [n for n in names if n not in skipped]
     if unknown:
         print(f"RESULT: FAILED, unknown break {', '.join(unknown)}; --list shows them")
         return 2
@@ -278,6 +282,8 @@ def main(description, make_table, add_options=None):
         print(line, flush=True)
         lines.append(line)
 
+    # A stop goes through the finally below, as SIGINT does, or the source keeps its break until the next run (#147).
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(1))
     try:
         # The unbroken source first: every scenario a break relies on must pass without it.
         tests = sorted({t for b in chosen for t in b[3]}, key=list(table.scenarios).index)

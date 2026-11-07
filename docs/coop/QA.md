@@ -66,6 +66,11 @@ number of clients, transport.
    `gInterpolationFPS`, which no handshake compares: 30 (no interpolated draw), 60, 120, 144 (not a multiple of the
    game's 30) and 360 (the top of the menu's slider). Vsync is off, because it clamps the rate without a word, and a run
    that did not log the draws its rate asks for fails (`# draws` lines in the log).
+   `python tools/coop/hash_check.py draw` (unattended, exit code 0 on `PASS`) plays the same two sections with and
+   without `SF64_COOP_TEST_NO_DRAW`, from each of the three starts below, and both must hash alike on every frame, with no
+   draws in one and draws in the other (#147). `python tools/coop/hash_check.py base --base <exe>` (unattended, exit code 0
+   on `PASS`) plays input by rule through the menus with co-op off on this build and on the build before a change, and they
+   must hash alike on every frame.
    `python tools/coop/view_check.py` (unattended, exit code 0 on `PASS`) plays the same two clients with buttons and
    pokes that give the two players different numbers, and checks what each one shows and hears from a view trace
    (`src/port/coop/test/view_trace.h`): camera, shield gauge, bomb counter, cockpit, hit flash, shield bar, sound, pause.
@@ -85,7 +90,7 @@ number of clients, transport.
    recorded frame. `--only opengl,no-fma3` picks variants.
    `python tools/coop/full_level.py` (#142, unattended, exit code 0 on `PASS`) is a whole level with 2 players: a pilot
    that reads game state (`src/port/coop/test/pilot.h`) flies Corneria from level start to the map once and writes a
-   replay, which two games then play with no pilot. `gCoopDebugPlayerCount` is the only CVar set, as there is no other
+   replay, which two games then play with no pilot, one of them drawing and one not (#147). `gCoopDebugPlayerCount` is the only CVar set, as there is no other
    way yet to have a second player without a session. Both must `PASS` every checkpoint, and their hash logs must equal
    each other's and the pilot's on every frame. A third game flips a bit of player 2 in all-range, and that must show at
    exactly its frame. Each run is one game: this says nothing about two clients.
@@ -122,6 +127,13 @@ number of clients, transport.
    `replay_test.py` shows for the first two. `builds` and `rates` keep it as well: frame interpolation first went wrong in
    the option menu (#141), and only they play it in Release and at many rates. A replay with checkpoints holds the frames it
    was made on, so it plays from where it was made, wherever the tool's own input by rule would start.
+   A test game does not draw either (`SF64_COOP_TEST_NO_DRAW`, #147): its draw code runs, as that is part of the
+   simulation, and the renderer gets an empty display list, while ImGui, the window, the swap and the frame limit go on.
+   A tool that needs pixels or interpolation asks for them (`DRAWN`, `REAL_TIME`), says why, and fails if it did not get
+   them: `determinism.py`, `hash_check.py builds` and `rates`, `exit_test.py`, `version_test.py`. `replay_test.py` shows
+   each of those fails without.
+   `python tools/coop/test_all.py` (#147, unattended) runs every test here in lanes, on a Debug build or with
+   `--config Release` on a Release build in a folder of its own. Exit code 0 only when every step ran and passed.
 3. **Two clients on one machine.** Two Starship processes with their own config, save and log folders (never the
    owner's), connected over loopback, both fed replays. `python tools/coop/join_test.py` (WP-24, unattended, exit code
    0 only when everything passed) takes two or three games from the lobby into a level through the scripted flow in

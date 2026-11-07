@@ -16,13 +16,15 @@ two machines running the same build, and compares every run's hash log with a ba
                                 audio rendered with a fixed sample count per update
                                 (SF64_COOP_TEST_AUDIO_SAMPLES, src/port/coop/test/switches.h)
                       no-fma3   C runtime math without FMA3 (SF64_COOP_TEST_NO_FMA3, Windows x64 only)
-                      speed     faster than real time, as every other test tool runs (SF64_COOP_TEST_SPEED, #137)
+                      speed     faster than real time (SF64_COOP_TEST_SPEED, #137), and drawing
+                      no-draw   as every other test tool runs: faster than real time, no drawing (#147)
 
-All but speed run in real time, which is what this tool compares: frame pacing and the audio device's fill level follow
-wall-clock time, and at test speed each game frame is drawn once and the audio buffer stays full, so those variants
-would no longer vary them. Frame interpolation only runs in real time too, and a bug there can reach the game state: a
-stack underflow in it corrupted the RNG seeds in Release (#141). So this tool stays the one that plays as a person
-does, and speed against base is interpolation off against on. replay_test.py fails if these games log a speed.
+All but speed and no-draw run in real time, which is what this tool compares: frame pacing and the audio device's fill
+level follow wall-clock time, and at test speed each game frame is drawn once and the audio buffer stays full, so those
+variants would no longer vary them. Frame interpolation only runs in real time too, and a bug there can reach the game
+state: a stack underflow in it corrupted the RNG seeds in Release (#141). So this tool stays the one that plays as a
+person does, and speed against base is interpolation off against on. replay_test.py fails if these games log a speed.
+A game that did not make the draws its variant asks for fails, whatever its hash says.
 
 Without a replay file it plays input by rule (hash_check.py, write_generated_replay). Such a replay has no checkpoints,
 so a run there only has to play through.
@@ -54,9 +56,12 @@ VARIANTS = {
     "audio-high": ({"SF64_COOP_TEST_AUDIO_SAMPLES": "high"}, None),
     "no-fma3": ({"SF64_COOP_TEST_NO_FMA3": "1"}, None),
     "speed": ({"SF64_COOP_TEST_SPEED": replay_tool.TEST_SPEED}, None),
+    "no-draw": ({"SF64_COOP_TEST_SPEED": replay_tool.TEST_SPEED,
+                 "SF64_COOP_TEST_NO_DRAW": replay_tool.NO_DRAW}, None),
 }
 if sys.platform != "win32":
     del VARIANTS["no-fma3"]
+SPEED_DRAWS = 1  # draws of a game frame at test speed, which has no frame interpolation
 WHOLE_PATH = (replay_tool.GS_TITLE, replay_tool.GS_MENU, replay_tool.GS_MAP)  # on the way to a level
 
 
@@ -79,6 +84,11 @@ def check(name, values, rows, base_rows, names, recorded, played):
     if rows is None:
         return [f"{name}: no hash log written"]
     failures = []
+    if name != "no-draw":
+        want = SPEED_DRAWS if name == "speed" else hash_check.INTERPOLATED
+        failures += hash_check.too_few_draws(name, (values,), want)
+    elif values and hash_check.read_draws(values["log"]):
+        failures.append(f"{name}: drew all the same")
     if not played(values):
         failures.append(f"{name}: replay did not pass: {values.get('result') if values else 'no report'}")
     if len(rows) < recorded:
@@ -118,6 +128,11 @@ def main():
         return 1
     if base_rows is None or not played(base_values):
         print(f"det: base run failed: {base_values.get('result') if base_values else 'no report'}")
+        print("det: FAIL")
+        return 1
+    no_draws = hash_check.too_few_draws("base", (base_values,))
+    if no_draws:
+        print(f"FAIL: {no_draws[0]}")
         print("det: FAIL")
         return 1
     recorded = int(base_values.get("recorded_frames", len(base_rows)))
