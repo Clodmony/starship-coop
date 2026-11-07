@@ -46,8 +46,13 @@ static bool Link_Send(int peer, uint16_t msgId, const void* data, uint16_t size,
     return (sMenu->session != NULL) && CoopSession_Send(sMenu->session, peer, msgId, data, size, lane);
 }
 
+// A frame that waits for input pumps the session from here, so this is a session tick too: without the driver's
+// tick a lockstep wait would read as a stall, though the other games hear from this one the whole time.
 static void Link_Pump(void) {
-    CoopMenu_Tick(sMenu, SDL_GetTicks());
+    uint32_t now = SDL_GetTicks();
+
+    CoopMenuDriver_Tick(now, sMenu->session != NULL);
+    CoopMenu_Tick(sMenu, now);
 }
 
 static void Link_Fail(const char* text) {
