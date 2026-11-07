@@ -2456,6 +2456,85 @@ Unknown:
 - Whether a free `gScenery360` slot is ever read: `fox_hud.c:2184` reads slot 0 without its status in Sector Y.
 - Windows and macOS: not run, on any start.
 
+### 2026-11-07, #21 (WP-23), desync detection and report
+
+Identity: ROM US 1.0, branch `issue/21-desync-report`, Linux, GCC, Debug and Release, OpenGL on a software renderer, no window,
+2 or 3 game clients, each in its own run folder, UDP over loopback, input delay 3 frames. One machine, Corneria only. The
+wire form is in PROTOCOL.md, section Desync check; `python tools/coop/lockstep_test.py --only desync_sim,desync,desync_control,desync_three`
+runs the checks named below, and `full`, `release` and `rates` the long ones.
+
+**What it is.** Every client hashes its state on every lockstep frame, before the frame runs: the same `CoopStateHash_Compute`
+the hash log writes, so a desync named here is a difference the test tools would show too. The totals of the last 10
+frames go to the games a client talks to in `SYNC_HASH`, on the reliable lane; the receiver compares them with its own.
+The first differing frame is the desync. Both sides of it send their hash of that frame region by region (`SYNC_DESYNC`),
+write a report into the game's own folder, tell the player, and end the session the way a lost player does
+(`src/port/coop/sync/desync.c`, `desync_game.c`, `desync_report.c`). Each game also keeps a dump of the last 64 frames'
+hashed bytes, in named chunks, so its report holds the state of that frame as hashed, and
+`tools/coop/desync_report.py diff` names the first value that differs between two reports.
+
+**Observed (runs)**
+
+| Run | Result |
+|---|---|
+| `desync`, rails | A bit of player 2's `pos.x` flipped on the client at frame 2000: both games named frame 2000, players 1 and 2, region `players`, and ended the session at frame 2009. `desync_report.py diff`: both dumps verified against their hashes; `players: gPlayer[1] differs in 1 of 1264 bytes, first at +116: b2 vs b3` |
+| `desync`, all-range | L at 1800 with `gDebugJumpToAllRange`, the bit flipped at 2400: named at 2400, `all-range` in the report and the text, same chunk and offset |
+| `full`, poke | The plain repeat of the pilots' flight with the bit flipped at 7394, in all-range: the hash logs first differ at 7394, both reports name 7394 and `players`, verified, `gPlayer[1]` at +116 |
+| `desync_three` | Player 3 flips the bit: the host and player 3 named players 1 and 3 and read the desync text; player 2's report has the host's hashes and `regions differing: none` |
+| `desync_control` | The same bit with `SF64_COOP_TEST_NO_DESYNC_CHECK=1` on both: hash logs differ from frame 2000 on, no report, no end, `done` at 2400 |
+| `full`, flight and plain | Pilot on each client to the map, 9394 frames equal, and the plain repeat equal to the flight: no report, no text |
+| `release --feed`, `rates --feed` | Two Release clients 9540 frames equal and equal to two Debug clients; 60 and 120 fps at real time equal: no report either |
+| `steer` to `menu` | The 15 short game scenarios of `lockstep_test.py`, with the check on in every session: all pass, no report, lag, a slow client, a stall and a frozen client included |
+| `desync_sim` | `desync.c` alone, 2 to 4 players, with lag, a peer 16 frames ahead, a peer that never answers, a far-away peer, messages that do not fit: 3385 checks. `desync_mutants.py`: 25 of 25 breaks caught |
+| Co-op off | One replay by rule, `flying`, one player, on a Debug build of `b69b193d` and on this branch: `no difference on the 1050 common frames`, every column |
+
+The report of the rails run, head: `player: 2 of 2, client`, both identity lines, `frame: 2000`, `pair: players 1 and 2`,
+`regions differing: players`, `frames checked: 2010, unchecked: 0`, both hash lines, and a dump of 396 chunks, 101586
+bytes; the file is about 210 KB.
+
+**Observed, the cost.** A frame's hash and dump is FNV-1a over about 101,600 bytes plus a copy of them: 396 chunks for
+2 players in Corneria. On this PC, loaded, that is 180 to 240 µs a frame measured on its own, under 1 % of a game frame at
+30 a second. The ring of 64 dumps takes about 8 MB, allocated when lockstep starts and freed with the session.
+
+**Derived**
+
+- Hash per frame, send every 10: the decision asks for a hash per frame and the frame number of the desync, and the
+  message, not the hash, is the cost. One `SYNC_HASH` a frame would double lockstep's datagram rate for 8 bytes; a batch
+  every 10 frames is one datagram, and a desync is still named within a third of a second plus a round trip. The ring
+  has to hold what the slowest client can still ask about: a peer is at most `COOP_LOCKSTEP_MAX_DELAY` frames ahead when
+  its batch leaves, plus the batch, plus a resend or two, so 64.
+- A frame the receiver has not run yet waits in the message: lockstep lets a peer run ahead by the input delay, so a
+  batch can name frames this game reaches a moment later. A frame it no longer holds counts as unchecked and never as a
+  desync: no false alarm from a slow link, only a gap the report counts.
+- Both sides find the desync by themselves, from each other's batches, so a report exists on both even if the other
+  side's `SYNC_DESYNC` is lost; the regions then read `unknown`. A game outside the pair waits the grace out before
+  it ends, or the host would see it leave before the pair had exchanged. A session that ends for another reason while a
+  desync is found still writes its report.
+- The dump holds exactly the bytes the hash saw, pointers normalised, and the tool recomputes every region hash from it
+  before it compares, so a report cannot claim a state it did not hash.
+- The frame named is the lockstep frame: 0 is the first frame in `PLAY_UPDATE`, as the lockstep log and
+  `lockstep_test.py`'s level rows count, so a poke at feed frame F shows as frame F.
+
+**Choices the owner can reverse** (from the brief or this code; not decided in a record)
+
+- **After a desync the session ends**, with the text above, the level going on in each game alone. Smallest honest
+  behaviour: there is no repair until host correction (decision 0002, option C) exists, and playing on would have each
+  player in a different game that looks like one. Alternatives: play on with a warning, or build C.
+- `COOP_DESYNC_PERIOD` 10 frames, `COOP_DESYNC_RING` 64, `COOP_DESYNC_GRACE_MS` 1000.
+- The report is a text file with the dump in hex, about 210 KB, in the game's own folder, named by frame and player.
+
+**Observed, a game outside the pair.** In `desync_three` the host and player 3 read the desync text and ended within
+9 frames of the flipped bit. Player 2, in step with the host, waits the grace out, and the host closed first: it read
+`The other player closed the connection.`, and its report, with the host's hashes and `regions differing: none`, was
+written as the session went away. That is why the identity lines are taken when lockstep starts: the first run of it
+had `other game: unknown` there.
+
+**Unknown**
+
+- Two machines, real latency, Windows: every run here is one PC over loopback.
+- Anything beyond Corneria, and a desync that is not a flipped bit of a player: no real desync has been seen yet.
+- What a report looks like for a difference in `scenery360` or in a free actor slot: the chunk names say where, not what
+  the field is called.
+
 ### 2026-11-05, #8 (WP-10), player count apart from camera count
 
 Observed:

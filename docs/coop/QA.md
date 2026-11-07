@@ -73,6 +73,10 @@ number of clients, transport.
    read back from OpenGL, and such pictures are game art, so they stay local and are deleted after reading.
    `python tools/coop/hash_check.py diff <a> <b>` compares every column of the two logs, names the first differing
    frame and the regions that differ there. It compares the common frames: read its first line for the two lengths.
+   `python tools/coop/desync_report.py diff <a> <b>` (WP-23) does the same for two desync reports, the files a game
+   writes into its own folder when two clients went out of step (`docs/coop/PROTOCOL.md`, Desync check): it checks each
+   dump against the region hashes in its header, then names the regions that differ and the first value that does, by
+   chunk and byte offset. `show <report>` prints one report's header and what its dump holds.
    `python tools/coop/replay.py play <replay> --hash-log` writes a log next to an ordinary playback.
    `python tools/coop/determinism.py <replay>` (WP-02, unattended, exit code 0 on `PASS`) plays the replay once alone
    and then six more times at once, each under a condition that can differ between machines: graphics backend,
@@ -134,6 +138,13 @@ number of clients, transport.
    and flips a bit on one client, which must show at exactly its frame. Its log feeds `--only menu,release,rates,audio
    --feed <log>`: the same flight through the real menu, on a Release build, and with the clients at different
    `gInterpolationFPS` or audio sample counts.
+   The desync check (WP-23) is tested there too: `desync_sim` is `desync.c` alone in a virtual network
+   (`tools/coop/desynctest`), and `python tools/coop/desync_mutants.py` shows that can fail. `desync` flips a bit of
+   player 2 on one client, on rails and in all-range: both games must write a report naming that frame, the pair and
+   the region `players`, end the session within a few frames with the text for the player, and `desync_report.py diff`
+   on the two reports must name `gPlayer[1]`. `desync_three` does it with a third game that stays in step, and
+   `desync_control` with `SF64_COOP_TEST_NO_DESYNC_CHECK`: the hashes differ and nobody says so. The poke in `full`
+   is checked the same way, and every scenario that compares two games also checks that neither wrote a report.
 4. **Network conditions (WP-27).** Lag, loss and reordering between the clients with a chaos relay, as in the hub's
    [network chaos testing](https://github.com/cranebeaker/coop-anything/blob/main/playbook/network-chaos-testing.md).
    The transport on its own already runs through that relay: `python tools/coop/net_test.py` (WP-20), which needs a
