@@ -2980,6 +2980,47 @@ Read at `95962d04` (origin/coop).
 - AddressSanitizer knows allocations, not fields, so an overrun from one `TxSlot` or `RxSlot` into its neighbour stays
   inside `CoopNetCore` and goes unseen. Not tested.
 
+### 2026-11-06, #91, the audit and its test inside check.py
+
+Read at `797c678b` (origin/coop). Python only, no game run. Results come from `check.py`, `sp_audit.py` and
+`sp_audit_test.py` on depth 1 clones without submodules, with temporary changes that were not kept.
+
+**Observed**
+
+- `check.py` took 0.24 s of CPU before and 6.26 s after, the median of 6 runs each, taken in turn so both saw the same
+  load. Wall time was 1.74 s and 33.86 s, on a machine with far more jobs running than it has cores.
+- `sp_audit_test.py` with `GIT_DIR` and `GIT_INDEX_FILE` set, as git does for a hook, printed `PASS`, exited 0 and
+  staged 783 paths in the outer repository's index. Its `git add .` follows those variables out of its own folder. It
+  now clears every `GIT_` variable, and the same run leaves the index empty.
+- What `sp_audit.py` does on the real tree after each kind of change a sync brings:
+
+| Change | Plain rerun | `--accept` |
+|---|---|---|
+| A site line moved | exit 0, list rewritten | not needed |
+| One site more in a function with a row | exit 1, writes nothing | exit 0 |
+| A new function, no row | exit 1, writes nothing | exit 1, list written, `no verdict` stays until the row is there |
+| The same, row added first | not tried | exit 0 |
+| A row with no sites left | exit 1, list written, `matches no site` | not tried; deleting the row and rerunning gives exit 0 |
+
+- A tracked file deleted but not committed makes `sp_audit.py` stop with a `FileNotFoundError` traceback
+  (`tools/coop/sp_audit.py:83`), so `check.py` and a local build fail on it too.
+- The `coop` ruleset requires `Co-op checks` and does not require a branch to be up to date
+  (`.github/rulesets/coop.json:18`).
+
+**Derived**
+
+- The audit is now a merge gate: `Co-op build` was not required, `Co-op checks` is. Two PRs that each pass alone can
+  leave `coop` stale when both merge, for example one moving a site line and one regenerating the list before it. Every
+  PR then fails `Co-op checks`, docs-only ones too, until the list is regenerated.
+- After an upstream sync the audit has to come before the build. `build.py` ends in `check.py`, so a sync text that
+  builds first stops there on a stale list.
+
+**Unknown**
+
+- How long `check.py` takes in CI and on an idle machine.
+- Whether `check.py` passes on Windows: this work ran neither audit tool there, and the Windows CI job builds with
+  `--no-check`. Local Windows builds do run it.
+
 ### 2026-11-06, #55, what the session tests can and cannot see
 
 Read at `a69c811a` (origin/coop).
