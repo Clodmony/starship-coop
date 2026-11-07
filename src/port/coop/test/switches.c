@@ -10,6 +10,7 @@
 #include <libultraship/luslog.h>
 
 #include "port/coop/game/players.h"
+#include "port/coop/session/session.h"
 
 // Sample counts per audio update, chosen each update from the output device's fill level
 // (src/port/Engine.cpp:363-364, :387-388).
@@ -24,6 +25,7 @@ void CoopTestSwitches_Init(void) {
     const char* noFma3 = getenv("SF64_COOP_TEST_NO_FMA3");
     const char* audioSamples = getenv("SF64_COOP_TEST_AUDIO_SAMPLES");
     const char* localIndex = getenv("SF64_COOP_TEST_LOCAL_INDEX");
+    const char* anyPlatform = getenv("SF64_COOP_TEST_ANY_PLATFORM");
 
     if (CoopTestSwitches_IsSet(noFma3)) {
 #if defined(_MSC_VER) && defined(_M_X64)
@@ -50,6 +52,13 @@ void CoopTestSwitches_Init(void) {
         CoopPlayers_SetLocalIndex(atoi(localIndex));
         LUSLOG_INFO("coop: test switch: local player index %d", atoi(localIndex));
     }
+
+#ifdef USE_NETWORKING
+    if (CoopTestSwitches_IsSet(anyPlatform)) {
+        CoopSession_AnyPlatform(true);
+        LUSLOG_INFO("coop: test switch: this host lets a client of another platform in%s", "");
+    }
+#endif
 
     CoopTeamTrace_Init(); // no-op unless SF64_COOP_TEAM_* is set (#89)
 }
