@@ -45,6 +45,9 @@ typedef struct {
 // Hash the current game state. Safe to call at any time; usable without the log (for WP-02, WP-22, WP-23).
 void CoopStateHash_Compute(CoopStateHash* out);
 
+// Test only: the poke of SF64_COOP_HASH_POKE on the frame now starting, for a frame only the caller can name.
+void CoopStateHash_PokeNow(void);
+
 // Name of a region as written in the log header.
 const char* CoopStateHash_RegionName(CoopHashRegion region);
 

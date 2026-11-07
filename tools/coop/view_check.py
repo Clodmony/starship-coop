@@ -27,8 +27,9 @@ Rules, on the frames they talk about:
                   the player is parked
   sound-source    all-range: a client's own player sounds from in front of its camera
   player-down     all-range: when player 1 goes down its client looks through player 0, and its engine is off
-  pause           pause is part of the shared game: player 0's pad pauses both clients on the same frames, player 1's
-                  pad pauses neither
+  pause           pause is part of the shared game, and any player can: player 1's Start pauses both clients on the
+                  same frames and player 0's resumes, then player 0's Start pauses, player 1's B does nothing, as the
+                  pause menu stays player 0's, and its B resumes
   hash            both clients played one game, pokes and all
 
 Exit code 0 on PASS, 1 otherwise.
@@ -69,9 +70,13 @@ HIT_LOW = ACTIVE + 770
 FLASH_FRAMES = 20
 BOMB_STEP_FRAMES = 3
 BESIDE_CAMERA = 0.05
-PRESS_P1_START = ACTIVE + 800  # must do nothing
-PRESS_P0_START = ACTIVE + 830
+PRESS_P1_START = ACTIVE + 800  # pauses both clients
+PRESS_P0_START = ACTIVE + 830  # resumes: Start works for any player, both ways
+PRESS_P0_PAUSE = ACTIVE + 845
+PRESS_P1_MENU = ACTIVE + 855  # B, in the pause menu: must do nothing
 PRESS_P0_RESUME = ACTIVE + 870  # B, in the pause menu
+PAUSE_SPANS = 2
+PAUSE_MIN_ROWS = 15
 ALL_RANGE_NUMBERS = 2300  # both players fly all-range by then
 ALL_RANGE_DOWN = 3060  # player 1 is ACTIVE here; a U-turn has no down check
 
@@ -320,11 +325,24 @@ def rule_player_down(clients):
     return good, f"{len(after) - len(wrong)} of {len(after)} frames after the poke: out, looks through player 0, engine off"
 
 
+def pause_spans(client):
+    """How many rows each pause of a client lasted, in order."""
+    spans = []
+    last = False
+    for row in client.rows:
+        if row.paused:
+            if not last:
+                spans.append(0)
+            spans[-1] += 1
+        last = row.paused
+    return spans
+
+
 def rule_pause(clients):
-    counts = [sum(1 for row in client.rows if row.paused) for client in clients]
-    early = [sum(1 for row in client.rows if row.paused and row.frame < PRESS_P0_START - 2) for client in clients]
-    good = counts[0] >= 20 and counts[0] == counts[1] and not any(early)
-    return good, f"paused rows on client 0 and 1: {counts[0]}, {counts[1]}; before player 0's press: {early[0]}, {early[1]}"
+    spans = [pause_spans(client) for client in clients]
+    early = [sum(1 for row in client.rows if row.paused and row.frame < PRESS_P1_START - 2) for client in clients]
+    good = (len(spans[0]) == PAUSE_SPANS and spans[0] == spans[1] and min(spans[0]) >= PAUSE_MIN_ROWS and not any(early))
+    return good, f"paused rows per pause on client 0 and 1: {spans[0]}, {spans[1]}; before the first press: {early[0]}, {early[1]}"
 
 
 RULES = {
@@ -359,9 +377,9 @@ def extra_buttons(frame, pad):
     level = frame - LEVEL_START
     if pad == 1 and level in PRESS_P1_VIEW or pad == 0 and level in PRESS_P0_VIEW:
         return BUTTON_C_UP
-    if pad == 1 and level == PRESS_P1_START or pad == 0 and level == PRESS_P0_START:
+    if pad == 1 and level == PRESS_P1_START or pad == 0 and level in (PRESS_P0_START, PRESS_P0_PAUSE):
         return BUTTON_START
-    if pad == 0 and level == PRESS_P0_RESUME:
+    if pad == 0 and level == PRESS_P0_RESUME or pad == 1 and level == PRESS_P1_MENU:
         return BUTTON_B
     return 0
 

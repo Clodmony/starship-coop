@@ -3,7 +3,7 @@
 // Message ids and the protocol version. The registry and the wire layout are in docs/coop/PROTOCOL.md.
 
 // Bump whenever a message layout changes (PROTOCOL.md rule 2).
-#define COOP_PROTOCOL_VERSION 4
+#define COOP_PROTOCOL_VERSION 5
 
 typedef enum {
     // Transport. These never reach the layers above it.
@@ -29,6 +29,9 @@ typedef enum {
     // Level start (WP-24): everyone into the same level from the same state.
     COOP_MSG_SESSION_LEVEL_START = 0x0016,
     COOP_MSG_SESSION_END = 0x0040,
+
+    // Lockstep (WP-22): frame-stamped inputs between all clients.
+    COOP_MSG_SYNC_INPUT = 0x0040,
 
     // Debug and test harness.
     COOP_MSG_TEST_RELIABLE = 0x00C0,

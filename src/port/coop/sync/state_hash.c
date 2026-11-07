@@ -646,6 +646,10 @@ static void CoopStateHash_OnGamePreUpdate(IEvent* event) {
     sFrame++;
 }
 
+void CoopStateHash_PokeNow(void) {
+    sPokeFrame = sFrame;
+}
+
 static void CoopStateHash_OnExit(void) {
     if (sLog != NULL) {
         fprintf(sLog, "# end frames=%u\n", sFrame);

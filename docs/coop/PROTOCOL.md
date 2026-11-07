@@ -1,7 +1,7 @@
 # Wire protocol
 
-Status: the transport (WP-20), the session handshake (WP-21), the characters (WP-34) and the level start (WP-24) exist;
-`COOP_PROTOCOL_VERSION` is 4. Sync and game messages come with their work packages. This
+Status: the transport (WP-20), the session handshake (WP-21), the characters (WP-34), the level start (WP-24) and
+lockstep (WP-22) exist; `COOP_PROTOCOL_VERSION` is 5. Other sync and game messages come with their work packages. This
 page sets the rules so parallel work does not collide.
 
 ## Rules
@@ -202,14 +202,72 @@ in `src/port/coop/session/session.c`; what the values are is in `src/port/coop/g
 | 4 | Roster, as in Characters |
 | 4 v | The values, each a little-endian 32-bit integer, in the order of the table in `level_start.c`: `COOP_LEVEL_START_VALUES`, 87 now |
 
-Each game goes to the level by itself, as soon as it hears: no frame is shared yet, so the games are not in step. That
-is WP-22, whose first frame will be what holds them together.
+Each game goes to the level by itself, as soon as it hears, and what holds them together from there on is the first
+frame of lockstep, below.
 
 What does not fit, as before:
 
 - A second level start, one before the welcome, and one from a client are dropped and counted (`CoopSession_Ignored`).
 - A client ends with `BAD_MESSAGE` on a level start of another size, with a level of 20 or more, with a roster that
   `SESSION_ROSTER` could not hold, or with value 1 anywhere in the roster.
+
+## Lockstep
+
+[Decision 0002](decisions/0002-sync-model.md): every client runs the whole game, and only inputs travel. The code is
+`src/port/coop/sync/lockstep.c`, and `lockstep_game.c` connects it to the game. A session of one player has no lockstep.
+
+**Frames.** Frame 0 is the first frame in `PLAY_UPDATE` after a level start, on every client. From then on every game
+frame is a lockstep frame, on the map too, until the session ends. Frame F runs on a client once it holds every
+player's input for F. Without them nothing of the frame runs, no game frame and no audio frame, and the last frame is
+drawn again so the window stays alive. Each client counts by itself; no message says what frame anyone is on.
+
+**Input.** What a client's local controller did on its frame F is that player's input for frame F + delay. The delay is
+`COOP_LOCKSTEP_INPUT_DELAY`, 3 frames, 100 ms at the game's 30 frames a second, and fixed for a session. A player's first
+`delay` frames are empty and go out like all others, so nobody runs frame 0 before everyone has reached it. An input is
+the pair the sender's player used, as in `src/port/coop/game/input.h`: `hold` and `press`.
+
+**Who sends what.** Clients only talk to the host. A client sends its own frames, and the host passes each player's frames
+on to everyone else, so the host's own input takes one hop and another client's takes two.
+
+`SYNC_INPUT` goes on the unreliable lane, because a resend timer would hold every frame behind a lost datagram. Each
+message repeats everything the other end has not confirmed. It goes out once per frame and when something new came in
+for another client, and at least every `COOP_LOCKSTEP_RESEND_MS`, 30 ms, also while a frame waits.
+
+| Size | Field |
+|---|---|
+| 4 x 4 | For each of the 4 players, the first frame the sender does not hold: this confirms everything before it |
+| 1 | Blocks b |
+| b x | Block: u8 player, u32 first frame, u8 count c (1 to 32), then c frames |
+
+A frame is 8 bytes, hold then press, each as u16 buttons and s8 stick x and y. All numbers are little-endian. A receiver
+keeps what it lacks and skips what it holds, so a block may overlap what came before, and a repeated or late datagram
+changes nothing.
+
+**Pause.** Any player can pause, by the owner's decision on #12. There is no message of its own: a pause is a Start press
+in `SYNC_INPUT`, and that already reaches everyone stamped with its frame. Every client tests every player's press on that
+frame (`CoopPlayers_PausePressed`), so all of them pause on the same frame, and Start from any player resumes on one. A
+message apart from the input would need its own way of agreeing on a frame. What the pause menu does next stays on player
+0: its cursor reads player 0's pad, as do retry and quit. The other team-wide inputs stay on player 0 too.
+
+**End.** Every frame needs every player, so a session ends for everyone when one player goes. The level goes on in each
+game, with the local player on its controller and the others idle: that is the choice `Leave` already had (#126).
+
+- A client that leaves or times out: the host ends the session, and says who left.
+- The host that leaves or times out: the client sees the session end.
+- `COOP_LOCKSTEP_STALL_MS`, 10000 ms, with no frame and no input from a player, on a connection that stays up: whoever
+  notices ends the session and names that player. Before frame 0 it is `COOP_LOCKSTEP_START_MS`, 60000 ms, as a slow PC
+  may still be loading.
+- The player reads why in the co-op window, which comes up by itself. So it does while a frame has waited for more than
+  a second.
+
+What does not fit:
+
+- `SYNC_INPUT` of the wrong size, for a player who is not in the level, from a client for anyone but itself, to a client for
+  itself, with a count of 0 or above 32, with a gap, or reaching further than `COOP_LOCKSTEP_RING` frames ahead of the
+  frame that runs next: the receiver ends the session.
+- Before this game has reached frame 0, a `SYNC_INPUT` is dropped, and it comes again.
+
+Comparing state hashes between clients is WP-23, and rollback is under "Later" in ROADMAP.md.
 
 ## Id ranges
 
@@ -240,6 +298,7 @@ What does not fit, as before:
 | 0x0014 | `SESSION_PICK_REFUSE` | host to client | u8 character asked for (2 to 5). The only reason is that someone else holds it. | WP-34 |
 | 0x0015 | `SESSION_ROSTER` | host to client | u8 for each of the 4 players, see Characters | WP-34 |
 | 0x0016 | `SESSION_LEVEL_START` | host to client | level, phase, roster and values, see Level start | WP-24 |
+| 0x0040 | `SYNC_INPUT` | both | frames of each player, see Lockstep | WP-22 |
 | 0x00C0 | `TEST_RELIABLE` | both | test pattern, only sent by `coop_net_test` | WP-20 |
 | 0x00C1 | `TEST_UNRELIABLE` | both | test pattern, only sent by `coop_net_test` | WP-20 |
 | 0x00C2 | `TEST_DONE` | both | none, only sent by `coop_net_test` | WP-20 |

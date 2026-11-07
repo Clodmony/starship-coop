@@ -277,8 +277,25 @@ static uint16_t Sim_Port(CoopTransport* t) {
     return sNet.lastPort != 0 ? sNet.lastPort : SIM_PORT;
 }
 
-static const CoopMenuBackend sSimBackend = { Sim_Host,       Sim_Connect, Sim_Port,     Id_Test,
-                                             Level_FromGame, Level_Enter, Session_Ended };
+static void Sync_Message(int peer, uint16_t msgId, const uint8_t* data, uint16_t size) {
+    (void) peer;
+    (void) msgId;
+    (void) data;
+    (void) size;
+}
+
+// In the game this says how long a frame has waited for a player. Here the tests decide.
+static uint32_t sWaitingMs = 0;
+static int32_t sWaitingFor = 0;
+
+static uint32_t Sync_Waiting(int32_t* player) {
+    *player = sWaitingFor;
+    return sWaitingMs;
+}
+
+static const CoopMenuBackend sSimBackend = { Sim_Host,       Sim_Connect, Sim_Port,      Id_Test,
+                                             Level_FromGame, Level_Enter, Session_Ended, Sync_Message,
+                                             Sync_Waiting };
 
 static void Sim_Reset(uint32_t latencyMs) {
     int n;
@@ -1187,7 +1204,8 @@ static int Run_Sim(void) {
 // ---- Real UDP ----
 
 static const CoopMenuBackend sUdpBackend = { CoopNetSdl_Host, CoopNetSdl_Connect, CoopNetSdl_Port, Id_Test,
-                                             Level_FromGame,  Level_Enter,        Session_Ended };
+                                             Level_FromGame,  Level_Enter,        Session_Ended,   Sync_Message,
+                                             Sync_Waiting };
 
 typedef bool (*Until)(void);
 

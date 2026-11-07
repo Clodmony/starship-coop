@@ -99,7 +99,9 @@ class Game(LevelLog):
         self.report_path = folder / f"{name}.report"
         replay = folder / f"{name}.sfcr"
         write_replay(replay, frames, SEEDS[name], press_until)
-        env = {**env, "SF64_COOP_JOIN_REPORT": str(self.report_path)}
+        # The report keeps port 0 empty in the level (lockstep_driver.h), so that no pad on this PC reaches a game.
+        env = {**env, "SF64_COOP_JOIN_REPORT": str(self.report_path),
+               "SF64_COOP_LOCKSTEP_REPORT": str(folder / f"{name}.lockstep")}
         self.run = None
         self.thread = threading.Thread(target=self.play, args=(replay, exe, frames, env))
 

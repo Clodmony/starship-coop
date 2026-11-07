@@ -7205,7 +7205,8 @@ void Play_Main(void) {
                 Play_Update();
             }
 
-            if ((gControllerPress[gMainController].button & START_BUTTON) &&
+            // COOP: not in co-op, as the save is each client's own and would part them (#20)
+            if (!CoopPlayers_IsCoop() && (gControllerPress[gMainController].button & START_BUTTON) &&
                 (gPlayer[0].state == PLAYERSTATE_LEVEL_INTRO) &&
                 gSaveFile.save.data.planet[sSaveSlotFromLevel[gCurrentLevel]].normalClear) {
                 Audio_ClearVoice();
@@ -7228,7 +7229,7 @@ void Play_Main(void) {
                 Versus_Main();
             }
 
-            if ((gControllerPress[gMainController].button & START_BUTTON) && gPauseEnabled) {
+            if (CoopPlayers_PausePressed() && gPauseEnabled) { // COOP: any player can pause (#20)
                 Audio_PlayPauseSfx(1);
                 gPlayState = PLAY_PAUSE;
                 D_ctx_80177868 = 4;
@@ -7258,7 +7259,7 @@ void Play_Main(void) {
                 }
             }
 
-            if ((D_ctx_80177868 == 4) && (gControllerPress[gMainController].button & START_BUTTON) && gPauseEnabled) {
+            if ((D_ctx_80177868 == 4) && CoopPlayers_PausePressed() && gPauseEnabled) { // COOP: any player (#20)
                 Audio_PlayPauseSfx(0);
                 gPlayState = PLAY_UPDATE;
                 gDrawMode = DRAW_PLAY;

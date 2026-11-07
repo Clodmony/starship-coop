@@ -115,6 +115,7 @@ void CoopLevelStart_Enter(const CoopLevelStart* start) {
         }
     }
     CoopPlayers_SetRoster(start->roster);
+    gMainController = 0; // team-wide input is player 0's slot on every client, whichever port this PC's title found
 
     // The way the game itself changes level from anywhere (src/overlays/ovl_i3/fox_a6.c:2927): Game_SetGameState clears
     // the objects, sets up the level and lands in PLAY_STANDBY on this frame, so both ends of a session go the same way
