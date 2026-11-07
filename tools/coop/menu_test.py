@@ -374,7 +374,7 @@ def in_level(game):
 
 def frames_logged(game):
     with open(game.run / "state-hash.txt", "rb") as f:
-        return sum(1 for _ in f)
+        return sum(1 for line in f if not line.startswith(b"#"))  # the log holds notes too, such as "# draws"
 
 
 def open_windows(games):

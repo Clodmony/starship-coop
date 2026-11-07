@@ -317,32 +317,32 @@ Basis per site: read 221, site 1041, name 642.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Play_InitEnvironment` | 583:P0 | view | site | kills a sound on player 0 source |
-| `Player_CollisionCheck` | 1838:CC, 2263:CC | setup | site | gCamCount != 1 and == 4 mean versus (mercy rules, player-vs-player hits); a co-op gCamCount of 2 would turn half of this on |
-| `Player_CollisionCheck` | 2177:P0 | view | site | warp ring sound played on player 0 source |
-| `Player_CollisionCheck` | 2191:SH | ok | site | dmgSource through CoopPlayers_DmgSource since #86 |
-| `Player_FloorCheck` | 2398:CC, 2413:CC | setup | site | gCamCount == 1 / != 1 as versus flag |
-| `Play_Init` | 2929:CC, 2932:CC | setup | read | sets gCamCount 1 (4 in versus), then CoopPlayers_LevelInit; since WP-10 CoopPlayers_Count() sizes the player allocation, the clear (Player_InitializeAll) and the init loop |
-| `Play_Init` | 2951:PA | setup | read | MEM_ARRAY_ALLOCATE(gPlayer, CoopPlayers_Count()): allocates every player, nothing to do |
-| `Player_SetupArwingShot` | 3091:SH | ok | site | writes player->num |
-| `Player_SetupTankShot` | 3141:SH | ok | site | writes player->num |
-| `Player_SetupOnFootShot` | 3291:SH | ok | site | writes player->num |
-| `Player_CanLockOn` | 3319:CC | setup | site | loops gCamCount players |
-| `Player_UpdateLockOn` | 3432:CC | setup | site | loops gCamCount players |
-| `Player_CheckBounds360` | 3697:CC | setup | read | gCamCount != 1 as versus flag: wraps the arena at 12000 |
-| `Player_Setup` | 4937:CC | setup | site | gCamCount == gPlayerNum + 1: HUD and hit counters reset only when the last player is set up |
-| `Player_UpdateTankJets` | 5477:CC, 5481:CC | setup | site | gCamCount == 1 as "not versus" for jet effects |
-| `Player_UpdateEffects` | 5523:CC | setup | site | loops gCamCount players |
-| `Player_Update` | 5901:MC, 5902:MC, 5903:MC | ok | read | with co-op off; in co-op CoopPlayers_SelectInput points at the player's own slot right after (WP-14) |
-| `Player_Update` | 6139:CC | setup | site | gCamCount == 4: down in versus goes to VS_STANDBY, else fade out and restart level |
-| `Player_Update` | 6149:P0, 6218:P0 | flow | site | death restart resets gPlayer[0].zPath and path progress; boost check reads player 0 state for every player |
-| `Camera_SetStarfieldPos` | 6647:P0, 6659:P0 | view | site | starfield from player 0 camera |
-| `Camera_SetupLights` | 6742:P0 | view | site | lights depend on player 0 state |
-| `Play_UpdateLevel` | 6872:P0, 6873:P0, 6874:P0, 6875:P0, 6876:P0, 6889:P0, 6890:P0, 6905:P0, 6914:P0, 6915:P0, 6940:P0, 6945:P0, 6948:P0, 6951:P0, 6954:P0, 6957:P0, 6960:P0, 6970:P0, 6972:P0, 6974:P0, 6975:P0, 6977:P0, 6978:P0, 6980:P0, 6986:P0, 6990:P0, 6992:P0, 6998:P0, 7008:P0, 7014:P0, 7015:P0 | flow | site | per-level triggers on player 0: level complete, warp zone, Solar heat damage to player 0 only, Venom 2 / Aquas checks |
-| `Play_UpdateLevel` | 6877:PA | flow | site | Camera_Update360 for player 0 as Venom 2 ends: level complete is one player's (WP-16) |
-| `Play_Main` | 7168:P0, 7169:P0, 7171:P0, 7172:P0, 7173:P0, 7210:P0, 7242:P0, 7243:P0 | flow | site | all-range z setup for player 0 only |
-| `Play_Main` | 7209:MC, 7242:MC | input | site | Start (intro skip, pause, unpause) and R while paused (toggles gShowReticles[0], no radio here) are read from gMainController only; versus reads R per controller |
-| `Play_Main` | 7222:CC | setup | site | intro skip resets gCamCount to 1; its sound cleanup loop is on CoopPlayers_Count() since WP-10 |
+| `Play_InitEnvironment` | 584:P0 | view | site | kills a sound on player 0 source |
+| `Player_CollisionCheck` | 1839:CC, 2264:CC | setup | site | gCamCount != 1 and == 4 mean versus (mercy rules, player-vs-player hits); a co-op gCamCount of 2 would turn half of this on |
+| `Player_CollisionCheck` | 2178:P0 | view | site | warp ring sound played on player 0 source |
+| `Player_CollisionCheck` | 2192:SH | ok | site | dmgSource through CoopPlayers_DmgSource since #86 |
+| `Player_FloorCheck` | 2399:CC, 2414:CC | setup | site | gCamCount == 1 / != 1 as versus flag |
+| `Play_Init` | 2930:CC, 2933:CC | setup | read | sets gCamCount 1 (4 in versus), then CoopPlayers_LevelInit; since WP-10 CoopPlayers_Count() sizes the player allocation, the clear (Player_InitializeAll) and the init loop |
+| `Play_Init` | 2952:PA | setup | read | MEM_ARRAY_ALLOCATE(gPlayer, CoopPlayers_Count()): allocates every player, nothing to do |
+| `Player_SetupArwingShot` | 3092:SH | ok | site | writes player->num |
+| `Player_SetupTankShot` | 3142:SH | ok | site | writes player->num |
+| `Player_SetupOnFootShot` | 3292:SH | ok | site | writes player->num |
+| `Player_CanLockOn` | 3320:CC | setup | site | loops gCamCount players |
+| `Player_UpdateLockOn` | 3433:CC | setup | site | loops gCamCount players |
+| `Player_CheckBounds360` | 3698:CC | setup | read | gCamCount != 1 as versus flag: wraps the arena at 12000 |
+| `Player_Setup` | 4938:CC | setup | site | gCamCount == gPlayerNum + 1: HUD and hit counters reset only when the last player is set up |
+| `Player_UpdateTankJets` | 5478:CC, 5482:CC | setup | site | gCamCount == 1 as "not versus" for jet effects |
+| `Player_UpdateEffects` | 5524:CC | setup | site | loops gCamCount players |
+| `Player_Update` | 5902:MC, 5903:MC, 5904:MC | ok | read | with co-op off; in co-op CoopPlayers_SelectInput points at the player's own slot right after (WP-14) |
+| `Player_Update` | 6140:CC | setup | site | gCamCount == 4: down in versus goes to VS_STANDBY, else fade out and restart level |
+| `Player_Update` | 6150:P0, 6219:P0 | flow | site | death restart resets gPlayer[0].zPath and path progress; boost check reads player 0 state for every player |
+| `Camera_SetStarfieldPos` | 6648:P0, 6660:P0 | view | site | starfield from player 0 camera |
+| `Camera_SetupLights` | 6743:P0 | view | site | lights depend on player 0 state |
+| `Play_UpdateLevel` | 6873:P0, 6874:P0, 6875:P0, 6876:P0, 6877:P0, 6890:P0, 6891:P0, 6906:P0, 6915:P0, 6916:P0, 6941:P0, 6946:P0, 6949:P0, 6952:P0, 6955:P0, 6958:P0, 6961:P0, 6971:P0, 6973:P0, 6975:P0, 6976:P0, 6978:P0, 6979:P0, 6981:P0, 6987:P0, 6991:P0, 6993:P0, 6999:P0, 7009:P0, 7015:P0, 7016:P0 | flow | site | per-level triggers on player 0: level complete, warp zone, Solar heat damage to player 0 only, Venom 2 / Aquas checks |
+| `Play_UpdateLevel` | 6878:PA | flow | site | Camera_Update360 for player 0 as Venom 2 ends: level complete is one player's (WP-16) |
+| `Play_Main` | 7169:P0, 7170:P0, 7172:P0, 7173:P0, 7174:P0, 7211:P0, 7243:P0, 7244:P0 | flow | site | all-range z setup for player 0 only |
+| `Play_Main` | 7210:MC, 7243:MC | input | site | Start (intro skip, pause, unpause) and R while paused (toggles gShowReticles[0], no radio here) are read from gMainController only; versus reads R per controller |
+| `Play_Main` | 7223:CC | setup | site | intro skip resets gCamCount to 1; its sound cleanup loop is on CoopPlayers_Count() since WP-10 |
 
 ### `src/engine/fox_radio.c`
 

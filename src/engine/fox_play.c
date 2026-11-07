@@ -23,6 +23,7 @@
 #include "assets/ast_zoness.h"
 #include "port/hooks/Events.h"
 #include "port/coop/game/players.h" // COOP: player count apart from camera count (WP-10)
+#include "port/coop/sync/lockstep_game.h" // COOP: whether a session runs the frames (#20)
 
 extern float gCurrentScreenWidth;
 extern float gCurrentScreenHeight;
@@ -7205,8 +7206,8 @@ void Play_Main(void) {
                 Play_Update();
             }
 
-            // COOP: not in co-op, as the save is each client's own and would part them (#20)
-            if (!CoopPlayers_IsCoop() && (gControllerPress[gMainController].button & START_BUTTON) &&
+            // COOP: not in a session, as the save is each client's own and would part them (#20)
+            if (!CoopSyncGame_IsOn() && (gControllerPress[gMainController].button & START_BUTTON) &&
                 (gPlayer[0].state == PLAYERSTATE_LEVEL_INTRO) &&
                 gSaveFile.save.data.planet[sSaveSlotFromLevel[gCurrentLevel]].normalClear) {
                 Audio_ClearVoice();
