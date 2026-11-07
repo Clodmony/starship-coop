@@ -479,6 +479,62 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-07, #136, other hits that only reach player 0
+
+Line numbers are for `issue/136-hits-any-player` on `coop` at `da44a18a`. Windows 11, MSVC v143, Debug, US 1.0 ROM.
+
+Observed, with `player_trace.py effects --players 2` on Corneria, on rails and with `--all-range`:
+
+- 40 of 40 lines hold in both sections, the 34 of #100 and 6 new ones. `texline` hits whichever player it is placed
+  on, through the real `TexturedLine_Update`. `bo-beam` and `and-reach` hit player 1 and not player 0: they call
+  `CoopHits_BolseBeam` and `CoopHits_AndrossReach` alone, as neither boss is on Corneria.
+- The first rails run failed `and-reach` for target 0: both players lost 40 shields from frame 3208, two frames
+  before the case was placed, and were pushed down 20 a frame. Scenery, not the test, and the heal let it hit again.
+  The probe now reads the two direct cases in the same frame as the call.
+- Running the rails and all-range runs at once made the all-range run place no case: both write
+  `local/test-trace-effects.sfcr`. Run them one after the other.
+- `replay.py play local/replays/corneria.sfcr`, one player: PASS, level complete at frame 11747.
+- With `gInterpolationFPS=20` and vsync off the game stopped in Corneria's intro at frame 600 and the run timed out
+  (exit code 1), before any probe case. No stack was taken.
+
+Read, in this checkout:
+
+- `TexturedLine_Update` tests `gPlayer[gPlayerNum]` and damages `gPlayer[0]` (`src/engine/fox_enmy.c:3092-3118`).
+  Lines that hurt are made by event scripts (`src/engine/fox_enmy2.c:1402`), Titania and Andross. A hit ends a line
+  of mode below 100. `CoopHits_TexturedLine` follows the upstream test (`src/engine/fox_enmy.c:3120`).
+- The Bolse base's beam (`src/overlays/ovl_i4/fox_bo.c:838-899`) tests player 0 only; the co-op test follows it
+  (`:895`) with the same rotation, offsets and length.
+- `Andross_8018D0D8` tests player 0 in x and y only; the co-op test follows it (`src/overlays/ovl_i6/fox_andross.c:1696`).
+- Not changed, with their reason:
+  - Macbeth (`src/overlays/ovl_i5/fox_ma.c:1671`, `:3572`, `:3621`, `:5888`) and Titania
+    (`src/overlays/ovl_i5/fox_ti.c:979`) are Landmaster levels, where co-op players stay parked
+    (`src/port/coop/game/players.c:195-198`). WP-18 (#16).
+  - The Andross escape explosions follow and kill player 0 (`src/overlays/ovl_i6/fox_andross.c:741-756`;
+    `include/sf64object.h:606`): a cutscene, WP-19 (#17).
+  - The Andross brain catches player 0 when close (`src/overlays/ovl_i6/fox_andross.c:815-821`) and drains it in state
+    11 (`:884-896`). It holds one player, so which one is a choice no record makes yet.
+  - Bare `gPlayer` outside a call: `src/engine/fox_beam.c:838` is friendly fire, an open rule (decision 0007, #7);
+    `:1762` and `:2026` are versus only; `src/engine/fox_hud.c:5012` reads player 0's intro; `src/engine/fox_play.c:2607`
+    clears every player.
+  - `Effect_Move` culls from player 0's camera on rails (`src/engine/fox_enmy.c:2797-2808`).
+- The abort of #100: `FrameInterpolation_ShouldInterpolateFrame(true)` sets recording on whatever it was
+  (`src/port/interpolation/FrameInterpolation.cpp:426-429`), and 23 places in `src/` call it. Recording is off for a
+  whole frame when the camera jumps or the game pauses or unpauses (`src/engine/fox_display.c:1922-1929`), and on every
+  frame at 20 FPS (`src/port/interpolation/FrameInterpolation.cpp:442`). The PC menu offers 30 and up
+  (`src/port/ui/ImguiUI.cpp:390`).
+
+Derived:
+
+- On a pause or unpause with a state 1 Effect374 or an Effect382 drawn, the close after it pops the root path
+  (`src/engine/fox_edisplay.c:2058`), and the next recorded call reads an empty vector. Same shape as #100's abort.
+- The 20 FPS stop fits the same pattern in another of the 23 places. Not shown: no stack.
+
+Unknown:
+
+- Whether a pause over a Zoness column aborts in play. Not run.
+- What stopped the 20 FPS run.
+- Bolse and Andross in their own levels with two players. Not run: no test can start there yet (#148).
+
 ### 2026-11-06, #12, input source per player: who steers whom
 
 Runs on `origin/coop` at 797c678b and on this branch: ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no

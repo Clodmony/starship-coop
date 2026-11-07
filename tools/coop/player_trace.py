@@ -72,11 +72,13 @@ the line, and what else it plays changes with a second player, so a silent limit
 must have equal state hashes on every frame, RNG included, so the draws behind a line repeat. Each run is one game: this
 says nothing about two clients.
 
-`effects` is the test for #100. It flies input by rule into Corneria, on rails or with --all-range in all-range, with
+`effects` is the test for #100 and #136. It flies input by rule into Corneria, on rails or with --all-range in all-range, with
 SF64_COOP_EFFECT_PROBE (src/port/coop/test/effect_probe.h): each case of EFFECT_CASES places an effect on one player
 and the game runs it. Each case must hit the target and nobody else, or do what EFFECT_CASES says. Player 0 is the
 control: a case that does not hit it says nothing about the others. Only the spawn is forced, so this shows Corneria
-running the effects of other levels, not those levels.
+running the effects of other levels, not those levels. Three cases are not effects (#136): `texline` places a textured
+line and runs TexturedLine_Update; `bo-beam` and `and-reach` call the co-op test of the Bolse base's beam and of
+Andross alone, for want of their boss, so they cannot hit player 0.
 
 Stopping the game can cut the last line of the trace; only that line may be cut.
 """
@@ -166,10 +168,11 @@ LOW_LINES = range(20304, 20310)  # gMsg_ID_20304 to gMsg_ID_20309, as gRadioMsgI
 EFFECT_CASES = {
     "laser": "hit", "laser-roll": "deflect", "shot398": "hit", "shot398-roll": "both", "e347": "hit", "e376": "hit",
     "e395": "hit", "e399": "hit", "me369": "hit", "me370": "hit", "me371": "hit", "bo397": "hit", "bo397-roll": "none",
-    "bo397-p0-roll": "hit-unless-p0", "zo374": "hit", "gorgon-beam": "hit", "out": "none",
+    "bo397-p0-roll": "hit-unless-p0", "zo374": "hit", "gorgon-beam": "hit", "texline": "hit",
+    "bo-beam": "hit-unless-p0", "and-reach": "hit-unless-p0", "out": "none",
 }
 EFFECT_ONE_TARGET = ("out",)  # the last player only
-EFFECT_FLIGHT = 2825  # 17 cases, 2 players, 40 frames each, from all-range (325 in) and with U-turns in between
+EFFECT_FLIGHT = 3125  # 20 cases, 2 players, 40 frames each, from all-range (325 in) and with U-turns in between
 
 
 def find_exe(given):

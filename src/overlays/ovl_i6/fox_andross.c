@@ -4,6 +4,7 @@
 #include "assets/ast_venom_2.h"
 #include "assets/ast_andross.h"
 #include "assets/ast_arwing.h"
+#include "port/coop/game/hits.h" // COOP: hits on the other players (#136)
 #include "assets/ast_bg_planet.h"
 #include "prevent_bss_reordering.h"
 #include "prevent_bss_reordering2.h"
@@ -1692,6 +1693,7 @@ void Andross_8018D0D8(AndAndross* this) {
         (fabsf(this->vwork[10].y - gPlayer[0].pos.y) < 700.0f)) {
         Player_ApplyDamage(&gPlayer[0], 0, 40);
     }
+    CoopHits_AndrossReach(this->vwork[10].x, this->vwork[10].y); // COOP: the same test for the other players (#136)
 }
 
 void Andross_AndAndross_Init(AndAndross* this) {
