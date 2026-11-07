@@ -101,7 +101,7 @@ src/engine/fox_enmy.c	Sprite_Move	sim	site	sprites culled by player 0 camera
 src/engine/fox_enmy.c	Effect_Move	sim	read	effects killed (Object_Kill) outside player 0 camera range
 src/engine/fox_enmy.c	Item_Move	sim	site	items culled by player 0 camera
 src/engine/fox_enmy.c	Actor_Update	ok	read	campaign lock-on release with co-op off; in co-op CoopPlayers_ReleaseLockOns runs each player's down on its own A (WP-14)
-src/engine/fox_enmy.c	TexturedLine_Update	sim	site	damages player 0 only
+src/engine/fox_enmy.c	TexturedLine_Update	sim	read	tests player 0, CoopHits_TexturedLine does the others (#136)
 src/engine/fox_enmy.c	Object_Update	flow	site	objects update and load only in certain player 0 states
 #
 # --- engine: scripted events (fox_enmy2.c)
@@ -275,8 +275,14 @@ src/overlays/ovl_i4/fox_sz.c	SectorZ_EnemyUpdate	sim	site	sets player 0 to STAND
 src/overlays/ovl_i5/fox_ma.c	Macbeth_MaLocomotive_Update	sim	site	train; sets player 0 to LEVEL_COMPLETE
 src/overlays/ovl_i5/fox_ma.c	Macbeth_MaRailwaySignal_Update	sim	site	sets player 0 to LEVEL_COMPLETE
 src/overlays/ovl_i6/fox_andross.c	Andross_80188A4C	sim	site	boss part; sets player 0 to STANDBY after the bonus
-src/overlays/ovl_i6/fox_andross.c	Andross_AndBrain_Update	sim	site	boss; sets player 0 to START_360 and moves its camera
+src/overlays/ovl_i6/fox_andross.c	Andross_AndBrain_Update	sim	site	boss; sets player 0 to START_360 and moves its camera; catches and drains player 0 only, it can hold one player: needs a choice (#136)
 src/overlays/ovl_i6/fox_andross.c	Andross_8018D2B0	sim	site	sets player 0 state
+src/overlays/ovl_i4/fox_bo.c	Bolse_8018E05C	sim	read	base's beam: tests player 0, CoopHits_BolseBeam does the others (#136)
+src/overlays/ovl_i6/fox_andross.c	Andross_8018D0D8	ok	read	tests player 0, CoopHits_AndrossReach does the others (#136)
+src/overlays/ovl_i6/fox_andross.c	Andross_AndExplosion_Update	flow	read	escape explosions follow and kill player 0: the escape is a cutscene (WP-19, #17), not changed in #136
+src/overlays/ovl_i5/fox_ma.c	Macbeth_MaTrainCar7_Update	sim	read	blast hits player 0 only; right for now: Macbeth is a Landmaster level, co-op players stay parked (WP-18, #136)
+src/overlays/ovl_i5/fox_ma.c	Macbeth_Effect378_Update	sim	read	shot hits player 0 only; right for now: Landmaster level, co-op players parked (WP-18, #136)
+src/overlays/ovl_i5/fox_ma.c	Macbeth_MaBombDrop_Update	sim	read	blast hits player 0 only; right for now: Landmaster level, co-op players parked (WP-18, #136)
 src/overlays/ovl_i6/fox_sy.c	SectorY_SyShogun_Init	sim	site	boss; sets player 0 to START_360
 src/overlays/ovl_i6/fox_sy.c	SectorY_80198F5C	sim	site	boss; sets player 0 state and camera
 src/overlays/ovl_i6/fox_sy.c	SectorY_80199438	sim	site	boss cutscene; moves player 0 camera
@@ -339,7 +345,7 @@ src/overlays/ovl_i1/fox_co.c	Corneria_CoCarrier_Update@gPlayer arg	flow	site	Bos
 src/overlays/ovl_i2/fox_me.c	Meteo_Effect369_Update@gPlayer arg	ok	read	func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0
 src/overlays/ovl_i2/fox_me.c	Meteo_Effect370_Update@gPlayer arg	ok	read	func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0
 src/overlays/ovl_i2/fox_me.c	Meteo_Effect371_Update@gPlayer arg	ok	read	func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0
-src/overlays/ovl_i4/fox_bo.c	Bolse_8018E05C@gPlayer arg	sim	read	a beam of the base, not an effect: hits player 0 only, so player 2 flies through it. Open, not changed in #100
+src/overlays/ovl_i4/fox_bo.c	Bolse_8018E05C@gPlayer arg	ok	read	Player_ApplyDamage for player 0; CoopHits_BolseBeam after it does the others (#136)
 src/overlays/ovl_i4/fox_bo.c	Bolse_Effect397_Update@gPlayer arg	ok	read	func_effect_8007A774 tests the others; each player's own roll counts, and player 0's roll no longer covers them (#100)
 src/overlays/ovl_i5/fox_ma.c	Macbeth_Effect380_Update@gPlayer arg	sim	read	right for now: Macbeth is rails in a Landmaster, where co-op players stay parked (CoopPlayers_SectionSupported); WP-18
 src/overlays/ovl_i5/fox_ti.c	Titania_TiBomb_Update@gPlayer arg	sim	read	right for now: an actor on Titania, rails in a Landmaster, where co-op players stay parked (CoopPlayers_SectionSupported); WP-18

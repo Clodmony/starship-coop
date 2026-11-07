@@ -5,6 +5,7 @@
 
 #include "global.h"
 #include "port/hooks/Events.h"
+#include "port/coop/game/hits.h"
 #include "port/coop/game/players.h"
 #include "public/bridge/consolevariablebridge.h"
 
@@ -20,6 +21,9 @@ typedef enum ProbeFlag {
     PROBE_AT_60 = 1 << 2,       // the update takes its position from unk_60 (Effect399)
     PROBE_BOSS = 1 << 3,        // the update takes its position from gBosses[0] (Effect395, state 10)
     PROBE_OUT = 1 << 4,         // the target is out of the level; run for the last player only
+    PROBE_TEXLINE = 1 << 5,     // no effect: a textured line through the target, as TexturedLine_Update tests (#136)
+    PROBE_BOLSE = 1 << 6,       // no effect: CoopHits_BolseBeam with a beam through the target (#136)
+    PROBE_ANDROSS = 1 << 7,     // no effect: CoopHits_AndrossReach from the target (#136)
 } ProbeFlag;
 
 typedef struct ProbeCase {
@@ -57,6 +61,11 @@ static const ProbeCase sCases[] = {
     // Effects with a test of their own and a bare gPlayer in Player_ApplyDamage.
     { "zo374", OBJ_EFFECT_374, 1, 192, 30, 2.5f, 10.0f, 0.0f, -100.0f, 0 },
     { "gorgon-beam", OBJ_EFFECT_395, 10, 1, 0, 0.0f, 1.0f, 1.0f, 0.0f, PROBE_BOSS },
+    // Hits that are not effects (#136). The line runs the real update. The Bolse and Andross cases call the co-op
+    // test alone, for want of their boss on Corneria, so player 0 is not hit there.
+    { "texline", 0, 0, 0, 0, 0.0f, 0.0f, 0.0f, 0.0f, PROBE_TEXLINE },
+    { "bo-beam", 0, 0, 0, 0, 0.0f, 0.0f, 0.0f, 0.0f, PROBE_BOLSE },
+    { "and-reach", 0, 0, 0, 0, 0.0f, 0.0f, 0.0f, 0.0f, PROBE_ANDROSS },
     // A player who is out cannot be hit.
     { "out", OBJ_EFFECT_ENEMY_LASER_1, 0, 0, 30, 0.0f, 1.0f, 0.0f, 0.0f, PROBE_OUT },
 };
@@ -160,12 +169,78 @@ static Effect* FreeEffect(void) {
     return &gEffects[i];
 }
 
+#define PROBE_NOT_EFFECT (PROBE_TEXLINE | PROBE_BOLSE | PROBE_ANDROSS)
+
+static s32 sLine = -1;
+static s32 sReadDone = 0; // the case was read where it ran (CallTest)
+
+static void Snapshot(void);
+
+// A line through where the target will be, along z, as an event script's laser (EVOP_MAKE_TEXLINE) would be.
+static void PlaceLine(const Player* p) {
+    TexturedLine* line;
+    s32 i;
+
+    for (i = ARRAY_COUNT(gTexturedLines) - 1; (i > 0) && (gTexturedLines[i].mode != 0); i--) {}
+    sLine = i;
+    line = &gTexturedLines[i];
+    line->mode = 1;
+    line->timer = 0;
+    line->xyScale = 3.0f;
+    line->prim.r = line->prim.a = 255;
+    line->prim.g = line->prim.b = 0;
+    line->posAA.x = line->posBB.x = p->pos.x + p->vel.x;
+    line->posAA.y = line->posBB.y = p->pos.y + p->vel.y;
+    line->posAA.z = p->trueZpos + p->vel.z + 100.0f;
+    line->posBB.z = line->posAA.z - 200.0f;
+}
+
+// The co-op tests of #136 that need their boss, called right here with the target inside them, and read at once:
+// by the next frame scenery can have hit someone (it hit both players on Corneria's rails, frame 3208).
+static void CallTest(const ProbeCase* c, s32 target) {
+    static Boss base; // only obj.pos is read
+    Player* p = &gPlayer[target];
+    f32 y[COOP_PLAYERS_MAX];
+    s32 i;
+
+    ClearHits();
+    if (c->flags & PROBE_BOLSE) {
+        base.obj.pos.x = p->pos.x;
+        base.obj.pos.y = p->pos.y - 580.0f;
+        base.obj.pos.z = p->trueZpos - 10.0f;
+        CoopHits_BolseBeam(&base, 0.0f, 0.0f, 0.0f, 0.0f, 100.0f);
+        Snapshot();
+        return;
+    }
+    // Andross reaches 700 in x and y, more than the spread: take the others away for the call.
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        y[i] = gPlayer[i].pos.y;
+        if (i != target) {
+            gPlayer[i].pos.y += 5000.0f;
+        }
+    }
+    CoopHits_AndrossReach(p->pos.x, p->pos.y);
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        gPlayer[i].pos.y = y[i];
+    }
+    Snapshot();
+}
+
 static void Place(const ProbeCase* c, s32 target) {
     Player* p = &gPlayer[target];
-    Effect* e = FreeEffect();
+    Effect* e;
 
     HealPlayers();
     SpreadPlayers();
+    if (c->flags & PROBE_TEXLINE) {
+        PlaceLine(p);
+        return;
+    }
+    if (c->flags & (PROBE_BOLSE | PROBE_ANDROSS)) {
+        CallTest(c, target);
+        return;
+    }
+    e = FreeEffect();
     if (c->flags & PROBE_OUT) {
         // Out players are not updated, so bring this one along to where the level is now.
         CoopPlayers_OnPlayerDown(p);
@@ -209,8 +284,8 @@ static void Place(const ProbeCase* c, s32 target) {
     }
 }
 
-// The effect had its frame. Take it and whatever it spawned out, so that only this frame counts.
-static void Read(const ProbeCase* c) {
+// Who is hit or deflected now.
+static void Snapshot(void) {
     s32 i;
 
     sHit = 0;
@@ -225,9 +300,26 @@ static void Read(const ProbeCase* c) {
             sDeflect |= 1 << i;
         }
         sDamage[i] = p->damage;
-        p->barrelRollAlpha = 0;
     }
-    for (i = 0; i < ARRAY_COUNT(gEffects); i++) {
+    sReadDone = 1;
+}
+
+// The effect had its frame. Take it and whatever it spawned out, so that only this frame counts.
+static void Read(const ProbeCase* c) {
+    s32 i;
+
+    if (!sReadDone) {
+        Snapshot();
+    }
+    sReadDone = 0;
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        gPlayer[i].barrelRollAlpha = 0;
+    }
+    if (sLine >= 0) {
+        gTexturedLines[sLine].mode = 0;
+        sLine = -1;
+    }
+    for (i = 0; (i < ARRAY_COUNT(gEffects)) && !(c->flags & PROBE_NOT_EFFECT); i++) {
         if (gEffects[i].obj.id == c->id) {
             Object_Kill(&gEffects[i].obj, gEffects[i].sfxSource);
         }
