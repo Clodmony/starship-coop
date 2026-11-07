@@ -13,10 +13,27 @@
 //   end
 // A click on a widget that is not on screen writes "error <text>". A disabled widget gets the click like any other, so
 // a test can see that it does nothing. Without the variable every function here returns at once.
+// While a session is open the driver also times the gaps between session ticks. Each gap longer than every one before
+// it adds a line to <folder>/menu-stall.txt:
+//   stall <ms> tick <n, ticks since the game started>
+// A gap that long means the other games heard nothing from this one for at least that long (#132).
 
-void CoopMenuDriver_Init();
+#include <stdbool.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void CoopMenuDriver_Init(void);
+// Once per session tick, with the time the session gets and whether a session is open.
+void CoopMenuDriver_Tick(uint32_t nowMs, bool inSession);
 // Once per frame, before the window is drawn.
-void CoopMenuDriver_Frame();
+void CoopMenuDriver_Frame(void);
 // After a widget: id names it in the commands and the state, label is what the player reads.
 void CoopMenuDriver_Item(const char* id, const char* label, bool enabled);
 void CoopMenuDriver_Text(const char* id, const char* text);
+
+#ifdef __cplusplus
+}
+#endif

@@ -3562,6 +3562,42 @@ Unknown:
 
 ## Networking
 
+### 2026-11-07, #132, how long a level load stalls the session, and the menu's time-out
+
+Identity: ROM US 1.0, branch `issue/132-menu-timeout` from `coop` `da44a18a`, Windows 11, MSVC v143, Debug, the
+graphics backend the test config leaves at its default, three games on one PC with windows.
+
+Observed:
+
+- The menu ticks the session once per game frame, from `GamePreUpdateEvent` with `SDL_GetTicks()`
+  (`src/port/coop/ui/menu_game.c`). While a frame takes long, nothing is sent or read, so the other games hear
+  nothing for at least that long.
+- `menu_driver` now times the gaps between those ticks while a session is open (`menu-stall.txt`,
+  `src/port/coop/test/menu_driver.h`). In `menu_test.py`'s `game_level`, the longest gap in each of the three games
+  was 160, 164 and 167 ms, all at the same tick (345 or 346), which is the level start. Before it, no gap was over
+  42 ms. `game_leave` gave 166 ms.
+- `menu_test.py --game` had not run on Windows before: the driver writes its state file in text mode, so each line
+  ends in CR LF there, and the test never saw the `end` line. It then failed with "no Co-op entry in the menu bar".
+  Fixed in the test's reader.
+- The join watch writes `level_running` once per run (`sRunningSaid`, `src/port/coop/test/join_driver.c`), so a
+  second level start in the same run does not show in the report.
+
+Derived:
+
+- 167 ms is about 30 times below the 5000 ms transport default, on this PC. The menu now passes its own
+  `COOP_MENU_TIMEOUT_MS` (10000 ms, `src/port/coop/ui/menu.h`), and `sim` checks that both host and client get it.
+
+Guess:
+
+- A first load from a slow disk, or a PC far slower than this one, stalls longer. Nothing here measured either.
+- On Windows, holding a window's title bar to drag it may stop the game loop for as long as it is held. Not tried.
+
+Unknown:
+
+- The longest stall on Linux with software rendering, and on a cold disk cache.
+- What the game itself does with a player who left during a level: `game_leave` only shows the session and the
+  menus stay right and every game keeps running. The rules belong to WP-16 (#14).
+
 ### 2026-11-06, #24, Steam relay transport on a fake, what only a real run can settle
 
 Nothing here has run on Steam: no SDK on the machine, and a real run needs the owner's accounts. Everything below was

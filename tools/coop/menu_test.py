@@ -15,7 +15,10 @@ start and then compares the state hash logs frame by frame, as join_test.py does
 through the menus to the map first. Their games play a replay with no input after that, so no controller reaches them,
 each from other seeds, and report the level through SF64_COOP_JOIN_WATCH. game_platform reads what a real menu shows for
 a platform refusal, on the host's side and the joining player's, and runs SF64_COOP_TEST_ANY_PLATFORM. Two games on one
-PC never differ in platform, so the other side there is coop_session_test, which says what it is told to.
+PC never differ in platform, so the other side there is coop_session_test, which says what it is told to. game_leave
+has player 2 leave during the level, which ends the session for everyone under lockstep (#160) while every game keeps
+running, then the same games hold a second session, start again and keep every player past the time-out (#132).
+game_level and game_leave print the longest gap between two session ticks (menu-stall.txt).
 
 Prints one line per scenario and a RESULT line, keeps logs in local/test-menu/<stamp>/, exits 0 only when everything
 passed. Each game gets its own folder under local/ with its own SHIP_HOME, removed when the run passed.
@@ -41,7 +44,7 @@ import session_test  # noqa: E402
 
 BOOT_SECONDS = 180  # three games with software rendering on a busy machine
 STEP_SECONDS = 60
-TIMEOUT_MS = 5000  # the transport's default, src/port/coop/net/transport.h
+TIMEOUT_MS = 10000  # COOP_MENU_TIMEOUT_MS, src/port/coop/ui/menu.h
 # Sets a CVar the handshake compares (src/port/coop/session/sim_cvars.c), and the name the player reads for it.
 ODD_CVAR, ODD_CVAR_NAME = "gInvincible", "Invincible"
 OTHER_PLATFORM = "Other platform"
@@ -108,6 +111,8 @@ class Game(join_test.LevelLog):
         at = 0
         for line in data[:whole].decode("utf-8", "replace").split("\n")[:-1]:
             at += len(line.encode("utf-8", "replace")) + 1
+            # The driver writes in text mode, so a Windows game ends each line with CR LF.
+            line = line.removesuffix("\r")
             if line.startswith("error "):
                 raise Fail(f"{self.name}: the driver says: {line[6:]}")
             if line.startswith("frame "):
@@ -379,6 +384,13 @@ def frames_logged(game):
         return sum(1 for line in f if not line.startswith(b"#"))  # the log holds notes too, such as "# draws"
 
 
+def longest_stall(game):
+    """The longest gap between two session ticks with a session open, in ms (src/port/coop/test/menu_driver.h)."""
+    path = game.run / "menu-stall.txt"
+    lines = path.read_text(encoding="utf-8").split() if path.exists() else []
+    return int(lines[-3]) if lines else 0
+
+
 def open_windows(games):
     for game in games:
         game.wait(lambda g=game: "menu" in g.items, "Co-op entry in the menu bar", BOOT_SECONDS)
@@ -473,7 +485,9 @@ def scenario_game_level(args, exe, out):
 
         host.click("start")
         frames, running = check_level(games, "Fox,Falco,Slippy,-")
-        return f"3 games from Start: same hash on {frames} frames, {running['characters']}, seeds {running['seeds']}"
+        stall = max(longest_stall(game) for game in games)
+        return (f"3 games from Start: same hash on {frames} frames, {running['characters']}, seeds {running['seeds']}, "
+                f"longest stall {stall} ms")
 
     return level_run(args, games, body)
 
@@ -503,6 +517,69 @@ def scenario_game_level_map(args, exe, out):
     return level_run(args, games, body)
 
 
+def start_three(games, port):
+    """Players 2 and 3 join and pick Falco and Slippy, the host clicks Start, and every game gets to the level."""
+    host, a, b = games
+    join(a, port, 2)
+    join(b, port, 3)
+    a.wait_item("pick-falco", enabled=True)
+    a.click("pick-falco")
+    host.wait_text("player2", r"^Player 2: Falco")
+    b.wait_item("pick-slippy", enabled=True)
+    b.click("pick-slippy")
+    host.wait_text("player3", r"^Player 3: Slippy")
+    host.wait_item("start", enabled=True)
+    host.click("start")
+    for game in games:
+        game.wait_text("level", r"The level has started", LEVEL_SECONDS)
+
+
+def scenario_game_leave(args, exe, out):
+    """A player leaves during a level, then the same three games hold a second session and start a level again (#132)."""
+    host, a, b = games = [Game(exe, name, out, seeds=join_test.SEEDS[seeds])
+                          for name, seeds in (("host", "host"), ("a", "client0"), ("b", "client1"))]
+
+    def body():
+        open_windows(games)
+        start_three(games, host_session(host))
+        for game in games:
+            game.wait(lambda g=game: in_level(g), "frame in the level", LEVEL_SECONDS)
+
+        # Player 2 leaves in the level. Every frame needs every player, so the session ends for everyone (#160,
+        # docs/coop/PROTOCOL.md, End): the host says who left, player 3 reads that the host closed, and every game
+        # goes on alone in its level.
+        frames = {game.name: frames_logged(game) for game in games}
+        a.click("leave")
+        a.wait_text("status", r"Not in a session\.")
+        host.wait_text("message", r"Player 2 left, so the session is over")
+        host.wait_text("status", r"Not in a session\.")
+        b.wait_text("status", r"Not in a session\.")
+        b.wait_text("message", r"closed the connection")
+        for game in games:
+            game.wait(lambda g=game: frames_logged(g) > frames[g.name] + 60, "frames after the leave", STEP_SECONDS,
+                      every=1)
+        for game in games:
+            game.wait(lambda g=game: "level" not in g.texts, "the level line gone after the session")
+
+        # The same games hold a second session, in the level they are in, and start again. The join watch reports
+        # level_running once per run, so the second start is checked from the menu and the frames: every game says it
+        # started, keeps going and keeps all three players past the time-out.
+        start_three(games, host_session(host))
+        frames = {game.name: frames_logged(game) for game in games}
+        time.sleep(TIMEOUT_MS / 1000 + 2)  # longer than the time-out: a player kept in by mistake would drop now
+        for game in games:
+            game.wait(lambda g=game: frames_logged(g) > frames[g.name] + 60, "frames after the second start",
+                      STEP_SECONDS, every=1)
+        host.wait_text("status", r", 3 of 4 players\.")
+        a.wait_text("status", r" as player 2\.")
+        b.wait_text("status", r" as player 3\.")
+        stall = max(longest_stall(game) for game in games)
+        return f"3 games: player 2 left in the level and the session ended for all, then a second session and level " \
+               f"held past the time-out; longest stall {stall} ms"
+
+    return level_run(args, games, body)
+
+
 def target(asan):
     return "coop_menu_test_asan" if asan else "coop_menu_test"
 
@@ -527,7 +604,7 @@ def scenario_program(mode):
 
 
 GAME_SCENARIOS = {"game": scenario_game, "game_level": scenario_game_level, "game_level_map": scenario_game_level_map,
-                  "game_platform": scenario_game_platform}
+                  "game_platform": scenario_game_platform, "game_leave": scenario_game_leave}
 SCENARIOS = {"sim": scenario_program("sim"), "udp": scenario_program("udp"), **GAME_SCENARIOS}
 
 
