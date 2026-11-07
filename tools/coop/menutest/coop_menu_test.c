@@ -75,12 +75,16 @@ static float Default_Float(const char* name, float defaultValue) {
 }
 
 static const char* sBuild = "test-build";
+static const char* sPlatform = NULL; // this machine's
 static int sIdentityReads;
 
 static void Id_Test(CoopIdentity* id) {
     memset(id, 0, sizeof(*id));
     snprintf(id->build, sizeof(id->build), "%s", sBuild);
     CoopIdentity_Platform(id->platform, sizeof(id->platform));
+    if (sPlatform != NULL) {
+        snprintf(id->platform, sizeof(id->platform), "%s", sPlatform);
+    }
     id->romCount = 1;
     id->roms[0] = ROM_US10;
     id->cvarTable = CoopSimCvars_TableHash();
@@ -299,6 +303,7 @@ static void Sim_Reset(uint32_t latencyMs) {
     memset(sNet.extraMs, 0, sizeof(sNet.extraMs));
     sIdentityReads = 0;
     sBuild = "test-build";
+    sPlatform = NULL;
     Level_Reset();
 }
 
@@ -785,6 +790,48 @@ static void Test_Refused(void) {
     Menus_Close();
 }
 
+static void Test_RefusedPlatform(void) {
+    const CoopMenuView* v;
+
+    sScenario = "refused_platform";
+    Menus_Init(0);
+    Start_Host();
+    sPlatform = "Other platform";
+    EXPECT(CoopMenu_Join(A, SIM_ADDRESS, "45000", sNet.now), "joining did not start");
+    Run(500);
+    v = View(A);
+    EXPECT(v->phase == COOP_MENU_IDLE, "a refused client stayed");
+    Expect_Has(v->message, "Different platforms: host ", "the client is not told what differs");
+    Expect_Has(v->message, "joining player Other platform", "the client is not told what differs");
+    v = View(HOST);
+    EXPECT(v->phase == COOP_MENU_HOSTING, "a refusal ended hosting");
+    Expect_Has(v->status, "1 of 4", "the host counts the refused player");
+    Expect_Has(v->message, "A player was refused.", "the host is not told");
+    Expect_Has(v->message, "joining player Other platform", "the host is not told what differs");
+    Menus_Close();
+}
+
+static void Test_AnyPlatform(void) {
+    const CoopMenuView* v;
+
+    sScenario = "any_platform";
+    Menus_Init(0);
+    Start_Host();
+    sPlatform = "Other platform";
+    CoopSession_AnyPlatform(true);
+    EXPECT(CoopMenu_Join(A, SIM_ADDRESS, "45000", sNet.now), "joining did not start");
+    Run(500);
+    CoopSession_AnyPlatform(false);
+    v = View(A);
+    EXPECT(v->phase == COOP_MENU_JOINED, "the test switch did not let the client in");
+    Expect_Has(v->message, "joining player Other platform", "the client is not told what differs");
+    v = View(HOST);
+    Expect_Has(v->status, "2 of 4", "the host does not count the player");
+    Expect_Has(v->message, "Player 2 joined.", "the host is not told");
+    Expect_Has(v->message, "joining player Other platform", "the host is not told what differs");
+    Menus_Close();
+}
+
 static void Test_NoHost(void) {
     const CoopMenuView* v;
 
@@ -1122,6 +1169,8 @@ static int Run_Sim(void) {
     Test_Leave();
     Test_HostCloses();
     Test_Refused();
+    Test_RefusedPlatform();
+    Test_AnyPlatform();
     Test_NoHost();
     Test_HostFull();
     Test_OneTick();
@@ -1131,7 +1180,7 @@ static int Run_Sim(void) {
     Test_LevelStart();
     Test_LevelPickInFlight();
     Test_LevelEnds();
-    printf("PASS: 22 scenarios\n");
+    printf("PASS: 24 scenarios\n");
     return 0;
 }
 

@@ -2,7 +2,7 @@
 """Tests for the co-op menu (WP-25): the menu layer without a game, then the real menu in real games.
 
     python tools/coop/menu_test.py                  # build coop_menu_test, run sim and udp; no ROM needed
-    python tools/coop/menu_test.py --game           # and the real games: game, game_level, game_level_map
+    python tools/coop/menu_test.py --game           # and the real games, every game_ scenario
     python tools/coop/menu_test.py --only game_level --no-build --exe <file>
     python tools/coop/menu_test.py --asan           # sim and udp under AddressSanitizer and UBSan; not on Windows
     python tools/coop/menu_test.py --list
@@ -13,7 +13,9 @@ real sockets. game starts real games with SF64_COOP_TEST_MENU (src/port/coop/tes
 widgets through ImGui's input queue and reads back what the window holds. game_level does the same up to the level
 start and then compares the state hash logs frame by frame, as join_test.py does; game_level_map has a host that went
 through the menus to the map first. Their games play a replay with no input after that, so no controller reaches them,
-each from other seeds, and report the level through SF64_COOP_JOIN_WATCH.
+each from other seeds, and report the level through SF64_COOP_JOIN_WATCH. game_platform reads what a real menu shows for
+a platform refusal, on the host's side and the joining player's, and runs SF64_COOP_TEST_ANY_PLATFORM. Two games on one
+PC never differ in platform, so the other side there is coop_session_test, which says what it is told to.
 
 Prints one line per scenario and a RESULT line, keeps logs in local/test-menu/<stamp>/, exits 0 only when everything
 passed. Each game gets its own folder under local/ with its own SHIP_HOME, removed when the run passed.
@@ -33,13 +35,17 @@ ROOT = Path(__file__).resolve().parents[2]
 IS_WINDOWS = platform.system() == "Windows"
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import join_test  # noqa: E402
+import net_test  # noqa: E402
 import replay  # noqa: E402
+import session_test  # noqa: E402
 
 BOOT_SECONDS = 180  # three games with software rendering on a busy machine
 STEP_SECONDS = 60
 TIMEOUT_MS = 5000  # the transport's default, src/port/coop/net/transport.h
 # Sets a CVar the handshake compares (src/port/coop/session/sim_cvars.c), and the name the player reads for it.
 ODD_CVAR, ODD_CVAR_NAME = "gInvincible", "Invincible"
+OTHER_PLATFORM = "Other platform"
+PLATFORM_TEXT = rf"Different platforms: host .+, joining player {OTHER_PLATFORM}\."
 LEVEL_SECONDS = 600  # from the click to enough frames in the level, three games on a busy machine
 # Longer than any run: the menu takes as many frames as the machine draws while the clicks go by. Nothing here reads the
 # end of the replay, the games stop once the level has run long enough.
@@ -59,7 +65,7 @@ class Game(join_test.LevelLog):
     """One real game with the menu driver on, in its own folder. With seeds it starts from them, gets no input and logs
     what join_test.py compares; press_until as in join_test.write_replay."""
 
-    def __init__(self, exe, name, out, cvars=None, seeds=None, press_until=0):
+    def __init__(self, exe, name, out, cvars=None, seeds=None, press_until=0, env_extra=None):
         self.name = name
         self.run = replay.make_run_dir(exe, f"menu-{name}")
         self.commands = self.run / "menu-commands.txt"
@@ -72,6 +78,7 @@ class Game(join_test.LevelLog):
         (self.run / "starship.cfg.json").write_text(json.dumps(config, indent=4), encoding="utf-8")
         env = replay.game_env(self.run)
         env["SF64_COOP_TEST_MENU"] = str(self.run)
+        env.update(env_extra or {})
         if seeds is not None:
             join_test.write_replay(self.run / "input.sfcr", LEVEL_REPLAY_FRAMES, seeds, press_until)
             env.update({"SF64_COOP_REPLAY_PLAY": str(self.run / "input.sfcr"),
@@ -286,6 +293,78 @@ def scenario_game(args, exe, out):
     return f"3 games: host, join, Falco taken and a click on it sent nothing, pings {pings} ms, refused: {refusal[:60]}"
 
 
+def scenario_game_platform(args, exe, out):
+    run = net_test.Run(args.session_program, out / "game_platform")
+    games = []
+
+    def start(name, env_extra=None):
+        games.append(Game(exe, name, out, env_extra=env_extra))
+        return games[-1]
+
+    def bot_client(name, port, *options):
+        """A client that stays until --max-seconds or the end of its session. Returns its process and result file."""
+        return run.client(port, "--max-seconds", 10, *options, name=name)
+
+    try:
+        plain, passing = start("plain"), start("passing", {"SF64_COOP_TEST_ANY_PLATFORM": "1"})
+        for game in games:
+            game.wait(lambda g=game: "menu" in g.items, "Co-op entry in the menu bar", BOOT_SECONDS)
+            toggle_window(game)
+            game.wait_text("status", r"Not in a session\.")
+        plain.type("port", "0")
+        plain.click("host")
+        port = plain.wait_text("status", r"Hosting on port (\d+), 1 of 4 players\.").group(1)
+
+        # Only the build may differ here, so a bot with this game's build then differs in the platform alone.
+        probe, result = bot_client("probe", port, "--build", "probe")
+        run.wait(probe, STEP_SECONDS, "the probe")
+        said = session_test.events(net_test.read(result), "refused")
+        expect(len(said) == 1 and said[0]["diff"] == session_test.DIFF_BUILD, f"the probe got {said}")
+        build = re.search(r"host (\S+), joining player probe", said[0]["text"]).group(1)
+        other = ["--build", build, "--platform", OTHER_PLATFORM]
+
+        # What the host's window shows.
+        client, result = bot_client("client", port, *other)
+        run.wait(client, STEP_SECONDS, "the refused client")
+        said = session_test.events(net_test.read(result), "refused")
+        expect(len(said) == 1 and said[0]["diff"] == session_test.DIFF_PLATFORM, f"the client got {said}")
+        host_view = plain.wait_text("message", rf"^A player was refused\. \| {PLATFORM_TEXT}").string
+        plain.wait_text("status", r", 1 of 4 players\.")
+
+        # What the joining player's window shows.
+        plain.click("leave")
+        plain.wait_text("status", r"Not in a session\.")
+        bot, bot_port, _ = run.host("--max-seconds", STEP_SECONDS, *other, name="host")
+        plain.type("address", "127.0.0.1")
+        plain.type("port", bot_port)
+        plain.click("join")
+        joiner_view = plain.wait_text("message", r"Different platforms: host Other platform, joining player ").string
+        plain.wait_text("status", r"Not in a session\.")
+        run.wait(bot, STEP_SECONDS + 10, "the bot host")
+
+        # The test switch, from a real game's environment: the same client gets in, and the window says what differs.
+        passing.type("port", "0")
+        passing.click("host")
+        port = passing.wait_text("status", r"Hosting on port (\d+), 1 of 4 players\.").group(1)
+        client, result = bot_client("passed", port, *other)
+        passing.wait_text("status", r", 2 of 4 players\.")
+        passing.wait_text("message", rf"^Player 2 joined\. \| {PLATFORM_TEXT}")
+        client.wait(timeout=STEP_SECONDS)  # it runs out of time and exits with 1: a real host sends it no game message
+        said = session_test.events(net_test.read(result), "joined")
+        expect(len(said) == 1 and said[0]["diff"] == session_test.DIFF_PLATFORM, f"the client got {said}")
+    except (Fail, net_test.Fail):
+        args.keep = True
+        raise
+    finally:
+        run.stop_all()
+        for game in games:
+            game.stop()
+        if not args.keep:
+            for game in games:
+                shutil.rmtree(game.run, ignore_errors=True)
+    return f"2 games and bots: host read '{host_view}'; joining player read '{joiner_view}'; the switch let it in"
+
+
 def in_level(game):
     """The driver's line for the first frame after Play_Init, None before that."""
     running = join_test.said(game.report(), "level_running")
@@ -444,7 +523,8 @@ def scenario_program(mode):
     return run
 
 
-GAME_SCENARIOS = {"game": scenario_game, "game_level": scenario_game_level, "game_level_map": scenario_game_level_map}
+GAME_SCENARIOS = {"game": scenario_game, "game_level": scenario_game_level, "game_level_map": scenario_game_level_map,
+                  "game_platform": scenario_game_platform}
 SCENARIOS = {"sim": scenario_program("sim"), "udp": scenario_program("udp"), **GAME_SCENARIOS}
 
 
@@ -480,23 +560,33 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
 
     program = None
+    targets = []
     if any(n not in GAME_SCENARIOS for n in names):
-        if not args.no_build:
-            if shutil.which("cmake") is None:
-                print("RESULT: FAILED, cmake not found")
-                return 1
-            build_log = out / "build.log"
-            with open(build_log, "w", encoding="utf-8") as log:
-                code = subprocess.run(["cmake", "--build", str(build_dir), "--config", args.config, "--target",
-                                       target(args.asan)], stdout=log, stderr=subprocess.STDOUT).returncode
-            if code != 0:
-                tail = build_log.read_text(encoding="utf-8", errors="replace").strip().splitlines()[-8:]
-                print("\n".join(tail))
-                print(f"RESULT: FAILED, {target(args.asan)} did not build (log: {build_log})")
-                return 1
+        targets.append(target(args.asan))
+    if "game_platform" in names:
+        targets.append(session_test.target(False))
+    if targets and not args.no_build:
+        if shutil.which("cmake") is None:
+            print("RESULT: FAILED, cmake not found")
+            return 1
+        build_log = out / "build.log"
+        with open(build_log, "w", encoding="utf-8") as log:
+            code = subprocess.run(["cmake", "--build", str(build_dir), "--config", args.config, "--target", *targets],
+                                  stdout=log, stderr=subprocess.STDOUT).returncode
+        if code != 0:
+            tail = build_log.read_text(encoding="utf-8", errors="replace").strip().splitlines()[-8:]
+            print("\n".join(tail))
+            print(f"RESULT: FAILED, {' '.join(targets)} did not build (log: {build_log})")
+            return 1
+    if any(n not in GAME_SCENARIOS for n in names):
         program = find_exe(build_dir, args.config, args.asan)
         if program is None:
             print(f"RESULT: FAILED, no {target(args.asan)} in {build_dir}")
+            return 1
+    if "game_platform" in names:
+        args.session_program = session_test.find_exe(build_dir, args.config)
+        if args.session_program is None:
+            print(f"RESULT: FAILED, no {session_test.target(False)} in {build_dir}")
             return 1
 
     lines = []
@@ -506,7 +596,7 @@ def main():
         exe = replay.find_exe(args.exe) if name in GAME_SCENARIOS else program
         try:
             line = f"ok      {name}: {SCENARIOS[name](args, exe, out)}"
-        except (Fail, join_test.Fail) as e:
+        except (Fail, join_test.Fail, net_test.Fail) as e:
             line = f"FAILED  {name}: {e}"
             failed.append(name)
         except Exception as e:  # a broken test must not read as a pass

@@ -64,6 +64,12 @@ struct CoopSession {
     char text[COOP_SESSION_TEXT];
 };
 
+static bool sAnyPlatform;
+
+void CoopSession_AnyPlatform(bool on) {
+    sAnyPlatform = on;
+}
+
 static CoopSession* Session_New(CoopTransport* transport, const CoopIdentity* identity, bool isHost) {
     CoopSession* s;
 
@@ -420,8 +426,8 @@ static void Host_Hello(CoopSession* s, int peer, const CoopNetEvent* net, uint32
         return;
     }
     diff = CoopIdentity_Compare(&s->local, &p->identity);
-    if (diff & COOP_ID_DIFF_REFUSE) {
-        // The platform warning goes along, so both players see everything that differs.
+    if (diff & (sAnyPlatform ? COOP_ID_DIFF_REFUSE & ~COOP_ID_DIFF_PLATFORM : COOP_ID_DIFF_REFUSE)) {
+        // With the test switch on the platform goes along, so both players see everything that differs.
         Host_Refuse(s, peer, diff, nowMs, ev);
         return;
     }

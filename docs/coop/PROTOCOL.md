@@ -10,9 +10,12 @@ page sets the rules so parallel work does not collide.
    area keep parallel branches from picking the same number; take the next free id in your area's range.
 2. **Versioned handshake.** The first exchange carries a protocol version, the build id (git commit), the ROM version
    (the game version of each loaded archive), the values of the simulation-affecting CVars and the platform (OS,
-   CPU, compiler). A different protocol version, build, ROM or CVar refuses the connection with a message the player
-   can read. A different platform only warns: the first two-PC tests run Windows against Linux, and whether the two
-   compute the same game is unknown (decision 0002). Bump `COOP_PROTOCOL_VERSION` whenever a message layout changes.
+   CPU, compiler with its version). A different protocol version, build, ROM, CVar or platform refuses the connection
+   with a message the player can read. The platform counts because lockstep needs every client to compute the same game
+   and no run has compared two platforms ([decision 0002](decisions/0002-sync-model.md)); a comparison that shows two
+   platforms compute the same game lifts that. For a real cross-platform test, `SF64_COOP_TEST_ANY_PLATFORM` on the host
+   lets in a client that differs in platform and nothing else, and both players read what differs. Bump
+   `COOP_PROTOCOL_VERSION` whenever a message layout changes.
 3. **Explicit layout.** Little-endian, fixed-size integer types, no raw `memcpy` of game structs (they hold pointers
    and padding). Write a serializer per message.
 4. **Frame-stamped.** Messages that belong to a game frame carry that frame number.
@@ -232,7 +235,7 @@ What does not fit, as before:
 | 0x0006 | `PONG` | both | u32 the clock value from the ping | WP-20 |
 | 0x0010 | `SESSION_HELLO` | client to host | identity | WP-21 |
 | 0x0011 | `SESSION_WELCOME` | host to client | u8 player index (1 to 3), then the host's identity | WP-21 |
-| 0x0012 | `SESSION_REFUSE` | host to client | u32 reasons: bit 0 build, 1 ROM, 2 CVars, 3 platform (never alone), 8 the hello could not be read, 9 a level has started (WP-24); 0 means no hello in time. Then the host's identity. | WP-21 |
+| 0x0012 | `SESSION_REFUSE` | host to client | u32 reasons: bit 0 build, 1 ROM, 2 CVars, 3 platform, 8 the hello could not be read, 9 a level has started (WP-24); 0 means no hello in time. Then the host's identity. | WP-21 |
 | 0x0013 | `SESSION_PICK` | client to host | u8 character asked for (3 to 5; 2 is refused as taken) | WP-34 |
 | 0x0014 | `SESSION_PICK_REFUSE` | host to client | u8 character asked for (2 to 5). The only reason is that someone else holds it. | WP-34 |
 | 0x0015 | `SESSION_ROSTER` | host to client | u8 for each of the 4 players, see Characters | WP-34 |

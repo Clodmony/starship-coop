@@ -19,8 +19,8 @@ your own US 1.0 or US 1.1 Star Fox 64 ROM on first launch.
 | What is shared | The whole level: enemies, bosses, items, wingmen, route choices, the story |
 | Save | The host's save file; clients do not touch their own |
 
-None of this works yet. The open design questions are in [docs/coop/DESIGN.md](docs/coop/DESIGN.md), and the choice
-of sync model is still open in [decision 0002](docs/coop/decisions/0002-sync-model.md).
+None of this works yet. The open design questions are in [docs/coop/DESIGN.md](docs/coop/DESIGN.md). The sync model is
+deterministic lockstep, see [decision 0002](docs/coop/decisions/0002-sync-model.md).
 
 ## Building
 
