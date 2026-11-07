@@ -4,12 +4,12 @@
     python tools/coop/view_check.py                     # unattended; prints PASS or FAIL
     python tools/coop/view_check.py --section rails     # or all-range; default both
 
-Plays one replay per section twice, with SF64_COOP_TEST_LOCAL_INDEX 0 and 1: two clients of one session. Each game starts
-straight in Corneria, before its intro (replay.py, Start). Input by rule flies both players (player_trace.py), and buttons
-and pokes give them different numbers, so a client that shows the
-wrong player shows the wrong number. Each game writes a view trace (src/port/coop/test/view_trace.h) and a state hash
-log. The trace says what the client holds to show, not what reached the screen: the HUD numbers without a value of their
-own (lives, the boost gauge) and the look of everything are for a picture, see docs/coop/QA.md.
+Plays one replay per section twice, with SF64_COOP_TEST_LOCAL_INDEX 0 and 1: two clients of one session. Each game
+starts straight in Corneria, before its intro (replay.py, Start). Input by rule flies both players (player_trace.py),
+and buttons and pokes give them different numbers, so a client that shows the wrong player shows the wrong number. Each
+game writes a view trace (src/port/coop/test/view_trace.h) and a state hash log. The trace says what the client holds to
+show, not what reached the screen: the HUD numbers without a value of their own (lives, the boost gauge) and the look of
+everything are for a picture, see docs/coop/QA.md.
 
 Rules, on the frames they talk about:
 
@@ -383,7 +383,8 @@ def play_section(section, exe, args):
     """Play one section with each local index. Returns a list of failures."""
     frames, l_at = SECTIONS[section]
     replay = replay_tool.ROOT / "local" / f"test-view-{section}.sfcr"
-    player_trace.write_rail_replay(replay, frames, l_at, extra=extra_buttons if section == "rails" else None, start=START)
+    player_trace.write_rail_replay(replay, frames, l_at, extra=extra_buttons if section == "rails" else None,
+                                   start=START)
     cvars = {"gCoopDebugPlayerCount": 2, "gInvincible": 1}
     if l_at is not None:
         cvars["gDebugJumpToAllRange"] = 1
@@ -391,7 +392,8 @@ def play_section(section, exe, args):
     with ThreadPoolExecutor(max_workers=2) as pool:
         jobs = [pool.submit(hash_check.play, replay, exe, args.timeout, f"view-{section}-{index}",
                             config={"CVars": cvars}, start=START,
-                            env_extra={"SF64_COOP_TEST_LOCAL_INDEX": str(index), "SF64_COOP_VIEW_TRACE": "view-trace.txt",
+                            env_extra={"SF64_COOP_TEST_LOCAL_INDEX": str(index),
+                                       "SF64_COOP_VIEW_TRACE": "view-trace.txt",
                                        "SF64_COOP_VIEW_POKE": pokes(section)}) for index in (0, 1)]
         results = [job.result() for job in jobs]
 

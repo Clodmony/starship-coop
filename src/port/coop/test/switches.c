@@ -95,6 +95,6 @@ void CoopTestSwitches_Init(void) {
     }
 #endif
 
-    CoopTeamTrace_Init();  // no-op unless SF64_COOP_TEAM_* is set (#89)
+    CoopTeamTrace_Init(); // no-op unless SF64_COOP_TEAM_* is set (#89)
     CoopTestStart_Init(); // no-op unless SF64_COOP_TEST_START_LEVEL is set (#148)
 }

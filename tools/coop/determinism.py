@@ -57,12 +57,13 @@ VARIANTS = {
 }
 if sys.platform != "win32":
     del VARIANTS["no-fma3"]
-WHOLE_PATH = (replay_tool.GS_TITLE, replay_tool.GS_MENU, replay_tool.GS_MAP)  # a run must pass these on its way to a level
+WHOLE_PATH = (replay_tool.GS_TITLE, replay_tool.GS_MENU, replay_tool.GS_MAP)  # on the way to a level
 
 
 def play(replay, exe, timeout, name, start, env_extra=None, config=None):
     env = {**replay_tool.REAL_TIME, **(env_extra or {})}  # why: see the top of this file
-    values, names, rows = hash_check.play(replay, exe, timeout, f"det-{name}", env_extra=env, config=config, start=start)
+    values, names, rows = hash_check.play(replay, exe, timeout, f"det-{name}", env_extra=env, config=config,
+                                          start=start)
     return name, values, names, rows
 
 
@@ -108,16 +109,16 @@ def main():
     if unknown:
         sys.exit(f"det: unknown variant(s) {', '.join(unknown)}; known: {', '.join(VARIANTS)}")
 
-    start = time.monotonic()
+    began = time.monotonic()
     print("det: phase 1: base, alone")
     _, base_values, names, base_rows = play(replay, exe, args.timeout, "base", start, config=config)
+    problem = base_rows and hash_check.whole_path_problem(base_rows, WHOLE_PATH)
+    if problem:
+        print(f"FAIL: base: {problem}\ndet: FAIL")
+        return 1
     if base_rows is None or not played(base_values):
         print(f"det: base run failed: {base_values.get('result') if base_values else 'no report'}")
         print("det: FAIL")
-        return 1
-    problem = hash_check.whole_path_problem(base_rows, WHOLE_PATH)
-    if problem:
-        print(f"FAIL: base: {problem}\ndet: FAIL")
         return 1
     recorded = int(base_values.get("recorded_frames", len(base_rows)))
     print(f"det: base: {len(base_rows)} frames hashed, {recorded} recorded")
@@ -137,7 +138,7 @@ def main():
     for f in failures:
         print(f"FAIL: {f}")
     print(f"det: {len(chosen) - len({f.split(':')[0] for f in failures})}/{len(chosen)} variants equal to base, "
-          f"{time.monotonic() - start:.0f}s")
+          f"{time.monotonic() - began:.0f}s")
     print("det: FAIL" if failures else "det: PASS")
     return 1 if failures else 0
 

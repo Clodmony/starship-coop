@@ -493,9 +493,9 @@ def rail_lead(flight):
 
 def write_pads(path, frames, pad_input, start=MENUS):
     """Write a replay in the layout of ReplayHeader and ReplayFrame in src/port/coop/test/replay.c: no checkpoints, so
-    playback reports FAIL_MISMATCH at frame 0 and plays on. pad_input(flight, pad) gives (button, stick_x, stick_y), with
-    flight counted from when player 0 flies in a game that starts at start. Hold and press pads get the same stick; press
-    holds the buttons that went down on this frame."""
+    playback reports FAIL_MISMATCH at frame 0 and plays on. pad_input(flight, pad) gives (button, stick_x, stick_y),
+    with flight counted from when player 0 flies in a game that starts at start. Hold and press pads get the same stick;
+    press holds the buttons that went down on this frame."""
     data = bytearray(b"SFCR" + struct.pack("<III6i", 2, 20, 204, *start.seeds))
     assert len(data) == RAIL_REPLAY_HEADER
     last = [0, 0, 0, 0]
@@ -522,10 +522,10 @@ def rail_input(flight, pad, start):
 
 
 def write_rail_replay(path, frames, l_at=None, lead=None, pad_rule=rail_pad, extra=None, start=MENUS):
-    """Write the input for `rails`, frames long, for a game that starts at start. Everything else counts from when player
-    0 flies. l_at adds one L on pad 0 (with CVar gDebugJumpToAllRange, the jump to all-range). lead(flight), if given, is
-    (button, stick_x, stick_y) of pad 0 in place of the rule for `rails`, and pad_rule(flight, pad) the same for the other
-    pads. extra(flight, pad) gives buttons to add."""
+    """Write the input for `rails`, frames long, for a game that starts at start. Everything else counts from when
+    player 0 flies. l_at adds one L on pad 0 (with CVar gDebugJumpToAllRange, the jump to all-range). lead(flight), if
+    given, is (button, stick_x, stick_y) of pad 0 in place of the rule for `rails`, and pad_rule(flight, pad) the same
+    for the other pads. extra(flight, pad) gives buttons to add."""
     def pad_input(flight, pad):
         if pad == 0 and lead is not None:
             button, stick_x, stick_y = lead(flight)

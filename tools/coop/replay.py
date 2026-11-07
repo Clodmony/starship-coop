@@ -58,9 +58,9 @@ LEVEL_CORNERIA = 0  # include/sf64level.h
 # with START_SEEDS, so a start in the level from those seeds plays that game, frame for frame (hash_check.py start).
 GENERATED_SEEDS = (1234, 5678, 9012, 111, 222, 333)
 START_SEEDS = (741, 16142, 16930, 6521, 10732, 6721)
-FIRST_PRESS = 60  # the title screen takes no A before this frame
+FIRST_PRESS = 60  # pad 0's first A: this far into the title screen
 FIRE_PERIOD = 30
-FIRE_PHASE = 25  # A goes down on frames 60, 90 and so on through the menus, which leaves this on the frames below
+FIRE_PHASE = 25  # counted from when player 0 flies: on MENUS, this makes it frames 60, 90, 120 and so on
 
 
 class Start(namedtuple("Start", "name level_id skip_intro level active seeds")):

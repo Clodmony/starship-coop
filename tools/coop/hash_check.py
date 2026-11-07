@@ -41,10 +41,11 @@ builds and rates run in real time: at test speed a game frame is drawn once, so 
 interpolation is what they are there to see (#141, #137). --speed on rates is for replay_test.py, which checks that a
 game at speed fails it.
 start is what a start in the level leaves different from coming through the menus (#148). It plays Corneria through the
-menus, takes the seeds that game entered the level with, and plays the same input twice from those seeds, starting in the
-level. The two starts in the level must be equal from their first frame to their last, and each must equal the game from
-the menus in every region from level frame 1 on. It also says if START_SEEDS in replay.py no longer are those seeds; that
-is not a failure, as then only the tools' flights change. What the hash cannot see is in docs/coop/NOTES.md.
+menus, takes the seeds that game entered the level with, and plays the same input twice from those seeds, starting in
+the level. The two starts in the level must be equal from their first frame to their last, and each must equal the game
+from the menus in every region from level frame 1 on. With --players 1 region scenery360 is left out, and the tool says
+how often it differed: see cmd_start. It also says if START_SEEDS in replay.py no longer are those seeds; that is not a
+failure, as then only the tools' flights change. What the hash cannot see is in docs/coop/NOTES.md.
 
 Exit code 0 on PASS (or no difference for diff), 1 otherwise.
 """
@@ -67,8 +68,8 @@ from run_folder import make_run_folder  # noqa: E402
 BUTTON_A = 0x8000
 BUTTON_L = 0x0020
 
-# Input by rule: replay.py's Start.fires on pad 0, L jumps to all-range with CVar gDebugJumpToAllRange, and co-op players
-# join a little later. Frames here count from when player 0 flies, so they fit every Start.
+# Input by rule: replay.py's Start.fires on pad 0, L jumps to all-range with CVar gDebugJumpToAllRange, and co-op
+# players join a little later. Frames here count from when player 0 flies, so they fit every Start.
 GENERATED_L = 65
 GENERATED_POKE = 625  # both players flying in all-range
 GENERATED_END = 1025
@@ -159,8 +160,8 @@ def cmd_diff(args):
 
 def write_generated_replay(path, frames=None, l_at=GENERATED_L, start=replay_tool.MENUS, seeds=None):
     """Write a replay from the rule above, for a game that starts at start: frames long, by default to GENERATED_END,
-    with L at l_at, counted from when player 0 flies, or none. It holds no checkpoints, so playback reports FAIL_MISMATCH
-    at frame 0 and plays on; the layout is ReplayHeader and ReplayFrame in src/port/coop/test/replay.c."""
+    with L at l_at, counted from when player 0 flies, or none. It holds no checkpoints, so playback reports
+    FAIL_MISMATCH at frame 0 and plays on; the layout is ReplayHeader and ReplayFrame in src/port/coop/test/replay.c."""
     data = bytearray(b"SFCR" + struct.pack("<III6i", 2, 20, 204, *(seeds or start.seeds)))
     idle = bytes(20)
     for frame in range(start.frame(GENERATED_END) if frames is None else frames):
@@ -192,8 +193,8 @@ def play(replay, exe, timeout, tag, poke=None, env_extra=None, config=None, star
 
 
 def test_setup(args):
-    """Return (replay, config, start) for a run: the given file, or input by rule with what that needs. start is args.start
-    for input by rule; a file plays from where it was made."""
+    """Return (replay, config, start) for a run: the given file, or input by rule with what that needs. start is
+    args.start for input by rule; a file plays from where it was made."""
     cvars = {}
     start = None
     if args.players != 1:
@@ -575,6 +576,12 @@ def read_level_line(path):
     return None
 
 
+def without_region(rows, at):
+    """Rows with one region and the total left out of the comparison."""
+    return [(frame, state, level, "", [*regions[:at], "", *regions[at + 1:]])
+            for frame, state, level, _, regions in rows]
+
+
 def start_played(name, values, rows, start):
     """Return (failures, frame Play_Init ran on, seeds) for a run of cmd_start."""
     level = None if values is None or "log" not in values else read_level_line(values["log"])
@@ -624,14 +631,22 @@ def cmd_start(args):
         menu_level_rows = [row for row in menu_rows if row[0] > menu_level]
         shifted = [(row[0] + menu_level - a_level, *row[1:]) for row in a_rows if row[0] > a_level]
         limit = recorded - a_level
+        if args.players == 1:
+            # Only here the hash reads free gScenery360 slots (HashScenery360), and level memory is not cleared: they
+            # hold what the screens before left there, and from the menus that is more than nothing.
+            at = names.index("scenery360")
+            apart = sum(1 for a, b in zip(menu_level_rows[:limit], shifted[:limit]) if a[4][at] != b[4][at])
+            print(f"hash: with one player free gScenery360 slots count: that region differs on {apart} frames, and is "
+                  f"left out")
+            menu_level_rows, shifted = without_region(menu_level_rows, at), without_region(shifted, at)
         diff = first_difference(menu_level_rows, shifted, limit)
         if diff is not None:
             failures.append(f"menus and start A differ {diff[0] + 1} frames into the level: {describe(names, diff)}")
         elif min(len(menu_level_rows), len(shifted)) < limit - 1:
             failures.append(f"only {min(len(menu_level_rows), len(shifted))} level frames to compare, not {limit - 1}")
         else:
-            print(f"hash: menus and start A equal on {limit - 1} level frames: state, level, total and {len(names)} "
-                  f"regions")
+            what = f"{len(names) - 1} regions" if args.players == 1 else f"total and {len(names)} regions"
+            print(f"hash: menus and start A equal on {limit - 1} level frames: state, level, {what}")
     for failure in failures:
         print(f"FAIL: {failure}")
     print("hash: FAIL" if failures else "hash: PASS")
