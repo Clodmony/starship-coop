@@ -7,7 +7,7 @@ description: Build, run and change Starship Co-op (the Star Fox 64 PC port with 
 
 ## Build
 
-One script, the same on Linux, macOS and Windows, and the same one CI runs:
+One script, the same on Linux, macOS and Windows:
 
 ```sh
 python tools/coop/build.py --quiet           # submodules if missing, configure, build, repo checks; prints a summary
@@ -18,7 +18,8 @@ Run it unattended and read only the summary line (`build: OK ...` or `build: FAI
 The full log is `<build dir>/coop-build.log`. Build dirs: `build-cmake` (Ninja) on Linux/macOS, `build/x64` (Visual
 Studio 2022) on Windows. Upstream's manual steps are in `docs/BUILDING.md`.
 
-- Build locally before every push; CI repeats the build on Linux and Windows for PRs that touch code.
+- Build locally before every push, and run `python tools/coop/test_all.py` before a merge. GitHub CI is off
+  (docs/coop/MAINTAINING.md), so nothing repeats the build for you.
 - Ask the owner before installing build dependencies. Linux packages are listed in `.github/workflows/coop-build.yml`.
 - The ROM (`baserom.z64`) and the generated `sf64.o2r` / `starship.o2r` never go into git (`.gitignore` covers them;
   `python tools/coop/check.py` fails if one is tracked).

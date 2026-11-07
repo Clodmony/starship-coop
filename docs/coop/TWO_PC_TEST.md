@@ -9,9 +9,11 @@ and that a desync, if one happens, is caught and reported.
 
 ## Before you start
 
-- **The same build on both PCs.** Download one CI build from the repository's Actions page: the newest green
-  **Co-op build** run on `coop`, artifact `starship-coop-<id>-<os>-x64`. Both players take the artifact of the same
-  run. Downloading needs a GitHub login, and artifacts expire after 14 days.
+- **The same build on both PCs.** GitHub CI is off, so its last builds are all there is: the newest **Co-op build**
+  run on `coop` on the repository's Actions page, artifact `starship-coop-<id>-<os>-x64`, kept for 14 days after
+  2026-11-07. Both players take the artifact of the same run. Downloading needs a GitHub login. Otherwise one player
+  builds a package (`python tools/coop/package.py --config Release`) and sends it to the other: two builds of the same
+  commit made with different compiler versions refuse each other.
 - **The same operating system.** A Windows game and a Linux game refuse each other, as nobody has shown yet that they
   compute the same game (decision 0002, platform rule). Both on Windows or both on Linux.
 - **Check the label.** Press F1 to open the menu bar. Its right end shows `Co-op <id>`. It must be the same on both

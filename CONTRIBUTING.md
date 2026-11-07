@@ -77,8 +77,8 @@ Don't let `gh repo fork --remote` rename your remotes; it would call this repo `
 
 ## Build locally before you push
 
-Your own machine is the development loop; CI is only the final check. One command, the same on Windows, Linux and
-macOS, and the same one CI runs:
+Your own machine is the development loop and the check: GitHub CI is off (docs/coop/MAINTAINING.md). One command
+builds, the same on Windows, Linux and macOS:
 
 ```sh
 python tools/coop/build.py            # configure, build (Debug), repo checks; add --quiet for a summary only
@@ -94,10 +94,9 @@ python tools/coop/build.py --assets   # first time: also builds sf64.o2r from yo
   yet.
 - Push only when the build is green. Say in the PR which OS you built on.
 
-CI on pull requests: `Co-op checks` (seconds) always; `Co-op build` (Linux and Windows, about 30 to 40 minutes) when
-the PR touches code, CMake files or submodules. Docs-only PRs skip the build. A `Co-op build` run leaves its builds
-on the run's page under Artifacts, named `starship-coop-<id>-<os>-x64`; the game shows the same `<id>` at the right end
-of the menu bar (F1).
+Before a PR is merged, `python tools/coop/test_all.py --base-exe <a build of coop>` runs every test in lanes,
+unattended, and must end in `RESULT: PASS`; `--config Release` does the same on a Release build. Say in the PR what ran
+and what did not. The game shows its build id at the right end of the menu bar (F1).
 
 ## Commits
 
@@ -110,8 +109,8 @@ of the menu bar (F1).
 ## Pull requests
 
 1. Open the PR as a **draft** early, with the template filled in and `Closes #<issue>`.
-2. Mark it ready when the checklist is done. It needs green `Co-op checks`, a green `Co-op build` when it ran, and
-   one approving review from a code owner (`.github/CODEOWNERS`). Maintainers can merge their own PRs without a
+2. Mark it ready when the checklist is done. It needs a passing `test_all.py` run on the branch with `coop` merged in,
+   named in the PR, and one approving review from a code owner (`.github/CODEOWNERS`). Maintainers can merge their own PRs without a
    second review while the project has a single maintainer; direct pushes to `coop` are blocked for everyone (see
    docs/coop/MAINTAINING.md).
 3. Say which QA level the change reached and how it was tested ([docs/coop/QA.md](docs/coop/QA.md)). "Compiles" is
