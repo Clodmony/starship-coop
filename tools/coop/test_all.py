@@ -112,6 +112,8 @@ def all_steps():
         ("hash-run-1", ["hash_check.py", "run"], "exe", False),
         ("effects", ["player_trace.py", "effects", "--players", "2"], "exe", False),
         ("effects-allrange", ["player_trace.py", "effects", "--players", "2", "--all-range"], "exe", False),
+        ("hash-start-2", ["hash_check.py", "start", "--players", "2"], "exe", False),
+        ("hash-start-1", ["hash_check.py", "start", "--players", "1"], "exe", False),
         ("hash-probe-2", ["hash_check.py", "probe", "--players", "2"], "exe", False),
         ("hash-probe-1", ["hash_check.py", "probe", "--players", "1"], "exe", False),
     ]

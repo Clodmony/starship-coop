@@ -26,6 +26,7 @@ unbroken run passed and every break was caught.
 import argparse
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -278,6 +279,8 @@ def main(description, make_table, add_options=None):
         print(line, flush=True)
         lines.append(line)
 
+    # A stop goes through the finally below, as SIGINT does, or the source keeps its break until the next run (#147).
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(1))
     try:
         # The unbroken source first: every scenario a break relies on must pass without it.
         tests = sorted({t for b in chosen for t in b[3]}, key=list(table.scenarios).index)

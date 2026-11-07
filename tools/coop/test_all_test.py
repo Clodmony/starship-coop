@@ -43,6 +43,27 @@ child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
 open(sys.argv[1], 'w').write(str(child.pid))
 time.sleep(60)
 """
+# mutants.py on a table of its own, whose first break hangs: the moment a source holds a break.
+MUTATION = """
+import sys, time
+from pathlib import Path
+tools, folder = sys.argv[1:]
+sys.path.insert(0, tools)
+import mutants
+mutants.FOLDER = Path(folder)
+mutants.LOCK = mutants.FOLDER / "lock"
+source = mutants.FOLDER / "source.txt"
+table = mutants.Table(source=source, test_script=source, scenarios={"one": None}, target="no-such-target",
+                      find_exe=lambda *args: None, breaks=[("break", "text", "broken", ["one"])])
+def build(self, label, changed=True):
+    if label == "break":
+        time.sleep(60)
+    return True, ""
+mutants.Runner.build = build
+mutants.Runner.scenarios = lambda self, tests, label: ({t: "ok" for t in tests}, {t: "" for t in tests})
+sys.argv = ["mutants.py", "--out", str(mutants.FOLDER / "out")]
+sys.exit(mutants.main("test_all_test", lambda args: table))
+"""
 # Notes when it started and ended, for the lanes.
 TIMED = """
 import sys, time
@@ -211,6 +232,24 @@ def scenario_stop(bench):
     want(not (bench.folder() / "later.log").exists(), "a step started after the stop")
 
 
+def scenario_stop_mutants(bench):
+    """A run stopped during a mutation check must not leave a break in the source: test_all.py runs them all."""
+    folder = bench.work / "mutants"
+    folder.mkdir()
+    source = folder / "source.txt"
+    source.write_text("text", encoding="utf-8")
+    proc = bench.start([step("mutants", "serial", MUTATION, TOOLS, folder)])
+    end = time.monotonic() + 10
+    while time.monotonic() < end and source.read_text(encoding="utf-8") != "broken":
+        time.sleep(0.05)
+    want(source.read_text(encoding="utf-8") == "broken", "the mutation check did not get to its break")
+    proc.send_signal(signal.SIGTERM)
+    output = proc.communicate(timeout=60)[0]
+    want_result(proc.returncode, output, 1, "FAILED")
+    want(source.read_text(encoding="utf-8") == "text", "the stop left the break in the source")
+    want(not (folder / "source.txt.orig").exists(), "the stop left the backup of the source")
+
+
 def scenario_tree(bench):
     plan = [step("writes", "game", f"open({str(bench.tracked)!r}, 'a').write('changed\\n')")]
     code, output = bench.run(plan)
@@ -226,10 +265,11 @@ SCENARIOS = {
     "lanes": scenario_lanes,
     "timeout": scenario_timeout,
     "stop": scenario_stop,
+    "stop-mutants": scenario_stop_mutants,
     "tree": scenario_tree,
 }
-if not sys.platform.startswith("linux"):  # these read /proc
-    del SCENARIOS["timeout"], SCENARIOS["stop"]
+if not sys.platform.startswith("linux"):  # these read /proc, or need a stop signal a process can catch
+    del SCENARIOS["timeout"], SCENARIOS["stop"], SCENARIOS["stop-mutants"]
 
 
 def main():
