@@ -39,6 +39,13 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   audio     the plain run with the two clients at different audio sample counts, as a radio line follows the sound thread.
   release   the plain run on a Release build (--release-exe) and on Debug: all four clients have to hash alike.
   rates     the plain run at real time, with the two clients at different gInterpolationFPS.
+  desync_sim src/port/coop/sync/desync.c alone, in a virtual network (tools/coop/desynctest), WP-23.
+  desync    a bit flipped on one client, on rails and in all-range: both games name that frame, the players and the
+            region, write a report, and the session ends; desync_report.py names the flipped value.
+  desync_control the same with SF64_COOP_TEST_NO_DESYNC_CHECK: the hashes differ and nobody says so.
+  desync_three a third game that stays in step hears which two differed, and writes its report too.
+
+Every scenario that compares two games also checks that neither wrote a desync report (WP-23).
 
 Prints one line per scenario and a RESULT line, exits 0 only when everything passed. Needs a build with assets.
 """
@@ -58,6 +65,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(ROOT / "tools" / "coop" / "chaos"))
+import desync_report  # noqa: E402
 import full_level  # noqa: E402
 import hash_check  # noqa: E402
 import join_test  # noqa: E402
@@ -66,7 +74,7 @@ import player_trace  # noqa: E402
 import replay as replay_tool  # noqa: E402
 
 IS_LINUX = platform.system() == "Linux"
-BUTTON_A, BUTTON_START = 0x8000, 0x1000
+BUTTON_A, BUTTON_START, BUTTON_L = 0x8000, 0x1000, 0x0020
 START_FRAME = 600
 REPLAY_FRAMES = 30000  # longer than any run: the games stop on `done`, not at the end of this
 INPUT_DELAY = 3  # COOP_LOCKSTEP_INPUT_DELAY
@@ -78,6 +86,8 @@ SHORT_FRAMES = 2700
 LEVEL_COMPLETE, MAP, PLAY_PAUSE = 7, 4, 100  # PLAYERSTATE_LEVEL_COMPLETE, GSTATE_MAP, PLAY_PAUSE
 MAP_TAIL = 60
 FLY_FRAMES = 14000  # Corneria took 11200 frames from level start to the map in #142, the rest is room
+DESYNC_PERIOD = 10  # COOP_DESYNC_PERIOD: a desync shows within this many frames plus the input delay
+DESYNC_SEEN_WITHIN = 2 * DESYNC_PERIOD + 2 * INPUT_DELAY + 10  # frames from the flipped bit to the session's end
 
 
 class Fail(Exception):
@@ -130,6 +140,7 @@ class Client(join_test.LevelLog):
         replay = self.run / "input.sfcr"
         join_test.write_replay(replay, REPLAY_FRAMES, join_test.SEEDS.get(name, join_test.SEEDS["client0"]))
         self.env = replay_tool.game_env(self.run)
+        self.env["SF64_COOP_TEST_SPEED"] = replay_tool.MEETING_SPEED  # games that meet over sockets, as in join_test.py
         self.env.update({
             "SF64_COOP_REPLAY_PLAY": str(replay),
             "SF64_COOP_REPLAY_REPORT": str(self.run / "replay-report.txt"),
@@ -172,9 +183,9 @@ class Client(join_test.LevelLog):
 
 
 def session(args, folder, host_env=None, client_env=None, both=None, config=None, client_config=None, client_port=None,
-            clients=1):
+            clients=1, client_envs=None):
     """A host and its clients through the join driver, on their way to a level. Returns them started: with one client as
-    (host, client), with more as (host, client, client, ...)."""
+    (host, client), with more as (host, client, client, ...). client_envs holds one more dict per client."""
     folder.mkdir(parents=True, exist_ok=True)
     port_file = folder / "port"
     env = dict(both or {})
@@ -193,7 +204,8 @@ def session(args, folder, host_env=None, client_env=None, both=None, config=None
     games = [host]
     for n, pick in zip(range(clients), ("falco", "slippy", "peppy")):
         games.append(Client(args, folder, f"client{n}", {**env, "SF64_COOP_JOIN_CONNECT": f"127.0.0.1:{port}",
-                                                         "SF64_COOP_JOIN_PICKS": pick, **(client_env or {})}))
+                                                         "SF64_COOP_JOIN_PICKS": pick, **(client_env or {}),
+                                                         **((client_envs or [{}] * clients)[n])}))
         games[-1].start(client_config if client_config is not None else config)
     return tuple(games)
 
@@ -227,7 +239,22 @@ def compare(host, client, frames=None):
     m = min(len(a), len(b))
     for i in range(m):
         expect(a[i] == b[i], f"the lockstep logs differ at frame {i}: host {a[i]}, client {b[i]}")
+    no_desync([host, client])
     return n
+
+
+def desync_reports(game):
+    """The desync reports a game wrote into its own folder (WP-23), oldest first."""
+    return sorted(game.run.glob("coop-desync-*.txt"))
+
+
+def no_desync(games):
+    for game in games:
+        reports = desync_reports(game)
+        expect(not reports, f"{game.name} wrote a desync report in a run that stayed in step: "
+                            f"{reports[0].name if reports else ''}")
+        said = [line for _, _, line in game.report() if "out of step" in line]
+        expect(not said, f"{game.name} said {said[0] if said else ''}")
 
 
 def view_of(game):
@@ -282,19 +309,36 @@ def find_sim(build_dir, config):
     return None
 
 
-def sc_sim(args, folder):
+def find_desync_sim(build_dir, config):
+    """The test program of `desync_sim`, as find_sim."""
+    for path in (build_dir / "coop-desync-test" / "coop_desync_test",
+                 build_dir / "coop-desync-test" / config / "coop_desync_test.exe"):
+        if path.exists():
+            return path
+    return None
+
+
+def run_sim(args, folder, target, find):
     folder.mkdir(parents=True, exist_ok=True)
     build = Path(args.build_dir).resolve() if args.build_dir else ROOT / "build-cmake"
     if not args.no_build:
-        done = subprocess.run(["cmake", "--build", str(build), "--config", args.config, "--target", "coop_lockstep_test"],
+        done = subprocess.run(["cmake", "--build", str(build), "--config", args.config, "--target", target],
                               capture_output=True, text=True)
-        expect(done.returncode == 0, f"could not build coop_lockstep_test: {done.stdout[-400:]}")
-    program = find_sim(build, args.config)
-    expect(program is not None, f"no coop_lockstep_test in {build}")
+        expect(done.returncode == 0, f"could not build {target}: {done.stdout[-400:]}")
+    program = find(build, args.config)
+    expect(program is not None, f"no {target} in {build}")
     done = subprocess.run([str(program)], capture_output=True, text=True, timeout=300)
     (folder / "sim.log").write_text(done.stdout + done.stderr, encoding="utf-8")
-    expect(done.returncode == 0, f"coop_lockstep_test failed: {done.stdout[-600:]}")
+    expect(done.returncode == 0, f"{target} failed: {done.stdout[-600:]}")
     return done.stdout.strip().splitlines()[-1]
+
+
+def sc_sim(args, folder):
+    return run_sim(args, folder, "coop_lockstep_test", find_sim)
+
+
+def sc_desync_sim(args, folder):
+    return run_sim(args, folder, "coop_desync_test", find_desync_sim)
 
 
 def sc_steer(args, folder):
@@ -388,13 +432,15 @@ def level_story(game, frames):
 
 
 def plain(args, folder, feed, frames, exe=None, env=None, host_env=None, client_env=None, config=None,
-          client_config=None, seconds=None, client_port=None):
-    """Two games repeat a flight from its log, with no pilot in them. Returns the two, stopped."""
+          client_config=None, seconds=None, client_port=None, until="done"):
+    """Two games repeat a flight from its log, with no pilot in them. Returns the two, stopped once both said `until`."""
     both = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(frames - 1), **(env or {})}
     run_args = argparse.Namespace(**{**vars(args), "exe": exe or args.exe})
     host, client = session(run_args, folder, host_env, client_env, both, config, client_config, client_port)
     try:
-        wait_for([host, client], "done", seconds or args.level_seconds, "in the plain run")
+        wait_for([host, client], until, seconds or args.level_seconds, "in the plain run")
+        if until == "over":
+            wait_for([host, client], "alive", 120, "after the session ended: a game hangs")
     finally:
         client.close()
         host.close()
@@ -423,16 +469,20 @@ def sc_full(args, folder):
     print(f"lockstep: plain run: {equal} frames equal, and equal to the flight; {played(host)}, {played(client)}",
           flush=True)
 
-    # Both fly on, so that what the poke changes can only show in the hash of the frame it lands on.
+    # Both fly on, so that what the poke changes can only show in the hash of the frame it lands on. The desync check
+    # then ends the session (WP-23), and each game has to say where.
     poke = frames - 2000
-    host, client = plain(args, folder / "poke", feed, poke + 200, client_env={"SF64_COOP_LOCKSTEP_POKE": str(poke),
-                                                                              "SF64_COOP_HASH_POKE_PLAYER": "1"})
+    host, client = plain(args, folder / "poke", feed, poke + 400, client_env={"SF64_COOP_LOCKSTEP_POKE": str(poke),
+                                                                              "SF64_COOP_HASH_POKE_PLAYER": "1"},
+                         until="over")
     _, _, ours = host.rows()
     _, _, theirs = client.rows()
     difference = next((i for i in range(min(len(ours), len(theirs))) if ours[i] != theirs[i]), None)
     expect(difference == poke, f"poke on the client at frame {poke}, first difference at {difference}")
     regions = [names[k] for k in range(len(ours[poke][3])) if ours[poke][3][k] != theirs[poke][3][k]]
-    return f"{frames} frames of Corneria to the map, equal; poke at {poke} shows there, in {','.join(regions)}"
+    found = check_desync(host, client, poke, "all-range")
+    return (f"{frames} frames of Corneria to the map, equal; poke at {poke} shows there, in {','.join(regions)}; "
+            f"{found}")
 
 
 def play_states(game):
@@ -756,8 +806,114 @@ def sc_rates(args, folder):
     return f"{a} and {b} fps at real time, {draws} draws a frame: {compare(host, client, args.feed_frames)} frames equal"
 
 
+def check_desync(host, client, poke, mode, pair=(1, 2), clients=None):
+    """Both games found the flipped bit of player 2 at exactly `poke`: a report each, with the frame, the pair, the
+    region and a verified dump, the session over within a few frames and the text for the player; and the diff tool
+    names gPlayer[1]. Returns a line about it."""
+    games = [host, client, *(clients or [])]
+    reports = {}
+    for game in games:
+        found = desync_reports(game)
+        expect(len(found) == 1, f"{game.name} wrote {len(found)} desync reports")
+        reports[game.name] = desync_report.Report(found[0])
+        header = reports[game.name].header
+        expect(header.get("frame") == str(poke), f"{game.name}: {found[0].name} says frame {header.get('frame')}")
+        expect(header.get("pair") == f"players {pair[0]} and {pair[1]}", f"{game.name}: pair {header.get('pair')}")
+        expect(mode in header.get("my state", ""), f"{game.name}: {header.get('my state')} is not {mode}")
+        problems = reports[game.name].verify()
+        expect(not problems, f"{game.name}: {problems[0] if problems else ''}")
+        for key in ("this game", "other game"):
+            expect(header.get(key, "").startswith("build "), f"{game.name}: {key}: {header.get(key)}")
+        over = join_test.said(game.sync(), "over")
+        expect(over, f"{game.name}: the session did not end")
+        frame = int(over[0]["frame"])
+        expect(poke <= frame <= poke + DESYNC_SEEN_WITHIN, f"{game.name}: over at frame {frame}, poke at {poke}")
+        ended = [line for _, _, line in game.report() if line.startswith("ended")]
+        expect(ended, f"{game.name} says nothing about the end")
+        if game in (host, client):
+            expect(f"out of step at frame {poke} of Corneria ({mode})" in ended[-1], f"{game.name}: {ended[-1]}")
+            expect("report for the developers is in" in ended[-1], f"{game.name}: no report named: {ended[-1]}")
+        else:
+            # A game outside the pair waits the grace out, and the host closes first: it reads the host's end, and its
+            # report comes from the session's end (NOTES.md, 2026-11-07, #21).
+            expect("out of step" in ended[-1] or "closed" in ended[-1], f"{game.name}: {ended[-1]}")
+    for game in (host, client):
+        expect(reports[game.name].header.get("regions differing") == "players",
+               f"{game.name}: regions {reports[game.name].header.get('regions differing')}")
+    for game in clients or []:
+        expect(reports[game.name].header.get("regions differing") == "none",
+               f"{game.name}: regions {reports[game.name].header.get('regions differing')}")
+    done = subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "coop" / "desync_report.py"), "diff",
+                           str(desync_reports(host)[0]), str(desync_reports(client)[0])],
+                          capture_output=True, text=True, timeout=120)
+    expect(done.returncode == 0, f"desync_report.py diff: exit {done.returncode}: {done.stdout[-400:]}")
+    first = next((line.strip() for line in done.stdout.splitlines() if "gPlayer[1]" in line), None)
+    expect(first is not None and first.startswith("players: gPlayer[1] differs"),
+           f"desync_report.py diff did not name gPlayer[1]: {done.stdout[-400:]}")
+    return f"both reports verified, `{first}`"
+
+
+def poke_session(args, folder, poke, jump=None, both=None, client_envs=None, clients=1):
+    """A session with sway, a bit of player 2 flipped on the first client at `poke`, into all-range first when `jump`
+    says when player 1 presses L (CVar gDebugJumpToAllRange on every game). Waits for the session to end, or for
+    `done` when `both` turns the check off. Returns the games, stopped."""
+    folder.mkdir(parents=True, exist_ok=True)
+    feed = folder / "feed.txt"
+    frames = poke + 400
+    write_feed(feed, frames + 16, press(sway, {(jump, 0)}, BUTTON_L) if jump is not None else sway)
+    config = {"CVars": {"gDebugJumpToAllRange": 1}} if jump is not None else None
+    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(frames), **(both or {})}
+    envs = [{"SF64_COOP_LOCKSTEP_POKE": str(poke), "SF64_COOP_HASH_POKE_PLAYER": "1"}] + [{}] * (clients - 1)
+    games = session(args, folder, both=env, config=config, clients=clients, client_envs=client_envs or envs)
+    try:
+        if both and "SF64_COOP_TEST_NO_DESYNC_CHECK" in both:
+            wait_for(list(games), "done", 900, "with the check off")
+        else:
+            wait_for(list(games), "over", 900, "after the flipped bit")
+            wait_for(list(games), "alive", 120, "after the session ended: a game hangs")
+    finally:
+        for game in games:
+            game.close()
+    return games
+
+
+def sc_desync(args, folder):
+    rails = JOIN_FRAME + 300
+    host, client = poke_session(args, folder / "rails", rails)
+    on_rails = check_desync(host, client, rails, "rails")
+    all_range = JOIN_FRAME + 700
+    host, client = poke_session(args, folder / "all-range", all_range, jump=JOIN_FRAME + 100)
+    in_all_range = check_desync(host, client, all_range, "all-range")
+    return f"rails, poke at {rails}: {on_rails}; all-range, poke at {all_range}: {in_all_range}"
+
+
+def sc_desync_control(args, folder):
+    """Can this test fail? With the check off the hashes still differ, and nobody says so."""
+    poke = JOIN_FRAME + 300
+    host, client = poke_session(args, folder, poke, both={"SF64_COOP_TEST_NO_DESYNC_CHECK": "1"})
+    _, _, ours = host.rows()
+    _, _, theirs = client.rows()
+    difference = next((i for i in range(min(len(ours), len(theirs))) if ours[i] != theirs[i]), None)
+    expect(difference == poke, f"poke at {poke}, first difference at {difference}")
+    no_desync([host, client])
+    expect(not join_test.said(host.sync(), "over") and not join_test.said(client.sync(), "over"), "the session ended")
+    return f"with the check off the hashes differ from frame {poke} on, no report, the session goes on"
+
+
+def sc_desync_three(args, folder):
+    """The second client flips the bit: the host and it name players 1 and 3, the first client hears it from the host."""
+    poke = JOIN_FRAME + 300
+    envs = [{}, {"SF64_COOP_LOCKSTEP_POKE": str(poke), "SF64_COOP_HASH_POKE_PLAYER": "1"}]
+    host, a, b = poke_session(args, folder, poke, client_envs=envs, clients=2)
+    own = int(join_test.said(b.report(), "joined")[0]["player"])  # whoever joined first is player 1
+    found = check_desync(host, b, poke, "rails", pair=(1, own + 1), clients=[a])
+    return (f"three games, poke on player {own + 1}'s at {poke}: {found}; player {4 - own}'s report says no region "
+            f"differs from the host's")
+
+
 SCENARIOS = {
     "sim": sc_sim,
+    "desync_sim": sc_desync_sim,
     "steer": sc_steer,
     "three": sc_three,
     "control": sc_control,
@@ -777,6 +933,9 @@ SCENARIOS = {
     "audio": sc_audio,
     "release": sc_release,
     "rates": sc_rates,
+    "desync": sc_desync,
+    "desync_control": sc_desync_control,
+    "desync_three": sc_desync_three,
 }
 LONG = ("full", "audio", "release", "rates")
 
@@ -800,7 +959,7 @@ def main():
         print("\n".join(SCENARIOS))
         return 0
     names = args.only.split(",") if args.only else [name for name in SCENARIOS if name not in LONG]
-    if names != ["sim"]:
+    if any(name not in ("sim", "desync_sim") for name in names):
         args.exe = replay_tool.find_exe(args.exe)
     if args.feed:
         args.feed = Path(args.feed).resolve()

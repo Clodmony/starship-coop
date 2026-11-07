@@ -24,6 +24,8 @@
 //   SF64_COOP_TEST_INPUT_DELAY=<n>    frames of input delay in place of COOP_LOCKSTEP_INPUT_DELAY
 //   SF64_COOP_TEST_NO_LOCKSTEP=1      a level start starts no lockstep, so a run can show what it is there for
 //   SF64_COOP_TEST_START_SEEDS=<a,b,c,d,e,f>  host: the level starts from these seeds, whatever frame Start came on
+//   SF64_COOP_TEST_NO_DESYNC_CHECK=1  no state hashes go out or are compared in a session (desync_game.h, WP-23), so
+//                                     a run can show what the check is there for
 // With none of them set, nothing changes.
 
 #ifdef __cplusplus

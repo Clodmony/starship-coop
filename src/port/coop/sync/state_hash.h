@@ -15,6 +15,8 @@
 // Frames are counted the same way as the input replay (src/port/coop/test/replay.c): frame 0 is the first frame in
 // GSTATE_START, so a hash log and a replay file line up frame by frame.
 
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -44,6 +46,33 @@ typedef struct {
 
 // Hash the current game state. Safe to call at any time; usable without the log (for WP-02, WP-22, WP-23).
 void CoopStateHash_Compute(CoopStateHash* out);
+
+// The bytes the hash ran over (WP-23): one frame's state as hashed, pointers normalised, in named chunks, so two
+// games' dumps of one frame compare byte for byte and the first difference has a name. A chunk is one hashed value
+// or one element of an array; its region is where it counted.
+typedef struct {
+    const char* name; // the variable or array, as in the source
+    int32_t index;    // the element, or the first slot of a range; -1 for a single value
+    uint8_t region;   // CoopHashRegion
+    uint32_t size;
+    uint32_t offset; // into bytes
+} CoopStateChunk;
+
+typedef struct {
+    uint8_t* bytes;
+    size_t cap;
+    size_t used;
+    CoopStateChunk* chunks;
+    uint32_t chunkCap;
+    uint32_t count;
+    bool overflow; // not everything fit: the dump is short, the hash is whole
+} CoopStateDump;
+
+// Chunks a dump has at most, and the bytes it needs at most.
+#define COOP_STATE_DUMP_CHUNKS 1024
+size_t CoopStateHash_DumpBytes(void);
+// As Compute, and every hashed byte also goes into dump, in hashing order. dump->used and count start from 0 here.
+void CoopStateHash_ComputeDump(CoopStateHash* out, CoopStateDump* dump);
 
 // Test only: the poke of SF64_COOP_HASH_POKE on the frame now starting, for a frame only the caller can name.
 void CoopStateHash_PokeNow(void);

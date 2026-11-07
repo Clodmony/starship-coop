@@ -102,6 +102,7 @@ def all_steps():
         Step("net-mutants", SERIAL, ["net_mutants.py"], "build", "net"),
         Step("net-mutants-asan", SERIAL, ["net_mutants.py", "--asan"], "build", "net", True),
         Step("lockstep-mutants", SERIAL, ["lockstep_mutants.py"], "build", "net"),
+        Step("desync-mutants", SERIAL, ["desync_mutants.py"], "build", "net"),
         Step("steam-mutants", SERIAL, ["steam_mutants.py"], "build", "net"),
     ]
     # Longest first, so no lane is left with a long one at the end. exit-test goes last all the same: it waits on the

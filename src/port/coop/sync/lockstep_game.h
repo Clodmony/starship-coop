@@ -13,6 +13,7 @@
 // Outside a session of two or more players nothing here does anything, and CoopSyncGame_HoldFrame returns 0 at once.
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "port/coop/net/transport.h"
@@ -28,6 +29,9 @@ typedef struct {
     void (*pump)(void);
     // Lockstep cannot go on: end the session and show this to the player. CoopSyncGame_End follows from there.
     void (*fail)(const char* text);
+    // One line on a game's identity for a desync report (WP-23): peer -1 is this game, as the session knows them. May
+    // be NULL, or leave "" when it does not know.
+    void (*identity)(int peer, char* out, size_t cap);
 } CoopSyncLink;
 
 void CoopSyncGame_Init(void);

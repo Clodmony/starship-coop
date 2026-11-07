@@ -190,7 +190,24 @@ static void Link_Fail(const char* text) {
     Session_End();
 }
 
-static const CoopSyncLink sLink = { Link_Send, Session_Pump, Link_Fail };
+// For a desync report: this game's identity, or a peer's as the session holds it.
+static void Link_Identity(int peer, char* out, size_t cap) {
+    const CoopIdentity* id = NULL;
+    CoopIdentity own;
+
+    out[0] = '\0';
+    if (peer < 0) {
+        CoopIdentity_FromGame(&own);
+        id = &own;
+    } else if (sSession != NULL) {
+        id = CoopSession_PeerIdentity(sSession, peer);
+    }
+    if (id != NULL) {
+        CoopIdentity_Line(id, out, cap);
+    }
+}
+
+static const CoopSyncLink sLink = { Link_Send, Session_Pump, Link_Fail, Link_Identity };
 
 // The control: everything Enter does but the values, so the two games go to one level from what they each brought.
 static void Enter_KeepOwn(const CoopLevelStart* start) {

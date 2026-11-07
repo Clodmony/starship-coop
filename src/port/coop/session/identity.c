@@ -259,6 +259,25 @@ static void T_Add(Text* t, const char* fmt, ...) {
     }
 }
 
+void CoopIdentity_Line(const CoopIdentity* id, char* out, size_t cap) {
+    size_t used;
+    uint8_t i;
+
+    used = (size_t) snprintf(out, cap, "build %s, %s, ROM ", id->build, id->platform);
+    if (id->romCount == 0 && used < cap) {
+        used += (size_t) snprintf(out + used, cap - used, "none");
+    }
+    for (i = 0; (i < id->romCount) && (used < cap); i++) {
+        const char* name = CoopIdentity_RomName(id->roms[i]);
+
+        used += (size_t) snprintf(out + used, cap - used, "%s%s (%08X)", i ? " + " : "", name ? name : "unknown ROM",
+                                  (unsigned) id->roms[i]);
+    }
+    if (used < cap) {
+        snprintf(out + used, cap - used, ", %u sim CVars", (unsigned) id->cvarCount);
+    }
+}
+
 const char* CoopIdentity_RomName(uint32_t version) {
     switch (version) {
         case 0x76924CA9: // observed in an sf64.o2r made from US 1.0, see NOTES.md WP-21
