@@ -1,7 +1,7 @@
 # 0006: What a human-flown wingman is: the character's shields follow the player
 
-- Status: Proposed
-- Date: 2026-11-06
+- Status: Accepted
+- Date: 2026-11-06 (proposed), 2026-11-08 (accepted by the owner, with changes to C and D)
 - Issue: #85
 
 ## Context
@@ -208,13 +208,23 @@ whatever the value says, so the value must not claim otherwise.
 
 ## Decision
 
-Proposed, for the owner to decide: **A1, B3, C1, D1, E2.** A human-flown wingman is a `Player` whose shields the game
-reads through `gTeamShields[id]`: the value holds the human's shields, so every down check, gate, medal, radio speaker
-and portrait keeps working unchanged and means that human. A human starts every level at 255, as Fox does, and loses
-shields only through their own ship. On rails the scripted scenes stay whole with a stand-in that cannot be hurt; in
+**A1, B3, C4 (with C1 until then), D1 with the radio about the absent Slippy dropped, E2.** Proposed as A1, B3, C1,
+D1, E2; the owner accepted A1, B3 and E2 as proposed on 2026-11-08 and changed two:
+
+- **C: the goal is C4.** Rail scenes are rebuilt around the human, so the chasers chase the human. C4 needs enemy fire
+  to reach every player first (#100), and costs a test per scene. Until a scene is rebuilt it runs as C1: the
+  stand-in flies the script and cannot be hurt. Scenes move from C1 to C4 one at a time.
+- **D: D1, and the radio follows.** A human-flown Slippy stays in play, as D1 says, and the lines that speak of Slippy
+  as absent or lost are dropped, by message id, the same way on every client. Which lines those are is unknown: nobody
+  has listed them yet (Sector X after the event, Titania until the third Goras part). That list is a research task
+  before the code.
+
+A human-flown wingman is a `Player` whose shields the game reads through `gTeamShields[id]`: the value holds the
+human's shields, so every down check, gate, medal, radio speaker and portrait keeps working unchanged and means that
+human. A human starts every level at 255, as Fox does, and loses shields only through their own ship. On rails the
+scripted scenes are rebuilt around the human over time, and run with a stand-in that cannot be hurt until then; in
 boss fights the computer wingman is left out; in all-range a hidden body keeps enemies aimed at the human. No script
-takes a human out of play. A1 and B3 follow from the code; C1, D1 and E2 are judgement calls between story and play,
-each reversible, and are the ones to look at.
+takes a human out of play, and the radio does not say otherwise.
 
 The rules:
 
@@ -235,7 +245,8 @@ The rules:
 5. **Radio.**
    - The gate stays: a human who is up speaks, one who is down does not, and that includes a human waiting to return.
      Story lines and ROB's stand-in lines follow.
-   - On rails, scenes keep their lines, calls for help included.
+   - On rails, scenes keep their lines, calls for help included. A scene rebuilt under C4 keeps them too, and then
+     they fit: the human is the one chased.
    - In all-range, calls for help and thanks for a human-flown speaker are dropped, as 0005 prefers, and the help marker
      goes with them. Own-action lines outside the actor's code go too (`src/overlays/ovl_i4/fox_sz.c:309-352`).
    - Lines in the wingman's own actor code end with its AI. The retreat line is kept, because the team needs to hear it:
@@ -248,7 +259,12 @@ The rules:
      voice is not decided here: the radio waits on the voice (`src/engine/fox_radio.c:628`), so it could move
      `gRadioState`.
 6. **Slippy.** As D1, with the level's vehicle as 0009 gives it. `EVOP_RESTORE_TEAM` and the Goras spawn write nothing
-   for a human id: a human comes back by 0007's rule only.
+   for a human id: a human comes back by 0007's rule only. Lines that speak of a human-flown Slippy as absent or lost
+   are dropped by message id, in the simulation, the same on every client.
+7. **Rail scenes (C4).** A scene with a human-flown wingman is rebuilt so its chasers chase the human and its scripted
+   hits land on the human's own ship. Until a scene is rebuilt and tested, it runs as rule 3 describes (C1). What a
+   scripted hit of 255, such as `CO S59:34`, does to a human is decided with the first rebuilt scene; rule 4 holds
+   until then.
 
 Each open question, answered or handed on:
 
@@ -266,7 +282,7 @@ Each open question, answered or handed on:
 | #59 10 | Boss health bar | Follows the value on all clients, as in the original: shown while Slippy is up, gone while down | Rule 1 |
 | #59 11 | Who picks on the map | Left to a later record | 0008 |
 | #59 12 | `gMissionTeamStatus` and ranking | A human counts as a wingman; the reads are unchanged | Rule 1 |
-| #60 | On-rails scenes, calls for help | Kept whole | Rule 5 |
+| #60 | On-rails scenes, calls for help | Kept whole; the scene is rebuilt around the human over time (C4) | Rules 5, 7 |
 | #60 | All-range calls for help | Dropped | Rule 5 |
 | #60 | Lines that react to Fox, a character comforting itself | Fox only, so it cannot happen | Rule 5 |
 | #60 | Scripted lines while player 0 is not active (#88) | Left to a later record | 0007 |
@@ -308,11 +324,11 @@ Easier:
 
 Harder:
 
-- A rail scene shows a second Arwing of a character a human is flying, which bends 0005's "in place of". If that looks
-  wrong in a watched run, hide it (C1) or go to C4.
+- Until its rebuild, a rail scene shows a second Arwing of a character a human is flying, which bends 0005's "in place
+  of". C4 removes that, scene by scene, at the cost of a test per scene across ten levels and the work named under C4.
 - Rescue scenes lose their stakes when a human flies the wingman, and Corneria's Falco gate then rests on the arches and
   that human staying up.
-- Titania's radio does not fit a Slippy who is flying.
+- Titania's and Sector X's radio would not fit a Slippy who is flying; those lines have to be found and dropped.
 - Lost shields cost a human nothing past the level. E1 is a small change at the join if that plays too easily.
 
 The 47 writes, for a human id:
@@ -337,6 +353,10 @@ To do, once accepted:
   `ActorTeamBoss_Init` (before its 255 at `src/engine/fox_hud.c:4835`), the chase and thanks lines
   (`src/engine/fox_360.c:530-552`, `:625-643`, `:1705-1752`), Sector X (two conditions) and Titania.
 - WP-17 or #100: enemy fire has to reach every player, or a human can only crash.
+- Research, before the Slippy code: list the lines, by message id, that speak of Slippy as absent or lost after the
+  Sector X event and in Titania.
+- After #100: rebuild the rail scenes one at a time (C4), each with its own test; a new work package once the first
+  scene shows how.
 - WP-16 (#14): 0007 and 0008 build on the value as defined here. The return in 0007 is what puts the value back above 0.
 - Tests with two clients: a human going down gives -1 and silences that character; a scene runs with its stand-in unhurt
   and the human's shields untouched by `EVOP_DAMAGE_TEAM`; Star Wolf chases a human in all-range and leaves them while
