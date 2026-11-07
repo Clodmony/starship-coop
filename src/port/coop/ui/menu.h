@@ -24,6 +24,10 @@ extern "C" {
 #define COOP_MENU_DEFAULT_PORT 46464
 #define COOP_MENU_ADDRESS_SIZE 128
 #define COOP_MENU_LINE_SIZE 192
+// How long a game hears nothing from another before it drops it. A game that loads a level hears nothing while it
+// loads: the longest such stall measured was 167 ms (three games on one PC, #132, docs/coop/NOTES.md). Ten seconds
+// leaves room for slower PCs and disks; a player who is really gone shows as gone after that long.
+#define COOP_MENU_TIMEOUT_MS 10000
 // Falco, Slippy, Peppy: what players 2 to 4 pick from (decision 0005).
 #define COOP_MENU_CHOICES 3
 

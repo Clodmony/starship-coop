@@ -37,6 +37,9 @@ static bool Port_Read(const char* text, long lowest, uint16_t* out) {
     return true;
 }
 
+// The rest stays at the transport's defaults.
+static const CoopNetConfig kNetConfig = { COOP_MENU_TIMEOUT_MS, 0, 0 };
+
 static void Menu_EndSession(CoopMenu* m) {
     CoopSession_Close(m->session);
     m->session = NULL;
@@ -64,7 +67,7 @@ bool CoopMenu_Host(CoopMenu* m, const char* portText) {
         Menu_Say(m, "The port has to be a number from 0 to 65535. 0 picks a free one.");
         return false;
     }
-    t = m->backend->host(port, NULL);
+    t = m->backend->host(port, &kNetConfig);
     if (t == NULL) {
         Menu_Say(m, "Could not open UDP port %u. Another program may be using it.", (unsigned) port);
         return false;
@@ -98,7 +101,7 @@ bool CoopMenu_Join(CoopMenu* m, const char* address, const char* portText, uint3
         Menu_Say(m, "The port has to be a number from 1 to 65535, the one the host shows.");
         return false;
     }
-    t = m->backend->connect(address, port, NULL);
+    t = m->backend->connect(address, port, &kNetConfig);
     if (t == NULL) {
         Menu_Say(m, "Could not reach %s. Check the address.", address);
         return false;

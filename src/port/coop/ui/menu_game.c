@@ -8,13 +8,18 @@
 
 #include "global.h"
 #include "port/coop/game/players.h"
+#include "port/coop/test/menu_driver.h"
 #include "port/hooks/Events.h"
 
 static CoopMenu* sMenu = NULL;
 
 static void CoopMenuGame_OnGamePreUpdate(IEvent* event) {
+    uint32_t now = SDL_GetTicks();
+
     (void) event;
-    CoopMenu_Tick(sMenu, SDL_GetTicks());
+    // Times the gaps the other games see, for menu_test.py; nothing without SF64_COOP_TEST_MENU.
+    CoopMenuDriver_Tick(now, sMenu->session != NULL);
+    CoopMenu_Tick(sMenu, now);
 }
 
 void CoopMenuGame_Listen(CoopMenu* menu) {
