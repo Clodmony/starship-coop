@@ -95,8 +95,8 @@ number of clients, transport.
    by rule, through Corneria's rails into all-range. Tests count frames, so the tools run a game with
    `SF64_COOP_TEST_SPEED=max`, silent and on Linux without a window (`game_env` in `tools/coop/replay.py`). A tool that
    needs wall-clock time keeps real time and says why. At test speed each game frame is drawn once, so frame
-   interpolation does not run and those tools cannot see it. `determinism.py` is the test that plays with it on, and
-   `speed` against its base is interpolation off against on.
+   interpolation does not run and those tools cannot see it. `determinism.py` and `hash_check.py builds` and `rates`
+   are the tests that play with it on, and `speed` against the base of `determinism.py` is interpolation off against on.
 3. **Two clients on one machine.** Two Starship processes with their own config, save and log folders (never the
    owner's), connected over loopback, both fed replays. `python tools/coop/join_test.py` (WP-24, unattended, exit code
    0 only when everything passed) takes two or three games from the lobby into a level through the scripted flow in
