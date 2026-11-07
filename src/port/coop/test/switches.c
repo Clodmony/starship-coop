@@ -16,14 +16,48 @@
 extern unsigned short samples_high;
 extern unsigned short samples_low;
 
+// SF64_COOP_TEST_SPEED=max: the limiter then waits under a microsecond a frame, which is no limit, and at 60 frames a
+// second the rate still fits an int.
+#define SPEED_NO_LIMIT 100000
+
+static int sSpeed = 1;
+static int sMostDraws = 0;
+
+int CoopTestSwitches_Speed(void) {
+    return sSpeed;
+}
+
+void CoopTestSwitches_NoteDraws(int draws) {
+    if (draws > sMostDraws) {
+        sMostDraws = draws;
+    }
+}
+
+int CoopTestSwitches_TakeMostDraws(void) {
+    int most = sMostDraws;
+
+    sMostDraws = 0;
+    return most;
+}
+
 static int CoopTestSwitches_IsSet(const char* value) {
     return (value != NULL) && (value[0] != '\0') && (strcmp(value, "0") != 0);
 }
 
 void CoopTestSwitches_Init(void) {
+    const char* speed = getenv("SF64_COOP_TEST_SPEED");
     const char* noFma3 = getenv("SF64_COOP_TEST_NO_FMA3");
     const char* audioSamples = getenv("SF64_COOP_TEST_AUDIO_SAMPLES");
     const char* localIndex = getenv("SF64_COOP_TEST_LOCAL_INDEX");
+
+    if (CoopTestSwitches_IsSet(speed)) {
+        sSpeed = (strcmp(speed, "max") == 0) ? SPEED_NO_LIMIT : atoi(speed);
+        if (sSpeed > 1) {
+            LUSLOG_INFO("coop: test speed %s", speed);
+        } else {
+            sSpeed = 1;
+        }
+    }
 
     if (CoopTestSwitches_IsSet(noFma3)) {
 #if defined(_MSC_VER) && defined(_M_X64)
