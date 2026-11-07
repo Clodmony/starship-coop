@@ -24,19 +24,19 @@ pattern without reading the code, so treat it as a guess.
 
 ## Summary
 
-1906 sites in 431 functions in 46 files.
+1904 sites in 431 functions in 46 files.
 A function whose sites have more than one verdict counts once per verdict in the functions column.
 
 | verdict | sites | functions | `gPlayer[0]` | `gPlayer->` | `gPlayer arg` | `gMainController` | `gCamCount` | `shooter` |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | sim | 1077 | 196 | 1073 | 1 | 3 | 0 | 0 | 0 |
 | view | 216 | 84 | 151 | 0 | 0 | 43 | 3 | 19 |
-| input | 16 | 9 | 0 | 0 | 0 | 11 | 0 | 5 |
+| input | 14 | 9 | 0 | 0 | 0 | 9 | 0 | 5 |
 | flow | 364 | 87 | 324 | 0 | 3 | 3 | 0 | 34 |
 | setup | 53 | 34 | 1 | 0 | 1 | 0 | 51 | 0 |
 | ok | 180 | 81 | 1 | 2 | 14 | 87 | 8 | 68 |
 
-Basis per site: read 221, site 1043, name 642.
+Basis per site: read 221, site 1041, name 642.
 
 ## Sites
 
@@ -340,9 +340,9 @@ Basis per site: read 221, site 1043, name 642.
 | `Camera_SetupLights` | 6742:P0 | view | site | lights depend on player 0 state |
 | `Play_UpdateLevel` | 6872:P0, 6873:P0, 6874:P0, 6875:P0, 6876:P0, 6889:P0, 6890:P0, 6905:P0, 6914:P0, 6915:P0, 6940:P0, 6945:P0, 6948:P0, 6951:P0, 6954:P0, 6957:P0, 6960:P0, 6970:P0, 6972:P0, 6974:P0, 6975:P0, 6977:P0, 6978:P0, 6980:P0, 6986:P0, 6990:P0, 6992:P0, 6998:P0, 7008:P0, 7014:P0, 7015:P0 | flow | site | per-level triggers on player 0: level complete, warp zone, Solar heat damage to player 0 only, Venom 2 / Aquas checks |
 | `Play_UpdateLevel` | 6877:PA | flow | site | Camera_Update360 for player 0 as Venom 2 ends: level complete is one player's (WP-16) |
-| `Play_Main` | 7168:P0, 7169:P0, 7171:P0, 7172:P0, 7173:P0, 7209:P0, 7241:P0, 7242:P0 | flow | site | all-range z setup for player 0 only |
-| `Play_Main` | 7208:MC, 7231:MC, 7241:MC, 7261:MC | input | site | Start (intro skip, pause, unpause) and R while paused (toggles gShowReticles[0], no radio here) are read from gMainController only; versus reads R per controller |
-| `Play_Main` | 7221:CC | setup | site | intro skip resets gCamCount to 1; its sound cleanup loop is on CoopPlayers_Count() since WP-10 |
+| `Play_Main` | 7168:P0, 7169:P0, 7171:P0, 7172:P0, 7173:P0, 7210:P0, 7242:P0, 7243:P0 | flow | site | all-range z setup for player 0 only |
+| `Play_Main` | 7209:MC, 7242:MC | input | site | Start (intro skip, pause, unpause) and R while paused (toggles gShowReticles[0], no radio here) are read from gMainController only; versus reads R per controller |
+| `Play_Main` | 7222:CC | setup | site | intro skip resets gCamCount to 1; its sound cleanup loop is on CoopPlayers_Count() since WP-10 |
 
 ### `src/engine/fox_radio.c`
 
