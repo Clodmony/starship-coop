@@ -2628,6 +2628,63 @@ Unknown:
 - Why that Steam mutant shows in Debug and not in Release. Guess: memory released too early still holds the message there.
 - A build of libultraship in the build folder on Windows and macOS: not run here, CI's Windows job will show.
 
+### 2026-11-08, #172, the co-op log: one file per player, streamed to every player
+
+Identity: ROM US 1.0, branch `issue/172-coop-log`, Linux, GCC, Debug, OpenGL on a software renderer, no window, 2 game
+clients, each in its own run folder, UDP over loopback, input delay 3 frames. One machine, Corneria only. The wire form is
+in PROTOCOL.md, section Co-op log; `python tools/coop/lockstep_test.py --only log` runs the check named below.
+
+**What it is.** A session opens a log in the game's own folder, `coop-log-<session start>-player<n>.txt`, and every line
+has the wall clock, the lockstep frame, the level and a category (`src/port/coop/log/coop_log.h`). The session writes
+its events where they happen (`session.c`: host, join, refusal with reasons and both identities, picks, roster, level
+start, leave, end), lockstep its start, every hold of 200 ms or more, a stall and a summary every 10 s
+(`lockstep_game.c`), the desync check its start, the frames compared every 300 frames and a desync with the report's
+path (`desync_game.c`), and the transport's counters go in every 5 s per peer. The game glue (`log_game.c`) adds state,
+level and mode changes, pause, a player's state changing or being parked, a state line per player every second, and the
+warnings and errors of the game's own log, through a spdlog sink added from port code (`log_spdlog.cpp`). During the
+session each game streams its lines in `DIAG_LOG` to the host, and the host passes them on, so every folder ends with
+every player's file; `tools/coop/coop_log.py merge` makes one timeline of them.
+
+**Observed (runs)**
+
+| Run | Result |
+|---|---|
+| `log` | Two games, 2700 lockstep frames, hashes equal on every frame with the streaming on, 16 s. Each folder held `player1` and `player2`; each game's own log had 52 lines, the host got 49 of the client's and the client 48 of the host's, the rest still queued when the test told the games to quit. 30 batches one way and 29 the other, 0 lines dropped for a full queue. Ping, resends and duplicates every 5 s: `ping 0 ms (0 to 9) ... resent 0, duplicates 0` over loopback |
+| `log`, privacy | Every file: no home folder, no user name, no IPv4 address; the file header shows the game folder as `~/...` |
+| `log`, the tool | `coop_log.py merge <host folder> <client folder>` orders 101 lines by time, each once though both folders hold both files; `--category session,desync` narrows it |
+| `coop_log_test.py` | Parsing, order by time and by frame, the filters, an offset, a line held twice: 14 checks, from `check.py` |
+| `check.py` | All OK, with three breaks of `session_mutants.py` updated to the new text around `CoopSession_Close`, `CoopSession_Host` and the end of `Client_Poll` |
+
+A line of the state category, as written: `2026-11-08 00:37:47.608 2419 Corneria state player 2 active shields 255 pos
+664 364 -27067 path -27067 speed 40.0`. The test game's lockstep and desync lines said `frame 2395: 0 frames held for
+0 ms so far` and `frame 2400: 2400 frames compared with a peer, 0 unchecked`.
+
+**Derived**
+
+- `session.c` is the one place both the menu and the join driver run through, so the log hooks into its poll: the events
+  go in as they come out, `DIAG_LOG` is taken there and never reaches the session's owner, and the pump runs once per
+  poll. The three test programs that compile `session.c` (menutest, sessiontest, steamtest) link `coop_log.c` with no
+  context, and the log stays closed there.
+- A client knows its player index only at the welcome, so its lines before that wait in memory and the file opens then;
+  the first run of this branch opened the client's file at once as `joiner`, which is now what a client that is never
+  welcomed gets.
+- A test game quits on SIGTERM without closing its session, so the closing line comes from an `atexit` handler, with
+  nothing sent: every line before it is flushed as written. That is why the other folder lacks the last two or three
+  lines in the table above: they were queued when the process left.
+- The rate limit is one datagram per peer every 50 ms with fewer than 32 reliable messages in flight: `SYNC_HASH` and
+  the session's messages keep the window, and the quiet level makes about 4 lines a second, well under the limit.
+- The `net` category has no lost-packet count: the transport counts resends and duplicates, not losses, so the line
+  says `resent`.
+
+**Unknown**
+
+- No warning or error of the game's own log came up during the run, so the spdlog sink has been built and linked but
+  not seen to deliver a line. `SF64_COOP_LOG=verbose` and the CVar `gCoopLogVerbose` were not run either.
+- Two PCs, Windows, a peer that leaves or stalls, three players and a desync in the log: the owner asked for one short
+  run (2026-11-08); `left`, `stall` and `desync` of `lockstep_test.py` ran with the log on in earlier branches only
+  without it.
+- What the log costs at real time with a window: the test games run at speed 8 with no draw.
+
 ### 2026-11-05, #8 (WP-10), player count apart from camera count
 
 Observed:

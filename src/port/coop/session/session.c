@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "port/coop/log/coop_log.h"
 #include "port/coop/net/protocol.h"
 
 typedef enum {
@@ -60,6 +61,10 @@ struct CoopSession {
     bool endPending; // client: an ENDED event is owed after the REFUSED one
     CoopSessionEnd pendingEnd;
     uint32_t ignored;
+    // The co-op log (#172): when the transport's counters were last written, and what they were then.
+    uint32_t nowMs;
+    uint32_t statsMs;
+    CoopNetStats lastStats[COOP_NET_MAX_PEERS];
     uint8_t buffer[COOP_NET_MAX_MESSAGE];
     char text[COOP_SESSION_TEXT];
 };
@@ -87,11 +92,21 @@ static CoopSession* Session_New(CoopTransport* transport, const CoopIdentity* id
     return s;
 }
 
+// The co-op log: one line on a game's identity. Nothing personal in it (identity.h).
+static void Log_Identity(const char* what, const CoopIdentity* id) {
+    char line[256];
+
+    CoopIdentity_Line(id, line, sizeof(line));
+    CoopLog_Write(COOP_LOG_SESSION, false, "%s: %s", what, line);
+}
+
 CoopSession* CoopSession_Host(CoopTransport* transport, const CoopIdentity* identity) {
     CoopSession* s = Session_New(transport, identity, true);
 
     if (s != NULL) {
         s->roster.character[0] = COOP_CHARACTER_FOX;
+        CoopLog_Begin(true, 0);
+        Log_Identity("hosting a session; this game", identity);
     }
     return s;
 }
@@ -102,14 +117,21 @@ CoopSession* CoopSession_Join(CoopTransport* transport, const CoopIdentity* iden
     if (s != NULL) {
         s->client = CLIENT_CONNECTING;
         s->clientSince = nowMs;
+        s->nowMs = nowMs;
+        CoopLog_Begin(false, nowMs);
+        Log_Identity("joining a host; this game", identity);
     }
     return s;
 }
+
+static bool Log_Send(void* user, int peer, const uint8_t* data, uint16_t size);
 
 void CoopSession_Close(CoopSession* s) {
     if (s == NULL) {
         return;
     }
+    CoopLog_Write(COOP_LOG_SESSION, false, "session closed");
+    CoopLog_End(s->nowMs, Log_Send, s);
     s->t->ops->close(s->t);
     free(s);
 }
@@ -150,6 +172,7 @@ bool CoopSession_Pick(CoopSession* s, CoopCharacter character) {
         character >= COOP_CHARACTER_COUNT) {
         return false;
     }
+    CoopLog_Write(COOP_LOG_SESSION, false, "asking the host for %s", CoopSession_CharacterName(wire));
     return s->t->ops->send(s->t, 0, COOP_MSG_SESSION_PICK, &wire, 1, COOP_NET_RELIABLE);
 }
 
@@ -754,8 +777,148 @@ static bool Client_Poll(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) {
     return false;
 }
 
+// ---- The co-op log (#172) ----
+
+// How often the transport's counters go into the log, per joined peer.
+#define LOG_NET_MS 5000
+
+static bool Log_Send(void* user, int peer, const uint8_t* data, uint16_t size) {
+    CoopSession* s = user;
+
+    return CoopSession_Send(s, peer, COOP_MSG_DIAG_LOG, data, size, COOP_NET_RELIABLE);
+}
+
+static bool Log_Pending(void* user, int peer, uint32_t* pending) {
+    CoopNetStats stats;
+
+    if (!CoopSession_Stats((CoopSession*) user, peer, &stats)) {
+        return false;
+    }
+    *pending = stats.pending;
+    return true;
+}
+
+static int Log_Player(const CoopSession* s, int peer) {
+    return s->isHost ? peer + 1 : 0;
+}
+
+// The transport's counters since the last line: ping, resends, duplicates, what was dropped unread.
+static void Log_Net(CoopSession* s, uint32_t nowMs) {
+    int i;
+
+    if (nowMs - s->statsMs < LOG_NET_MS) {
+        return;
+    }
+    s->statsMs = nowMs;
+    for (i = 0; i < COOP_NET_MAX_PEERS; i++) {
+        CoopNetStats now;
+        CoopNetStats* last = &s->lastStats[i];
+
+        if (!CoopSession_Stats(s, i, &now)) {
+            memset(last, 0, sizeof(*last));
+            continue;
+        }
+        CoopLog_Write(COOP_LOG_NET, false,
+                      "player %d: ping %u ms (%u to %u), in %us: sent %u, received %u, resent %u, duplicates %u, "
+                      "dropped unread %u, pending %u, bad datagrams %u, stray %u",
+                      Log_Player(s, i) + 1, (unsigned) now.rttMs, (unsigned) now.rttMinMs, (unsigned) now.rttMaxMs,
+                      (unsigned) (LOG_NET_MS / 1000), (unsigned) (now.sent - last->sent),
+                      (unsigned) (now.received - last->received), (unsigned) (now.resent - last->resent),
+                      (unsigned) (now.duplicates - last->duplicates), (unsigned) (now.overflow - last->overflow),
+                      (unsigned) now.pending, (unsigned) (now.badDatagrams - last->badDatagrams),
+                      (unsigned) (now.strayDatagrams - last->strayDatagrams));
+        *last = now;
+    }
+}
+
+static const char* Log_Character(uint8_t character) {
+    const char* name = CoopSession_CharacterName(character);
+
+    return (name[0] != '\0') ? name : (character == COOP_CHARACTER_UNPICKED) ? "unpicked" : "-";
+}
+
+// What the owner of the session is about to hear, in the log too.
+static void Log_Event(CoopSession* s, const CoopSessionEvent* ev) {
+    const CoopRoster* roster;
+
+    switch (ev->type) {
+        case COOP_SESSION_EV_JOINED:
+            if (s->isHost) {
+                CoopLog_PeerOpen(ev->peer);
+                CoopLog_Write(COOP_LOG_SESSION, false, "player %d joined%s%s", ev->playerIndex + 1,
+                              (ev->text[0] != '\0') ? "; " : "", ev->text);
+                Log_Identity("its game", &s->peers[ev->peer].identity);
+            } else {
+                CoopLog_SetPlayer(ev->playerIndex);
+                CoopLog_PeerOpen(0);
+                CoopLog_Write(COOP_LOG_SESSION, false, "joined as player %d%s%s", ev->playerIndex + 1,
+                              (ev->text[0] != '\0') ? "; " : "", ev->text);
+                Log_Identity("the host's game", &s->peers[0].identity);
+            }
+            break;
+        case COOP_SESSION_EV_REFUSED:
+            if (s->isHost) {
+                CoopLog_Write(COOP_LOG_SESSION, false, "refused a joining game (reasons 0x%x): %s", (unsigned) ev->diff,
+                              ev->text);
+                if ((ev->diff & ~(uint32_t) COOP_SESSION_REFUSE_MALFORMED) != 0) {
+                    Log_Identity("its game", &s->peers[ev->peer].identity);
+                }
+            } else {
+                CoopLog_Write(COOP_LOG_SESSION, false, "the host refused this game (reasons 0x%x): %s",
+                              (unsigned) ev->diff, ev->text);
+            }
+            break;
+        case COOP_SESSION_EV_LEFT:
+            CoopLog_Write(COOP_LOG_SESSION, false, "player %d left: %s", ev->peer + 2, ev->text);
+            CoopLog_PeerClose(ev->peer);
+            break;
+        case COOP_SESSION_EV_ENDED:
+            CoopLog_Write(COOP_LOG_SESSION, false, "session ended: %s", ev->text);
+            CoopLog_PeerClose(0);
+            break;
+        case COOP_SESSION_EV_ROSTER:
+            roster = CoopSession_Roster(s);
+            if (roster != NULL) {
+                CoopLog_Write(COOP_LOG_SESSION, false, "roster: %s, %s, %s, %s", Log_Character(roster->character[0]),
+                              Log_Character(roster->character[1]), Log_Character(roster->character[2]),
+                              Log_Character(roster->character[3]));
+            }
+            break;
+        case COOP_SESSION_EV_PICK_REFUSED:
+            if (s->isHost) {
+                CoopLog_Write(COOP_LOG_SESSION, false, "player %d asked for %s, which is taken", ev->peer + 2,
+                              Log_Character(ev->character));
+            } else {
+                CoopLog_Write(COOP_LOG_SESSION, false, "the host refused %s: %s", Log_Character(ev->character),
+                              ev->text);
+            }
+            break;
+        case COOP_SESSION_EV_LEVEL_START:
+            CoopLog_Write(COOP_LOG_SESSION, false, "level start: level %d, phase %d, roster %s, %s, %s, %s",
+                          (int) ev->levelStart->level, (int) ev->levelStart->phase,
+                          Log_Character(ev->levelStart->roster[0]), Log_Character(ev->levelStart->roster[1]),
+                          Log_Character(ev->levelStart->roster[2]), Log_Character(ev->levelStart->roster[3]));
+            break;
+        case COOP_SESSION_EV_MESSAGE:
+            break;
+    }
+}
+
 bool CoopSession_Poll(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) {
-    return s->isHost ? Host_Poll(s, nowMs, ev) : Client_Poll(s, nowMs, ev);
+    s->nowMs = nowMs;
+    CoopLog_Pump(nowMs, Log_Send, Log_Pending, s);
+    Log_Net(s, nowMs);
+    while (s->isHost ? Host_Poll(s, nowMs, ev) : Client_Poll(s, nowMs, ev)) {
+        // A log batch is the log's and nobody else's: it never reaches the owner, and one that cannot be read is
+        // dropped and counted, never the end of a session.
+        if (ev->type == COOP_SESSION_EV_MESSAGE && ev->msgId == COOP_MSG_DIAG_LOG) {
+            CoopLog_Receive(ev->peer, s->isHost, ev->data, ev->size);
+            continue;
+        }
+        Log_Event(s, ev);
+        return true;
+    }
+    return false;
 }
 
 #endif

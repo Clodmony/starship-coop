@@ -100,6 +100,13 @@ def main():
         failures.append("tools/coop/test_all_test.py failed:\n  "
                         + "\n  ".join((runner.stdout + runner.stderr).strip().splitlines()))
 
+    # 8b. coop_log.py: the merge of the co-op logs must still parse, order and filter (no build, no game).
+    logs = subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "coop" / "coop_log_test.py")],
+                          cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
+    if logs.returncode != 0:
+        failures.append("tools/coop/coop_log_test.py failed:\n  "
+                        + "\n  ".join((logs.stdout + logs.stderr).strip().splitlines()))
+
     # 9. Build folders: libultraship's archives belong to one build folder, or a second config shares them.
     cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
     if "add_subdirectory(libultraship ${CMAKE_CURRENT_BINARY_DIR}/libultraship)" not in cmake:

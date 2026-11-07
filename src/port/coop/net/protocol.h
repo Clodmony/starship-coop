@@ -41,4 +41,6 @@ typedef enum {
     COOP_MSG_TEST_UNRELIABLE = 0x00C1,
     COOP_MSG_TEST_DONE = 0x00C2,
     COOP_MSG_TEST_SESSION = 0x00C3,
+    // The co-op log (#172): a batch of log lines of one player, streamed so every player holds every log.
+    COOP_MSG_DIAG_LOG = 0x00C4,
 } CoopMessageId;

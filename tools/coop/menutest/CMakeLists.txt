@@ -15,6 +15,7 @@ foreach(COOP_TARGET ${COOP_MENU_TEST_TARGETS})
         ${CMAKE_SOURCE_DIR}/src/port/coop/net/transport_sdlnet.c
         ${CMAKE_SOURCE_DIR}/src/port/coop/session/identity.c
         ${CMAKE_SOURCE_DIR}/src/port/coop/session/session.c
+        ${CMAKE_SOURCE_DIR}/src/port/coop/log/coop_log.c
         ${CMAKE_SOURCE_DIR}/src/port/coop/session/sim_cvars.c
         ${CMAKE_SOURCE_DIR}/src/port/coop/ui/menu.c
     )
