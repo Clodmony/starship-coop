@@ -34,7 +34,9 @@ TOOLS = ROOT / "tools" / "coop"
 ENDING = "COOP_CRASH_TEST_ENDING"  # read by the stand-in; not SF64_COOP_*, which game_env removes
 STAY_SECONDS = 20  # a stand-in that stays ends itself after this, in case a tool never stops it
 FRAMES = 30  # in the stand-in's replay file
-FRAME_SIZE = 8
+# Frame number, no pads, then a checkpoint of 16 bytes, as replay.recorded_start reads it (ReplayFrame in
+# src/port/coop/test/replay.c). All zero, so it says the replay started in the menus, as the stand-in reports.
+FRAME_SIZE = 4 + 16
 
 STAND_IN = textwrap.dedent(f"""\
     import os, struct, sys, time
