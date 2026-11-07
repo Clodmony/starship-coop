@@ -2253,7 +2253,7 @@ How a start in the level goes. `src/port/coop/test/start_level.c` waits for the 
 `GSTATE_INIT` sets `gClearPlayerInfo`, the lives and the button maps (`src/engine/fox_game.c:421`, `:425`, `:440`). It then
 calls `Map_Setup_Menu` (`src/overlays/ovl_menu/fox_map.c:1570`), which is what a new game does on the map, and
 `CoopLevelStart_Enter` from #22, with the values the game holds, so with no roster. Past the intro it presses Start, with
-`normalClear` set for that frame, as nothing else ends an intro (`src/engine/fox_play.c:7209-7224`).
+`normalClear` set for that frame, as nothing else ends an intro (`src/engine/fox_play.c:7208-7224`).
 
 Observed, frames of a replay and a hash log, which still count from `GSTATE_START`:
 
@@ -2314,8 +2314,8 @@ Derived:
 - A start past the intro is another flight, of a level as a player gets it on a planet they have cleared. Nothing here
   checks it against the intro's flight, and it has to pass each tool's rules on its own. It did on the first run for all but
   `lowhealth`, whose failure was the tool's.
-- `gGameFrameCount` differs by 1673 past the intro, so anything that goes by it runs in another phase there. Tools that care
-  about that stay on `level`.
+- `gGameFrameCount` differs by 1673 past the intro, so anything that goes by it runs in another phase there. A tool that cares
+  about that belongs on `level`.
 - Coverage. What a start in the level does not run stays with these, and nothing else plays it:
 
 | Left out | Still played by |
