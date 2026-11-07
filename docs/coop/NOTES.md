@@ -9,6 +9,34 @@ Private notes (your paths, your PC, your logs) go in `local/`, not here.
 
 ## Build and run
 
+### 2026-11-07, #116, how a crashed test game looks to the tools
+
+Identity: no game run; `tools/coop/crash_test.py` with a stand-in for the game, Windows 11, Python 3, on `issue/116`.
+
+Observed:
+
+- A test game writes its replay report from an atexit handler also when it crashes (`src/port/coop/test/replay.c`,
+  `CoopReplay_OnExit`): `RECORDED` when it records, `FAIL_INCOMPLETE` during a playback. Then it ends with exit code
+  1 on Linux (`src/port/coop/test/stop_signal.c`, `CoopStopSignal_OnExit`, #98).
+- A playback that reached its end writes `PASS` and keeps running until the tool stops it (`replay.c`,
+  `CoopReplay_FinishPlayback` sets `REPLAY_DONE`, nothing exits).
+- Before #116, `replay.py record --frames` and `play` ended with exit code 0 for a game that wrote a passing report
+  and then ended with code 1 (`crash_test.py`, `play-crash` and `record-crash`, before the fix).
+- On Windows, `Popen.terminate` ends a process with code 1, the same code as a crash on Linux.
+
+Derived:
+
+- The report alone cannot tell a crash: the tools read how the game ended. A game that ends on its own with a code
+  other than 0 crashed; one the tool stopped did not (`crashed` and `stop_game` in `tools/coop/replay.py`).
+
+Unknown:
+
+- The exit code of a crashed game on Windows and macOS: `stop_signal.c` is Linux only, and a real crash was not made
+  there. Any code other than 0 counts.
+- On Windows a test game still opens a window: the offscreen driver is Linux only (`game_env`, #137).
+- On Windows `record --frames` never writes its report, with or without this change (#156), so `replay_test.py`
+  fails there at its first step. `play` of an existing replay passed with the real game.
+
 ### 2026-11-06, #54, what SHIP_HOME reaches, and how a replay file can end
 
 Identity: ROM US 1.0, on commit `a69c811a`, Linux, GCC, Debug, OpenGL in software, no window.

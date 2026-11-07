@@ -9,7 +9,8 @@ Every run gets a fresh folder under local/ (config, save and logs start empty) a
 recording and its playback start from the same state and the owner's own setup is never touched, even when SHIP_HOME
 is set in the shell. The game is told what to do through the SF64_COOP_REPLAY_* environment variables
 (src/port/coop/test/replay.h). Playback exits 0 on PASS, 1 otherwise: only a whole file can pass, so a file with no
-frames or a cut last frame fails. python tools/coop/replay_test.py tests all this.
+frames or a cut last frame fails. A game that ends on its own with a code other than 0 crashed, whatever its report
+says: the result is then CRASH (#116). python tools/coop/replay_test.py and crash_test.py test all this.
 
 A game started from here makes no sound, opens no window on Linux and runs at TEST_SPEED: see game_env. Only record
 without --frames runs as a person plays it. To watch a playback, set SDL_VIDEODRIVER and SDL_AUDIODRIVER in the shell
@@ -148,6 +149,7 @@ def run_game(mode, replay, exe, timeout, hash_log=False, poke=None, tag=None, en
     proc = subprocess.Popen([str(exe)], cwd=run, env=env)
 
     values = None
+    ended_itself = True
     try:
         while True:
             if mode == "play":
@@ -163,20 +165,39 @@ def run_game(mode, replay, exe, timeout, hash_log=False, poke=None, tag=None, en
                 break
             time.sleep(1)
     finally:
-        if proc.poll() is None:
-            # Only the process this script started.
-            proc.terminate()
-            try:
-                proc.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                proc.kill()
+        ended_itself = stop_game(proc)
 
     if values is None:
         time.sleep(1)
         values = read_report(report)
     if values is None:
         print(f"replay: no report written (exit code {proc.returncode}); see {run / 'logs'}")
+    elif crashed(proc, ended_itself):
+        print(f"replay: the game ended on its own with exit code {proc.returncode}, after its report said "
+              f"{values['result']}; see {run / 'logs'}")
+        values = {**values, "result": "CRASH", "exit_code": str(proc.returncode)}
     return values, run, time.monotonic() - start
+
+
+def stop_game(proc):
+    """Stop a game this script started, if it still runs. Returns whether it had already ended on its own."""
+    if proc.poll() is not None:
+        return True
+    # Only the process this script started.
+    proc.terminate()
+    try:
+        proc.wait(timeout=15)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+    return False
+
+
+def crashed(proc, ended_itself):
+    """Whether a game that stop_game has seen to the end crashed (#116). A crashed test game still writes its report,
+    which can say RECORDED or PASS, and then ends with exit code 1 (src/port/coop/test/stop_signal.c), or with what
+    the system gives a crash. A game stopped by stop_game did not crash, although on Windows its code is 1 too."""
+    return ended_itself and proc.returncode != 0
 
 
 def main():
