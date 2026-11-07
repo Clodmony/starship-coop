@@ -28,7 +28,7 @@ How a run gets there, none of it new game code:
 gdb stops on the lines of the game that matter, found by searching the source, so a line that moves is followed. Each
 run also stops on Map_PlayLevel: that stop must show in the log, or the silence about the other lines proves nothing.
 The frames below hold for this game on one build; when the game changes they can drift, and the run fails on what it did
-not reach instead of passing. Linux only, as it needs gdb. About 30 minutes, more on a loaded machine.
+not reach instead of passing. Linux only, as it needs gdb. About 8 minutes, more on a loaded machine.
 """
 import argparse
 import json

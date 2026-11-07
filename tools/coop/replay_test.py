@@ -234,21 +234,24 @@ def speeds_logged(output):
 
 def games_of(tool, exe):
     """The running games a tool started: {pid: their environment}. While the tool forks, /proc shows a process that is
-    not the game yet and still has the tool's environment, so the process must run exe."""
+    not the game yet and still has the tool's environment, so the process must run exe. For a moment of the exec it runs
+    exe and has no environment at all: that is not a game without drivers either, so it counts from the next look."""
     found = {}
     for pid in filter(str.isdigit, os.listdir("/proc")):
         try:
             parent = int(Path(f"/proc/{pid}/stat").read_text().rpartition(")")[2].split()[1])
             if parent == tool.pid and os.readlink(f"/proc/{pid}/exe") == str(exe):
-                pairs = Path(f"/proc/{pid}/environ").read_bytes().decode("utf-8", "replace").split("\0")
-                found[int(pid)] = dict(pair.partition("=")[::2] for pair in pairs)
+                data = Path(f"/proc/{pid}/environ").read_bytes()
+                if data:
+                    pairs = data.decode("utf-8", "replace").split("\0")
+                    found[int(pid)] = dict(pair.partition("=")[::2] for pair in pairs)
         except (OSError, ValueError, IndexError):
             pass  # it ended while we looked
     return found
 
 
 def watch_quiet(bench):
-    """Returns the check of a bare-* scenario: every game has the drivers of QUIET. It looks at each game as it starts."""
+    """Returns the check of a bare-* scenario: every game has the drivers of QUIET. It looks at each game at its start."""
     def watch(tool):
         failures = []
         seen = set()

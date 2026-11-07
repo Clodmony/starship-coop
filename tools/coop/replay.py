@@ -12,8 +12,8 @@ is set in the shell. The game is told what to do through the SF64_COOP_REPLAY_* 
 frames or a cut last frame fails. python tools/coop/replay_test.py tests all this.
 
 A game started from here makes no sound, opens no window on Linux and runs at TEST_SPEED: see game_env. Only record
-without --frames runs as a person plays it. To watch a playback, set SDL_VIDEODRIVER and SDL_AUDIODRIVER in the shell and
-pass --speed 1.
+without --frames runs as a person plays it. To watch a playback, set SDL_VIDEODRIVER and SDL_AUDIODRIVER in the shell
+and pass --speed 1.
 
 A replay file holds raw structs: it only plays back on the same build and platform it was recorded on.
 """
@@ -42,6 +42,7 @@ DATA_FILES = ["sf64.o2r", "starship.o2r", "gamecontrollerdb.txt"]
 HEADER_SIZE = 40  # ReplayHeader in src/port/coop/test/replay.c
 TEST_SPEED = "max"  # no frame limit for a test game: every test here counts frames, not seconds (#137)
 REAL_TIME = {"SF64_COOP_TEST_SPEED": "1"}  # as env_extra, for a run that needs wall-clock time; say why next to it
+RENDER_THREADS = "3"  # for a software renderer: with its default, games side by side slow each other down (#137)
 
 
 def find_exe(given):
@@ -99,15 +100,16 @@ def game_env(run, person_plays=False):
     variable, as one left in the shell would change a test with no sign in its result.
 
     A test game is silent and has no window, also from a bare shell: a driver the shell sets still wins. The offscreen
-    driver is for Linux only, as the default backend on Windows draws into a real window. It runs at TEST_SPEED, which
-    env_extra can replace (REAL_TIME). With person_plays someone needs to see, hear and fly the game, so it gets none of
-    that. The caller adds what the run needs."""
+    driver is for Linux only, as the default backend on Windows draws into a real window, and so is RENDER_THREADS. It
+    runs at TEST_SPEED, which env_extra can replace (REAL_TIME). With person_plays someone needs to see, hear and fly
+    the game, so it gets none of that. The caller adds what the run needs."""
     env = {key: value for key, value in os.environ.items() if not key.startswith("SF64_COOP_")}
     env["SHIP_HOME"] = str(run)
     if not person_plays:
         env.setdefault("SDL_AUDIODRIVER", "dummy")
         if sys.platform.startswith("linux"):
             env.setdefault("SDL_VIDEODRIVER", "offscreen")
+            env.setdefault("LP_NUM_THREADS", RENDER_THREADS)
         env["SF64_COOP_TEST_SPEED"] = TEST_SPEED
     return env
 

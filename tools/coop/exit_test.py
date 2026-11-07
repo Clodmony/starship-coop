@@ -50,7 +50,7 @@ ROOT = Path(__file__).resolve().parents[2]
 EXIT_LIMIT = 10  # seconds; run_game in replay.py allows 15 before it uses SIGKILL
 PLAIN_WAIT = 3  # seconds; ten times what the slowest test run took to end
 READY_LIMIT = 120  # seconds until the game must have drawn frames
-READY_FILE = "imgui.ini"  # ImGui writes it a few seconds after it starts to draw
+READY_FILE = "imgui.ini"  # ImGui writes it 5 s after it starts to draw, on the clock at any game speed (IniSavingRate)
 MAX_DELAY = 1.5  # seconds after READY_FILE, so the signal does not land on the same point of a frame each time
 CRASH_CODE = 1  # the exit(1) of Ship::ErrorHandler, libultraship/src/debug/CrashHandler.cpp:202
 CRASH_LOG = Path("logs") / "Starship.log"
@@ -109,6 +109,8 @@ def gdb_command(exe, fault):
 
 
 def start_game(exe, run, scenario, replay):
+    # Real time, unlike game_env (#137): this test waits on the clock, not on frames, so speed gains it little. Without
+    # the frame limit a signal also lands inside a frame more often, and FAULT_AFTER runs out during the boot logo.
     env = {k: v for k, v in os.environ.items() if not k.startswith("SF64_COOP_")}
     env.update(SHIP_HOME=str(run), SDL_VIDEODRIVER="offscreen", SDL_AUDIODRIVER="dummy", LIBGL_ALWAYS_SOFTWARE="1",
                GALLIUM_DRIVER="llvmpipe")
@@ -120,7 +122,6 @@ def start_game(exe, run, scenario, replay):
         env["SF64_COOP_REPLAY_RECORD" if scenario.mode == "record" else "SF64_COOP_REPLAY_PLAY"] = str(replay)
         env["SF64_COOP_REPLAY_REPORT"] = str(run / "replay-report.txt")
     if scenario.mode != "plain":
-        env["SF64_COOP_TEST_SPEED"] = replay_tool.TEST_SPEED
         env["SF64_COOP_HASH_LOG"] = str(run / "state-hash.txt")
     if scenario.fault is not None:
         with open(run / "gdb.txt", "wb") as out:

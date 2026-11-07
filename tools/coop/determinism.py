@@ -20,7 +20,9 @@ two machines running the same build, and compares every run's hash log with a ba
 
 All but speed run in real time, which is what this tool compares: frame pacing and the audio device's fill level follow
 wall-clock time, and at test speed each game frame is drawn once and the audio buffer stays full, so those variants
-would no longer vary them.
+would no longer vary them. Frame interpolation only runs in real time too, and a bug there can reach the game state: a
+stack underflow in it corrupted the RNG seeds in Release (#141). So this tool stays the one that plays as a person
+does, and speed against base is interpolation off against on. replay_test.py fails if these games log a speed.
 
 Without a replay file it plays input by rule (hash_check.py, write_generated_replay). Such a replay has no checkpoints,
 so a run there only has to play through.
@@ -93,7 +95,9 @@ def main():
     exe = replay_tool.find_exe(args.exe)
     args.players = 1
     replay, config = hash_check.test_setup(args)
-    played = hash_check.played_through if args.file is None else (lambda values: bool(values) and values.get("result") == "PASS")
+    played = hash_check.played_through
+    if args.file is not None:
+        played = lambda values: bool(values) and values.get("result") == "PASS"  # noqa: E731
     chosen = list(VARIANTS) if not args.only else [v.strip() for v in args.only.split(",") if v.strip()]
     unknown = [v for v in chosen if v not in VARIANTS]
     if unknown:
