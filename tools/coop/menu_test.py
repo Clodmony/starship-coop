@@ -16,8 +16,9 @@ through the menus to the map first. Their games play a replay with no input afte
 each from other seeds, and report the level through SF64_COOP_JOIN_WATCH. game_platform reads what a real menu shows for
 a platform refusal, on the host's side and the joining player's, and runs SF64_COOP_TEST_ANY_PLATFORM. Two games on one
 PC never differ in platform, so the other side there is coop_session_test, which says what it is told to. game_leave
-has player 2 leave during the level and the rest stay past the time-out, then the same games hold a second session and
-start again (#132). game_level and game_leave print the longest gap between two session ticks (menu-stall.txt).
+has player 2 leave during the level, which ends the session for everyone under lockstep (#160) while every game keeps
+running, then the same games hold a second session, start again and keep every player past the time-out (#132).
+game_level and game_leave print the longest gap between two session ticks (menu-stall.txt).
 
 Prints one line per scenario and a RESULT line, keeps logs in local/test-menu/<stamp>/, exits 0 only when everything
 passed. Each game gets its own folder under local/ with its own SHIP_HOME, removed when the run passed.
@@ -544,34 +545,28 @@ def scenario_game_leave(args, exe, out):
         for game in games:
             game.wait(lambda g=game: in_level(g), "frame in the level", LEVEL_SECONDS)
 
-        # Player 2 leaves in the level: the others hear of it and stay, and every game goes on.
+        # Player 2 leaves in the level. Every frame needs every player, so the session ends for everyone (#160,
+        # docs/coop/PROTOCOL.md, End): the host says who left, player 3 reads that the host closed, and every game
+        # goes on alone in its level.
         frames = {game.name: frames_logged(game) for game in games}
         a.click("leave")
         a.wait_text("status", r"Not in a session\.")
-        host.wait_text("message", r"Player 2 left")
-        host.wait_text("status", r", 2 of 4 players\.")
-        b.wait_text("status", r" as player 3\.")
-        time.sleep(TIMEOUT_MS / 1000 + 2)  # longer than the time-out: a player kept in by mistake would drop now
-        for game in games:
-            game.wait(lambda g=game: frames_logged(g) > frames[g.name] + 60, "frames after the leave", STEP_SECONDS,
-                      every=1)
-        host.read()
-        b.read()
-        expect(re.search(r", 2 of 4 players\.", host.texts["status"]), f"host: {host.texts['status']}")
-        expect(re.search(r" as player 3\.", b.texts["status"]), f"player 3 dropped: {b.texts['status']}")
-
-        # The host ends the session; the same games hold a second one, in the level they are in, and start again.
-        host.click("leave")
+        host.wait_text("message", r"Player 2 left, so the session is over")
         host.wait_text("status", r"Not in a session\.")
         b.wait_text("status", r"Not in a session\.")
         b.wait_text("message", r"closed the connection")
         for game in games:
+            game.wait(lambda g=game: frames_logged(g) > frames[g.name] + 60, "frames after the leave", STEP_SECONDS,
+                      every=1)
+        for game in games:
             game.wait(lambda g=game: "level" not in g.texts, "the level line gone after the session")
-        # The join watch reports level_running once per run, so the second start is checked from the menu and the
-        # frames: every game says it started, keeps going and keeps all three players past the time-out.
+
+        # The same games hold a second session, in the level they are in, and start again. The join watch reports
+        # level_running once per run, so the second start is checked from the menu and the frames: every game says it
+        # started, keeps going and keeps all three players past the time-out.
         start_three(games, host_session(host))
         frames = {game.name: frames_logged(game) for game in games}
-        time.sleep(TIMEOUT_MS / 1000 + 2)
+        time.sleep(TIMEOUT_MS / 1000 + 2)  # longer than the time-out: a player kept in by mistake would drop now
         for game in games:
             game.wait(lambda g=game: frames_logged(g) > frames[g.name] + 60, "frames after the second start",
                       STEP_SECONDS, every=1)
@@ -579,8 +574,8 @@ def scenario_game_leave(args, exe, out):
         a.wait_text("status", r" as player 2\.")
         b.wait_text("status", r" as player 3\.")
         stall = max(longest_stall(game) for game in games)
-        return f"3 games: player 2 left in the level and the rest stayed, then a second session and level; " \
-               f"longest stall {stall} ms"
+        return f"3 games: player 2 left in the level and the session ended for all, then a second session and level " \
+               f"held past the time-out; longest stall {stall} ms"
 
     return level_run(args, games, body)
 
