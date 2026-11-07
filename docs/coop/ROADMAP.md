@@ -91,6 +91,6 @@ Deferred work packages keep their issues, in the GitHub milestone "Later".
 
 - Three and four players. Decision 0005 sets the rules, and versus mode already handles four `Player` structs.
 - Rollback instead of plain lockstep, if input delay hurts (decision 0002).
-- Cross-platform play (Windows with Linux), if determinism holds across compilers. Until a comparison shows that, a
-  platform difference refuses the connection (decision 0002).
+- Cross-platform play (Windows with Linux), if determinism holds across compilers. A platform difference warns and the
+  session runs (decision 0010); the desync check shows whether the two stay in step.
 - Late join and reconnect.

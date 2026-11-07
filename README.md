@@ -12,7 +12,7 @@ your own US 1.0 or US 1.1 Star Fox 64 ROM on first launch.
 
 ## Current state
 
-Last updated 2026-11-07. For the live list see the [open issues](https://github.com/Clodmony/starship-coop/issues) and
+Last updated 2026-11-08. For the live list see the [open issues](https://github.com/Clodmony/starship-coop/issues) and
 the [roadmap](docs/coop/ROADMAP.md).
 
 **Two real games now stay in step through all of Corneria, on one PC.** Scripts fly both, over the real session, and
@@ -28,7 +28,7 @@ Everything here is tested by scripts, on Corneria, on Linux. Nobody has played i
 | Players | Up to 4 Arwings fly Corneria on rails and in all-range, started by a debug setting. Landmaster and Blue Marine sections keep extra players parked |
 | Input | Each player has their own input source: a controller, a replay or the network |
 | View | Camera, HUD and sound follow your own player, and the other player is an Arwing with a shield bar |
-| Network | UDP transport with its own reliability, session handshake with build, ROM and platform checks, character choice |
+| Network | UDP transport with its own reliability, session handshake that refuses a different build, ROM or game setting and warns about a different platform, character choice |
 | Menu | Co-op menu with host, join, characters, status and ping, and starting a level for everyone together |
 | Steam relay | Built, off by default, tested on a fake Steam only |
 | Determinism | Two runs of one build match on every frame through all of Corneria, and Release, Debug and frame rates from 30 to 360 match too |

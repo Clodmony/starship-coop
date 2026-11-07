@@ -12,7 +12,6 @@
 #include <libultraship/luslog.h>
 
 #include "port/coop/game/players.h"
-#include "port/coop/session/session.h"
 #include "port/coop/sync/lockstep_game.h"
 
 // Sample counts per audio update, chosen each update from the output device's fill level
@@ -76,7 +75,6 @@ void CoopTestSwitches_Init(void) {
     const char* audioSamples = getenv("SF64_COOP_TEST_AUDIO_SAMPLES");
     const char* localIndex = getenv("SF64_COOP_TEST_LOCAL_INDEX");
     const char* noDraw = getenv("SF64_COOP_TEST_NO_DRAW");
-    const char* anyPlatform = getenv("SF64_COOP_TEST_ANY_PLATFORM");
     const char* noLockstep = getenv("SF64_COOP_TEST_NO_LOCKSTEP");
 
     if (CoopTestSwitches_IsSet(noDraw)) {
@@ -123,13 +121,6 @@ void CoopTestSwitches_Init(void) {
         CoopSyncGame_SetOff(true);
         LUSLOG_INFO("coop: test switch: no lockstep%s", "");
     }
-
-#ifdef USE_NETWORKING
-    if (CoopTestSwitches_IsSet(anyPlatform)) {
-        CoopSession_AnyPlatform(true);
-        LUSLOG_INFO("coop: test switch: this host lets a client of another platform in%s", "");
-    }
-#endif
 
     CoopTeamTrace_Init(); // no-op unless SF64_COOP_TEAM_* is set (#89)
     CoopTestStart_Init(); // no-op unless SF64_COOP_TEST_START_LEVEL is set (#148)

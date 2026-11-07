@@ -2628,6 +2628,47 @@ Unknown:
 - Why that Steam mutant shows in Debug and not in Release. Guess: memory released too early still holds the message there.
 - A build of libultraship in the build folder on Windows and macOS: not run here, CI's Windows job will show.
 
+### 2026-11-08, #171, a platform difference warns again (decision 0010)
+
+Identity: the commit of this PR's branch, Linux, GCC, Debug. `coop_session_test` and `coop_menu_test` in a virtual
+network and over loopback UDP; no game, no ROM and no second platform: two games on one PC never differ in platform,
+so the platforms are texts the bots are told to claim.
+
+Observed:
+
+- With the rule of decision 0002 (`COOP_ID_DIFF_PLATFORM` in `COOP_ID_DIFF_REFUSE`), the new `platform` scenario of
+  `tools/coop/session_test.py` fails: both sides get REFUSED with reasons 8 and the old text. With decision 0010 it
+  passes: both sides get JOINED with bit 3 and the same text, `Different platforms: host Windows x86-64 MSVC 1944,
+  joining player Linux x86-64 GCC 13.2. Nobody has checked that these two compute the same game; the game will say so
+  if they part.`, and a game message passes after the welcome. Both runs were made, the old one with the session files
+  of `origin/coop` checked out against the new tests.
+- A build difference on top still refuses, with reasons 9, and the refusal's text holds the build line and the platform
+  line (`platform_build`, in the sim and over UDP).
+- A refusal with bit 3 alone, which only a host with the old rule sends, still reads as the platform text on the client
+  and not as "did not finish in time" (`Script_ClientRefused`): the client's text mask is `COOP_ID_DIFF_ALL`, the
+  refuse mask without the platform is `COOP_ID_DIFF_REFUSE`. The break that narrows it is caught by the sim.
+- `session_mutants.py`: `platform_refuses` (the gate in `Host_Hello` back on `COOP_ID_DIFF_ALL`) is caught by the sim
+  and by `platform`; `refusal_drops_platform` by the sim and `platform_build`; `joined_event_no_warning` and
+  `client_not_compared` by the sim and `platform`. 299 patterns match `session.c` once.
+- The menu needed no change: `Menu_OnEvent` (`src/port/coop/ui/menu.c`) already shows a JOINED event's text, as
+  `Player 2 joined.` plus the text on the host and the text alone on the joining player. `coop_menu_test`'s
+  `warned_platform` reads both.
+
+Derived:
+
+- The host's mask in `Host_Hello` is the only gate. The client compares the host's identity on the welcome and
+  describes every bit it finds (`Client_Answer`), so the client side needed nothing for the warning.
+- `COOP_PROTOCOL_VERSION` stays 6: no message layout changes, bit 3 keeps its meaning in the hello, the welcome and the
+  refusal. A host with the old rule meets a client of this build with another build id, so its refusal carries bit 0
+  and reads as a build refusal, as before.
+- `SF64_COOP_TEST_ANY_PLATFORM` and `CoopSession_AnyPlatform` are gone: the rule they bypassed is gone, and a real
+  cross-platform session now runs with what players get.
+
+Unknown:
+
+- Whether Windows and Linux compute the same game: still never run. The first such session, with the desync check on,
+  is the next step on #171.
+
 ### 2026-11-05, #8 (WP-10), player count apart from camera count
 
 Observed:

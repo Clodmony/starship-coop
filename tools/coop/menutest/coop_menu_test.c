@@ -806,40 +806,19 @@ static void Test_Refused(void) {
     Menus_Close();
 }
 
-static void Test_RefusedPlatform(void) {
+// A different platform gets in with a warning on both sides (decision 0010).
+static void Test_WarnedPlatform(void) {
     const CoopMenuView* v;
 
-    sScenario = "refused_platform";
+    sScenario = "warned_platform";
     Menus_Init(0);
     Start_Host();
     sPlatform = "Other platform";
     EXPECT(CoopMenu_Join(A, SIM_ADDRESS, "45000", sNet.now), "joining did not start");
     Run(500);
     v = View(A);
-    EXPECT(v->phase == COOP_MENU_IDLE, "a refused client stayed");
+    EXPECT(v->phase == COOP_MENU_JOINED, "a client of another platform was not let in");
     Expect_Has(v->message, "Different platforms: host ", "the client is not told what differs");
-    Expect_Has(v->message, "joining player Other platform", "the client is not told what differs");
-    v = View(HOST);
-    EXPECT(v->phase == COOP_MENU_HOSTING, "a refusal ended hosting");
-    Expect_Has(v->status, "1 of 4", "the host counts the refused player");
-    Expect_Has(v->message, "A player was refused.", "the host is not told");
-    Expect_Has(v->message, "joining player Other platform", "the host is not told what differs");
-    Menus_Close();
-}
-
-static void Test_AnyPlatform(void) {
-    const CoopMenuView* v;
-
-    sScenario = "any_platform";
-    Menus_Init(0);
-    Start_Host();
-    sPlatform = "Other platform";
-    CoopSession_AnyPlatform(true);
-    EXPECT(CoopMenu_Join(A, SIM_ADDRESS, "45000", sNet.now), "joining did not start");
-    Run(500);
-    CoopSession_AnyPlatform(false);
-    v = View(A);
-    EXPECT(v->phase == COOP_MENU_JOINED, "the test switch did not let the client in");
     Expect_Has(v->message, "joining player Other platform", "the client is not told what differs");
     v = View(HOST);
     Expect_Has(v->status, "2 of 4", "the host does not count the player");
@@ -1237,8 +1216,7 @@ static int Run_Sim(void) {
     Test_Leave();
     Test_HostCloses();
     Test_Refused();
-    Test_RefusedPlatform();
-    Test_AnyPlatform();
+    Test_WarnedPlatform();
     Test_NoHost();
     Test_HostFull();
     Test_OneTick();

@@ -11,7 +11,7 @@ One file per architecture decision: `NNNN-short-title.md`, numbered in order. Co
 | # | Title | Status |
 |---|---|---|
 | [0001](0001-fork-and-code-layout.md) | Fork of Starship, co-op code isolated in `src/port/coop/` | Accepted (branch layout superseded by 0003) |
-| [0002](0002-sync-model.md) | Sync model: lockstep or host authority | Accepted (option A, deterministic lockstep) |
+| [0002](0002-sync-model.md) | Sync model: lockstep or host authority | Accepted (option A, deterministic lockstep; platform rule superseded by 0010) |
 | [0003](0003-branch-layout.md) | Branch layout: `coop` integrates, `main` mirrors upstream | Accepted |
 | [0004](0004-transport.md) | Transport: UDP on SDL2_net with our own reliability layer | Accepted |
 | [0005](0005-players-and-characters.md) | Players and characters: player 1 is Fox, players 2-4 pick a wingman | Accepted |
@@ -19,3 +19,4 @@ One file per architecture decision: `NNNN-short-title.md`, numbered in order. Co
 | [0007](0007-lives-and-respawn.md) | Lives and respawn: a shared pool, players 2-4 return while Fox flies | Proposed |
 | [0008](0008-routes-and-score.md) | Routes, warps, hit count and medals | Proposed |
 | [0009](0009-vehicles-cutscenes-save.md) | Vehicles, cutscene timing and save | Proposed |
+| [0010](0010-cross-platform-sessions.md) | Cross-platform sessions: a platform difference warns, it does not refuse | Accepted |

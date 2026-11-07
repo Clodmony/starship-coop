@@ -1,8 +1,9 @@
 #pragma once
 
 // What a player's game must agree on with the host's before they play together (PROTOCOL.md rule 2): the build, the
-// ROM, the simulation CVars and the platform. Lockstep needs every client to compute the same game, and nobody has
-// compared two platforms yet (decision 0002), so a different platform refuses too.
+// ROM and the simulation CVars. The platform is compared too, but only warns (decision 0010): lockstep needs every
+// client to compute the same game, and nobody has compared two platforms yet, so the desync check (WP-23) is what
+// tells whether two platforms do.
 // Plain C with no game or network dependency, so the test program can build identities of its own.
 
 #include <stdbool.h>
@@ -35,7 +36,9 @@ typedef enum {
     COOP_ID_DIFF_PLATFORM = 1 << 3,
 } CoopIdentityDiff;
 
-#define COOP_ID_DIFF_REFUSE (COOP_ID_DIFF_BUILD | COOP_ID_DIFF_ROM | COOP_ID_DIFF_CVARS | COOP_ID_DIFF_PLATFORM)
+// Refuses the connection. The rest of COOP_ID_DIFF_ALL only warns, on both sides.
+#define COOP_ID_DIFF_REFUSE (COOP_ID_DIFF_BUILD | COOP_ID_DIFF_ROM | COOP_ID_DIFF_CVARS)
+#define COOP_ID_DIFF_ALL (COOP_ID_DIFF_REFUSE | COOP_ID_DIFF_PLATFORM)
 
 // The platform this file was compiled for, for example "Windows x86-64 MSVC 1944".
 void CoopIdentity_Platform(char* out, size_t cap);

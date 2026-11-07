@@ -64,12 +64,6 @@ struct CoopSession {
     char text[COOP_SESSION_TEXT];
 };
 
-static bool sAnyPlatform;
-
-void CoopSession_AnyPlatform(bool on) {
-    sAnyPlatform = on;
-}
-
 static CoopSession* Session_New(CoopTransport* transport, const CoopIdentity* identity, bool isHost) {
     CoopSession* s;
 
@@ -426,8 +420,8 @@ static void Host_Hello(CoopSession* s, int peer, const CoopNetEvent* net, uint32
         return;
     }
     diff = CoopIdentity_Compare(&s->local, &p->identity);
-    if (diff & (sAnyPlatform ? COOP_ID_DIFF_REFUSE & ~COOP_ID_DIFF_PLATFORM : COOP_ID_DIFF_REFUSE)) {
-        // With the test switch on the platform goes along, so both players see everything that differs.
+    if (diff & COOP_ID_DIFF_REFUSE) {
+        // Every bit goes along, the platform too, so both players see everything that differs.
         Host_Refuse(s, peer, diff, nowMs, ev);
         return;
     }
@@ -677,7 +671,7 @@ static void Client_Answer(CoopSession* s, const CoopNetEvent* net, CoopSessionEv
                  "same Starship Co-op build.");
     } else if (ev->diff & COOP_SESSION_REFUSE_STARTED) {
         snprintf(s->text, sizeof(s->text), "%s", STARTED_TEXT);
-    } else if ((ev->diff & COOP_ID_DIFF_REFUSE) == 0) {
+    } else if ((ev->diff & COOP_ID_DIFF_ALL) == 0) {
         snprintf(s->text, sizeof(s->text), "%s", CoopSession_EndText(COOP_SESSION_END_NO_HANDSHAKE));
     } else {
         CoopIdentity_Describe(ev->diff, host, &s->local, s->text, sizeof(s->text));

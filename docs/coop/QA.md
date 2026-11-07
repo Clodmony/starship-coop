@@ -181,8 +181,8 @@ number of clients, transport.
    games with `SF64_COOP_TEST_MENU=<folder>` (`src/port/coop/test/menu_driver.h`), clicks the real ImGui widgets through
    ImGui's input queue and reads back what each window holds, so it needs nobody at the screen. Its `game_level` and
    `game_level_map` scenarios (#126) go on to the Start button and compare the state hash logs from the first frame after
-   `Play_Init`, as `join_test.py` does. Its `game_platform` scenario reads what the menu shows for a platform refusal and
-   runs `SF64_COOP_TEST_ANY_PLATFORM`, against `coop_session_test` as the other side, because two games on one PC never
+   `Play_Init`, as `join_test.py` does. Its `game_platform` scenario reads what the menu shows both players for a
+   platform warning (decision 0010), against `coop_session_test` as the other side, because two games on one PC never
    differ in platform. Neither says how the window looks.
 6. **Regression per bug.** Every desync fix comes with the replay that triggered it; every transport fix adds a
    break to `tools/coop/net_mutants.py`, every session fix one to `tools/coop/session_mutants.py`.
