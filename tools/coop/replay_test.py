@@ -16,7 +16,8 @@ Every tool starts with SHIP_HOME set to a decoy folder, never the value from you
 can only write into the decoy. That fails the scenario, and so does a run folder the game did not write its config
 into. The decoy holds sf64.o2r, as a real install does: without it the game exits at once and writes nothing
 (src/port/Engine.cpp:78), which would hide the bug. On Linux the game runs without a window and off the GPU. Everything
-lands under local/test-*: the folders are deleted when all scenarios hold and kept for reading when one fails.
+lands under local/test-*: the folders are deleted when all scenarios hold and kept for reading when one fails. On
+another system the scenarios that need Linux are skipped, and the run says which (#166).
 
 The leak-* scenarios start a tool with the variables an earlier test can leave in a shell (#70). Each one shows when it
 reaches the game: a file in the decoy, a test switch line in the game's log, or a hash_check.py run that fails because
@@ -150,9 +151,13 @@ SCENARIOS = {
     "level-full": Scenario("in-level", "full", 1, None, None, says="started in the level"),
     "person": None,
 }
-if not sys.platform.startswith("linux"):  # the check reads /proc, and only Linux gets the offscreen driver
-    for name in ("bare-replay", "bare-hash", "bare-trace", "person"):
-        del SCENARIOS[name]
+# Tools that run on Linux only: exit_test.py sends Linux signals, version_test.py reads the Linux build (#166).
+LINUX_ONLY_TOOLS = {"exit", "version"}
+# Scenarios this system cannot run. The bare ones and person read /proc, and only Linux gets the offscreen driver.
+SKIPPED = [] if sys.platform.startswith("linux") else [
+    name for name, s in SCENARIOS.items() if s is None or s.bare or s.tool in LINUX_ONLY_TOOLS]
+for name in SKIPPED:
+    del SCENARIOS[name]
 
 
 def left_in_shell(decoy):
@@ -419,11 +424,20 @@ def main():
             print(f"{name}: a recording for a person to play, real time" if s is None else
                   f"{name}: {s.file} replay through {s.tool}, wants exit code {s.code}"
                   + (f" and {s.result}" if s.result else ""))
+        for name in SKIPPED:
+            print(f"{name}: skipped, Linux only")
         return 0
     chosen = list(SCENARIOS) if not args.only else [s.strip() for s in args.only.split(",") if s.strip()]
-    unknown = [s for s in chosen if s not in SCENARIOS]
+    unknown = [s for s in chosen if s not in SCENARIOS and s not in SKIPPED]
     if unknown:
         sys.exit(f"replay_test: unknown scenario(s) {', '.join(unknown)}; known: {', '.join(SCENARIOS)}")
+    skipped = [s for s in (SKIPPED if not args.only else chosen) if s in SKIPPED]
+    chosen = [s for s in chosen if s not in SKIPPED]
+    if skipped:
+        print(f"replay_test: skipped on {sys.platform}, Linux only: {', '.join(skipped)}", flush=True)
+    if not chosen:
+        print("replay_test: nothing left to run here")
+        return 0
 
     start = time.monotonic()
     bench = Bench(args.exe)
