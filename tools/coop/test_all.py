@@ -18,6 +18,8 @@ At the end it prints the failures, the longest step and one RESULT line. A step 
 what it started, and counts as failed. When all steps pass, the run folders they left in local/ are deleted (--keep
 keeps them); a failure keeps them for reading.
 
+A build that is not Debug leaves out what only Debug can do: OPTIMISED below, printed at the end of a run.
+
 Two steps need a second build, and without one they do not run: coop-off plays co-op off on this build and --base-exe,
 the build before your change, and builds plays this build against the other config of the same commit, found by
 itself in the other default folder. The last step checks that no tracked file changed during the run.
@@ -61,6 +63,16 @@ STOP_WAIT = 15  # seconds a stopped step has before it is killed
 SERIAL, GAME = "serial", "game"
 FOLDERS = {"Debug": "build-cmake", "Release": "build-release", "RelWithDebInfo": "build-relwithdebinfo"}
 CONFIG_PAIR = {"Debug": "Release", "Release": "Debug"}
+
+# What a build without Debug's symbols cannot do, and that a Debug run covers: step -> (its tool and arguments there,
+# what that leaves out). push_frame is inlined and gdb has no lines to stop on. The mutant is a release too early, which
+# a Debug build shows on lan and a Release build did not, 3 runs of 3.
+OPTIMISED = {
+    "exit-test": (["exit_test.py", "--skip", "fault-main,fault-stuck"], "exit-test fault-main, fault-stuck"),
+    "wingman": (["wingman_check.py", "run", "chain"], "wingman alive, down, sitout"),
+    "steam-mutants": (["steam_mutants.py", "--skip", "message_released_too_early"],
+                      "steam-mutants message_released_too_early"),
+}
 
 # name, lane, the tool and its arguments, what it takes (see command_of), what goes in front of it, Linux only
 Step = namedtuple("Step", "name lane command takes wrap linux", defaults=(None, None, False))
@@ -151,7 +163,8 @@ def read_id(folder):
 
 def command_of(step, args, exe, other):
     """What to run for a step, or (None, why it cannot run). takes says which of the builds a tool gets, and how."""
-    command = [sys.executable, "-u", str(TOOLS / step.command[0]), *step.command[1:]]
+    tool = OPTIMISED[step.name][0] if args.config != "Debug" and step.name in OPTIMISED else step.command
+    command = [sys.executable, "-u", str(TOOLS / tool[0]), *tool[1:]]
     if step.takes in ("exe", "both"):
         command += ["--exe", str(exe)]
     if step.takes in ("build", "both"):
@@ -435,6 +448,9 @@ def main():
         lines.append(f"test_all: longest step {longest[0]}, {duration(longest[2])}")
     lines += [f"FAILED {name} ({seconds:.0f}s): {line}" for name, _, seconds, line in failed]
     lines += [f"NOT RUN {name}: {why}" for name, why in missing]
+    left_out = [OPTIMISED[s.name][1] for s in chosen if s.name in OPTIMISED] if args.config != "Debug" else []
+    if left_out:
+        lines.append(f"test_all: left out on {args.config}, as a Debug run covers them: {'; '.join(left_out)}")
     if failed or stopped:
         verdict, code = "FAILED", 1
     elif missing:

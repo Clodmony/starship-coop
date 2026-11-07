@@ -2377,14 +2377,24 @@ Observed:
   24: 17 to 22 s a game at every value, and in the last two rounds, load 10 to 18, 17 to 18 s. CPU per game in those rounds
   17.4 and 17.5 s for 0 and 1, 18.6 to 18.9 s for 2 and 3. An earlier pass, all of 3 and then all of 1, gave 28 and 18 s at
   load about 25; taken in turn that gap is gone.
-- Lanes with drawing off, before #148: the 15 steps of `test_all.py` that count frames, under five shared slots, took 7m53s, 5m36s,
-  4m56s and 5m41s with 2, 3, 4 and 5 lanes (load 23 to 25, 10 to 22, 16 to 30 and 18 to 27). The same 15 steps on the build
-  of `e0f25422`, which cannot skip drawing, took 14m30s with 4 lanes (load 15 to 26). `full_level.py` alone took 234 s
-  against 870 s.
+- Lanes with drawing off, before #148: the 15 steps of `test_all.py` that count frames, under five shared slots, took
+  7m53s, 5m36s, 4m56s and 5m41s with 2, 3, 4 and 5 lanes (load 23 to 25, 10 to 22, 16 to 30 and 18 to 27). The same 15
+  steps on the build of `e0f25422`, which cannot skip drawing, took 14m30s with 4 lanes (load 15 to 26). `full_level.py`
+  alone took 234 s against 870 s.
 - A first run of every step with 5 lanes took 41m39s at load 4 to 43, all of it `hash_check.py rates`, which started first
   and plays in real time. `menu_test.py --game` took 835 s in that run, 13 minutes of it waiting for a slot, as five lanes
   and the machine's other work held all five. It ran for 38 s.
 - Every step, merged with #148, 4 lanes: 21m17s at load 4 to 30, of which `hash_check.py rates` on the rails is 18m27s.
+- Release with no drawing plays 5800 frames in 5 s or less, against 15 s in Debug. Tools that count frames passed there. Two
+  games meeting over a socket did not: `join_test.py` gave 0 of 5 with no limit, with `the host never tried to start`, 4
+  of 5 with drawing, 5 of 5 at `SF64_COOP_TEST_SPEED=8` and 2 of 5 at 16; Debug with no limit gave 5 of 5. Some failures were
+  #148's guard, with a client 1 to 11 frames on the title: it comes that way, as the host starts as soon as it is there.
+  `menu_test.py --game` with no limit passed once at load 15 and failed `game` 3 of 3 at load 2 to 8, with no client's ping
+  shown; at 8, 3 of 3 passed. So those two run at `MEETING_SPEED`.
+- What Release cannot run: `exit_test.py` `fault-main` and `fault-stuck`, as `push_frame` is inlined and gdb's stop in it
+  never comes; `wingman_check.py` `alive`, `down` and `sitout`, as gdb has no lines to stop on. And `steam_mutants.py`
+  `message_released_too_early` survives on `lan`, 3 runs of 3, where Debug catches it. `test_all.py` leaves those out and says
+  so. Everything else in it passed.
 - Stopping `test_all.py` during `net_mutants.py` left a break in `net_core.c` and its backup: SIGTERM ended `mutants.py`
   outside its `finally`. The `tree` step named it. With a handler the source is back, and `test_all_test.py` stops a run at
   that moment: `stop-mutants` fails without the handler.
@@ -2417,6 +2427,7 @@ Unknown:
 
 - Why #141 saw ninja keep the other folder's archive. The cause is gone with the shared folder either way.
 - What the crash handler waits for in that 1 game of 48, and whether it is the hang #137 saw.
+- Why that Steam mutant shows in Debug and not in Release. Guess: memory released too early still holds the message there.
 - A build of libultraship in the build folder on Windows and macOS: not run here, CI's Windows job will show.
 
 ### 2026-11-05, #8 (WP-10), player count apart from camera count

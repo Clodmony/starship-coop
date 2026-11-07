@@ -111,6 +111,10 @@ class Game(LevelLog):
         self.thread = threading.Thread(target=self.play, args=(replay, exe, frames, env))
 
     def play(self, replay, exe, frames, env):
+        # A frame limit, as the join takes wall-clock time and the replay is counted in frames. With none, a Release
+        # game that does not draw plays all of it in 5 s, before a client has joined (#147): 0 of 5 scenarios, and 2 of
+        # 5 at 16.
+        env = {"SF64_COOP_TEST_SPEED": replay_tool.MEETING_SPEED, **env}
         _, self.run, _ = replay_tool.run_game("play", replay, exe, max(600, frames), hash_log=True, tag=self.name,
                                               env_extra=env)
 

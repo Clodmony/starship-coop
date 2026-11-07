@@ -302,6 +302,7 @@ def run_once(exe, folder, name, scenario, number):
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--only", help="comma-separated scenarios (default: all)")
+    p.add_argument("--skip", default="", help="comma-separated scenarios to leave out")
     p.add_argument("--repeat", type=int, default=3, help="games per scenario (default: 3)")
     p.add_argument("--exe", help="Starship executable (default: newest build found)")
     p.add_argument("--list", action="store_true", help="print the scenarios and stop")
@@ -314,7 +315,9 @@ def main():
     if not sys.platform.startswith("linux"):
         sys.exit("exit_test: Linux only; only there does libultraship catch these signals")
     chosen = list(SCENARIOS) if not args.only else [s.strip() for s in args.only.split(",") if s.strip()]
-    unknown = [s for s in chosen if s not in SCENARIOS]
+    skipped = [s.strip() for s in args.skip.split(",") if s.strip()]
+    unknown = [s for s in [*chosen, *skipped] if s not in SCENARIOS]
+    chosen = [s for s in chosen if s not in skipped]
     if unknown:
         sys.exit(f"exit_test: unknown scenario(s) {', '.join(unknown)}; known: {', '.join(SCENARIOS)}")
     if shutil.which("gdb") is None and any(SCENARIOS[s].fault for s in chosen):
