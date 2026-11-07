@@ -1,8 +1,8 @@
 # Wire protocol
 
-Status: the transport (WP-20), the session handshake (WP-21), the characters (WP-34), the level start (WP-24) and
-lockstep (WP-22) exist; `COOP_PROTOCOL_VERSION` is 5. Other sync and game messages come with their work packages. This
-page sets the rules so parallel work does not collide.
+Status: the transport (WP-20), the session handshake (WP-21), the characters (WP-34), the level start (WP-24),
+lockstep (WP-22) and the desync check (WP-23) exist; `COOP_PROTOCOL_VERSION` is 6. Other sync and game messages come
+with their work packages. This page sets the rules so parallel work does not collide.
 
 ## Rules
 
@@ -267,7 +267,70 @@ What does not fit:
   frame that runs next: the receiver ends the session.
 - Before this game has reached frame 0, a `SYNC_INPUT` is dropped, and it comes again.
 
-Comparing state hashes between clients is WP-23, and rollback is under "Later" in ROADMAP.md.
+Rollback is under "Later" in ROADMAP.md.
+
+## Desync check
+
+WP-23, [decision 0002](decisions/0002-sync-model.md): every client hashes its state on every lockstep frame, before the
+frame runs (`src/port/coop/sync/state_hash.c`, the same hash the test tools log), and the clients compare. The code is
+`src/port/coop/sync/desync.c`, and `desync_game.c` connects it to the game, from `lockstep_game.c`. Nothing here writes
+game state, reads a clock inside the simulation or holds a frame: a late or lost hash leaves a frame unchecked, never
+held. Co-op off runs no hash, and a session with no desync hashes as before.
+
+**Hashes.** The hash of frame F is the state after frame F - 1, as in the hash log. Each game keeps its last 64 frames
+(`COOP_DESYNC_RING`), with the hash of every region and a dump of the bytes hashed. Every `COOP_DESYNC_PERIOD`, 10,
+frames it sends `SYNC_HASH` with the totals of the last 10 frames to the games it talks to: a client to the host, the host
+to every client. So a client is compared with the host, and the host with each client, as inputs travel. Why 10: hashing
+is per frame, as the decision says, and the message is what has a cost. One message a frame would double lockstep's
+datagram rate for 8 bytes of payload; every 10 frames the totals go out in one datagram, and a desync is still named
+within a third of a second plus a round trip. 64 frames of ring hold what the slowest client can still ask about: a peer
+at most `COOP_LOCKSTEP_MAX_DELAY`, 16, frames ahead when its batch leaves, plus the batch, plus a resend or two.
+
+`SYNC_HASH` goes on the reliable lane, in order, so no batch is lost and the first differing frame is the first one. A
+receiver compares every total with its own for that frame. A frame it has not run yet waits in the message, four messages
+deep per peer; a frame it no longer holds counts as unchecked, never as a desync.
+
+| Size | Field |
+|---|---|
+| 4 | First frame |
+| 1 | Count c (1 to 32) |
+| 8 c | The total hash of each frame, little-endian u64 |
+
+**The desync.** The first frame whose totals differ is the desync, found by both sides of it: the host from the client's
+batch and the client from the host's, and whichever games find it, or hear of it, send `SYNC_DESYNC` with their own
+hash of that frame, region by region, on the reliable lane. A game that receives one before it found the desync itself
+takes the frame and the pair from it, as a third player does. A game in the pair ends the session once the other side's
+hash has come, or `COOP_DESYNC_GRACE_MS`, 1000 ms, after its own went out; a game outside the pair waits the grace out,
+or the host would see it leave before the pair had exchanged. Ending runs through the same path as a lost player: the
+level goes on in each game with the local player on its controller and the others idle, and the co-op window comes up
+with the text. The text names the frame, the level and its mode, the two players, the regions, and the report's path.
+
+| Size | Field |
+|---|---|
+| 4 | Frame |
+| 1 | Sender's player index |
+| 1, 1 | The pair: the two players whose totals differed, in order |
+| 1 | Flags: bit 0, the sender still held the frame, so its hashes below are real |
+| 4 | The sender's game state, level, level mode and play state at that frame, u8 each |
+| 8 | The sender's total hash |
+| 8 x 12 | One hash per region, in the order of `CoopHashRegion` |
+
+**The report** is `coop-desync-<frame>-player<n>.txt` in the game's own folder, where its config and saves are, one per
+game: both games' identity as the handshake had them (build, platform, ROM, CVar count), the frame, the pair, the regions
+that differ, both sides' hashes, and a dump of this game's state at that frame as hashed, pointers normalised, in named
+chunks (`gActors[59]`, `gPlayer[1]`, `gLifeCount[0]`). `python tools/coop/desync_report.py diff <a> <b>` reads two and
+names the first value that differs. Nothing personal goes in. The layout is `src/port/coop/sync/desync_report.c`.
+
+**What the session does after a desync: it ends.** That is the smallest behaviour that is honest: until host correction
+(option C of decision 0002) exists there is no repair, and playing on would have each player in a different game that
+looks like one. It is a choice for the owner to reverse; the alternatives are to play on with a warning, or C.
+
+What does not fit:
+
+- `SYNC_HASH` of the wrong size, with a count of 0 or above 32, on a link nobody is on; `SYNC_DESYNC` of the wrong size,
+  from a client for anyone but itself, with a pair of one player or of a player who is not in the level: the receiver
+  ends the session.
+- Before this game has reached frame 0, both are dropped.
 
 ## Id ranges
 
@@ -299,6 +362,8 @@ Comparing state hashes between clients is WP-23, and rollback is under "Later" i
 | 0x0015 | `SESSION_ROSTER` | host to client | u8 for each of the 4 players, see Characters | WP-34 |
 | 0x0016 | `SESSION_LEVEL_START` | host to client | level, phase, roster and values, see Level start | WP-24 |
 | 0x0040 | `SYNC_INPUT` | both | frames of each player, see Lockstep | WP-22 |
+| 0x0041 | `SYNC_HASH` | both | the total state hash of the last 10 frames, see Desync check | WP-23 |
+| 0x0042 | `SYNC_DESYNC` | both | the sender's hash of the first differing frame, region by region, see Desync check | WP-23 |
 | 0x00C0 | `TEST_RELIABLE` | both | test pattern, only sent by `coop_net_test` | WP-20 |
 | 0x00C1 | `TEST_UNRELIABLE` | both | test pattern, only sent by `coop_net_test` | WP-20 |
 | 0x00C2 | `TEST_DONE` | both | none, only sent by `coop_net_test` | WP-20 |

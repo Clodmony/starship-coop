@@ -15,6 +15,8 @@
 #include "port/coop/game/players.h"
 #include "port/coop/net/protocol.h"
 #include "port/hooks/Events.h"
+#include "desync.h"
+#include "desync_game.h"
 #include "lockstep.h"
 
 // src/port/Game.cpp
@@ -27,6 +29,8 @@ extern void Graphics_PushFrame(Gfx* data);
 // A wait shorter than this says nothing: it is a frame or two.
 #define SYNC_WAIT_SHOWN_MS 1000
 #define SYNC_TEXT_SIZE 192
+// A desync names the frame, the level, the players, the regions and the report's path (desync_game.c).
+#define SYNC_DESYNC_TEXT_SIZE 1536
 
 typedef enum {
     SYNC_OFF,
@@ -58,7 +62,20 @@ static bool Send(void* user, int peer, const void* data, uint16_t size) {
     return sMuted || sLink.send(peer, COOP_MSG_SYNC_INPUT, data, size, COOP_NET_UNRELIABLE);
 }
 
+// The desync check's messages take the session link as they are: a mute is about input.
+static bool Desync_Send(int peer, uint16_t msgId, const void* data, uint16_t size, CoopNetLane lane) {
+    return sLink.send(peer, msgId, data, size, lane);
+}
+
+static void Desync_Identity(int peer, char* out, size_t cap) {
+    out[0] = '\0';
+    if (sLink.identity != NULL) {
+        sLink.identity(peer, out, cap);
+    }
+}
+
 static void Sync_Start(void) {
+    CoopDesyncGameLink desync = { Desync_Send, Desync_Identity };
     int32_t i;
 
     CoopLockstep_Start(&sLockstep, &sConfig, SDL_GetTicks());
@@ -66,7 +83,17 @@ static void Sync_Start(void) {
         CoopInput_SetSource(i, &sSource);
     }
     CoopInput_SetLocalSource(&sSource);
+    CoopDesyncGame_Begin(&desync, sConfig.self, sConfig.host, sConfig.present, sConfig.delay);
     sState = SYNC_RUNNING;
+}
+
+// A desync that is complete ends the session with its text, as a lost player does (WP-23).
+static void Sync_CheckDesync(void) {
+    char text[SYNC_DESYNC_TEXT_SIZE];
+
+    if ((sState == SYNC_RUNNING) && CoopDesyncGame_Check(SDL_GetTicks(), text, sizeof(text))) {
+        sLink.fail(text);
+    }
 }
 
 static void Sync_Stalled(int32_t player) {
@@ -85,6 +112,7 @@ static bool Sync_FrameIsReady(void) {
         int32_t stalled;
 
         sLink.pump();
+        Sync_CheckDesync();
         if (sState != SYNC_RUNNING) {
             return true; // the session ended: this game goes on alone
         }
@@ -137,7 +165,10 @@ int32_t CoopSyncGame_HoldFrame(void) {
 static void CoopSyncGame_OnGamePreUpdate(IEvent* event) {
     (void) event;
     if (sState == SYNC_RUNNING) {
+        // The state this frame starts from, hashed before anything of the frame runs, then the frame's input.
+        CoopDesyncGame_Frame(sLockstep.frame, SDL_GetTicks());
         CoopLockstep_Advance(&sLockstep, CoopInput_Controller(), SDL_GetTicks());
+        Sync_CheckDesync();
     }
 }
 
@@ -153,6 +184,7 @@ void CoopSyncGame_Init(void) {
             sConfig.delay = (uint32_t) value;
         }
     }
+    CoopDesyncGame_Init();
     REGISTER_LISTENER(GamePreUpdateEvent, CoopSyncGame_OnGamePreUpdate, EVENT_PRIORITY_HIGH);
 }
 
@@ -183,7 +215,17 @@ void CoopSyncGame_Begin(const CoopSyncLink* link, const uint8_t* roster, int32_t
 
 void CoopSyncGame_Receive(int peer, uint16_t msgId, const uint8_t* data, uint16_t size) {
     // Another game can get to the level first. What it sends before this one is there is dropped, as it repeats it.
-    if ((msgId != COOP_MSG_SYNC_INPUT) || (sState != SYNC_RUNNING)) {
+    if (sState != SYNC_RUNNING) {
+        return;
+    }
+    if (CoopDesync_IsMessage(msgId)) {
+        if (!CoopDesyncGame_Receive(peer, msgId, data, size, SDL_GetTicks())) {
+            sLink.fail("Another player sent a state hash that could not be read, so the session is over.");
+        }
+        Sync_CheckDesync();
+        return;
+    }
+    if (msgId != COOP_MSG_SYNC_INPUT) {
         return;
     }
     if (!CoopLockstep_Receive(&sLockstep, peer, data, size, SDL_GetTicks())) {
@@ -195,6 +237,7 @@ void CoopSyncGame_End(void) {
     if (sState == SYNC_RUNNING) {
         CoopInput_ClearSources();
     }
+    CoopDesyncGame_End();
     sState = SYNC_OFF;
     sWaiting = false;
 }

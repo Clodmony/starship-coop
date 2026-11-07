@@ -33,17 +33,18 @@ Everything here is tested by scripts, on Corneria, on Linux. Nobody has played i
 | Steam relay | Built, off by default, tested on a fake Steam only |
 | Determinism | Two runs of one build match on every frame through all of Corneria, and Release, Debug and frame rates from 30 to 360 match too |
 | Lockstep | [Decision 0002](docs/coop/decisions/0002-sync-model.md) is built: inputs go over the network, every frame waits for every player, any player can pause, and a lost player ends the session cleanly |
-| Tests | Replays, a state hash per frame, deliberate-break tests, and uncapped, silent test games that can start straight in a level. See [tools/coop](tools/coop/README.md) |
+| Desync check | Every client hashes its state on every frame and the clients compare. A desync names its frame, level, players and regions in the game, each game writes a report into its own folder, and the session ends. A tool compares two reports and names the first value that differs |
+| Tests | One command runs everything (`python tools/coop/test_all.py`): replays, a state hash per frame, deliberate-break tests, and uncapped, silent test games that can skip the drawing and start straight in a level. See [tools/coop](tools/coop/README.md) |
 
 ### In progress
 
-- [#147](https://github.com/Clodmony/starship-coop/issues/147): faster tests without the final drawing, one command for all tests, Release runs
+Nothing is being built right now. The next step is the first test on two PCs.
 
 ### What is open
 
 | What | Where |
 |---|---|
-| Desync reports for players | [WP-23](https://github.com/Clodmony/starship-coop/issues/21) |
+| What a session does after a desync: it ends now, the smallest honest choice, for the owner to revise | [WP-23](https://github.com/Clodmony/starship-coop/issues/21), [decision 0002](docs/coop/decisions/0002-sync-model.md) |
 | A run on two PCs, and Windows Release | [#2](https://github.com/Clodmony/starship-coop/issues/2), [#145](https://github.com/Clodmony/starship-coop/issues/145): needed before a first public release |
 | Real Steam test | [WP-26](https://github.com/Clodmony/starship-coop/issues/24): needs two PCs and two Steam accounts |
 | Lag and loss testing | [WP-27](https://github.com/Clodmony/starship-coop/issues/25) |
