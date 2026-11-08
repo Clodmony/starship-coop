@@ -35,8 +35,11 @@ on both sides, and the float given to `sinf` is `0x406a927f`. Its exact sine, -0
 floats -0.5 (`0xbf000000`) and -0.49999997 (`0xbeffffff`). glibc 2.44 `sinf` returns `0xbeffffff`, which gives
 `yBob` = `0x3e7fffff`, the client's dumped value, bit for bit.
 
-Derived, not run on Windows: the host's `0x3e800000` needs a sine of exactly -0.5, so the Windows C runtime rounds this
-tie the other way.
+Observed on Windows (MSVC v143), run by the other player and reported to the owner, not seen by the agent: `math_test.py`
+passes there on the same 11018 inputs, so MSVC compiles `sincos.c` to the reference's bits, as GCC does. Windows' own
+`sinf` returns `0xbf000000` for `0x406a927f`, as the host's `yBob` of `0x3e800000` needed; the Windows C library differs
+from the N64 algorithm on 576 sines and 582 cosines of the 11018 (glibc: 577 and 557), so the two libraries are not the
+same function.
 
 Unknown: whether frame 5 is also a sine or cosine result; whether more differences follow once this is fixed.
 
@@ -54,10 +57,10 @@ Unknown: whether frame 5 is also a sine or cosine result; whether more differenc
 ## Decision
 
 Option 1. While a session runs, `__sinf`, `__cosf` (and so `SIN_DEG` and `COS_DEG`) return the result of the N64
-algorithm; otherwise they call the C library as before. The switch goes on when the game is told to enter the level
-(`CoopMenuGame_EnterLevel`, on every game, before the level is set up) and off when the session ends
-(`CoopMenuGame_SessionEnded`), so both games switch before the first value of the level is computed, and a menu or a
-single-player game never sees it. The game writes a line to the co-op log when it goes on, with the N64 sine of
+algorithm; otherwise they call the C library as before. The switch goes on when the lockstep is armed
+(`CoopSyncGame_Begin`, which the co-op menu and the test join driver both call, on every game, before the level is set
+up) and off in `CoopSyncGame_End`, so both games switch before the first value of the level is computed, and a menu or
+a single-player game never sees it. The game writes a line to the co-op log when it goes on, with the N64 sine of
 `0x406a927f`: it is `0xbf000000` on every platform, so two logs side by side show that both games use it. The code is
 `src/port/coop/math/`, built with `-ffp-contract=off` where the compiler has it, with constants given as bit patterns and
 no pointer type punning. `Engine.cpp` changes in its two wrappers only, marked `// COOP:`.

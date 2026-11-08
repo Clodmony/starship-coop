@@ -14,6 +14,7 @@
 #include "port/coop/game/input.h"
 #include "port/coop/game/players.h"
 #include "port/coop/log/coop_log.h"
+#include "port/coop/math/sincos.h"
 #include "port/coop/net/protocol.h"
 #include "port/hooks/Events.h"
 #include "desync.h"
@@ -219,6 +220,23 @@ void CoopSyncGame_Init(void) {
     REGISTER_LISTENER(GamePreUpdateEvent, CoopSyncGame_OnGamePreUpdate, EVENT_PRIORITY_HIGH);
 }
 
+// The N64's sine and cosine from here until CoopSyncGame_End (decision 0011, #186). Begin is where the menu and the
+// test join driver both arm the lockstep, before the level is set up. The line is the same on every platform, so two
+// logs side by side show that both games use it.
+static void Sync_MathOn(void) {
+    uint32_t in = 0x406A927Fu; // 210 degrees as SIN_DEG hands it to __sinf: the input of the first desync (#186)
+    uint32_t out;
+    float x, s;
+
+    CoopMath_SetSession(1);
+    memcpy(&x, &in, sizeof(x));
+    s = CoopMath_Sinf(x);
+    memcpy(&out, &s, sizeof(out));
+    CoopLog_Write(COOP_LOG_SESSION, false,
+                  "math the N64's sine and cosine are on for this session (sin of 0x%08x = 0x%08x)", (unsigned) in,
+                  (unsigned) out);
+}
+
 void CoopSyncGame_Begin(const CoopSyncLink* link, const uint8_t* roster, int32_t self, bool host) {
     uint32_t present = 0;
     int32_t players = 0;
@@ -242,6 +260,7 @@ void CoopSyncGame_Begin(const CoopSyncLink* link, const uint8_t* roster, int32_t
     sWaiting = false;
     sMuted = false;
     sState = SYNC_ARMED;
+    Sync_MathOn();
 }
 
 void CoopSyncGame_Receive(int peer, uint16_t msgId, const uint8_t* data, uint16_t size) {
@@ -271,6 +290,7 @@ void CoopSyncGame_End(void) {
                       (unsigned) sLockstep.frame, (unsigned) sHeldFrames, (unsigned) sHeldMs);
     }
     CoopDesyncGame_End();
+    CoopMath_SetSession(0); // the C library again, as upstream (decision 0011)
     sState = SYNC_OFF;
     sWaiting = false;
 }

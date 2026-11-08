@@ -750,7 +750,12 @@ def sc_menu(args, folder):
         client.close()
     equal = compare(host, client, frames)
     expect(1 in {player for _, player in view_of(client)}, "the client never looked through player 1")
-    return f"through the real menu: same hash on {equal} frames, the client looked through player 1"
+    # The real widgets reach the lockstep start through the menu glue, the other scenarios through the join driver: both
+    # have to switch on the session's sine (decision 0011).
+    expect_math_line(host, 1)
+    expect_math_line(client, 2)
+    return (f"through the real menu: same hash on {equal} frames, the client looked through player 1, both logs say "
+            f"the session's sine is on")
 
 
 def sc_leave(args, folder):
@@ -915,6 +920,17 @@ def sc_desync_three(args, folder):
             f"differs from the host's")
 
 
+# The line a game writes when the lockstep starts (decision 0011, #186): the N64 sine of 0x406a927f is bf000000 on every
+# platform, the value a Windows host needed where glibc gave beffffff.
+MATH_LINE = "the N64's sine and cosine are on for this session (sin of 0x406a927f = 0xbf000000)"
+
+
+def expect_math_line(game, player):
+    """The game's own co-op log says the session's sine is on."""
+    text = coop_logs(game)[player].read_text(encoding="utf-8", errors="replace")
+    expect(MATH_LINE in text, f"{game.name}'s log of player {player} never says `{MATH_LINE}`")
+
+
 def coop_logs(game):
     """{player: path} of the one session of co-op logs in a game's folder."""
     found = coop_log.log_files(game.run)
@@ -960,10 +976,9 @@ def sc_log(args, folder):
         want = {"session", "net", "lockstep", "desync", "game", "state", "log"}
         expect(want <= categories, f"player {player}'s log lacks {sorted(want - categories)}")
         texts = "\n".join(own)
-        # The session's sine (decision 0011, #186): on before the level, and the N64 sine of 0x406a927f is bf000000
-        # everywhere, the value a Windows host needed where glibc gave beffffff.
+        # The session's sine (decision 0011, #186) is on before the level.
         for phrase in ("lockstep started at frame 0", "level start: level 0", "desync check on", "log closed",
-                       "the N64's sine and cosine are on for this session (sin of 0x406a927f = 0xbf000000)"):
+                       MATH_LINE):
             expect(phrase in texts, f"player {player}'s log never says `{phrase}`")
         # A test game is told to quit, so its last lines may still be queued; none may have been lost to a full queue.
         closed = [line for line in own if "log closed" in line][-1]

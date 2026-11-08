@@ -17,7 +17,7 @@ float CoopMath_Sinf(float x);
 float CoopMath_Cosf(float x);
 
 // On while a session is running: the game's __sinf and __cosf (src/port/Engine.cpp) then call the two above, and the C
-// library otherwise, as upstream. Set by the co-op menu glue when a level starts and when the session ends.
+// library otherwise, as upstream. Set when the lockstep starts and ends (src/port/coop/sync/lockstep_game.c).
 void CoopMath_SetSession(int on);
 int CoopMath_InSession(void);
 

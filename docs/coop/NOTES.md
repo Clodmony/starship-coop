@@ -2941,8 +2941,10 @@ Observed (the full table is in [decision 0011](decisions/0011-deterministic-sine
 - The co-op log reaches every player, the desync report does not: `desync_report.c` only writes into the local folder.
   The other PC's report has to be fetched by hand to run `desync_report.py diff`.
 
-Derived: the Windows runtime returns `0xbf000000` for that input, because the host's `yBob` is `0x3e800000`. Not run on
-Windows.
+Observed on Windows (MSVC v143; run by the other player and reported to the owner, not seen by the agent):
+`tools/coop/math_test.py` passes on the same 11018 inputs, Windows' `sinf(0x406a927f)` is `0xbf000000` (the host's
+`yBob` of `0x3e800000` needed it), and its C library differs from the N64 algorithm on 576 sines and 582 cosines (glibc:
+577 and 557).
 
 Unknown: whether frame 5 is also a sine or cosine result.
 
