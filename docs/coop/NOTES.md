@@ -479,6 +479,43 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-08, #16, how Aquas's boss (Bacoon) goes down, for the marine pilot
+
+Read in `d29a6f24` (`issue/16-vehicles` merged with `coop` at `0e5a5cf6`), no build, nothing run. US 1.0 source;
+line numbers are `src/overlays/ovl_i3/fox_aq.c` unless named.
+
+Observed:
+
+- Bacoon starts with health 150 (`:2587`) and spawns two `OBJ_ACTOR_256` beside it (`:2589`-`:2601`);
+  `D_i3_801C42A0[23] = 2` counts them (`:2603`). The fight starts when it is within 3000 of **player 0's**
+  `trueZpos` (`:2687`).
+- Actor 256 (`:1909`): a hit lowers the shell target `D_i3_801C4308[79]` by 5 (`:1944`), only while the shell is
+  open at least 6 degrees, the boss is in state >= 10 and `swork[AQ_SWK_0] < 2`. Once `D_i3_801C4308[10] <= -23`
+  the first hit opens a window (`swork[AQ_SWK_0] = 1`, health 10); after that only a hit with `damage == 31` counts
+  (`:1976`), and one is enough.
+- `damage == 31` is a lock-on shot in Aquas, which is the marine's torpedo: `src/engine/fox_beam.c:691` (actors) and
+  `:1018` (bosses); the torpedo is `PLAYERSHOT_LOCK_ON` from `Aquas_BlueMarineTorpedo`.
+- When both actors 256 are gone (`D_i3_801C42A0[23]--`, `:2035`), the boss goes to state 14 (`:2052`), then 15.
+- In Bacoon's damage switch (`:3026`, only while `fabsf(D_i3_801C4308[10]) >= 5`): part 13 (eye film) takes any hit
+  from state 15, 10 hits (`swork[AQ_SWK_12]`, set at `:2781`, refilled at `:3443` once the film grows back). Part 18
+  takes `damage == 31` only, once the film is gone, in state 15, and not while `swork[AQ_SWK_1] == 2` (`:3100`):
+  `health -= 31` (`:3115`), so five torpedoes.
+- At health 0 only **player 0** gets `PLAYERSTATE_LEVEL_COMPLETE` (`:3128`), as in Macbeth.
+
+Derived:
+
+- The marine pilot needs three aims, in order: lasers at both actors 256 until the shell is open, a torpedo into
+  each; lasers at part 13 ten times; torpedoes at part 18, five times, each before the eye film grows back.
+- Every kill step needs a torpedo, and all marines share one torpedo slot (`gPlayerShots[15]`, see the session 3
+  entry), so two pilots firing B can block each other.
+
+Unknown:
+
+- Where parts 13 and 18 and the actors' boxes sit: `aAqBacoonHitbox` and `aAqActor256Hitbox` come from the ROM, not
+  the source. The pilot would read them at run time (`CoopPilot_BoxCenter`).
+- How a torpedo picks its target (the lock-on before B): not read.
+- Whether player 1 can start the fight or end the level alone: by the lines above, no; not run.
+
 ### 2026-11-08, #16, a pilot for the Landmaster, and the long vehicle runs
 
 Identity: US 1.0 (SHA-1 `d8b10885...`), Windows 11, MSVC v143, Debug, test games without drawing, on `issue/16-vehicles`
