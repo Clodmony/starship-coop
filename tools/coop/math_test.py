@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
-"""Tests the sine and cosine that a co-op session uses instead of the C library (#186, decision 0011).
+"""Tests the trigonometry that a co-op session uses instead of the C library (#186, decision 0011).
 
     python tools/coop/math_test.py     # unattended; prints PASS or FAIL. No game, no ROM, a few seconds.
 
-Windows and Linux part in a session because their C libraries round some sinf inputs differently. The session's sine
-(src/port/coop/math/sincos.c) is the N64 libultra algorithm in plain double arithmetic, so it must give the same bits
-everywhere. This test compiles that one file with the platform's own compiler and compares it, bit for bit, with a
-Python port of the same algorithm. Python's floats are IEEE doubles and use no C library math here, so the expected
-values are the same on every machine and need no stored table. The inputs are the angles the game feeds (SIN_DEG and
-COS_DEG: every half degree from -720 to 720, as the game computes them), random floats, and the edges of each branch.
+Windows and Linux part in a session because their C libraries round some sinf, cosf and atanf inputs differently. The
+session's versions (src/port/coop/math/sincos.c and atan.c) are the N64's own: libultra's sine and cosine in plain double
+arithmetic, and the game's original arctangent, a continued fraction in float arithmetic (the comment in
+src/libc_math64.c), plus an arccosine built on it. They must give the same bits everywhere. This test compiles those
+files with the platform's own compiler and compares them, bit for bit, with a Python port of the same lines. Python's
+floats are IEEE doubles and use no C library math here; a float operation is a double operation rounded to float, which
+is exact for + - * / and sqrt because a double carries more than twice the bits of a float. So the expected values are
+the same on every machine and need no stored table. The inputs are the angles the game feeds (SIN_DEG and COS_DEG: every
+half degree from -720 to 720, as the game computes them), random floats, and the edges of each branch.
 
-It also prints, for information, how many inputs the platform's own sinf and cosf round differently from the N64
-algorithm: on those a Windows and a Linux game would part without the session's sine.
+It also prints, for information, how many inputs the platform's own functions round differently from the N64 versions:
+on those a Windows and a Linux game would part without the session's versions.
 
 Needs a C compiler (CC, cc, gcc, clang, or cl on Windows). Exit code 0 when every input holds, 1 otherwise. The folder
 local/test-math/ is deleted when all hold and kept for reading when one fails.
@@ -45,6 +48,14 @@ DRIVER = r"""
 #include <stdio.h>
 #include <string.h>
 #include "sincos.h"
+#include "atan.h"
+
+static uint32_t Bits(float f) {
+    uint32_t u;
+
+    memcpy(&u, &f, sizeof(u));
+    return u;
+}
 
 int main(void) {
     unsigned in;
@@ -57,19 +68,13 @@ int main(void) {
     after = CoopMath_InSession();
     printf("S %d %d %d\n", before, during, after);
     while (scanf("%x", &in) == 1) {
-        uint32_t a = in, s, c, ls, lc;
-        float x, r;
+        uint32_t a = in;
+        float x;
 
         memcpy(&x, &a, 4);
-        r = CoopMath_Sinf(x);
-        memcpy(&s, &r, 4);
-        r = CoopMath_Cosf(x);
-        memcpy(&c, &r, 4);
-        r = sinf(x);
-        memcpy(&ls, &r, 4);
-        r = cosf(x);
-        memcpy(&lc, &r, 4);
-        printf("%08x %08x %08x %08x %08x\n", a, s, c, ls, lc);
+        printf("%08x %08x %08x %08x %08x %08x %08x %08x %08x\n", a, Bits(CoopMath_Sinf(x)), Bits(CoopMath_Cosf(x)),
+               Bits(sinf(x)), Bits(cosf(x)), Bits(CoopMath_FAtanF(x)), Bits(atanf(x)), Bits(CoopMath_FAcosF(x)),
+               Bits(acosf(x)));
     }
     return 0;
 }
@@ -77,7 +82,11 @@ int main(void) {
 
 
 def f32(x):
-    return struct.unpack("<f", struct.pack("<f", x))[0]
+    """Round a double to float, as a float operation does. An overflow becomes an infinity, as in C."""
+    try:
+        return struct.unpack("<f", struct.pack("<f", x))[0]
+    except OverflowError:
+        return math.copysign(math.inf, x)
 
 
 def bits32(x):
@@ -86,6 +95,10 @@ def bits32(x):
 
 def from_bits(b):
     return struct.unpack("<f", struct.pack("<I", b))[0]
+
+
+def is_nan_bits(b):
+    return (b & 0x7F800000) == 0x7F800000 and (b & 0x007FFFFF) != 0
 
 
 def rounded(d):
@@ -146,6 +159,54 @@ def ref_cos(xb):
     return 0
 
 
+def atan_f(x):
+    """The game's original Math_FAtanF (the comment in src/libc_math64.c): float arithmetic, a value in, a value out."""
+    if x > 1.0:
+        sector = 1
+        x = f32(1.0 / x)
+    elif x < -1.0:
+        sector = -1
+        x = f32(1.0 / x)
+    else:
+        sector = 0
+    sq = f32(x * x)
+    conv = 0.0
+    z = 24.0
+    for _ in range(24):
+        conv = f32(f32(f32(z * z) * sq) / f32(f32(f32(2.0 * z) + 1.0) + conv))
+        z = f32(z - 1.0)
+    frac = f32(x / f32(1.0 + conv))
+    if sector > 0:
+        return f32(math.pi / 2.0 - frac)  # M_PI / 2.0f is a double, the difference is rounded once, at the return
+    if sector < 0:
+        return f32(-math.pi / 2.0 - frac)
+    return frac
+
+
+def ref_atan(xb):
+    return bits32(atan_f(from_bits(xb)))
+
+
+def ref_acos(xb):
+    """CoopMath_FAcosF: acos(x) = atan(sqrt(1 - x^2) / x), the quadrant by the sign of x, a NaN outside [-1, 1]."""
+    x = from_bits(xb)
+    if x != x:
+        return xb
+    if x > 1.0 or x < -1.0:
+        return QNAN
+    if x == 1.0:
+        return 0
+    pi_f = f32(math.pi)
+    if x == -1.0:
+        return bits32(pi_f)
+    if x == 0.0:
+        return bits32(f32(math.pi / 2.0))
+    t = f32(math.sqrt(f32(1.0 - f32(x * x))))
+    if x > 0.0:
+        return bits32(atan_f(f32(t / x)))
+    return bits32(f32(pi_f - atan_f(f32(t / -x))))
+
+
 def inputs():
     """The bits of every float the test feeds. 0x406a927f (210 degrees) is the input of the first desync, frame 22."""
     rng = random.Random(186)
@@ -162,13 +223,19 @@ def inputs():
         add(bits32(f32(rng.uniform(-8.0, 8.0))))
     for _ in range(500):
         add(bits32(f32(rng.uniform(-1e8, 1e8))))
-    edges = [0.0, 1.0, 1.5, 2.0 ** -12, 2.0 ** -13, 2.0 ** 28, 2.0 ** 27, math.pi, math.pi / 2, 7 * math.pi / 6]
+    for _ in range(3000):  # arctangent and arccosine live here: ratios and cosines
+        add(bits32(f32(rng.uniform(-1.0, 1.0))))
+    for _ in range(1000):
+        add(bits32(f32(math.exp(rng.uniform(-30.0, 30.0)) * rng.choice((-1.0, 1.0)))))
+    edges = [0.0, 1.0, 1.5, 2.0 ** -12, 2.0 ** -13, 2.0 ** 28, 2.0 ** 27, math.pi, math.pi / 2, 7 * math.pi / 6, 0.5,
+             1e-20, 1e30]
     for e in edges:
         for sign in (1.0, -1.0):
             b = bits32(f32(sign * e))
             for step in range(-3, 4):
                 add(b + step)
-    for b in (0x80000000, 0x00000001, 0x7F800000, 0xFF800000, 0x7FC00000, 0xFFC00000, 0x7F7FFFFF, 0x406A927F):
+    for b in (0x80000000, 0x00000001, 0x7F800000, 0xFF800000, 0x7FC00000, 0xFFC00000, 0x7F7FFFFF, 0x406A927F,
+              0x3F000000):
         add(b)
     return list(seen)
 
@@ -183,12 +250,11 @@ def find_compiler():
 def build(cc):
     (WORK / "driver.c").write_text(DRIVER, encoding="utf-8")
     exe = WORK / ("driver.exe" if sys.platform == "win32" else "driver")
-    sincos = SRC / "sincos.c"
+    files = [str(SRC / "sincos.c"), str(SRC / "atan.c")]
     if Path(cc).stem.lower() == "cl":
-        cmd = [cc, "/nologo", "/O2", "/D_CRT_SECURE_NO_WARNINGS", f"/I{SRC}", "driver.c", str(sincos), f"/Fe:{exe}"]
+        cmd = [cc, "/nologo", "/O2", "/D_CRT_SECURE_NO_WARNINGS", f"/I{SRC}", "driver.c", *files, f"/Fe:{exe}"]
     else:
-        cmd = [cc, "-O2", "-std=c11", "-ffp-contract=off", "-I", str(SRC), "driver.c", str(sincos), "-o", str(exe),
-               "-lm"]
+        cmd = [cc, "-O2", "-std=c11", "-ffp-contract=off", "-I", str(SRC), "driver.c", *files, "-o", str(exe), "-lm"]
     done = subprocess.run(cmd, cwd=WORK, capture_output=True, text=True)
     if done.returncode != 0:
         print("math_test: FAIL, the driver does not build:\n" + (done.stdout + done.stderr)[-1500:])
@@ -196,12 +262,18 @@ def build(cc):
     return exe
 
 
+def same(a, b):
+    """Equal bits; two NaNs count as equal, as which NaN a float operation passes on is not what is being tested."""
+    return a == b or (is_nan_bits(a) and is_nan_bits(b))
+
+
 def main():
     shutil.rmtree(WORK, ignore_errors=True)
     WORK.mkdir(parents=True)
-    if not (SRC / "sincos.c").exists():
-        print(f"math_test: FAIL, {SRC / 'sincos.c'} does not exist")
-        return 1
+    for name in ("sincos.c", "atan.c"):
+        if not (SRC / name).exists():
+            print(f"math_test: FAIL, {SRC / name} does not exist")
+            return 1
     cc = find_compiler()
     exe = build(cc)
     if exe is None:
@@ -219,20 +291,21 @@ def main():
         rows = [line.split() for line in lines[1:]]
         if len(rows) != len(xs):
             failures.append(f"the driver answered {len(rows)} of {len(xs)} inputs")
-        differ_sin = differ_cos = 0
+        names = ("sin", "cos", "atan", "acos")
+        differ = dict.fromkeys(names, 0)
         for row in rows:
-            a, s, c, ls, lc = (int(v, 16) for v in row)
-            if s != ref_sin(a):
-                failures.append(f"sin {a:08x}: compiled {s:08x}, reference {ref_sin(a):08x}")
-            if c != ref_cos(a):
-                failures.append(f"cos {a:08x}: compiled {c:08x}, reference {ref_cos(a):08x}")
-            differ_sin += (s != ls) and not (math.isnan(from_bits(s)) and math.isnan(from_bits(ls)))
-            differ_cos += (c != lc) and not (math.isnan(from_bits(c)) and math.isnan(from_bits(lc)))
+            a, s, c, ls, lc, at, lat, ac, lac = (int(v, 16) for v in row)
+            for name, got, want, libm in (("sin", s, ref_sin(a), ls), ("cos", c, ref_cos(a), lc),
+                                          ("atan", at, ref_atan(a), lat), ("acos", ac, ref_acos(a), lac)):
+                if not same(got, want):
+                    failures.append(f"{name} {a:08x}: compiled {got:08x}, reference {want:08x}")
+                differ[name] += not same(got, libm)
             if a == 0x406A927F:
                 print(f"math_test: the frame-22 input 0x406a927f: N64 sine {s:08x}, this platform's sinf {ls:08x} "
                       f"(a Windows host needed bf000000, a glibc client got beffffff)")
-        print(f"math_test: {len(rows)} inputs; this platform's C library differs from the N64 algorithm on "
-              f"{differ_sin} sines and {differ_cos} cosines (information, not a failure)")
+        print(f"math_test: {len(rows)} inputs; this platform's C library differs from the N64 versions on "
+              f"{differ['sin']} sines, {differ['cos']} cosines, {differ['atan']} arctangents and {differ['acos']} "
+              f"arccosines (information, not a failure)")
     if failures:
         print(f"math_test: FAIL, {len(failures)} problems; first {min(10, len(failures))}:")
         for f in failures[:10]:

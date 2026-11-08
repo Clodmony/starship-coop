@@ -921,8 +921,10 @@ def sc_desync_three(args, folder):
 
 
 # The line a game writes when the lockstep starts (decision 0011, #186): the N64 sine of 0x406a927f is bf000000 on every
-# platform, the value a Windows host needed where glibc gave beffffff.
-MATH_LINE = "the N64's sine and cosine are on for this session (sin of 0x406a927f = 0xbf000000)"
+# platform, the value a Windows host needed where glibc gave beffffff, and the game's own arctangent of 0.5 is 3eed6338
+# (both from the Python port in math_test.py).
+MATH_LINE = ("the N64's sine, cosine and arctangent are on for this session "
+             "(sin of 0x406a927f = 0xbf000000, atan of 0x3f000000 = 0x3eed6338)")
 
 
 def expect_math_line(game, player):

@@ -1,4 +1,4 @@
-# 0011: Sine and cosine in a session come from the N64's own code, not the C library
+# 0011: Sine, cosine and arctangent in a session come from the N64's own code, not the C library
 
 - Status: Accepted
 - Date: 2026-11-08, accepted by the owner 2026-11-08 (option 1 of 4)
@@ -27,8 +27,16 @@ Observed in the code (read at `0e5a5cf6`):
   neither).
 - Other readers of `__sinf` and `__cosf`: audio (`src/audio/audio_general.c:2264-2265`) and the projection
   (`src/libultra/gu/perspective.c:27`). Read, not run: neither writes state that the hash covers.
-- No other C library math is called by the simulation: the remaining hits in `src/engine`, `src/overlays`, `src/sys`
-  and `src/libultra` are `fabs` (exact) and the game's own `Math_*` functions. `sqrtf` is exactly rounded.
+- Corrected 2026-11-08: the first version of this record said no other C library math is called by the simulation. It
+  was wrong, as the search left out `src/libc_math64.c`. There, `Math_FAtanF` calls `atanf` (`:35-36`; the game's own
+  continued fraction is the comment under it) and `Math_FAcosF` calls `acosf` (`:97-98`). `Math_Atan2F` ends in
+  `Math_FAtanF` (`src/sys/sys_math.c:53-79`) and has 268 uses, `Math_Atan2F_XY` 9 and `Math_Atan2F_XYAlt` 3; those three
+  are the only callers of `Math_FAtanF` (7 sites). `Math_FAcosF` has one use (`src/engine/fox_col1.c:594`, a test
+  against 90 degrees). `Math_TanF`,
+  `Math_FAtan2F` and `Math_FAsinF` wrap `tanf`, `atan2f` and `asinf` but have no caller. `floorf`, `ceilf`, `truncf`,
+  `roundf`, `nearbyintf`, `fabs` and `sqrtf` are exactly rounded. The audio code (`src/audio/audio_playback.c`,
+  `audio_general.c:484`) and the frame interpolation (`fmodf`) call the C library too; read, not run: neither writes
+  state that the hash covers.
 
 Verified on this PC: at frame 22, `yBob = -SIN_DEG(bobPhase) * 0.5f` (`src/engine/fox_play.c:224`), `bobPhase` is 210.0
 on both sides, and the float given to `sinf` is `0x406a927f`. Its exact sine, -0.49999998509, lies halfway between the
@@ -41,7 +49,15 @@ passes there on the same 11018 inputs, so MSVC compiles `sincos.c` to the refere
 from the N64 algorithm on 576 sines and 582 cosines of the 11018 (glibc: 577 and 557), so the two libraries are not the
 same function.
 
-Unknown: whether frame 5 is also a sine or cosine result; whether more differences follow once this is fixed.
+Second session (2026-11-08, commit `b5c9bc9b`, the sine in place): both co-op logs show the N64 sine line, and the games
+stayed in step for 4556 frames of Corneria. Then only the `sprites` region differed. `desync_report.py diff` on the
+host's and the client's report names `gSprites[16]`, offset +20, which is `obj.rot.y`: host `0x40eda99f`, client
+`0x40eda9a0`, one ulp apart (about 7.42696). `Sprite_UpdateDoodad` writes that field every frame as
+`Math_Atan2F(camera - sprite) * 180 / M_PI` (`src/engine/fox_enmy.c:2603-2607`), and `Math_Atan2F` ends in `atanf`.
+Derived, not shown: the arctangent is the cause; the inputs of that frame were not recovered.
+
+Unknown: whether more differences follow once the arctangent is fixed. (Frame 5 of the first test, one ulp in
+`gActors[0].fwork[1]`, is probably this too; it was not traced.)
 
 ## Options
 
@@ -65,9 +81,17 @@ a single-player game never sees it. The game writes a line to the co-op log when
 `src/port/coop/math/`, built with `-ffp-contract=off` where the compiler has it, with constants given as bit patterns and
 no pointer type punning. `Engine.cpp` changes in its two wrappers only, marked `// COOP:`.
 
+Arctangent and arccosine, added 2026-11-08 under the same option (the owner asked for the fix to cover what the second
+session found): while the switch is on, `Math_FAtanF` returns `CoopMath_FAtanF`, the game's own continued fraction from
+the comment in `src/libc_math64.c`, in float arithmetic, and `Math_FAcosF` returns `CoopMath_FAcosF`, built on it
+(`acos(x) = atan(sqrt(1 - x^2) / x)`, a NaN outside [-1, 1] as the C library gives, so the one caller's comparison
+keeps its meaning). `src/port/coop/math/atan.c`, also built with `-ffp-contract=off`. The log line names the three
+functions and shows the N64 arctangent of 0.5 (`0x3eed6338`). `tanf`, `atan2f` and `asinf` have no caller and stay as
+they are.
+
 ## Consequences
 
-Easier: sine and cosine are the same bits on Windows, Linux and macOS by construction, and a test on one PC can show it
+Easier: sine, cosine and arctangent are the same bits on Windows, Linux and macOS by construction, and a test on one PC can show it
 (golden values from a reference that does not use the compiler).
 
 Harder: a second implementation to keep right; hash logs of session replays change by an ulp wherever a sine was

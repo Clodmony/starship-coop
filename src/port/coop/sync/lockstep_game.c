@@ -14,6 +14,7 @@
 #include "port/coop/game/input.h"
 #include "port/coop/game/players.h"
 #include "port/coop/log/coop_log.h"
+#include "port/coop/math/atan.h"
 #include "port/coop/math/sincos.h"
 #include "port/coop/net/protocol.h"
 #include "port/hooks/Events.h"
@@ -220,21 +221,26 @@ void CoopSyncGame_Init(void) {
     REGISTER_LISTENER(GamePreUpdateEvent, CoopSyncGame_OnGamePreUpdate, EVENT_PRIORITY_HIGH);
 }
 
-// The N64's sine and cosine from here until CoopSyncGame_End (decision 0011, #186). Begin is where the menu and the
-// test join driver both arm the lockstep, before the level is set up. The line is the same on every platform, so two
-// logs side by side show that both games use it.
+// The N64's sine, cosine and arctangent from here until CoopSyncGame_End (decision 0011, #186). Begin is where the menu
+// and the test join driver both arm the lockstep, before the level is set up. The line is the same on every platform,
+// so two logs side by side show that both games use them.
 static void Sync_MathOn(void) {
-    uint32_t in = 0x406A927Fu; // 210 degrees as SIN_DEG hands it to __sinf: the input of the first desync (#186)
-    uint32_t out;
-    float x, s;
+    uint32_t sinIn = 0x406A927Fu;  // 210 degrees as SIN_DEG hands it to __sinf: the input of the first desync (#186)
+    uint32_t atanIn = 0x3F000000u; // 0.5
+    uint32_t sinOut, atanOut;
+    float x, s, a;
 
     CoopMath_SetSession(1);
-    memcpy(&x, &in, sizeof(x));
+    memcpy(&x, &sinIn, sizeof(x));
     s = CoopMath_Sinf(x);
-    memcpy(&out, &s, sizeof(out));
+    memcpy(&sinOut, &s, sizeof(sinOut));
+    memcpy(&x, &atanIn, sizeof(x));
+    a = CoopMath_FAtanF(x);
+    memcpy(&atanOut, &a, sizeof(atanOut));
     CoopLog_Write(COOP_LOG_SESSION, false,
-                  "math the N64's sine and cosine are on for this session (sin of 0x%08x = 0x%08x)", (unsigned) in,
-                  (unsigned) out);
+                  "math the N64's sine, cosine and arctangent are on for this session (sin of 0x%08x = 0x%08x, atan of "
+                  "0x%08x = 0x%08x)",
+                  (unsigned) sinIn, (unsigned) sinOut, (unsigned) atanIn, (unsigned) atanOut);
 }
 
 void CoopSyncGame_Begin(const CoopSyncLink* link, const uint8_t* roster, int32_t self, bool host) {

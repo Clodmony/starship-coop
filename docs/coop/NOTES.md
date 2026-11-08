@@ -2946,7 +2946,14 @@ Observed on Windows (MSVC v143; run by the other player and reported to the owne
 `yBob` of `0x3e800000` needed it), and its C library differs from the N64 algorithm on 576 sines and 582 cosines (glibc:
 577 and 557).
 
-Unknown: whether frame 5 is also a sine or cosine result.
+Second session (`b5c9bc9b`, the sine in place): in step for 4556 frames, then `gSprites[16].obj.rot.y` (+20) differs by
+one ulp (host `0x40eda99f`, client `0x40eda9a0`). `Sprite_UpdateDoodad` (`src/engine/fox_enmy.c:2603-2607`) writes it every
+frame from `Math_Atan2F`, which ends in `Math_FAtanF`, and that calls `atanf` (`src/libc_math64.c:35-36`). The same file
+sends `Math_FAcosF` to `acosf` (one use, `src/engine/fox_col1.c:594`). An earlier line here and in decision 0011 said no
+other C library math was called by the simulation; the search had missed `src/libc_math64.c`. `Math_TanF`,
+`Math_FAtan2F` and `Math_FAsinF` have no caller.
+
+Unknown: whether frame 5 of the first test (`gActors[0].fwork[1]`) was this arctangent too.
 
 ### 2026-11-08, #169, frame interpolation: the skip flag and the recording path stack
 
