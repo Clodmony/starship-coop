@@ -479,6 +479,40 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-08, #16, Landmaster and Blue Marine levels with two clients
+
+Identity: US 1.0 (SHA-1 `d8b10885...`), Windows 11, MSVC v143, Debug, test games without drawing, on `issue/16-vehicles`
+(base `4ba082f2`). `python tools/coop/lockstep_test.py --only vehicles`: two real clients over loopback per level, the
+three levels side by side, 6000 frames each, both players steering and firing by script from frame 1700.
+
+Observed:
+
+- Titania, Aquas and Macbeth: host and client hash alike on all 6000 frames, every region (scenario `vehicles`, 83 s).
+- Titania, with player 1 let in: player 1 drove its own Landmaster on 4267 frames, on the ground (y about -3 to 190,
+  the same band as player 0), took hits and stayed up. Player 0 went down at the end, and player 1 went away with it.
+- Aquas and Macbeth, player 1 still parked: player 0 drove on 5104 and 5144 frames, player 1 on none.
+- Corneria unchanged: `lockstep_test.py --only steer` and `hash_check.py run --players 2 --poke-player 1` pass.
+- The six Landmaster values of decision 0009 (item 6 table) are now one set per player: player 0 keeps the
+  `fox_tank.c` globals, every other player's copy is swapped in around its `Player_Update`
+  (`src/port/coop/game/vehicles.c`, `PlayerPreUpdateEvent` and `PlayerPostUpdateEvent`, `src/engine/fox_play.c:5896`,
+  `:6229`, with no return in between). `D_800C9F3C` moved from a function static to file scope
+  (`src/engine/fox_tank.c`, `// COOP:`). The copies are hashed (`gCoopTankState`, `src/port/coop/sync/state_hash.c`).
+- Every reader and writer of those values is called from inside `Player_Update`: `Tank_UpdateOnRails`
+  (`src/engine/fox_play.c:5750`) and the Landmaster scenes of `fox_ma.c` and `fox_ti_cs.c` (player states).
+
+Derived:
+
+- Lockstep holds in all three levels with one player driving and the other parked, and in Titania with both driving.
+- Player 0 behaves as upstream by construction: its values are never swapped.
+
+Unknown:
+
+- Whether the swap changes play in Titania. The test shows sync, not that a shared value went wrong before; the wobble
+  and knockback values matter in Macbeth (0009), and Macbeth is not opened.
+- The rest of Titania: 6000 frames is not the whole level, and the boss with two tanks has not run.
+- Macbeth's `D_MA_801BE250` and the Blue Marine state (0009, item 6): not touched; both levels stay parked.
+- Two machines: everything above ran on one PC.
+
 ### 2026-11-07, #136, other hits that only reach player 0
 
 Line numbers are for `issue/136-hits-any-player` on `coop` at `da44a18a`. Windows 11, MSVC v143, Debug, US 1.0 ROM.

@@ -38,6 +38,7 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   full      all of Corneria: pilots fly it live, one on each client, then plain runs repeat what they flew. Takes a while.
   audio     the plain run with the two clients at different audio sample counts, as a radio line follows the sound thread.
   release   the plain run on a Release build (--release-exe) and on Debug: all four clients have to hash alike.
+  vehicles  Titania, Aquas and Macbeth, the Landmaster and Blue Marine levels: same hash, the client's player parked.
   rates     the plain run at real time, with the two clients at different gInterpolationFPS.
   desync_sim src/port/coop/sync/desync.c alone, in a virtual network (tools/coop/desynctest), WP-23.
   desync    a bit flipped on one client, on rails and in all-range: both games name that frame, the players and the
@@ -63,6 +64,7 @@ import signal
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -357,6 +359,50 @@ def sc_steer(args, folder):
     moved = flown(client)
     expect(moved[0] > 500 and moved[1] > 500, f"a player did not fly: moved {moved}")
     return f"same hash on {frames} frames, moved {moved[0]:.0f} and {moved[1]:.0f}; {played(host)}, {played(client)}"
+
+
+# Name, LevelId (include/sf64level.h), and whether co-op has opened it: there player 1 drives too, elsewhere it stays
+# parked (CoopPlayers_SectionSupported, src/port/coop/game/players.c).
+VEHICLE_LEVELS = (("Titania", 12, True), ("Aquas", 13, False), ("Macbeth", 11, False))
+VEHICLE_FRAMES = 6000  # past each level's intro and well into the drive
+STATE_ACTIVE = 3  # PLAYERSTATE_ACTIVE
+
+
+def vehicle_story(game):
+    """From a game's trace: frames on which player 0 was active, the forms it had then, and frames player 1 was not
+    parked."""
+    rows = player_trace.parse(game.run / "trace.txt")
+    active = [r for r in rows if r.players and r.players[0].state == STATE_ACTIVE]
+    forms = sorted({r.players[0].form for r in active})
+    joined = sum(1 for r in rows if len(r.players) > 1 and not r.players[1].parked)
+    return len(active), forms, joined
+
+
+def sc_vehicles(args, folder):
+    """The Landmaster and Blue Marine levels with two clients (WP-18, #16), the three levels side by side. Both steer
+    and fire from the join frame on. Hashes equal on every frame. In a level co-op has opened, player 1 drives along
+    with player 0; in the others it stays parked (decision 0009, item 6: V2 until the level is proven)."""
+    only = getattr(args, "levels", None)
+    levels = [entry for entry in VEHICLE_LEVELS if not only or entry[0].lower() in only]
+
+    def one(entry):
+        name, level, opened = entry
+        host, client = run_short(args, folder / name.lower(), frames=VEHICLE_FRAMES,
+                                 host_env={"SF64_COOP_JOIN_LEVEL": str(level)})
+        frames = compare(host, client, VEHICLE_FRAMES)
+        active, forms, joined = vehicle_story(client)
+        expect(active > 1000, f"{name}: player 0 drove on only {active} frames")
+        if opened:
+            expect(joined > 1000, f"{name}: player 1 drove on only {joined} frames")
+            moved = flown(client)
+            expect(moved[1] > 500, f"{name}: player 1 did not steer, moved {moved[1]:.0f}")
+        else:
+            expect(joined == 0, f"{name}: player 1 was not parked on {joined} frames")
+        return f"{name} {frames} frames, player 0 active on {active}, player 1 on {joined}, form {forms}"
+
+    with ThreadPoolExecutor(max_workers=len(levels)) as pool:
+        futures = [pool.submit(one, entry) for entry in levels]
+    return "same hash; " + "; ".join(future.result() for future in futures)
 
 
 def sc_three(args, folder):
@@ -1003,8 +1049,9 @@ SCENARIOS = {
     "desync_control": sc_desync_control,
     "desync_three": sc_desync_three,
     "log": sc_log,
+    "vehicles": sc_vehicles,
 }
-LONG = ("full", "audio", "release", "rates")
+LONG = ("full", "audio", "release", "rates", "vehicles")
 
 
 def main():
@@ -1021,6 +1068,8 @@ def main():
     ap.add_argument("--level-seconds", type=float, default=2400, help="give up on a whole level after this long")
     ap.add_argument("--profiles", default="good_wifi", help="for `lag`: chaos relay profiles, comma-separated")
     ap.add_argument("--rates", default="60,120", help="for `rates`: the two clients' gInterpolationFPS")
+    ap.add_argument("--levels", type=lambda t: t.lower().split(","),
+                    help="for `vehicles`: some of titania,aquas,macbeth (default all three)")
     args = ap.parse_args()
     if args.list:
         print("\n".join(SCENARIOS))
@@ -1034,7 +1083,7 @@ def main():
     for name in names:
         if name not in SCENARIOS:
             sys.exit(f"lockstep: no scenario {name}")
-    root = Path(args.out) if args.out else replay_tool.ROOT / "local" / f"test-lockstep-{time.strftime('%Y%m%d-%H%M%S')}"
+    root = Path(args.out).resolve() if args.out else replay_tool.ROOT / "local" / f"test-lockstep-{time.strftime('%Y%m%d-%H%M%S')}"
     passed = 0
     for name in names:
         started = time.monotonic()
