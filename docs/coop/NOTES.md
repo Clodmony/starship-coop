@@ -479,6 +479,92 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-08, #16, a pilot for the Landmaster, and the long vehicle runs
+
+Identity: US 1.0 (SHA-1 `d8b10885...`), Windows 11, MSVC v143, Debug, test games without drawing, on `issue/16-vehicles`
+(base `50bbf6dd`, with this entry's changes). Two clients through the join driver, each with
+`SF64_COOP_LOCKSTEP_PILOT=1` and `SF64_COOP_JOIN_LEVEL` 11 or 12, scratch script around `lockstep_test.session()`.
+
+Observed:
+
+- Input by rule (`vehicles`, 20000 frames) does not get far: player 0 goes down in every try, Titania at z about
+  -19500, Macbeth about -39000, Aquas about -34700, and after three tries the game is over and starts Corneria.
+- The Landmaster's shields go down a little each frame after a hit (2 a frame for about 20 frames,
+  `Player_ApplyDamage`, `src/engine/fox_play.c:974`); `dmgType` keeps the hit's size (20, 39, 40, 60).
+- What hit the tank in Titania without the pilot seeing it: falling pillars (`Titania_TiPillar_Update`,
+  `src/overlays/ovl_i5/fox_ti.c:2111`, they fall when player 0 comes near, forward or to a side, each side with its own
+  hitbox), the ribs (rotated hitboxes), landmines, Goras's body. In Macbeth: enemy lasers (effect 353) and the bomb
+  drops.
+- A Macbeth bomb burns where it lands for 200 frames, in a box of its own, and tests **`gPlayer[0]` only**
+  (`Macbeth_MaBombDrop_Update`, `src/overlays/ovl_i5/fox_ma.c:5884-5888`): other tanks drive through its fire unhurt.
+- Z and R held together make the tank hover while the boost meter fills (`func_tank_80045678`,
+  `src/engine/fox_tank.c:601`, `Tank_UpdateOnRails`): gravity -0.4, up to 300. Brake is `gBrakeButton`, C-down
+  (`src/engine/fox_game.c:440-441`).
+- A tank shot leaves along the tank's yaw and `unk_17C`, the barrel (`Player_SetupTankShot`, `fox_play.c:3095`);
+  `unk_17C` follows stick y, `stick_y * 0.7 - 8`, held to -40..0 (`func_tank_80044868`, `fox_tank.c:381`).
+- Goras (`Titania_TiGoras_Update`, `fox_ti.c:4977`): its hitbox `aTiGorasHitbox` (`:2446`) is rebuilt every frame,
+  plain boxes, and box n is part `D_i5_801B7904[n]` (`:2369`). In states 7 to 13 a beam hit on a part numbered in
+  `D_i5_801BAA78` (`:3762`, parts 7, 8, 16, 17) takes that part's `swork[8 + number]`; with all four at 0 the health bar
+  shows and part 23 takes `swork[21]` (from 100, 10 a hit). Then the four grow back.
+- With the pilot and `gInvincible` on both games: Titania, Goras from health 100 to 30 in 26000 frames, all four parts
+  shot off five times; Macbeth past z -230000 in 16000 frames, no boss yet. Without `gInvincible` the pilot reaches
+  Goras (z about -92000) and loses there; Macbeth up to z -65000.
+- `lockstep_test.py` gave every game a menu replay of 30000 frames (`REPLAY_FRAMES`). The long Titania run went out of
+  step at level frame 29394, the frame after the host's 30000th: from there the host's pads were its own (player 2's
+  empty, player 1's without the input delay), while the input logs stayed equal. Up to 29393 the two games were equal on
+  every frame, through four rounds of the Goras fight.
+
+Done:
+
+- `src/port/coop/test/pilot.c` drives a Landmaster on rails: each spot across the path is played a second forward
+  against the hitboxes with the game's own test (rotation in the pilot's own matrix, nothing in the game written),
+  plus where a pillar will lie, where a bomb burns and where a fast effect crosses; it hovers when that gets further,
+  picks up rings, and at Goras lines up under a part that counts, raises the barrel to it and brakes near the boss.
+  A hit writes what was near to the pilot log.
+- `session()` and `Client` take `replay_frames`, for runs longer than 30000 frames.
+- The pilot also aims at Macbeth's boss (parts, locomotive, body) and drives a Blue Marine (dodging only); its log is
+  flushed every frame, and a drop of more than 50 shields in one frame lists every actor with its state.
+- New scenario `lockstep_test.py --only vehicle_end`: Macbeth and Titania to level complete with the pilot and
+  `gInvincible` on both games.
+
+Derived:
+
+- The bomb fire is a co-op gap: only the first player can be burnt. Not fixed; it changes nothing between clients.
+
+Observed later the same evening:
+
+- Titania to its end, pilot and `gInvincible` on both games, 45000 frames: Goras down to 0 in rounds of 10, level
+  complete at frame 29169, then the next level; host and client hash alike on all 45031 frames. Player 1 is parked on
+  the frame after player 0's level complete, as on rails in an Arwing.
+- Macbeth's boss is actor 207 (`Macbeth_Actor207_Update`, `src/overlays/ovl_i5/fox_ma.c:4221`, it talks as
+  `RCID_BOSS_MACBETH`). Its parts 0 and 1 take `D_i5_801BE320[9]` and `[10]` (`:5117-5140`); a hit on part 1 of the
+  locomotive sets `D_i5_801BE320[4]` (`Macbeth_MaLocomotive_HandleDamage`, `:878-886`), which opens the boss (state
+  8, `:5185-5195`), and then any hit takes `[29]`, from 250. How far it goes depends on the track: an entry of the
+  track table with `unk_10 >= 300` sets `D_i5_801BE320[18]` (`:624-626`), and at 4 the boss goes to state 18 and 19,
+  and a hit on it in state 19 sets `gPlayer[0].shields = 0` (`:5057-5058`) past `Player_ApplyDamage`.
+- Macbeth with the pilot aiming at parts 0 and 1, then the locomotive, then the boss: boss down at frame 9360, level
+  complete at 9523; same hash on all 17906 frames. `lockstep_test.py --only vehicle_end --levels macbeth`: PASS,
+  level complete at 9522, player 1 drove on 11328 of 14000 frames, 256 s.
+- Before the pilot aimed at the boss: the boss reached state 19 at about frame 17950, player 0's shields went from 255
+  to 0 in one frame with actor 207 on the tank, and with `gInvincible` the tank was never downed (`Player_Down` waits
+  for `radioDamageTimer`, which `Player_ApplyDamage` sets only for damage; `Tank_UpdateOnRails`,
+  `src/engine/fox_tank.c`). It kept state 3 with 0 shields and climbed to y 9866; both games then crashed on the same
+  frame in `Item_Update` (`src/engine/fox_enmy.c:3036`, the item's action call, access violation).
+- Aquas: the marine pilot climbs with stick y negative (with positive it stuck at the top of the path). It got to z
+  -58600 without `gInvincible`, input by rule to about -34700.
+
+Derived:
+
+- The Macbeth crash is the game's own with `gInvincible`: a kill that skips `Player_ApplyDamage` leaves a tank that
+  can never go down. Not co-op; a player with the cheat on who lets the train reach the end may hit it too (not tried
+  without co-op).
+- Macbeth's boss, like its bombs, kills player 0 only.
+
+Unknown:
+
+- Aquas's boss with two marines, and the level end: the marine pilot does not aim yet.
+- The Macbeth crash without co-op (single player, cheat on): not run.
+
 ### 2026-11-08, #16, Macbeth with two Landmasters
 
 Identity: US 1.0 (SHA-1 `d8b10885...`), Windows 11, MSVC v143, Debug, test games without drawing, on `issue/16-vehicles`

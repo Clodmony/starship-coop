@@ -39,6 +39,8 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   audio     the plain run with the two clients at different audio sample counts, as a radio line follows the sound thread.
   release   the plain run on a Release build (--release-exe) and on Debug: all four clients have to hash alike.
   vehicles  Titania, Aquas and Macbeth, the Landmaster and Blue Marine levels: same hash, both drive where co-op has opened.
+  vehicle_end a vehicle level to its end: pilots drive it live, one on each client, with gInvincible on both, through
+            the boss to level complete. Same hash on every frame. Macbeth takes minutes, Titania about an hour.
   rates     the plain run at real time, with the two clients at different gInterpolationFPS.
   desync_sim src/port/coop/sync/desync.c alone, in a virtual network (tools/coop/desynctest), WP-23.
   desync    a bit flipped on one client, on rails and in all-range: both games name that frame, the players and the
@@ -82,7 +84,8 @@ import replay as replay_tool  # noqa: E402
 IS_LINUX = platform.system() == "Linux"
 BUTTON_A, BUTTON_B, BUTTON_START, BUTTON_L = 0x8000, 0x4000, 0x1000, 0x0020
 START_FRAME = 600
-REPLAY_FRAMES = 30000  # longer than any run: the games stop on `done`, not at the end of this
+REPLAY_FRAMES = 30000  # longer than a short run: the games stop on `done`, not at the end of this. A game whose replay
+# ends leaves lockstep there (its pads are its own again), so a longer run passes replay_frames to session()
 INPUT_DELAY = 3  # COOP_LOCKSTEP_INPUT_DELAY
 TIMEOUT_MS = 30000  # the join driver's transport timeout
 STALL_SECONDS = 10  # COOP_LOCKSTEP_STALL_MS
@@ -137,14 +140,14 @@ def sway(frame, player):
 class Client(join_test.LevelLog):
     """One game. It joins through the join driver unless menu is set: then menu_test.Game clicks the real widgets."""
 
-    def __init__(self, args, folder, name, env):
+    def __init__(self, args, folder, name, env, replay_frames=REPLAY_FRAMES):
         self.name = name
         self.run = replay_tool.make_run_dir(args.exe, f"lockstep-{name}")
         self.report_path = self.run / "join-report.txt"
         self.sync_report = self.run / "lockstep-report.txt"
         self.sync_log = self.run / "lockstep-log.txt"
         replay = self.run / "input.sfcr"
-        join_test.write_replay(replay, REPLAY_FRAMES, join_test.SEEDS.get(name, join_test.SEEDS["client0"]))
+        join_test.write_replay(replay, replay_frames, join_test.SEEDS.get(name, join_test.SEEDS["client0"]))
         self.env = replay_tool.game_env(self.run)
         self.env["SF64_COOP_TEST_SPEED"] = replay_tool.MEETING_SPEED  # games that meet over sockets, as in join_test.py
         self.env.update({
@@ -189,7 +192,7 @@ class Client(join_test.LevelLog):
 
 
 def session(args, folder, host_env=None, client_env=None, both=None, config=None, client_config=None, client_port=None,
-            clients=1, client_envs=None):
+            clients=1, client_envs=None, replay_frames=REPLAY_FRAMES):
     """A host and its clients through the join driver, on their way to a level. Returns them started: with one client as
     (host, client), with more as (host, client, client, ...). client_envs holds one more dict per client."""
     folder.mkdir(parents=True, exist_ok=True)
@@ -198,7 +201,8 @@ def session(args, folder, host_env=None, client_env=None, both=None, config=None
     env["SF64_COOP_TEST_START_SEEDS"] = SEEDS
     host = Client(args, folder, "host", {**env, "SF64_COOP_JOIN_PORT_FILE": str(port_file),
                                          "SF64_COOP_JOIN_CLIENTS": str(clients), "SF64_COOP_JOIN_LEVEL": "0",
-                                         "SF64_COOP_JOIN_START_FRAME": str(START_FRAME), **(host_env or {})})
+                                         "SF64_COOP_JOIN_START_FRAME": str(START_FRAME), **(host_env or {})},
+                  replay_frames)
     host.start(config)
     deadline = time.monotonic() + 180
     while not (port_file.exists() and port_file.read_text(encoding="utf-8").strip()):
@@ -211,7 +215,7 @@ def session(args, folder, host_env=None, client_env=None, both=None, config=None
     for n, pick in zip(range(clients), ("falco", "slippy", "peppy")):
         games.append(Client(args, folder, f"client{n}", {**env, "SF64_COOP_JOIN_CONNECT": f"127.0.0.1:{port}",
                                                          "SF64_COOP_JOIN_PICKS": pick, **(client_env or {}),
-                                                         **((client_envs or [{}] * clients)[n])}))
+                                                         **((client_envs or [{}] * clients)[n])}, replay_frames))
         games[-1].start(client_config if client_config is not None else config)
     return tuple(games)
 
@@ -444,6 +448,45 @@ def sc_vehicles(args, folder):
     with ThreadPoolExecutor(max_workers=len(levels)) as pool:
         futures = [pool.submit(one, entry) for entry in levels]
     return "same hash; " + "; ".join(future.result() for future in futures)
+
+
+# A level, its frames from the join to well past level complete with the pilot and gInvincible (#16): Titania reached
+# level complete at frame 29169 in the first run, Macbeth at 9523, so there is room for a slower fight. Macbeth's boss
+# kills player 0 outright when the train reaches the end of its track first (Macbeth_Actor207_Update, state 18-19), and
+# with gInvincible that tank is never downed: it climbs on and the game crashes later. A slower pilot fails there.
+VEHICLE_END_LEVELS = (("Macbeth", 11, 14000), ("Titania", 12, 34000))
+
+
+def sc_vehicle_end(args, folder):
+    """A vehicle level to its end with two players (#16, #181). Each client's pilot (src/port/coop/test/pilot.c) drives
+    its own vehicle, and gInvincible on both games keeps them going, so what is tested is the level, the boss and the
+    end with two vehicles, not the pilot. Hashes and inputs equal on every frame, player 0 reaches level complete, and
+    player 1 drives most of the way. The menu replay is made longer than the run: a game whose replay ends leaves
+    lockstep."""
+    only = getattr(args, "levels", None)
+    texts = []
+    for name, level, frames in VEHICLE_END_LEVELS:
+        if only and name.lower() not in only:
+            continue
+        env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt",
+               "SF64_COOP_LOCKSTEP_END": str(frames)}
+        host, client = session(args, folder / name.lower(), {"SF64_COOP_JOIN_LEVEL": str(level)}, None, env,
+                               config={"CVars": {"gInvincible": 1}}, replay_frames=frames + 20000)
+        try:
+            wait_for([host, client], "done", max(args.level_seconds, frames * 0.25), f"in {name}")
+        finally:
+            host.close()
+            client.close()
+        compared = compare(host, client, frames)
+        rows = player_trace.parse(client.run / "trace.txt")
+        complete = next((r.frame for r in rows if r.level == level and r.players and
+                         r.players[0].state == LEVEL_COMPLETE), None)
+        expect(complete is not None, f"{name}: player 0 never reached level complete in {frames} frames")
+        active, _, joined = vehicle_story(client)
+        expect(joined > frames // 2, f"{name}: player 1 drove on only {joined} of {frames} frames")
+        texts.append(f"{name} {compared} frames, level complete at {complete}, player 1 drove on {joined}")
+    expect(texts, "no level chosen")
+    return "same hash; " + "; ".join(texts)
 
 
 def sc_three(args, folder):
@@ -1091,8 +1134,9 @@ SCENARIOS = {
     "desync_three": sc_desync_three,
     "log": sc_log,
     "vehicles": sc_vehicles,
+    "vehicle_end": sc_vehicle_end,
 }
-LONG = ("full", "audio", "release", "rates", "vehicles")
+LONG = ("full", "audio", "release", "rates", "vehicles", "vehicle_end")
 
 
 def main():
@@ -1110,7 +1154,7 @@ def main():
     ap.add_argument("--profiles", default="good_wifi", help="for `lag`: chaos relay profiles, comma-separated")
     ap.add_argument("--rates", default="60,120", help="for `rates`: the two clients' gInterpolationFPS")
     ap.add_argument("--levels", type=lambda t: t.lower().split(","),
-                    help="for `vehicles`: some of titania,aquas,macbeth (default all three)")
+                    help="for `vehicles` and `vehicle_end`: some of titania,aquas,macbeth (default all)")
     args = ap.parse_args()
     if args.list:
         print("\n".join(SCENARIOS))
