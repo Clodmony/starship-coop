@@ -122,7 +122,8 @@ Each needs a decision record before code depends on it. Proposals in brackets.
 3. A player goes down: respawn rule [respawn after a delay while any player is alive].
 4. Route choices and warps: who decides [whoever triggers it; the whole team follows].
 5. Hit count and medals: [team total].
-6. Landmaster and Blue Marine levels: [same rules, vehicles per player].
+6. Landmaster and Blue Marine levels: decided in [0009](decisions/0009-vehicles-cutscenes-save.md), item 6. Every
+   player gets the level's vehicle, on player 0's path; extra players stay parked in a level until it is proven (#16).
 7. Cutscenes, radio and level intros: [host's timing; clients follow].
 8. Save: [only the host saves; clients run with a throwaway save].
 
