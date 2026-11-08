@@ -479,6 +479,64 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-08, #193, who the enemies aim at: the nearest human
+
+Read at `4d638b13` (the tip of #190). Owner's choice on #193: option 1, enemies also aim at the nearest human.
+
+Observed (code):
+
+- Most aimed enemy shots go through one function: `Effect_EnemyLaser` (`src/engine/fox_effect.c`) checks the shooter
+  is not within 300 of player 0 and calls `func_effect_8007E6B8`, which points the shot's velocity at player 0's
+  `pos.x`, `pos.y`, `trueZpos`. Its callers: event actors' `EVACT_2`, `EVACT_6`, `EVACT_7`, `EVACT_8`, `EVACT_16`
+  (`src/engine/fox_enmy2.c`, `ActorEvent_ProcessActions`), `MeHopBot_Update`, `MeteoBall_Update`, Granga
+  (`src/overlays/ovl_i1/fox_co.c`, `Corneria_CoGranga_ShootLaser` and an `OBJ_EFFECT_376`), and Meteo, Sector X and
+  Sector Y actors and bosses (`fox_me.c`, `fox_sx.c`, `fox_sy.c`). `EVACT_17` goes through `func_effect_8007F20C` and
+  `func_effect_8007E93C`, which aim at player 0's `cam.eye` instead.
+- `Effect_Effect398_Update` aims itself at player 0 in its first update (state 0). Spawned by Corneria's carrier
+  (`Corneria_CoCarrier_Update`) and Zoness (`fox_zo.c`).
+- `ActorMissileSeek_Update` (`src/engine/fox_enmy.c`): a missile with no wingman to seek (`iwork[1]` 10000) steers
+  each frame at player 0's position, and on rails stops steering once it is within 100 of player 0's `trueZpos`.
+- What happens when such a shot reaches player 1 was already in place: `CoopEffects_ShotHit` (#100) repeats the hit,
+  barrel-roll deflect and knock-back test of `Effect_Effect353_354_Update` (353 to 356, 377) and
+  `Effect_Effect398_Update` for every co-op player, `CoopEffects_BoxHit` that of `OBJ_EFFECT_376`, and a missile is an
+  actor that `Player_CollisionCheck` tests against each player it is called for (`src/engine/fox_play.c`). All of
+  them call `Player_ApplyDamage(player)`, and `Player_UpdateShields` takes the damage off that player's own shields.
+
+Built:
+
+- `CoopAim_Nearest(x, y, z)` (`src/port/coop/game/aim.c`): the nearest of player 0 and every co-op player that is
+  joined and active or in a U-turn, by squared distance to `pos.x`, `pos.y`, `trueZpos`; a tie goes to the lower
+  index. 0 outside co-op, so co-op off is upstream. Called in `func_effect_8007E6B8`, `func_effect_8007E93C` (it aims
+  at that player's `cam.eye`), the 300 test of `Effect_EnemyLaser` and `func_effect_8007F20C` (so no shot comes from
+  point blank at the one it is aimed at), `Effect_Effect398_Update` state 0, and `ActorMissileSeek_Update` (target
+  point and the on-rails stop). A missile picks again each frame, so it can switch to a player who comes nearer.
+- `SF64_COOP_AIM_TRACE` (`src/port/coop/test/aim_trace.h`) logs whom each new enemy shot flies at, from its velocity
+  on `ObjectInitEvent`, and whom each homing missile seeks. It watches the objects and does not ask `CoopAim_Nearest`.
+  `lockstep_test.py --only aim` uses it.
+- Run once, Linux, Release, US 1.0, two games on one PC: `aim` passed, the hashes equal on 4000 frames of
+  Corneria's rails, 12 shots at player 1, 8 at player 0, 51 at nobody (fired straight ahead), the two traces alike
+  line by line. The same run on a build without `CoopAim_Nearest` was not made.
+
+Left on player 0 (not changed here):
+
+- The script gates around the shots: `EVACT_2`, `EVACT_6`, `EVACT_7` fire only while the actor is 600 ahead of player
+  0's `trueZpos`, `EVACT_17` of its `cam.eye.z`. On rails every player shares player 0's `pos.z`
+  (`CoopPlayers_FollowPath`), so only boost and brake (`camDist`) move a player off it.
+- `EVACT_8` scatters its shot by moving player 0 by up to 150 before `Effect_EnemyLaser` and back after. When player
+  1 is nearer, its shot goes straight at player 1, unscattered. Guess: rare enough to leave for now.
+- Bosses and level actors that work out their own aim from player 0 (at least 15 lines in 7 overlay files call
+  `Math_Atan2F(gPlayer[0]...)` directly, more do it through local variables), all-range enemies (they aim at team slots
+  through `aiTarget`, decision 0006 B3 plans the body there), chasers on rails (`EVOP_SET_TARGET` keeps the stand-in,
+  as decision 0006 C1 says), and a missile's culling by player 0's camera. Shots fired straight ahead
+  (`ActorEvent_8006F254`, `func_effect_8007F04C`) aim at nobody.
+
+Unknown:
+
+- Whether a human notices the missile that switches targets, or the shots at player 1's camera (`EVACT_17`): nothing
+  was played by hand.
+- The squared distance is plain float code in an upstream-style file, so with fused multiply-add on a target that has
+  it, a near tie could go to another player there than on x86-64. Decision 0010's platforms are x86-64 only.
+
 ### 2026-11-08, #7, decision 0007 walk-through: what had moved since the record was written
 
 Read in `b3169ab6` (checkout of `coop`), no build, nothing run. This is the re-check behind the owner's walk-through of
