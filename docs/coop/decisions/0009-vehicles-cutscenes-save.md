@@ -1,7 +1,7 @@
 # 0009: Vehicles, cutscene timing and save
 
-- Status: Proposed
-- Date: 2026-11-06
+- Status: Proposed; item 6 Accepted (V1 with V2 until each level is proven)
+- Date: 2026-11-06 (proposed), 2026-11-08 (item 6 accepted by the owner, as proposed)
 - Issue: #7
 
 This record covers `DESIGN.md` section 4, items 6, 7 and 8. Each item has its own options and one recommendation, so the
@@ -238,9 +238,9 @@ Unknown:
 
 ## Decision
 
-Proposed, for the owner to accept item by item.
+Item 6 is accepted. Items 7 and 8 are proposed, for the owner to accept one by one.
 
-**Item 6: V1, with V2 until each level is proven.** Every player gets the level's vehicle, on player 0's path. WP-18
+**Item 6: V1, with V2 until each level is proven.** Accepted by the owner on 2026-11-08. Every player gets the level's vehicle, on player 0's path. WP-18
 opens one level at a time, Landmaster first; a level it has not passed keeps today's behaviour. The character a player
 flies does not change the vehicle. Whether a human Slippy is "away" in Titania belongs to #85.
 
