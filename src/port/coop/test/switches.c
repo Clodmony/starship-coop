@@ -13,11 +13,16 @@
 
 #include "port/coop/game/players.h"
 #include "port/coop/sync/lockstep_game.h"
+#include "port/hooks/Events.h"
 
 // Sample counts per audio update, chosen each update from the output device's fill level
 // (src/port/Engine.cpp:363-364, :387-388).
 extern unsigned short samples_high;
 extern unsigned short samples_low;
+
+// The frames the game has ticked since boot (src/sys/sys_main.c). It is not simulation state: two clients of one
+// session started their games at different times, so they do not share it.
+extern uint32_t gSysFrameCount;
 
 // SF64_COOP_TEST_SPEED=max: the limiter then waits under a microsecond a frame, which is no limit, and at 60 frames a
 // second the rate still fits an int.
@@ -27,6 +32,17 @@ static int sSpeed = 1;
 static int sMostDraws = 0;
 static int sNoDraw = 0;
 static Gfx sNothingToDraw[] = { gsSPEndDisplayList() };
+
+// SF64_COOP_TEST_SYS_FRAME_OFFSET: on the first game frame, gSysFrameCount jumps ahead by this many, as if this client
+// had booted earlier than the others (#129). An even number: the graphics pool alternates on gSysFrameCount % 2
+// (Graphics_InitializeTask), and a change of parity in the middle of a frame would hand a frame the pool in use.
+static uint32_t sSysFrameOffset = 0;
+
+static void CoopTestSwitches_OnGamePreUpdate(IEvent* event) {
+    (void) event;
+    gSysFrameCount += sSysFrameOffset;
+    sSysFrameOffset = 0;
+}
 
 int CoopTestSwitches_Speed(void) {
     return sSpeed;
@@ -76,6 +92,7 @@ void CoopTestSwitches_Init(void) {
     const char* localIndex = getenv("SF64_COOP_TEST_LOCAL_INDEX");
     const char* noDraw = getenv("SF64_COOP_TEST_NO_DRAW");
     const char* noLockstep = getenv("SF64_COOP_TEST_NO_LOCKSTEP");
+    const char* sysFrameOffset = getenv("SF64_COOP_TEST_SYS_FRAME_OFFSET");
 
     if (CoopTestSwitches_IsSet(noDraw)) {
         sNoDraw = 1;
@@ -120,6 +137,12 @@ void CoopTestSwitches_Init(void) {
     if (CoopTestSwitches_IsSet(noLockstep)) {
         CoopSyncGame_SetOff(true);
         LUSLOG_INFO("coop: test switch: no lockstep%s", "");
+    }
+
+    if (CoopTestSwitches_IsSet(sysFrameOffset)) {
+        sSysFrameOffset = (uint32_t) atoi(sysFrameOffset) & ~1u;
+        LUSLOG_INFO("coop: test switch: gSysFrameCount starts %u ahead", sSysFrameOffset);
+        REGISTER_LISTENER(GamePreUpdateEvent, CoopTestSwitches_OnGamePreUpdate, EVENT_PRIORITY_HIGH);
     }
 
     CoopTeamTrace_Init(); // no-op unless SF64_COOP_TEAM_* is set (#89)

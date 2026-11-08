@@ -2340,7 +2340,8 @@ void Effect_Effect344_Update(Effect344* this) {
 }
 
 void Effect_Effect345_Update(Effect345* this) {
-    if ((gCamCount != 1) && (this->timer_50 == 0)) {
+    // COOP: as with several cameras, a mark ends by its own timer: nothing frees it for leaving the view (#96, #129)
+    if (((gCamCount != 1) || CoopPlayers_IsCoop()) && (this->timer_50 == 0)) {
         Object_Kill(&this->obj, this->sfxSource);
     }
 }

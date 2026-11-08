@@ -3450,18 +3450,20 @@ Derived:
 
 Unknown:
 
-- Every level but Corneria: the verdicts there come from reading, not from a run.
+- Every level but Corneria: the verdicts there come from reading, not from a run. (Run in #129, 15 Arwing levels: see
+  that entry.)
 - Whether effects with no timer of their own pile up now that nothing frees them for leaving the view. Versus runs that
-  path upstream, but only on versus stages. The runs here did not count slots.
+  path upstream, but only on versus stages. The runs here did not count slots. (Counted in #129: ground laser marks
+  stayed, now fixed; see that entry.)
 - Whether the sound and picture look right for a client through player 1: these runs check state, not what is seen.
   Before player 1 joins it looks through a parked player's empty camera, which WP-28 has to settle.
 - Local indexes 2 and 3: only 0 and 1 ran.
 - A camera value that reaches a write through a local or a parameter: the read searched for the names of camera values,
   so it sees such a path only where a function was read by hand.
 - `Katina_EnemyDraw` picks low poly by `gSysFrameCount` into `iwork` (`src/overlays/ovl_i4/fox_ka.c:2633`): not a camera
-  matter, but two clients need not share that count, and `iwork` is hashed.
+  matter, but two clients need not share that count, and `iwork` is hashed. (Run and fixed in #129.)
 - `Radio_Draw` follows the voice status (`src/engine/fox_radio.c:645`), which comes from the sound thread. WP-02's audio
-  variants matched on one machine; two machines did not run.
+  variants matched on one machine; two machines did not run. (More levels at two sample counts in #129.)
 
 ### 2026-11-06, #67, state hash: per-player arrays, team arrays, co-op slots
 
@@ -3918,6 +3920,78 @@ Unknown:
 - Release builds, other compilers (GCC, Clang) and cross-platform play (Windows against Linux).
 - Whether the MSVC runtime's FMA3 path gives other results than the non-FMA3 path at all, or the two agree bit for
   bit by design. Either way the run shows no difference for this replay.
+
+### 2026-11-08, #129, what #96 could not cover: other levels, Katina, the radio, effect slots
+
+Identity: ROM US 1.0, branch `issue/129-lockstep-gaps` on top of `4f82cd65`, Linux, GCC, Debug, OpenGL on a software
+renderer, no window, two games per run on one PC, no transport. Input by rule (`player_trace.py`, `write_rail_replay`),
+2 players, `gInvincible`, each level from its start past its intro (`SF64_COOP_TEST_START_LEVEL`, #148), 2400 frames
+(80 seconds of play) unless a line says otherwise.
+
+What the new runs change about the two clients of `hash_check.py views`: besides a camera each, the second has ticked 6
+more frames since boot (`SF64_COOP_TEST_SYS_FRAME_OFFSET`, new in `src/port/coop/test/switches.c`) and the two render
+different sample counts per audio update (`SF64_COOP_TEST_AUDIO_SAMPLES` high and low). Both differ between two real
+clients.
+
+**Observed (runs)**
+
+- *Other levels.* `views --level` is equal on every frame (2414 of 2414) on 15 levels: Corneria, Meteo, Sector X, Area 6,
+  Sector Y, Venom 1, Solar, Zoness, Venom Andross, Training, Fortuna, Katina, Bolse, Sector Z and Venom 2. In each, the
+  cameras drawn differ on at least 21 of the 24 sampled frames, and both clients fly in the level for over half the
+  frames. Corneria's two sections from `views` with no `--level` are equal too: 5739 rails and 3239 all-range frames.
+  After the fixes below; the runs before them split only on Katina's LOD flag (next point).
+- *Radio timer.* `gTeamLowHealthMsgTimer` was not hashed. `hash_check.py probe` with a rule for it failed:
+  `changed=0 regions=none, but it changes only globals (7 of 7 probes)`. It is hashed now in co-op only
+  (`src/port/coop/sync/state_hash.c`, `HashGlobals`): the probe shows it in `globals` with 2 players (5 of 5) and leaves
+  the hash alone with 1 (5 of 5), so a single-player log lines up with one from an older build.
+- *Katina.* `Katina_EnemyDraw` (`src/overlays/ovl_i4/fox_ka.c`) sets `iwork[KA_ACTOR_LOW_POLY]` from
+  `(index + gSysFrameCount) % 8`. The port's `gDisableLOD` (default 1) clears it again in the same call, so a session on the default never showed it: `views --level katina` was equal with and without
+  the skew. With `--cvar gDisableLOD=0` (the handshake compares the CVar, so two clients can agree on 0) the clients split
+  at frame 16, and with the skew at frame 14, region `actors`. Two games started together can differ in
+  `gSysFrameCount` by themselves: the boot logo runs on wall-clock time. After the fix: equal on all 2414 frames.
+- *The other users of `gSysFrameCount`* are draw only, by reading: `fox_blur.c:17-19` walks pixels, `fox_a6.c:1923` sets a
+  local to 1 and then to 0, `fox_aq.c:2091-2170` double-buffers a vertex array (`D_i3_801C3A88`, not hashed)
+  that the same draw reads.
+- *Effect slots.* Nothing frees an effect for leaving the view in co-op any more (#96). The test game now logs the slots in
+  use (`# slots`, and `# effects` with the ids). Katina over 7500 frames: 1 player holds 0 to 10 effects, 2 players climb
+  to about 50 and stay there. The 50 are `OBJ_EFFECT_LASER_MARK_1`, the mark a shot leaves on the ground
+  (`fox_beam.c:205-227`), which is set up only in effect slots 0 to 49 with an 80 frame timer. Its update (`Effect_Effect345_Update`, `fox_effect.c`) uses that timer
+  only when `gCamCount != 1`, which is versus: the view cull freed it otherwise. Fortuna reached
+  100 of 100 slots. `hash_check.py slots` (median effects in use, co-op minus single player, over the samples after
+  frame 300; at most 15) before the fix: Katina +41, Fortuna +58.5, Corneria +8.5; after it: +6.5, +13, +12. All other levels
+  are within 15 (Solar holds 48 with one player as well: effect 392 is its own).
+- *Radio and the sound thread.* With the audio sample counts split, the two clients are equal on every frame in all 15
+  levels and both Corneria sections, and the radio state changed 48 to 148 times in each run, so lines were played. WP-02's
+  audio variants had matched on Corneria only (#2 entry, 2026-11-04) and `lockstep_test.py audio` on one flight.
+
+**Derived**
+
+- A write in a draw function that lands in hashed state, with a value only one client has, is a desync as soon as the
+  draw runs on every client (#96). `gSysFrameCount` was the one such value found outside the camera, in the 15 levels
+  flown.
+- The leak was a co-op change (#96) meeting an upstream rule that only versus had needed. One line puts a ground mark on
+  its own timer, as versus does. Other effect kinds, if any, would show in `slots` as a plateau, and none did in the 15
+  levels.
+- The radio does not depend on how many samples an audio update renders, on the evidence of 15 levels at two sample
+  counts. The sequence ticks run per audio update (`src/audio/audio_synthesis.c:665-668`); the guess of WP-02 stands.
+
+**Choices this makes**, all reversible, none a game rule with a record (`DESIGN.md` section 4):
+
+- In a session every Katina enemy is drawn in full, whatever `gDisableLOD` says (`CoopPlayers_IsCoop()` in `fox_ka.c`).
+- A ground laser mark lasts 80 frames in co-op. In single player it lasts until it leaves the view. Circling in all-range, a mark is gone sooner than that
+  (derived from the code, not compared by eye).
+
+**Unknown**
+
+- A second PC. The audio devices and boot times here are the ones one PC can make; a real second device may time its
+  buffer differently (the sample counts here are the two values the engine picks between, `src/port/Engine.cpp:387-388`).
+- The vehicle levels (Titania, Macbeth, Aquas): extra players are parked there until WP-18 (#16), so `views` has no second
+  view to compare. Levels 4 and 15 (`LEVEL_UNK_4`, `LEVEL_UNK_15`) were not flown.
+- Anything after the first 80 seconds of a level: bosses mostly come later. A longer flight needs a pilot as in
+  `full_level.py` for Corneria.
+- Whether the effects of other kinds pile up in a run longer than 7500 frames (Katina) or in a level not flown in the
+  `slots` check beyond 3000 frames.
+- Windows. Run on Linux only.
 
 ## Networking
 
