@@ -453,12 +453,20 @@ def sc_boost(args, folder):
         window = [r for r in rows if BOOST_AT <= r.frame < BOOST_AT + BOOST_FRAMES + 40]
         top = max(r.pathvel for r in window)
         lead = min(r.players[1].camdist for r in window)
-        own = min(r.players[0].camdist for r in rows)
+        # Player 0 does not press boost: inside the window his camDist stays where it was just before it (the level
+        # intro pulls it forward earlier on, so the minimum over the whole run says nothing).
+        own_before = sorted(r.players[0].camdist for r in rows if BOOST_AT - 60 <= r.frame < BOOST_AT)
+        own_base = own_before[len(own_before) // 2] if own_before else 0.0
+        own = min(r.players[0].camdist for r in window)
         expect(lead < -100, f"{game.name}: player 1 did not boost, camDist only {lead}")
-        expect(own > -10, f"{game.name}: player 0 boosted too, camDist {own}")
         expect(top > base + 15, f"{game.name}: level speed {base} before, {top} at most while player 1 boosts")
+        expect(own > own_base - 10, f"{game.name}: player 0 boosted too, camDist {own} against {own_base} before")
         seen.append((base, top, [(r.frame, r.pathvel) for r in rows]))
-    expect(seen[0][2] == seen[1][2], "the two games do not have one level speed")
+    # A game can run a few frames past `done` before it is stopped, so compare the frames both traces hold.
+    ours, theirs = dict(seen[0][2]), dict(seen[1][2])
+    common = sorted(set(ours) & set(theirs))
+    expect(len(common) > 50 and all(ours[f] == theirs[f] for f in common),
+           f"the two games do not have one level speed ({len(common)} common frames)")
     return (f"same hash on {frames} frames; level speed {seen[0][0]:.1f} -> {seen[0][1]:.1f} in both games while only "
             f"player 1 boosts")
 
