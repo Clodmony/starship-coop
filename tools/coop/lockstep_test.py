@@ -80,7 +80,7 @@ import player_trace  # noqa: E402
 import replay as replay_tool  # noqa: E402
 
 IS_LINUX = platform.system() == "Linux"
-BUTTON_A, BUTTON_START, BUTTON_L = 0x8000, 0x1000, 0x0020
+BUTTON_A, BUTTON_B, BUTTON_START, BUTTON_L = 0x8000, 0x4000, 0x1000, 0x0020
 START_FRAME = 600
 REPLAY_FRAMES = 30000  # longer than any run: the games stop on `done`, not at the end of this
 INPUT_DELAY = 3  # COOP_LOCKSTEP_INPUT_DELAY
@@ -378,16 +378,50 @@ def vehicle_story(game):
     return len(active), forms, joined
 
 
+TORPEDO_PERIOD = 150  # frames between player 1's torpedoes on Aquas; one flies for up to 300 (D_i3_801C4454)
+TORPEDO_RE = re.compile(r" torpedo=(-?\d+):(\d+):(\d+):(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)")
+
+
+def sway_torpedo(frame, player):
+    """sway, and player 1 fires a torpedo (B) every TORPEDO_PERIOD frames. Player 0 never does, so the one torpedo
+    slot is free for player 1."""
+    button, x, y = sway(frame, player)
+    if player == 1 and frame >= JOIN_FRAME and (frame - JOIN_FRAME) % TORPEDO_PERIOD == TORPEDO_PERIOD // 2:
+        button |= BUTTON_B
+    return button, x, y
+
+
+def torpedo_story(game):
+    """From a game's trace: frames player 1's torpedo flew, frames it homed on a target, and the longest way one
+    torpedo went (from the first frame it showed to the last of an unbroken run)."""
+    flew = homed = 0
+    longest = 0.0
+    start = last = None
+    for line in (game.run / "trace.txt").read_text().splitlines():
+        m = TORPEDO_RE.search(line)
+        if not m or int(m.group(1)) != 1:
+            start = None
+            continue
+        flew += 1
+        homed += int(m.group(2)) != 0 and int(m.group(3)) != 0
+        last = tuple(float(v) for v in m.groups()[3:])
+        start = start or last
+        longest = max(longest, math.dist(start, last))
+    return flew, homed, longest
+
+
 def sc_vehicles(args, folder):
     """The Landmaster and Blue Marine levels with two clients (WP-18, #16), the three levels side by side. Both steer
     and fire from the join frame on. Hashes equal on every frame. In a level co-op has opened (Titania, Aquas), player 1
-    drives along with player 0; in the others it stays parked (decision 0009, item 6: V2 until the level is proven)."""
+    drives along with player 0; in the others it stays parked (decision 0009, item 6: V2 until the level is proven).
+    On Aquas player 1 also fires torpedoes: one has to fly and at least one has to home on a target."""
     only = getattr(args, "levels", None)
     levels = [entry for entry in VEHICLE_LEVELS if not only or entry[0].lower() in only]
 
     def one(entry):
         name, level, opened = entry
-        host, client = run_short(args, folder / name.lower(), frames=VEHICLE_FRAMES,
+        script = sway_torpedo if name == "Aquas" else sway
+        host, client = run_short(args, folder / name.lower(), script=script, frames=VEHICLE_FRAMES,
                                  host_env={"SF64_COOP_JOIN_LEVEL": str(level)})
         frames = compare(host, client, VEHICLE_FRAMES)
         active, forms, joined = vehicle_story(client)
@@ -398,7 +432,13 @@ def sc_vehicles(args, folder):
             expect(moved[1] > 500, f"{name}: player 1 did not steer, moved {moved[1]:.0f}")
         else:
             expect(joined == 0, f"{name}: player 1 was not parked on {joined} frames")
-        return f"{name} {frames} frames, player 0 active on {active}, player 1 on {joined}, form {forms}"
+        text = f"{name} {frames} frames, player 0 active on {active}, player 1 on {joined}, form {forms}"
+        if script is sway_torpedo:
+            flew, homed, longest = torpedo_story(client)
+            expect(flew > 30 and longest > 1000, f"{name}: player 1's torpedo flew on {flew} frames, {longest:.0f} far")
+            expect(homed > 0, f"{name}: player 1's torpedo never homed ({flew} frames in flight)")
+            text += f", player 1's torpedo flew on {flew} frames (up to {longest:.0f} far), homed on {homed}"
+        return text
 
     with ThreadPoolExecutor(max_workers=len(levels)) as pool:
         futures = [pool.submit(one, entry) for entry in levels]

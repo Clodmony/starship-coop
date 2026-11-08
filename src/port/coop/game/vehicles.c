@@ -216,6 +216,18 @@ static void CoopVehicles_OnShotPostUpdate(IEvent* event) {
     sShotSwapped = -1;
 }
 
+void CoopVehicles_MarineLock(int32_t player, int32_t* target, int32_t* homing) {
+    if (player == 0) {
+        *target = D_i3_801C4190[0];
+        *homing = D_i3_801C4190[3];
+    } else if ((player > 0) && (player < COOP_PLAYERS_MAX)) {
+        *target = gCoopMarineState[player].ints[0]; // sMarineInts[0] = 0
+        *homing = gCoopMarineState[player].ints[2]; // sMarineInts[2] = 3
+    } else {
+        *target = *homing = 0;
+    }
+}
+
 void CoopVehicles_LevelInit(void) {
     memset(gCoopTankState, 0, sizeof(gCoopTankState));
     memset(gCoopMarineState, 0, sizeof(gCoopMarineState));

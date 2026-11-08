@@ -479,6 +479,38 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-08, #16, player 1's torpedo in Aquas
+
+Identity: US 1.0 (SHA-1 `d8b10885...`), Windows 11, MSVC v143, Debug, test games without drawing, on `issue/16-vehicles`
+(base `26b5d271`, with this entry's changes). `python tools/coop/lockstep_test.py --only vehicles --levels aquas`: in
+Aquas player 1 now also presses B every 150 frames from the join on; player 0 never does. The trace has a new
+`torpedo=` field (`src/port/coop/test/player_trace.h`).
+
+Observed:
+
+- Host and client hash alike on all 6000 frames. Player 1 fired 15 torpedoes that flew (311 frames in all, one went
+  2991 units); the `torpedo=` field was the same on host and client on every one of those frames.
+- 11 of the 15 homed on a target (169 frames with player 1's lock-on flag `D_i3_801C4190[3]` set and a target in its
+  copy). The first three, near the start, flew without a target.
+- One torpedo slot for all marines: `Aquas_BlueMarineTorpedo` looks at `gPlayerShots[15]` only
+  (`src/overlays/ovl_i3/fox_aq.c:1214`, `gPlayerShots[16]` in `include/sf64context.h:238`).
+- `Play_Update` runs every `Player_Update` first, then `PlayerShot_UpdateAll` (`src/engine/fox_play.c:7059`, `:7067`).
+- Regression on the same build: `vehicles` (all three levels), `steer`, `hash_check.py run --players 2
+  --poke-player 1`: pass.
+
+Derived (from reading, not run):
+
+- A marine notices its torpedo is gone only in its own `Aquas_BlueMarineShoot`, by the slot being free (`:1262`). If
+  player 1's torpedo ends and player 0 fires into the freed slot before player 1's update, player 1 still counts the
+  slot as its torpedo: no new lock-on and no torpedo for it until player 0's torpedo ends. The same the other way
+  round. Both clients do the same, so it cannot desync; it is a gameplay quirk.
+
+Unknown:
+
+- Whether a homing torpedo of player 1 hits more often than one without a target: the trace does not log the target's
+  position or the hit.
+- Two marines firing torpedoes in the same seconds (the case above): not scripted.
+
 ### 2026-11-08, #16, a Blue Marine per player in Aquas
 
 Identity: US 1.0 (SHA-1 `d8b10885...`), Windows 11, MSVC v143, Debug, test games without drawing, on `issue/16-vehicles`
@@ -516,7 +548,7 @@ Derived:
 
 Unknown:
 
-- **Torpedoes are untested:** the scripted input fires the laser (A) only, never B.
+- **Torpedoes are untested:** the scripted input fires the laser (A) only, never B. (Tested later: entry above.)
 - Whether two marines fit the narrow passages: player 1 was hit about as often as player 0 here.
 - A follower's camera uses player 0's edge offset (`[9]`, `[10]`), and the fish follow player 0's torpedo. Small; not
   fixed.

@@ -47,6 +47,11 @@ typedef struct {
 // Index = player; slot 0 is unused, as for the tank. Hashed in state_hash.c.
 extern CoopMarineState gCoopMarineState[COOP_PLAYERS_MAX];
 
+// A Blue Marine's lock-on, for tests: the actor it has locked (gActors index + 1, 0 for none) and whether its torpedo
+// homes on it (D_i3_801C4190[0] and [3]). Player 0 reads the fox_aq.c globals, the others their copy. Only valid
+// between frames, when no copy is swapped in.
+void CoopVehicles_MarineLock(int32_t player, int32_t* target, int32_t* homing);
+
 // Clears every copy. Call it with CoopPlayers_LevelInit.
 void CoopVehicles_LevelInit(void);
 
