@@ -48,7 +48,7 @@ HOST_TIMEOUT = "} else if (p->state == PEER_WAIT_HELLO && nowMs - p->since >= CO
 CONNECTED_STATE = "p->state = PEER_WAIT_HELLO;\n                p->since = nowMs;"
 PEER_JOINED_FLAG = "bool joined = p->state == PEER_JOINED;"
 HOST_HELLO_GATE = "if (p->state == PEER_WAIT_HELLO && net.msgId == COOP_MSG_SESSION_HELLO) {"
-HELLO_REFUSES = "if (diff & (sAnyPlatform ? COOP_ID_DIFF_REFUSE & ~COOP_ID_DIFF_PLATFORM : COOP_ID_DIFF_REFUSE)) {"
+HELLO_REFUSES = "if (diff & COOP_ID_DIFF_REFUSE) {"
 HOST_GAME_GATE = "if (p->state == PEER_JOINED && net.msgId >= COOP_MSG_SESSION_END) {"
 HOST_MESSAGE = ("Event_Init(ev, COOP_SESSION_EV_MESSAGE, net.peer);\n                    ev->msgId = net.msgId;\n"
                 "                    ev->size = net.size;\n                    ev->data = net.data;")
@@ -115,8 +115,10 @@ SIM = ["sim"]
 BREAKS = [
     # Creating, closing, asking.
     ("no_null_transport_check", "if (transport == NULL) {\n        return NULL;\n    }\n", "", SIM),
-    ("close_null_session", "if (s == NULL) {\n        return;\n    }\n    s->t->ops->close(s->t);",
-     "s->t->ops->close(s->t);", SIM),
+    ("close_null_session", "if (s == NULL) {\n        return;\n    }\n    CoopLog_Write(COOP_LOG_SESSION, false, "
+     "\"session closed\");\n    CoopLog_End(s->nowMs, Log_Send, s);\n    s->t->ops->close(s->t);",
+     "CoopLog_Write(COOP_LOG_SESSION, false, \"session closed\");\n    CoopLog_End(s->nowMs, Log_Send, s);\n"
+     "    s->t->ops->close(s->t);", SIM),
     ("close_keeps_transport", "s->t->ops->close(s->t);\n    free(s);", "free(s);", SIM),
     ("identity_host_any_state", "return s->peers[peer].state == PEER_JOINED ? &s->peers[peer].identity : NULL;",
      "return &s->peers[peer].identity;", SIM),
@@ -174,16 +176,11 @@ BREAKS = [
     ("hello_not_read", "if (!Identity_ReadAll(&p->identity, net->data, net->size)) {",
      "Identity_ReadAll(&p->identity, net->data, net->size);\n    if (0) {", SIM),
     ("hello_not_compared", HELLO_REFUSES, "if (0) {", ["sim", "build"]),
-    # A different platform refuses (decision 0002). This is the rule before it: only a warning.
-    ("platform_only_warns", HELLO_REFUSES, "if (diff & (COOP_ID_DIFF_REFUSE & ~COOP_ID_DIFF_PLATFORM)) {",
-     ["sim", "platform"]),
+    # A different platform only warns (decision 0010). This is the rule before it, from decision 0002: a refusal.
+    ("platform_refuses", HELLO_REFUSES, "if (diff & COOP_ID_DIFF_ALL) {", ["sim", "platform"]),
+    # A refusal names the platform too, when it differs as well.
     ("refusal_drops_platform", "Host_Refuse(s, peer, diff, nowMs, ev);",
-     "Host_Refuse(s, peer, diff & ~COOP_ID_DIFF_PLATFORM, nowMs, ev);", ["sim", "platform"]),
-    # The test switch: it passes a difference in platform, nothing else, and only while it is on.
-    ("switch_ignored", HELLO_REFUSES, "if (diff & COOP_ID_DIFF_REFUSE) {", ["sim", "platform_switch"]),
-    ("switch_passes_anything", HELLO_REFUSES, "if (!sAnyPlatform && (diff & COOP_ID_DIFF_REFUSE)) {", SIM),
-    ("switch_on_by_default", "static bool sAnyPlatform;", "static bool sAnyPlatform = true;", ["sim", "platform"]),
-    ("switch_stays_on", "sAnyPlatform = on;", "sAnyPlatform = sAnyPlatform || on;", SIM),
+     "Host_Refuse(s, peer, diff & ~COOP_ID_DIFF_PLATFORM, nowMs, ev);", ["sim", "platform_build"]),
     ("welcome_same_slot", "s->buffer[0] = (uint8_t) (peer + 1);", "s->buffer[0] = 1;", SIM),
     ("welcome_unreliable", "COOP_MSG_SESSION_WELCOME, s->buffer, (uint16_t) (size + 1), COOP_NET_RELIABLE)",
      "COOP_MSG_SESSION_WELCOME, s->buffer, (uint16_t) (size + 1), COOP_NET_UNRELIABLE)", SIM),
@@ -194,11 +191,11 @@ BREAKS = [
     ("joined_event_wrong_peer", "Event_Init(ev, COOP_SESSION_EV_JOINED, peer);",
      "Event_Init(ev, COOP_SESSION_EV_JOINED, 0);", SIM),
     ("joined_event_same_slot", "ev->playerIndex = (uint8_t) (peer + 1);", "ev->playerIndex = 1;", SIM),
-    ("joined_event_no_warning", "ev->diff = diff;\n", "", ["sim", "platform_switch"]),
+    ("joined_event_no_warning", "ev->diff = diff;\n", "", ["sim", "platform"]),
     ("joined_text_sides_swapped", "CoopIdentity_Describe(diff, &s->local, &p->identity, s->text, sizeof(s->text));",
-     "CoopIdentity_Describe(diff, &p->identity, &s->local, s->text, sizeof(s->text));", ["sim", "platform_switch"]),
+     "CoopIdentity_Describe(diff, &p->identity, &s->local, s->text, sizeof(s->text));", ["sim", "platform"]),
     ("joined_no_text", "sizeof(s->text));\n    ev->text = s->text;\n}\n\n// Time-outs",
-     "sizeof(s->text));\n}\n\n// Time-outs", ["sim", "platform_switch"]),
+     "sizeof(s->text));\n}\n\n// Time-outs", ["sim", "platform"]),
 
     # Host: time.
     ("linger_no_wait", DELIVERED, "bool delivered = true;", SIM),
@@ -260,13 +257,13 @@ BREAKS = [
     ("client_not_active", "s->client = CLIENT_ACTIVE;\n", "", SIM),
     ("client_event_same_slot", "ev->playerIndex = net->data[0];", "ev->playerIndex = 1;", SIM),
     ("client_not_compared", "ev->diff = CoopIdentity_Compare(host, &s->local);", "ev->diff = 0;",
-     ["sim", "platform_switch"]),
+     ["sim", "platform"]),
     ("client_warning_sides_swapped",
      "CoopIdentity_Describe(ev->diff, host, &s->local, s->text, sizeof(s->text));\n        ev->text = s->text;\n",
      "CoopIdentity_Describe(ev->diff, &s->local, host, s->text, sizeof(s->text));\n        ev->text = s->text;\n",
-     ["sim", "platform_switch"]),
+     ["sim", "platform"]),
     ("client_warning_no_text", "sizeof(s->text));\n        ev->text = s->text;\n        return;",
-     "sizeof(s->text));\n        return;", ["sim", "platform_switch"]),
+     "sizeof(s->text));\n        return;", ["sim", "platform"]),
     ("refused_client_stays", "// SESSION_REFUSE. We leave at once: the host waits for our goodbye or for the ack.\n"
      "    s->t->ops->disconnect(s->t, 0);\n", "", SIM),
     ("refuse_size_unchecked", REFUSE_READ, REFUSE_READ.replace("net->size < 4 || ", ""), SIM),
@@ -281,9 +278,10 @@ BREAKS = [
     ("reasons_byte_2_lost", REASONS, REASONS.replace(" | ((uint32_t) net->data[2] << 16)", ""), SIM),
     ("reasons_byte_3_lost", REASONS, REASONS.replace(" |\n               ((uint32_t) net->data[3] << 24)", ""), SIM),
     ("client_text_malformed_lost", "if (ev->diff & COOP_SESSION_REFUSE_MALFORMED) {", "if (0) {", SIM),
-    ("client_text_no_handshake_lost", "} else if ((ev->diff & COOP_ID_DIFF_REFUSE) == 0) {", "} else if (0) {", SIM),
-    ("client_text_platform_lost", "} else if ((ev->diff & COOP_ID_DIFF_REFUSE) == 0) {",
-     "} else if ((ev->diff & (COOP_ID_DIFF_REFUSE & ~COOP_ID_DIFF_PLATFORM)) == 0) {", ["sim", "platform"]),
+    ("client_text_no_handshake_lost", "} else if ((ev->diff & COOP_ID_DIFF_ALL) == 0) {", "} else if (0) {", SIM),
+    # A host with the old rule (decision 0002) refuses on the platform alone; this client still reads why.
+    ("client_text_platform_lost", "} else if ((ev->diff & COOP_ID_DIFF_ALL) == 0) {",
+     "} else if ((ev->diff & COOP_ID_DIFF_REFUSE) == 0) {", SIM),
     ("client_refusal_sides_swapped",
      "CoopIdentity_Describe(ev->diff, host, &s->local, s->text, sizeof(s->text));\n    }\n    ev->text = s->text;",
      "CoopIdentity_Describe(ev->diff, &s->local, host, s->text, sizeof(s->text));\n    }\n    ev->text = s->text;",
@@ -327,15 +325,17 @@ BREAKS = [
     ("client_message_no_size", CLIENT_MESSAGE, CLIENT_MESSAGE.replace(MESSAGE_SIZE, ""), SIM),
     ("client_message_no_data", CLIENT_MESSAGE, CLIENT_MESSAGE.replace(MESSAGE_DATA, ""), SIM),
     ("client_ignored_uncounted", "s->ignored++;\n                break;\n            default:\n                break;\n"
-     "        }\n    }\n    return false;\n}\n\nbool CoopSession_Poll",
+     "        }\n    }\n    return false;\n}\n\n// ---- The co-op log",
      "break;\n            default:\n                break;\n        }\n    }\n    return false;\n}\n\n"
-     "bool CoopSession_Poll", SIM),
+     "// ---- The co-op log", SIM),
 
     # Characters: who may ask, and for what.
     ("host_is_not_fox", "s->roster.character[0] = COOP_CHARACTER_FOX;",
      "s->roster.character[0] = COOP_CHARACTER_FALCO;", SIM),
-    ("host_null_unchecked", "if (s != NULL) {\n        s->roster.character[0] = COOP_CHARACTER_FOX;\n    }",
-     "s->roster.character[0] = COOP_CHARACTER_FOX;", SIM),
+    ("host_null_unchecked", "if (s != NULL) {\n        s->roster.character[0] = COOP_CHARACTER_FOX;\n"
+     "        CoopLog_Begin(true, 0);\n        Log_Identity(\"hosting a session; this game\", identity);\n    }",
+     "s->roster.character[0] = COOP_CHARACTER_FOX;\n        CoopLog_Begin(true, 0);\n"
+     "        Log_Identity(\"hosting a session; this game\", identity);", SIM),
     ("pick_before_welcome", PICK_GUARD, PICK_GUARD.replace("s->client != CLIENT_ACTIVE || ", ""), SIM),
     ("pick_fox", PICK_GUARD, PICK_GUARD.replace("character <= COOP", "character < COOP"), SIM),
     ("pick_no_low_bound", PICK_GUARD, PICK_GUARD.replace("character <= COOP_CHARACTER_FOX ||\n        ", ""), SIM),

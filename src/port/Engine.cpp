@@ -49,6 +49,8 @@
 #include "port/coop/test/join_driver.h" // COOP: scripted join flow for tests (WP-24)
 #include "port/coop/test/lockstep_driver.h" // COOP: scripted input in a session, for tests (#20)
 #include "port/coop/sync/lockstep_game.h"   // COOP: frames in lockstep (#20)
+#include "port/coop/log/log_game.h"   // COOP: the co-op log of a session (#172)
+#include "port/coop/log/log_spdlog.h" // COOP: the game's warnings and errors in the co-op log (#172)
 #include "port/coop/ui/menu_window.h"     // COOP: the co-op menu starts levels (#126)
 #include "port/coop/game/input_game.h"    // COOP: an input source per player (WP-14)
 
@@ -186,6 +188,7 @@ GameEngine::GameEngine() {
         (spdlog::level::level_enum) CVarGetInteger("gDeveloperTools.LogLevel", 1));
     Ship::Context::GetInstance()->GetLogger()->set_pattern("[%H:%M:%S.%e] [%s:%#] [%l] %v");
 #endif
+    CoopLogSpdlog_Install(); // COOP: warnings and errors also reach the co-op log of a session (#172)
 
     auto loader = context->GetResourceManager()->GetResourceLoader();
     loader->RegisterResourceFactory(std::make_shared<SF64::ResourceFactoryBinaryAnimV0>(), RESOURCE_FORMAT_BINARY,
@@ -320,6 +323,7 @@ void GameEngine::Create() {
     CoopViewTrace_Init(); // COOP: no-op unless SF64_COOP_VIEW_TRACE is set (#30)
     CoopJoinDriver_Init(); // COOP: no-op unless SF64_COOP_JOIN_* is set (WP-24)
     CoopSyncGame_Init();   // COOP: does nothing until a session starts a level (#20)
+    CoopLogGame_Init();    // COOP: the co-op log; nothing is written without a session (#172)
     CoopLockstepDriver_Init(); // COOP: no-op unless SF64_COOP_LOCKSTEP_* is set (#20)
     CoopUi::Listen();      // COOP: does nothing on a frame without a co-op session (#126)
     CoopInput_Init(); // COOP: does nothing until a co-op level starts (WP-14)

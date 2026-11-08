@@ -29,14 +29,14 @@ A function whose sites have more than one verdict counts once per verdict in the
 
 | verdict | sites | functions | `gPlayer[0]` | `gPlayer->` | `gPlayer arg` | `gMainController` | `gCamCount` | `shooter` |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| sim | 1077 | 196 | 1073 | 1 | 3 | 0 | 0 | 0 |
+| sim | 1062 | 193 | 1059 | 1 | 2 | 0 | 0 | 0 |
 | view | 216 | 84 | 151 | 0 | 0 | 43 | 3 | 19 |
 | input | 14 | 9 | 0 | 0 | 0 | 9 | 0 | 5 |
-| flow | 364 | 87 | 324 | 0 | 3 | 3 | 0 | 34 |
+| flow | 374 | 88 | 334 | 0 | 3 | 3 | 0 | 34 |
 | setup | 53 | 34 | 1 | 0 | 1 | 0 | 51 | 0 |
-| ok | 180 | 81 | 1 | 2 | 14 | 87 | 8 | 68 |
+| ok | 185 | 83 | 5 | 2 | 15 | 87 | 8 | 68 |
 
-Basis per site: read 221, site 1041, name 642.
+Basis per site: read 269, site 1038, name 597.
 
 ## Sites
 
@@ -228,36 +228,36 @@ Basis per site: read 221, site 1041, name 642.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `func_enmy_80060FE4` | 106:P0 | flow | site | player 0 intro state |
-| `func_enmy_80061148` | 134:P0 | flow | site | player 0 level complete |
-| `func_enmy_80061A4C` | 323:P0, 324:P0 | sim | site | target point around player 0 |
-| `func_enmy_80061B68` | 344:P0, 347:P0 | sim | site | target point around player 0 |
-| `Object_Load` | 443:P0, 444:P0 | sim | site | level objects spawn relative to player 0 path position |
-| `Object_LoadLevelObjects` | 596:P0, 599:P0, 636:P0, 637:P0 | sim | site | spawning on path splits follows player 0 path change |
-| `Object_Init` | 1228:P0 | sim | site | init depends on player 0 z |
-| `ActorMissileSeek_Update` | 1612:P0, 1613:P0, 1614:P0, 1690:P0, 1711:P0, 1714:P0 | sim | site | homing missile seeks player 0 |
-| `ActorMissileSeek_Update` | 1649:SH | ok | site | enemy missile on a wingman writes DMG_SRC_2, which since #86 only enemies do in co-op |
-| `Actor_Despawn` | 1761:SH, 1762:SH, 1765:SH | flow | read | only player 0's kills add to gHitCount, the hit-count drop and Star Wolf hits: WP-16 (#14), DESIGN.md section 4 item 5; the score branch is versus only |
-| `SceneryRotateTowardsCamera` | 2020:P0 | view | site | billboard to player 0 camera |
-| `Item_CheckBounds` | 2031:P0, 2037:P0, 2040:P0, 2041:P0, 2043:P0, 2044:P0 | sim | site | items kept inside player 0 path bounds |
-| `ActorSupplies_Update` | 2131:P0, 2156:P0 | sim | site | supply drop for player 0 |
-| `func_enmy_80067A40` | 2204:P0, 2206:P0, 2208:P0, 2210:P0, 2212:P0 | sim | site | wing repair applied to player 0 |
-| `ItemLasers_Update` | 2300:P0, 2301:P0 | sim | site | laser item checks player 0 wings |
-| `ItemSupplyRing_Update` | 2367:P0 | view | site | player 0 alternate (cockpit) view |
-| `ItemMeteoWarp_Update` | 2444:P0, 2447:P0, 2452:P0, 2453:P0 | flow | site | warp ring sends player 0 into the warp zone |
-| `ItemCheckpoint_Update` | 2476:P0 | view | site | player 0 alternate (cockpit) view |
-| `ItemPathChange_Update` | 2522:P0, 2525:P0, 2526:P0, 2529:P0, 2530:P0, 2533:P0, 2540:P0, 2543:P0, 2546:P0, 2554:P0, 2555:P0, 2559:P0, 2560:P0, 2561:P0, 2563:P0, 2564:P0, 2569:P0, 2570:P0, 2574:P0, 2575:P0, 2579:P0, 2580:P0, 2581:P0, 2583:P0, 2584:P0, 2589:P0, 2590:P0, 2594:P0, 2595:P0 | flow | read | path split and level end gate: changes player 0 path, state and flags |
-| `Sprite_UpdateDoodad` | 2604:P0 | view | site | billboard to player 0 camera |
-| `Actor_Move` | 2694:P0, 2698:P0, 2699:P0, 2700:P0, 2701:P0 | sim | read | actors are killed (Object_Kill) when outside player 0 camera and path bounds |
-| `Boss_Move` | 2738:P0, 2739:P0 | sim | site | bosses culled by player 0 camera |
-| `Scenery_Move` | 2745:P0, 2751:P0, 2758:P0, 2761:P0 | sim | site | scenery culled by player 0 camera |
-| `Sprite_Move` | 2778:P0, 2788:P0 | sim | site | sprites culled by player 0 camera |
-| `Effect_Move` | 2802:P0, 2804:P0, 2805:P0 | sim | read | effects killed (Object_Kill) outside player 0 camera range |
-| `Item_Move` | 2813:P0 | sim | site | items culled by player 0 camera |
-| `Actor_Update` | 2844:CC | ok | read | versus branch, loops all players |
-| `Actor_Update` | 2855:MC, 2856:MC | ok | read | campaign lock-on release with co-op off; in co-op CoopPlayers_ReleaseLockOns runs each player's down on its own A (WP-14) |
-| `TexturedLine_Update` | 3093:P0, 3110:P0, 3112:P0 | sim | site | damages player 0 only |
-| `Object_Update` | 3153:P0, 3154:P0, 3155:P0, 3159:P0 | flow | site | objects update and load only in certain player 0 states |
+| `func_enmy_80060FE4` | 107:P0 | flow | site | player 0 intro state |
+| `func_enmy_80061148` | 135:P0 | flow | site | player 0 level complete |
+| `func_enmy_80061A4C` | 324:P0, 325:P0 | sim | site | target point around player 0 |
+| `func_enmy_80061B68` | 345:P0, 348:P0 | sim | site | target point around player 0 |
+| `Object_Load` | 444:P0, 445:P0 | sim | site | level objects spawn relative to player 0 path position |
+| `Object_LoadLevelObjects` | 597:P0, 600:P0, 637:P0, 638:P0 | sim | site | spawning on path splits follows player 0 path change |
+| `Object_Init` | 1229:P0 | sim | site | init depends on player 0 z |
+| `ActorMissileSeek_Update` | 1613:P0, 1614:P0, 1615:P0, 1691:P0, 1712:P0, 1715:P0 | sim | site | homing missile seeks player 0 |
+| `ActorMissileSeek_Update` | 1650:SH | ok | site | enemy missile on a wingman writes DMG_SRC_2, which since #86 only enemies do in co-op |
+| `Actor_Despawn` | 1762:SH, 1763:SH, 1766:SH | flow | read | only player 0's kills add to gHitCount, the hit-count drop and Star Wolf hits: WP-16 (#14), DESIGN.md section 4 item 5; the score branch is versus only |
+| `SceneryRotateTowardsCamera` | 2021:P0 | view | site | billboard to player 0 camera |
+| `Item_CheckBounds` | 2032:P0, 2038:P0, 2041:P0, 2042:P0, 2044:P0, 2045:P0 | sim | site | items kept inside player 0 path bounds |
+| `ActorSupplies_Update` | 2132:P0, 2157:P0 | sim | site | supply drop for player 0 |
+| `func_enmy_80067A40` | 2205:P0, 2207:P0, 2209:P0, 2211:P0, 2213:P0 | sim | site | wing repair applied to player 0 |
+| `ItemLasers_Update` | 2301:P0, 2302:P0 | sim | site | laser item checks player 0 wings |
+| `ItemSupplyRing_Update` | 2368:P0 | view | site | player 0 alternate (cockpit) view |
+| `ItemMeteoWarp_Update` | 2445:P0, 2448:P0, 2453:P0, 2454:P0 | flow | site | warp ring sends player 0 into the warp zone |
+| `ItemCheckpoint_Update` | 2477:P0 | view | site | player 0 alternate (cockpit) view |
+| `ItemPathChange_Update` | 2523:P0, 2526:P0, 2527:P0, 2530:P0, 2531:P0, 2534:P0, 2541:P0, 2544:P0, 2547:P0, 2555:P0, 2556:P0, 2560:P0, 2561:P0, 2562:P0, 2564:P0, 2565:P0, 2570:P0, 2571:P0, 2575:P0, 2576:P0, 2580:P0, 2581:P0, 2582:P0, 2584:P0, 2585:P0, 2590:P0, 2591:P0, 2595:P0, 2596:P0 | flow | read | path split and level end gate: changes player 0 path, state and flags |
+| `Sprite_UpdateDoodad` | 2605:P0 | view | site | billboard to player 0 camera |
+| `Actor_Move` | 2695:P0, 2699:P0, 2700:P0, 2701:P0, 2702:P0 | sim | read | actors are killed (Object_Kill) when outside player 0 camera and path bounds |
+| `Boss_Move` | 2739:P0, 2740:P0 | sim | site | bosses culled by player 0 camera |
+| `Scenery_Move` | 2746:P0, 2752:P0, 2759:P0, 2762:P0 | sim | site | scenery culled by player 0 camera |
+| `Sprite_Move` | 2779:P0, 2789:P0 | sim | site | sprites culled by player 0 camera |
+| `Effect_Move` | 2803:P0, 2805:P0, 2806:P0 | sim | read | effects killed (Object_Kill) outside player 0 camera range |
+| `Item_Move` | 2814:P0 | sim | site | items culled by player 0 camera |
+| `Actor_Update` | 2845:CC | ok | read | versus branch, loops all players |
+| `Actor_Update` | 2856:MC, 2857:MC | ok | read | campaign lock-on release with co-op off; in co-op CoopPlayers_ReleaseLockOns runs each player's down on its own A (WP-14) |
+| `TexturedLine_Update` | 3094:P0, 3111:P0, 3113:P0 | sim | read | tests player 0, CoopHits_TexturedLine does the others (#136) |
+| `Object_Update` | 3155:P0, 3156:P0, 3157:P0, 3161:P0 | flow | site | objects update and load only in certain player 0 states |
 
 ### `src/engine/fox_enmy2.c`
 
@@ -528,16 +528,16 @@ Basis per site: read 221, site 1041, name 642.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Bolse_UpdateEventHandler` | 208:P0, 271:P0, 272:P0, 273:P0, 274:P0, 275:P0, 295:P0, 298:P0, 299:P0, 300:P0, 301:P0, 302:P0, 303:P0, 378:P0 | flow | read | Bolse events: level complete and standby cutscene on player 0 |
-| `Bolse_8018CCE8` | 488:P0, 489:P0, 507:P0, 508:P0, 522:P0, 523:P0, 524:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Bolse_BoLaserCannon_Update` | 651:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Bolse_8018E05C` | 865:P0, 866:P0, 867:P0, 872:P0, 876:P0, 878:P0, 882:P0, 883:P0, 884:P0, 885:P0, 886:P0, 889:P0, 890:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Bolse_8018E05C` | 873:PA | sim | read | a beam of the base, not an effect: hits player 0 only, so player 2 flies through it. Open, not changed in #100 |
-| `Bolse_8018EAEC` | 1046:P0, 1047:P0, 1048:P0, 1051:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Bolse_8018F83C` | 1368:P0, 1369:P0, 1370:P0, 1373:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Bolse_LevelComplete` | 1472:P0, 1473:P0, 1474:P0, 1492:P0, 1493:P0, 1494:P0, 1584:P0, 1591:P0, 1609:P0, 1610:P0, 1611:P0, 1612:P0, 1613:P0, 1614:P0, 1640:P0, 1641:P0, 1642:P0 | flow | name | level complete on player 0 |
-| `Bolse_Effect397_Update` | 1831:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Bolse_Effect397_Update` | 1832:PA | ok | read | func_effect_8007A774 tests the others; each player's own roll counts, and player 0's roll no longer covers them (#100) |
+| `Bolse_UpdateEventHandler` | 209:P0, 272:P0, 273:P0, 274:P0, 275:P0, 276:P0, 296:P0, 299:P0, 300:P0, 301:P0, 302:P0, 303:P0, 304:P0, 379:P0 | flow | read | Bolse events: level complete and standby cutscene on player 0 |
+| `Bolse_8018CCE8` | 489:P0, 490:P0, 508:P0, 509:P0, 523:P0, 524:P0, 525:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Bolse_BoLaserCannon_Update` | 652:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Bolse_8018E05C` | 866:P0, 867:P0, 868:P0, 873:P0, 877:P0, 879:P0, 883:P0, 884:P0, 885:P0, 886:P0, 887:P0, 890:P0, 891:P0 | sim | read | base's beam: tests player 0, CoopHits_BolseBeam does the others (#136) |
+| `Bolse_8018E05C` | 874:PA | ok | read | Player_ApplyDamage for player 0; CoopHits_BolseBeam after it does the others (#136) |
+| `Bolse_8018EAEC` | 1048:P0, 1049:P0, 1050:P0, 1053:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Bolse_8018F83C` | 1370:P0, 1371:P0, 1372:P0, 1375:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Bolse_LevelComplete` | 1474:P0, 1475:P0, 1476:P0, 1494:P0, 1495:P0, 1496:P0, 1586:P0, 1593:P0, 1611:P0, 1612:P0, 1613:P0, 1614:P0, 1615:P0, 1616:P0, 1642:P0, 1643:P0, 1644:P0 | flow | name | level complete on player 0 |
+| `Bolse_Effect397_Update` | 1833:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Bolse_Effect397_Update` | 1834:PA | ok | read | func_effect_8007A774 tests the others; each player's own roll counts, and player 0's roll no longer covers them (#100) |
 
 ### `src/overlays/ovl_i4/fox_fo.c`
 
@@ -583,7 +583,7 @@ Basis per site: read 221, site 1041, name 642.
 | `Macbeth_8019A87C` | 710:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 | `Macbeth_MaLocomotive_Update` | 954:P0, 1049:P0, 1050:P0, 1051:P0, 1055:P0, 1056:P0, 1096:P0 | sim | site | train; sets player 0 to LEVEL_COMPLETE |
 | `Macbeth_8019D048` | 1165:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_MaTrainCar7_Update` | 1666:P0, 1667:P0, 1668:P0, 1671:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_MaTrainCar7_Update` | 1666:P0, 1667:P0, 1668:P0, 1671:P0 | sim | read | blast hits player 0 only; right for now: Macbeth is a Landmaster level, co-op players stay parked (WP-18, #136) |
 | `Macbeth_MaTrainCar7_Update` | 1677:MC | view | site | rumble on gMainController (controller index used as player index) |
 | `Macbeth_8019F164` | 1727:P0, 1728:P0, 1729:P0, 1803:P0, 1804:P0, 1805:P0, 1806:P0, 1807:P0, 1808:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 | `Macbeth_MaSwitchTrack_Update` | 2232:P0, 2238:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
@@ -594,7 +594,7 @@ Basis per site: read 221, site 1041, name 642.
 | `Macbeth_MaRailroadSwitch_Update` | 3125:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 | `Macbeth_MaBoulder_Update` | 3241:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 | `Macbeth_MaRailwaySignal_Update` | 3345:P0, 3366:P0, 3408:P0, 3409:P0, 3413:P0, 3414:P0 | sim | site | sets player 0 to LEVEL_COMPLETE |
-| `Macbeth_Effect378_Update` | 3545:P0, 3559:P0, 3560:P0, 3561:P0, 3571:P0, 3572:P0, 3573:P0, 3575:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_Effect378_Update` | 3545:P0, 3559:P0, 3560:P0, 3561:P0, 3571:P0, 3572:P0, 3573:P0, 3575:P0 | sim | read | shot hits player 0 only; right for now: Landmaster level, co-op players parked (WP-18, #136) |
 | `Macbeth_Effect380_Update` | 3606:P0, 3618:P0, 3619:P0, 3620:P0, 3622:P0, 3624:P0, 3626:P0, 3628:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 | `Macbeth_Effect380_Update` | 3621:PA | sim | read | right for now: Macbeth is rails in a Landmaster, where co-op players stay parked (CoopPlayers_SectionSupported); WP-18 |
 | `Macbeth_MaHorizontalLockBar_Update` | 3659:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
@@ -612,7 +612,7 @@ Basis per site: read 221, site 1041, name 642.
 | `Macbeth_Actor207_Draw` | 5446:P0, 5447:P0, 5448:P0, 5452:P0, 5453:P0 | view | name | drawing by player 0 |
 | `Macbeth_EffectClouds_Setup` | 5672:P0, 5673:P0, 5674:P0 | view | name | clouds around player 0 |
 | `Macbeth_801AD144` | 5776:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_MaBombDrop_Update` | 5834:P0, 5884:P0, 5885:P0, 5886:P0, 5887:P0, 5888:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_MaBombDrop_Update` | 5834:P0, 5884:P0, 5885:P0, 5886:P0, 5887:P0, 5888:P0 | sim | read | blast hits player 0 only; right for now: Landmaster level, co-op players parked (WP-18, #136) |
 | `Macbeth_MaBombDrop_Update` | 5867:MC, 5868:MC | view | site | rumble on gMainController (controller index used as player index) |
 | `Macbeth_MaSpear_Update` | 5960:P0, 5986:P0, 5989:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 | `Macbeth_MaSpear_Update` | 6002:MC, 6003:MC | view | site | rumble on gMainController (controller index used as player index) |
@@ -657,26 +657,26 @@ Basis per site: read 221, site 1041, name 642.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Andross_ActorTeamArwing_Update` | 284:P0, 285:P0, 286:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Andross_AndBrainWaste_Update` | 357:P0, 358:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Andross_80188A4C` | 459:P0, 482:P0, 483:P0 | sim | site | boss part; sets player 0 to STANDBY after the bonus |
-| `Andross_80188CB8` | 542:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Andross_80189214` | 605:P0, 615:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Andross_AndBossTimer_Update` | 636:P0, 637:P0 | flow | name | boss timer on player 0 |
-| `Andross_AndJamesTrigger_Update` | 665:P0, 667:P0, 668:P0, 669:P0, 676:P0, 677:P0 | flow | site | James appears when player 0 is near |
-| `Andross_AndExplosion_Update` | 719:P0, 720:P0, 741:P0, 742:P0, 743:P0, 744:P0, 746:P0, 747:P0, 749:P0, 753:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Andross_AndBrain_Update` | 814:P0, 815:P0, 816:P0, 847:P0, 852:P0, 853:P0, 855:P0, 860:P0, 889:P0, 890:P0, 894:P0, 895:P0, 899:P0, 900:P0, 901:P0, 902:P0, 910:P0, 918:P0, 919:P0, 939:P0, 940:P0, 941:P0, 986:P0, 1011:P0, 1012:P0, 1013:P0, 1015:P0, 1016:P0, 1017:P0, 1019:P0, 1026:P0, 1060:P0, 1082:P0, 1083:P0, 1084:P0, 1085:P0, 1086:P0, 1087:P0, 1088:P0, 1089:P0, 1090:P0, 1091:P0, 1092:P0, 1093:P0, 1094:P0, 1099:P0, 1130:P0, 1131:P0, 1136:P0, 1138:P0, 1139:P0, 1166:P0, 1167:P0, 1187:P0, 1189:P0 | sim | site | boss; sets player 0 to START_360 and moves its camera |
-| `Andross_AndBrain_Update` | 892:MC, 1053:MC, 1126:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Andross_AndBrain_Update` | 1100:PA | flow | site | Camera_Update360 for player 0 as the brain dies: level complete is one player's (WP-16) |
-| `Andross_AndBrain_Draw` | 1335:P0 | view | name | drawing by player 0 |
-| `Andross_8018C390` | 1438:MC | input | site | any button on gMainController shortens a cutscene timer |
-| `Andross_Effect396_Update` | 1609:P0, 1621:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Andross_8018D0D8` | 1690:P0, 1691:P0, 1692:P0, 1693:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Andross_8018D2B0` | 1745:P0, 1746:P0 | sim | site | sets player 0 state |
-| `Andross_AndAndross_Update` | 1930:P0, 1997:P0, 2006:P0, 2007:P0, 2008:P0, 2033:P0, 2034:P0, 2035:P0, 2643:P0, 2644:P0, 2645:P0, 2924:P0, 2944:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Andross_AndAndross_Update` | 2639:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Andross_AndDoor_Update` | 3661:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Andross_801939A0` | 3790:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Andross_ActorTeamArwing_Update` | 285:P0, 286:P0, 287:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Andross_AndBrainWaste_Update` | 358:P0, 359:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Andross_80188A4C` | 460:P0, 483:P0, 484:P0 | sim | site | boss part; sets player 0 to STANDBY after the bonus |
+| `Andross_80188CB8` | 543:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Andross_80189214` | 606:P0, 616:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Andross_AndBossTimer_Update` | 637:P0, 638:P0 | flow | name | boss timer on player 0 |
+| `Andross_AndJamesTrigger_Update` | 666:P0, 668:P0, 669:P0, 670:P0, 677:P0, 678:P0 | flow | site | James appears when player 0 is near |
+| `Andross_AndExplosion_Update` | 720:P0, 721:P0, 742:P0, 743:P0, 744:P0, 745:P0, 747:P0, 748:P0, 750:P0, 754:P0 | flow | read | escape explosions follow and kill player 0: the escape is a cutscene (WP-19, #17), not changed in #136 |
+| `Andross_AndBrain_Update` | 815:P0, 816:P0, 817:P0, 848:P0, 853:P0, 854:P0, 856:P0, 861:P0, 890:P0, 891:P0, 895:P0, 896:P0, 900:P0, 901:P0, 902:P0, 903:P0, 911:P0, 919:P0, 920:P0, 940:P0, 941:P0, 942:P0, 987:P0, 1012:P0, 1013:P0, 1014:P0, 1016:P0, 1017:P0, 1018:P0, 1020:P0, 1027:P0, 1061:P0, 1083:P0, 1084:P0, 1085:P0, 1086:P0, 1087:P0, 1088:P0, 1089:P0, 1090:P0, 1091:P0, 1092:P0, 1093:P0, 1094:P0, 1095:P0, 1100:P0, 1131:P0, 1132:P0, 1137:P0, 1139:P0, 1140:P0, 1167:P0, 1168:P0, 1188:P0, 1190:P0 | sim | site | boss; sets player 0 to START_360 and moves its camera; catches and drains player 0 only, it can hold one player: needs a choice (#136) |
+| `Andross_AndBrain_Update` | 893:MC, 1054:MC, 1127:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Andross_AndBrain_Update` | 1101:PA | flow | site | Camera_Update360 for player 0 as the brain dies: level complete is one player's (WP-16) |
+| `Andross_AndBrain_Draw` | 1336:P0 | view | name | drawing by player 0 |
+| `Andross_8018C390` | 1439:MC | input | site | any button on gMainController shortens a cutscene timer |
+| `Andross_Effect396_Update` | 1610:P0, 1622:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Andross_8018D0D8` | 1691:P0, 1692:P0, 1693:P0, 1694:P0 | ok | read | tests player 0, CoopHits_AndrossReach does the others (#136) |
+| `Andross_8018D2B0` | 1747:P0, 1748:P0 | sim | site | sets player 0 state |
+| `Andross_AndAndross_Update` | 1932:P0, 1999:P0, 2008:P0, 2009:P0, 2010:P0, 2035:P0, 2036:P0, 2037:P0, 2645:P0, 2646:P0, 2647:P0, 2926:P0, 2946:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Andross_AndAndross_Update` | 2641:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Andross_AndDoor_Update` | 3663:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Andross_801939A0` | 3792:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 
 ### `src/overlays/ovl_i6/fox_sy.c`
 

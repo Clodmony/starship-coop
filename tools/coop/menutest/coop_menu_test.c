@@ -169,6 +169,7 @@ static struct {
     int hostCalls;
     int connectCalls;
     uint16_t lastPort;
+    uint32_t lastTimeoutMs; // what the menu gave the last transport it opened
     uint32_t picksSent;
     bool failPicks; // the transport's window is full
     bool dropPongs; // nobody gets a round trip
@@ -231,9 +232,14 @@ static void SimT_Close(CoopTransport* t) {
 
 static const CoopTransportOps sSimOps = { SimT_Send, SimT_Poll, SimT_Disconnect, SimT_Stats, SimT_Close };
 
-static CoopTransport* Sim_Transport(int addr) {
+// The menu's own config, as the real transports would get it.
+static CoopTransport* Sim_Transport(int addr, const CoopNetConfig* menuConfig) {
     CoopNetConfig config = { 0 };
     SimTransport* st = calloc(1, sizeof(*st));
+
+    if (menuConfig != NULL) {
+        config = *menuConfig;
+    }
 
     st->base.ops = &sSimOps;
     st->addr = addr;
@@ -248,26 +254,26 @@ static CoopTransport* Sim_Transport(int addr) {
 }
 
 static CoopTransport* Sim_Host(uint16_t port, const CoopNetConfig* config) {
-    (void) config;
     sNet.hostCalls++;
     sNet.lastPort = port;
-    return sNet.failHost ? NULL : Sim_Transport(SIM_HOST);
+    sNet.lastTimeoutMs = config != NULL ? config->timeoutMs : 0;
+    return sNet.failHost ? NULL : Sim_Transport(SIM_HOST, config);
 }
 
 // The node a client gets goes round, so a client that left can come back while others stay.
 static CoopTransport* Sim_Connect(const char* host, uint16_t port, const CoopNetConfig* config) {
     int addr;
 
-    (void) config;
     sNet.connectCalls++;
     sNet.lastPort = port;
+    sNet.lastTimeoutMs = config != NULL ? config->timeoutMs : 0;
     if (strcmp(host, SIM_ADDRESS) != 0) {
         return NULL;
     }
     for (addr = sNet.nextClient;; addr = addr + 1 == SIM_NODES ? SIM_FIRST_CLIENT : addr + 1) {
         if (sNet.cores[addr] == NULL) {
             sNet.nextClient = addr + 1 == SIM_NODES ? SIM_FIRST_CLIENT : addr + 1;
-            return Sim_Transport(addr);
+            return Sim_Transport(addr, config);
         }
     }
 }
@@ -486,8 +492,12 @@ static void Test_BadInput(void) {
     // The wrong input leaves nothing behind.
     EXPECT(CoopMenu_Host(HOST, "65535"), "the top port was refused");
     EXPECT(sNet.lastPort == 65535, "the port did not reach the transport");
+    // A level load stalls the game, and the transport's 5 s default is not the menu's choice (#132).
+    EXPECT(sNet.lastTimeoutMs == COOP_MENU_TIMEOUT_MS, "the host's transport did not get the menu's time-out");
     EXPECT(View(HOST)->message[0] == '\0', "the old message stayed");
+    sNet.lastTimeoutMs = 0;
     EXPECT(CoopMenu_Join(A, SIM_ADDRESS, "45000", sNet.now), "joining did not start");
+    EXPECT(sNet.lastTimeoutMs == COOP_MENU_TIMEOUT_MS, "the client's transport did not get the menu's time-out");
     EXPECT(View(A)->message[0] == '\0', "the old message stayed");
     Menus_Close();
 }
@@ -806,40 +816,19 @@ static void Test_Refused(void) {
     Menus_Close();
 }
 
-static void Test_RefusedPlatform(void) {
+// A different platform gets in with a warning on both sides (decision 0010).
+static void Test_WarnedPlatform(void) {
     const CoopMenuView* v;
 
-    sScenario = "refused_platform";
+    sScenario = "warned_platform";
     Menus_Init(0);
     Start_Host();
     sPlatform = "Other platform";
     EXPECT(CoopMenu_Join(A, SIM_ADDRESS, "45000", sNet.now), "joining did not start");
     Run(500);
     v = View(A);
-    EXPECT(v->phase == COOP_MENU_IDLE, "a refused client stayed");
+    EXPECT(v->phase == COOP_MENU_JOINED, "a client of another platform was not let in");
     Expect_Has(v->message, "Different platforms: host ", "the client is not told what differs");
-    Expect_Has(v->message, "joining player Other platform", "the client is not told what differs");
-    v = View(HOST);
-    EXPECT(v->phase == COOP_MENU_HOSTING, "a refusal ended hosting");
-    Expect_Has(v->status, "1 of 4", "the host counts the refused player");
-    Expect_Has(v->message, "A player was refused.", "the host is not told");
-    Expect_Has(v->message, "joining player Other platform", "the host is not told what differs");
-    Menus_Close();
-}
-
-static void Test_AnyPlatform(void) {
-    const CoopMenuView* v;
-
-    sScenario = "any_platform";
-    Menus_Init(0);
-    Start_Host();
-    sPlatform = "Other platform";
-    CoopSession_AnyPlatform(true);
-    EXPECT(CoopMenu_Join(A, SIM_ADDRESS, "45000", sNet.now), "joining did not start");
-    Run(500);
-    CoopSession_AnyPlatform(false);
-    v = View(A);
-    EXPECT(v->phase == COOP_MENU_JOINED, "the test switch did not let the client in");
     Expect_Has(v->message, "joining player Other platform", "the client is not told what differs");
     v = View(HOST);
     Expect_Has(v->status, "2 of 4", "the host does not count the player");
@@ -854,7 +843,7 @@ static void Test_NoHost(void) {
     sScenario = "no_host";
     Menus_Init(0);
     EXPECT(CoopMenu_Join(A, SIM_ADDRESS, "45000", sNet.now), "joining did not start");
-    Run(4000);
+    Run(COOP_MENU_TIMEOUT_MS - 1000);
     EXPECT(View(A)->phase == COOP_MENU_CONNECTING, "gave up too early");
     Run(2000);
     v = View(A);
@@ -1237,8 +1226,7 @@ static int Run_Sim(void) {
     Test_Leave();
     Test_HostCloses();
     Test_Refused();
-    Test_RefusedPlatform();
-    Test_AnyPlatform();
+    Test_WarnedPlatform();
     Test_NoHost();
     Test_HostFull();
     Test_OneTick();

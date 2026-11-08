@@ -72,11 +72,13 @@ the line, and what else it plays changes with a second player, so a silent limit
 must have equal state hashes on every frame, RNG included, so the draws behind a line repeat. Each run is one game: this
 says nothing about two clients.
 
-`effects` is the test for #100. It flies input by rule into Corneria, on rails or with --all-range in all-range, with
+`effects` is the test for #100 and #136. It flies input by rule into Corneria, on rails or with --all-range in all-range, with
 SF64_COOP_EFFECT_PROBE (src/port/coop/test/effect_probe.h): each case of EFFECT_CASES places an effect on one player
 and the game runs it. Each case must hit the target and nobody else, or do what EFFECT_CASES says. Player 0 is the
 control: a case that does not hit it says nothing about the others. Only the spawn is forced, so this shows Corneria
-running the effects of other levels, not those levels.
+running the effects of other levels, not those levels. Three cases are not effects (#136): `texline` places a textured
+line and runs TexturedLine_Update; `bo-beam` and `and-reach` call the co-op test of the Bolse base's beam and of
+Andross alone, for want of their boss, so they cannot hit player 0.
 
 Stopping the game can cut the last line of the trace; only that line may be cut.
 """
@@ -96,7 +98,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools" / "coop"))
 from hash_check import GENERATED_L, describe, first_difference, read_log, write_generated_replay  # noqa: E402
-from replay import FLYING as PAST_INTRO, LEVEL, MENUS, check_start, game_env, read_report, recorded_start  # noqa: E402
+from replay import FLYING as PAST_INTRO, LEVEL, MENUS, check_start, crashed, game_env, read_report, recorded_start  # noqa: E402,E501
+from replay import stop_game  # noqa: E402
 from run_folder import make_run_folder  # noqa: E402
 EXE_CANDIDATES = [
     "build/x64/Release/Starship.exe",
@@ -165,10 +168,11 @@ LOW_LINES = range(20304, 20310)  # gMsg_ID_20304 to gMsg_ID_20309, as gRadioMsgI
 EFFECT_CASES = {
     "laser": "hit", "laser-roll": "deflect", "shot398": "hit", "shot398-roll": "both", "e347": "hit", "e376": "hit",
     "e395": "hit", "e399": "hit", "me369": "hit", "me370": "hit", "me371": "hit", "bo397": "hit", "bo397-roll": "none",
-    "bo397-p0-roll": "hit-unless-p0", "zo374": "hit", "gorgon-beam": "hit", "out": "none",
+    "bo397-p0-roll": "hit-unless-p0", "zo374": "hit", "gorgon-beam": "hit", "texline": "hit",
+    "bo-beam": "hit-unless-p0", "and-reach": "hit-unless-p0", "out": "none",
 }
 EFFECT_ONE_TARGET = ("out",)  # the last player only
-EFFECT_FLIGHT = 2825  # 17 cases, 2 players, 40 frames each, from all-range (325 in) and with U-turns in between
+EFFECT_FLIGHT = 3125  # 20 cases, 2 players, 40 frames each, from all-range (325 in) and with U-turns in between
 
 
 def find_exe(given):
@@ -219,24 +223,22 @@ def play(args):
     start = time.monotonic()
     proc = subprocess.Popen([str(exe)], cwd=run_dir, env=env)
     report = None
+    ended_itself = True
     try:
         while report is None and proc.poll() is None and time.monotonic() - start < args.timeout:
             time.sleep(1)
             report = read_report(report_path)
     finally:
-        if proc.poll() is None:
-            # Only the process this script started.
-            proc.terminate()
-            try:
-                proc.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait()
+        ended_itself = stop_game(proc)
     elapsed = time.monotonic() - start
     report = report or read_report(report_path)
     if report is None:
         print(f"player_trace: FAIL, no replay report after {elapsed:.0f}s (exit code {proc.returncode}); "
               f"the game crashed, hung or does not have the replay code")
+        return None
+    if crashed(proc, ended_itself):
+        print(f"player_trace: FAIL, CRASH: the game ended on its own with exit code {proc.returncode}, after its "
+              f"report said {report['result']}")
         return None
     check_start(report, start_at)
     result = report["result"]

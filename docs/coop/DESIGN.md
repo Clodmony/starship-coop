@@ -94,6 +94,7 @@ src/port/coop/
   sync/      the sync model from decision 0002 (input exchange + state hashes, or host snapshots)
   game/      game glue: player count apart from camera count, player 2+ spawn, input routing, HUD, rules
   ui/        ImGui menu entries: host, join, status (the menubar is in src/port/ui/ImguiUI.cpp)
+  log/       the co-op log of a session, one file per player, streamed between the players (#172)
   test/      replay files, state hashing, harness hooks used by tools/coop/
 ```
 
@@ -129,6 +130,8 @@ Each needs a decision record before code depends on it. Proposals in brackets.
 
 Deterministic lockstep, [decision 0002](decisions/0002-sync-model.md), accepted on one-PC evidence. Every client runs
 the whole simulation. Only inputs travel, plus a state hash per frame to detect desyncs, so all clients need the same
-build, ROM, simulation CVars and platform, and a platform difference refuses the connection until a comparison has shown
-that the two compute the same game. Before a first public release: the two-machine run, and `hash_check.py builds` and
+build, ROM and simulation CVars. A platform difference only warns
+([decision 0010](decisions/0010-cross-platform-sessions.md)): nobody has compared two platforms, and the desync check is
+what shows whether two compute the same game. Before a first public release: the two-machine run, and
+`hash_check.py builds` and
 `rates` on Windows Release (#145). A difference that cannot be found and removed reopens the choice through a new record.

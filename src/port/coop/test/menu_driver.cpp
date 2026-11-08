@@ -31,6 +31,12 @@ enum class Step { None, Press, Release, Type };
 bool sActive;
 std::string sCommandFile;
 std::string sStateFile;
+std::string sStallFile;
+// Session ticks: the time of the last one with a session open, the longest gap so far, and the count.
+bool sTicking;
+uint32_t sLastTickMs;
+uint32_t sLongestGapMs;
+uint32_t sTicks;
 long sCommandOffset;
 std::map<std::string, Item> sItems;
 std::map<std::string, Text> sTexts;
@@ -38,11 +44,15 @@ std::string sLastState;
 Step sStep;
 std::string sTyping;
 
-void Write_Line(const std::string& line) {
-    if (FILE* f = fopen(sStateFile.c_str(), "a")) {
+void Append(const std::string& file, const std::string& line) {
+    if (FILE* f = fopen(file.c_str(), "a")) {
         fputs(line.c_str(), f);
         fclose(f);
     }
+}
+
+void Write_Line(const std::string& line) {
+    Append(sStateFile, line);
 }
 
 // False if the file holds no whole new line.
@@ -128,17 +138,35 @@ void Write_State() {
 
 } // namespace
 
-void CoopMenuDriver_Init() {
+void CoopMenuDriver_Init(void) {
     const char* folder = getenv("SF64_COOP_TEST_MENU");
 
     if (folder != nullptr && folder[0] != '\0') {
         sActive = true;
         sCommandFile = std::string(folder) + "/menu-commands.txt";
         sStateFile = std::string(folder) + "/menu-state.txt";
+        sStallFile = std::string(folder) + "/menu-stall.txt";
     }
 }
 
-void CoopMenuDriver_Frame() {
+void CoopMenuDriver_Tick(uint32_t nowMs, bool inSession) {
+    if (!sActive) {
+        return;
+    }
+    sTicks++;
+    if (!inSession) {
+        sTicking = false;
+        return;
+    }
+    if (sTicking && nowMs - sLastTickMs > sLongestGapMs) {
+        sLongestGapMs = nowMs - sLastTickMs;
+        Append(sStallFile, "stall " + std::to_string(sLongestGapMs) + " tick " + std::to_string(sTicks) + "\n");
+    }
+    sTicking = true;
+    sLastTickMs = nowMs;
+}
+
+void CoopMenuDriver_Frame(void) {
     ImGuiIO* io;
 
     if (!sActive) {
