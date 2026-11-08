@@ -2252,7 +2252,7 @@ Guess:
 Unknown:
 
 - Why the first boot in an empty folder did not write. It no longer matters for the seeds.
-- Windows Release, and any second compiler: not run. Other levels: not run. Levels with two scrolling surfaces (`fox_bg.c`,
+- Any second compiler: Windows Release with MSVC 19.44 ran on 2026-11-08 (#145) and matched, see QA.md. Other levels: not run. Levels with two scrolling surfaces (`fox_bg.c`,
   Aquas) would put more into `masterDL`.
 - Whether the `Map_Prologue_Update` read changes what a player sees. It does not reach the hash in these runs.
 
@@ -2908,6 +2908,41 @@ A line of the state category, as written: `2026-11-08 00:37:47.608 2419 Corneria
   run (2026-11-08); `left`, `stall` and `desync` of `lockstep_test.py` ran with the log on in earlier branches only
   without it.
 - What the log costs at real time with a window: the test games run at speed 8 with no draw.
+
+### 2026-11-08, #169, frame interpolation: the skip flag and the recording path stack
+
+`src/port/interpolation/FrameInterpolation.cpp` builds a tree of matrix ops each drawn frame. `current_path` is a
+stack of `Path*`: `FrameInterpolation_StartRecord` clears it and pushes the root, `RecordOpenChild` pushes a child,
+`RecordCloseChild` pops. Both record calls early-return when `is_recording` is false.
+
+Observed (file:line):
+
+- `is_recording` is a single on/off flag set directly by `FrameInterpolation_ShouldInterpolateFrame`
+  (FrameInterpolation.cpp:426). It has no save/restore and no nesting. A `(false)` turns recording off, a `(true)`
+  turns it fully on, whoever last called it.
+- The game uses `(false)`/`(true)` as "skip this bit" guards in many `@port` spots, and these nest. Outer, whole-frame
+  skips: the camera "big jump" wraps all of `Display_Update` when the view teleports (fox_display.c:1927), on a pause
+  transition or a level restart. Inner skips: `Object_SetMatrix` for the "banned" Corneria buildings
+  (fox_edisplay.c:979), `Effect_Effect382_Draw` (fox_effect.c:223), backdrops (fox_bg.c), and more. An inner skip's
+  `(true)` re-enables recording while the outer skip meant it off.
+
+Derived:
+
+- When that happens, an `OpenChild` that the outer skip swallowed pushed nothing, but its matching `CloseChild` now
+  runs with recording on and pops. `current_path` loses an entry it never gained, and underflows past the root. The
+  next `RecordOpenChild` calls `current_path.back()` on an empty vector (its abort in a checked Debug build, #169's
+  first sighting), or a later frame faults freeing the corrupted tree in `Path::~Path()` (the second sighting).
+- This is upstream Starship's recording/skip design, not co-op code; co-op off hits it too, and so does a build that
+  draws. #141 fixed the sister case on the interpolation matrix stack by stopping at its ends. Nothing reads
+  `current_path` back for a drawn matrix, so refusing to pop the root changes no pixel.
+
+Reproduced on purpose (deterministic, 1 player, no session, no draw): a generated replay that flies the Corneria
+intro on rails, then taps START every 10 frames from flight frame 1200 to force pause-transition big jumps while
+scenery is on screen. On `coop` it crashes with signal 11 about two frames into a big jump (the underflow is logged
+at the same game frame the next `OpenChild` aborts). The one-line guard below runs the same replay to the end.
+
+Fix: `RecordCloseChild` never pops the root (`current_path.size() <= 1` returns). One `// COOP:` line in the upstream
+file; drafted as an upstream report.
 
 ### 2026-11-05, #8 (WP-10), player count apart from camera count
 
@@ -3673,6 +3708,31 @@ Unknown:
   beyond `gObjectLoadIndex`, audio). A desync that the hash misses would show up as equal hashes with different play.
 - `gScenery360` is only hashed in `LEVELMODE_ALL_RANGE`; Andross allocates it mid-level
   (`src/overlays/ovl_i6/fox_andross.c:4055`), where it may not be hashed.
+
+### 2026-11-08, #145, Windows Release matches itself, Debug and every rate
+
+Identity: ROM US 1.0, game code at `4283e076`, Windows 11, MSVC 19.44, Release and Debug from `build.py`, DirectX 11,
+two players by `gCoopDebugPlayerCount`, input by rule through the menus, drawn in real time.
+
+Observed:
+
+- `hash_check.py builds`: two Release runs equal, and Debug equal to Release, on every frame of Corneria's rail section
+  (10500) and its all-range section (8000).
+- `hash_check.py rates` on Release: 60, 120, 144 and 360 fps each equal to 30 fps on every frame of both sections,
+  each run logging the draws its rate asks for.
+- A Debug build and a Release build in the same Visual Studio build folder (`build/x64/Debug`, `build/x64/Release`)
+  ran as two builds; `build.py` reported `build: OK` for each.
+
+Derived:
+
+- The Release difference fixed in #144, and the interpolation fault of #141, do not show on MSVC either.
+
+Unknown:
+
+- Windows against Linux: still never compared. These runs say each platform agrees with itself, not with the other.
+- The stray reads listed on #145 (upstream code) are not touched by this run; a hash cannot see a write that lands on
+  memory nothing hashes.
+- Other levels than Corneria.
 
 ### 2026-11-07, #2, decision 0002 accepted: what a platform refusal looks like
 
