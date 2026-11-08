@@ -4114,7 +4114,7 @@ void Player_MoveArwingOnRails(Player* player) {
 
     sp68.x = 0.0f;
     sp68.y = 0.0f;
-    sp68.z = -player->boostSpeed;
+    sp68.z = -CoopPlayers_PathBoostSpeed(player); // COOP: the team's boost and brake (#194)
 
     Matrix_MultVec3fNoTranslate(gCalcMatrix, &sp68, &sp50);
 

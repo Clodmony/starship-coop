@@ -75,8 +75,11 @@ struct Player;
 // Call at the start of Player_UpdatePath. Nonzero means `player` is a co-op player other than player 0: it took player
 // 0's place on the path and Player_UpdatePath must return, because the rest would write the path globals and move the
 // path by this player's speed. The player keeps its own x and y inside the flight box and its own camDist, so boost
-// and brake move it ahead of and behind player 0 without changing the speed along the path.
+// and brake move it ahead of and behind player 0; the speed along the path is the team's (CoopPlayers_PathBoostSpeed).
 int32_t CoopPlayers_FollowPath(struct Player* player);
+
+// The boostSpeed Player_MoveArwingOnRails flies with: the team's in a session (#194), the player's own otherwise.
+float CoopPlayers_PathBoostSpeed(const struct Player* player);
 
 // Points gInputHold, gInputPress and gControllerRumble at player `index`, in co-op only: its pad slot, which holds that
 // player's input for this frame whoever steers it (input.h), and its rumble flag.
