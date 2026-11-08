@@ -479,6 +479,41 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-08, #191, the level intro skip in a session: the jump back to Play_Init in lockstep
+
+Identity: ROM US 1.0, on top of `4d638b13`, Linux, GCC 16, Release, no window, two games over loopback, input delay 3,
+Corneria only. One run of `lockstep_test.py --only save`, nothing else of lockstep_test.py.
+
+Observed:
+
+- The skip (`src/engine/fox_play.c`, `Play_Main`, `PLAY_UPDATE`) sets `gPlayState = PLAY_INIT` and
+  `D_ctx_8017782C = false`; the next frame's `Play_Init` then goes past `Player_Setup`'s intro branch, which only runs
+  while that flag is set (`fox_play.c:4817`), so player 0 starts in `PLAYERSTATE_ACTIVE`.
+- Start in the intro never pauses: `Player_Update` sets `gPauseEnabled = false` every frame in `PLAYERSTATE_LEVEL_INTRO`
+  (`fox_play.c:5960-5962`), and the pause test comes after the skip in the same frame. So the skip and a pause cannot
+  both happen on one frame.
+- In the run, with the host's save cleared and the client pressing Start on lockstep frame 300: both lockstep logs show
+  play state 1 (`PLAY_INIT`) on frame 301 and 2 everywhere else in the first 900 frames; both hash logs have a second
+  `# level` line, with the same seeds on both games (`5224,712,23369,4444,5555,6666`, the first was the test's
+  `1111,...,6666`); the hash was equal on all 900 frames and neither game wrote a desync report.
+- The trace of both games: player 0 in `LEVEL_INTRO` on rows 1 to 301, `INIT` on row 302, and on row 303 player 0 and
+  player 2 are `ACTIVE` with player 2 no longer parked: the co-op player joins on the first frame player 0 flies, as
+  at the end of a played intro (`CoopPlayers_SkipUpdate`). The client looks through its own player from then on
+  (`# view` lines).
+- With Corneria cleared only in the client's save, Start from either player (frames 300 and 360) changed nothing: play
+  state 2 throughout, player 0 in the intro for all 900 frames, player 2 parked, hash equal.
+
+Derived:
+
+- The jump back to `PLAY_INIT` is safe in lockstep as far as this run goes: it is an ordinary lockstep frame (lockstep
+  arms once, `CoopSyncGame_HoldFrame`), `CoopPlayers_LevelInit` keeps the roster's count, and every game takes it on the
+  same frame because the Start and the flag are the same on every game.
+
+Unknown:
+
+- Other levels' intros, three or four players, the real menu's way into a level (`CoopMenuGame_Level`), Windows, two PCs.
+- A later level of the same session: the level start names only its own level, so there the skip stays off.
+
 ### 2026-11-08, #7, decision 0007 walk-through: what had moved since the record was written
 
 Read in `b3169ab6` (checkout of `coop`), no build, nothing run. This is the re-check behind the owner's walk-through of
@@ -2538,7 +2573,8 @@ Observed (reads and a crash):
 - Any player's Start pauses and resumes. The cursor, retry and quit of the pause menu stay on player 0, and so does Start
   in the all-range intros (`fox_bo.c:342`, `fox_fo.c:309`, `fox_ve2.c:146`).
 - In co-op nobody skips a level intro, on the host either, as the skip reads a save the clients do not share. The rule for
-  saves is proposed in decision 0009, and carrying the host's bit in the level start would fit it.
+  saves is proposed in decision 0009, and carrying the host's bit in the level start would fit it. [changed, see
+  2026-11-08, #191: the level start carries it now]
 - One player lost ends the session for everyone. Nothing lets three players go on as two.
 - After the end the level goes on in each game, the others idle: what Leave already did (#126).
 - A wait shows in the co-op window after a second, and it ends after 10 s, 60 s before frame 0.

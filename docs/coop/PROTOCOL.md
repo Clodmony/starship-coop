@@ -2,7 +2,7 @@
 
 Status: the transport (WP-20), the session handshake (WP-21), the characters (WP-34), the level start (WP-24),
 lockstep (WP-22), the desync check (WP-23), the co-op log (#172) and the handover (#189) exist;
-`COOP_PROTOCOL_VERSION` is 6. Other sync and game messages come
+`COOP_PROTOCOL_VERSION` is 7. Other sync and game messages come
 with their work packages. This page sets the rules so parallel work does not collide.
 
 ## Rules
@@ -186,14 +186,19 @@ in `src/port/coop/session/session.c`; what the values are is in `src/port/coop/g
 1. The host's game asks for a level with what it holds now. The host turns that down while a client that joined holds
    value 1, or while a client is in the handshake, which ends within 10000 ms. Nothing changes then, and it can ask
    again. So a client never flies with nothing: nobody starts until it has picked or left.
-2. When the host takes it, the level, the phase, the values and the roster of that moment are fixed. A client that
-   leaves afterwards does not change what the others start from, so every game comes to the same player count.
+2. When the host takes it, the level, the phase, the values, the roster and whether the host's save has the level
+   cleared are fixed. A client that leaves afterwards does not change what the others start from, so every game comes
+   to the same player count.
 3. From then on nobody picks and nobody joins, and nothing opens that again yet. A `SESSION_PICK` on its way is dropped
    and counted; the client learns what it holds from the level start. A hello gets `SESSION_REFUSE` with bit 9, whatever
    its identity.
 4. The host sends the message to every client that joined, on the next poll, and tries again on the next one while the
    window is full. Its own game hears of it on that poll too. Each game then enters the level from the message, the
    host's as well, so no game goes by its own history.
+5. The cleared flag is what Start in that level's intro reads in a session, on every game, in place of the game's own
+   save (`normalClear` of the level, `src/engine/fox_play.c`, #191): with it set, any player's Start skips the intro.
+   It names only the level of this message; a later level of the session goes without a skip, until the host's whole
+   save is shared (S1, #22).
 
 | Size | Field |
 |---|---|
@@ -201,6 +206,7 @@ in `src/port/coop/session/session.c`; what the values are is in `src/port/coop/g
 | 1 | Phase: `gLevelPhase` |
 | 4 | Roster, as in Characters |
 | 4 v | The values, each a little-endian 32-bit integer, in the order of the table in `level_start.c`: `COOP_LEVEL_START_VALUES`, 87 now |
+| 1 | Cleared: 1 when the host's save has this level cleared (`normalClear`), else 0 (since version 7) |
 
 Each game goes to the level by itself, as soon as it hears, and what holds them together from there on is the first
 frame of lockstep, below.
@@ -209,7 +215,7 @@ What does not fit, as before:
 
 - A second level start, one before the welcome, and one from a client are dropped and counted (`CoopSession_Ignored`).
 - A client ends with `BAD_MESSAGE` on a level start of another size, with a level of 20 or more, with a roster that
-  `SESSION_ROSTER` could not hold, or with value 1 anywhere in the roster.
+  `SESSION_ROSTER` could not hold, with value 1 anywhere in the roster, or with a cleared byte other than 0 or 1.
 
 ## Lockstep
 
@@ -419,7 +425,7 @@ Nothing is passed on: with three players a client gets the host's report, the ho
 | 0x0013 | `SESSION_PICK` | client to host | u8 character asked for (3 to 5; 2 is refused as taken) | WP-34 |
 | 0x0014 | `SESSION_PICK_REFUSE` | host to client | u8 character asked for (2 to 5). The only reason is that someone else holds it. | WP-34 |
 | 0x0015 | `SESSION_ROSTER` | host to client | u8 for each of the 4 players, see Characters | WP-34 |
-| 0x0016 | `SESSION_LEVEL_START` | host to client | level, phase, roster and values, see Level start | WP-24 |
+| 0x0016 | `SESSION_LEVEL_START` | host to client | level, phase, roster, values and the host's cleared flag, see Level start | WP-24, #191 |
 | 0x0040 | `SYNC_INPUT` | both | frames of each player, see Lockstep | WP-22 |
 | 0x0041 | `SYNC_HASH` | both | the total state hash of the last 10 frames, see Desync check | WP-23 |
 | 0x0042 | `SYNC_DESYNC` | both | the sender's hash of the first differing frame, region by region, see Desync check | WP-23 |

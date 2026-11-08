@@ -24,6 +24,7 @@
 #include "port/hooks/Events.h"
 #include "port/coop/game/players.h" // COOP: player count apart from camera count (WP-10)
 #include "port/coop/sync/lockstep_game.h" // COOP: whether a session runs the frames (#20)
+#include "port/coop/game/level_start.h"   // COOP: the host's save in a session, for the intro skip (#191)
 
 extern float gCurrentScreenWidth;
 extern float gCurrentScreenHeight;
@@ -7206,10 +7207,11 @@ void Play_Main(void) {
                 Play_Update();
             }
 
-            // COOP: not in a session, as the save is each client's own and would part them (#20)
-            if (!CoopSyncGame_IsOn() && (gControllerPress[gMainController].button & START_BUTTON) &&
-                (gPlayer[0].state == PLAYERSTATE_LEVEL_INTRO) &&
-                gSaveFile.save.data.planet[sSaveSlotFromLevel[gCurrentLevel]].normalClear) {
+            // COOP: any player's Start; in a session the host's save, as its level start carried it, since each
+            // client's own save would part them (#191)
+            if (CoopPlayers_PausePressed() && (gPlayer[0].state == PLAYERSTATE_LEVEL_INTRO) &&
+                (CoopSyncGame_IsOn() ? CoopLevelStart_Cleared(gCurrentLevel)
+                                     : gSaveFile.save.data.planet[sSaveSlotFromLevel[gCurrentLevel]].normalClear)) {
                 Audio_ClearVoice();
                 Audio_SetEnvSfxReverb(0);
                 Play_ClearObjectData();
