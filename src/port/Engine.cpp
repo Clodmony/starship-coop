@@ -47,6 +47,7 @@
 #include "port/coop/test/view_trace.h"   // COOP: what a client shows and hears, for tests (#30)
 #include "port/coop/test/stop_signal.h"  // COOP: clean exit on SIGTERM in test runs (#71)
 #include "port/coop/test/join_driver.h" // COOP: scripted join flow for tests (WP-24)
+#include "port/coop/math/sincos.h"          // COOP: the N64's sine and cosine in a session (#186)
 #include "port/coop/test/lockstep_driver.h" // COOP: scripted input in a session, for tests (#20)
 #include "port/coop/sync/lockstep_game.h"   // COOP: frames in lockstep (#20)
 #include "port/coop/log/log_game.h"   // COOP: the co-op log of a session (#172)
@@ -689,10 +690,16 @@ extern "C" void GameEngine_GetTextureInfo(const char* path, int32_t* width, int3
 }
 
 extern "C" float __cosf(float angle) throw() {
+    if (CoopMath_InSession()) { // COOP: the same bits on every platform (#186, decision 0011)
+        return CoopMath_Cosf(angle);
+    }
     return cosf(angle);
 }
 
 extern "C" float __sinf(float angle) throw() {
+    if (CoopMath_InSession()) { // COOP: as __cosf (#186)
+        return CoopMath_Sinf(angle);
+    }
     return sinf(angle);
 }
 

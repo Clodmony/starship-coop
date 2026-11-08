@@ -960,7 +960,10 @@ def sc_log(args, folder):
         want = {"session", "net", "lockstep", "desync", "game", "state", "log"}
         expect(want <= categories, f"player {player}'s log lacks {sorted(want - categories)}")
         texts = "\n".join(own)
-        for phrase in ("lockstep started at frame 0", "level start: level 0", "desync check on", "log closed"):
+        # The session's sine (decision 0011, #186): on before the level, and the N64 sine of 0x406a927f is bf000000
+        # everywhere, the value a Windows host needed where glibc gave beffffff.
+        for phrase in ("lockstep started at frame 0", "level start: level 0", "desync check on", "log closed",
+                       "the N64's sine and cosine are on for this session (sin of 0x406a927f = 0xbf000000)"):
             expect(phrase in texts, f"player {player}'s log never says `{phrase}`")
         # A test game is told to quit, so its last lines may still be queued; none may have been lost to a full queue.
         closed = [line for line in own if "log closed" in line][-1]

@@ -84,6 +84,7 @@ def all_steps():
     steps = [
         Step("checks", SERIAL, ["check.py"]),
         Step("package", SERIAL, ["package_test.py"]),
+        Step("math", SERIAL, ["math_test.py"]),
         Step("net", SERIAL, ["net_test.py"], "build", "net"),
         Step("session", SERIAL, ["session_test.py"], "build", "net"),
         Step("steam", SERIAL, ["steam_test.py"], "build", "net"),

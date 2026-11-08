@@ -53,12 +53,14 @@ Unknown: whether frame 5 is also a sine or cosine result; whether more differenc
 
 ## Decision
 
-Option 1. While a session has a joined peer, `__sinf`, `__cosf` (and so `SIN_DEG` and `COS_DEG`) return the result of the
-N64 algorithm; otherwise they call the C library as before. The switch goes on when the menu sees `COOP_SESSION_EV_JOINED`
-(host: the first client; client: the host let it in) and off when the menu ends the session, so both games switch before
-any level starts. The code is `src/port/coop/math/`, built with `-ffp-contract=off` where the compiler has it, with
-constants given as bit patterns and no pointer type punning. `Engine.cpp` changes in the four wrappers only, marked
-`// COOP:`.
+Option 1. While a session runs, `__sinf`, `__cosf` (and so `SIN_DEG` and `COS_DEG`) return the result of the N64
+algorithm; otherwise they call the C library as before. The switch goes on when the game is told to enter the level
+(`CoopMenuGame_EnterLevel`, on every game, before the level is set up) and off when the session ends
+(`CoopMenuGame_SessionEnded`), so both games switch before the first value of the level is computed, and a menu or a
+single-player game never sees it. The game writes a line to the co-op log when it goes on, with the N64 sine of
+`0x406a927f`: it is `0xbf000000` on every platform, so two logs side by side show that both games use it. The code is
+`src/port/coop/math/`, built with `-ffp-contract=off` where the compiler has it, with constants given as bit patterns and
+no pointer type punning. `Engine.cpp` changes in its two wrappers only, marked `// COOP:`.
 
 ## Consequences
 

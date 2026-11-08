@@ -5,9 +5,12 @@
 #include "menu_game.h"
 
 #include <SDL2/SDL.h>
+#include <string.h>
 
 #include "global.h"
 #include "port/coop/game/players.h"
+#include "port/coop/log/coop_log.h"
+#include "port/coop/math/sincos.h"
 #include "port/coop/sync/lockstep_game.h"
 #include "port/coop/test/menu_driver.h"
 #include "port/coop/test/switches.h"
@@ -78,12 +81,30 @@ static void Link_Identity(int peer, char* out, size_t cap) {
 
 static const CoopSyncLink sLink = { Link_Send, Link_Pump, Link_Fail, Link_Identity };
 
+// The N64's sine and cosine from here until the session ends (decision 0011): every game switches before the level is
+// set up. The line is the same on every platform, so two logs side by side show that both games use it.
+static void CoopMenuGame_MathOn(void) {
+    uint32_t in = 0x406A927Fu; // 210 degrees as SIN_DEG hands it to __sinf: the input of the first desync (#186)
+    uint32_t out;
+    float x, s;
+
+    CoopMath_SetSession(1);
+    memcpy(&x, &in, sizeof(x));
+    s = CoopMath_Sinf(x);
+    memcpy(&out, &s, sizeof(out));
+    CoopLog_Write(COOP_LOG_SESSION, false,
+                  "math the N64's sine and cosine are on for this session (sin of 0x%08x = 0x%08x)", (unsigned) in,
+                  (unsigned) out);
+}
+
 void CoopMenuGame_EnterLevel(const CoopLevelStart* start) {
+    CoopMenuGame_MathOn();
     CoopLevelStart_Enter(start);
     CoopSyncGame_Begin(&sLink, start->roster, sMenu->self, sMenu->phase == COOP_MENU_HOSTING);
 }
 
 void CoopMenuGame_SessionEnded(void) {
+    CoopMath_SetSession(0);
     CoopSyncGame_End();
     CoopPlayers_SetRoster(NULL);
 }

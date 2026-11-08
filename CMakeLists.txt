@@ -416,6 +416,12 @@ if(USE_NETWORKING)
     endif()
 endif()
 
+# COOP: the session's sine and cosine (decision 0011, #186) must give the same bits on every target, so no fused
+# multiply-add: GCC and clang may contract by default on targets that have one. MSVC does not contract without /fp:fast.
+if(NOT MSVC)
+    set_source_files_properties(src/port/coop/math/sincos.c PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
+endif()
+
 option(USE_STANDALONE "Build as a standalone executable" OFF)
 option(BUILD_STORMLIB "Build with StormLib support" OFF)
 
