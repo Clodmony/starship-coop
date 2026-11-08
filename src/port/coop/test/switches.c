@@ -20,8 +20,8 @@
 extern unsigned short samples_high;
 extern unsigned short samples_low;
 
-// The frames the game has ticked since boot (src/sys/sys_main.c). It is not simulation state: two clients of one session
-// started their games at different times, so they do not share it.
+// The frames the game has ticked since boot (src/sys/sys_main.c). It is not simulation state: two clients of one
+// session started their games at different times, so they do not share it.
 extern uint32_t gSysFrameCount;
 
 // SF64_COOP_TEST_SPEED=max: the limiter then waits under a microsecond a frame, which is no limit, and at 60 frames a

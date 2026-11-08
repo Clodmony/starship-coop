@@ -2640,8 +2640,8 @@ void Katina_EnemyDraw(ActorAllRange* this) {
     }
 
     // @port: never use low poly
-    // COOP: also in a session. The choice above follows gSysFrameCount, which each client counts from its own boot, and it
-    // lands in iwork, which is hashed (#129)
+    // COOP: also in a session. The choice above follows gSysFrameCount, which each client counts from its own boot, and
+    // it lands in iwork, which is hashed (#129)
     if ((CVarGetInteger("gDisableLOD", 1) == 1) || CoopPlayers_IsCoop()) {
         this->iwork[KA_ACTOR_LOW_POLY] = false;
     }
