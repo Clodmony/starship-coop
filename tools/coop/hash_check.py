@@ -419,7 +419,7 @@ VIEW_SECTIONS = {  # name -> (frames from when player 0 flies, when L goes into 
 # Levels `views --level` flies, from include/sf64level.h: the Arwing levels, on rails or in all-range, where extra players
 # join (players.c, CoopPlayers_SectionSupported). The Landmaster and Blue Marine levels are WP-18 (#16).
 VIEW_LEVELS = {
-    "corneria": 0, "meteo": 1, "sector-x": 2, "area-6": 3, "sector-y": 5, "venom-1": 6, "solar": 7, "zoness": 8, "training": 10,
+    "corneria": 0, "meteo": 1, "sector-x": 2, "area-6": 3, "sector-y": 5, "venom-1": 6, "solar": 7, "zoness": 8, "venom-andross": 9, "training": 10,
     "fortuna": 14, "katina": 16, "bolse": 17, "sector-z": 18, "venom-2": 19,
 }
 VIEW_LEVEL_FRAMES = 2400  # frames from when player 0 flies: 80 seconds of play
