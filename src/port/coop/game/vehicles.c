@@ -13,6 +13,9 @@ extern f32 D_800C9F20;
 extern f32 D_800C9F24;
 extern u8 D_800C9F3C;
 
+// src/overlays/ovl_i5/fox_ma.c
+extern f32 D_MA_801BE250[COOP_TANK_RAILS];
+
 // src/overlays/ovl_i3/fox_aq.c
 extern f32 D_AQ_801C4188;
 extern s32 D_i3_801C4190[10];
@@ -53,7 +56,11 @@ static AquasLevel sAquasLevel;
 static s32 sMarineSwapped = -1;
 static s32 sShotSwapped = -1;
 
+// Only the tank's rail code uses D_MA_801BE250, called from Tank_UpdateOnRails with the tank (NOTES.md, #16).
 static void Tank_Save(CoopTankState* state) {
+    if (gCurrentLevel == LEVEL_MACBETH) {
+        memcpy(state->rails, D_MA_801BE250, sizeof(state->rails));
+    }
     state->boostStart = D_800C9F24;
     state->jetStart = D_800C9F20;
     state->knockback = D_800C9F00;
@@ -63,6 +70,9 @@ static void Tank_Save(CoopTankState* state) {
 }
 
 static void Tank_Load(const CoopTankState* state) {
+    if (gCurrentLevel == LEVEL_MACBETH) {
+        memcpy(D_MA_801BE250, state->rails, sizeof(state->rails));
+    }
     D_800C9F24 = state->boostStart;
     D_800C9F20 = state->jetStart;
     D_800C9F00 = state->knockback;

@@ -5,7 +5,8 @@
 // fox_tank.c keeps its tank's state in file globals, one set for the level. With a second tank each would read and
 // write the other's: knockback, the rail wobble, the first frame of boost, collision flags and two sound gates
 // (decision 0009, table under item 6). Player 0 keeps the globals as upstream; every other player gets its own copy,
-// swapped in around its Player_Update. Co-op off, or player 0: nothing changes.
+// swapped in around its Player_Update. Co-op off, or player 0: nothing changes. In Macbeth the copy also holds
+// D_MA_801BE250, the rail the tank rides: only the tank's own rail code uses it, from that tank's trueZpos.
 //
 // fox_aq.c does the same for the Blue Marine, in two arrays that mix the marine's state with the level's. A marine's
 // steering, lock-on and torpedo are swapped like the tank's, and also around the update of a torpedo it fired. The
@@ -21,7 +22,9 @@ extern "C" {
 #endif
 
 // The fox_tank.c values one tank owns. Laid out without padding, as the state hash reads it as bytes.
+#define COOP_TANK_RAILS 40
 typedef struct {
+    float rails[COOP_TANK_RAILS]; // D_MA_801BE250: Macbeth's rail under this tank, only swapped in Macbeth
     float boostStart;   // D_800C9F24
     float jetStart;     // D_800C9F20
     uint8_t knockback;  // D_800C9F00

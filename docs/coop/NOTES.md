@@ -479,6 +479,42 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-08, #16, Macbeth with two Landmasters
+
+Identity: US 1.0 (SHA-1 `d8b10885...`), Windows 11, MSVC v143, Debug, test games without drawing, on `issue/16-vehicles`
+(base `1df610cd`, with this entry's changes). `python tools/coop/lockstep_test.py --only vehicles`, Macbeth now opened.
+
+Observed:
+
+- Every use of `D_MA_801BE250[40]` (`src/overlays/ovl_i5/fox_ma.c:46`) is in three functions, `Macbeth_801A3300`
+  (`:2869`), `Macbeth_801A3790` (`:2972`) and `Macbeth_801A3C20` (`:3075`), in the level's reset (`:378-380`), and in
+  the tank's own code (`src/engine/fox_tank.c:318-324`, `:860-997`, `:1187-1254`). The three functions are called only
+  from `fox_tank.c` (`:994`, `:1188`, `:1205`, `:1242`), each with the tank's `trueZpos`.
+- What they keep: the rail segment the tank is on (`[6]`, `[16]`, `[20]`, searched forward from the kept one), the
+  rail's x and height under the tank (`[9]`, `[2]`, `[19]`, `[12]`, `[21]`, `[22]`), a tilt smoothed over frames
+  (`[3]`, `[13]`, `[23]`) and a few values set when the segment changes (`[4]`, `[7]`, `[8]`, `[14]`, `[17]`, `[18]`).
+  `[27-29]` are scratch, reset at the start of `func_tank_800444BC` (`fox_tank.c:318-319`).
+- `D_MA_801BE2F0[9]` (`fox_ma.c:47`) is the level's: track switches set by actors (`:1115-1683`), the section flag set
+  by the railway signal (`:3399`). Left shared.
+- Two clients, 6000 frames: host and client hash alike. Player 1 drove on 5573 frames on its own line (x up to 550
+  apart from player 0), lowest shields 89. Player 0 went down twice and the level restarted; player 1 joined again
+  each time. Titania, Aquas, `steer` and `hash_check.py run --players 2 --poke-player 1` pass on the same build.
+
+Done:
+
+- `D_MA_801BE250` is part of each tank's copy (`CoopTankState.rails`), swapped in Macbeth only. Macbeth is opened for
+  players 2-4 (`CoopPlayers_SectionSupported`).
+
+Derived:
+
+- A tank that joins with a zeroed copy starts its segment search at 0, as the level's reset does for player 0.
+
+Unknown:
+
+- Whether player 1 rode a rail section in this run: the trace has no rail state. Its height left the ground (-3) on
+  some frames (28 at frame 1463 of the second try).
+- Macbeth past frame 6000: the train, the boss, the ending with two tanks. Two PCs.
+
 ### 2026-11-08, #16, player 1's torpedo in Aquas
 
 Identity: US 1.0 (SHA-1 `d8b10885...`), Windows 11, MSVC v143, Debug, test games without drawing, on `issue/16-vehicles`

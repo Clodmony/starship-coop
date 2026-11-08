@@ -363,7 +363,7 @@ def sc_steer(args, folder):
 
 # Name, LevelId (include/sf64level.h), and whether co-op has opened it: there player 1 drives too, elsewhere it stays
 # parked (CoopPlayers_SectionSupported, src/port/coop/game/players.c).
-VEHICLE_LEVELS = (("Titania", 12, True), ("Aquas", 13, True), ("Macbeth", 11, False))
+VEHICLE_LEVELS = (("Titania", 12, True), ("Aquas", 13, True), ("Macbeth", 11, True))
 VEHICLE_FRAMES = 6000  # past each level's intro and well into the drive
 STATE_ACTIVE = 3  # PLAYERSTATE_ACTIVE
 
@@ -412,8 +412,9 @@ def torpedo_story(game):
 
 def sc_vehicles(args, folder):
     """The Landmaster and Blue Marine levels with two clients (WP-18, #16), the three levels side by side. Both steer
-    and fire from the join frame on. Hashes equal on every frame. In a level co-op has opened (Titania, Aquas), player 1
-    drives along with player 0; in the others it stays parked (decision 0009, item 6: V2 until the level is proven).
+    and fire from the join frame on. Hashes equal on every frame. In a level co-op has opened, player 1
+    drives along with player 0; in one it has not opened it stays parked (decision 0009, item 6: V2 until the level is
+    proven). All three are open since #16.
     On Aquas player 1 also fires torpedoes: one has to fly and at least one has to home on a target."""
     only = getattr(args, "levels", None)
     levels = [entry for entry in VEHICLE_LEVELS if not only or entry[0].lower() in only]
