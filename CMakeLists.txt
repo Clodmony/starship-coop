@@ -419,7 +419,9 @@ endif()
 # COOP: the session's sine and cosine (decision 0011, #186) must give the same bits on every target, so no fused
 # multiply-add: GCC and clang may contract by default on targets that have one. MSVC does not contract without /fp:fast.
 if(NOT MSVC)
-    set_source_files_properties(src/port/coop/math/sincos.c src/port/coop/math/atan.c
+    # aim.c (#193) chooses the nearest player by comparing squared distances: the same rule, so a near tie must not depend
+    # on a fused multiply-add either.
+    set_source_files_properties(src/port/coop/math/sincos.c src/port/coop/math/atan.c src/port/coop/game/aim.c
         PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
 endif()
 
