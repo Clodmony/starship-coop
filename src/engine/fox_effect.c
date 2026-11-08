@@ -26,6 +26,7 @@
 #include "port/interpolation/FrameInterpolation.h"
 #include "port/mods/PortEnhancements.h"
 #include "port/coop/game/effects.h" // COOP: enemy effects against the other players (#100)
+#include "port/coop/game/aim.h"     // COOP: enemies aim at the nearest human (#193)
 #include "sf64_tagging.h"
 
 // rodata
@@ -2438,6 +2439,7 @@ void func_effect_8007E6B8(Effect* this, u32 objId, f32 xPos, f32 yPos, f32 zPos,
     f32 temp_ft4;
     Vec3f sp40;
     Vec3f sp34;
+    Player* aimed = &gPlayer[CoopAim_Nearest(xPos, yPos, zPos)]; // COOP: the nearest human, was player 0 (#193)
 
     Effect_Initialize(this);
     this->obj.status = OBJ_INIT;
@@ -2449,9 +2451,9 @@ void func_effect_8007E6B8(Effect* this, u32 objId, f32 xPos, f32 yPos, f32 zPos,
     this->obj.pos.z = zPos;
 
     Object_SetInfo(&this->info, this->obj.id);
-    sp50 = Math_Atan2F(gPlayer[0].pos.x - xPos, gPlayer[0].trueZpos - zPos);
-    temp_ft4 = sqrtf(SQ(gPlayer[0].pos.x - xPos) + SQ(gPlayer[0].trueZpos - zPos));
-    sp54 = -Math_Atan2F(gPlayer[0].pos.y - yPos, temp_ft4);
+    sp50 = Math_Atan2F(aimed->pos.x - xPos, aimed->trueZpos - zPos);        // COOP: was gPlayer[0]
+    temp_ft4 = sqrtf(SQ(aimed->pos.x - xPos) + SQ(aimed->trueZpos - zPos)); // COOP: was gPlayer[0]
+    sp54 = -Math_Atan2F(aimed->pos.y - yPos, temp_ft4);                     // COOP: was gPlayer[0]
 
     Matrix_RotateY(gCalcMatrix, sp50, MTXF_NEW);
     Matrix_RotateX(gCalcMatrix, sp54, MTXF_APPLY);
@@ -2492,6 +2494,7 @@ void func_effect_8007E93C(Effect* this, u32 objId, f32 xPos, f32 yPos, f32 zPos,
     f32 temp_ft4;
     Vec3f sp40;
     Vec3f sp34;
+    Player* aimed = &gPlayer[CoopAim_Nearest(xPos, yPos, zPos)]; // COOP: the nearest human, was player 0 (#193)
 
     Effect_Initialize(this);
     this->obj.status = OBJ_INIT;
@@ -2503,9 +2506,9 @@ void func_effect_8007E93C(Effect* this, u32 objId, f32 xPos, f32 yPos, f32 zPos,
     this->obj.pos.z = zPos;
 
     Object_SetInfo(&this->info, this->obj.id);
-    sp50 = Math_Atan2F(gPlayer[0].cam.eye.x - xPos, gPlayer[0].cam.eye.z - zPos);
-    temp_ft4 = sqrtf(SQ(gPlayer[0].cam.eye.x - xPos) + SQ(gPlayer[0].cam.eye.z - zPos));
-    sp54 = -Math_Atan2F(gPlayer[0].cam.eye.y - yPos, temp_ft4);
+    sp50 = Math_Atan2F(aimed->cam.eye.x - xPos, aimed->cam.eye.z - zPos);        // COOP: was gPlayer[0]
+    temp_ft4 = sqrtf(SQ(aimed->cam.eye.x - xPos) + SQ(aimed->cam.eye.z - zPos)); // COOP: was gPlayer[0]
+    sp54 = -Math_Atan2F(aimed->cam.eye.y - yPos, temp_ft4);                      // COOP: was gPlayer[0]
 
     Matrix_RotateY(gCalcMatrix, sp50, MTXF_NEW);
     Matrix_RotateX(gCalcMatrix, sp54, MTXF_APPLY);
@@ -2649,8 +2652,10 @@ void func_effect_8007F04C(ObjectId objId, f32 xPos, f32 yPos, f32 zPos, f32 xRot
 
 void Effect_EnemyLaser(ObjectId objId, f32 xPos, f32 yPos, f32 zPos, f32 speed) {
     s32 i;
+    // COOP: no shot from close by at the one func_effect_8007E6B8 aims at, the nearest human; was gPlayer[0] (#193)
+    Player* aimed = &gPlayer[CoopAim_Nearest(xPos, yPos, zPos)];
 
-    if ((fabsf(zPos - gPlayer[0].trueZpos) > 300.0f) || (fabsf(xPos - gPlayer[0].pos.x) > 300.0f)) {
+    if ((fabsf(zPos - aimed->trueZpos) > 300.0f) || (fabsf(xPos - aimed->pos.x) > 300.0f)) {
         for (i = ARRAY_COUNT(gEffects) - 1; i >= 0; i--) {
             if (gEffects[i].obj.status == OBJ_FREE) {
                 Matrix_Push(&gCalcMatrix);
@@ -2664,8 +2669,10 @@ void Effect_EnemyLaser(ObjectId objId, f32 xPos, f32 yPos, f32 zPos, f32 speed) 
 
 void func_effect_8007F20C(ObjectId objId, f32 xPos, f32 yPos, f32 zPos, f32 speed) {
     s32 i;
+    // COOP: no shot from close by at the one func_effect_8007E93C aims at, the nearest human; was gPlayer[0] (#193)
+    Player* aimed = &gPlayer[CoopAim_Nearest(xPos, yPos, zPos)];
 
-    if ((fabsf(zPos - gPlayer[0].cam.eye.z) > 300.0f) || (fabsf(xPos - gPlayer[0].cam.eye.x) > 300.0f)) {
+    if ((fabsf(zPos - aimed->cam.eye.z) > 300.0f) || (fabsf(xPos - aimed->cam.eye.x) > 300.0f)) {
         for (i = ARRAY_COUNT(gEffects) - 1; i >= 0; i--) {
             if (gEffects[i].obj.status == OBJ_FREE) {
                 Matrix_Push(&gCalcMatrix);
@@ -3031,12 +3038,14 @@ void Effect_Effect398_Update(Effect398* this) {
     Vec3f srcVelocity;
     Vec3f destVelocity;
     Vec3f sp3C;
+    Player* aimed; // COOP: who it is shot at (#193)
 
     switch (this->state) {
         case 0:
-            yRot = Math_Atan2F(gPlayer[0].pos.x - this->obj.pos.x, gPlayer[0].trueZpos - this->obj.pos.z);
-            temp = sqrtf(SQ(gPlayer[0].pos.x - this->obj.pos.x) + SQ(gPlayer[0].trueZpos - this->obj.pos.z));
-            xRot = -Math_Atan2F(gPlayer[0].pos.y - this->obj.pos.y, temp);
+            aimed = &gPlayer[CoopAim_Nearest(this->obj.pos.x, this->obj.pos.y, this->obj.pos.z)];  // COOP: was player 0
+            yRot = Math_Atan2F(aimed->pos.x - this->obj.pos.x, aimed->trueZpos - this->obj.pos.z); // COOP: as above
+            temp = sqrtf(SQ(aimed->pos.x - this->obj.pos.x) + SQ(aimed->trueZpos - this->obj.pos.z)); // COOP: as above
+            xRot = -Math_Atan2F(aimed->pos.y - this->obj.pos.y, temp);                                // COOP: as above
             Matrix_RotateY(gCalcMatrix, yRot, MTXF_NEW);
             Matrix_RotateX(gCalcMatrix, xRot, MTXF_APPLY);
             srcVelocity.y = 0.0f;

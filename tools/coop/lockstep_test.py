@@ -19,6 +19,8 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   sim       src/port/coop/sync/lockstep.c alone, in a virtual network with loss, lag, reordering and duplicates, for two to
             four players (tools/coop/locksteptest).
   steer     each client flies its own player. Hashes equal, each game looks through its own player.
+  aim       enemies aim at the nearest human (#193): on Corneria's rails some enemy shots or missiles fly at player 1,
+            the two games log the same ones (src/port/coop/test/aim_trace.h), and the hashes stay equal.
   three     the same with three games, so that input goes through the host to the other client.
   control   the same run with SF64_COOP_TEST_NO_LOCKSTEP: it must differ, or this test says nothing.
   pause     Start on either client pauses both on the same frame, Start on either resumes.
@@ -91,6 +93,7 @@ STALL_SECONDS = 10  # COOP_LOCKSTEP_STALL_MS
 SEEDS = "1111,2222,3333,4444,5555,6666"  # every level start of a run: the flight then depends on nothing but the input
 JOIN_FRAME = 1700  # a little after both players fly: level frames, 1674 in NOTES.md, #142
 SHORT_FRAMES = 2700
+AIM_FRAMES = 4000  # Corneria's rails from the join on, long enough for some enemies to fire (#193)
 LEVEL_COMPLETE, MAP, PLAY_PAUSE = 7, 4, 100  # PLAYERSTATE_LEVEL_COMPLETE, GSTATE_MAP, PLAY_PAUSE
 PLAY_INIT, PLAY_UPDATE, LEVEL_INTRO = 1, 2, 2  # PLAY_INIT, PLAY_UPDATE, PLAYERSTATE_LEVEL_INTRO
 MAP_TAIL = 60
@@ -387,6 +390,42 @@ def sc_steer(args, folder):
     moved = flown(client)
     expect(moved[0] > 500 and moved[1] > 500, f"a player did not fly: moved {moved}")
     return f"same hash on {frames} frames, moved {moved[0]:.0f} and {moved[1]:.0f}; {played(host)}, {played(client)}"
+
+
+AIM_LINE = re.compile(r"(shot|missile) level=(\d+) frame=(\d+) .*player=(-?\d+)$")
+
+
+def aim_rows(path):
+    """(kind, level, frame, player, line) of every line of an aim trace (src/port/coop/test/aim_trace.h)."""
+    rows = []
+    if path.exists():
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            match = AIM_LINE.match(line)
+            if match:
+                rows.append((match.group(1), int(match.group(2)), int(match.group(3)), int(match.group(4)), line))
+    return rows
+
+
+def sc_aim(args, folder):
+    """Enemies aim at the nearest human (#193). The trace watches the shots and does not ask the aim code, so a build
+    with every enemy aiming at player 0 fails here."""
+    traces = {name: folder / f"{name}-aim.txt" for name in ("host", "client")}
+    for path in traces.values():
+        if path.exists():
+            path.unlink()  # the trace appends
+    host, client = run_short(args, folder, frames=AIM_FRAMES,
+                             host_env={"SF64_COOP_AIM_TRACE": str(traces["host"])},
+                             client_env={"SF64_COOP_AIM_TRACE": str(traces["client"])})
+    frames = compare(host, client, AIM_FRAMES)
+    ours, theirs = aim_rows(traces["host"]), aim_rows(traces["client"])
+    # A game can run a little past `done` before it is stopped, so the shorter trace has to start the longer one.
+    n = min(len(ours), len(theirs))
+    for a, b in zip(ours[:n], theirs[:n]):
+        expect(a == b, f"the aim traces differ: host `{a[4]}`, client `{b[4]}`")
+    at = {player: sum(1 for row in ours if row[3] == player) for player in (-1, 0, 1)}
+    expect(at[1] > 0, f"no enemy shot or missile flew at player 1: {at[0]} at player 0, {at[-1]} at nobody")
+    return (f"same hash on {frames} frames; {at[1]} shots or missiles at player 1, {at[0]} at player 0, "
+            f"{at[-1]} at nobody; {n} trace lines alike")
 
 
 def sc_three(args, folder):
@@ -1119,6 +1158,7 @@ SCENARIOS = {
     "sim": sc_sim,
     "desync_sim": sc_desync_sim,
     "steer": sc_steer,
+    "aim": sc_aim,
     "three": sc_three,
     "control": sc_control,
     "pause": sc_pause,

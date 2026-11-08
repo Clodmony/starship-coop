@@ -1,6 +1,7 @@
 #include "global.h"
 #include "port/coop/game/players.h" // COOP: whose sound it is (#30)
 #include "port/coop/game/hits.h"    // COOP: hits on the other players (#136)
+#include "port/coop/game/aim.h"     // COOP: enemies aim at the nearest human (#193)
 #include "assets/ast_corneria.h"
 #include "assets/ast_sector_x.h"
 #include "assets/ast_sector_y.h"
@@ -1539,6 +1540,7 @@ void ActorMissileSeek_Update(Actor* this) {
     f32 sp80;
     f32 sp7C;
     f32 sp78;
+    s32 aimed = 0; // COOP: the player it seeks, was player 0 (#193)
 
     var_ra = (gLevelMode == LEVELMODE_ALL_RANGE) ? 2 : 0;
 
@@ -1610,9 +1612,10 @@ void ActorMissileSeek_Update(Actor* this) {
             }
         }
     } else {
-        this->fwork[29] = gPlayer[0].trueZpos;
-        this->fwork[28] = gPlayer[0].pos.y;
-        this->fwork[27] = gPlayer[0].pos.x;
+        aimed = CoopAim_Nearest(this->obj.pos.x, this->obj.pos.y, this->obj.pos.z); // COOP: the nearest human (#193)
+        this->fwork[29] = gPlayer[aimed].trueZpos;                                  // COOP: was gPlayer[0]
+        this->fwork[28] = gPlayer[aimed].pos.y;                                     // COOP: was gPlayer[0]
+        this->fwork[27] = gPlayer[aimed].pos.x;                                     // COOP: was gPlayer[0]
     }
 
     if (this->timer_0BC != 0) {
@@ -1709,7 +1712,7 @@ void ActorMissileSeek_Update(Actor* this) {
     }
 
     if (gLevelMode == LEVELMODE_ON_RAILS) {
-        if (fabsf(this->obj.pos.z - gPlayer[0].trueZpos) < 100.0f) {
+        if (fabsf(this->obj.pos.z - gPlayer[aimed].trueZpos) < 100.0f) { // COOP: was gPlayer[0] (#193)
             this->iwork[10] = 1;
         }
         if (gPlayer[0].cam.eye.z < (this->obj.pos.z + gPathProgress)) {
