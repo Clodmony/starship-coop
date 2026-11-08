@@ -710,6 +710,101 @@ Unknown:
 - Macbeth's `D_MA_801BE250` and the Blue Marine state (0009, item 6): not touched; both levels stay parked.
 - Two machines: everything above ran on one PC.
 
+### 2026-11-08, #7, decision 0007 walk-through: what had moved since the record was written
+
+Read in `b3169ab6` (checkout of `coop`), no build, nothing run. This is the re-check behind the owner's walk-through of
+`docs/coop/decisions/0007-lives-and-respawn.md`, which was read at `797c678b`.
+
+Observed, in the code:
+
+- **The return path is still as 0007 describes.** A player 2+ going down is set `OUT` and stays so until the next
+  `Play_Init` (`src/port/coop/game/players.c:187-191`, `:309-317`, `:233-237`). A join copies player 0's `gLifeCount`
+  into the slot (`:166`). A player waits or comes back only while the section is supported and player 0 is `ACTIVE`
+  (`:195-198`, `:217-231`). Slots are `JOINED`, `WAITING`, `AWAY` and `OUT`.
+- **Parking is still tied to player 0.** A joined player goes `AWAY` once player 0 is neither `ACTIVE` nor `U_TURN`
+  (`players.c:208-214`), so nobody flies on while Fox is down.
+- **The 11 `gLifeCount` write lines of 0007 are all still there**, still indexed by `gPlayerNum` or the collector's
+  `playerNum`: `src/engine/fox_enmy.c:2230`, `:2334`, `src/port/mods/PortEnhancements.c:259`,
+  `src/engine/fox_hud.c:1090`, `:1093`, `:1174`, `:1540`, `:1553`, `src/overlays/ovl_menu/fox_map.c:1448`, `:1529`,
+  `:3512`. The game-over test is at
+  `src/engine/fox_play.c:6174`, the start value at `src/engine/fox_game.c:425` and `fox_play.c:4935`.
+- **Enemy effects now hit any player**, by the probes of #100 and #136: 40 of 40 lines hold on Corneria, on rails and in
+  all-range (the NOTES entries of 2026-11-06 #100 and 2026-11-07 #136). Not re-run here. So the sentence in 0007's
+  context that enemy shots test player 0 only is out of date for effects. What an effect is aimed at is still player 0.
+- **Player shots on players.** The loop at `src/engine/fox_beam.c:837-884` walks `gCamCount` players and is all-range
+  only. In a co-op session `gCamCount` is 1 (`players.c:41`, `:53`), so a shot from player 1+ reaches player 0, never
+  the reverse. The hit gives 20 damage (60 when `gPlayer[0].form` is on foot) and a barrel roll deflects the shot
+  (`:861-884`). It is not gated on `gVersusMode`; that only widens the hitbox (`:840-843`).
+- **Ways to go down.** `Player_Down` is called at `src/engine/fox_play.c:5736`, `:5764`, `:5789`, `:5818`, `:5834` and
+  `src/engine/fox_tank.c:1179`. `Cutscene_KillPlayer` is called at `src/engine/fox_demo.c:1666`, `:1752`, `:1857`,
+  `src/overlays/ovl_i3/fox_aq.c:1085` and `src/overlays/ovl_i6/fox_andross.c:754`. Only the call at `fox_play.c:5736`
+  was read to its end: it writes speed and `csTimer` after `Player_Down` returns (`:5735-5743`).
+- **How much of the game reads player 0** (`docs/coop/audit/single-player.md`, 1904 sites in 431 functions): verdict
+  `sim` 1062 sites, of which 1059 are `gPlayer[0]`; `flow` 374, of which 334 are `gPlayer[0]`. The file says its
+  verdicts are a starting list, not checked facts (a sample of 45 found 5 wrong, #56).
+
+Derived:
+
+- A "lead index" variable in place of `gPlayer[0]` would touch on the order of 1400 sites in the decompiled game.
+  That is far from the fork's rule to keep the upstream diff small. Swapping a survivor into slot 0 needs only port-side
+  code, but everything that remembers a slot number has to be remapped: a shot's `sourceId`, an item's `playerNum`,
+  `lockOnTimers[i]`, `dmgSource`, the pad mapping (`CoopPlayers_SelectInput`) and the per-player arrays that
+  `CoopPlayers_JoinFromPlayer0` lists (`players.c:146-167`). Whether that works is the question of #183.
+- In decision 0006, "a return comes back at 64" meant a return at a level load. The owner's walk-through gave a return
+  in a level (for a life) full shields, so only the free return at a level load gives 64 (0006 and 0007 say so).
+
+Unknown:
+
+- How refill in place behaves: it has not been built or run, in any level.
+- Whether the other `Player_Down` and `Cutscene_KillPlayer` callers fit a refill; the story deaths in particular.
+- Whether passing the lead role to a survivor works (#183).
+- How lives, the 150-frame delay and friendly fire play with four people. Nobody has played co-op with lives.
+
+### 2026-11-08, #7, decision 0008 walk-through: what had moved since the record was written
+
+Read in `5447b479` (`coop` after #184), no build, nothing run. This is the re-check behind the owner's walk-through of
+`docs/coop/decisions/0008-routes-and-score.md`, which was read at `797c678b`. A throwaway script compared the 97
+`file:line` citations of the record with the code at `5447b479`, block by block: 37 are where they were, 55 moved by 1
+to 11 lines in `src/engine` and `src/overlays` (the port files by more: `players.c` about 58, `state_hash.c` 97), and 5
+changed text.
+
+Observed, in the code:
+
+- **The shooter value is no longer shared with an enemy's.** `dmgSource` is written through `CoopPlayers_DmgSource`
+  at `src/engine/fox_beam.c:697`, `:1957`, `:1964`, `:1979`, `src/engine/fox_play.c:2192` and
+  `src/engine/fox_tank.c:1422` (#86). Co-op off, player 0 or an NPC: `sourceId + 1`. In a session, players 1 to 3:
+  `COOP_DMG_SRC_PLAYER` (10) plus the index, so 11 to 13 (`src/port/coop/game/players.c:110-115`,
+  `src/port/coop/game/players.h:101-107`). Four of the five changed citations are these writes.
+- **The team total is still unbuilt.** `src/engine/fox_enmy.c:1766` and `src/engine/fox_360.c:921` still test
+  `dmgSource == AI360_FOX + 1`. A grep over `src/engine` and `src/overlays` finds 9 lines that compare `dmgSource` with
+  `AI360_FOX + 1` and 21 lines that read it in all (a count, not checked line by line).
+- **Unchanged:** the Saucerer test (`src/engine/fox_beam.c:1008`), a split reading `gPlayer[0]`
+  (`src/engine/fox_enmy.c:2560`, `:2580`), the path item dying while player 0 is not `ACTIVE`
+  (`src/engine/fox_enmy.c:2523-2524`), `gHitCount` in the state hash (`src/port/coop/sync/state_hash.c:425`).
+- **The HUD reads the client's own player.** The fifth changed citation: the path arrows now read
+  `gPlayer[CoopPlayers_HudIndex()]` (`src/engine/fox_hud.c:2907`, #30). The arrows' setting is still on `gPlayer[0]`
+  (`src/engine/fox_enmy.c:2541-2547`).
+- **The map has no co-op code.** `src/overlays/ovl_menu/fox_map.c` holds no `COOP:` marker (grep count 0). The tests
+  call `Map_Setup_Menu` for the setup (`src/port/coop/test/start_level.c:38`) and `level_start.c` notes what
+  `Map_PlayLevel` adds (`src/port/coop/game/level_start.c:122`), but no test drives the map's own menu in a session.
+
+Derived:
+
+- Question 4's prerequisite (telling player 1 from `DMG_SRC_2`) is met, so WP-16's step is a helper that says whether a
+  `dmgSource` is player 0's or a human's, and two tests that use it (plus the Saucerer's).
+- Under 0006 a human's slot is -1 while they are down, and under 0007 they return after 150 frames for a life, so a human
+  costs a medal only if they are down at the clear itself, or stay down at pool 0.
+- Records 0007 and 0008 meet at one point: splits and turns need player 0 `ACTIVE`, and 0007 keeps player 0 up or ends
+  the run. That changes only if the spike #183 lets a survivor take slot 0.
+
+Unknown:
+
+- Anything at run time: how far a team total moves a level's hits, and what a client's map does in a session (nothing
+  covers the menu).
+- Whether a Landmaster's or a Blue Marine's kills reach the same `dmgSource` tests: the writes were found by grep, not
+  read to the end.
+- US 1.1: not read.
+
 ### 2026-11-07, #136, other hits that only reach player 0
 
 Line numbers are for `issue/136-hits-any-player` on `coop` at `da44a18a`. Windows 11, MSVC v143, Debug, US 1.0 ROM.

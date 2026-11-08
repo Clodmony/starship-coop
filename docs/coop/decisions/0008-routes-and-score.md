@@ -1,8 +1,13 @@
 # 0008: Routes, warps, hit count and medals
 
-- Status: Proposed
-- Date: 2026-11-06
+- Status: Accepted by the owner, all five questions as proposed (see "Walk-through, 2026-11-08" under Decision)
+- Date: 2026-11-06 (proposed), 2026-11-08 (accepted by the owner)
 - Issue: #7
+
+In short: **the team earns, the host steers, the team scores.** Any human player can earn a route or a warp. Player 0,
+the host, steers at a split and alone decides on the map. `gHitCount` is a team total: a kill by any human scores as
+one by player index 0 does, thresholds unchanged. A medal keeps its check, reading what 0006 puts in `gTeamShields[id]`.
+The Options below are kept as the proposal wrote them; the Decision is what binds.
 
 ## Context
 
@@ -21,6 +26,28 @@ Scope:
 Everything below was read at `797c678b`. **Nothing was run.** Object and script numbers (`SX` object 375, `SY S21`) are
 ROM data from the `.o2r` built from US 1.0, read with a throwaway reader as in the NOTES entry, so they cannot be looked
 up in the repo.
+
+Re-checked for the walk-through on 2026-11-08, at `5447b479`, by reading only (NOTES entry "decision 0008 walk-through:
+what had moved since the record was written"). Of the 97 `file:line` citations below, 37 are where they were, 55 have
+moved by 1 to 11 lines in `src/engine` and `src/overlays` (more in the port files: `players.c` by about 58,
+`state_hash.c` by 97), and 5 changed text. The line numbers below are those of `797c678b`; the Decision and "To do"
+give today's lines for the sites work will touch. Where a fact changed, the line says "Update 2026-11-08":
+
+- **The shooter value no longer collides.** The `dmgSource` writes in `fox_beam.c`, `fox_play.c` and `fox_tank.c` now go
+  through `CoopPlayers_DmgSource` (#86): player 0 and computer wingmen keep `sourceId + 1`, players 1 to 3 in a session
+  get `COOP_DMG_SRC_PLAYER + index` (11 to 13), a value no game code writes or tests (`src/port/coop/game/players.c:110`,
+  `players.h:101-107`). So "Player index 1 therefore gives 2, which is `DMG_SRC_2`" holds only with co-op off. The team
+  total itself is **not** built: `src/engine/fox_enmy.c:1766` and `src/engine/fox_360.c:921` still test
+  `AI360_FOX + 1`, so a kill by player 1 to 3 still scores nothing on the general path.
+- **Everything else the record names is as read:** the Saucerer test (`fox_beam.c:1008`), a split reading `gPlayer[0]`
+  (`fox_enmy.c:2560`, `:2580`), the warp counts and the path item's death while player 0 is not active (`fox_enmy.c:2523`).
+  `fox_map.c` still has no `COOP:` marker. The HUD now reads the client's own player through `CoopPlayers_HudIndex()`
+  (#30), not `gPlayerNum` (`src/engine/fox_hud.c:2907`).
+- **Records 0006 and 0007 are Accepted.** Under 0006 a human's `gTeamShields[id]` holds their shields, 1 to 255, and -1
+  while they are down, so question 5 reads a human as it reads a computer wingman. Under 0007 retry belongs to the host
+  and costs a life from the shared pool (rule 7). 0007 also says the map menus read player 0's input on every client;
+  that is meant, not shown: WP-14 (#12) is closed, but `fox_map.c` has no `COOP:` marker and no test drives the map in
+  a session, so what a client's map does is `unknown`.
 
 ### Observed: earning a route
 
@@ -232,7 +259,8 @@ Five questions. Splitting the team over two paths is not among them: there is on
 
 ## Decision
 
-Proposed, for the owner to accept: **the team earns, the host steers, the team scores.** Any human player can earn a
+Accepted by the owner on 2026-11-08, all five questions as proposed: **the team earns, the host steers, the team
+scores.** Any human player can earn a
 route or a warp (1a), so Katina's Saucerer takes damage from every human player. Direction stays with player 0, the
 host: a split takes its side from player 0's position, as the code does today (2a), and on the map only player 0's input
 counts for go on, change path and retry (3a). Players 2-4 see the same map. `gHitCount` is a team total: a kill by any
@@ -245,6 +273,23 @@ accident would decide the warp. 2b stays open as a later change, since it needs 
 
 It answers NOTES #59 questions 7, 8 and 11, and question 6 together with 0006.
 
+### Walk-through, 2026-11-08
+
+The owner went through the five questions item by item, each with a concrete case, after the re-check above. Every
+proposed option was accepted; nothing was changed.
+
+| # | Question | Case put to the owner | Accepted |
+|---|---|---|---|
+| 1 | Who can earn a route or a warp | Player 3 flies Meteo's rings, Sector X's gates or Corneria's arches, or shoots Katina's Saucerer | **1a, any human player.** Rings, gates and arches already count from anyone; the Saucerer test at `fox_beam.c:1008` is the one change |
+| 2 | Who steers at a path split | Sector X's split, with all four warp gates on one lane; today any player touches it and player 0's position picks the side | **2a, player 0.** No change; 2b stays open as a later change |
+| 3 | Who decides on the map | Go on and change path after a level; retry is already the host's (0007 rule 7) | **3a, the host alone.** A vote (3c) can come later on top, since the host's input stays the final step. 3d was dropped in the record: the game has no single earner |
+| 4 | What counts as a hit | Player 2 shoots down an enemy; today only Fox's kill scores on the general path | **4b, team total, thresholds unchanged.** By how much medals, Sector Y, lives and the refill move is `unknown` until WP-16 is measured |
+| 5 | What a medal needs | 4 players, 150+ hits on Corneria, player 3 is down at the moment of the clear | **5a, keep the check.** A human who is down at the clear costs the medal, as a computer wingman does; respawn (0007) makes it rarer for humans |
+
+What the case in question 5 means after 0006 and 0007: a human's slot is -1 while they are down and they return after
+150 frames for a life from the shared pool, so a human costs the medal only if they are down at the instant of the
+clear, or stay down because the pool is at 0.
+
 ## Consequences
 
 Easier: no new menu, no UI and no new network message for v1. Player 0 already owns the path. The upstream diff is three
@@ -255,16 +300,23 @@ than in single player, by an unknown amount.
 
 To do, once this is accepted:
 
-- **WP-16 (#14):** the team total at `src/engine/fox_enmy.c:1761` and `src/engine/fox_360.c:920`, and the Saucerer at
-  `src/engine/fox_beam.c:1007`, all gated on co-op. Player index 1 and `DMG_SRC_2` share a value, so this needs a way to
-  tell them apart. With #86, which owns the shooter sites.
-- **WP-14 (#12):** on the map every client takes player 0's input. `gMainController` is per client and comes from the
-  title screen, so it must not pick a different pad on a client.
+- **WP-16 (#14):** the team total at `src/engine/fox_enmy.c:1766` and `src/engine/fox_360.c:921`, and the Saucerer at
+  `src/engine/fox_beam.c:1008`, all gated on co-op (lines at `5447b479`). The way to tell player index 1 from
+  `DMG_SRC_2` exists since #86: `CoopPlayers_DmgSource` gives players 1 to 3 the values 11 to 13 in a session. What is
+  left is a test that takes player 0's value or a human's, and nothing else: not `DMG_SRC_2`, not an NPC's. The same
+  test should also cover a Landmaster's or a Blue Marine's kills: by a grep of `dmgSource =` they set it at the same
+  sites (`fox_beam.c:697`, `:1957`, `:1964`, `:1979`, and a tank's ram at `fox_tank.c:1422`), but the sites were not read
+  to the end and nothing was run. Draft #179 (#16) is what puts those vehicles in a session.
+- **WP-14 (#12), map input:** on the map every client takes player 0's input. `gMainController` is per client and comes
+  from the title screen, so it must not pick a different pad on a client. Open: `fox_map.c` has no `COOP:` marker yet.
 - **WP-22 (#20), WP-24 (#22):** keep the clients together across the map, which has no co-op code today.
-- **Record 0007:** a path item dies while player 0 is not active (`src/engine/fox_enmy.c:2518-2519`). If player 0 can be
-  down while others fly on, splits and turns stop working, and Corneria's Carrier route with them. Retry spends
-  `gLifeCount[gPlayerNum]` (`src/overlays/ovl_menu/fox_map.c:3512`), and the life for 100 hits goes to the same index in
-  a draw function (`src/engine/fox_hud.c:1089`).
+- **Record 0007:** a path item dies while player 0 is not active (`src/engine/fox_enmy.c:2523`, was `:2518-2519`). If
+  player 0 can be down while others fly on, splits and turns stop working, and Corneria's Carrier route with them. Update
+  2026-11-08: under 0007 player 0 is down while others fly on only if the lead role can pass to a survivor (#183), since
+  Fox is refilled in place in a proven level, a level not yet proven restarts, and Fox down at pool 0 ends the run. So
+  this holds as long as #183 fails to pass the lead; if it passes, splits and turns need the new lead. Retry spends from the
+  shared pool (0007 rule 7; the write is `src/overlays/ovl_menu/fox_map.c:3512`), and the life for 100 hits goes to the
+  same index in a draw function (`src/engine/fox_hud.c:1090`, was `:1089`).
 - **Record 0009:** a medal and the hit totals go into the host's save.
 - **After WP-16:** measure hit totals per level with 1, 2 and 4 players. If medals become trivial, scaling them (4c)
   needs a new record.
