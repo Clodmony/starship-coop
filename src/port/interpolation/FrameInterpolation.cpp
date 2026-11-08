@@ -465,6 +465,17 @@ void FrameInterpolation_RecordCloseChild(void) {
     if (has_inv_actor_mtx && current_path.size() == inv_actor_mtx_path_index) {
         has_inv_actor_mtx = false;
     }
+    // COOP: never pop the root. is_recording is a plain on/off flag with no save/restore, so a nested skip region
+    // (ShouldInterpolateFrame(false) ... (true), as in Object_SetMatrix or the Effect draws) turns recording back on
+    // while an outer skip (a camera big jump, e.g. a pause transition or a level restart) still has it meant off. An
+    // OpenChild skipped by the outer region then pushes nothing, but this CloseChild runs with recording on and pops,
+    // so current_path underflows past the root. The next OpenChild's back() then aborts on the empty vector, or a
+    // later frame crashes freeing the corrupted tree (#169). Upstream's bug: same unbalance with drawing on; stopping
+    // at the root changes no matrix drawn, as #141 did for the interpolation matrix stack. An upstream report is
+    // drafted in the PR for #169, not sent.
+    if (current_path.size() <= 1) {
+        return;
+    }
     current_path.pop_back();
 }
 

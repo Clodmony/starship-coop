@@ -2791,6 +2791,41 @@ A line of the state category, as written: `2026-11-08 00:37:47.608 2419 Corneria
   without it.
 - What the log costs at real time with a window: the test games run at speed 8 with no draw.
 
+### 2026-11-08, #169, frame interpolation: the skip flag and the recording path stack
+
+`src/port/interpolation/FrameInterpolation.cpp` builds a tree of matrix ops each drawn frame. `current_path` is a
+stack of `Path*`: `FrameInterpolation_StartRecord` clears it and pushes the root, `RecordOpenChild` pushes a child,
+`RecordCloseChild` pops. Both record calls early-return when `is_recording` is false.
+
+Observed (file:line):
+
+- `is_recording` is a single on/off flag set directly by `FrameInterpolation_ShouldInterpolateFrame`
+  (FrameInterpolation.cpp:426). It has no save/restore and no nesting. A `(false)` turns recording off, a `(true)`
+  turns it fully on, whoever last called it.
+- The game uses `(false)`/`(true)` as "skip this bit" guards in many `@port` spots, and these nest. Outer, whole-frame
+  skips: the camera "big jump" wraps all of `Display_Update` when the view teleports (fox_display.c:1927), on a pause
+  transition or a level restart. Inner skips: `Object_SetMatrix` for the "banned" Corneria buildings
+  (fox_edisplay.c:979), `Effect_Effect382_Draw` (fox_effect.c:223), backdrops (fox_bg.c), and more. An inner skip's
+  `(true)` re-enables recording while the outer skip meant it off.
+
+Derived:
+
+- When that happens, an `OpenChild` that the outer skip swallowed pushed nothing, but its matching `CloseChild` now
+  runs with recording on and pops. `current_path` loses an entry it never gained, and underflows past the root. The
+  next `RecordOpenChild` calls `current_path.back()` on an empty vector (its abort in a checked Debug build, #169's
+  first sighting), or a later frame faults freeing the corrupted tree in `Path::~Path()` (the second sighting).
+- This is upstream Starship's recording/skip design, not co-op code; co-op off hits it too, and so does a build that
+  draws. #141 fixed the sister case on the interpolation matrix stack by stopping at its ends. Nothing reads
+  `current_path` back for a drawn matrix, so refusing to pop the root changes no pixel.
+
+Reproduced on purpose (deterministic, 1 player, no session, no draw): a generated replay that flies the Corneria
+intro on rails, then taps START every 10 frames from flight frame 1200 to force pause-transition big jumps while
+scenery is on screen. On `coop` it crashes with signal 11 about two frames into a big jump (the underflow is logged
+at the same game frame the next `OpenChild` aborts). The one-line guard below runs the same replay to the end.
+
+Fix: `RecordCloseChild` never pops the root (`current_path.size() <= 1` returns). One `// COOP:` line in the upstream
+file; drafted as an upstream report.
+
 ### 2026-11-05, #8 (WP-10), player count apart from camera count
 
 Observed:
