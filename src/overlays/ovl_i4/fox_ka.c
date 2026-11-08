@@ -7,6 +7,7 @@
 #include "prevent_bss_reordering.h"
 #include "global.h"
 #include "assets/ast_katina.h"
+#include "port/coop/game/players.h" // COOP: no low-poly choice from gSysFrameCount in a session (#129)
 
 Vec3f D_i4_8019F0F0[] = { { 7000.0f, 500.0f, -50 }, { 7700.0f, 550.0f, -50.0f }, { 6000.0f, 300.0f, 1950.0f } };
 Vec3f D_i4_8019F114[] = { { -30.0f, 0.0f, 0.0f }, { -30.0f, 0.0f, 0.0f }, { 0.0f, 5.0f, -40.0f } };
@@ -2639,7 +2640,9 @@ void Katina_EnemyDraw(ActorAllRange* this) {
     }
 
     // @port: never use low poly
-    if (CVarGetInteger("gDisableLOD", 1) == 1) {
+    // COOP: also in a session. The choice above follows gSysFrameCount, which each client counts from its own boot, and
+    // it lands in iwork, which is hashed (#129)
+    if ((CVarGetInteger("gDisableLOD", 1) == 1) || CoopPlayers_IsCoop()) {
         this->iwork[KA_ACTOR_LOW_POLY] = false;
     }
 

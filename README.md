@@ -31,7 +31,7 @@ Everything here is tested by scripts, on Corneria, on Linux; determinism also on
 | Network | UDP transport with its own reliability, session handshake that refuses a different build, ROM or game setting and warns about a different platform, character choice |
 | Menu | Co-op menu with host, join, characters, status and ping, and starting a level for everyone together |
 | Steam relay | Built, off by default, tested on a fake Steam only |
-| Determinism | Two runs of one build match on every frame through all of Corneria, and Release, Debug and frame rates from 30 to 360 match too |
+| Determinism | Two runs of one build match on every frame through all of Corneria, and Release, Debug and frame rates from 30 to 360 match too. Two clients that draw different cameras, booted at different times and render different audio sample counts match on 15 Arwing levels (the first 80 seconds of each) |
 | Lockstep | [Decision 0002](docs/coop/decisions/0002-sync-model.md) is built: inputs go over the network, every frame waits for every player, any player can pause, and a lost player ends the session cleanly |
 | Desync check | Every client hashes its state on every frame and the clients compare. A desync names its frame, level, players and regions in the game, each game writes a report into its own folder, and the session ends. A tool compares two reports and names the first value that differs |
 | Co-op log | Every game writes a log of the session into its own folder (session, transport, lockstep, desync check, game state, a state line per player each second, the game's own warnings) and streams it to the other players, so every folder holds every player's log, with the home folder and user name taken out. `python tools/coop/coop_log.py merge` makes one timeline of them |
@@ -50,7 +50,7 @@ Nothing is being built right now. The next step is the first test on two PCs: se
 | Real Steam test | [WP-26](https://github.com/Clodmony/starship-coop/issues/24): needs two PCs and two Steam accounts |
 | Lag and loss testing | [WP-27](https://github.com/Clodmony/starship-coop/issues/25) |
 | Game rules: lives, respawn, routes, score | Decision [0006](docs/coop/decisions/0006-human-flown-wingman.md) is Accepted, [0007](docs/coop/decisions/0007-lives-and-respawn.md) to [0009](docs/coop/decisions/0009-vehicles-cutscenes-save.md) are Proposed (0009 item 6, vehicles, is Accepted), then [WP-16](https://github.com/Clodmony/starship-coop/issues/14) and [WP-17](https://github.com/Clodmony/starship-coop/issues/15) |
-| Other levels, vehicles, bosses and cutscenes | [WP-18](https://github.com/Clodmony/starship-coop/issues/16), [WP-19](https://github.com/Clodmony/starship-coop/issues/17), [#129](https://github.com/Clodmony/starship-coop/issues/129), [#136](https://github.com/Clodmony/starship-coop/issues/136) |
+| Other levels, vehicles, bosses and cutscenes | [WP-18](https://github.com/Clodmony/starship-coop/issues/16), [WP-19](https://github.com/Clodmony/starship-coop/issues/17), [#136](https://github.com/Clodmony/starship-coop/issues/136) |
 | macOS build | [WP-01](https://github.com/Clodmony/starship-coop/issues/1) |
 | Local split screen | [WP-13](https://github.com/Clodmony/starship-coop/issues/11), [WP-15](https://github.com/Clodmony/starship-coop/issues/13) |
 | Player docs and a full campaign run | [WP-31](https://github.com/Clodmony/starship-coop/issues/27), [WP-32](https://github.com/Clodmony/starship-coop/issues/28) |
