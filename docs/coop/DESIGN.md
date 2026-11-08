@@ -118,8 +118,12 @@ Each needs a decision record before code depends on it. Proposals in brackets.
 1. Who player 2 is: decided in [0005](decisions/0005-players-and-characters.md). Player 1 is always Fox; players 2-4
    each pick Falco, Peppy or Slippy; unpicked wingmen stay computer wingmen. What a human-flown wingman is, with its
    shields, radio, rail scenes and story events: [0006](decisions/0006-human-flown-wingman.md).
-2. Lives: shared pool or per player [shared pool, game over when it is empty].
-3. A player goes down: respawn rule [respawn after a delay while any player is alive].
+2. Lives: decided in [0007](decisions/0007-lives-and-respawn.md). One shared pool, 2 plus 1 per extra player; the run
+   ends when the pool is 0 and the last player goes down.
+3. A player goes down: decided in [0007](decisions/0007-lives-and-respawn.md). Players 2-4 return after 5 s for a
+   life, at full shields; Fox is refilled on the spot for a life, one level at a time as each is proven (a level not
+   yet open keeps the original restart). Fox down at pool 0 ends the run until a spike (#183) shows the lead role can
+   pass to a survivor. A player's shot hurts another player in all-range.
 4. Route choices and warps: who decides [whoever triggers it; the whole team follows].
 5. Hit count and medals: [team total].
 6. Landmaster and Blue Marine levels: decided in [0009](decisions/0009-vehicles-cutscenes-save.md), item 6. Every

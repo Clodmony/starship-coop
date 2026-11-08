@@ -1,7 +1,7 @@
 # 0006: What a human-flown wingman is: the character's shields follow the player
 
 - Status: Accepted
-- Date: 2026-11-06 (proposed), 2026-11-08 (accepted by the owner, with changes to D and E)
+- Date: 2026-11-06 (proposed), 2026-11-08 (accepted by the owner, with changes to D and E; amended the same day, see E)
 - Issue: #85
 
 ## Context
@@ -216,14 +216,20 @@ as A1, B3, C1, D1, E2; the owner accepted A1, B3 and C1 as proposed on 2026-11-0
   has listed them yet (Sector X after the event, Titania until the third Goras part). That list is a research task
   before the code.
 - **E: neither option, carry and heal.** Every player's shields carry over to the next level and heal a bit there, and
-  a player who went down heals a little and comes back. That holds for every player in a co-op session, Fox included;
-  single player stays as the original, where Fox refills every level. The heal is a starting value of 64, a quarter of
-  the bar, both for the heal at each level load and for a return, to be tuned after playing.
+  a player who went down heals a little and comes back at the next level load. That holds for every player in a
+  co-op session, Fox included; single player stays as the original, where Fox refills every level. The heal is a
+  starting value of 64, a quarter of the bar, for the heal at each level load and for a player who went down coming
+  back there, to be tuned after playing.
+- **Amended 2026-11-08, in the owner's walk-through of 0007:** a return inside a level, for a life from the shared
+  pool, gives full shields (255), not 64. This record had 64 for "a return" at a level load and inside a level alike.
+  Only the free return at a level load gives 64. 0007 rule 4 says the same, and Fox's refill in place (0007 rule 3)
+  gives full shields too.
 
 A human-flown wingman is a `Player` whose shields the game reads through `gTeamShields[id]`: the value holds the
 human's shields, so every down check, gate, medal, radio speaker and portrait keeps working unchanged and means that
 human. Shields carry over from level to level and heal by 64 at each level load, and a player who went down comes back
-at 64; a human loses shields only through their own ship. On rails the scripted scenes stay whole with a stand-in that
+at the level load at 64 (a return inside a level is 0007's, with full shields); a human loses shields only through
+their own ship. On rails the scripted scenes stay whole with a stand-in that
 cannot be hurt; in
 boss fights the computer wingman is left out; in all-range a hidden body keeps enemies aimed at the human. No script
 takes a human out of play, and the radio does not say otherwise.
@@ -239,7 +245,8 @@ The rules:
    level with plus 64, at most 255; a player who went down, or whose value is at or below 0, comes back at 64. The
    human joins at that, and a human id's value is set to it. So no human goes through the sit-out, as 0007 asks.
    `COOP_LEVEL_HEAL`, 64, is one constant, to be tuned after playing. The first level of a run starts every player at
-   255, as the original does. If 0007 changes, this rule has to be read again.
+   255, as the original does. A return inside a level is 0007's and gives full shields. If 0007 changes, this rule has
+   to be read again.
 3. **Actors.** As B3. Scene actors take no damage, through the Katt and Bill check (`src/engine/fox_enmy2.c:2117-2119`).
    The all-range body uses `gNoHitbox`, not `timer_0C2`, which enemies read. While its human is out it stays in the slot
    in `STATE360_6`, so enemies leave it, and it is ready for 0007's return. If a human goes down during a scene, the
@@ -294,7 +301,7 @@ Each open question, answered or handed on:
 | #61 3 | Does going down cost a life | Left to a later record | 0007 |
 | #61 4 | Who triggers a restart | Left to a later record. Rule 2 brings every human back, at 64 after going down | 0007 |
 | #61 5 | Who may retry | Left to a later record | 0007 |
-| #61 6 | Return at 255, clear screen heal | The heal runs and carries over, as the next load adds 64 to what is left. A return comes back at 64 | Rule 2, 0007 |
+| #61 6 | Return at 255, clear screen heal | The heal runs and carries over, as the next load adds 64 to what is left. A return at a level load comes back at 64; a return inside a level has full shields (0007 rule 4) | Rule 2, 0007 |
 | #61 7 | Scripted away and scripted hits | No script takes a human away, hurts them or brings them back | Rules 3, 4, 6 |
 | #61 8 | Venom levels, "out until the end" | Left to a later record. Rule 2 does not keep anyone out | 0007 |
 | #61 9 | One player down costs the medal | Yes, if that human is down at clear: the read is unchanged. 0008 keeps the check | Rule 1, 0008 |
