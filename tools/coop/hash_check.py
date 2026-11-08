@@ -107,6 +107,9 @@ PLAYER_ARRAYS = (  # state_hash.c, sPlayerArrays: region players, in co-op only
     "gShieldTimer", "gShieldAlpha",
 )
 PLAYER_GLOBALS = ("gLifeCount", "gBombCount", "gPlayerScores")  # HashGlobals: region globals, with co-op off too
+# HashGlobals: one value, region globals, in co-op only (#129). The low-health radio timer: a drifted one would show only
+# at the next limit that draws a number (#87).
+COOP_GLOBALS = ("gTeamLowHealthMsgTimer",)
 PLAYER_SLOTS = 4
 # state_hash.c, sTeamArrays: one value per team member, region globals, in co-op only. name -> (slots, first slot read,
 # slot after the last one read); the slots nobody reads must leave the hash alone.
@@ -320,6 +323,8 @@ def probe_rule(target, parked, players):
         return (True, "players") if coop and parked == "0" else (False, None)
     if name in PLAYER_GLOBALS:
         return (True, "globals") if parked == "0" else (False, None)
+    if name in COOP_GLOBALS:
+        return (True, "globals") if coop else (False, None)
     if name in TEAM_ARRAYS:
         _, first, end = TEAM_ARRAYS[name]
         return (True, "globals") if coop and first <= int(index) < end else (False, None)
@@ -370,6 +375,7 @@ def check_probes(probes, players):
         states = ["0"] if players == 1 or i == 0 else ["0", "1"] if i < players else ["1"]
         wanted += [(f"{name}[{i}]", state) for name in PLAYER_ARRAYS + PLAYER_GLOBALS + ("slot",) for state in states]
     wanted += [(f"{name}[{i}]", "0") for name, (slots, _, _) in TEAM_ARRAYS.items() for i in range(slots)]
+    wanted += [(name, "0") for name in COOP_GLOBALS]
     for target, parked in wanted:
         if (target, parked) not in groups:
             failures.append(f"no probe of {target}{' parked' if parked == '1' else ''} ran")
@@ -402,6 +408,31 @@ VIEW_SECTIONS = {  # name -> (frames from when player 0 flies, when L goes into 
     "rails": (None, None),  # None: player_trace.RAIL_FLIGHT
     "all-range": (3225, GENERATED_L),
 }
+
+
+# Levels `views --level` flies, from include/sf64level.h: the Arwing levels, on rails or in all-range, where extra players
+# join (players.c, CoopPlayers_SectionSupported). The Landmaster and Blue Marine levels are WP-18 (#16).
+VIEW_LEVELS = {
+    "meteo": 1, "sector-x": 2, "area-6": 3, "sector-y": 5, "venom-1": 6, "solar": 7, "zoness": 8, "training": 10,
+    "fortuna": 14, "katina": 16, "bolse": 17, "sector-z": 18, "venom-2": 19,
+}
+VIEW_LEVEL_FRAMES = 2400  # frames from when player 0 flies: 80 seconds of play
+
+
+def parse_cvars(items):
+    """{name: int} of repeated --cvar NAME[=VALUE] options (1 when there is no value)."""
+    cvars = {}
+    for item in items or []:
+        name, _, value = item.partition("=")
+        cvars[name] = int(value) if value else 1
+    return cvars
+
+
+def level_start(name):
+    """Where `views --level` starts a game: straight in the level, past its intro, as FLYING does in Corneria. The
+    frame numbers are Corneria's; a level that takes player 0 later only shifts the input by rule."""
+    return replay_tool.Start(f"flying-{name}", VIEW_LEVELS[name], True, replay_tool.FLYING.level,
+                             replay_tool.FLYING.active, replay_tool.START_SEEDS)
 
 
 def read_views(path):
@@ -451,32 +482,64 @@ def view_section(section, exe, args):
     """Play one section with each local index. Returns a list of failures."""
     start = replay_tool.FLYING
     replay, frames, config = section_setup(section, "views", args, start)
+    config["CVars"].update(parse_cvars(args.cvar))
+    return view_compare(section, replay, frames, config, start, exe, args)
 
+
+def view_level(name, exe, args):
+    """Play one level with each local index (#129). Returns a list of failures."""
+    import player_trace  # here, as player_trace imports this file
+
+    start = level_start(name)
+    frames = args.frames or start.frame(VIEW_LEVEL_FRAMES)
+    replay = make_run_folder(replay_tool.ROOT / "local", f"test-hash-views-{name}-") / "input.sfcr"
+    player_trace.write_rail_replay(replay, frames, None, start=start)
+    # Flying by rule, player 0 would not live through the level, as in player_trace.py rails.
+    config = {"CVars": {"gCoopDebugPlayerCount": args.players, "gInvincible": 1, **parse_cvars(args.cvar)}}
+    return view_compare(name, replay, frames, config, start, exe, args, level=VIEW_LEVELS[name])
+
+
+def view_compare(label, replay, frames, config, start, exe, args, level=None):
+    """Play replay with local index 0 and 1 and compare. level, if given, is the LevelId both runs must fly in."""
     with ThreadPoolExecutor(max_workers=2) as pool:
-        jobs = [pool.submit(play, replay, exe, args.timeout, f"view-{section}-{index}", config=config, start=start,
+        jobs = [pool.submit(play, replay, exe, args.timeout, f"view-{label}-{index}", config=config, start=start,
                             env_extra={"SF64_COOP_TEST_LOCAL_INDEX": str(index)}) for index in (0, 1)]
         (a_values, names, a_rows), (b_values, _, b_rows) = [job.result() for job in jobs]
 
     if a_rows is None or b_rows is None:
-        return [f"{section}: no hash log written"]
-    failures = [f"{section}: index {index} did not play through: {values.get('result') if values else 'no report'}"
+        return [f"{label}: no hash log written"]
+    failures = [f"{label}: index {index} did not play through: {values.get('result') if values else 'no report'}"
                 for index, values in ((0, a_values), (1, b_values)) if not played_through(values)]
     if min(len(a_rows), len(b_rows)) < frames:
-        failures.append(f"{section}: hash logs shorter than the replay ({len(a_rows)}, {len(b_rows)} < {frames} frames)")
-    failures += check_views_differ(section, a_values, b_values)
+        failures.append(f"{label}: hash logs shorter than the replay ({len(a_rows)}, {len(b_rows)} < {frames} frames)")
+    if level is not None:
+        for index, rows in ((0, a_rows), (1, b_rows)):
+            flown = sum(1 for row in rows if row[1] == replay_tool.GS_PLAY and row[2] == level)
+            print(f"hash: {label}: index {index} flew {flown} frames in level {level}")
+            if flown < frames // 2:
+                failures.append(f"{label}: index {index} flew only {flown} of {frames} frames in level {level}")
+    failures += check_views_differ(label, a_values, b_values)
     diff = first_difference(a_rows, b_rows, frames)
     if diff is not None:
-        failures.append(f"{section}: index 0 and 1 differ: {describe(names, diff)}")
+        failures.append(f"{label}: index 0 and 1 differ: {describe(names, diff)}")
     else:
-        print(f"hash: {section}: index 0 and 1 equal on all {min(frames, len(a_rows), len(b_rows))} frames")
+        print(f"hash: {label}: index 0 and 1 equal on all {min(frames, len(a_rows), len(b_rows))} frames")
     return failures
 
 
 def cmd_views(args):
     exe = replay_tool.find_exe(args.exe)
     failures = []
-    for section in VIEW_SECTIONS if args.section == "both" else (args.section,):
-        failures += view_section(section, exe, args)
+    if args.level:
+        names = list(VIEW_LEVELS) if args.level == "all" else args.level.split(",")
+        unknown = [name for name in names if name not in VIEW_LEVELS]
+        if unknown:
+            sys.exit(f"hash: no level {', '.join(unknown)}; the choices are {', '.join(VIEW_LEVELS)}")
+        for name in names:
+            failures += view_level(name, exe, args)
+    else:
+        for section in VIEW_SECTIONS if args.section == "both" else (args.section,):
+            failures += view_section(section, exe, args)
     for f in failures:
         print(f"FAIL: {f}")
     print("hash: FAIL" if failures else "hash: PASS")
@@ -749,8 +812,12 @@ def main():
     b.add_argument("--start", choices=replay_tool.STARTS, default="level", help="input by rule: where the game starts")
     v = sub.add_parser("views", help="play one replay with local index 0 and 1 and compare the hashes")
     v.add_argument("--section", choices=[*VIEW_SECTIONS, "both"], default="both", help="default: both")
+    v.add_argument("--level", metavar="NAME[,NAME]", help=f"fly these levels instead of Corneria's sections, or all: "
+                   f"{', '.join(VIEW_LEVELS)} (#129)")
+    v.add_argument("--cvar", action="append", default=[], metavar="NAME[=VALUE]", help="another CVar for both runs")
     v.add_argument("--players", type=int, default=2, help="players, through gCoopDebugPlayerCount (default 2)")
-    v.add_argument("--frames", type=int, help="replay length (default: what the section needs)")
+    v.add_argument("--frames", type=int, help="replay length (default: what the section needs, or "
+                   f"{VIEW_LEVEL_FRAMES} past when player 0 flies for a level)")
     v.add_argument("--exe", help="Starship executable (default: newest build found)")
     v.add_argument("--timeout", type=float, default=1800, help="per run: give up after this many seconds")
     u = sub.add_parser("builds", help="play one replay on two Release runs and a Debug run and compare the hashes")

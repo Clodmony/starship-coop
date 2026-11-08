@@ -431,6 +431,11 @@ static void HashGlobals(uint64_t* h) {
     HASH_PER_PLAYER(h, gPlayerScores);
     HASH_VAR(h, gRadioState);
     HASH_VAR(h, gRadioMsgId);
+    if (CoopPlayers_IsCoop()) {
+        // The low-health radio timer (#87). A drifted one shows only at the next limit that draws a number, so it is
+        // hashed on its own. Co-op only, so a single-player log lines up with one from an older build.
+        HASH_VAR(h, gTeamLowHealthMsgTimer);
+    }
 }
 
 static void Compute(CoopStateHash* out) {
@@ -639,6 +644,7 @@ static void Probe(void) {
         ProbePlayerValue("gPlayerScores", i, &gPlayerScores[i]);
         ProbeSlot(i);
     }
+    ProbeBit("gTeamLowHealthMsgTimer", 0, &gTeamLowHealthMsgTimer);
     for (k = 0; k < ARRAY_COUNT(sTeamArrays); k++) {
         for (i = 0; i < sTeamArrays[k].count; i++) {
             char target[40];
