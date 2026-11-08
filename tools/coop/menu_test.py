@@ -14,8 +14,8 @@ widgets through ImGui's input queue and reads back what the window holds. game_l
 start and then compares the state hash logs frame by frame, as join_test.py does; game_level_map has a host that went
 through the menus to the map first. Their games play a replay with no input after that, so no controller reaches them,
 each from other seeds, and report the level through SF64_COOP_JOIN_WATCH. game_platform reads what a real menu shows for
-a platform refusal, on the host's side and the joining player's, and runs SF64_COOP_TEST_ANY_PLATFORM. Two games on one
-PC never differ in platform, so the other side there is coop_session_test, which says what it is told to. game_leave
+a platform warning (decision 0010), on the host's side and the joining player's. Two games on one PC never differ in
+platform, so the other side there is coop_session_test, which says what it is told to. game_leave
 has player 2 leave during the level, which ends the session for everyone under lockstep (#160) while every game keeps
 running, then the same games hold a second session, start again and keep every player past the time-out (#132).
 game_level and game_leave print the longest gap between two session ticks (menu-stall.txt).
@@ -314,11 +314,10 @@ def scenario_game_platform(args, exe, out):
         return run.client(port, "--max-seconds", 10, *options, name=name)
 
     try:
-        plain, passing = start("plain"), start("passing", {"SF64_COOP_TEST_ANY_PLATFORM": "1"})
-        for game in games:
-            game.wait(lambda g=game: "menu" in g.items, "Co-op entry in the menu bar", BOOT_SECONDS)
-            toggle_window(game)
-            game.wait_text("status", r"Not in a session\.")
+        plain = start("plain")
+        plain.wait(lambda: "menu" in plain.items, "Co-op entry in the menu bar", BOOT_SECONDS)
+        toggle_window(plain)
+        plain.wait_text("status", r"Not in a session\.")
         plain.type("port", "0")
         plain.click("host")
         port = plain.wait_text("status", r"Hosting on port (\d+), 1 of 4 players\.").group(1)
@@ -331,35 +330,27 @@ def scenario_game_platform(args, exe, out):
         build = re.search(r"host (\S+), joining player probe", said[0]["text"]).group(1)
         other = ["--build", build, "--platform", OTHER_PLATFORM]
 
-        # What the host's window shows.
+        # What the host's window shows: the client gets in, and the window says what differs.
         client, result = bot_client("client", port, *other)
-        run.wait(client, STEP_SECONDS, "the refused client")
-        said = session_test.events(net_test.read(result), "refused")
+        plain.wait_text("status", r", 2 of 4 players\.")
+        host_view = plain.wait_text("message", rf"^Player 2 joined\. \| {PLATFORM_TEXT}").string
+        client.wait(timeout=STEP_SECONDS)  # it runs out of time and exits with 1: a real host sends it no game message
+        said = session_test.events(net_test.read(result), "joined")
         expect(len(said) == 1 and said[0]["diff"] == session_test.DIFF_PLATFORM, f"the client got {said}")
-        host_view = plain.wait_text("message", rf"^A player was refused\. \| {PLATFORM_TEXT}").string
         plain.wait_text("status", r", 1 of 4 players\.")
 
-        # What the joining player's window shows.
+        # What the joining player's window shows: in the session, with the same warning.
         plain.click("leave")
         plain.wait_text("status", r"Not in a session\.")
         bot, bot_port, _ = run.host("--max-seconds", STEP_SECONDS, *other, name="host")
         plain.type("address", "127.0.0.1")
         plain.type("port", bot_port)
         plain.click("join")
-        joiner_view = plain.wait_text("message", r"Different platforms: host Other platform, joining player ").string
+        joiner_view = plain.wait_text("message", r"^Different platforms: host Other platform, joining player ").string
+        plain.wait_text("status", r"as player 2")
+        plain.click("leave")
         plain.wait_text("status", r"Not in a session\.")
         run.wait(bot, STEP_SECONDS + 10, "the bot host")
-
-        # The test switch, from a real game's environment: the same client gets in, and the window says what differs.
-        passing.type("port", "0")
-        passing.click("host")
-        port = passing.wait_text("status", r"Hosting on port (\d+), 1 of 4 players\.").group(1)
-        client, result = bot_client("passed", port, *other)
-        passing.wait_text("status", r", 2 of 4 players\.")
-        passing.wait_text("message", rf"^Player 2 joined\. \| {PLATFORM_TEXT}")
-        client.wait(timeout=STEP_SECONDS)  # it runs out of time and exits with 1: a real host sends it no game message
-        said = session_test.events(net_test.read(result), "joined")
-        expect(len(said) == 1 and said[0]["diff"] == session_test.DIFF_PLATFORM, f"the client got {said}")
     except (Fail, net_test.Fail):
         args.keep = True
         raise
@@ -370,7 +361,7 @@ def scenario_game_platform(args, exe, out):
         if not args.keep:
             for game in games:
                 shutil.rmtree(game.run, ignore_errors=True)
-    return f"2 games and bots: host read '{host_view}'; joining player read '{joiner_view}'; the switch let it in"
+    return f"1 game and bots: as host it read '{host_view}'; as joining player '{joiner_view}'; both sessions ran"
 
 
 def in_level(game):

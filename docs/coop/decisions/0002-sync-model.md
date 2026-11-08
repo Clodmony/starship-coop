@@ -187,6 +187,8 @@ compiler on one OS, Windows against Linux, and real latency. Each stays a stated
 
 ### Platform rule
 
+Platform rule superseded by [0010](0010-cross-platform-sessions.md).
+
 A needs every client to compute the same game, and no run has compared two platforms. So the same platform is a
 requirement of v1, and cross-platform play stays under "Later" in ROADMAP.md.
 

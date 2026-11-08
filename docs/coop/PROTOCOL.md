@@ -10,12 +10,11 @@ with their work packages. This page sets the rules so parallel work does not col
    area keep parallel branches from picking the same number; take the next free id in your area's range.
 2. **Versioned handshake.** The first exchange carries a protocol version, the build id (git commit), the ROM version
    (the game version of each loaded archive), the values of the simulation-affecting CVars and the platform (OS,
-   CPU, compiler with its version). A different protocol version, build, ROM, CVar or platform refuses the connection
-   with a message the player can read. The platform counts because lockstep needs every client to compute the same game
-   and no run has compared two platforms ([decision 0002](decisions/0002-sync-model.md)); a comparison that shows two
-   platforms compute the same game lifts that. For a real cross-platform test, `SF64_COOP_TEST_ANY_PLATFORM` on the host
-   lets in a client that differs in platform and nothing else, and both players read what differs. Bump
-   `COOP_PROTOCOL_VERSION` whenever a message layout changes.
+   CPU, compiler with its version). A different protocol version, build, ROM or CVar refuses the connection with a
+   message the player can read. A different platform only warns, on both sides, with both platforms named
+   ([decision 0010](decisions/0010-cross-platform-sessions.md)): lockstep needs every client to compute the same game,
+   nobody has compared two platforms, and the desync check (WP-23) is what shows whether two do. A refusal names the
+   platform too when it differs as well. Bump `COOP_PROTOCOL_VERSION` whenever a message layout changes.
 3. **Explicit layout.** Little-endian, fixed-size integer types, no raw `memcpy` of game structs (they hold pointers
    and padding). Write a serializer per message.
 4. **Frame-stamped.** Messages that belong to a game frame carry that frame number.

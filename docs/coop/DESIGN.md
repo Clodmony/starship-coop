@@ -130,6 +130,8 @@ Each needs a decision record before code depends on it. Proposals in brackets.
 
 Deterministic lockstep, [decision 0002](decisions/0002-sync-model.md), accepted on one-PC evidence. Every client runs
 the whole simulation. Only inputs travel, plus a state hash per frame to detect desyncs, so all clients need the same
-build, ROM, simulation CVars and platform, and a platform difference refuses the connection until a comparison has shown
-that the two compute the same game. Before a first public release: the two-machine run, and `hash_check.py builds` and
+build, ROM and simulation CVars. A platform difference only warns
+([decision 0010](decisions/0010-cross-platform-sessions.md)): nobody has compared two platforms, and the desync check is
+what shows whether two compute the same game. Before a first public release: the two-machine run, and
+`hash_check.py builds` and
 `rates` on Windows Release (#145). A difference that cannot be found and removed reopens the choice through a new record.

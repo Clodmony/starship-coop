@@ -221,14 +221,16 @@ def sc_cvar(run, args):
 
 
 def sc_platform(run, args):
-    return refused(run, ["--platform", WINDOWS], ["--platform", LINUX], DIFF_PLATFORM,
-                   f"Different platforms: host {WINDOWS}, joining player {LINUX}")
-
-
-def sc_platform_switch(run, args):
-    text = joined(run, ["--platform", WINDOWS, "--any-platform", 1], ["--platform", LINUX], DIFF_PLATFORM)
-    expect(text.startswith(f"Different platforms: host {WINDOWS}"), f"no platform text: {text!r}")
+    # A platform difference only warns (decision 0010): the session runs, and both players read the same warning.
+    text = joined(run, ["--platform", WINDOWS], ["--platform", LINUX], DIFF_PLATFORM)
+    expect(text.startswith(f"Different platforms: host {WINDOWS}, joining player {LINUX}."), f"no platform text: {text!r}")
     return text
+
+
+def sc_platform_build(run, args):
+    # With a build difference on top it refuses, and the refusal names the platform too.
+    return refused(run, ["--platform", WINDOWS, "--build", "aaaa1111"], ["--platform", LINUX, "--build", "bbbb2222"],
+                   DIFF_BUILD | DIFF_PLATFORM, f"Different platforms: host {WINDOWS}, joining player {LINUX}")
 
 
 def sc_refuse_hell(run, args):
@@ -323,7 +325,7 @@ SCENARIOS = {
     "rom": sc_rom,
     "cvar": sc_cvar,
     "platform": sc_platform,
-    "platform_switch": sc_platform_switch,
+    "platform_build": sc_platform_build,
     "two_clients": sc_two_clients,
     "characters": sc_characters,
     "taken": sc_taken,
