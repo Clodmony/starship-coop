@@ -238,6 +238,28 @@ int32_t CoopPlayers_SkipUpdate(int32_t index) {
     }
 }
 
+// Forward speed on the rails is the team's (#194): any player's boost speeds the level for everyone, and when nobody
+// boosts the strongest brake slows it. boostSpeed is what single player uses (ramps +2 a frame to 30, -1 a frame back,
+// brake to -20), so the level speeds up as smoothly as it does for Fox alone. Boost wins over a brake. Only players
+// that fly count; player 0 always does, as it owns the path. Every game reads the same players in the same order, so
+// the result is the same everywhere. A player later in the loop is read as it stood after the previous frame.
+f32 CoopPlayers_PathBoostSpeed(const Player* player) {
+    f32 hi = gPlayer[0].boostSpeed;
+    f32 lo = hi;
+    s32 i;
+
+    if (!CoopPlayers_IsCoop()) {
+        return player->boostSpeed;
+    }
+    for (i = 1; i < CoopPlayers_Count(); i++) {
+        if (!CoopPlayers_IsParked(i) && (gPlayer[i].state == PLAYERSTATE_ACTIVE)) {
+            hi = MAX(hi, gPlayer[i].boostSpeed);
+            lo = MIN(lo, gPlayer[i].boostSpeed);
+        }
+    }
+    return (hi > 0.0f) ? hi : lo;
+}
+
 // Player 0 owns the path: everything that hangs off it reads player 0 or the globals player 0 writes (object loading,
 // culling, path turns, floor collision, ground scroll), and it is the one player every client has. See NOTES.md, WP-12.
 int32_t CoopPlayers_FollowPath(Player* player) {

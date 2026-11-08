@@ -82,6 +82,8 @@ import replay as replay_tool  # noqa: E402
 
 IS_LINUX = platform.system() == "Linux"
 BUTTON_A, BUTTON_START, BUTTON_L = 0x8000, 0x1000, 0x0020
+BUTTON_C_LEFT = 0x0002  # gBoostButton, src/engine/fox_game.c
+BOOST_AT, BOOST_FRAMES = 2000, 40  # feed frames of sc_boost
 START_FRAME = 600
 REPLAY_FRAMES = 30000  # longer than any run: the games stop on `done`, not at the end of this
 INPUT_DELAY = 3  # COOP_LOCKSTEP_INPUT_DELAY
@@ -385,6 +387,39 @@ def sc_steer(args, folder):
     moved = flown(client)
     expect(moved[0] > 500 and moved[1] > 500, f"a player did not fly: moved {moved}")
     return f"same hash on {frames} frames, moved {moved[0]:.0f} and {moved[1]:.0f}; {played(host)}, {played(client)}"
+
+
+def boost_of_player_1(frame, player):
+    """sway, and player 1 alone holds boost (C-left) for BOOST_FRAMES frames from BOOST_AT. Player 0 never does."""
+    button, x, y = sway(frame, player)
+    if player == 1 and BOOST_AT <= frame < BOOST_AT + BOOST_FRAMES:
+        button |= BUTTON_C_LEFT
+    return button, x, y
+
+
+def sc_boost(args, folder):
+    """#194: on the rails any player's boost speeds the level for everyone. Player 1 boosts, player 0 does not."""
+    host, client = run_short(args, folder, script=boost_of_player_1)
+    frames = compare(host, client, SHORT_FRAMES)
+    seen = []
+    for game in (host, client):
+        rows = [r for r in player_trace.parse(game.run / "trace.txt") if r.level == 0 and r.mode == 0
+                and len(r.players) > 1 and r.players[1].state == 3 and not r.players[1].parked]
+        before = sorted(r.pathvel for r in rows if r.frame < BOOST_AT and r.pathvel > 0)
+        expect(len(before) > 50 and any(r.frame >= BOOST_AT for r in rows),
+               f"{game.name}: only {len(before)} frames on the rails with both flying before the boost")
+        base = before[len(before) // 2]
+        window = [r for r in rows if BOOST_AT <= r.frame < BOOST_AT + BOOST_FRAMES + 40]
+        top = max(r.pathvel for r in window)
+        lead = min(r.players[1].camdist for r in window)
+        own = min(r.players[0].camdist for r in rows)
+        expect(lead < -100, f"{game.name}: player 1 did not boost, camDist only {lead}")
+        expect(own > -10, f"{game.name}: player 0 boosted too, camDist {own}")
+        expect(top > base + 15, f"{game.name}: level speed {base} before, {top} at most while player 1 boosts")
+        seen.append((base, top, [(r.frame, r.pathvel) for r in rows]))
+    expect(seen[0][2] == seen[1][2], "the two games do not have one level speed")
+    return (f"same hash on {frames} frames; level speed {seen[0][0]:.1f} -> {seen[0][1]:.1f} in both games while only "
+            f"player 1 boosts")
 
 
 def sc_three(args, folder):
@@ -1086,6 +1121,7 @@ SCENARIOS = {
     "sim": sc_sim,
     "desync_sim": sc_desync_sim,
     "steer": sc_steer,
+    "boost": sc_boost,
     "three": sc_three,
     "control": sc_control,
     "pause": sc_pause,
