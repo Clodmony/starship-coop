@@ -2069,7 +2069,7 @@ Guess:
 Unknown:
 
 - Why the first boot in an empty folder did not write. It no longer matters for the seeds.
-- Windows Release, and any second compiler: not run. Other levels: not run. Levels with two scrolling surfaces (`fox_bg.c`,
+- Any second compiler: Windows Release with MSVC 19.44 ran on 2026-11-08 (#145) and matched, see QA.md. Other levels: not run. Levels with two scrolling surfaces (`fox_bg.c`,
   Aquas) would put more into `masterDL`.
 - Whether the `Map_Prologue_Update` read changes what a player sees. It does not reach the hash in these runs.
 
@@ -3392,6 +3392,31 @@ Unknown:
   beyond `gObjectLoadIndex`, audio). A desync that the hash misses would show up as equal hashes with different play.
 - `gScenery360` is only hashed in `LEVELMODE_ALL_RANGE`; Andross allocates it mid-level
   (`src/overlays/ovl_i6/fox_andross.c:4055`), where it may not be hashed.
+
+### 2026-11-08, #145, Windows Release matches itself, Debug and every rate
+
+Identity: ROM US 1.0, game code at `4283e076`, Windows 11, MSVC 19.44, Release and Debug from `build.py`, DirectX 11,
+two players by `gCoopDebugPlayerCount`, input by rule through the menus, drawn in real time.
+
+Observed:
+
+- `hash_check.py builds`: two Release runs equal, and Debug equal to Release, on every frame of Corneria's rail section
+  (10500) and its all-range section (8000).
+- `hash_check.py rates` on Release: 60, 120, 144 and 360 fps each equal to 30 fps on every frame of both sections,
+  each run logging the draws its rate asks for.
+- A Debug build and a Release build in the same Visual Studio build folder (`build/x64/Debug`, `build/x64/Release`)
+  ran as two builds; `build.py` reported `build: OK` for each.
+
+Derived:
+
+- The Release difference fixed in #144, and the interpolation fault of #141, do not show on MSVC either.
+
+Unknown:
+
+- Windows against Linux: still never compared. These runs say each platform agrees with itself, not with the other.
+- The stray reads listed on #145 (upstream code) are not touched by this run; a hash cannot see a write that lands on
+  memory nothing hashes.
+- Other levels than Corneria.
 
 ### 2026-11-07, #2, decision 0002 accepted: what a platform refusal looks like
 

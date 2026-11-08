@@ -194,6 +194,21 @@ Running tests must never use or modify the owner's own `starship.cfg.json`, save
 Newest first. One block per run that matters (a milestone, a release, a QA level change).
 
 ```
+date:       2026-11-08
+commit:     issue/145-windows-release, game code at 4283e076
+identity:   ROM US 1.0, Windows 11, MSVC 19.44 (14.44.35207), Release and Debug from build.py (Visual Studio 2022),
+            DirectX 11, drawn in real time, 2 players by gCoopDebugPlayerCount, input by rule through the menus, no
+            transport
+what ran:   python tools/coop/hash_check.py builds --debug build/x64/Debug/Starship.exe
+            --release build/x64/Release/Starship.exe; python tools/coop/hash_check.py rates
+            --exe build/x64/Release/Starship.exe (30, 60, 120, 144, 360 fps)
+result:     PASS on both. builds: two Release runs equal, and Debug equal to Release, on 10500/10500 rail frames and
+            8000/8000 all-range frames. rates: 60, 120, 144 and 360 fps each equal to 30 fps on all 10500 rail and
+            all 8000 all-range frames, every run with the draws its rate asks for. Each run's replay result is
+            FAIL_MISMATCH at frame 0, as for every co-op run (see Test plan). About 35 min in all
+```
+
+```
 date:       2026-11-06
 commit:     issue/10-rails-player2, game code at e3aaaa4a, on 95962d04
 identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window, 1 client per run, no transport,
