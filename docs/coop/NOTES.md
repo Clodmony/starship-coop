@@ -479,6 +479,56 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-08, #7, decision 0007 walk-through: what had moved since the record was written
+
+Read in `b3169ab6` (checkout of `coop`), no build, nothing run. This is the re-check behind the owner's walk-through of
+`docs/coop/decisions/0007-lives-and-respawn.md`, which was read at `797c678b`.
+
+Observed, in the code:
+
+- **The return path is still as 0007 describes.** A player 2+ going down is set `OUT` and stays so until the next
+  `Play_Init` (`src/port/coop/game/players.c:187-191`, `:309-317`, `:233-237`). A join copies player 0's `gLifeCount`
+  into the slot (`:166`). A player waits or comes back only while the section is supported and player 0 is `ACTIVE`
+  (`:195-198`, `:217-231`). Slots are `JOINED`, `WAITING`, `AWAY` and `OUT`.
+- **Parking is still tied to player 0.** A joined player goes `AWAY` once player 0 is neither `ACTIVE` nor `U_TURN`
+  (`players.c:208-214`), so nobody flies on while Fox is down.
+- **The 11 `gLifeCount` write lines of 0007 are all still there**, still indexed by `gPlayerNum` or the collector's
+  `playerNum`: `src/engine/fox_enmy.c:2230`, `:2334`, `src/port/mods/PortEnhancements.c:259`,
+  `src/engine/fox_hud.c:1090`, `:1093`, `:1174`, `:1540`, `:1553`, `src/overlays/ovl_menu/fox_map.c:1448`, `:1529`,
+  `:3512`. The game-over test is at
+  `src/engine/fox_play.c:6174`, the start value at `src/engine/fox_game.c:425` and `fox_play.c:4935`.
+- **Enemy effects now hit any player**, by the probes of #100 and #136: 40 of 40 lines hold on Corneria, on rails and in
+  all-range (the NOTES entries of 2026-11-06 #100 and 2026-11-07 #136). Not re-run here. So the sentence in 0007's
+  context that enemy shots test player 0 only is out of date for effects. What an effect is aimed at is still player 0.
+- **Player shots on players.** The loop at `src/engine/fox_beam.c:837-884` walks `gCamCount` players and is all-range
+  only. In a co-op session `gCamCount` is 1 (`players.c:41`, `:53`), so a shot from player 1+ reaches player 0, never
+  the reverse. The hit gives 20 damage (60 when `gPlayer[0].form` is on foot) and a barrel roll deflects the shot
+  (`:861-884`). It is not gated on `gVersusMode`; that only widens the hitbox (`:840-843`).
+- **Ways to go down.** `Player_Down` is called at `src/engine/fox_play.c:5736`, `:5764`, `:5789`, `:5818`, `:5834` and
+  `src/engine/fox_tank.c:1179`. `Cutscene_KillPlayer` is called at `src/engine/fox_demo.c:1666`, `:1752`, `:1857`,
+  `src/overlays/ovl_i3/fox_aq.c:1085` and `src/overlays/ovl_i6/fox_andross.c:754`. Only the call at `fox_play.c:5736`
+  was read to its end: it writes speed and `csTimer` after `Player_Down` returns (`:5735-5743`).
+- **How much of the game reads player 0** (`docs/coop/audit/single-player.md`, 1904 sites in 431 functions): verdict
+  `sim` 1062 sites, of which 1059 are `gPlayer[0]`; `flow` 374, of which 334 are `gPlayer[0]`. The file says its
+  verdicts are a starting list, not checked facts (a sample of 45 found 5 wrong, #56).
+
+Derived:
+
+- A "lead index" variable in place of `gPlayer[0]` would touch on the order of 1400 sites in the decompiled game.
+  That is far from the fork's rule to keep the upstream diff small. Swapping a survivor into slot 0 needs only port-side
+  code, but everything that remembers a slot number has to be remapped: a shot's `sourceId`, an item's `playerNum`,
+  `lockOnTimers[i]`, `dmgSource`, the pad mapping (`CoopPlayers_SelectInput`) and the per-player arrays that
+  `CoopPlayers_JoinFromPlayer0` lists (`players.c:146-167`). Whether that works is the question of #183.
+- In decision 0006, "a return comes back at 64" meant a return at a level load. The owner's walk-through gave a return
+  in a level (for a life) full shields, so only the free return at a level load gives 64 (0006 and 0007 say so).
+
+Unknown:
+
+- How refill in place behaves: it has not been built or run, in any level.
+- Whether the other `Player_Down` and `Cutscene_KillPlayer` callers fit a refill; the story deaths in particular.
+- Whether passing the lead role to a survivor works (#183).
+- How lives, the 150-frame delay and friendly fire play with four people. Nobody has played co-op with lives.
+
 ### 2026-11-07, #136, other hits that only reach player 0
 
 Line numbers are for `issue/136-hits-any-player` on `coop` at `da44a18a`. Windows 11, MSVC v143, Debug, US 1.0 ROM.
