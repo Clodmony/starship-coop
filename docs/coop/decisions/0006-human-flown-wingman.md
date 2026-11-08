@@ -1,7 +1,7 @@
 # 0006: What a human-flown wingman is: the character's shields follow the player
 
-- Status: Proposed
-- Date: 2026-11-06
+- Status: Accepted
+- Date: 2026-11-06 (proposed), 2026-11-08 (accepted by the owner, with changes to D and E)
 - Issue: #85
 
 ## Context
@@ -208,13 +208,25 @@ whatever the value says, so the value must not claim otherwise.
 
 ## Decision
 
-Proposed, for the owner to decide: **A1, B3, C1, D1, E2.** A human-flown wingman is a `Player` whose shields the game
-reads through `gTeamShields[id]`: the value holds the human's shields, so every down check, gate, medal, radio speaker
-and portrait keeps working unchanged and means that human. A human starts every level at 255, as Fox does, and loses
-shields only through their own ship. On rails the scripted scenes stay whole with a stand-in that cannot be hurt; in
+**A1, B3, C1, D1 with the radio about the absent Slippy dropped, and shields that carry over and heal.** Proposed
+as A1, B3, C1, D1, E2; the owner accepted A1, B3 and C1 as proposed on 2026-11-08 and changed two:
+
+- **D: D1, and the radio follows.** A human-flown Slippy stays in play, as D1 says, and the lines that speak of Slippy
+  as absent or lost are dropped, by message id, the same way on every client. Which lines those are is unknown: nobody
+  has listed them yet (Sector X after the event, Titania until the third Goras part). That list is a research task
+  before the code.
+- **E: neither option, carry and heal.** Every player's shields carry over to the next level and heal a bit there, and
+  a player who went down heals a little and comes back. That holds for every player in a co-op session, Fox included;
+  single player stays as the original, where Fox refills every level. The heal is a starting value of 64, a quarter of
+  the bar, both for the heal at each level load and for a return, to be tuned after playing.
+
+A human-flown wingman is a `Player` whose shields the game reads through `gTeamShields[id]`: the value holds the
+human's shields, so every down check, gate, medal, radio speaker and portrait keeps working unchanged and means that
+human. Shields carry over from level to level and heal by 64 at each level load, and a player who went down comes back
+at 64; a human loses shields only through their own ship. On rails the scripted scenes stay whole with a stand-in that
+cannot be hurt; in
 boss fights the computer wingman is left out; in all-range a hidden body keeps enemies aimed at the human. No script
-takes a human out of play. A1 and B3 follow from the code; C1, D1 and E2 are judgement calls between story and play,
-each reversible, and are the ones to look at.
+takes a human out of play, and the radio does not say otherwise.
 
 The rules:
 
@@ -223,9 +235,11 @@ The rules:
    bar and the heal. On going down the value is -1, written in `CoopPlayers_OnPlayerDown`, as all three retreats do, and
    it stays -1 until the human flies again. A parked player's value is left alone. The id comes from the roster, never
    from the player index. Humans and computer wingmen share these meanings, and a run can mix them (0005).
-2. **Level load.** Every level load sets a human id's value to 255, and the human joins at 255. So no human goes through
-   the sit-out, as 0007 asks, and the game's stores do not matter for a human. If 0007 changes, this rule has to be read
-   again.
+2. **Level load.** In a co-op session every level load gives each player, Fox included, the shields they ended the last
+   level with plus 64, at most 255; a player who went down, or whose value is at or below 0, comes back at 64. The
+   human joins at that, and a human id's value is set to it. So no human goes through the sit-out, as 0007 asks.
+   `COOP_LEVEL_HEAL`, 64, is one constant, to be tuned after playing. The first level of a run starts every player at
+   255, as the original does. If 0007 changes, this rule has to be read again.
 3. **Actors.** As B3. Scene actors take no damage, through the Katt and Bill check (`src/engine/fox_enmy2.c:2117-2119`).
    The all-range body uses `gNoHitbox`, not `timer_0C2`, which enemies read. While its human is out it stays in the slot
    in `STATE360_6`, so enemies leave it, and it is ready for 0007's return. If a human goes down during a scene, the
@@ -248,7 +262,8 @@ The rules:
      voice is not decided here: the radio waits on the voice (`src/engine/fox_radio.c:628`), so it could move
      `gRadioState`.
 6. **Slippy.** As D1, with the level's vehicle as 0009 gives it. `EVOP_RESTORE_TEAM` and the Goras spawn write nothing
-   for a human id: a human comes back by 0007's rule only.
+   for a human id: a human comes back by 0007's rule only. Lines that speak of a human-flown Slippy as absent or lost
+   are dropped by message id, in the simulation, the same on every client.
 
 Each open question, answered or handed on:
 
@@ -277,9 +292,9 @@ Each open question, answered or handed on:
 | #61 1 | Down through what | `Player.shields`, with the value kept in step | Rule 1 |
 | #61 2 | Missing a level, what the player does meanwhile | Left to a later record | 0007 |
 | #61 3 | Does going down cost a life | Left to a later record | 0007 |
-| #61 4 | Who triggers a restart | Left to a later record. Rule 2 brings every human back at 255 either way | 0007 |
+| #61 4 | Who triggers a restart | Left to a later record. Rule 2 brings every human back, at 64 after going down | 0007 |
 | #61 5 | Who may retry | Left to a later record | 0007 |
-| #61 6 | Return at 255, clear screen heal | The heal runs, and the next load's 255 replaces it. A return at 255 fits 0007's | Rule 2, 0007 |
+| #61 6 | Return at 255, clear screen heal | The heal runs and carries over, as the next load adds 64 to what is left. A return comes back at 64 | Rule 2, 0007 |
 | #61 7 | Scripted away and scripted hits | No script takes a human away, hurts them or brings them back | Rules 3, 4, 6 |
 | #61 8 | Venom levels, "out until the end" | Left to a later record. Rule 2 does not keep anyone out | 0007 |
 | #61 9 | One player down costs the medal | Yes, if that human is down at clear: the read is unchanged. 0008 keeps the check | Rule 1, 0008 |
@@ -310,9 +325,10 @@ Harder:
 
 - A rail scene shows a second Arwing of a character a human is flying, which bends 0005's "in place of". If that looks
   wrong in a watched run, hide it (C1) or go to C4.
+- Shields that carry over make a hard level harder for the next one, and 64 decides how much. Nobody has played it.
 - Rescue scenes lose their stakes when a human flies the wingman, and Corneria's Falco gate then rests on the arches and
   that human staying up.
-- Titania's radio does not fit a Slippy who is flying.
+- Titania's and Sector X's radio would not fit a Slippy who is flying; those lines have to be found and dropped.
 - Lost shields cost a human nothing past the level. E1 is a small change at the join if that plays too easily.
 
 The 47 writes, for a human id:
@@ -337,9 +353,11 @@ To do, once accepted:
   `ActorTeamBoss_Init` (before its 255 at `src/engine/fox_hud.c:4835`), the chase and thanks lines
   (`src/engine/fox_360.c:530-552`, `:625-643`, `:1705-1752`), Sector X (two conditions) and Titania.
 - WP-17 or #100: enemy fire has to reach every player, or a human can only crash.
+- Research, before the Slippy code: list the lines, by message id, that speak of Slippy as absent or lost after the
+  Sector X event and in Titania.
 - WP-16 (#14): 0007 and 0008 build on the value as defined here. The return in 0007 is what puts the value back above 0.
 - Tests with two clients: a human going down gives -1 and silences that character; a scene runs with its stand-in unhurt
   and the human's shields untouched by `EVOP_DAMAGE_TEAM`; Star Wolf chases a human in all-range and leaves them while
-  they are out; every level starts a human at 255. Only Corneria has been run, so the scene and Slippy rules need other
+  they are out; each level load carries shields over and adds 64, and a player who went down comes back at 64. Only Corneria has been run, so the scene and Slippy rules need other
   levels first.
 - `DESIGN.md` section 4, item 1 and the index in `decisions/README.md` get a line for this record.
