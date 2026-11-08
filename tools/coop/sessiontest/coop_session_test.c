@@ -2501,7 +2501,7 @@ static void Script_ClientPickRefused(void) {
 
 // ---- Level start on a scripted transport ----
 
-#define LEVEL_BYTES (2 + COOP_SESSION_PLAYERS + 4 * COOP_LEVEL_START_VALUES)
+#define LEVEL_BYTES (2 + COOP_SESSION_PLAYERS + 4 * COOP_LEVEL_START_VALUES + 1)
 #define TEST_LEVEL 5
 #define TEST_PHASE 1
 
@@ -2520,6 +2520,7 @@ static void Level_Fill(CoopLevelStart* start, uint8_t level, uint8_t phase) {
     for (i = 0; i < COOP_LEVEL_START_VALUES; i++) {
         start->values[i] = Level_Value(i);
     }
+    start->cleared = 1;
 }
 
 // The message as PROTOCOL.md gives it, written apart from the session's own code.
@@ -2540,6 +2541,7 @@ static void Level_Bytes(uint8_t* out, uint8_t level, uint8_t phase, uint8_t p0, 
         out[8 + 4 * i] = (uint8_t) (v >> 16);
         out[9 + 4 * i] = (uint8_t) (v >> 24);
     }
+    out[LEVEL_BYTES - 1] = 1; // cleared (#191)
 }
 
 static void Expect_Level(const char* name, const Side* side, uint8_t level, uint8_t phase, uint8_t p0, uint8_t p1,
@@ -2554,6 +2556,7 @@ static void Expect_Level(const char* name, const Side* side, uint8_t level, uint
     for (i = 0; i < COOP_LEVEL_START_VALUES; i++) {
         EXPECT(got->values[i] == Level_Value(i), name, "a value did not arrive as it was");
     }
+    EXPECT(got->cleared == 1, name, "the cleared flag did not arrive as it was");
 }
 
 // Since from, peer got the level start exactly once, on the reliable lane, with these bytes.
@@ -2982,6 +2985,9 @@ static void Script_ClientStart(void) {
     Expect_BadLevel("level_last_holds_nothing", bytes, LEVEL_BYTES, 1);
     Level_Bytes(bytes, TEST_LEVEL, TEST_PHASE, FOX, FALCO, UNPICKED, NO_PLAYER);
     Expect_BadLevel("level_other_holds_nothing", bytes, LEVEL_BYTES, 1);
+    Level_Bytes(bytes, TEST_LEVEL, TEST_PHASE, FOX, FALCO, NO_PLAYER, NO_PLAYER);
+    bytes[LEVEL_BYTES - 1] = 2;
+    Expect_BadLevel("level_cleared_not_a_flag", bytes, LEVEL_BYTES, 1);
 }
 
 // ---- Characters over the real transport core: three clients, each going down its list on every refusal ----

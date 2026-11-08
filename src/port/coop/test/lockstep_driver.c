@@ -198,6 +198,9 @@ static void CoopLockstepDriver_OnGamePreUpdate(IEvent* event) {
     s32 frame;
 
     (void) event;
+    if (sCleared) { // from boot on, so the host's level start already carries it (#191)
+        gSaveFile.save.data.planet[PLANET_CORNERIA].normalClear = 1;
+    }
     frame = Driver_Frame();
     if (frame < 0) {
         Driver_After();
@@ -210,9 +213,6 @@ static void CoopLockstepDriver_OnGamePreUpdate(IEvent* event) {
     if (CoopSyncGame_Frame() >= 0) {
         sLastFrame = frame;
         Driver_Log(frame);
-    }
-    if (sCleared) {
-        gSaveFile.save.data.planet[PLANET_CORNERIA].normalClear = 1;
     }
     Driver_Pad(frame);
     if (frame == sMuteFrame) {

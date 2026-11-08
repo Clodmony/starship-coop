@@ -292,8 +292,8 @@ static bool Identity_ReadAll(CoopIdentity* id, const uint8_t* data, uint16_t siz
     return read != 0 && read == size;
 }
 
-// Level start on the wire: level, phase, roster, then the values little-endian.
-#define LEVEL_START_SIZE (2 + COOP_SESSION_PLAYERS + 4 * COOP_LEVEL_START_VALUES)
+// Level start on the wire: level, phase, roster, the values little-endian, then the cleared flag.
+#define LEVEL_START_SIZE (2 + COOP_SESSION_PLAYERS + 4 * COOP_LEVEL_START_VALUES + 1)
 
 static void LevelStart_Write(const CoopLevelStart* start, uint8_t* out) {
     int i;
@@ -310,6 +310,7 @@ static void LevelStart_Write(const CoopLevelStart* start, uint8_t* out) {
         *out++ = (uint8_t) (value >> 16);
         *out++ = (uint8_t) (value >> 24);
     }
+    *out = start->cleared ? 1 : 0;
 }
 
 static void LevelStart_Read(CoopLevelStart* start, const uint8_t* data) {
@@ -326,6 +327,7 @@ static void LevelStart_Read(CoopLevelStart* start, const uint8_t* data) {
         start->values[i] = (int32_t) value;
         data += 4;
     }
+    start->cleared = *data;
 }
 
 static void Event_Init(CoopSessionEvent* ev, CoopSessionEventType type, int peer) {
@@ -636,8 +638,8 @@ static bool Roster_Valid(const uint8_t* data, uint16_t size, uint8_t self) {
     return true;
 }
 
-// True if data is a level start this client can enter: a level there is, and a roster as above in which everyone holds
-// a character, as the host starts no other way.
+// True if data is a level start this client can enter: a level there is, a roster as above in which everyone holds
+// a character, as the host starts no other way, and a cleared flag of 0 or 1.
 static bool LevelStart_Valid(const uint8_t* data, uint16_t size, uint8_t self) {
     const uint8_t* roster = data + 2;
     int i;
@@ -651,7 +653,7 @@ static bool LevelStart_Valid(const uint8_t* data, uint16_t size, uint8_t self) {
             return false;
         }
     }
-    return true;
+    return data[LEVEL_START_SIZE - 1] <= 1;
 }
 
 static void Client_LevelStart(CoopSession* s, const CoopNetEvent* net, CoopSessionEvent* ev) {

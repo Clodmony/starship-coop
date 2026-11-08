@@ -22,8 +22,9 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   three     the same with three games, so that input goes through the host to the other client.
   control   the same run with SF64_COOP_TEST_NO_LOCKSTEP: it must differ, or this test says nothing.
   pause     Start on either client pauses both on the same frame, Start on either resumes.
-  save      a host whose save has Corneria cleared presses Start in the level intro: no client skips it, as the skip reads
-            a save the clients do not share.
+  save      the intro skip goes by the host's save, as the level start carries it (#191): with Corneria cleared there,
+            the client's Start in the intro skips it on both games and both players fly; with it cleared only in the
+            client's save, nobody's Start does anything.
   zero_seed a seed zeroed on both clients: no clock read, so they stay equal.
   slow      one game takes much longer on some frames: the other one waits, and nothing differs.
   poke      a bit flipped on one client shows at exactly that frame, and nowhere before.
@@ -91,6 +92,7 @@ SEEDS = "1111,2222,3333,4444,5555,6666"  # every level start of a run: the fligh
 JOIN_FRAME = 1700  # a little after both players fly: level frames, 1674 in NOTES.md, #142
 SHORT_FRAMES = 2700
 LEVEL_COMPLETE, MAP, PLAY_PAUSE = 7, 4, 100  # PLAYERSTATE_LEVEL_COMPLETE, GSTATE_MAP, PLAY_PAUSE
+PLAY_INIT, PLAY_UPDATE, LEVEL_INTRO = 1, 2, 2  # PLAY_INIT, PLAY_UPDATE, PLAYERSTATE_LEVEL_INTRO
 MAP_TAIL = 60
 FLY_FRAMES = 14000  # Corneria took 11200 frames from level start to the map in #142, the rest is room
 DESYNC_PERIOD = 10  # COOP_DESYNC_PERIOD: a desync shows within this many frames plus the input delay
@@ -552,14 +554,45 @@ def sc_pause(args, folder):
     return f"both clients paused and resumed on the same frames, {len(paused)} of them; same hash on {frames} frames"
 
 
+def level_trace(game, frames):
+    """The first `frames` rows of the trace in Corneria: about one per lockstep frame, as both start with the level."""
+    return [r for r in player_trace.parse(game.run / "trace.txt") if r.level == 0][:frames]
+
+
+def both_fly(row):
+    return row.players[0].state == player_trace.ACTIVE and not any(p.parked for p in row.players)
+
+
 def sc_save(args, folder):
-    """Saves are each client's own. A host with Corneria cleared presses Start in the intro, and the skip reads the save.
-    It pauses instead, and the second press resumes."""
-    frames = 900
-    host, client = run_short(args, folder, press(idle, {(300, 0), (360, 0)}), frames=frames,
+    """Saves are each client's own, and the level start carries the host's word on the level (#191). Corneria cleared on
+    the host only: the client's Start in the intro skips it, Play_Init runs again on both games on the same frame, and
+    both players fly. Cleared on the client only: neither Start does anything, the intro goes on."""
+    frames, skip = 900, 300
+    host, client = run_short(args, folder / "host_cleared", press(idle, {(skip, 1)}), frames=frames,
                              host_env={"SF64_COOP_LOCKSTEP_CLEARED": "1"})
     equal = compare(host, client, frames)
-    return f"Start in the intro on a host whose save differs: same hash on {equal} frames"
+    for game in (host, client):
+        inits = [i for i, state in enumerate(play_states(game)[:frames]) if state == PLAY_INIT]
+        expect(inits == [skip + 1], f"{game.name}: Play_Init on lockstep frames {inits}, want [{skip + 1}]: "
+                                    f"the client's Start did not skip the intro")
+        rows = level_trace(game, frames)
+        intro = sum(1 for r in rows if r.players[0].state == LEVEL_INTRO)
+        expect(intro <= skip + 2, f"{game.name}: player 0 in the intro on {intro} frames, the skip was at {skip}")
+        flying = next((n for n, r in enumerate(rows) if both_fly(r)), None)
+        expect(flying is not None, f"{game.name}: after the skip the two players never flew together")
+    host, client = run_short(args, folder / "client_cleared", press(idle, {(skip, 0), (skip + 60, 1)}), frames=frames,
+                             client_env={"SF64_COOP_LOCKSTEP_CLEARED": "1"})
+    kept = compare(host, client, frames)
+    for game in (host, client):
+        states = set(play_states(game)[1:frames])
+        expect(states == {PLAY_UPDATE}, f"{game.name}: play states {sorted(states)} after frame 0, want only "
+                                        f"{PLAY_UPDATE}: a Start did something in the intro")
+        rows = level_trace(game, frames)
+        expect(len(rows) >= frames - 2 and all(r.players[0].state == LEVEL_INTRO for r in rows[2:]),
+               f"{game.name}: player 0 left the intro within {frames} frames with the host's save not cleared")
+    return (f"host's save cleared: the client's Start skipped the intro on both, Play_Init again on frame {skip + 1}, "
+            f"both fly {flying} frames into the level, same hash on {equal} frames; client's save cleared only: Start "
+            f"from either did nothing, same hash on {kept} frames")
 
 
 def sc_zero_seed(args, folder):

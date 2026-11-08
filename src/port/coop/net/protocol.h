@@ -3,7 +3,7 @@
 // Message ids and the protocol version. The registry and the wire layout are in docs/coop/PROTOCOL.md.
 
 // Bump whenever a message layout changes (PROTOCOL.md rule 2).
-#define COOP_PROTOCOL_VERSION 6
+#define COOP_PROTOCOL_VERSION 7
 
 typedef enum {
     // Transport. These never reach the layers above it.

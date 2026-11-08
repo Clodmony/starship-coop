@@ -113,9 +113,10 @@ int32_t CoopPlayers_DmgSource(int32_t sourceId);
 // #87); a later record can change it here.
 int32_t CoopPlayers_SkipLowHealthMsg(struct Player* player);
 
-// Nonzero when Start went down on this frame for whoever may pause or resume: any player in co-op, by the owner's
-// decision on #12, gMainController otherwise. The pad slots hold every player's input on every client (input.h), so all
-// of them pause on the same frame. What the pause menu does next stays on player 0, as gInputPress does.
+// Nonzero when Start went down on this frame for whoever may pause or resume, or skip a level intro (#191): any player
+// in co-op, by the owner's decision on #12, gMainController otherwise. The pad slots hold every player's input on every
+// client (input.h), so all of them pause on the same frame. What the pause menu does next stays on player 0, as
+// gInputPress does.
 int32_t CoopPlayers_PausePressed(void);
 
 #define COOP_PLAYERS_DEBUG_CVAR "gCoopDebugPlayerCount"

@@ -25,15 +25,21 @@ typedef struct {
     uint8_t phase;                    // gLevelPhase
     uint8_t roster[COOP_PLAYERS_MAX]; // who flies what, as CoopRoster; CoopSession_StartLevel fills this in
     int32_t values[COOP_LEVEL_START_VALUES];
+    uint8_t cleared; // 1 when the host's save has the level cleared (normalClear), so Start may skip its intro (#191)
 } CoopLevelStart;
 
-// Host: level and phase as given, values from this game as they are now.
+// Host: level and phase as given, values and the cleared flag from this game as they are now.
 void CoopLevelStart_FromGame(CoopLevelStart* out, uint8_t level, uint8_t phase);
 
 // Puts the values in place and sends the game to the level on this frame, from whatever it is doing. Call it from a
 // GamePreUpdateEvent listener or anywhere else outside Game_Update, so that nothing runs between the values and the
 // level. The players of the roster stay in the level until CoopPlayers_SetRoster(NULL).
 void CoopLevelStart_Enter(const CoopLevelStart* start);
+
+// Nonzero when the last level start this game entered said the host's save has `level` cleared: what the intro skip
+// reads in a session instead of this game's own save (#191). Only the level of that start: a later level of the
+// session is not in it, so 0, as is a game that entered none.
+int32_t CoopLevelStart_Cleared(int32_t level);
 
 #ifdef __cplusplus
 }
