@@ -21,7 +21,7 @@ players on two PCs flying all of Corneria with matching state.
 
 ### What works
 
-Everything here is tested by scripts, on Corneria, on Linux. Nobody has played it, and nothing has run between two PCs.
+Everything here is tested by scripts, on Corneria, on Linux; determinism also on Windows (Release and Debug). Nobody has played it, and nothing has run between two PCs.
 
 | Area | State |
 |---|---|
@@ -46,7 +46,7 @@ Nothing is being built right now. The next step is the first test on two PCs: se
 | What | Where |
 |---|---|
 | What a session does after a desync: it ends now, the smallest honest choice, for the owner to revise | [WP-23](https://github.com/Clodmony/starship-coop/issues/21), [decision 0002](docs/coop/decisions/0002-sync-model.md) |
-| A run on two PCs, and Windows Release | [#2](https://github.com/Clodmony/starship-coop/issues/2), [#145](https://github.com/Clodmony/starship-coop/issues/145): needed before a first public release |
+| A run on two PCs | [#2](https://github.com/Clodmony/starship-coop/issues/2): needed before a first public release. Windows Release matches itself, Debug and every rate ([#145](https://github.com/Clodmony/starship-coop/issues/145)); Windows against Linux is still not compared |
 | Real Steam test | [WP-26](https://github.com/Clodmony/starship-coop/issues/24): needs two PCs and two Steam accounts |
 | Lag and loss testing | [WP-27](https://github.com/Clodmony/starship-coop/issues/25) |
 | Game rules: lives, respawn, routes, score | Decision [0006](docs/coop/decisions/0006-human-flown-wingman.md) is Accepted, [0007](docs/coop/decisions/0007-lives-and-respawn.md) to [0009](docs/coop/decisions/0009-vehicles-cutscenes-save.md) are Proposed (0009 item 6, vehicles, is Accepted), then [WP-16](https://github.com/Clodmony/starship-coop/issues/14) and [WP-17](https://github.com/Clodmony/starship-coop/issues/15) |
