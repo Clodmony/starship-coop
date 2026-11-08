@@ -60,6 +60,9 @@ number of clients, transport.
    `python tools/coop/hash_check.py views` (unattended, exit code 0 on `PASS`) plays one replay with
    `SF64_COOP_TEST_LOCAL_INDEX` 0 and 1, in Corneria's rails and its all-range section: two clients of one session, who
    draw different cameras and must still hash alike on every frame. It names the first differing frame and regions.
+   The client with index 1 has also ticked 6 more frames since boot (`SF64_COOP_TEST_SYS_FRAME_OFFSET`, `--skew`):
+   `gSysFrameCount` is not simulation state, and two clients of a session do not share it (#129). `--level katina`
+   (or a list, or `all`) flies another Arwing level for 2400 frames instead, and `--cvar NAME=VALUE` sets a CVar on both.
    `python tools/coop/hash_check.py builds --debug <exe> --release <exe>` (unattended, exit code 0 on `PASS`) plays the
    same two sections on two Release runs and a Debug run of one commit, and all three must hash alike on every frame.
    `python tools/coop/hash_check.py rates --exe <exe>` (unattended, exit code 0 on `PASS`) does the same across

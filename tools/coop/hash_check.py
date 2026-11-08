@@ -30,7 +30,9 @@ probe plays one game with SF64_COOP_HASH_PROBE: every --period frames the game c
   whether the hash can see a value, not whether two runs match. Without a replay file, as for run.
 views plays one replay twice per section, with SF64_COOP_TEST_LOCAL_INDEX 0 and 1: two clients of one session, who look
   through different players and must still hash alike. Input by rule flies every player (player_trace.py, rail_pad), and
-  --section picks Corneria's rails, its all-range section or both. Prints the first differing frame and regions.
+  --section picks Corneria's rails, its all-range section or both. Prints the first differing frame and regions. The
+  client with index 1 has also ticked VIEW_SYS_FRAME_SKEW more frames since boot (--skew), as gSysFrameCount is not
+  simulation state. --level flies other Arwing levels instead (VIEW_LEVELS, or all) and --cvar NAME=VALUE sets a CVar (#129).
 builds plays one replay on two runs of a Release build and one of a Debug build of the same commit (point 3 of decision
   0002): the two Release runs must be equal on every frame, and so must Debug against Release. Input by rule, as for
   views. Give each build as its own --debug and --release: a build folder holds one build type.
@@ -417,6 +419,11 @@ VIEW_LEVELS = {
     "fortuna": 14, "katina": 16, "bolse": 17, "sector-z": 18, "venom-2": 19,
 }
 VIEW_LEVEL_FRAMES = 2400  # frames from when player 0 flies: 80 seconds of play
+# The second client of `views` has ticked this many more frames since boot (SF64_COOP_TEST_SYS_FRAME_OFFSET): two clients
+# of one session booted at different times, and gSysFrameCount is not simulation state. Not a multiple of 8, which is
+# what Katina's low-poly choice takes it by, and even (switches.c). Two games started together can also differ in it by
+# chance, as the boot logo runs on wall-clock time, so without this a run can pass or fail by luck.
+VIEW_SYS_FRAME_SKEW = 6
 
 
 def parse_cvars(items):
@@ -503,7 +510,9 @@ def view_compare(label, replay, frames, config, start, exe, args, level=None):
     """Play replay with local index 0 and 1 and compare. level, if given, is the LevelId both runs must fly in."""
     with ThreadPoolExecutor(max_workers=2) as pool:
         jobs = [pool.submit(play, replay, exe, args.timeout, f"view-{label}-{index}", config=config, start=start,
-                            env_extra={"SF64_COOP_TEST_LOCAL_INDEX": str(index)}) for index in (0, 1)]
+                            env_extra={"SF64_COOP_TEST_LOCAL_INDEX": str(index),
+                                       **({"SF64_COOP_TEST_SYS_FRAME_OFFSET": str(args.skew)}
+                                          if index == 1 and args.skew else {})}) for index in (0, 1)]
         (a_values, names, a_rows), (b_values, _, b_rows) = [job.result() for job in jobs]
 
     if a_rows is None or b_rows is None:
@@ -815,6 +824,8 @@ def main():
     v.add_argument("--level", metavar="NAME[,NAME]", help=f"fly these levels instead of Corneria's sections, or all: "
                    f"{', '.join(VIEW_LEVELS)} (#129)")
     v.add_argument("--cvar", action="append", default=[], metavar="NAME[=VALUE]", help="another CVar for both runs")
+    v.add_argument("--skew", type=int, default=VIEW_SYS_FRAME_SKEW, help="frames since boot the client with index 1 "
+                   f"is ahead by, 0 for none (default {VIEW_SYS_FRAME_SKEW}, #129)")
     v.add_argument("--players", type=int, default=2, help="players, through gCoopDebugPlayerCount (default 2)")
     v.add_argument("--frames", type=int, help="replay length (default: what the section needs, or "
                    f"{VIEW_LEVEL_FRAMES} past when player 0 flies for a level)")

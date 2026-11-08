@@ -17,6 +17,8 @@
 //   SF64_COOP_TEST_AUDIO_SAMPLES=high always had enough, or never had enough, buffered; src/port/Engine.cpp:387-388).
 //   SF64_COOP_TEST_LOCAL_INDEX=<i>    in co-op this client looks through player i (CoopPlayers_SetLocalIndex), which
 //                                     two clients of one session would do. It changes what is drawn, not the input.
+//   SF64_COOP_TEST_SYS_FRAME_OFFSET=<n>  gSysFrameCount, the frames since boot, jumps ahead by n on the first game
+//                                     frame (rounded down to an even number): a client that booted earlier (#129).
 // And for tests of lockstep (src/port/coop/sync/lockstep_game.h, #20):
 //   SF64_COOP_TEST_INPUT_DELAY=<n>    frames of input delay in place of COOP_LOCKSTEP_INPUT_DELAY
 //   SF64_COOP_TEST_NO_LOCKSTEP=1      a level start starts no lockstep, so a run can show what it is there for
