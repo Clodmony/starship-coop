@@ -28,6 +28,7 @@ typedef enum {
     VIEW_POKE_BOOST,
     VIEW_POKE_HIT,
     VIEW_POKE_DOWN,
+    VIEW_POKE_GUNS,
 } ViewPokeKind;
 
 typedef struct {
@@ -38,7 +39,7 @@ typedef struct {
     bool done;
 } ViewPoke;
 
-static const char* sPokeNames[] = { "shields", "bombs", "lives", "boost", "hit", "down" };
+static const char* sPokeNames[] = { "shields", "bombs", "lives", "boost", "hit", "down", "guns" };
 
 static ViewPoke sPokes[VIEW_POKES_MAX];
 static s32 sPokeCount = 0;
@@ -68,6 +69,10 @@ static void CoopViewTrace_Poke(ViewPoke* poke) {
             // What Player_Update wants before it calls Player_Down; gInvincible keeps the timer from being set by a hit.
             player->shields = 0;
             player->radioDamageTimer = poke->value;
+            break;
+        case VIEW_POKE_GUNS:
+            // Where the laser guns of the Arwing are (-10 fully out); the draw derives laserGunsXpos from it (#192).
+            player->arwing.laserGunsYpos = (f32) poke->value;
             break;
     }
 }

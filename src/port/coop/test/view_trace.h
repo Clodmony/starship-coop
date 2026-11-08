@@ -19,8 +19,8 @@
 //
 // SF64_COOP_VIEW_POKE changes the game on chosen frames, to give two players different numbers. Both clients of a test
 // get the same list, so they stay one game: <frame>:<player>:<what>:<value>,... with what one of shields, bombs, lives,
-// boost, hit (Player_ApplyDamage, direction 0) or down (Player_Down follows). Frames are gGameFrameCount, applied after
-// that frame.
+// boost, hit (Player_ApplyDamage, direction 0), down (Player_Down follows) or guns (laserGunsYpos, -10 for the laser
+// guns fully out). Frames are gGameFrameCount, applied after that frame.
 
 #ifdef __cplusplus
 extern "C" {

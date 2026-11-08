@@ -65,6 +65,9 @@ ACTIVE = 1680  # level frame by which player 0 flies Corneria's rails
 POKE_NUMBERS = ACTIVE + 60
 PRESS_P1_VIEW = (ACTIVE + 200, ACTIVE + 320)
 PRESS_P0_VIEW = (ACTIVE + 420, ACTIVE + 540)
+# Player 0's laser guns slide out while he is in cockpit view: the game that looks through him does not draw his wings,
+# the other does, and what the draw writes into the player must not part their hashes (#192).
+GUNS_OUT = ACTIVE + 450
 HIT_P1 = ACTIVE + 640
 HIT_P0 = ACTIVE + 700
 LOW_SHIELDS = ACTIVE + 760
@@ -394,7 +397,7 @@ def pokes(section):
         return ",".join([f"{ALL_RANGE_NUMBERS}:{p.split(':', 1)[1]}" for p in numbers]
                          + [f"{ALL_RANGE_DOWN}:1:down:4"])
     return ",".join(numbers + [f"{HIT_P1 - 1}:1:hit:20", f"{HIT_P0 - 1}:0:hit:20", f"{LOW_SHIELDS}:1:shields:80",
-                               f"{HIT_LOW - 1}:1:hit:20"])
+                               f"{HIT_LOW - 1}:1:hit:20", f"{GUNS_OUT}:0:guns:-10"])
 
 
 def play_section(section, exe, args):
