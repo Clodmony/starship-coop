@@ -6,6 +6,7 @@
     python tools/coop/hash_check.py diff a/state-hash.txt b/state-hash.txt
     python tools/coop/hash_check.py probe --players 2                  # unattended; prints PASS or FAIL
     python tools/coop/hash_check.py views                              # unattended; prints PASS or FAIL
+    python tools/coop/hash_check.py slots --level katina               # unattended; prints PASS or FAIL
     python tools/coop/hash_check.py builds --debug a/Starship --release b/Starship   # unattended; prints PASS or FAIL
     python tools/coop/hash_check.py rates --exe b/Starship             # unattended; prints PASS or FAIL
     python tools/coop/hash_check.py draw                               # unattended; prints PASS or FAIL
@@ -33,6 +34,9 @@ views plays one replay twice per section, with SF64_COOP_TEST_LOCAL_INDEX 0 and 
   --section picks Corneria's rails, its all-range section or both. Prints the first differing frame and regions. The
   client with index 1 has also ticked VIEW_SYS_FRAME_SKEW more frames since boot (--skew), as gSysFrameCount is not
   simulation state. --level flies other Arwing levels instead (VIEW_LEVELS, or all) and --cvar NAME=VALUE sets a CVar (#129).
+slots plays a level with 1 player and with --players and compares how many effect slots are in use (the median over
+  the samples after the start): co-op frees nothing for leaving the view, so a kind of effect that only that frees
+  stays for the whole level (#129). Fails when co-op holds more than SLOTS_LEAK more.
 builds plays one replay on two runs of a Release build and one of a Debug build of the same commit (point 3 of decision
   0002): the two Release runs must be equal on every frame, and so must Debug against Release. Input by rule, as for
   views. Give each build as its own --debug and --release: a build folder holds one build type.
@@ -415,7 +419,7 @@ VIEW_SECTIONS = {  # name -> (frames from when player 0 flies, when L goes into 
 # Levels `views --level` flies, from include/sf64level.h: the Arwing levels, on rails or in all-range, where extra players
 # join (players.c, CoopPlayers_SectionSupported). The Landmaster and Blue Marine levels are WP-18 (#16).
 VIEW_LEVELS = {
-    "meteo": 1, "sector-x": 2, "area-6": 3, "sector-y": 5, "venom-1": 6, "solar": 7, "zoness": 8, "training": 10,
+    "corneria": 0, "meteo": 1, "sector-x": 2, "area-6": 3, "sector-y": 5, "venom-1": 6, "solar": 7, "zoness": 8, "training": 10,
     "fortuna": 14, "katina": 16, "bolse": 17, "sector-z": 18, "venom-2": 19,
 }
 VIEW_LEVEL_FRAMES = 2400  # frames from when player 0 flies: 80 seconds of play
@@ -450,6 +454,31 @@ def read_views(path):
             parts = line.split()
             views[int(parts[2].split("=")[1])] = (int(parts[3].split("=")[1]), parts[4:])
     return views
+
+
+def read_slots(path):
+    """The "# slots" lines of a log: [(frame, {array: (used, capacity)})]."""
+    rows = []
+    for line in Path(path).read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith("# slots "):
+            parts = line.split()
+            counts = {kv.split("=")[0]: tuple(int(n) for n in kv.split("=")[1].split("/")) for kv in parts[3:]}  # radio=n
+            rows.append((int(parts[2].split("=")[1]), counts))
+    return rows
+
+
+def describe_slots(rows):
+    """One line: for each object array the most slots in use, of how many, and how many at the last sample."""
+    if not rows:
+        return "no samples"
+    parts = []
+    for name in rows[0][1]:
+        if name == "radio":
+            parts.append(f"radio state changed {rows[-1][1][name][0]} times")
+            continue
+        peak = max(counts[name][0] for _, counts in rows)
+        parts.append(f"{name} peak {peak}/{rows[0][1][name][1]} last {rows[-1][1][name][0]}")
+    return ", ".join(parts)
 
 
 def check_views_differ(section, a_values, b_values):
@@ -506,13 +535,23 @@ def view_level(name, exe, args):
     return view_compare(name, replay, frames, config, start, exe, args, level=VIEW_LEVELS[name])
 
 
+def client_env(index, args):
+    """What differs between the two clients of `views` besides the camera: the second one booted VIEW_SYS_FRAME_SKEW
+    frames earlier (--skew), and each renders another sample count per audio update (--audio, #129), as a radio line
+    follows the voice sequence in the sound thread."""
+    env = {"SF64_COOP_TEST_LOCAL_INDEX": str(index)}
+    if index == 1 and args.skew:
+        env["SF64_COOP_TEST_SYS_FRAME_OFFSET"] = str(args.skew)
+    if args.audio != "same":
+        env["SF64_COOP_TEST_AUDIO_SAMPLES"] = ("high", "low")[index]
+    return env
+
+
 def view_compare(label, replay, frames, config, start, exe, args, level=None):
     """Play replay with local index 0 and 1 and compare. level, if given, is the LevelId both runs must fly in."""
     with ThreadPoolExecutor(max_workers=2) as pool:
         jobs = [pool.submit(play, replay, exe, args.timeout, f"view-{label}-{index}", config=config, start=start,
-                            env_extra={"SF64_COOP_TEST_LOCAL_INDEX": str(index),
-                                       **({"SF64_COOP_TEST_SYS_FRAME_OFFSET": str(args.skew)}
-                                          if index == 1 and args.skew else {})}) for index in (0, 1)]
+                            env_extra=client_env(index, args)) for index in (0, 1)]
         (a_values, names, a_rows), (b_values, _, b_rows) = [job.result() for job in jobs]
 
     if a_rows is None or b_rows is None:
@@ -527,6 +566,8 @@ def view_compare(label, replay, frames, config, start, exe, args, level=None):
             print(f"hash: {label}: index {index} flew {flown} frames in level {level}")
             if flown < frames // 2:
                 failures.append(f"{label}: index {index} flew only {flown} of {frames} frames in level {level}")
+    for index, values in ((0, a_values), (1, b_values)):
+        print(f"hash: {label}: index {index} slots in use: {describe_slots(read_slots(values['log']))}")
     failures += check_views_differ(label, a_values, b_values)
     diff = first_difference(a_rows, b_rows, frames)
     if diff is not None:
@@ -534,6 +575,65 @@ def view_compare(label, replay, frames, config, start, exe, args, level=None):
     else:
         print(f"hash: {label}: index 0 and 1 equal on all {min(frames, len(a_rows), len(b_rows))} frames")
     return failures
+
+
+# `slots`: how many effect slots a level holds in co-op more than in single player (#129). A median over the samples after
+# the start, so a burst of explosions does not count, and a leak that holds slots for the whole level does.
+SLOTS_FROM = 300
+SLOTS_LEAK = 15
+
+
+def median_used(rows, name):
+    import statistics
+
+    used = [counts[name][0] for frame, counts in rows if frame >= SLOTS_FROM]
+    return statistics.median(used) if used else None
+
+
+def slots_level(name, exe, args):
+    """Play one level with 1 player and with args.players, the same input. Returns a list of failures."""
+    import player_trace  # here, as player_trace imports this file
+
+    start = level_start(name)
+    frames = args.frames or start.frame(VIEW_LEVEL_FRAMES)
+    replay = make_run_folder(replay_tool.ROOT / "local", f"test-hash-slots-{name}-") / "input.sfcr"
+    player_trace.write_rail_replay(replay, frames, None, start=start)
+    counts = (1, args.players)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        jobs = [pool.submit(play, replay, exe, args.timeout, f"slots-{name}-{n}", start=start,
+                            config={"CVars": {"gCoopDebugPlayerCount": n, "gInvincible": 1}}) for n in counts]
+        runs = [job.result() for job in jobs]
+    failures = []
+    series = []
+    for n, (values, _, rows) in zip(counts, runs):
+        if rows is None or not played_through(values):
+            failures.append(f"{name}: {n} player(s) did not play through")
+            continue
+        slots = read_slots(values["log"])
+        print(f"hash: {name}: {n} player(s) slots in use: {describe_slots(slots)}")
+        series.append(median_used(slots, "effects"))
+    if len(series) == 2:
+        single, coop = series
+        print(f"hash: {name}: median effects in use {single} with 1 player, {coop} with {args.players}")
+        if coop - single > SLOTS_LEAK:
+            failures.append(f"{name}: {args.players} players hold {coop - single} more effect slots than 1 (median "
+                            f"{coop} against {single}, at most {SLOTS_LEAK} more): something is not freed")
+    return failures
+
+
+def cmd_slots(args):
+    exe = replay_tool.find_exe(args.exe)
+    names = list(VIEW_LEVELS) if args.level == "all" else args.level.split(",")
+    unknown = [name for name in names if name not in VIEW_LEVELS]
+    if unknown:
+        sys.exit(f"hash: no level {', '.join(unknown)}; the choices are {', '.join(VIEW_LEVELS)}")
+    failures = []
+    for name in names:
+        failures += slots_level(name, exe, args)
+    for f in failures:
+        print(f"FAIL: {f}")
+    print("hash: FAIL" if failures else "hash: PASS")
+    return 1 if failures else 0
 
 
 def cmd_views(args):
@@ -826,11 +926,21 @@ def main():
     v.add_argument("--cvar", action="append", default=[], metavar="NAME[=VALUE]", help="another CVar for both runs")
     v.add_argument("--skew", type=int, default=VIEW_SYS_FRAME_SKEW, help="frames since boot the client with index 1 "
                    f"is ahead by, 0 for none (default {VIEW_SYS_FRAME_SKEW}, #129)")
+    v.add_argument("--audio", choices=("split", "same"), default="split",
+                   help="split: index 0 renders the high sample count per audio update, index 1 the low (default); "
+                   "same: the client's own choice (#129)")
     v.add_argument("--players", type=int, default=2, help="players, through gCoopDebugPlayerCount (default 2)")
     v.add_argument("--frames", type=int, help="replay length (default: what the section needs, or "
                    f"{VIEW_LEVEL_FRAMES} past when player 0 flies for a level)")
     v.add_argument("--exe", help="Starship executable (default: newest build found)")
     v.add_argument("--timeout", type=float, default=1800, help="per run: give up after this many seconds")
+    c = sub.add_parser("slots", help="play a level with 1 player and with several and compare the effect slots in use")
+    c.add_argument("--level", default="katina,fortuna,corneria", metavar="NAME[,NAME]",
+                   help=f"levels, or all: {', '.join(VIEW_LEVELS)} (default katina,fortuna,corneria)")
+    c.add_argument("--players", type=int, default=2, help="players, through gCoopDebugPlayerCount (default 2)")
+    c.add_argument("--frames", type=int, help=f"replay length (default {VIEW_LEVEL_FRAMES} past when player 0 flies)")
+    c.add_argument("--exe", help="Starship executable (default: newest build found)")
+    c.add_argument("--timeout", type=float, default=1800, help="per run: give up after this many seconds")
     u = sub.add_parser("builds", help="play one replay on two Release runs and a Debug run and compare the hashes")
     u.add_argument("--debug", help="Starship executable of the Debug build")
     u.add_argument("--release", help="Starship executable of the Release build of the same commit")
@@ -868,7 +978,7 @@ def main():
     args = p.parse_args()
     if args.cmd == "builds" and not ((args.debug and args.release) or args.exe):
         p.error("builds needs --debug and --release")
-    commands = {"run": cmd_run, "diff": cmd_diff, "probe": cmd_probe, "views": cmd_views, "builds": cmd_builds,
+    commands = {"run": cmd_run, "diff": cmd_diff, "probe": cmd_probe, "views": cmd_views, "slots": cmd_slots, "builds": cmd_builds,
                 "rates": cmd_rates, "draw": cmd_draw, "base": cmd_base, "start": cmd_start}
     return commands[args.cmd](args)
 

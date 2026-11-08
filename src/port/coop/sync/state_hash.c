@@ -655,6 +655,20 @@ static void Probe(void) {
     }
 }
 
+static s32 sRadioPrev = 0;
+static s32 sRadioChanges = 0;
+
+// Slots of an object array that are not free. Every object type starts with an Obj, whose status is its first byte.
+static s32 CountUsed(const void* array, size_t size, size_t count) {
+    s32 used = 0;
+    size_t i;
+
+    for (i = 0; i < count; i++) {
+        used += ((const Object*) ((const u8*) array + i * size))->status != OBJ_FREE;
+    }
+    return used;
+}
+
 static void CoopStateHash_OnGamePreUpdate(IEvent* event) {
     CoopStateHash hash;
     s32 i;
@@ -683,6 +697,43 @@ static void CoopStateHash_OnGamePreUpdate(IEvent* event) {
     if (CoopPlayers_IsCoop() && (gGameState == GSTATE_PLAY) && ((sFrame % VIEW_LOG_PERIOD) == 0)) {
         fprintf(sLog, "# view frame=%u player=%d eye=%.1f %.1f %.1f\n", sFrame, CoopPlayers_ViewIndex(), gPlayCamEye.x,
                 gPlayCamEye.y, gPlayCamEye.z);
+    }
+
+    // Test only: how many slots of each object array are in use. Nothing frees an effect or a shot for leaving the view
+    // in co-op any more (#96), so tools/coop/hash_check.py views reads this to see whether any array piles up or fills
+    // (#129). With co-op off too, to have single player to compare with.
+    // Which effects hold the slots: id:count for every effect id in use (Effect.obj.id).
+    if ((gGameState == GSTATE_PLAY) && ((sFrame % VIEW_LOG_PERIOD) == 0)) {
+        s32 counts[512] = { 0 };
+        s32 k;
+
+        for (k = 0; k < ARRAY_COUNT(gEffects); k++) {
+            if (gEffects[k].obj.status != OBJ_FREE) {
+                counts[gEffects[k].obj.id & 511]++;
+            }
+        }
+        fprintf(sLog, "# effects frame=%u", sFrame);
+        for (k = 0; k < 512; k++) {
+            if (counts[k] != 0) {
+                fprintf(sLog, " %d:%d", k, counts[k]);
+            }
+        }
+        fprintf(sLog, "\n");
+    }
+
+    // And how often the radio state changed so far: tools/coop/hash_check.py views plays two clients at different audio
+    // sample counts, and the radio follows the sound thread, so it wants to know a line was played.
+    if (gGameState == GSTATE_PLAY) {
+        sRadioChanges += (gRadioState != sRadioPrev);
+        sRadioPrev = gRadioState;
+    }
+    if ((gGameState == GSTATE_PLAY) && ((sFrame % VIEW_LOG_PERIOD) == 0)) {
+        fprintf(sLog, "# slots frame=%u effects=%d/%d actors=%d/%d shots=%d/%d items=%d/%d radio=%d\n", sFrame,
+                CountUsed(gEffects, sizeof(gEffects[0]), ARRAY_COUNT(gEffects)), (s32) ARRAY_COUNT(gEffects),
+                CountUsed(gActors, sizeof(gActors[0]), ARRAY_COUNT(gActors)), (s32) ARRAY_COUNT(gActors),
+                CountUsed(gPlayerShots, sizeof(gPlayerShots[0]), ARRAY_COUNT(gPlayerShots)),
+                (s32) ARRAY_COUNT(gPlayerShots), CountUsed(gItems, sizeof(gItems[0]), ARRAY_COUNT(gItems)),
+                (s32) ARRAY_COUNT(gItems), sRadioChanges);
     }
 
     // Test only: the most draws a game frame got since the last line, counted at the draw loop. Vsync and test speed
