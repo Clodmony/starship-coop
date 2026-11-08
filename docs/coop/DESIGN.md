@@ -124,8 +124,12 @@ Each needs a decision record before code depends on it. Proposals in brackets.
    life, at full shields; Fox is refilled on the spot for a life, one level at a time as each is proven (a level not
    yet open keeps the original restart). Fox down at pool 0 ends the run until a spike (#183) shows the lead role can
    pass to a survivor. A player's shot hurts another player in all-range.
-4. Route choices and warps: who decides [whoever triggers it; the whole team follows].
-5. Hit count and medals: [team total].
+4. Route choices and warps: decided in [0008](decisions/0008-routes-and-score.md). Any human player can earn a route or
+   a warp. Player 0, the host, steers at a split from its own position and alone decides on the map (go on, change path;
+   retry is the host's too, by 0007).
+5. Hit count and medals: decided in [0008](decisions/0008-routes-and-score.md). A team total: a kill by any human scores
+   as one by player 0 does, thresholds unchanged. A medal keeps the original check (all three wingman slots above 0 at
+   the clear, plus the hits), so a human who is down at the clear costs it.
 6. Landmaster and Blue Marine levels: decided in [0009](decisions/0009-vehicles-cutscenes-save.md), item 6. Every
    player gets the level's vehicle, on player 0's path; extra players stay parked in a level until it is proven (#16).
 7. Cutscenes, radio and level intros: [host's timing; clients follow].

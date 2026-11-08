@@ -529,6 +529,51 @@ Unknown:
 - Whether passing the lead role to a survivor works (#183).
 - How lives, the 150-frame delay and friendly fire play with four people. Nobody has played co-op with lives.
 
+### 2026-11-08, #7, decision 0008 walk-through: what had moved since the record was written
+
+Read in `5447b479` (`coop` after #184), no build, nothing run. This is the re-check behind the owner's walk-through of
+`docs/coop/decisions/0008-routes-and-score.md`, which was read at `797c678b`. A throwaway script compared the 97
+`file:line` citations of the record with the code at `5447b479`, block by block: 37 are where they were, 55 moved by 1
+to 11 lines in `src/engine` and `src/overlays` (the port files by more: `players.c` about 58, `state_hash.c` 97), and 5
+changed text.
+
+Observed, in the code:
+
+- **The shooter value is no longer shared with an enemy's.** `dmgSource` is written through `CoopPlayers_DmgSource`
+  at `src/engine/fox_beam.c:697`, `:1957`, `:1964`, `:1979`, `src/engine/fox_play.c:2192` and
+  `src/engine/fox_tank.c:1422` (#86). Co-op off, player 0 or an NPC: `sourceId + 1`. In a session, players 1 to 3:
+  `COOP_DMG_SRC_PLAYER` (10) plus the index, so 11 to 13 (`src/port/coop/game/players.c:110-115`,
+  `src/port/coop/game/players.h:101-107`). Four of the five changed citations are these writes.
+- **The team total is still unbuilt.** `src/engine/fox_enmy.c:1766` and `src/engine/fox_360.c:921` still test
+  `dmgSource == AI360_FOX + 1`. A grep over `src/engine` and `src/overlays` finds 9 lines that compare `dmgSource` with
+  `AI360_FOX + 1` and 21 lines that read it in all (a count, not checked line by line).
+- **Unchanged:** the Saucerer test (`src/engine/fox_beam.c:1008`), a split reading `gPlayer[0]`
+  (`src/engine/fox_enmy.c:2560`, `:2580`), the path item dying while player 0 is not `ACTIVE`
+  (`src/engine/fox_enmy.c:2523-2524`), `gHitCount` in the state hash (`src/port/coop/sync/state_hash.c:425`).
+- **The HUD reads the client's own player.** The fifth changed citation: the path arrows now read
+  `gPlayer[CoopPlayers_HudIndex()]` (`src/engine/fox_hud.c:2907`, #30). The arrows' setting is still on `gPlayer[0]`
+  (`src/engine/fox_enmy.c:2541-2547`).
+- **The map has no co-op code.** `src/overlays/ovl_menu/fox_map.c` holds no `COOP:` marker (grep count 0). The tests
+  call `Map_Setup_Menu` for the setup (`src/port/coop/test/start_level.c:38`) and `level_start.c` notes what
+  `Map_PlayLevel` adds (`src/port/coop/game/level_start.c:122`), but no test drives the map's own menu in a session.
+
+Derived:
+
+- Question 4's prerequisite (telling player 1 from `DMG_SRC_2`) is met, so WP-16's step is a helper that says whether a
+  `dmgSource` is player 0's or a human's, and two tests that use it (plus the Saucerer's).
+- Under 0006 a human's slot is -1 while they are down, and under 0007 they return after 150 frames for a life, so a human
+  costs a medal only if they are down at the clear itself, or stay down at pool 0.
+- Records 0007 and 0008 meet at one point: splits and turns need player 0 `ACTIVE`, and 0007 keeps player 0 up or ends
+  the run. That changes only if the spike #183 lets a survivor take slot 0.
+
+Unknown:
+
+- Anything at run time: how far a team total moves a level's hits, and what a client's map does in a session (nothing
+  covers the menu).
+- Whether a Landmaster's or a Blue Marine's kills reach the same `dmgSource` tests: the writes were found by grep, not
+  read to the end.
+- US 1.1: not read.
+
 ### 2026-11-07, #136, other hits that only reach player 0
 
 Line numbers are for `issue/136-hits-any-player` on `coop` at `da44a18a`. Windows 11, MSVC v143, Debug, US 1.0 ROM.
