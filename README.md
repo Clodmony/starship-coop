@@ -39,14 +39,14 @@ Everything here is tested by scripts, on Corneria, on Linux; determinism also on
 
 ### In progress
 
-Nothing is being built right now. The next step is the first test on two PCs: see [TWO_PC_TEST.md](docs/coop/TWO_PC_TEST.md).
+The first Windows against Linux session parted in Corneria within 22 frames: the two C libraries round one `sinf` input differently ([#186](https://github.com/Clodmony/starship-coop/issues/186), [decision 0011](docs/coop/decisions/0011-deterministic-sine-in-sessions.md)). The fix is in progress; the next step is the same test again: see [TWO_PC_TEST.md](docs/coop/TWO_PC_TEST.md).
 
 ### What is open
 
 | What | Where |
 |---|---|
 | What a session does after a desync: it ends now, the smallest honest choice, for the owner to revise | [WP-23](https://github.com/Clodmony/starship-coop/issues/21), [decision 0002](docs/coop/decisions/0002-sync-model.md) |
-| A run on two PCs | [#2](https://github.com/Clodmony/starship-coop/issues/2): needed before a first public release. Windows Release matches itself, Debug and every rate ([#145](https://github.com/Clodmony/starship-coop/issues/145)); Windows against Linux is still not compared |
+| A run on two PCs | [#2](https://github.com/Clodmony/starship-coop/issues/2): needed before a first public release. Windows Release matches itself, Debug and every rate ([#145](https://github.com/Clodmony/starship-coop/issues/145)); Windows against Linux parted at frame 22 on the first try ([#186](https://github.com/Clodmony/starship-coop/issues/186), [#187](https://github.com/Clodmony/starship-coop/issues/187)) |
 | Real Steam test | [WP-26](https://github.com/Clodmony/starship-coop/issues/24): needs two PCs and two Steam accounts |
 | Lag and loss testing | [WP-27](https://github.com/Clodmony/starship-coop/issues/25) |
 | Game rules: lives, respawn, routes, score | Decisions [0006](docs/coop/decisions/0006-human-flown-wingman.md), [0007](docs/coop/decisions/0007-lives-and-respawn.md) and [0008](docs/coop/decisions/0008-routes-and-score.md) are Accepted, [0009](docs/coop/decisions/0009-vehicles-cutscenes-save.md) is Proposed (item 6, vehicles, is Accepted), then [WP-16](https://github.com/Clodmony/starship-coop/issues/14) and [WP-17](https://github.com/Clodmony/starship-coop/issues/15) |

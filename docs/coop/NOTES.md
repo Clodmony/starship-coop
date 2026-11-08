@@ -2927,6 +2927,25 @@ A line of the state category, as written: `2026-11-08 00:37:47.608 2419 Corneria
   without it.
 - What the log costs at real time with a window: the test games run at speed 8 with no draw.
 
+### 2026-11-08, #186, the first Windows against Linux session: a sine that rounds differently
+
+Observed (the full table is in [decision 0011](decisions/0011-deterministic-sine-in-sessions.md)):
+
+- Build `0e5a5cf66a4e` on a Windows (MSVC 1944) host and a Linux (GCC 16.2, glibc 2.44) client, US 1.0, 0 resends and 0
+  drops. Three attempts at Corneria, three desyncs: frame 22 (`gPlayer[0].yBob`, one ulp), frame 5
+  (`gActors[0].fwork[1]`, one ulp) and frame 0 (`gRightWingHealth[0]`, 60 against 40: leftover state, #187).
+- `SIN_DEG`, `COS_DEG`, `__sinf` and `__cosf` call the C library's `sinf` and `cosf` (`src/port/Engine.cpp:691-704`). The
+  libultra versions (`src/libultra/gu/sinf.c`, `cosf.c`) are not in the build.
+- Run here: glibc 2.44 `sinf(0x406a927f)` (210 degrees as the game computes it) returns `0xbeffffff`. The exact sine of
+  that float, -0.49999998509, is halfway between `0xbf000000` and `0xbeffffff`.
+- The co-op log reaches every player, the desync report does not: `desync_report.c` only writes into the local folder.
+  The other PC's report has to be fetched by hand to run `desync_report.py diff`.
+
+Derived: the Windows runtime returns `0xbf000000` for that input, because the host's `yBob` is `0x3e800000`. Not run on
+Windows.
+
+Unknown: whether frame 5 is also a sine or cosine result.
+
 ### 2026-11-08, #169, frame interpolation: the skip flag and the recording path stack
 
 `src/port/interpolation/FrameInterpolation.cpp` builds a tree of matrix ops each drawn frame. `current_path` is a
