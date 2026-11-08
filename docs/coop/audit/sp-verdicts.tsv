@@ -221,7 +221,7 @@ src/overlays/ovl_i2/fox_sx.c	SectorX_LevelStart_SetupTeam	flow	name	intro team a
 src/overlays/ovl_i2/fox_sx.c	SectorX_LevelComplete_SetupTeam	flow	name	level complete team
 src/overlays/ovl_i3/fox_aq.c	Aquas_801A95C8	flow	site	cutscene moves player 0 camera
 src/overlays/ovl_i3/fox_aq.c	Aquas_CsAqFishGroup_Update	flow	name	cutscene fish
-src/overlays/ovl_i3/fox_aq.c	Aquas_801ABA40	sim	site	Blue Marine torpedoes culled by player 0 camera, aimed with player 0 rotation
+src/overlays/ovl_i3/fox_aq.c	Aquas_801ABA40	sim	site	Blue Marine torpedoes culled by player 0 camera; aimed by the firing marine since #16
 src/overlays/ovl_i3/fox_so.c	Solar_LevelStart	flow	name	intro on player 0
 src/overlays/ovl_i3/fox_so.c	Solar_801A3C4C	flow	site	Vulkain death: rumble and player 0 to level complete
 src/overlays/ovl_i4/fox_bo.c	Bolse_UpdateEventHandler	flow	read	Bolse events: level complete and standby cutscene on player 0

@@ -193,8 +193,8 @@ static void CoopPlayers_SetOut(s32 i) {
 }
 
 // Nonzero while the level is in a section co-op players fly in: all-range (WP-11), rails in an Arwing (WP-12), or a
-// Landmaster level that WP-18 has proven (#16): Titania so far. Macbeth and the Blue Marine in Aquas keep the others
-// parked until they are proven too (decision 0009, item 6).
+// vehicle level that WP-18 has proven (#16): Titania's Landmaster and Aquas's Blue Marine so far. Macbeth keeps the
+// others parked until it is proven too (decision 0009, item 6).
 static s32 CoopPlayers_SectionSupported(void) {
     if (gLevelMode == LEVELMODE_ALL_RANGE) {
         return 1;
@@ -203,7 +203,8 @@ static s32 CoopPlayers_SectionSupported(void) {
         return 0;
     }
     return (gPlayer[0].form == FORM_ARWING) ||
-           ((gPlayer[0].form == FORM_LANDMASTER) && (gCurrentLevel == LEVEL_TITANIA));
+           ((gPlayer[0].form == FORM_LANDMASTER) && (gCurrentLevel == LEVEL_TITANIA)) ||
+           ((gPlayer[0].form == FORM_BLUE_MARINE) && (gCurrentLevel == LEVEL_AQUAS));
 }
 
 int32_t CoopPlayers_SkipUpdate(int32_t index) {

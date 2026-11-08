@@ -38,7 +38,7 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   full      all of Corneria: pilots fly it live, one on each client, then plain runs repeat what they flew. Takes a while.
   audio     the plain run with the two clients at different audio sample counts, as a radio line follows the sound thread.
   release   the plain run on a Release build (--release-exe) and on Debug: all four clients have to hash alike.
-  vehicles  Titania, Aquas and Macbeth, the Landmaster and Blue Marine levels: same hash, the client's player parked.
+  vehicles  Titania, Aquas and Macbeth, the Landmaster and Blue Marine levels: same hash, both drive where co-op has opened.
   rates     the plain run at real time, with the two clients at different gInterpolationFPS.
   desync_sim src/port/coop/sync/desync.c alone, in a virtual network (tools/coop/desynctest), WP-23.
   desync    a bit flipped on one client, on rails and in all-range: both games name that frame, the players and the
@@ -363,7 +363,7 @@ def sc_steer(args, folder):
 
 # Name, LevelId (include/sf64level.h), and whether co-op has opened it: there player 1 drives too, elsewhere it stays
 # parked (CoopPlayers_SectionSupported, src/port/coop/game/players.c).
-VEHICLE_LEVELS = (("Titania", 12, True), ("Aquas", 13, False), ("Macbeth", 11, False))
+VEHICLE_LEVELS = (("Titania", 12, True), ("Aquas", 13, True), ("Macbeth", 11, False))
 VEHICLE_FRAMES = 6000  # past each level's intro and well into the drive
 STATE_ACTIVE = 3  # PLAYERSTATE_ACTIVE
 
@@ -380,8 +380,8 @@ def vehicle_story(game):
 
 def sc_vehicles(args, folder):
     """The Landmaster and Blue Marine levels with two clients (WP-18, #16), the three levels side by side. Both steer
-    and fire from the join frame on. Hashes equal on every frame. In a level co-op has opened, player 1 drives along
-    with player 0; in the others it stays parked (decision 0009, item 6: V2 until the level is proven)."""
+    and fire from the join frame on. Hashes equal on every frame. In a level co-op has opened (Titania, Aquas), player 1
+    drives along with player 0; in the others it stays parked (decision 0009, item 6: V2 until the level is proven)."""
     only = getattr(args, "levels", None)
     levels = [entry for entry in VEHICLE_LEVELS if not only or entry[0].lower() in only]
 

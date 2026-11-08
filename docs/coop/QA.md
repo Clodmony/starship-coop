@@ -147,7 +147,7 @@ number of clients, transport.
    fail. The rest are in the tool: steering, three games, pause, what a save or a zero seed could do, a slow client, lag
    through the chaos relay, another input delay, and every way of losing a player, through the join driver and through
    the real menu. `--only vehicles` (#16) plays Titania, Aquas and Macbeth side by side with two clients each: same
-   hash, both tanks driving in Titania, the client's player parked in the other two (`--levels` picks some). `--only full` flies all of Corneria with a pilot on each client, repeats the flight with plain games,
+   hash, both players driving in Titania and Aquas, the client's player parked in Macbeth (`--levels` picks some). `--only full` flies all of Corneria with a pilot on each client, repeats the flight with plain games,
    and flips a bit on one client, which must show at exactly its frame. Its log feeds `--only menu,release,rates,audio
    --feed <log>`: the same flight through the real menu, on a Release build, and with the clients at different
    `gInterpolationFPS` or audio sample counts.

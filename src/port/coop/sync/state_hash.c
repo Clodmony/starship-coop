@@ -95,6 +95,7 @@ static const PlayerArray sPlayerArrays[] = {
     PLAYER_ARRAY(gLoopDownTimers),       PLAYER_ARRAY(gLoopBoostTimers), PLAYER_ARRAY(gLeftWingDebrisTimer),
     PLAYER_ARRAY(gRightWingDebrisTimer), PLAYER_ARRAY(gHasShield),       PLAYER_ARRAY(gShieldTimer),
     PLAYER_ARRAY(gShieldAlpha),          PLAYER_ARRAY(gCoopTankState),
+    PLAYER_ARRAY(gCoopMarineState),
 };
 
 static FILE* sLog = NULL;

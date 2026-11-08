@@ -479,6 +479,49 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-08, #16, a Blue Marine per player in Aquas
+
+Identity: US 1.0 (SHA-1 `d8b10885...`), Windows 11, MSVC v143, Debug, test games without drawing, on `issue/16-vehicles`
+(base `43a4a498`). `python tools/coop/lockstep_test.py --only vehicles`, as in the entry below, now with Aquas opened.
+
+Observed:
+
+- Titania, Aquas and Macbeth: host and client hash alike on all 6000 frames (scenario `vehicles`, 88 s).
+- Aquas, player 1 let in: drove its own marine from frame 546 on. The scripted steering runs into the level: player 1's
+  shields reached 0 at frame 1338 and it was out at 1543; player 0 went down later and the level restarted, where
+  player 1 joined again. 3582 frames driven by player 1, 4429 by player 0.
+- Titania (4267 frames for each player) and Macbeth (player 1 parked) as before.
+- What belongs to one marine, from every use of the two arrays in `src/overlays/ovl_i3/fox_aq.c`:
+  `D_i3_801C4190[0, 1, 3, 4, 5, 7]`, `D_i3_801C41B8[0-11, 21-23]`, `D_i3_801C4454`, `D_i3_801C4458`, `D_i3_801C445C`.
+  The rest is the level's: `D_i3_801C4190[6]` (set by the boss, `:2688`), `[8]` and `D_i3_801C41B8[12-17, 25, 26]`
+  (light and fog, `Aquas_801A99D4`, `:482`), `D_i3_801C41B8[18-20, 24, 27, 28]` (boss and other actors).
+- A torpedo's flight runs in `PlayerShot_UpdateAll` (`src/engine/fox_beam.c`), outside `Player_Update`, and reads the
+  lock-on state (`Aquas_801ABA40`, `:1088`). Its first frame took player 0's rotation (`:1137-1138`).
+- The fish groups chase the torpedo of whoever owns the arrays (`Aquas_AqFishGroup_Update`, `:6463-6506`), and
+  `Aquas_UpdateCamera` reads `D_i3_801C41B8[9]`, `[10]` in the camera loop, also outside `Player_Update`.
+- All marines share the three laser slots and the one torpedo slot `gPlayerShots[15]`, as Arwings share theirs.
+
+Done:
+
+- Every other player's marine values are swapped in around its `Player_Update`, and around the update of a torpedo it
+  fired (new `PlayerShotPreUpdateEvent` and `PlayerShotPostUpdateEvent`, `src/port/hooks/list/EngineEvent.h`). They are
+  hashed (`gCoopMarineState`).
+- The level part (light, fog, the slowdown before the boss, the one marine lamp) is put back after another marine's
+  update, so player 0 steps it once per frame as in one-player play.
+- A torpedo starts with the rotation of the marine that fired it (`fox_aq.c`, `// COOP:`).
+
+Derived:
+
+- Player 0 behaves as upstream by construction: its values are never swapped, and the level part is player 0's.
+
+Unknown:
+
+- **Torpedoes are untested:** the scripted input fires the laser (A) only, never B.
+- Whether two marines fit the narrow passages: player 1 was hit about as often as player 0 here.
+- A follower's camera uses player 0's edge offset (`[9]`, `[10]`), and the fish follow player 0's torpedo. Small; not
+  fixed.
+- The rest of Aquas and its boss with two marines; two machines.
+
 ### 2026-11-08, #16, Landmaster and Blue Marine levels with two clients
 
 Identity: US 1.0 (SHA-1 `d8b10885...`), Windows 11, MSVC v143, Debug, test games without drawing, on `issue/16-vehicles`

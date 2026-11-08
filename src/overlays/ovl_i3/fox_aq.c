@@ -1137,8 +1137,8 @@ void Aquas_801ABA40(PlayerShot* shot) {
         switch (shot->unk_5C) {
             case 0:
                 shot->timer = 50;
-                shot->obj.rot.y = gPlayer[0].rot.y;
-                shot->obj.rot.x = gPlayer[0].rot.x;
+                shot->obj.rot.y = gPlayer[shot->sourceId].rot.y; // COOP: was gPlayer[0]; the marine that fired (#16)
+                shot->obj.rot.x = gPlayer[shot->sourceId].rot.x; // COOP: was gPlayer[0] (#16)
                 shot->unk_5C++;
                 break;
 
