@@ -8,6 +8,8 @@
 
 #include "global.h"
 #include "port/coop/game/players.h"
+#include "port/coop/net/protocol.h"
+#include "port/coop/sync/handover_game.h"
 #include "port/coop/sync/lockstep_game.h"
 #include "port/coop/test/menu_driver.h"
 #include "port/coop/test/switches.h"
@@ -89,7 +91,20 @@ void CoopMenuGame_SessionEnded(void) {
 }
 
 void CoopMenuGame_Message(int peer, uint16_t msgId, const uint8_t* data, uint16_t size) {
+    char text[COOP_SESSION_TEXT];
+
+    if (msgId == COOP_MSG_HANDOVER) {
+        if ((sMenu->session != NULL) && CoopHandoverGame_Heard(sMenu->session, peer, data, size, text, sizeof(text))) {
+            CoopMenu_Fail(sMenu, text);
+        }
+        return;
+    }
     CoopSyncGame_Receive(peer, msgId, data, size);
+}
+
+void CoopMenuGame_Handover(CoopSession* s, bool leaving) {
+    CoopSyncGame_End();
+    CoopHandoverGame_Run(s, leaving);
 }
 
 uint32_t CoopMenuGame_Waiting(int32_t* player) {

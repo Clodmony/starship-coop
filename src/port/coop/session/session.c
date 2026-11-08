@@ -61,6 +61,7 @@ struct CoopSession {
     bool endPending; // client: an ENDED event is owed after the REFUSED one
     CoopSessionEnd pendingEnd;
     uint32_t ignored;
+    bool closedSaid; // `session closed` is in the log (CoopSession_SayClosed)
     // The co-op log (#172): when the transport's counters were last written, and what they were then.
     uint32_t nowMs;
     uint32_t statsMs;
@@ -120,11 +121,18 @@ CoopSession* CoopSession_Join(CoopTransport* transport, const CoopIdentity* iden
 
 static bool Log_Send(void* user, int peer, const uint8_t* data, uint16_t size);
 
+void CoopSession_SayClosed(CoopSession* s) {
+    if (!s->closedSaid) {
+        s->closedSaid = true;
+        CoopLog_Write(COOP_LOG_SESSION, false, "session closed");
+    }
+}
+
 void CoopSession_Close(CoopSession* s) {
     if (s == NULL) {
         return;
     }
-    CoopLog_Write(COOP_LOG_SESSION, false, "session closed");
+    CoopSession_SayClosed(s);
     CoopLog_End(s->nowMs, Log_Send, s);
     s->t->ops->close(s->t);
     free(s);
@@ -132,6 +140,24 @@ void CoopSession_Close(CoopSession* s) {
 
 uint32_t CoopSession_Ignored(const CoopSession* s) {
     return s->ignored;
+}
+
+int CoopSession_Self(const CoopSession* s) {
+    if (s->isHost) {
+        return 0;
+    }
+    return (s->player != 0) ? s->player : -1;
+}
+
+int CoopSession_PeerPlayer(const CoopSession* s, int peer) {
+    if (CoopSession_PeerIdentity(s, peer) == NULL) {
+        return -1;
+    }
+    return s->isHost ? peer + 1 : 0;
+}
+
+bool CoopSession_LevelStarted(const CoopSession* s) {
+    return s->started;
 }
 
 const CoopIdentity* CoopSession_PeerIdentity(const CoopSession* s, int peer) {

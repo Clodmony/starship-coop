@@ -53,13 +53,16 @@ and that a desync, if one happens, is caught and reported.
 ## What to send back
 
 - **If the game reports a desync:** it says so on screen, names the frame and what differs, and tells you where its
-  report file is: `coop-desync-<frame>-player<n>.txt`. Keep the file from **both** PCs.
-  `python tools/coop/desync_report.py diff <a> <b>` compares the two. Say what each PC ran: Windows or Linux, and the
+  report file is: `coop-desync-<frame>-player<n>.txt`. Before the connection closes, each game hands its report to the
+  other (#189, a few hundred ms, 8 seconds at most), so one PC's folder normally holds both players' reports;
+  `python tools/coop/desync_report.py diff <a> <b>` compares the two. Keep the files from **both** PCs anyway, in
+  case the connection was already gone. Say what each PC ran: Windows or Linux, and the
   platform line the menu's warning showed, if the two differed. A desync between two platforms is the result decision
   0010 waits for, not a surprise.
 - **The co-op logs:** `coop-log-<session start>-player1.txt` and `-player2.txt` from the game folder, where its config
   and saves are. Each game writes its own and gets the other player's during the session, so one PC's folder normally
-  holds both; send both folders' files anyway, as the last lines may not have crossed before the session closed. They
+  holds both, up to the other's `session closed` line when the session ended with the connection still up; send both
+  folders' files anyway, as the last lines cannot cross when a PC or its connection is gone. They
   hold the session, the ping and resends every 5 seconds, every frame held and for how long, the desync check, pauses,
   players going down, a state line per player each second, and the game's own warnings. The home folder and the user
   name are taken out before a line is written or sent. `python tools/coop/coop_log.py merge <folder a> <folder b>`

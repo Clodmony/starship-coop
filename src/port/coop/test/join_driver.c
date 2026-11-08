@@ -18,7 +18,9 @@
 #include "port/coop/game/level_start.h"
 #include "port/coop/game/players.h"
 #include "port/coop/session/identity_game.h"
+#include "port/coop/net/protocol.h"
 #include "port/coop/session/session.h"
+#include "port/coop/sync/handover_game.h"
 #include "port/coop/sync/lockstep_game.h"
 #include "port/coop/test/switches.h"
 #include "port/hooks/Events.h"
@@ -179,8 +181,10 @@ static bool Link_Send(int peer, uint16_t msgId, const void* data, uint16_t size,
 
 static void Session_Pump(void);
 
+// As the menu ends one (menu_game.c): lockstep first, then the handover while the others can still be reached (#189).
 static void Session_End(void) {
     CoopSyncGame_End();
+    CoopHandoverGame_Run(sSession, false);
     CoopSession_Close(sSession);
     sSession = NULL;
 }
@@ -246,6 +250,14 @@ static void Session_Event(const CoopSessionEvent* ev) {
             }
             break;
         case COOP_SESSION_EV_MESSAGE:
+            if (ev->msgId == COOP_MSG_HANDOVER) {
+                char text[COOP_SESSION_TEXT];
+
+                if (CoopHandoverGame_Heard(sSession, ev->peer, ev->data, ev->size, text, sizeof(text))) {
+                    Link_Fail(text);
+                }
+                break;
+            }
             CoopSyncGame_Receive(ev->peer, ev->msgId, ev->data, ev->size);
             break;
         case COOP_SESSION_EV_ROSTER: {

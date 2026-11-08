@@ -40,7 +40,10 @@ static bool Port_Read(const char* text, long lowest, uint16_t* out) {
 // The rest stays at the transport's defaults.
 static const CoopNetConfig kNetConfig = { COOP_MENU_TIMEOUT_MS, 0, 0 };
 
-static void Menu_EndSession(CoopMenu* m) {
+static void Menu_EndSession(CoopMenu* m, bool leaving) {
+    if (m->backend->handover != NULL) {
+        m->backend->handover(m->session, leaving);
+    }
     CoopSession_Close(m->session);
     m->session = NULL;
     m->phase = COOP_MENU_IDLE;
@@ -182,7 +185,7 @@ bool CoopMenu_Start(CoopMenu* m) {
 
 void CoopMenu_Leave(CoopMenu* m) {
     if (m->session != NULL) {
-        Menu_EndSession(m);
+        Menu_EndSession(m, true);
         m->message[0] = '\0';
     }
 }
@@ -191,7 +194,7 @@ void CoopMenu_Fail(CoopMenu* m, const char* text) {
     if (m->session != NULL) {
         Menu_Say(m, "%s", text);
         m->lost = m->levelStarted;
-        Menu_EndSession(m);
+        Menu_EndSession(m, false);
     }
 }
 
@@ -240,7 +243,7 @@ static void Menu_OnEvent(CoopMenu* m, const CoopSessionEvent* ev) {
                 Menu_Say(m, "%s", ev->text);
             }
             m->lost = m->levelStarted;
-            Menu_EndSession(m);
+            Menu_EndSession(m, false);
             break;
         case COOP_SESSION_EV_ROSTER:
             roster = CoopSession_Roster(m->session);

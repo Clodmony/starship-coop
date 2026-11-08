@@ -2955,6 +2955,38 @@ other C library math was called by the simulation; the search had missed `src/li
 
 Unknown: whether frame 5 of the first test (`gActors[0].fwork[1]`) was this arctangent too.
 
+### 2026-11-08, #189, the handover: every report and the end of every log cross before the connection goes
+
+The desync report stayed in its own game's folder, and the co-op log's last lines were often still queued when the
+session closed (#186 above). A game now hands both over before it closes a session whose peers are still connected,
+on the session's own connection, as `HANDOVER` (0x0080, PROTOCOL.md "Handover").
+
+**Observed (runs, Linux, Release build of this branch on b5c9bc9b, US 1.0 ROM, loopback)**
+
+| Run | Result |
+|---|---|
+| `lockstep_test.py --only handover`, the build before the change | `FAILED handover: host's folder holds the reports of players [1], want 1 and 2` |
+| the same, this branch | both folders hold `coop-desync-2000-player1.txt` and `-player2.txt` (213176 and 213178 bytes), each byte for byte the sender's; `desync_report.py diff` of the two in one folder prints what it prints for the originals (`players: gPlayer[1] differs in 1 of 1264 bytes, first at +116`); each copy of the other's log runs to its `session closed`, 92 lines; the handover took 51 and 54 ms; both games play on |
+| `lockstep_test.py --only log,menu` | both ok (on the build just before the last change, a bound on session events per pass in `handover_game.c`, which neither run reaches) |
+| `handover_test.py` | names and size caps, ok, under ASan and UBSan |
+
+**Derived**
+
+- The session's reliable lane is ordered across message ids (`net_core.c`, one `txNext` per peer), so a log batch
+  sent before `BYE` arrives before it, and `BYE` after `DONE` stands for the `DONE`. That is why `session closed` is
+  written once `DONE` came from everyone, and `BYE` goes once the log queue is empty.
+- In a desync pair the other side never ends on the generic text: the first game's `SYNC_DESYNC` goes out before its
+  `BEGIN`, on the same lane, and completes the other's check (`CoopDesync_Done`) before the `BEGIN` is read.
+- A host before the level must not end its session when a client leaves (menu_test's `game` scenario frees the
+  character and goes on), so it answers that client's `BEGIN` with `DONE` and `BYE` and plays on.
+- `COOP_PROTOCOL_VERSION` stays 6: no layout of an existing message changes (rule 2), as with `DIAG_LOG` in #172, and
+  a different build is refused by the handshake anyway (bit 0, `COOP_ID_DIFF_REFUSE`).
+
+**Unknown**
+
+- Windows, two PCs, a real network with loss, three players and Leave through the real menu with the handover: not
+  run in this branch (the owner asked for a short test; he tests two PCs by hand).
+
 ### 2026-11-08, #169, frame interpolation: the skip flag and the recording path stack
 
 `src/port/interpolation/FrameInterpolation.cpp` builds a tree of matrix ops each drawn frame. `current_path` is a

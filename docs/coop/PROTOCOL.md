@@ -1,7 +1,8 @@
 # Wire protocol
 
 Status: the transport (WP-20), the session handshake (WP-21), the characters (WP-34), the level start (WP-24),
-lockstep (WP-22) and the desync check (WP-23) exist; `COOP_PROTOCOL_VERSION` is 6. Other sync and game messages come
+lockstep (WP-22), the desync check (WP-23), the co-op log (#172) and the handover (#189) exist;
+`COOP_PROTOCOL_VERSION` is 6. Other sync and game messages come
 with their work packages. This page sets the rules so parallel work does not collide.
 
 ## Rules
@@ -354,6 +355,42 @@ its lines to every other player, so every folder ends up with one file per playe
 - Before a line is written or sent, the home folder becomes `~`, the user name `<user>` and any IPv4 address `<ip>`.
   Nothing in the log names a peer's address: a player is "player 2".
 
+## Handover
+
+#189: before a game closes a session, it hands its desync report and the rest of its co-op log to every player still
+connected, and takes theirs, so every folder ends with every player's report next to every player's log and
+`desync_report.py diff` runs in one folder. The rules are `src/port/coop/sync/handover.c`; `handover_game.c` connects
+them to the session, from `menu_game.c` and the test join driver. `HANDOVER` goes on the reliable lane of the session's
+own connection, and its first byte is the kind:
+
+| Kind | Size | Fields |
+|---|---|---|
+| 1 `BEGIN` | 2 | u8 reason: 1 the player left, 2 the session cannot go on in the sender's game, 3 the sender answers a `BEGIN` |
+| 2 `FILE_START` | 7 + n | u8 file (0 to 3), u32 size (1 to 2 MiB), u8 name length n (1 to 48), the name |
+| 3 `FILE_DATA` | 7 to 1156 | u8 file, u32 offset, 1 to 1150 bytes of the file |
+| 4 `DONE` | 2 | u8 files sent |
+| 5 `BYE` | 1 | none: the sender's last log line has gone out |
+
+1. A game that ends a session while a peer is still connected (a desync, a stall, a lost player, Leave) sends that peer
+   `BEGIN`, its desync report of this session in parts and `DONE`, without waiting for anything. The co-op log is sent
+   as fast as the window takes it from here on, ahead of the files.
+2. A game that receives `BEGIN` while its session runs ends it too, with a text that names the sender, and does the same.
+   In a level every player is needed; a client's only peer is its host. A host before the level answers a client's
+   `BEGIN` with `DONE` and `BYE` and goes on with the others. A second `BEGIN` changes nothing.
+3. Once `DONE` came from every peer, a game writes `session closed`, lets the log drain and sends `BYE`. It closes the
+   connection once `BYE` came from every peer and all it sent is acknowledged, a peer that went is waited for no more,
+   and after `COOP_HANDOVER_MS`, 8000 ms, it closes whatever stands. It pumps SDL's events while it waits. So both sides
+   do the same in either order, and the lines up to `session closed` reach the other side.
+4. A received file goes into the game's own folder under its name, through `<name>.part` and a rename; no folder is
+   made. The name has to be exactly what `desync_report.c` writes for the sender's own player, which the receiver takes
+   from the session, never from the message: `coop-desync-<frame>-player<n>.txt` or `...-player<n>-<k>.txt`, frame
+   below 2^32 without a leading zero, k 2 to 9. So no name holds a path, and none is the receiver's own.
+5. At most 4 files per peer, 2 MiB each, 4 MiB from all peers together. A file with a name or size out of bounds, a part
+   out of place or beyond its size, or a file not whole at `DONE` is refused; a message that cannot be read is dropped
+   and counted. Neither ends anything: the session ends as it was going to.
+
+Nothing is passed on: with three players a client gets the host's report, the host everybody's.
+
 ## Id ranges
 
 | Range | Area |
@@ -386,6 +423,7 @@ its lines to every other player, so every folder ends up with one file per playe
 | 0x0040 | `SYNC_INPUT` | both | frames of each player, see Lockstep | WP-22 |
 | 0x0041 | `SYNC_HASH` | both | the total state hash of the last 10 frames, see Desync check | WP-23 |
 | 0x0042 | `SYNC_DESYNC` | both | the sender's hash of the first differing frame, region by region, see Desync check | WP-23 |
+| 0x0080 | `HANDOVER` | both | u8 kind (1 `BEGIN`, 2 `FILE_START`, 3 `FILE_DATA`, 4 `DONE`, 5 `BYE`), then its fields, see Handover | #189 |
 | 0x00C0 | `TEST_RELIABLE` | both | test pattern, only sent by `coop_net_test` | WP-20 |
 | 0x00C1 | `TEST_UNRELIABLE` | both | test pattern, only sent by `coop_net_test` | WP-20 |
 | 0x00C2 | `TEST_DONE` | both | none, only sent by `coop_net_test` | WP-20 |

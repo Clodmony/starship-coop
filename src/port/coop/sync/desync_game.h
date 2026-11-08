@@ -42,6 +42,11 @@ bool CoopDesyncGame_Check(uint32_t nowMs, char* text, size_t cap);
 // Frees the rings. Nothing happens here until the next Begin.
 void CoopDesyncGame_End(void);
 
+// For the handover at the end of a session (#189): the path of the report this lockstep wrote, once, so that a later
+// session does not hand it over again. A desync that is found and not reported yet is reported now. False, and "" in
+// out, if there is none.
+bool CoopDesyncGame_TakeReport(char* out, size_t cap);
+
 #ifdef __cplusplus
 }
 #endif

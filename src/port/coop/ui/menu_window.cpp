@@ -28,7 +28,8 @@ const char* const kWindowCvar = "gCoopMenuWindow";
 
 const CoopMenuBackend kBackend = { CoopNetSdl_Host,           CoopNetSdl_Connect,   CoopNetSdl_Port,
                                    CoopIdentity_FromGame,     CoopMenuGame_Level,   CoopMenuGame_EnterLevel,
-                                   CoopMenuGame_SessionEnded, CoopMenuGame_Message, CoopMenuGame_Waiting };
+                                   CoopMenuGame_SessionEnded, CoopMenuGame_Message, CoopMenuGame_Waiting,
+                                   CoopMenuGame_Handover };
 
 CoopMenu sMenu;
 char sAddress[COOP_MENU_ADDRESS_SIZE];

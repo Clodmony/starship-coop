@@ -50,6 +50,9 @@ typedef struct {
     void (*sessionEnded)(void);                      // the session is over, however it went
     void (*message)(int peer, uint16_t msgId, const uint8_t* data, uint16_t size); // above the session range
     uint32_t (*waiting)(int32_t* player); // how many ms the game has been waiting for that player, 0 if it is not
+    // Optional, NULL for none: right before the session closes, while the players still connected can be reached (the
+    // handover, #189). leaving: the player chose to leave. It may take a few seconds; the session stays the menu's.
+    void (*handover)(CoopSession* s, bool leaving);
 } CoopMenuBackend;
 
 typedef struct {

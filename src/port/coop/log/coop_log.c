@@ -612,6 +612,39 @@ void CoopLog_Pump(uint32_t nowMs, CoopLogSendFn send, CoopLogPendingFn pending, 
     }
 }
 
+void CoopLog_Flush(uint32_t nowMs, CoopLogSendFn send, void* user) {
+    int i;
+
+    if (!sOpen) {
+        return;
+    }
+    for (i = 0; i < COOP_LOG_PEERS; i++) {
+        // One batch at a time while send takes them: a batch that went out counts in sStats.sent.
+        while (sPeers[i].open && (sPeers[i].used != 0)) {
+            uint32_t sent = sStats.sent;
+
+            Peer_Pump(i, nowMs, true, send, NULL, user);
+            if (sStats.sent == sent) {
+                break;
+            }
+        }
+    }
+}
+
+bool CoopLog_Queued(void) {
+    int i;
+
+    if (!sOpen) {
+        return false;
+    }
+    for (i = 0; i < COOP_LOG_PEERS; i++) {
+        if (sPeers[i].open && (sPeers[i].used != 0)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool CoopLog_Receive(int peer, bool host, const uint8_t* data, uint16_t size) {
     char text[COOP_LOG_BATCH_TEXT + 1];
     int origin;

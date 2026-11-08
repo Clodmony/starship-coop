@@ -115,10 +115,9 @@ SIM = ["sim"]
 BREAKS = [
     # Creating, closing, asking.
     ("no_null_transport_check", "if (transport == NULL) {\n        return NULL;\n    }\n", "", SIM),
-    ("close_null_session", "if (s == NULL) {\n        return;\n    }\n    CoopLog_Write(COOP_LOG_SESSION, false, "
-     "\"session closed\");\n    CoopLog_End(s->nowMs, Log_Send, s);\n    s->t->ops->close(s->t);",
-     "CoopLog_Write(COOP_LOG_SESSION, false, \"session closed\");\n    CoopLog_End(s->nowMs, Log_Send, s);\n"
-     "    s->t->ops->close(s->t);", SIM),
+    ("close_null_session", "if (s == NULL) {\n        return;\n    }\n    CoopSession_SayClosed(s);\n    "
+     "CoopLog_End(s->nowMs, Log_Send, s);\n    s->t->ops->close(s->t);",
+     "CoopSession_SayClosed(s);\n    CoopLog_End(s->nowMs, Log_Send, s);\n    s->t->ops->close(s->t);", SIM),
     ("close_keeps_transport", "s->t->ops->close(s->t);\n    free(s);", "free(s);", SIM),
     ("identity_host_any_state", "return s->peers[peer].state == PEER_JOINED ? &s->peers[peer].identity : NULL;",
      "return &s->peers[peer].identity;", SIM),

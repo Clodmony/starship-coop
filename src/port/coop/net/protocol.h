@@ -36,6 +36,10 @@ typedef enum {
     COOP_MSG_SYNC_HASH = 0x0041,
     COOP_MSG_SYNC_DESYNC = 0x0042,
 
+    // The handover (#189): before a session closes, every game hands its desync report and the rest of its co-op log
+    // to every player still connected. A kind byte first, see src/port/coop/sync/handover.h.
+    COOP_MSG_HANDOVER = 0x0080,
+
     // Debug and test harness.
     COOP_MSG_TEST_RELIABLE = 0x00C0,
     COOP_MSG_TEST_UNRELIABLE = 0x00C1,

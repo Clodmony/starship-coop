@@ -44,6 +44,9 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             region, write a report, and the session ends; desync_report.py names the flipped value.
   desync_control the same with SF64_COOP_TEST_NO_DESYNC_CHECK: the hashes differ and nobody says so.
   desync_three a third game that stays in step hears which two differed, and writes its report too.
+  handover  the handover (#189): after a desync both folders hold both reports, byte for byte, desync_report.py diff
+            reads the two of one folder as it reads the originals, and each folder's copy of the other player's log
+            runs to its `session closed`.
   log       the co-op log (#172): each game's folder holds its own log and the other player's, streamed during the
             session; the hash stays equal with streaming on; nothing personal is in the files; coop_log.py merges them.
 
@@ -248,8 +251,33 @@ def compare(host, client, frames=None):
 
 
 def desync_reports(game):
-    """The desync reports a game wrote into its own folder (WP-23), oldest first."""
+    """The desync reports in a game's own folder (WP-23), its own and the ones handed over to it (#189), by name."""
     return sorted(game.run.glob("coop-desync-*.txt"))
+
+
+REPORT_NAME = re.compile(r"coop-desync-(\d+)-player(\d)(?:-\d)?\.txt$")
+
+
+def player_of(game):
+    """The player number a game flies as: 1 for the host, a client's from the join driver's `joined` line."""
+    if game.name == "host":
+        return 1
+    return int(join_test.said(game.report(), "joined")[0]["player"]) + 1
+
+
+def reports_by_player(game):
+    """{player: [paths]} of the desync reports in a game's folder."""
+    found = {}
+    for path in desync_reports(game):
+        match = REPORT_NAME.match(path.name)
+        if match:
+            found.setdefault(int(match.group(2)), []).append(path)
+    return found
+
+
+def own_reports(game):
+    """The reports a game wrote itself, not the ones the others handed over."""
+    return reports_by_player(game).get(player_of(game), [])
 
 
 def no_desync(games):
@@ -815,6 +843,15 @@ def sc_rates(args, folder):
     return f"{a} and {b} fps at real time, {draws} draws a frame: {compare(host, client, args.feed_frames)} frames equal"
 
 
+def report_diff(a, b):
+    """desync_report.py diff of two reports; it has to find a difference."""
+    done = subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "coop" / "desync_report.py"), "diff", str(a),
+                           str(b)], capture_output=True, text=True, timeout=120)
+    expect(done.returncode == 0, f"desync_report.py diff {a.name} {b.name}: exit {done.returncode}: "
+                                 f"{done.stdout[-400:]}")
+    return done
+
+
 def check_desync(host, client, poke, mode, pair=(1, 2), clients=None):
     """Both games found the flipped bit of player 2 at exactly `poke`: a report each, with the frame, the pair, the
     region and a verified dump, the session over within a few frames and the text for the player; and the diff tool
@@ -822,7 +859,7 @@ def check_desync(host, client, poke, mode, pair=(1, 2), clients=None):
     games = [host, client, *(clients or [])]
     reports = {}
     for game in games:
-        found = desync_reports(game)
+        found = own_reports(game)
         expect(len(found) == 1, f"{game.name} wrote {len(found)} desync reports")
         reports[game.name] = desync_report.Report(found[0])
         header = reports[game.name].header
@@ -852,10 +889,7 @@ def check_desync(host, client, poke, mode, pair=(1, 2), clients=None):
     for game in clients or []:
         expect(reports[game.name].header.get("regions differing") == "none",
                f"{game.name}: regions {reports[game.name].header.get('regions differing')}")
-    done = subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "coop" / "desync_report.py"), "diff",
-                           str(desync_reports(host)[0]), str(desync_reports(client)[0])],
-                          capture_output=True, text=True, timeout=120)
-    expect(done.returncode == 0, f"desync_report.py diff: exit {done.returncode}: {done.stdout[-400:]}")
+    done = report_diff(own_reports(host)[0], own_reports(client)[0])
     first = next((line.strip() for line in done.stdout.splitlines() if "gPlayer[1]" in line), None)
     expect(first is not None and first.startswith("players: gPlayer[1] differs"),
            f"desync_report.py diff did not name gPlayer[1]: {done.stdout[-400:]}")
@@ -918,6 +952,57 @@ def sc_desync_three(args, folder):
     found = check_desync(host, b, poke, "rails", pair=(1, own + 1), clients=[a])
     return (f"three games, poke on player {own + 1}'s at {poke}: {found}; player {4 - own}'s report says no region "
             f"differs from the host's")
+
+
+def sc_handover(args, folder):
+    """#189: before the connection goes, each game hands its report and the rest of its log to the other. After a desync
+    both folders hold both reports, byte for byte the sender's; the diff tool reads the two of one folder as it reads
+    the originals; each folder's copy of the other player's log runs on up to its `session closed`; the handover ends
+    because it is done, not because its time is up; and the session still ends, with both games playing on."""
+    poke = JOIN_FRAME + 300
+    host, client = poke_session(args, folder, poke)
+    found = check_desync(host, client, poke, "rails")
+    games = (host, client)
+    names = {game: own_reports(game)[0].name for game in games}
+    for game in games:
+        held = reports_by_player(game)
+        expect(set(held) == {1, 2}, f"{game.name}'s folder holds the reports of players {sorted(held)}, want 1 and 2")
+        for other in games:
+            path = game.run / names[other]
+            expect(path.exists(), f"{game.name}'s folder lacks {names[other]}")
+            expect(path.read_bytes() == (other.run / names[other]).read_bytes(),
+                   f"{game.name}'s {names[other]} is not byte for byte {other.name}'s")
+        leftovers = sorted(game.run.glob("*.part"))
+        expect(not leftovers, f"{game.name} left {leftovers[0].name if leftovers else ''}")
+    originals = report_diff(host.run / names[host], client.run / names[client]).stdout
+    for game in games:
+        here = report_diff(game.run / names[host], game.run / names[client]).stdout
+        expect(here == originals, f"desync_report.py diff in {game.name}'s folder says {here[-300:]}, "
+                                  f"on the originals {originals[-300:]}")
+    first = next((line.strip() for line in originals.splitlines() if "differs" in line), "?")
+    lines = 0
+    took = []
+    for own_game, other_game in ((host, client), (client, host)):
+        player = player_of(own_game)
+        own = [line.format() for line in coop_log.read_lines(coop_logs(own_game)[player], player)]
+        got = [line.format() for line in coop_log.read_lines(coop_logs(other_game)[player], player)]
+        closed = next((i for i, line in enumerate(own) if line.endswith(" session session closed")), None)
+        expect(closed is not None, f"player {player}'s own log never says `session closed`")
+        expect(got and got[0] in own, f"{other_game.name}'s copy of player {player}'s log starts with a line player "
+                                      f"{player} never wrote: {got[:1]}")
+        tail = own[own.index(got[0]):closed + 1]
+        missing = [line for line in tail if line not in got]
+        expect(got[:len(tail)] == tail, f"{other_game.name}'s copy of player {player}'s log stops {len(missing)} lines "
+                                        f"short of `session closed`, first missing: {missing[:1]}")
+        lines += len(tail)
+        done = [re.search(r"handover: done in (\d+) ms", line) for line in own[closed:]]
+        done = [int(match.group(1)) for match in done if match]
+        expect(done, f"player {player}'s log does not say the handover was done: "
+                     f"{[line for line in own if 'handover' in line][-3:]}")
+        took.append(done[0])
+    return (f"{found}; both folders hold both reports, byte for byte, and the diff in one folder reads as on the "
+            f"originals ({first}); each copy of the other's log runs to `session closed`, {lines} lines; the "
+            f"handover took {took[0]} and {took[1]} ms; both games play on")
 
 
 # The line a game writes when the lockstep starts (decision 0011, #186): the N64 sine of 0x406a927f is bf000000 on every
@@ -1022,6 +1107,7 @@ SCENARIOS = {
     "desync": sc_desync,
     "desync_control": sc_desync_control,
     "desync_three": sc_desync_three,
+    "handover": sc_handover,
     "log": sc_log,
 }
 LONG = ("full", "audio", "release", "rates")
