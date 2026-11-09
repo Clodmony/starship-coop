@@ -39,8 +39,45 @@ void CoopMenuGame_Listen(CoopMenu* menu) {
     REGISTER_LISTENER(GamePreUpdateEvent, CoopMenuGame_OnGamePreUpdate, EVENT_PRIORITY_HIGH);
 }
 
+// The levels the lobby offers (#211). Left out: Training and Versus, which are no campaign levels, and the two ids the
+// game leaves unnamed (LEVEL_UNK_4, LEVEL_UNK_15). Phase 0 for all; the route state a campaign builds on the way is not
+// there, and the map after a level started this way is untested (NOTES.md, #211).
+static const struct {
+    uint8_t level;
+    const char* name;
+} sStartLevels[] = {
+    { LEVEL_CORNERIA, "Corneria" }, { LEVEL_METEO, "Meteo" },
+    { LEVEL_SECTOR_Y, "Sector Y" }, { LEVEL_FORTUNA, "Fortuna" },
+    { LEVEL_KATINA, "Katina" },     { LEVEL_AQUAS, "Aquas" },
+    { LEVEL_SOLAR, "Solar" },       { LEVEL_ZONESS, "Zoness" },
+    { LEVEL_SECTOR_X, "Sector X" }, { LEVEL_TITANIA, "Titania" },
+    { LEVEL_MACBETH, "Macbeth" },   { LEVEL_SECTOR_Z, "Sector Z" },
+    { LEVEL_BOLSE, "Bolse" },       { LEVEL_AREA_6, "Area 6" },
+    { LEVEL_VENOM_1, "Venom" },     { LEVEL_VENOM_ANDROSS, "Venom (Andross)" },
+    { LEVEL_VENOM_2, "Venom 2" },
+};
+static int32_t sStartIndex = 0; // Corneria
+
+int32_t CoopMenuGame_StartLevelCount(void) {
+    return (int32_t) ARRAY_COUNT(sStartLevels);
+}
+
+const char* CoopMenuGame_StartLevelName(int32_t index) {
+    return ((index >= 0) && (index < CoopMenuGame_StartLevelCount())) ? sStartLevels[index].name : "";
+}
+
+int32_t CoopMenuGame_StartLevelIndex(void) {
+    return sStartIndex;
+}
+
+void CoopMenuGame_SetStartLevel(int32_t index) {
+    if ((index >= 0) && (index < CoopMenuGame_StartLevelCount())) {
+        sStartIndex = index;
+    }
+}
+
 void CoopMenuGame_Level(CoopLevelStart* out) {
-    CoopLevelStart_FromGame(out, LEVEL_CORNERIA, 0);
+    CoopLevelStart_FromGame(out, sStartLevels[sStartIndex].level, 0);
     CoopTestSwitches_StartSeeds(out->values);
 }
 
@@ -88,6 +125,7 @@ void CoopMenuGame_EnterLevel(const CoopLevelStart* start) {
 void CoopMenuGame_SessionEnded(void) {
     CoopSyncGame_End();
     CoopPlayers_SetRoster(NULL);
+    sStartIndex = 0; // the next session starts at Corneria again unless its host picks another level (#211)
 }
 
 void CoopMenuGame_Message(int peer, uint16_t msgId, const uint8_t* data, uint16_t size) {

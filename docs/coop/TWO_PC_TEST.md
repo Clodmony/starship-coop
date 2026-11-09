@@ -36,8 +36,10 @@ and that a desync, if one happens, is caught and reported.
 3. **Joining player:** type the host's address and the port, then click **Join a game**. The status line shows the
    join and a ping.
 4. **Both:** pick a character. The host flies Fox; the other player picks a wingman.
-5. **Host:** click **Start the level**. Both games go to Corneria together.
-6. **Fly the level together.** Either player's Start pauses both games. If the host's save has Corneria cleared,
+5. **Host:** optionally pick another level in the **Start at** dropdown (Corneria unless you do), then click **Start
+   the level**. Both games go to that level together (#211). A level started this way carries none of the route a
+   campaign builds on the way, and the map after it is untested.
+6. **Fly the level together.** Either player's Start pauses both games. If the host's save has the level cleared,
    either player's Start in the intro skips it on both games; otherwise Start does nothing there (#191).
 7. **Stop at the map** after the level is complete, and quit. The map is not tested yet: each player has their own
    save, and the map reads it.

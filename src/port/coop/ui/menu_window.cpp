@@ -116,10 +116,35 @@ void DrawChoices(const CoopMenuView& view) {
     }
 }
 
+// The host's dropdown (#211). Each entry is a widget of its own for menu_test.py, which clicks with the mouse.
+void DrawStartLevel() {
+    const int32_t current = CoopMenuGame_StartLevelIndex();
+
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Start at");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(-1.0f);
+    const bool open = ImGui::BeginCombo("##start-level", CoopMenuGame_StartLevelName(current));
+    CoopMenuDriver_Item("start-level", CoopMenuGame_StartLevelName(current), true);
+    if (open) {
+        for (int32_t i = 0; i < CoopMenuGame_StartLevelCount(); i++) {
+            char id[32];
+
+            snprintf(id, sizeof(id), "start-level-%d", (int) i);
+            if (ImGui::Selectable(CoopMenuGame_StartLevelName(i), i == current)) {
+                CoopMenuGame_SetStartLevel(i);
+            }
+            CoopMenuDriver_Item(id, CoopMenuGame_StartLevelName(i), true);
+        }
+        ImGui::EndCombo();
+    }
+}
+
 // Below the players and the characters, above Leave.
 void DrawLevelStart(const CoopMenuView& view) {
     if (view.showStart) {
         UIWidgets::PaddedSeparator();
+        DrawStartLevel();
         if (Button("start", view.startLabel, view.canStart)) {
             CoopMenu_Start(&sMenu);
         }

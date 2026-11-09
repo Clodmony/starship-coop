@@ -3813,6 +3813,30 @@ Unknown:
 - Other all-range levels (Fortuna, Katina, Bolse, Sector Z, Venom 2) start in all-range; there player 1 would join
   once player 0 is active after the intro. Not run.
 
+### 2026-11-10, #211, the lobby's choice of the level to start at
+
+**Observed**
+
+- The lobby started Corneria and nothing else: `CoopMenuGame_Level` passed `LEVEL_CORNERIA` to
+  `CoopLevelStart_FromGame` (`src/port/coop/ui/menu_game.c`). The level-start message already carries the level and the
+  phase, and `CoopSession_StartLevel` accepts any of the 20 ids (`session.c`), so the change is the host's choice and
+  nothing on the wire.
+- Now the host's window has a **Start at** dropdown above the Start button (`menu_window.cpp`, `DrawStartLevel`):
+  17 campaign levels in the order of the first routes; Training, Versus and the two unnamed ids are left out. The choice
+  is a static in `menu_game.c`, Corneria at launch and again when a session ends. A client sees nothing new.
+- `menu_test.py --game --only game_start_level`: the host opens the dropdown and picks Meteo with real mouse clicks (the
+  driver's widgets), a client joins as Falco, Start: both games log `level 1`, same hash on 1441 frames. `game_level`
+  (Corneria, three games) still passes.
+- The host's cleared flag of the chosen level goes with the message (`CoopLevelStart_FromGame`), so the intro skip
+  (#191) follows the level the host picked.
+
+**Unknown**
+
+- Which levels run for long in a session: by hand only Corneria, Meteo, Fortuna, Solar and Macbeth, by script the first
+  2400 frames of 15 levels (#129).
+- A level started this way takes the host's globals as they are at the title (lives, bombs, team shields) and none of
+  the route state; what the map does after it is untested.
+
 ### 2026-11-09, #200, Solar's heat drain for every player
 
 Observed:
