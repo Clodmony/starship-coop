@@ -1,7 +1,7 @@
 # 0012: A wingman a human flies is not shown twice: the scene goes to a free computer wingman
 
-- Status: Proposed
-- Date: 2026-11-09
+- Status: Accepted
+- Date: 2026-11-09 (proposed; accepted by the owner as proposed the same day)
 - Issue: #202
 - Changes: decision 0006, option C1 and rule 5 for on-rails scenes. 0006 stays Accepted for everything else.
 
@@ -111,7 +111,8 @@ answers would play to nobody.
 
 ## Decision
 
-**Proposed: A2, B4, C2, with C3 left for after a listening pass.** The owner chose B4 on 2026-11-09. A scene that would
+**A2, B4, C2, with C3 left for after a listening pass.** The owner chose B4 on 2026-11-09 and accepted the record
+as proposed the same day. A scene that would
 put a human-flown wingman on screen is flown by the next free computer wingman in the order Falco, Slippy, Peppy. If
 none is free, a guest flies it: Katt, or Bill; if both are busy, the stand-in, as 0006 C1. In a borrowed scene the taken wingman's own lines are swapped for the substitute's line where
 the game recorded one for all three, and dropped otherwise; everything else in the radio follows 0006.
@@ -167,7 +168,9 @@ Harder:
 
 Next:
 
-- WP-17 (#15) builds rules 1 to 5 after 0006 rules 1 to 4.
+- WP-17 (#15) builds rules 1 to 5 after 0006 rules 1 to 4, in two steps, as the owner asked on 2026-11-09: first the
+  computer wingmen (A2: Falco, Slippy, Peppy), then the guests (B4: Katt, Bill). With two players one human wingman
+  leaves two computer wingmen, so a guest is only needed with four players.
 - A listening pass over the borrowed scenes, per level, to find lines that name the taken wingman (and, for C2,
   replacement lines).
 - A tool that reads the level object lists, to answer whether a substitute's own scene can overlap a borrowed one.

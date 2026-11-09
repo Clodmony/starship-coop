@@ -3,6 +3,8 @@
 - Status: Accepted
 - Date: 2026-11-06 (proposed), 2026-11-08 (accepted by the owner, with changes to D and E; amended the same day, see E)
 - Issue: #85
+- Changed by: [0012](0012-taken-wingman-scenes.md) for on-rails scenes: a scene that would show a human-flown wingman
+  goes to a free computer wingman, else Katt or Bill; C1 stays only as the last fallback.
 
 ## Context
 
