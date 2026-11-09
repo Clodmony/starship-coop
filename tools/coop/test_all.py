@@ -115,6 +115,7 @@ def all_steps():
         ("builds", ["hash_check.py", "builds"], "other", False),
         ("determinism", ["determinism.py"], "exe", False),
         ("view-check", ["view_check.py"], "exe", False),
+        ("solar-heat", ["solar_check.py"], "exe", False),
         ("wingman", ["wingman_check.py", "all"], "exe", True),
         ("full-level", ["full_level.py"], "exe", False),
         ("lowhealth-allrange", ["player_trace.py", "lowhealth", "--players", "2", "--section", "all-range"], "exe",

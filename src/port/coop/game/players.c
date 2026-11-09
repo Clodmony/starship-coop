@@ -379,3 +379,45 @@ void CoopPlayers_SetSlotState(int32_t index, int32_t state) {
         sSlot[index] = (CoopSlot) state;
     }
 }
+
+// The rate of Play_UpdateLevel's LEVEL_SOLAR drain for a height: one point every (mask + 1) frames. Same steps as
+// there (src/engine/fox_play.c), which keeps its own copy for player 0 so that co-op off stays upstream's code.
+static s32 SolarHeatMask(f32 y) {
+    if (y > 500.0f) {
+        return 8 - 1;
+    }
+    if (y > 300.0f) {
+        return 4 - 1;
+    }
+    if (y > 200.0f) {
+        return 2 - 1;
+    }
+    return 0;
+}
+
+void CoopPlayers_SolarHeat(void) {
+    s32 i;
+
+    if (!CoopPlayers_IsCoop() || CVarGetInteger("gInvincible", 0)) {
+        return;
+    }
+    for (i = 1; i < CoopPlayers_Count(); i++) {
+        Player* player = &gPlayer[i];
+
+        if (CoopPlayers_IsParked(i) || (player->state != PLAYERSTATE_ACTIVE) ||
+            ((gGameFrameCount & SolarHeatMask(player->pos.y)) != 0)) {
+            continue;
+        }
+        player->shields--;
+        if (player->shields <= 0) {
+            player->shields = 0;
+        }
+        if ((player->heal == 0) && CoopPlayers_IsViewed(i)) {
+            if (player->shields == 50) {
+                AUDIO_PLAY_SFX(NA_SE_SHIELD_WARNING1, gDefaultSfxSource, 4);
+            } else if (player->shields == 100) {
+                AUDIO_PLAY_SFX(NA_SE_SHIELD_WARNING0, gDefaultSfxSource, 4);
+            }
+        }
+    }
+}

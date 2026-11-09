@@ -6978,7 +6978,7 @@ void Play_UpdateLevel(void) {
                 if (gPlayer[0].shields <= 0) {
                     gPlayer[0].shields = 0;
                 }
-                if (gPlayer[0].heal == 0) {
+                if ((gPlayer[0].heal == 0) && CoopPlayers_IsViewed(0)) { // COOP: heard by the player viewed (#200)
                     if (gPlayer[0].shields == 50) {
                         AUDIO_PLAY_SFX(NA_SE_SHIELD_WARNING1, gDefaultSfxSource, 4);
                     } else if (gPlayer[0].shields == 100) {
@@ -6986,6 +6986,7 @@ void Play_UpdateLevel(void) {
                     }
                 }
             }
+            CoopPlayers_SolarHeat(); // COOP: the heat drains every player who flies, not Fox alone (#200)
 
             shields = MIN(gPlayer[0].shields, 255);
 

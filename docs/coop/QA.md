@@ -84,6 +84,8 @@ number of clients, transport.
    (`src/port/coop/test/view_trace.h`): camera, shield gauge, bomb counter, cockpit, hit flash, shield bar, sound, pause.
    The trace holds what a client means to show. What reached the screen needs a picture: a game with no window can be
    read back from OpenGL, and such pictures are game art, so they stay local and are deleted after reading.
+   `python tools/coop/solar_check.py` (unattended, exit code 0 on `PASS`) plays Solar with the same two clients and
+   gInvincible off: both players' shields must fall to the heat, and the hashes stay equal (#200).
    `python tools/coop/hash_check.py diff <a> <b>` compares every column of the two logs, names the first differing
    frame and the regions that differ there. It compares the common frames: read its first line for the two lengths.
    `python tools/coop/desync_report.py diff <a> <b>` (WP-23) does the same for two desync reports, the files a game
