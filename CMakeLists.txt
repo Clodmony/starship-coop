@@ -171,6 +171,9 @@ list(FILTER ALL_FILES EXCLUDE REGEX "src/overlays/ovl_ending/fox_end2_data.c")
 list(FILTER ALL_FILES EXCLUDE REGEX "src/sys/sys_timer.c")
 list(FILTER ALL_FILES EXCLUDE REGEX "src/sys/sys_fault.c")
 list(FILTER ALL_FILES EXCLUDE REGEX "src/mods/object_ram.c")
+# COOP: the recursive glob finds "Resource.rc" in any subfolder, so a second checkout in the private local/ folder
+# (a worktree for a friend's build) gave the link a second VERSION resource (CVT1100). Skip local/.
+list(FILTER ALL_FILES EXCLUDE REGEX "^local/")
 
 if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(IOS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/libultraship/ios)
