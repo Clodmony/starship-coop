@@ -86,8 +86,6 @@ src/engine/fox_enmy.c	Object_Init	sim	site	init depends on player 0 z
 src/engine/fox_enmy.c	ActorMissileSeek_Update	sim	site	seeks the nearest human (CoopAim_Nearest, #193); player 0's camera and level end remove it
 src/engine/fox_enmy.c	SceneryRotateTowardsCamera	view	site	billboard to player 0 camera
 src/engine/fox_enmy.c	Item_CheckBounds	sim	site	items kept inside player 0 path bounds
-src/engine/fox_enmy.c	ActorSupplies_Update	sim	site	supply drop for player 0
-src/engine/fox_enmy.c	func_enmy_80067A40	sim	site	wing repair applied to player 0
 src/engine/fox_enmy.c	ItemLasers_Update	sim	site	laser item checks player 0 wings
 src/engine/fox_enmy.c	ItemSupplyRing_Update	view	site	player 0 alternate (cockpit) view
 src/engine/fox_enmy.c	ItemMeteoWarp_Update	flow	site	warp ring sends player 0 into the warp zone
@@ -112,8 +110,7 @@ src/engine/fox_enmy2.c	ActorDebris_Update	sim	site	debris placed relative to pla
 src/engine/fox_enmy2.c	func_enmy2_8006D0F4	sim	site	scenery search ahead of player 0
 src/engine/fox_enmy2.c	ActorEvent_ProcessScript	sim	site	event scripts check player 0 state and position; radio only when player 0 active
 src/engine/fox_enmy2.c	ActorEvent_ProcessActions	sim	read	event actors aim at player 0 (temporarily jitters player 0 position to aim off)
-src/engine/fox_enmy2.c	ActorEvent_8006FE28	sim	site	contact with player 0
-src/engine/fox_enmy2.c	ActorEvent_ProcessTriggers@gPlayer[0]	sim	read	event conditions read player 0 position, shields, speed and laser level
+src/engine/fox_enmy2.c	ActorEvent_ProcessTriggers@gPlayer[0]	sim	read	event conditions read player 0 position, shields and speed; the laser levels read every active player since #201
 src/engine/fox_enmy2.c	ActorEvent_ProcessTriggers@gMainController	input	site	C-right condition read from gMainController
 src/engine/fox_enmy2.c	ActorEvent_80072474	sim	site	angle to player 0
 src/engine/fox_enmy2.c	ActorEvent_Update	sim	site	event actors aim at player 0 and set player 0 damage type; killed on player 0 level complete
@@ -296,7 +293,7 @@ src/engine/fox_beam.c	PlayerShot_CheckEventHitbox@shooter	ok	site	sourceId < 4 a
 src/engine/fox_beam.c	PlayerShot_CheckActorHitbox@shooter	ok	site	sourceId < 4 and gLaserStrength[sourceId]: every player, own lasers
 src/engine/fox_beam.c	PlayerShot_ApplyDamageToActor@shooter	ok	read	damage by the shooter's own lasers; dmgSource through CoopPlayers_DmgSource since #86
 src/engine/fox_beam.c	PlayerShot_CollisionCheck@shooter	flow	site	open rules: Star Wolf dodges only player 0's shots outside Venom 2 and only player 0 hurts the Saucerer (WP-16 #14, NOTES #59 question 8), shots hit player 0 only in all-range (friendly fire, #7), Shogun bonus only for sourceId 0 (fox_sy.c:564, :602, WP-16 #14)
-src/engine/fox_beam.c	PlayerShot_DrawLaser@shooter	view	site	colour by NPC id; player colours in the versus branch
+src/engine/fox_beam.c	PlayerShot_DrawLaser@shooter	view	site	colour by NPC id; player colours in the versus branch; twin or hyper look from the shooter's own gLaserStrength in co-op (#201)
 src/engine/fox_beam.c	PlayerShot_DrawShot@shooter	view	site	player colours in versus branches
 src/engine/fox_beam.c	PlayerShot_UpdateBeam@shooter	ok	read	ground hit uses the shooter's own lasers and form since #86; :1696 tests NPC ids
 src/engine/fox_beam.c	PlayerShot_FindLockTarget@shooter	ok	site	per shooter: lock-on timers, sound, reticle; gVsLockOnTimers in versus only

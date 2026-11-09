@@ -21,6 +21,12 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   steer     each client flies its own player. Hashes equal, each game looks through its own player.
   aim       enemies aim at the nearest human (#193): on Corneria's rails some enemy shots or missiles fly at player 1,
             the two games log the same ones (src/port/coop/test/aim_trace.h), and the hashes stay equal.
+  laser     a laser item in front of player 1 only (#201): its lasers go 0 to 1 and its wings are set on both games,
+            player 0's stay, the hashes are equal.
+  laser_wing1 player 1's wing is broken and it collects a laser item: its wings are repaired, lasers not raised (#201).
+  laser_wing0 only Fox's wing is broken and player 1 collects a laser item: player 1's lasers go up, Fox's wings stay.
+  repair    a wing repair item collected by player 1 repairs player 1's wings, not Fox's.
+  crate     a supply crate bursts with Fox at twin lasers and player 1 at single: it drops lasers.
   three     the same with three games, so that input goes through the host to the other client.
   control   the same run with SF64_COOP_TEST_NO_LOCKSTEP: it must differ, or this test says nothing.
   pause     Start on either client pauses both on the same frame, Start on either resumes.
@@ -469,6 +475,92 @@ def sc_boost(args, folder):
            f"the two games do not have one level speed ({len(common)} common frames)")
     return (f"same hash on {frames} frames; level speed {seen[0][0]:.1f} -> {seen[0][1]:.1f} in both games while only "
             f"player 1 boosts")
+
+
+LASER_AT = 1900  # feed frame a laser item appears in front of player 1 (sc_laser)
+
+
+def run_item(args, folder, spec):
+    """Both games with SF64_COOP_LOCKSTEP_ITEM=spec. Returns (frames, [per game: placed, rows]) where a row is the dict of
+    a `lasers` line with strength, wings and states as lists of ints, after hashes and lockstep logs matched."""
+    host, client = run_short(args, folder, both={"SF64_COOP_LOCKSTEP_ITEM": spec}, frames=LASER_AT + 200)
+    frames = compare(host, client, LASER_AT + 200)
+    games = []
+    for game in (host, client):
+        report = game.sync()
+        expect(join_test.said(report, "item"), f"{game.name}: the item was never placed")
+        rows = []
+        for row in join_test.said(report, "lasers"):
+            rows.append({key: ([int(v) for v in row[key].split(",")] if key != "frame" else int(row[key]))
+                         for key in ("frame", "strength", "wings", "states")})
+        expect(rows, f"{game.name}: no `lasers` line")
+        games.append((rows, join_test.said(report, "drop")))
+    expect(games[0][0][1:] == games[1][0][1:] or games[0][0][-1] == games[1][0][-1],
+           f"the two games saw different pickups: {games[0][0]} / {games[1][0]}")
+    return frames, games
+
+
+BROKEN, INTACT = 11, 22  # 10 * left + right wing state, WINGSTATE_BROKEN and WINGSTATE_INTACT
+
+
+def sc_laser(args, folder):
+    """#201: a laser item in front of player 1 alone. It has to count for player 1 on both clients: gLaserStrength[1] 0
+    to 1, its wing health set, player 0 untouched, and the hashes equal."""
+    frames, games = run_item(args, folder, f"{LASER_AT}:1:0:8")
+    for n, (rows, _) in enumerate(games):
+        first, last = rows[0], rows[-1]
+        expect(first["strength"][1] == 0 and last["strength"][1] == 1,
+               f"game {n}: player 1's lasers {first['strength'][1]} -> {last['strength'][1]}, want 0 -> 1")
+        expect(last["strength"][0] == first["strength"][0], f"game {n}: player 0's lasers changed: {rows}")
+        expect(first["wings"][1] == 0 and last["wings"][1] == 60,
+               f"game {n}: player 1's wing health {first['wings'][1]} -> {last['wings'][1]}, want 0 -> 60")
+    last = games[0][0][-1]
+    return (f"same hash on {frames} frames; on both games player 1's lasers 0 -> 1 on frame {last['frame']}, its wings "
+            f"{last['wings'][1]}, player 0's lasers stay {last['strength'][0]}")
+
+
+def sc_laser_wing1(args, folder):
+    """#201: player 1's wing is broken, it collects a laser item: the wings are repaired, the lasers are not raised, and
+    Fox is untouched (the owner's rule: the collector decides)."""
+    frames, games = run_item(args, folder, f"{LASER_AT}:1:0:2")
+    for n, (rows, _) in enumerate(games):
+        last = rows[-1]
+        expect(last["states"][1] == INTACT, f"game {n}: player 1's wings were not repaired: {last}")
+        expect(last["strength"] == [0, 0], f"game {n}: lasers changed with a wing to repair: {last}")
+        expect(last["wings"][1] > 0, f"game {n}: player 1's wing health was not set: {last}")
+        expect(last["states"][0] == INTACT and last["wings"][0] == rows[0]["wings"][0],
+               f"game {n}: Fox's wings changed: {rows[0]} -> {last}")
+    return f"same hash on {frames} frames; player 1's wings repaired, lasers stay 0, Fox untouched, on both games"
+
+
+def sc_laser_wing0(args, folder):
+    """#201: only Fox's wing is broken, player 1 collects a laser item: player 1's lasers 0 -> 1, Fox's wings stay
+    broken (before, the item turned into a wing repair for Fox before anybody reached it)."""
+    frames, games = run_item(args, folder, f"{LASER_AT}:1:0:1")
+    for n, (rows, _) in enumerate(games):
+        last = rows[-1]
+        expect(last["strength"] == [0, 1], f"game {n}: lasers {last['strength']}, want 0,1")
+        expect(last["states"][0] == BROKEN, f"game {n}: Fox's wings changed: {last}")
+    return f"same hash on {frames} frames; player 1's lasers 0 -> 1, Fox's wings stay broken, on both games"
+
+
+def sc_repair(args, folder):
+    """#201: a wing repair item collected by player 1 repairs player 1's wings, not Fox's (both are broken)."""
+    frames, games = run_item(args, folder, f"{LASER_AT}:1:1:3")
+    for n, (rows, _) in enumerate(games):
+        last = rows[-1]
+        expect(last["states"][1] == INTACT, f"game {n}: player 1's wings were not repaired: {last}")
+        expect(last["states"][0] == BROKEN, f"game {n}: Fox's wings were repaired: {last}")
+    return f"same hash on {frames} frames; player 1's wings repaired, Fox's stay broken, on both games"
+
+
+def sc_crate(args, folder):
+    """#201: a supply crate bursts with Fox at twin lasers and player 1 at single: it drops lasers (anyone's need)."""
+    frames, games = run_item(args, folder, f"{LASER_AT}:1:2:4")
+    for n, (_, drops) in enumerate(games):
+        expect(drops, f"game {n}: the crate dropped nothing")
+        expect(drops[0]["lasers"] == "1", f"game {n}: the crate dropped item {drops[0]['id']}, not lasers")
+    return f"same hash on {frames} frames; the crate dropped lasers on both games"
 
 
 def sc_three(args, folder):
@@ -1203,6 +1295,11 @@ SCENARIOS = {
     "steer": sc_steer,
     "aim": sc_aim,
     "boost": sc_boost,
+    "laser": sc_laser,
+    "laser_wing1": sc_laser_wing1,
+    "laser_wing0": sc_laser_wing0,
+    "repair": sc_repair,
+    "crate": sc_crate,
     "three": sc_three,
     "control": sc_control,
     "pause": sc_pause,

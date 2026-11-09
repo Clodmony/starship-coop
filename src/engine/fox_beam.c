@@ -1103,6 +1103,8 @@ void PlayerShot_DrawLaser(PlayerShot* shot) {
     u8 var_a1;
     f32 twinLaserSeparation;
     Gfx* dList;
+    // COOP: a player's shot is drawn from its owner's lasers, not Fox's (#201)
+    s32 laserOwner = (CoopPlayers_IsCoop() && (shot->sourceId < 4)) ? shot->sourceId : 0;
 
     dList = D_101AED0;
     if (gCamCount < 4) {
@@ -1115,8 +1117,8 @@ void PlayerShot_DrawLaser(PlayerShot* shot) {
             width = 2.0f;
             length = 10.0f;
         }
-        if ((gLaserStrength[0] > LASERS_SINGLE) && (shot->unk_58 == 0)) {
-            switch (gLaserStrength[0]) {
+        if ((gLaserStrength[laserOwner] > LASERS_SINGLE) && (shot->unk_58 == 0)) { // COOP: was [0]
+            switch (gLaserStrength[laserOwner]) {                                  // COOP: was [0]
                 case LASERS_TWIN:
                     break;
                 case LASERS_HYPER:

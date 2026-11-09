@@ -28,6 +28,10 @@ extern s32 sRandSeed3;
 #define DRIVER_RULE_PERIOD 30
 #define DRIVER_ALIVE_PERIOD 120
 #define DRIVER_LINE_SIZE 256
+#define ITEM_SETUP_BREAK_0 (1 << 0)      // SF64_COOP_LOCKSTEP_ITEM setup: player 0's wings are broken
+#define ITEM_SETUP_BREAK_1 (1 << 1)      // player 1's wings are broken
+#define ITEM_SETUP_TWIN_0 (1 << 2)       // player 0 has twin lasers
+#define ITEM_SETUP_NO_WING_HP_1 (1 << 3) // player 1's wing health is 0
 
 typedef struct {
     s16 hold[3];
@@ -56,6 +60,13 @@ static s32 sOwnFrame = -1;
 static s32 sFramesAfter = 0;
 static bool sOverSaid = false;
 static bool sStartSaid = false;
+static s32 sItemFrame = -1; // SF64_COOP_LOCKSTEP_ITEM=<frame>:<player>
+static s32 sItemPlayer = 0;
+static bool sItemPlaced = false;
+static s32 sItemSeen[COOP_PLAYERS_MAX * 4] = { -1 };
+static s32 sItemKind = 0;
+static s32 sItemSetup = 0;
+static bool sItemDropSaid = false;
 
 static void Report(const char* format, ...) {
     va_list args;
@@ -68,6 +79,118 @@ static void Report(const char* format, ...) {
     va_end(args);
     fputc('\n', sReport);
     fflush(sReport);
+}
+
+typedef enum ItemKind { ITEM_KIND_LASERS, ITEM_KIND_REPAIR, ITEM_KIND_CRATE } ItemKind;
+
+static void Item_BreakWings(s32 player) {
+    gPlayer[player].arwing.rightWingState = gPlayer[player].arwing.leftWingState = WINGSTATE_BROKEN;
+}
+
+// SF64_COOP_LOCKSTEP_ITEM, on its frame: the setup (which wings are broken, who has twin lasers), then a laser item, a
+// wing repair or a supply crate about to burst, where the player will be on the next frame (players move before
+// objects). From then on a line for every change of the lasers, the wings or their state of players 0 and 1, and, for
+// a crate, one for the item it drops.
+static void Item_Place(s32 frame) {
+    Player* p = &gPlayer[sItemPlayer];
+    s32 i;
+
+    if (sItemSetup & ITEM_SETUP_BREAK_0) {
+        Item_BreakWings(0);
+    }
+    if (sItemSetup & ITEM_SETUP_BREAK_1) {
+        Item_BreakWings(1);
+    }
+    if (sItemSetup & ITEM_SETUP_TWIN_0) {
+        gLaserStrength[0] = LASERS_TWIN;
+    }
+    if (sItemSetup & ITEM_SETUP_NO_WING_HP_1) {
+        gLeftWingHealth[1] = gRightWingHealth[1] = 0;
+    }
+    if (sItemKind == ITEM_KIND_CRATE) {
+        Actor* crate = NULL;
+
+        for (i = ARRAY_COUNT(gActors) - 1; i >= 50; i--) {
+            if (gActors[i].obj.status == OBJ_FREE) {
+                crate = &gActors[i];
+                break;
+            }
+        }
+        if (crate == NULL) {
+            return;
+        }
+        Actor_Initialize(crate);
+        crate->obj.status = OBJ_ACTIVE;
+        crate->obj.id = OBJ_ACTOR_SUPPLIES;
+        Object_SetInfo(&crate->info, OBJ_ACTOR_SUPPLIES);
+        crate->obj.pos.x = p->pos.x + p->vel.x;
+        crate->obj.pos.y = p->pos.y + p->vel.y;
+        crate->obj.pos.z = p->trueZpos + p->vel.z;
+        crate->health = 1;
+        crate->damage = 10;
+        crate->dmgType = DMG_BEAM;
+    } else {
+        Item* item = NULL;
+
+        for (i = 0; i < ARRAY_COUNT(gItems); i++) {
+            if (gItems[i].obj.status == OBJ_FREE) {
+                item = &gItems[i];
+                break;
+            }
+        }
+        if (item == NULL) {
+            return;
+        }
+        Item_Initialize(item);
+        item->obj.status = OBJ_ACTIVE;
+        item->obj.id = (sItemKind == ITEM_KIND_REPAIR) ? OBJ_ITEM_WING_REPAIR : OBJ_ITEM_LASERS;
+        Object_SetInfo(&item->info, item->obj.id);
+        item->obj.pos.x = p->pos.x + p->vel.x;
+        item->obj.pos.y = p->pos.y + p->vel.y;
+        item->obj.pos.z = p->trueZpos + p->vel.z;
+        item->unk_50 = 90.0f;
+        if (sItemKind == ITEM_KIND_REPAIR) {
+            item->timer_48 = 1000;
+        }
+    }
+    sItemPlaced = true;
+    Report("item placed frame=%d player=%d kind=%d", (int) frame, (int) sItemPlayer, (int) sItemKind);
+}
+
+static void Driver_Item(s32 frame) {
+    s32 now[COOP_PLAYERS_MAX * 4];
+    s32 i;
+
+    if ((sItemFrame < 0) || (gGameState != GSTATE_PLAY)) {
+        return;
+    }
+    if (!sItemPlaced && (frame == sItemFrame)) {
+        Item_Place(frame);
+    }
+    if (!sItemPlaced) {
+        return;
+    }
+    if (!sItemDropSaid && (sItemKind == ITEM_KIND_CRATE) && (frame > sItemFrame)) {
+        for (i = 0; i < ARRAY_COUNT(gItems); i++) {
+            if (gItems[i].obj.status != OBJ_FREE) {
+                sItemDropSaid = true;
+                Report("drop frame=%d id=%d lasers=%d", (int) frame, (int) gItems[i].obj.id,
+                       (int) (gItems[i].obj.id == OBJ_ITEM_LASERS));
+                break;
+            }
+        }
+    }
+    for (i = 0; i < COOP_PLAYERS_MAX; i++) {
+        now[i * 4] = gLaserStrength[i];
+        now[i * 4 + 1] = gLeftWingHealth[i];
+        now[i * 4 + 2] = gRightWingHealth[i];
+        now[i * 4 + 3] = (gPlayer[i].arwing.leftWingState * 10) + gPlayer[i].arwing.rightWingState;
+    }
+    if (memcmp(now, sItemSeen, sizeof(now)) != 0) {
+        memcpy(sItemSeen, now, sizeof(now));
+        Report("lasers frame=%d strength=%d,%d wings=%d,%d states=%d,%d", (int) frame, (int) now[0], (int) now[4],
+               (int) now[1], (int) now[5], (int) now[3], (int) now[7]);
+    }
 }
 
 static void Feed_Load(const char* path) {
@@ -215,6 +338,7 @@ static void CoopLockstepDriver_OnGamePreUpdate(IEvent* event) {
         Driver_Log(frame);
     }
     Driver_Pad(frame);
+    Driver_Item(frame);
     if (frame == sMuteFrame) {
         CoopSyncGame_Mute();
     }
@@ -251,6 +375,7 @@ void CoopLockstepDriver_Init(void) {
     const char* feed = Env_Text("SF64_COOP_LOCKSTEP_FEED");
     const char* slow = Env_Text("SF64_COOP_LOCKSTEP_SLOW");
     const char* zero = Env_Text("SF64_COOP_LOCKSTEP_ZERO_SEED");
+    const char* item = Env_Text("SF64_COOP_LOCKSTEP_ITEM");
 
     if (report != NULL) {
         sReport = fopen(report, "w");
@@ -273,6 +398,19 @@ void CoopLockstepDriver_Init(void) {
     if (zero != NULL) {
         sZeroFrame = atoi(zero);
         sZeroSeed = (strchr(zero, ':') != NULL) ? atoi(strchr(zero, ':') + 1) : 1;
+    }
+    if (item != NULL) {
+        sItemFrame = atoi(item);
+        sItemPlayer = (strchr(item, ':') != NULL) ? atoi(strchr(item, ':') + 1) : 1;
+        // <frame>:<player>:<kind>:<setup>, kind 0 lasers, 1 wing repair, 2 supply crate; setup a sum of the
+        // ITEM_SETUP_*
+        if ((strchr(item, ':') != NULL) && (strchr(strchr(item, ':') + 1, ':') != NULL)) {
+            const char* rest = strchr(strchr(item, ':') + 1, ':') + 1;
+
+            sItemKind = atoi(rest);
+            sItemSetup = (strchr(rest, ':') != NULL) ? atoi(strchr(rest, ':') + 1) : 0;
+        }
+        memset(sItemSeen, 0xff, sizeof(sItemSeen));
     }
     if ((report == NULL) && (log == NULL) && (feed == NULL) && !sPilot) {
         return;
