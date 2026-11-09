@@ -974,6 +974,61 @@ Unknown:
 - Macbeth's `D_MA_801BE250` and the Blue Marine state (0009, item 6): not touched; both levels stay parked.
 - Two machines: everything above ran on one PC.
 
+### 2026-11-09, #15 (WP-17), a human-flown wingman's value and its scenes, first run
+
+Identity: ROM US 1.0, branch `issue/15-wingman-replacement` on `0e5a5cf6`, Windows 11, MSVC v143, Debug, two games
+over loopback with the lockstep pilots (`lockstep_test.py --only scenes`), no window. "Before" is the combined test
+build `89efaa8a`, which has none of this code. Scripts read with `tools/coop/script_reader.py` (US 1.0).
+
+Observed in the code:
+
+- The scene table in `src/port/coop/game/team.c` has 105 scenes on the ten levels of decision 0012 rule 7, at most 15
+  on one level (Sector Y, Venom 1). A scene's scripts are the #59 table's fly-ins and rescues, plus every script with
+  `EVOP_SET_TEAM_ID` on a wingman that the #59 table does not list (Meteo S38 S42 S80 S136, Sector Y S33, Solar S18,
+  Zoness S15, Venom 1 S84; placed or not is unknown, see below).
+- Lines of a set of three, by speaker, from `EVOP_PLAY_MSG` in the scene scripts: 9100, 9130 and 9160 are Falco's
+  (Macbeth S26, Titania S7, Zoness S8), 9110, 9140 and 9170 Slippy's (Macbeth S27, Zoness S46, Area 6 S21, Macbeth
+  S50), 9120, 9150 and 9180 Peppy's (Macbeth S28, Area 6 S11). 20315, 20316 and 20317 are Falco, Slippy and Peppy
+  (Meteo S82, Venom 1 S91 to S93); 20319, 20320 and 20321 likewise (Area 6 S22, Meteo S21).
+- `SX S94` gates on Slippy being up to skip its fly-in, so a remap would turn it round: it is not in the table, and
+  `EVOP_RESTORE_TEAM` writes nothing for a human id.
+- Corneria S60, the rescue's leader, speaks two of Falco's lines (2166, 2167) and one of Peppy's (20235). Corneria S51
+  is a Slippy fly-in whose lines are Peppy's.
+
+Observed in runs (7000 lockstep frames of Corneria's rails, the client flying Falco):
+
+| | before (`89efaa8a`) | this branch |
+|---|---|---|
+| `scenes` check | fails: a scene shows Falco on 21 trace lines, first at frame 3349 | passes |
+| Event actors as Falco | yes | none on any line |
+| Falco's rescue (S59) | Falco's actor | Slippy, chosen at frame 4985 (host trace) |
+| `gTeamShields[TEAM_ID_FALCO]` while player 1 flies | not followed | equal to player 1's shields on every line, 135 to 255 |
+| Host and client hash logs | | equal on all 7000 frames, no desync report |
+
+- In an earlier run on this branch that flew on (`--only scenes` as first written, to the map), the borrowed rescue
+  took Slippy's shields down by its scripted hits, the 255 among them: -2 then -1 at frame 5274, and he turned back.
+  The pilots then spent from frame 7140 to 14330 at Granga without him, Fox went down, and the run never reached the
+  map. That is decision 0012 rule 4 as written, and the check now stops before Granga.
+- Corneria also borrowed Falco's S4 for Slippy, S14 for Peppy and S64 for Slippy in that run (`scenes=2,0,3,2,2`).
+- The trace's own frame counter differs between host and client (4985 and 4647 for the same choice): it counts from
+  each game's `GSTATE_START`, the hash compares per lockstep frame.
+
+Derived:
+
+- A borrowed rescue the team does not save costs the substitute, so with a human Falco the Corneria boss is harder
+  than in single player whenever the rescue fails. 0012 named the cost; this run shows its size for the pilots.
+- In all-range and boss fights the computer Falco still flies while a human flies Falco: its value is now the human's,
+  so it no longer turns back on its own damage. 0006 rule 3 (B3, a hidden all-range body, and no boss stand-in) is
+  not built yet.
+
+Unknown:
+
+- Which of the scripts above are placed in the level object lists (no tool reads them yet), and whether a
+  substitute's own scene can overlap a borrowed one.
+- Every level but Corneria: the table for the other nine was not flown.
+- Whether the lines that now play in the substitute's voice say the same thing (0012 C2; no listening pass yet).
+- US 1.1.
+
 ### 2026-11-08, #7, decision 0007 walk-through: what had moved since the record was written
 
 Read in `b3169ab6` (checkout of `coop`), no build, nothing run. This is the re-check behind the owner's walk-through of

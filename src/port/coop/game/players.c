@@ -2,6 +2,7 @@
 
 #include "input.h"
 #include "vehicles.h"
+#include "team.h"
 
 #include "global.h"
 #include "public/bridge/consolevariablebridge.h"
@@ -63,6 +64,7 @@ void CoopPlayers_LevelInit(void) {
     }
     sCoopPlayerCount = count;
     CoopVehicles_LevelInit();
+    CoopTeam_LevelInit();
 
     for (i = 0; i < COOP_PLAYERS_MAX; i++) {
         sReturnTimer[i] = 0; // a return still waiting is dropped: the player joins again below, for free
@@ -406,6 +408,7 @@ int32_t CoopPlayers_OnPlayerDown(Player* player) {
         return 0;
     }
     CoopPlayers_SetDown(i);
+    CoopTeam_OnPlayerDown(i);
     return 1;
 }
 

@@ -23,6 +23,7 @@
 #include "assets/ast_zoness.h"
 #include "port/hooks/Events.h"
 #include "port/coop/game/players.h" // COOP: player count apart from camera count (WP-10)
+#include "port/coop/game/team.h"    // COOP: a human-flown wingman's gTeamShields (WP-17)
 #include "port/coop/sync/lockstep_game.h" // COOP: whether a session runs the frames (#20)
 #include "port/coop/game/level_start.h"   // COOP: the host's save in a session, for the intro skip (#191)
 
@@ -7065,6 +7066,7 @@ void Play_Update(void) {
     if (CoopPlayers_IsCoop()) { // COOP: the loop leaves gPlayerNum at the last player. Player 0 on every client (#96)
         gPlayerNum = 0;
         CoopPlayers_SelectInput(gPlayerNum); // COOP: the same for the controller (WP-12)
+        CoopTeam_Update();                   // COOP: a human's shields in its character's gTeamShields (WP-17)
     }
 
     Object_Update();

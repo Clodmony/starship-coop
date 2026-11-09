@@ -52,6 +52,8 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   frozen    a client stops dead (SIGSTOP): the session ends on the transport's timeout, and it can be thawed.
   menu      the whole way through the real menu, with real widgets.
   full      all of Corneria: pilots fly it live, one on each client, then plain runs repeat what they flew. Takes a while.
+  scenes    all of Corneria with the client as Falco (#15): no scene shows a second Falco, his rescue goes to Slippy,
+            and gTeamShields[Falco] holds the client's shields while it flies. Rails only, about 3 minutes.
   audio     the plain run with the two clients at different audio sample counts, as a radio line follows the sound thread.
   release   the plain run on a Release build (--release-exe) and on Debug: all four clients have to hash alike.
   vehicles  Titania, Aquas and Macbeth, the Landmaster and Blue Marine levels: same hash, both drive where co-op has opened.
@@ -915,9 +917,9 @@ def log_rows(game):
     return [line.split() for line in game.sync_log.read_text(encoding="utf-8").splitlines() if line.count(" ") >= 26]
 
 
-def fly(args, folder):
+def fly(args, folder, extra_env=None):
     """Pilots fly Corneria, one on each client. Returns (host, client, frames to the map and its tail)."""
-    env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt"}
+    env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt", **(extra_env or {})}
     folder.mkdir(parents=True, exist_ok=True)
     host, client = session(args, folder, both=env)
     deadline = time.monotonic() + args.level_seconds
@@ -1006,6 +1008,73 @@ def sc_full(args, folder):
     found = check_desync(host, client, poke, "all-range")
     return (f"{frames} frames of Corneria to the map, equal; poke at {poke} shows there, in {','.join(regions)}; "
             f"{found}")
+
+
+# Corneria's rows in sScenes (src/port/coop/game/team.c): the fourth is Falco's rescue, S59 with S60 and S61.
+CO_RESCUE_SCENE = 3
+TEAM_FALCO, TEAM_SLIPPY = 1, 2
+
+
+def team_lines(game):
+    """The team trace of a game (src/port/coop/test/team_trace.h), Corneria lines in a level only, as dicts."""
+    rows = []
+    for line in (game.run / "team.txt").read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith("#"):
+            continue
+        # p1 and scenes came with #15; a build from before reads as no player 1 and no choice, so it fails on its ships.
+        row = {"p1": "-1", "scenes": ",".join(["0"] * 16), **dict(field.split("=", 1) for field in line.split())}
+        if row["level"] == "0" and row["gs"] == "7":  # LEVEL_CORNERIA, GSTATE_PLAY
+            rows.append({k: [int(v) for v in value.split(",")] if "," in value else value for k, value in row.items()})
+    return rows
+
+
+SCENES_FRAMES = 7000  # Corneria's rails to before Granga: the rescue (S59) starts near 5000 in the pilots' flight
+
+
+def fly_for(args, folder, frames, extra_env):
+    """Pilots fly Corneria, one on each client, for `frames` lockstep frames. Returns (host, client). A whole level
+    is not asked for: a borrowed rescue can cost Slippy (0012 rule 4), and the pilots do not always win Granga then."""
+    env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt", **extra_env}
+    folder.mkdir(parents=True, exist_ok=True)
+    host, client = session(args, folder, both=env)
+    deadline = time.monotonic() + args.level_seconds
+    try:
+        while not (host.sync_log.exists() and len(log_rows(host)) >= frames and len(log_rows(client)) >= frames):
+            for game in (host, client):
+                expect(game.proc.poll() is None, f"{game.name} ended with code {game.proc.returncode}")
+            expect(time.monotonic() < deadline, f"not {frames} frames after {args.level_seconds} s")
+            time.sleep(2)
+    finally:
+        client.close()
+        host.close()
+    return host, client
+
+
+def sc_scenes(args, folder):
+    """#15: the client flies Falco. No scene shows a second Falco, his rescue goes to Slippy, and gTeamShields[Falco]
+    is the human's shields on every frame he flies (decisions 0006 rule 1, 0012)."""
+    frames = SCENES_FRAMES
+    host, client = fly_for(args, folder, frames, {"SF64_COOP_TEAM_TRACE": "team.txt"})
+    equal = compare(host, client, frames)
+    found = []
+    for game in (host, client):
+        lines = team_lines(game)
+        expect(lines, f"{game.name}: no Corneria lines in the team trace")
+        falco = [l for l in lines if l["ships"][0] > 0]
+        expect(not falco, f"{game.name}: a scene shows Falco on {len(falco)} lines, first at frame {falco[0]['frame'] if falco else 0}")
+        rescue = [l for l in lines if l["scenes"][CO_RESCUE_SCENE] != 0]
+        expect(rescue, f"{game.name}: Falco's rescue (S59) never chose a flyer")
+        expect(rescue[0]["scenes"][CO_RESCUE_SCENE] == TEAM_SLIPPY,
+               f"{game.name}: Falco's rescue went to team {rescue[0]['scenes'][CO_RESCUE_SCENE]}, not Slippy")
+        flying = [l for l in lines if int(l["p1"]) >= 0]
+        expect(flying, f"{game.name}: player 1 never flew")
+        wrong = [l for l in flying if l["team"][0] != min(max(int(l["p1"]), 1), 255)]
+        expect(not wrong, f"{game.name}: gTeamShields[Falco] {wrong[0]['team'][0] if wrong else 0} while player 1 "
+                          f"has {wrong[0]['p1'] if wrong else 0}, frame {wrong[0]['frame'] if wrong else 0}")
+        shields = sorted({int(l["p1"]) for l in flying})
+        found.append(f"{game.name}: {len(flying)} lines with player 1 flying, shields {shields[0]}..{shields[-1]}, "
+                     f"Falco's rescue to Slippy from frame {rescue[0]['frame']}")
+    return f"{frames} frames of Corneria's rails, {equal} frames equal; " + "; ".join(found)
 
 
 def play_states(game):
@@ -1633,6 +1702,7 @@ SCENARIOS = {
     "frozen": sc_frozen,
     "menu": sc_menu,
     "full": sc_full,
+    "scenes": sc_scenes,
     "audio": sc_audio,
     "release": sc_release,
     "rates": sc_rates,
@@ -1644,7 +1714,7 @@ SCENARIOS = {
     "vehicles": sc_vehicles,
     "vehicle_end": sc_vehicle_end,
 }
-LONG = ("full", "audio", "release", "rates", "vehicles", "vehicle_end")
+LONG = ("full", "scenes", "audio", "release", "rates", "vehicles", "vehicle_end")
 
 
 def main():
