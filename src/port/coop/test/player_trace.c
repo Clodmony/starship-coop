@@ -8,6 +8,7 @@
 #include "global.h"
 #include "port/hooks/Events.h"
 #include "port/coop/game/players.h"
+#include "port/coop/game/vehicles.h"
 #include "port/coop/test/test_pad.h"
 
 static FILE* sTraceFile = NULL;
@@ -54,6 +55,21 @@ static void CoopTrace_WriteLocks(void) {
         }
     }
     fprintf(sTraceFile, " locks=%d,%d,%d,%d", locks[0], locks[1], locks[2], locks[3]);
+}
+
+// The Blue Marine's torpedo, on Aquas only (#16): Aquas_BlueMarineTorpedo fires into the last gPlayerShots slot alone,
+// so there is at most one for all marines. Its owner, the owner's lock-on target and whether it homes, its position.
+static void CoopTrace_WriteTorpedo(void) {
+    const PlayerShot* shot = &gPlayerShots[ARRAY_COUNT(gPlayerShots) - 1];
+    s32 target;
+    s32 homing;
+
+    if ((gCurrentLevel != LEVEL_AQUAS) || (shot->obj.status != SHOT_ACTIVE) || (shot->obj.id != PLAYERSHOT_LOCK_ON)) {
+        return;
+    }
+    CoopVehicles_MarineLock(shot->sourceId, &target, &homing);
+    fprintf(sTraceFile, " torpedo=%d:%d:%d:%.1f,%.1f,%.1f", shot->sourceId, homing, target, shot->obj.pos.x,
+            shot->obj.pos.y, shot->obj.pos.z);
 }
 
 static s32 sSteerPeriod = 0; // SF64_COOP_TRACE_STEER, see player_trace.h
@@ -163,6 +179,7 @@ static void CoopTrace_OnGamePostUpdate(IEvent* event) {
         fprintf(sTraceFile, ",%d", gLaserStrength[i]);
     }
     CoopTrace_WriteHits();
+    CoopTrace_WriteTorpedo();
     fputc('\n', sTraceFile);
     if ((gGameFrameCount % 60) == 0) {
         fflush(sTraceFile); // tests may kill the game on a timeout

@@ -691,6 +691,289 @@ Unknown:
 - The squared distance is plain float code in an upstream-style file, so with fused multiply-add on a target that has
   it, a near tie could go to another player there than on x86-64. Decision 0010's platforms are x86-64 only.
 
+### 2026-11-08, #16, how Aquas's boss (Bacoon) goes down, for the marine pilot
+
+Read in `d29a6f24` (`issue/16-vehicles` merged with `coop` at `0e5a5cf6`), no build, nothing run. US 1.0 source;
+line numbers are `src/overlays/ovl_i3/fox_aq.c` unless named.
+
+Observed:
+
+- Bacoon starts with health 150 (`:2587`) and spawns two `OBJ_ACTOR_256` beside it (`:2589`-`:2601`);
+  `D_i3_801C42A0[23] = 2` counts them (`:2603`). The fight starts when it is within 3000 of **player 0's**
+  `trueZpos` (`:2687`).
+- Actor 256 (`:1909`): a hit lowers the shell target `D_i3_801C4308[79]` by 5 (`:1944`), only while the shell is
+  open at least 6 degrees, the boss is in state >= 10 and `swork[AQ_SWK_0] < 2`. Once `D_i3_801C4308[10] <= -23`
+  the first hit opens a window (`swork[AQ_SWK_0] = 1`, health 10); after that only a hit with `damage == 31` counts
+  (`:1976`), and one is enough.
+- `damage == 31` is a lock-on shot in Aquas, which is the marine's torpedo: `src/engine/fox_beam.c:691` (actors) and
+  `:1018` (bosses); the torpedo is `PLAYERSHOT_LOCK_ON` from `Aquas_BlueMarineTorpedo`.
+- When both actors 256 are gone (`D_i3_801C42A0[23]--`, `:2035`), the boss goes to state 14 (`:2052`), then 15.
+- In Bacoon's damage switch (`:3026`, only while `fabsf(D_i3_801C4308[10]) >= 5`): part 13 (eye film) takes any hit
+  from state 15, 10 hits (`swork[AQ_SWK_12]`, set at `:2781`, refilled at `:3443` once the film grows back). Part 18
+  takes `damage == 31` only, once the film is gone, in state 15, and not while `swork[AQ_SWK_1] == 2` (`:3100`):
+  `health -= 31` (`:3115`), so five torpedoes.
+- At health 0 only **player 0** gets `PLAYERSTATE_LEVEL_COMPLETE` (`:3128`), as in Macbeth.
+
+Derived:
+
+- The marine pilot needs three aims, in order: lasers at both actors 256 until the shell is open, a torpedo into
+  each; lasers at part 13 ten times; torpedoes at part 18, five times, each before the eye film grows back.
+- Every kill step needs a torpedo, and all marines share one torpedo slot (`gPlayerShots[15]`, see the session 3
+  entry), so two pilots firing B can block each other.
+
+- Lock-on (read later the same session): a marine locks on to an actor or a Bacoon box that the point 1200 ahead along
+  its heading falls into, the box widened by 200 (`Aquas_BlueMarineShoot`, `Aquas_801A9ED0`); Bacoon's lockable boxes
+  are hitbox entries 119, 129, 139 and 169 (z at `[j]`, y at `[j + 2]`, x at `[j + 4]`), and 777 in
+  `D_i3_801C4190[0]` means "the boss".
+
+Observed at run time (2026-11-09, the pilot aiming as above; `lockstep_test.py --only vehicle_end --levels aquas`,
+Windows 11, MSVC v143 Debug, US 1.0, `a7874412` plus the pilot change, one PC, `gInvincible` on both games):
+
+- Same hash on all 40000 frames; player 0 reached level complete at frame 7240, player 1 drove on 37084.
+- The fight, from the pilot log: state 10 at about frame 5550; the two actors 256 went at about 5800 and 6100 (a
+  window opened at shell -25 to -26, then a torpedo); state 15 at about 6180; health 150, 119, 88, 57, 26, 0, a
+  torpedo each, the eye film refilled in between. Both players fired torpedoes that homed (player 0 on 20 logged
+  frames, player 1 on 14).
+- The box offsets read at run time: actors 256 at x +-370 from the boss, eye film (119) at about x 7, y 616, core
+  (169) at x 0, y 543, both about 2000 to 2200 ahead of the marines, who stop at z -94773 while the boss is up.
+
+Unknown:
+
+- Whether player 1 can start the fight or end the level alone: by the lines above, no; not run.
+- Two marines that both press B at once: the pilot staggers them by five frames, so the shared slot was not tested
+  under contention.
+
+### 2026-11-08, #16, a pilot for the Landmaster, and the long vehicle runs
+
+Identity: US 1.0 (SHA-1 `d8b10885...`), Windows 11, MSVC v143, Debug, test games without drawing, on `issue/16-vehicles`
+(base `50bbf6dd`, with this entry's changes). Two clients through the join driver, each with
+`SF64_COOP_LOCKSTEP_PILOT=1` and `SF64_COOP_JOIN_LEVEL` 11 or 12, scratch script around `lockstep_test.session()`.
+
+Observed:
+
+- Input by rule (`vehicles`, 20000 frames) does not get far: player 0 goes down in every try, Titania at z about
+  -19500, Macbeth about -39000, Aquas about -34700, and after three tries the game is over and starts Corneria.
+- The Landmaster's shields go down a little each frame after a hit (2 a frame for about 20 frames,
+  `Player_ApplyDamage`, `src/engine/fox_play.c:974`); `dmgType` keeps the hit's size (20, 39, 40, 60).
+- What hit the tank in Titania without the pilot seeing it: falling pillars (`Titania_TiPillar_Update`,
+  `src/overlays/ovl_i5/fox_ti.c:2111`, they fall when player 0 comes near, forward or to a side, each side with its own
+  hitbox), the ribs (rotated hitboxes), landmines, Goras's body. In Macbeth: enemy lasers (effect 353) and the bomb
+  drops.
+- A Macbeth bomb burns where it lands for 200 frames, in a box of its own, and tests **`gPlayer[0]` only**
+  (`Macbeth_MaBombDrop_Update`, `src/overlays/ovl_i5/fox_ma.c:5884-5888`): other tanks drive through its fire unhurt.
+- Z and R held together make the tank hover while the boost meter fills (`func_tank_80045678`,
+  `src/engine/fox_tank.c:601`, `Tank_UpdateOnRails`): gravity -0.4, up to 300. Brake is `gBrakeButton`, C-down
+  (`src/engine/fox_game.c:440-441`).
+- A tank shot leaves along the tank's yaw and `unk_17C`, the barrel (`Player_SetupTankShot`, `fox_play.c:3095`);
+  `unk_17C` follows stick y, `stick_y * 0.7 - 8`, held to -40..0 (`func_tank_80044868`, `fox_tank.c:381`).
+- Goras (`Titania_TiGoras_Update`, `fox_ti.c:4977`): its hitbox `aTiGorasHitbox` (`:2446`) is rebuilt every frame,
+  plain boxes, and box n is part `D_i5_801B7904[n]` (`:2369`). In states 7 to 13 a beam hit on a part numbered in
+  `D_i5_801BAA78` (`:3762`, parts 7, 8, 16, 17) takes that part's `swork[8 + number]`; with all four at 0 the health bar
+  shows and part 23 takes `swork[21]` (from 100, 10 a hit). Then the four grow back.
+- With the pilot and `gInvincible` on both games: Titania, Goras from health 100 to 30 in 26000 frames, all four parts
+  shot off five times; Macbeth past z -230000 in 16000 frames, no boss yet. Without `gInvincible` the pilot reaches
+  Goras (z about -92000) and loses there; Macbeth up to z -65000.
+- `lockstep_test.py` gave every game a menu replay of 30000 frames (`REPLAY_FRAMES`). The long Titania run went out of
+  step at level frame 29394, the frame after the host's 30000th: from there the host's pads were its own (player 2's
+  empty, player 1's without the input delay), while the input logs stayed equal. Up to 29393 the two games were equal on
+  every frame, through four rounds of the Goras fight.
+
+Done:
+
+- `src/port/coop/test/pilot.c` drives a Landmaster on rails: each spot across the path is played a second forward
+  against the hitboxes with the game's own test (rotation in the pilot's own matrix, nothing in the game written),
+  plus where a pillar will lie, where a bomb burns and where a fast effect crosses; it hovers when that gets further,
+  picks up rings, and at Goras lines up under a part that counts, raises the barrel to it and brakes near the boss.
+  A hit writes what was near to the pilot log.
+- `session()` and `Client` take `replay_frames`, for runs longer than 30000 frames.
+- The pilot also aims at Macbeth's boss (parts, locomotive, body) and drives a Blue Marine (dodging only); its log is
+  flushed every frame, and a drop of more than 50 shields in one frame lists every actor with its state.
+- New scenario `lockstep_test.py --only vehicle_end`: Macbeth and Titania to level complete with the pilot and
+  `gInvincible` on both games.
+
+Derived:
+
+- The bomb fire is a co-op gap: only the first player can be burnt. Not fixed; it changes nothing between clients.
+
+Observed later the same evening:
+
+- Titania to its end, pilot and `gInvincible` on both games, 45000 frames: Goras down to 0 in rounds of 10, level
+  complete at frame 29169, then the next level; host and client hash alike on all 45031 frames. Player 1 is parked on
+  the frame after player 0's level complete, as on rails in an Arwing.
+- Macbeth's boss is actor 207 (`Macbeth_Actor207_Update`, `src/overlays/ovl_i5/fox_ma.c:4221`, it talks as
+  `RCID_BOSS_MACBETH`). Its parts 0 and 1 take `D_i5_801BE320[9]` and `[10]` (`:5117-5140`); a hit on part 1 of the
+  locomotive sets `D_i5_801BE320[4]` (`Macbeth_MaLocomotive_HandleDamage`, `:878-886`), which opens the boss (state
+  8, `:5185-5195`), and then any hit takes `[29]`, from 250. How far it goes depends on the track: an entry of the
+  track table with `unk_10 >= 300` sets `D_i5_801BE320[18]` (`:624-626`), and at 4 the boss goes to state 18 and 19,
+  and a hit on it in state 19 sets `gPlayer[0].shields = 0` (`:5057-5058`) past `Player_ApplyDamage`.
+- Macbeth with the pilot aiming at parts 0 and 1, then the locomotive, then the boss: boss down at frame 9360, level
+  complete at 9523; same hash on all 17906 frames. `lockstep_test.py --only vehicle_end --levels macbeth`: PASS,
+  level complete at 9522, player 1 drove on 11328 of 14000 frames, 256 s.
+- Before the pilot aimed at the boss: the boss reached state 19 at about frame 17950, player 0's shields went from 255
+  to 0 in one frame with actor 207 on the tank, and with `gInvincible` the tank was never downed (`Player_Down` waits
+  for `radioDamageTimer`, which `Player_ApplyDamage` sets only for damage; `Tank_UpdateOnRails`,
+  `src/engine/fox_tank.c`). It kept state 3 with 0 shields and climbed to y 9866; both games then crashed on the same
+  frame in `Item_Update` (`src/engine/fox_enmy.c:3036`, the item's action call, access violation).
+- Aquas: the marine pilot climbs with stick y negative (with positive it stuck at the top of the path). It got to z
+  -58600 without `gInvincible`, input by rule to about -34700.
+
+Derived:
+
+- The Macbeth crash is the game's own with `gInvincible`: a kill that skips `Player_ApplyDamage` leaves a tank that
+  can never go down. Not co-op; a player with the cheat on who lets the train reach the end may hit it too (not tried
+  without co-op).
+- Macbeth's boss, like its bombs, kills player 0 only.
+
+Unknown:
+
+- Aquas's boss with two marines, and the level end: the marine pilot does not aim yet.
+- The Macbeth crash without co-op (single player, cheat on): not run.
+
+### 2026-11-08, #16, Macbeth with two Landmasters
+
+Identity: US 1.0 (SHA-1 `d8b10885...`), Windows 11, MSVC v143, Debug, test games without drawing, on `issue/16-vehicles`
+(base `1df610cd`, with this entry's changes). `python tools/coop/lockstep_test.py --only vehicles`, Macbeth now opened.
+
+Observed:
+
+- Every use of `D_MA_801BE250[40]` (`src/overlays/ovl_i5/fox_ma.c:46`) is in three functions, `Macbeth_801A3300`
+  (`:2869`), `Macbeth_801A3790` (`:2972`) and `Macbeth_801A3C20` (`:3075`), in the level's reset (`:378-380`), and in
+  the tank's own code (`src/engine/fox_tank.c:318-324`, `:860-997`, `:1187-1254`). The three functions are called only
+  from `fox_tank.c` (`:994`, `:1188`, `:1205`, `:1242`), each with the tank's `trueZpos`.
+- What they keep: the rail segment the tank is on (`[6]`, `[16]`, `[20]`, searched forward from the kept one), the
+  rail's x and height under the tank (`[9]`, `[2]`, `[19]`, `[12]`, `[21]`, `[22]`), a tilt smoothed over frames
+  (`[3]`, `[13]`, `[23]`) and a few values set when the segment changes (`[4]`, `[7]`, `[8]`, `[14]`, `[17]`, `[18]`).
+  `[27-29]` are scratch, reset at the start of `func_tank_800444BC` (`fox_tank.c:318-319`).
+- `D_MA_801BE2F0[9]` (`fox_ma.c:47`) is the level's: track switches set by actors (`:1115-1683`), the section flag set
+  by the railway signal (`:3399`). Left shared.
+- Two clients, 6000 frames: host and client hash alike. Player 1 drove on 5573 frames on its own line (x up to 550
+  apart from player 0), lowest shields 89. Player 0 went down twice and the level restarted; player 1 joined again
+  each time. Titania, Aquas, `steer` and `hash_check.py run --players 2 --poke-player 1` pass on the same build.
+
+Done:
+
+- `D_MA_801BE250` is part of each tank's copy (`CoopTankState.rails`), swapped in Macbeth only. Macbeth is opened for
+  players 2-4 (`CoopPlayers_SectionSupported`).
+
+Derived:
+
+- A tank that joins with a zeroed copy starts its segment search at 0, as the level's reset does for player 0.
+
+Unknown:
+
+- Whether player 1 rode a rail section in this run: the trace has no rail state. Its height left the ground (-3) on
+  some frames (28 at frame 1463 of the second try).
+- Macbeth past frame 6000: the train, the boss, the ending with two tanks. Two PCs.
+
+### 2026-11-08, #16, player 1's torpedo in Aquas
+
+Identity: US 1.0 (SHA-1 `d8b10885...`), Windows 11, MSVC v143, Debug, test games without drawing, on `issue/16-vehicles`
+(base `26b5d271`, with this entry's changes). `python tools/coop/lockstep_test.py --only vehicles --levels aquas`: in
+Aquas player 1 now also presses B every 150 frames from the join on; player 0 never does. The trace has a new
+`torpedo=` field (`src/port/coop/test/player_trace.h`).
+
+Observed:
+
+- Host and client hash alike on all 6000 frames. Player 1 fired 15 torpedoes that flew (311 frames in all, one went
+  2991 units); the `torpedo=` field was the same on host and client on every one of those frames.
+- 11 of the 15 homed on a target (169 frames with player 1's lock-on flag `D_i3_801C4190[3]` set and a target in its
+  copy). The first three, near the start, flew without a target.
+- One torpedo slot for all marines: `Aquas_BlueMarineTorpedo` looks at `gPlayerShots[15]` only
+  (`src/overlays/ovl_i3/fox_aq.c:1214`, `gPlayerShots[16]` in `include/sf64context.h:238`).
+- `Play_Update` runs every `Player_Update` first, then `PlayerShot_UpdateAll` (`src/engine/fox_play.c:7059`, `:7067`).
+- Regression on the same build: `vehicles` (all three levels), `steer`, `hash_check.py run --players 2
+  --poke-player 1`: pass.
+
+Derived (from reading, not run):
+
+- A marine notices its torpedo is gone only in its own `Aquas_BlueMarineShoot`, by the slot being free (`:1262`). If
+  player 1's torpedo ends and player 0 fires into the freed slot before player 1's update, player 1 still counts the
+  slot as its torpedo: no new lock-on and no torpedo for it until player 0's torpedo ends. The same the other way
+  round. Both clients do the same, so it cannot desync; it is a gameplay quirk.
+
+Unknown:
+
+- Whether a homing torpedo of player 1 hits more often than one without a target: the trace does not log the target's
+  position or the hit.
+- Two marines firing torpedoes in the same seconds (the case above): not scripted.
+
+### 2026-11-08, #16, a Blue Marine per player in Aquas
+
+Identity: US 1.0 (SHA-1 `d8b10885...`), Windows 11, MSVC v143, Debug, test games without drawing, on `issue/16-vehicles`
+(base `43a4a498`). `python tools/coop/lockstep_test.py --only vehicles`, as in the entry below, now with Aquas opened.
+
+Observed:
+
+- Titania, Aquas and Macbeth: host and client hash alike on all 6000 frames (scenario `vehicles`, 88 s).
+- Aquas, player 1 let in: drove its own marine from frame 546 on. The scripted steering runs into the level: player 1's
+  shields reached 0 at frame 1338 and it was out at 1543; player 0 went down later and the level restarted, where
+  player 1 joined again. 3582 frames driven by player 1, 4429 by player 0.
+- Titania (4267 frames for each player) and Macbeth (player 1 parked) as before.
+- What belongs to one marine, from every use of the two arrays in `src/overlays/ovl_i3/fox_aq.c`:
+  `D_i3_801C4190[0, 1, 3, 4, 5, 7]`, `D_i3_801C41B8[0-11, 21-23]`, `D_i3_801C4454`, `D_i3_801C4458`, `D_i3_801C445C`.
+  The rest is the level's: `D_i3_801C4190[6]` (set by the boss, `:2688`), `[8]` and `D_i3_801C41B8[12-17, 25, 26]`
+  (light and fog, `Aquas_801A99D4`, `:482`), `D_i3_801C41B8[18-20, 24, 27, 28]` (boss and other actors).
+- A torpedo's flight runs in `PlayerShot_UpdateAll` (`src/engine/fox_beam.c`), outside `Player_Update`, and reads the
+  lock-on state (`Aquas_801ABA40`, `:1088`). Its first frame took player 0's rotation (`:1137-1138`).
+- The fish groups chase the torpedo of whoever owns the arrays (`Aquas_AqFishGroup_Update`, `:6463-6506`), and
+  `Aquas_UpdateCamera` reads `D_i3_801C41B8[9]`, `[10]` in the camera loop, also outside `Player_Update`.
+- All marines share the three laser slots and the one torpedo slot `gPlayerShots[15]`, as Arwings share theirs.
+
+Done:
+
+- Every other player's marine values are swapped in around its `Player_Update`, and around the update of a torpedo it
+  fired (new `PlayerShotPreUpdateEvent` and `PlayerShotPostUpdateEvent`, `src/port/hooks/list/EngineEvent.h`). They are
+  hashed (`gCoopMarineState`).
+- The level part (light, fog, the slowdown before the boss, the one marine lamp) is put back after another marine's
+  update, so player 0 steps it once per frame as in one-player play.
+- A torpedo starts with the rotation of the marine that fired it (`fox_aq.c`, `// COOP:`).
+
+Derived:
+
+- Player 0 behaves as upstream by construction: its values are never swapped, and the level part is player 0's.
+
+Unknown:
+
+- **Torpedoes are untested:** the scripted input fires the laser (A) only, never B. (Tested later: entry above.)
+- Whether two marines fit the narrow passages: player 1 was hit about as often as player 0 here.
+- A follower's camera uses player 0's edge offset (`[9]`, `[10]`), and the fish follow player 0's torpedo. Small; not
+  fixed.
+- The rest of Aquas and its boss with two marines; two machines.
+
+### 2026-11-08, #16, Landmaster and Blue Marine levels with two clients
+
+Identity: US 1.0 (SHA-1 `d8b10885...`), Windows 11, MSVC v143, Debug, test games without drawing, on `issue/16-vehicles`
+(base `4ba082f2`). `python tools/coop/lockstep_test.py --only vehicles`: two real clients over loopback per level, the
+three levels side by side, 6000 frames each, both players steering and firing by script from frame 1700.
+
+Observed:
+
+- Titania, Aquas and Macbeth: host and client hash alike on all 6000 frames, every region (scenario `vehicles`, 83 s).
+- Titania, with player 1 let in: player 1 drove its own Landmaster on 4267 frames, on the ground (y about -3 to 190,
+  the same band as player 0), took hits and stayed up. Player 0 went down at the end, and player 1 went away with it.
+- Aquas and Macbeth, player 1 still parked: player 0 drove on 5104 and 5144 frames, player 1 on none.
+- Corneria unchanged: `lockstep_test.py --only steer` and `hash_check.py run --players 2 --poke-player 1` pass.
+- The six Landmaster values of decision 0009 (item 6 table) are now one set per player: player 0 keeps the
+  `fox_tank.c` globals, every other player's copy is swapped in around its `Player_Update`
+  (`src/port/coop/game/vehicles.c`, `PlayerPreUpdateEvent` and `PlayerPostUpdateEvent`, `src/engine/fox_play.c:5896`,
+  `:6229`, with no return in between). `D_800C9F3C` moved from a function static to file scope
+  (`src/engine/fox_tank.c`, `// COOP:`). The copies are hashed (`gCoopTankState`, `src/port/coop/sync/state_hash.c`).
+- Every reader and writer of those values is called from inside `Player_Update`: `Tank_UpdateOnRails`
+  (`src/engine/fox_play.c:5750`) and the Landmaster scenes of `fox_ma.c` and `fox_ti_cs.c` (player states).
+
+Derived:
+
+- Lockstep holds in all three levels with one player driving and the other parked, and in Titania with both driving.
+- Player 0 behaves as upstream by construction: its values are never swapped.
+
+Unknown:
+
+- Whether the swap changes play in Titania. The test shows sync, not that a shared value went wrong before; the wobble
+  and knockback values matter in Macbeth (0009), and Macbeth is not opened.
+- The rest of Titania: 6000 frames is not the whole level, and the boss with two tanks has not run.
+- Macbeth's `D_MA_801BE250` and the Blue Marine state (0009, item 6): not touched; both levels stay parked.
+- Two machines: everything above ran on one PC.
+
 ### 2026-11-08, #7, decision 0007 walk-through: what had moved since the record was written
 
 Read in `b3169ab6` (checkout of `coop`), no build, nothing run. This is the re-check behind the owner's walk-through of

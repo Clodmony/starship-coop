@@ -444,6 +444,8 @@ void PortEnhancements_Register() {
 
     REGISTER_EVENT(PlayerPreUpdateEvent);
     REGISTER_EVENT(PlayerPostUpdateEvent);
+    REGISTER_EVENT(PlayerShotPreUpdateEvent);  // COOP: (#16)
+    REGISTER_EVENT(PlayerShotPostUpdateEvent); // COOP: (#16)
 
     REGISTER_EVENT(DrawRadarHUDEvent);
     REGISTER_EVENT(DrawRadarMarkArwingEvent);

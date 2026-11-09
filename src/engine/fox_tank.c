@@ -598,8 +598,9 @@ void func_tank_80045348(Player* player) {
     }
 }
 
+u8 D_800C9F3C = 0; // COOP: was a static in func_tank_80045678; one per tank in co-op (#16, vehicles.c)
+
 void func_tank_80045678(Player* player) {
-    static u8 D_800C9F3C = 0;
     f32 temp;
     f32 pad;
 

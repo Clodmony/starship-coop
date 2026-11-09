@@ -14,6 +14,10 @@ DEFINE_EVENT(PlayUpdateEvent);
 DEFINE_EVENT(PlayerPreUpdateEvent, Player* player;);
 DEFINE_EVENT(PlayerPostUpdateEvent, Player* player;);
 
+// COOP: around each player shot's update, so a shot can see the state of the player that fired it (#16)
+DEFINE_EVENT(PlayerShotPreUpdateEvent, PlayerShot* shot;);
+DEFINE_EVENT(PlayerShotPostUpdateEvent, PlayerShot* shot;);
+
 DEFINE_EVENT(DrawRadarHUDEvent);
 DEFINE_EVENT(DrawRadarMarkArwingEvent, s32 colorIdx;);
 DEFINE_EVENT(DrawRadarMarkWolfenEvent);

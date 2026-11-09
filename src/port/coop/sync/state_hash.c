@@ -37,6 +37,7 @@
 #include "global.h"
 #include "port/hooks/Events.h"
 #include "port/coop/game/players.h"
+#include "port/coop/game/vehicles.h"
 #include "port/coop/test/switches.h"
 
 // src/sys/sys_math.c
@@ -93,7 +94,8 @@ static const PlayerArray sPlayerArrays[] = {
     PLAYER_ARRAY(gChargeTimers),         PLAYER_ARRAY(gUturnDownTimers), PLAYER_ARRAY(gUturnBrakeTimers),
     PLAYER_ARRAY(gLoopDownTimers),       PLAYER_ARRAY(gLoopBoostTimers), PLAYER_ARRAY(gLeftWingDebrisTimer),
     PLAYER_ARRAY(gRightWingDebrisTimer), PLAYER_ARRAY(gHasShield),       PLAYER_ARRAY(gShieldTimer),
-    PLAYER_ARRAY(gShieldAlpha),
+    PLAYER_ARRAY(gShieldAlpha),          PLAYER_ARRAY(gCoopTankState),
+    PLAYER_ARRAY(gCoopMarineState),
 };
 
 static FILE* sLog = NULL;

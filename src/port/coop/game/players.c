@@ -1,6 +1,7 @@
 #include "players.h"
 
 #include "input.h"
+#include "vehicles.h"
 
 #include "global.h"
 #include "public/bridge/consolevariablebridge.h"
@@ -61,6 +62,7 @@ void CoopPlayers_LevelInit(void) {
         }
     }
     sCoopPlayerCount = count;
+    CoopVehicles_LevelInit();
 
     for (i = 0; i < COOP_PLAYERS_MAX; i++) {
         sReturnTimer[i] = 0; // a return still waiting is dropped: the player joins again below, for free
@@ -234,11 +236,20 @@ static void CoopPlayers_SetDown(s32 i) {
     Audio_StopPlayerNoise(i);
 }
 
-// Nonzero while the level is in a section co-op players fly in: all-range (WP-11), or rails in an Arwing (WP-12). On
-// rails the Landmaster and the Blue Marine are WP-18: they call Player_UpdatePath too, but nothing has run them.
+// Nonzero while the level is in a section co-op players fly in: all-range (WP-11), rails in an Arwing (WP-12), or a
+// vehicle level that WP-18 has proven (#16): the Landmaster in Titania and Macbeth, the Blue Marine in Aquas (decision
+// 0009, item 6).
 static s32 CoopPlayers_SectionSupported(void) {
-    return (gLevelMode == LEVELMODE_ALL_RANGE) ||
-           ((gLevelMode == LEVELMODE_ON_RAILS) && (gPlayer[0].form == FORM_ARWING));
+    if (gLevelMode == LEVELMODE_ALL_RANGE) {
+        return 1;
+    }
+    if (gLevelMode != LEVELMODE_ON_RAILS) {
+        return 0;
+    }
+    return (gPlayer[0].form == FORM_ARWING) ||
+           ((gPlayer[0].form == FORM_LANDMASTER) &&
+            ((gCurrentLevel == LEVEL_TITANIA) || (gCurrentLevel == LEVEL_MACBETH))) ||
+           ((gPlayer[0].form == FORM_BLUE_MARINE) && (gCurrentLevel == LEVEL_AQUAS));
 }
 
 int32_t CoopPlayers_SkipUpdate(int32_t index) {

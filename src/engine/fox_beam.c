@@ -5,6 +5,7 @@
 #include "assets/ast_versus.h"
 #include "port/interpolation/FrameInterpolation.h"
 #include "port/coop/game/players.h" // COOP: a shot answers to the pad of its owner (WP-14), who fired (#86)
+#include "port/hooks/Events.h"      // COOP: shot update events (#16)
 
 Vec3f sShotViewPos;
 
@@ -2365,7 +2366,9 @@ void PlayerShot_UpdateAll(void) {
 
     for (i = 0; i < ARRAY_COUNT(gPlayerShots); i++) {
         gPlayerShots[i].index = i;
+        CALL_EVENT(PlayerShotPreUpdateEvent, &gPlayerShots[i]); // COOP: a Blue Marine per player (#16)
         PlayerShot_Update(&gPlayerShots[i]);
+        CALL_EVENT(PlayerShotPostUpdateEvent, &gPlayerShots[i]); // COOP: (#16)
     }
 }
 

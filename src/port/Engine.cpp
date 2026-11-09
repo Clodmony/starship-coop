@@ -54,6 +54,7 @@
 #include "port/coop/log/log_spdlog.h" // COOP: the game's warnings and errors in the co-op log (#172)
 #include "port/coop/ui/menu_window.h"     // COOP: the co-op menu starts levels (#126)
 #include "port/coop/game/input_game.h"    // COOP: an input source per player (WP-14)
+#include "port/coop/game/vehicles.h"      // COOP: one Landmaster per player (#16)
 
 #include <Fast3D/interpreter.h>
 #include <filesystem>
@@ -328,6 +329,7 @@ void GameEngine::Create() {
     CoopLockstepDriver_Init(); // COOP: no-op unless SF64_COOP_LOCKSTEP_* is set (#20)
     CoopUi::Listen();      // COOP: does nothing on a frame without a co-op session (#126)
     CoopInput_Init(); // COOP: does nothing until a co-op level starts (WP-14)
+    CoopVehicles_Init(); // COOP: does nothing for player 0 or outside co-op (#16)
 }
 
 void GameEngine::Destroy() {

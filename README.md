@@ -16,16 +16,17 @@ Last updated 2026-11-08. For the live list see the [open issues](https://github.
 the [roadmap](docs/coop/ROADMAP.md).
 
 **Two real games now stay in step through all of Corneria, on one PC.** Scripts fly both, over the real session, and
-their state matches on every frame. It has not run on two PCs yet, and nobody has played it. The first goal is two
-players on two PCs flying all of Corneria with matching state.
+their state matches on every frame. On two PCs (Windows against Linux, played by hand since 2026-11-08) the games
+still part in Corneria; each cause found becomes an issue. The first goal is two players on two PCs flying all of
+Corneria with matching state.
 
 ### What works
 
-Everything here is tested by scripts, on Corneria, on Linux; determinism also on Windows (Release and Debug). Nobody has played it, and nothing has run between two PCs.
+Everything here is tested by scripts, on Corneria, on Linux; determinism also on Windows (Release and Debug). Two PCs (Windows host, Linux client) have played Corneria by hand since 2026-11-08; those runs still end in a desync, see below.
 
 | Area | State |
 |---|---|
-| Players | Up to 4 Arwings fly Corneria on rails and in all-range, started by a debug setting. Landmaster and Blue Marine sections keep extra players parked |
+| Players | Up to 4 Arwings fly Corneria on rails and in all-range, started by a debug setting. Titania and Macbeth with a Landmaster per player, Aquas with a Blue Marine per player; all three run by test pilots to level complete, bosses included (one PC) |
 | Input | Each player has their own input source: a controller, a replay or the network |
 | View | Camera, HUD and sound follow your own player, and the other player is an Arwing with a shield bar |
 | Network | UDP transport with its own reliability, session handshake that refuses a different build, ROM or game setting and warns about a different platform, character choice |
@@ -50,7 +51,7 @@ The first Windows against Linux session parted in Corneria within 22 frames: the
 | Real Steam test | [WP-26](https://github.com/Clodmony/starship-coop/issues/24): needs two PCs and two Steam accounts |
 | Lag and loss testing | [WP-27](https://github.com/Clodmony/starship-coop/issues/25) |
 | Game rules: lives, respawn, routes, score | Decisions [0006](docs/coop/decisions/0006-human-flown-wingman.md), [0007](docs/coop/decisions/0007-lives-and-respawn.md) and [0008](docs/coop/decisions/0008-routes-and-score.md) are Accepted, [0009](docs/coop/decisions/0009-vehicles-cutscenes-save.md) is Proposed (item 6, vehicles, is Accepted), then [WP-16](https://github.com/Clodmony/starship-coop/issues/14) and [WP-17](https://github.com/Clodmony/starship-coop/issues/15) |
-| Other levels, vehicles, bosses and cutscenes | [WP-18](https://github.com/Clodmony/starship-coop/issues/16), [WP-19](https://github.com/Clodmony/starship-coop/issues/17), [#136](https://github.com/Clodmony/starship-coop/issues/136) |
+| Other levels, bosses and cutscenes | [WP-19](https://github.com/Clodmony/starship-coop/issues/17), [#136](https://github.com/Clodmony/starship-coop/issues/136) |
 | macOS build | [WP-01](https://github.com/Clodmony/starship-coop/issues/1) |
 | Local split screen | [WP-13](https://github.com/Clodmony/starship-coop/issues/11), [WP-15](https://github.com/Clodmony/starship-coop/issues/13) |
 | Player docs and a full campaign run | [WP-31](https://github.com/Clodmony/starship-coop/issues/27), [WP-32](https://github.com/Clodmony/starship-coop/issues/28) |
