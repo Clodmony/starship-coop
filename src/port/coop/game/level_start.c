@@ -115,6 +115,27 @@ void CoopLevelStart_FromGame(CoopLevelStart* out, uint8_t level, uint8_t phase) 
     }
 }
 
+// What a level sets up on its first frame and the state hash already reads before that frame: Player_Setup
+// (src/engine/fox_play.c:4574) sets the per-player values and gObjectLoadIndex, the path update gPathVelZ. Until then
+// they hold whatever the last level this process played left, so two games whose histories differ hash apart at frame
+// 0, though nothing reads them before they are set (#187). Every game clears them as a fresh process holds them.
+static void LevelStart_ClearSetupValues(void) {
+    memset(gLeftWingHealth, 0, sizeof(gLeftWingHealth));
+    memset(gRightWingHealth, 0, sizeof(gRightWingHealth));
+    memset(gChargeTimers, 0, sizeof(gChargeTimers));
+    memset(gUturnDownTimers, 0, sizeof(gUturnDownTimers));
+    memset(gUturnBrakeTimers, 0, sizeof(gUturnBrakeTimers));
+    memset(gLoopDownTimers, 0, sizeof(gLoopDownTimers));
+    memset(gLoopBoostTimers, 0, sizeof(gLoopBoostTimers));
+    memset(gLeftWingDebrisTimer, 0, sizeof(gLeftWingDebrisTimer));
+    memset(gRightWingDebrisTimer, 0, sizeof(gRightWingDebrisTimer));
+    memset(gHasShield, 0, sizeof(gHasShield));
+    memset(gShieldTimer, 0, sizeof(gShieldTimer));
+    memset(gShieldAlpha, 0, sizeof(gShieldAlpha));
+    gObjectLoadIndex = 0;
+    gPathVelZ = 0.0f;
+}
+
 void CoopLevelStart_Enter(const CoopLevelStart* start) {
     size_t r;
     s32 i;
@@ -127,6 +148,7 @@ void CoopLevelStart_Enter(const CoopLevelStart* start) {
     }
     sClearedLevel = start->level;
     sCleared = start->cleared != 0;
+    LevelStart_ClearSetupValues();
     CoopPlayers_SetRoster(start->roster);
     gMainController = 0; // team-wide input is player 0's slot on every client, whichever port this PC's title found
 

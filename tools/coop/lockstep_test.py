@@ -41,6 +41,8 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             the client's Start in the intro skips it on both games and both players fly; with it cleared only in the
             client's save, nobody's Start does anything.
   zero_seed a seed zeroed on both clients: no clock read, so they stay equal.
+  reset     a client flew Corneria alone, took a hit on a wing and went back to the title through the reset (F4), in the
+            same process: the session's level is equal from frame 0 on (#187).
   slow      one game takes much longer on some frames: the other one waits, and nothing differs.
   poke      a bit flipped on one client shows at exactly that frame, and nowhere before.
   lag       the clients talk through the chaos relay, with lag, jitter and a little loss.
@@ -232,7 +234,9 @@ def session(args, folder, host_env=None, client_env=None, both=None, config=None
     host.start(config)
     deadline = time.monotonic() + 180
     while not (port_file.exists() and port_file.read_text(encoding="utf-8").strip()):
-        expect(host.proc.poll() is None and time.monotonic() < deadline, "the host did not report its port")
+        if host.proc.poll() is not None or time.monotonic() >= deadline:
+            host.close()  # a host left running keeps the build from linking Starship.exe
+            raise Fail("the host did not report its port")
         time.sleep(0.2)
     port = port_file.read_text(encoding="utf-8").strip()
     if client_port is not None:
@@ -1163,6 +1167,36 @@ def sc_zero_seed(args, folder):
     return f"seeds 1 and 3 zeroed on both clients: same hash on {equal} and {compare(host, client, 1500)} frames"
 
 
+RESET_FLY_FRAMES = 600  # the client's own flight before the reset
+RESET_START_FRAME = 2400  # the host starts once the client is back at the title: boot, title, level, reset, title
+RESET_FRAMES = 900
+
+
+def sc_reset(args, folder):
+    """A client that played a level alone in the same process, with damage, then reset to the title: what that level
+    left must not part the games at the session's level start (#187)."""
+    client_env = {"SF64_COOP_TEST_START_LEVEL": "0", "SF64_COOP_TEST_START_SKIP_INTRO": "1",
+                  "SF64_COOP_TEST_START_TITLE_FRAMES": "40", "SF64_COOP_TEST_START_RESET": str(RESET_FLY_FRAMES)}
+    host, client = run_short(args, folder, frames=RESET_FRAMES,
+                             host_env={"SF64_COOP_JOIN_START_FRAME": str(RESET_START_FRAME)}, client_env=client_env)
+    _, rows = hash_check.read_log(client.run / "state-hash.txt")
+    running = join_test.said(client.report(), "level_running")
+    expect(running, "the client never got to the session's level")
+    first = int(running[0]["frame"])
+    before = [row[1] for row in rows if row[0] < first]
+    # Its own level is the first stretch in GSTATE_PLAY; the session's level start is in GSTATE_PLAY too.
+    start = next((i for i, state in enumerate(before) if state == replay_tool.GS_PLAY), len(before))
+    end = next((i for i in range(start, len(before)) if before[i] != replay_tool.GS_PLAY), len(before))
+    alone = end - start
+    expect(alone >= RESET_FLY_FRAMES, f"the client played {alone} frames before the session, want {RESET_FLY_FRAMES}")
+    titles = sum(1 for state in before[end:] if state == replay_tool.GS_TITLE)
+    expect(titles >= hash_check.WHOLE_PATH_FRAMES,
+           f"the client was at the title for {titles} frames between its own level and the session's")
+    frames = compare(host, client, RESET_FRAMES)
+    return (f"a client that flew {alone} frames alone and reset to the title: same hash on {frames} frames of the "
+            f"session's level")
+
+
 def sc_slow(args, folder):
     host, client = run_short(args, folder, client_env={"SF64_COOP_LOCKSTEP_SLOW": "40:150"})
     frames = compare(host, client, SHORT_FRAMES)
@@ -1692,6 +1726,7 @@ SCENARIOS = {
     "pause": sc_pause,
     "save": sc_save,
     "zero_seed": sc_zero_seed,
+    "reset": sc_reset,
     "slow": sc_slow,
     "lag": sc_lag,
     "delay": sc_delay,
