@@ -16,12 +16,13 @@ Last updated 2026-11-08. For the live list see the [open issues](https://github.
 the [roadmap](docs/coop/ROADMAP.md).
 
 **Two real games now stay in step through all of Corneria, on one PC.** Scripts fly both, over the real session, and
-their state matches on every frame. It has not run on two PCs yet, and nobody has played it. The first goal is two
-players on two PCs flying all of Corneria with matching state.
+their state matches on every frame. On two PCs (Windows against Linux, played by hand since 2026-11-08) the games
+still part in Corneria; each cause found becomes an issue. The first goal is two players on two PCs flying all of
+Corneria with matching state.
 
 ### What works
 
-Everything here is tested by scripts, on Corneria, on Linux; determinism also on Windows (Release and Debug). Nobody has played it, and nothing has run between two PCs.
+Everything here is tested by scripts, on Corneria, on Linux; determinism also on Windows (Release and Debug). Two PCs (Windows host, Linux client) have played Corneria by hand since 2026-11-08; those runs still end in a desync, see below.
 
 | Area | State |
 |---|---|
@@ -39,18 +40,20 @@ Everything here is tested by scripts, on Corneria, on Linux; determinism also on
 
 ### In progress
 
-Nothing is being built right now. The next step is the first test on two PCs: see [TWO_PC_TEST.md](docs/coop/TWO_PC_TEST.md).
+Fixing what the two-PC runs found: sine and cosine that round differently on Windows and Linux
+([#186](https://github.com/Clodmony/starship-coop/issues/186)), and a value of the Arwing written only when it is drawn
+([#192](https://github.com/Clodmony/starship-coop/issues/192)). How to run the test: [TWO_PC_TEST.md](docs/coop/TWO_PC_TEST.md).
 
 ### What is open
 
 | What | Where |
 |---|---|
 | What a session does after a desync: it ends now, the smallest honest choice, for the owner to revise | [WP-23](https://github.com/Clodmony/starship-coop/issues/21), [decision 0002](docs/coop/decisions/0002-sync-model.md) |
-| A run on two PCs | [#2](https://github.com/Clodmony/starship-coop/issues/2): needed before a first public release. Windows Release matches itself, Debug and every rate ([#145](https://github.com/Clodmony/starship-coop/issues/145)); Windows against Linux is still not compared |
+| A whole level on two PCs without a desync | [#2](https://github.com/Clodmony/starship-coop/issues/2): needed before a first public release. Windows against Linux has run by hand since 2026-11-08 and still parts in Corneria ([#186](https://github.com/Clodmony/starship-coop/issues/186), [#192](https://github.com/Clodmony/starship-coop/issues/192)); no vehicle level yet |
 | Real Steam test | [WP-26](https://github.com/Clodmony/starship-coop/issues/24): needs two PCs and two Steam accounts |
 | Lag and loss testing | [WP-27](https://github.com/Clodmony/starship-coop/issues/25) |
 | Game rules: lives, respawn, routes, score | Decisions [0006](docs/coop/decisions/0006-human-flown-wingman.md), [0007](docs/coop/decisions/0007-lives-and-respawn.md) and [0008](docs/coop/decisions/0008-routes-and-score.md) are Accepted, [0009](docs/coop/decisions/0009-vehicles-cutscenes-save.md) is Proposed (item 6, vehicles, is Accepted), then [WP-16](https://github.com/Clodmony/starship-coop/issues/14) and [WP-17](https://github.com/Clodmony/starship-coop/issues/15) |
-| Other levels, vehicles, bosses and cutscenes | [WP-18](https://github.com/Clodmony/starship-coop/issues/16), [WP-19](https://github.com/Clodmony/starship-coop/issues/17), [#136](https://github.com/Clodmony/starship-coop/issues/136) |
+| Other levels, bosses and cutscenes | [WP-19](https://github.com/Clodmony/starship-coop/issues/17), [#136](https://github.com/Clodmony/starship-coop/issues/136) |
 | macOS build | [WP-01](https://github.com/Clodmony/starship-coop/issues/1) |
 | Local split screen | [WP-13](https://github.com/Clodmony/starship-coop/issues/11), [WP-15](https://github.com/Clodmony/starship-coop/issues/13) |
 | Player docs and a full campaign run | [WP-31](https://github.com/Clodmony/starship-coop/issues/27), [WP-32](https://github.com/Clodmony/starship-coop/issues/28) |
