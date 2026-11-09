@@ -451,10 +451,11 @@ def sc_vehicles(args, folder):
 
 
 # A level, its frames from the join to well past level complete with the pilot and gInvincible (#16): Titania reached
-# level complete at frame 29169 in the first run, Macbeth at 9523, so there is room for a slower fight. Macbeth's boss
+# level complete at frame 29169 in the first run, Macbeth at 9523, Aquas at 7240 (the join is close to its boss), so
+# there is room for a slower fight. Macbeth's boss
 # kills player 0 outright when the train reaches the end of its track first (Macbeth_Actor207_Update, state 18-19), and
 # with gInvincible that tank is never downed: it climbs on and the game crashes later. A slower pilot fails there.
-VEHICLE_END_LEVELS = (("Macbeth", 11, 14000), ("Titania", 12, 34000))
+VEHICLE_END_LEVELS = (("Macbeth", 11, 14000), ("Titania", 12, 34000), ("Aquas", 13, 14000))
 
 
 def sc_vehicle_end(args, folder):

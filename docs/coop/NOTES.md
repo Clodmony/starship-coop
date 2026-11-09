@@ -509,12 +509,27 @@ Derived:
 - Every kill step needs a torpedo, and all marines share one torpedo slot (`gPlayerShots[15]`, see the session 3
   entry), so two pilots firing B can block each other.
 
+- Lock-on (read later the same session): a marine locks on to an actor or a Bacoon box that the point 1200 ahead along
+  its heading falls into, the box widened by 200 (`Aquas_BlueMarineShoot`, `Aquas_801A9ED0`); Bacoon's lockable boxes
+  are hitbox entries 119, 129, 139 and 169 (z at `[j]`, y at `[j + 2]`, x at `[j + 4]`), and 777 in
+  `D_i3_801C4190[0]` means "the boss".
+
+Observed at run time (2026-11-09, the pilot aiming as above; `lockstep_test.py --only vehicle_end --levels aquas`,
+Windows 11, MSVC v143 Debug, US 1.0, `a7874412` plus the pilot change, one PC, `gInvincible` on both games):
+
+- Same hash on all 40000 frames; player 0 reached level complete at frame 7240, player 1 drove on 37084.
+- The fight, from the pilot log: state 10 at about frame 5550; the two actors 256 went at about 5800 and 6100 (a
+  window opened at shell -25 to -26, then a torpedo); state 15 at about 6180; health 150, 119, 88, 57, 26, 0, a
+  torpedo each, the eye film refilled in between. Both players fired torpedoes that homed (player 0 on 20 logged
+  frames, player 1 on 14).
+- The box offsets read at run time: actors 256 at x +-370 from the boss, eye film (119) at about x 7, y 616, core
+  (169) at x 0, y 543, both about 2000 to 2200 ahead of the marines, who stop at z -94773 while the boss is up.
+
 Unknown:
 
-- Where parts 13 and 18 and the actors' boxes sit: `aAqBacoonHitbox` and `aAqActor256Hitbox` come from the ROM, not
-  the source. The pilot would read them at run time (`CoopPilot_BoxCenter`).
-- How a torpedo picks its target (the lock-on before B): not read.
 - Whether player 1 can start the fight or end the level alone: by the lines above, no; not run.
+- Two marines that both press B at once: the pilot staggers them by five frames, so the shared slot was not tested
+  under contention.
 
 ### 2026-11-08, #16, a pilot for the Landmaster, and the long vehicle runs
 

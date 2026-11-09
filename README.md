@@ -25,7 +25,7 @@ Everything here is tested by scripts, on Corneria, on Linux; determinism also on
 
 | Area | State |
 |---|---|
-| Players | Up to 4 Arwings fly Corneria on rails and in all-range, started by a debug setting. Titania and Macbeth with a Landmaster per player, Aquas with a Blue Marine per player (first 6000 frames each, one PC) |
+| Players | Up to 4 Arwings fly Corneria on rails and in all-range, started by a debug setting. Titania and Macbeth with a Landmaster per player, Aquas with a Blue Marine per player; all three run by test pilots to level complete, bosses included (one PC) |
 | Input | Each player has their own input source: a controller, a replay or the network |
 | View | Camera, HUD and sound follow your own player, and the other player is an Arwing with a shield bar |
 | Network | UDP transport with its own reliability, session handshake that refuses a different build, ROM or game setting and warns about a different platform, character choice |

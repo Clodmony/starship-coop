@@ -10,6 +10,7 @@
 #include "i5.h"
 #include "assets/ast_titania.h"
 #include "port/coop/game/players.h"
+#include "port/coop/game/vehicles.h"
 
 extern f32 sCoGrangaWork[68]; // src/overlays/ovl_i1/fox_co.c
 
@@ -691,6 +692,69 @@ static s32 CoopPilot_SwimSteps(const Player* p, f32 spotX, f32 spotY) {
     return step;
 }
 
+extern s32 D_i3_801C42A0[25]; // fox_aq.c
+extern f32 D_i3_801C4308[82];
+
+#define PILOT_BACOON_FILM 119 // Bacoon's hitbox entries that a torpedo can lock on to (Aquas_801A9ED0): z at [j], y at
+#define PILOT_BACOON_CORE 169 // [j + 2], x at [j + 4]. 119 is the eye film (part 13), 169 the core (part 18).
+
+// Aquas's boss, Bacoon (Aquas_AqBacoon_Update; NOTES.md, #16). Three steps, read from its state:
+// 1. While D_i3_801C42A0[23] counts actors 256 left, lasers at the nearest one push the shell open; once it is wide
+//    enough the boss opens a window (swork[0] == 1, the actor's health 10), and one torpedo (damage 31) ends it.
+// 2. From state 15, lasers at the eye film, ten hits (swork[12]).
+// 3. Then torpedoes at the core, 31 off its health of 150 each, unless swork[1] == 2 (just hit).
+// Sets where to line up, and whether a torpedo should go now.
+static bool CoopPilot_BacoonTarget(Vec3f* at, bool* torpedo) {
+    const Boss* boss = &gBosses[0];
+    s32 j;
+
+    *torpedo = false;
+    if ((gCurrentLevel != LEVEL_AQUAS) || (boss->obj.status != OBJ_ACTIVE) || (boss->obj.id != OBJ_BOSS_AQ_BACOON) ||
+        (boss->state < 10) || (boss->health == 0) || (boss->info.hitbox == NULL)) {
+        return false;
+    }
+    if (D_i3_801C42A0[23] > 0) {
+        f32 best = 1e9f;
+        s32 k;
+
+        for (k = 0; k < ARRAY_COUNT(gActors); k++) {
+            const Actor* a = &gActors[k];
+            s32 n;
+
+            if ((a->obj.status != OBJ_ACTIVE) || (a->obj.id != OBJ_ACTOR_256) || (a->state != 0) ||
+                (a->info.hitbox == NULL)) {
+                continue;
+            }
+            // The box the lock-on tests (Aquas_BlueMarineShoot): offsets after the count, or after a rotation.
+            n = (a->info.hitbox[1] == HITBOX_ROTATED) ? 5 : 1;
+            // The one with a window open first, then the one with the lowest index: both pilots on the same one.
+            if (((a->health > 0) ? 0.0f : 1000.0f) + k < best) {
+                best = ((a->health > 0) ? 0.0f : 1000.0f) + k;
+                at->x = a->obj.pos.x + a->info.hitbox[n + 4];
+                at->y = a->obj.pos.y + a->info.hitbox[n + 2];
+                at->z = a->obj.pos.z + a->info.hitbox[n + 0];
+                *torpedo = (boss->swork[0] == 1) && (a->health > 0);
+                sAimPart = 2560 + k;
+            }
+        }
+        if (best < 1e9f) {
+            sAimAt = *at;
+            return true;
+        }
+    }
+    if (boss->state != 15) {
+        return false;
+    }
+    j = (boss->swork[12] > 0) ? PILOT_BACOON_FILM : PILOT_BACOON_CORE;
+    at->x = boss->obj.pos.x + boss->info.hitbox[j + 4];
+    at->y = boss->obj.pos.y + boss->info.hitbox[j + 2];
+    at->z = boss->obj.pos.z + boss->info.hitbox[j + 0];
+    *torpedo = (j == PILOT_BACOON_CORE) && (boss->swork[1] != 2);
+    sAimPart = j;
+    sAimAt = *at;
+    return true;
+}
+
 // A Blue Marine on rails (#16): stick x turns it across the path as the tank's does, stick y pitches it
 // (Aquas_BlueMarineMove), and it keeps between the floor and the top of the path. Spots on a grid across and up, each
 // played a second forward as for the tank. It fires the laser all the time, and player 1 a torpedo now and then.
@@ -701,21 +765,34 @@ static void CoopPilot_Swim(const Player* p, s32 i, PilotPad* pad) {
     f32 top = p->pathHeight - 90.0f;
     f32 wantX = p->xPath + ((i == 0) ? -0.3f : 0.3f) * edge + 0.25f * edge * sinf(t * 0.03f + i);
     f32 wantY = (floor + top) * 0.5f + 0.25f * (top - floor) * sinf(t * 0.02f + i);
-    f32 targetX = wantX;
-    f32 targetY = wantY;
+    f32 wantWeight = 0.3f;
+    f32 targetX;
+    f32 targetY;
     f32 best = -1e9f;
+    bool aiming;
+    bool torpedo;
+    Vec3f aim;
     f32 x;
     f32 y;
 
     if (top < floor) {
         top = floor;
     }
+    aiming = CoopPilot_BacoonTarget(&aim, &torpedo);
+    if (aiming) {
+        // Line up in front of it: shots and the lock-on (1200 ahead, Aquas_BlueMarineShoot) go straight on.
+        wantX = aim.x;
+        wantY = fmaxf(floor, fminf(top, aim.y));
+        wantWeight = 1.5f;
+    }
+    targetX = wantX;
+    targetY = wantY;
     for (y = floor; y <= top; y += 60.0f) {
         for (x = -edge; x <= edge; x += 60.0f) {
             f32 spotX = p->xPath + x;
             s32 steps = CoopPilot_SwimSteps(p, spotX, y);
             f32 score = steps * 1000.0f - fabsf(spotX - p->pos.x) - fabsf(y - p->pos.y) -
-                        (fabsf(spotX - wantX) + fabsf(y - wantY)) * 0.3f;
+                        (fabsf(spotX - wantX) + fabsf(y - wantY)) * wantWeight;
 
             if (score > best) {
                 best = score;
@@ -731,7 +808,18 @@ static void CoopPilot_Swim(const Player* p, s32 i, PilotPad* pad) {
     if ((gGameFrameCount % PILOT_FIRE_PERIOD) == 0) {
         pad->button |= A_BUTTON;
     }
-    if ((i == 1) && ((gGameFrameCount % 150) == 75)) {
+    if (aiming) {
+        // At the boss a torpedo goes only when it is the step's weapon and this marine has a lock and none in flight
+        // (all marines share one torpedo slot, gPlayerShots[15]).
+        s32 target;
+        s32 homing;
+
+        CoopVehicles_MarineLock(i, &target, &homing);
+        if (torpedo && (target != 0) && (homing == 0) && (gPlayerShots[15].obj.status == SHOT_FREE) &&
+            ((gGameFrameCount % 10) == (u32) (i * 5))) {
+            pad->button |= B_BUTTON;
+        }
+    } else if ((i == 1) && ((gGameFrameCount % 150) == 75)) {
         pad->button |= B_BUTTON;
     }
 }
@@ -928,6 +1016,20 @@ static void CoopPilot_Note(const Player* p, s32 i) {
                         a->obj.pos.z, p->pos.x, p->pos.y, p->trueZpos);
             }
         }
+    }
+    // Aquas's boss: health, the actors 256 left, the shell's opening, the window, the eye film's hits left.
+    if ((gCurrentLevel == LEVEL_AQUAS) && ((gGameFrameCount % 30) == 0) && (boss->obj.status == OBJ_ACTIVE) &&
+        (boss->obj.id == OBJ_BOSS_AQ_BACOON)) {
+        s32 target;
+        s32 homing;
+
+        CoopVehicles_MarineLock(i, &target, &homing);
+        fprintf(sLog,
+                "frame=%d player=%d bacoon state=%d health=%d left=%d shell=%.1f window=%d film=%d hit=%d aim=%d@%.0f,"
+                "%.0f,%.0f lock=%d homing=%d torpedo=%d pos=%.0f,%.0f,%.0f\n",
+                gGameFrameCount, i, boss->state, boss->health, D_i3_801C42A0[23], D_i3_801C4308[10], boss->swork[0],
+                boss->swork[12], boss->swork[1], sAimPart, sAimAt.x, sAimAt.y, sAimAt.z, target, homing,
+                gPlayerShots[15].obj.status, p->pos.x, p->pos.y, p->trueZpos);
     }
     // A boss on rails (the vehicle levels): its state and swork[21], which is Goras's health (Titania_TiGoras_Init).
     if ((gLevelMode == LEVELMODE_ON_RAILS) && (i == 0) && ((gGameFrameCount % 60) == 0) &&
