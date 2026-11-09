@@ -38,7 +38,8 @@ Do not rename a branch that is the head of an open PR: GitHub closes the PR (tha
 
 **Off since 2026-11-07, by the owner's choice:** waiting for GitHub CI only slowed development. Both co-op workflows are
 disabled in the repository settings, not deleted, and the `coop` ruleset no longer requires `Co-op checks`. Local runs
-are the check: `python tools/coop/build.py` before a push, `python tools/coop/test_all.py` before a merge. To turn CI on
+are the check: `python tools/coop/build.py` and the area's `test_all.py --only` steps before a push, the full
+`python tools/coop/test_all.py` once per batch of PRs before the merge (CONTRIBUTING.md, #195). To turn CI on
 again: `gh workflow enable "Co-op checks"`, `gh workflow enable "Co-op build"`, and add `Co-op checks` back as a required
 status check of the `coop` ruleset (`.github/rulesets/coop.json`). What the workflows do when on:
 
