@@ -18,11 +18,11 @@
 // the game wrote it.
 //
 // Co-op hashes differently from single player: negative numbers in Actor.iwork[] (NormalizeWord), free gScenery360
-// slots (HashScenery360), the per-player arrays and the co-op slots (HashPlayerArrays), the team member arrays
-// (HashTeamArrays), and it leaves out the per-player values of players who are not in the level (HashPerPlayer) and
-// what follows the camera a client draws and only sound or draw code reads (ClearViewState, ClearPlayerViewState). With
-// co-op off the hash stays as it was, so a single-player log still lines up with one from an older build
-// (docs/coop/QA.md, test plan item 1).
+// slots (HashScenery360), the per-player arrays, the co-op slots and return counters (HashPlayerArrays), the team
+// member arrays (HashTeamArrays), and it leaves out the per-player values of players who are not in the level
+// (HashPerPlayer) and what follows the camera a client draws and only sound or draw code reads (ClearViewState,
+// ClearPlayerViewState). With co-op off the hash stays as it was, so a single-player log still lines up with one from
+// an older build (docs/coop/QA.md, test plan item 1).
 //
 // The listener runs on GamePreUpdateEvent, before any game logic of the frame, so the hash of frame N is the state
 // after frame N-1. It runs after the input replay listener (EVENT_PRIORITY_LOW runs first, see
@@ -289,6 +289,10 @@ static void HashPlayerArrays(uint64_t* h) {
     for (i = 0; i < CoopPlayers_Count(); i++) {
         slot = CoopPlayers_SlotState(i);
         HashNamed(h, "slot", i, &slot, sizeof(slot));
+    }
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        slot = CoopPlayers_ReturnTimer(i); // how long a downed player still waits (decision 0007 rule 4, #14)
+        HashNamed(h, "returnTimer", i, &slot, sizeof(slot));
     }
 }
 
@@ -616,6 +620,21 @@ static void ProbeSlot(s32 i) {
     ProbeReport(target, !PlayerValuesCount(i), &before, &after);
 }
 
+// The same for the return counter of player i (#14).
+static void ProbeReturnTimer(s32 i) {
+    char target[40];
+    s32 saved = CoopPlayers_ReturnTimer(i);
+    CoopStateHash before;
+    CoopStateHash after;
+
+    CoopStateHash_Compute(&before);
+    CoopPlayers_SetReturnTimer(i, saved ^ 1);
+    CoopStateHash_Compute(&after);
+    CoopPlayers_SetReturnTimer(i, saved);
+    snprintf(target, sizeof(target), "returnTimer[%d]", i);
+    ProbeReport(target, !PlayerValuesCount(i), &before, &after);
+}
+
 // Test only: what tools/coop/hash_check.py probe reads. Which of these must change the hash is written there.
 static void Probe(void) {
     char target[16];
@@ -643,6 +662,7 @@ static void Probe(void) {
         ProbePlayerValue("gBombCount", i, &gBombCount[i]);
         ProbePlayerValue("gPlayerScores", i, &gPlayerScores[i]);
         ProbeSlot(i);
+        ProbeReturnTimer(i);
     }
     ProbeBit("gTeamLowHealthMsgTimer", 0, &gTeamLowHealthMsgTimer);
     for (k = 0; k < ARRAY_COUNT(sTeamArrays); k++) {

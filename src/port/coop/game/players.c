@@ -12,16 +12,29 @@ static s32 sCoopPlayerCount = 1;
 // update and not drawn (its draw flag is 0). They start WAITING and join when player 0 flies a section that supports
 // them (see CoopPlayers_SectionSupported). A joined player whose section ends is AWAY: it comes back with its own
 // shields, wings and weapons if player 0 flies again in this level (rails, the cut to all-range, all-range), and
-// otherwise stays parked until the next Play_Init. A joined player that goes down is OUT until the next Play_Init;
-// when and how it comes back is a game rule (WP-07, WP-16).
+// otherwise stays parked until the next Play_Init. A joined player that goes down is DOWN: it comes back beside
+// player 0 for a life from the pool (decision 0007 rule 4, CoopPlayers_ReturnFromDown), or at the next Play_Init for
+// free. OUT is a slot nobody in the roster flies, for the whole level.
 typedef enum {
     COOP_SLOT_JOINED, // also every player outside co-op, and player 0
     COOP_SLOT_WAITING,
     COOP_SLOT_AWAY,
     COOP_SLOT_OUT,
+    COOP_SLOT_DOWN, // last, so the numbers above keep what they meant in a hash log
 } CoopSlot;
 
 static CoopSlot sSlot[COOP_PLAYERS_MAX];
+
+// Decision 0007 rule 4: a player 2-4 who went down comes back once its counter has run out, the pool (gLifeCount[0])
+// holds a life and player 0 flies a section co-op players fly in. The counter is the delay versus uses
+// (src/engine/fox_versus.c:594, :622-623): 150 game frames, 5 s at 30 frames a second. It counts in
+// CoopPlayers_SkipUpdate, so in game frames, inside the player loop, and not while paused. Simulation state: hashed.
+#define COOP_RETURN_FRAMES 150
+static s32 sReturnTimer[COOP_PLAYERS_MAX];
+
+// The mercyTimer a returning player gets, in game frames: no collisions while it runs (Player_CollisionCheck,
+// Player_Collide). 0007 leaves the value to WP-16; 30 (1 s) is a starting value, to tune by play. A hit gives 20.
+#define COOP_RETURN_MERCY_FRAMES 30
 
 // The session's roster, and how many players it makes; 0 without one.
 static u8 sRoster[COOP_PLAYERS_MAX];
@@ -50,6 +63,7 @@ void CoopPlayers_LevelInit(void) {
     sCoopPlayerCount = count;
 
     for (i = 0; i < COOP_PLAYERS_MAX; i++) {
+        sReturnTimer[i] = 0; // a return still waiting is dropped: the player joins again below, for free
         sSlot[i] = ((gCamCount == 1) && (i > 0) && (i < count)) ? COOP_SLOT_WAITING : COOP_SLOT_JOINED;
         if ((sSlot[i] == COOP_SLOT_WAITING) && (sRosterCount > 0) && (sRoster[i] == 0)) {
             sSlot[i] = COOP_SLOT_OUT;
@@ -184,8 +198,38 @@ static void CoopPlayers_RejoinFromPlayer0(s32 i) {
     p->arwing.leftWingState = leftWing;
 }
 
-static void CoopPlayers_SetOut(s32 i) {
-    sSlot[i] = COOP_SLOT_OUT;
+// Player i comes back after it went down (decision 0007 rule 4): beside player 0 as at a join, and as player 0 comes
+// back after a death (Player_Setup, src/engine/fox_play.c): full shields, both wings, 3 bombs, a single laser, no
+// timers or damage left from the copy, plus a short mercyTimer. The life is spent here, from the pool, not at the
+// crash (0007 rule 4).
+static void CoopPlayers_ReturnFromDown(s32 i) {
+    Player* p = &gPlayer[i];
+
+    gLifeCount[0]--;
+    CoopPlayers_PlaceBesidePlayer0(i);
+    p->shields = Play_GetMaxShields(); // 255, or 383 with the team's shield upgrade from three gold rings
+    p->damage = p->heal = 0;
+    p->hitTimer = p->dmgEffectTimer = p->dmgEffect = p->radioDamageTimer = 0;
+    p->damageShake = 0.0f;
+    p->knockback.x = p->knockback.y = p->knockback.z = 0.0f;
+    p->mercyTimer = COOP_RETURN_MERCY_FRAMES;
+    p->arwing.rightWingState = p->arwing.leftWingState = WINGSTATE_INTACT;
+    p->arwing.laserGunsYpos = 0.0f; // single laser: the guns in (Player_Shoot)
+    CoopPlayers_SetLaserGunsX(p);
+
+    gLeftWingHealth[i] = gRightWingHealth[i] = gExpertMode ? 10 : 60;
+    gUturnDownTimers[i] = gUturnBrakeTimers[i] = gLoopDownTimers[i] = gLoopBoostTimers[i] = gShieldTimer[i] =
+        gHasShield[i] = gChargeTimers[i] = 0;
+    gRightWingFlashTimer[i] = gLeftWingFlashTimer[i] = gRightWingDebrisTimer[i] = gLeftWingDebrisTimer[i] =
+        D_ctx_80177990[i] = D_ctx_801779A8[i] = gMuzzleFlashScale[i] = gShieldAlpha[i] = 0.0f;
+    gLaserStrength[i] = LASERS_SINGLE;
+    gBombCount[i] = 3;
+    gLifeCount[i] = gLifeCount[0]; // decides nothing (0007 rule 1); the HUD of this player's client shows it (WP-28)
+}
+
+static void CoopPlayers_SetDown(s32 i) {
+    sSlot[i] = COOP_SLOT_DOWN;
+    sReturnTimer[i] = COOP_RETURN_FRAMES;
     gPlayer[i].draw = false;
     Audio_StopPlayerNoise(i);
 }
@@ -230,9 +274,25 @@ int32_t CoopPlayers_SkipUpdate(int32_t index) {
             }
             return 1;
 
+        case COOP_SLOT_DOWN:
+            // Player_Update turns draw back on after a Player_Down in the same frame, so hide it again here.
+            gPlayer[index].draw = false;
+            if (sReturnTimer[index] > 0) {
+                sReturnTimer[index]--;
+            }
+            // Player 0 updates first, so a return due on the frame it goes down is refused, and with one life left
+            // and several waiting the lowest index takes it (0007, "Every client decides alike"). At pool 0 the player
+            // stays out until a life comes in or the next Play_Init (rule 5).
+            if ((sReturnTimer[index] == 0) && (gLifeCount[0] > 0) && CoopPlayers_SectionSupported() &&
+                (gPlayer[0].state == PLAYERSTATE_ACTIVE)) {
+                CoopPlayers_ReturnFromDown(index);
+                sSlot[index] = COOP_SLOT_JOINED;
+                Audio_StartPlayerNoise(index);
+            }
+            return 1; // as for a join: it starts updating on the next frame
+
         case COOP_SLOT_OUT:
         default:
-            // Player_Update turns draw back on after a Player_Down in the same frame, so hide it again here.
             gPlayer[index].draw = false;
             return 1;
     }
@@ -334,7 +394,7 @@ int32_t CoopPlayers_OnPlayerDown(Player* player) {
     if ((i <= 0) || (i >= COOP_PLAYERS_MAX) || !CoopPlayers_IsCoop()) {
         return 0;
     }
-    CoopPlayers_SetOut(i);
+    CoopPlayers_SetDown(i);
     return 1;
 }
 
@@ -377,5 +437,19 @@ int32_t CoopPlayers_SlotState(int32_t index) {
 void CoopPlayers_SetSlotState(int32_t index, int32_t state) {
     if ((index >= 0) && (index < COOP_PLAYERS_MAX)) {
         sSlot[index] = (CoopSlot) state;
+    }
+}
+
+int32_t CoopPlayers_IsDown(int32_t index) {
+    return (index >= 0) && (index < COOP_PLAYERS_MAX) && (sSlot[index] == COOP_SLOT_DOWN);
+}
+
+int32_t CoopPlayers_ReturnTimer(int32_t index) {
+    return ((index >= 0) && (index < COOP_PLAYERS_MAX)) ? sReturnTimer[index] : 0;
+}
+
+void CoopPlayers_SetReturnTimer(int32_t index, int32_t frames) {
+    if ((index >= 0) && (index < COOP_PLAYERS_MAX)) {
+        sReturnTimer[index] = frames;
     }
 }

@@ -337,6 +337,9 @@ def probe_rule(target, parked, players):
     if name == "slot":
         # A player who is in the level or not: the values above count or stop counting with it.
         return (True, "players,globals") if coop and int(index) < players else (False, None)
+    if name == "returnTimer":
+        # How long a downed player still waits (#14): hashed beside its slot, for every player of the level.
+        return (True, "players") if coop and int(index) < players else (False, None)
     if not coop and target in PROBE_RULES_COOP_OFF:
         return PROBE_RULES_COOP_OFF[target]
     return PROBE_RULES["player" if target.startswith("player") else target]
@@ -379,7 +382,8 @@ def check_probes(probes, players):
         wanted += [(f"player{i}", "1"), (f"player{i}", "0")]
     for i in range(PLAYER_SLOTS):
         states = ["0"] if players == 1 or i == 0 else ["0", "1"] if i < players else ["1"]
-        wanted += [(f"{name}[{i}]", state) for name in PLAYER_ARRAYS + PLAYER_GLOBALS + ("slot",) for state in states]
+        wanted += [(f"{name}[{i}]", state) for name in PLAYER_ARRAYS + PLAYER_GLOBALS + ("slot", "returnTimer")
+                   for state in states]
     wanted += [(f"{name}[{i}]", "0") for name, (slots, _, _) in TEAM_ARRAYS.items() for i in range(slots)]
     wanted += [(name, "0") for name in COOP_GLOBALS]
     for target, parked in wanted:
