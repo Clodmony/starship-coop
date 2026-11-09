@@ -2,6 +2,7 @@
 #include "port/coop/game/players.h" // COOP: whose sound it is (#30)
 #include "port/coop/game/hits.h"    // COOP: hits on the other players (#136)
 #include "port/coop/game/aim.h"     // COOP: enemies aim at the nearest human (#193)
+#include "port/coop/game/items.h"   // COOP: crate, laser item and wing repair look at every player (#201)
 #include "assets/ast_corneria.h"
 #include "assets/ast_sector_x.h"
 #include "assets/ast_sector_y.h"
@@ -2132,7 +2133,6 @@ void Actor_SpawnDebris70(f32 xPos, f32 yPos, f32 zPos, f32 xRot, f32 yRot, f32 a
 }
 
 void ActorSupplies_Update(ActorSupplies* this) {
-    Player* player = &gPlayer[0];
     s32 i;
 
     this->obj.rot.y += 1.0f;
@@ -2153,13 +2153,12 @@ void ActorSupplies_Update(ActorSupplies* this) {
             Effect_SpawnTimedSfxAtPos(&this->obj.pos, NA_SE_EN_EXPLOSION_S);
             func_effect_8007D2C8(this->obj.pos.x, this->obj.pos.y, this->obj.pos.z, 5.0f);
 
-            if (((player[0].arwing.rightWingState <= WINGSTATE_BROKEN) ||
-                 (player[0].arwing.leftWingState <= WINGSTATE_BROKEN)) &&
-                (player[0].form != FORM_LANDMASTER)) {
+            // COOP: what ANY active player needs, one drop (#201); co-op off the tests are upstream's on player 0
+            if (CoopItems_AnyWingBroken()) {
                 this->itemDrop = DROP_WING_REPAIR;
-            } else if (gPlayer[0].shields < 128) {
+            } else if (CoopItems_AnyShieldsBelow(128)) {
                 this->itemDrop = DROP_SILVER_STAR;
-            } else if ((gLaserStrength[0] == LASERS_SINGLE) && (player[0].form != FORM_LANDMASTER)) {
+            } else if (CoopItems_AnySingleLasers()) {
                 this->itemDrop = DROP_LASERS;
             } else {
                 this->itemDrop = DROP_BOMB;
@@ -2204,22 +2203,22 @@ void ActorSupplies_Draw(ActorEvent* this) {
                        gAmbientB);
 }
 
-void func_enmy_80067A40(void) {
-    AUDIO_PLAY_SFX(NA_SE_WING_REPAIR, gPlayer[0].sfxSource, 0);
+void func_enmy_80067A40(s32 playerNum) { // COOP: was (void), player 0 only (#201)
+    AUDIO_PLAY_SFX(NA_SE_WING_REPAIR, gPlayer[playerNum].sfxSource, 0);
 
-    if (gPlayer[0].arwing.rightWingState <= WINGSTATE_BROKEN) {
-        gRightWingFlashTimer[0] = 1050;
-        gPlayer[0].arwing.rightWingState = WINGSTATE_INTACT;
+    if (gPlayer[playerNum].arwing.rightWingState <= WINGSTATE_BROKEN) {
+        gRightWingFlashTimer[playerNum] = 1050;
+        gPlayer[playerNum].arwing.rightWingState = WINGSTATE_INTACT;
     }
-    if (gPlayer[0].arwing.leftWingState <= WINGSTATE_BROKEN) {
-        gLeftWingFlashTimer[0] = 1050;
-        gPlayer[0].arwing.leftWingState = WINGSTATE_INTACT;
+    if (gPlayer[playerNum].arwing.leftWingState <= WINGSTATE_BROKEN) {
+        gLeftWingFlashTimer[playerNum] = 1050;
+        gPlayer[playerNum].arwing.leftWingState = WINGSTATE_INTACT;
     }
 
     if (gExpertMode) {
-        gRightWingHealth[0] = gLeftWingHealth[0] = 10;
+        gRightWingHealth[playerNum] = gLeftWingHealth[playerNum] = 10;
     } else {
-        gRightWingHealth[0] = gLeftWingHealth[0] = 60;
+        gRightWingHealth[playerNum] = gLeftWingHealth[playerNum] = 60;
     }
 }
 
@@ -2265,6 +2264,12 @@ void ItemPickup_Update(Item* this) {
                     this->timer_48 = 20;
                     this->unk_50 = 60.0f;
 
+                    // COOP: the collector with a broken wing gets it repaired instead of lasers (#201)
+                    if (CoopPlayers_IsCoop() && CoopItems_WingBroken(this->playerNum)) {
+                        func_enmy_80067A40(this->playerNum);
+                        break;
+                    }
+
                     gLaserStrength[this->playerNum]++;
                     if (gLaserStrength[this->playerNum] > LASERS_HYPER) {
                         gLaserStrength[this->playerNum] = LASERS_HYPER;
@@ -2301,8 +2306,10 @@ void ItemPickup_Update(Item* this) {
 }
 
 void ItemLasers_Update(ItemLasers* this) {
-    if (!gVersusMode && ((gPlayer[0].arwing.leftWingState <= WINGSTATE_BROKEN) ||
-                         (gPlayer[0].arwing.rightWingState <= WINGSTATE_BROKEN))) {
+    // COOP: in a session the item stays lasers until someone collects it; the collector decides (ItemPickup_Update)
+    if (!gVersusMode && !CoopPlayers_IsCoop() &&
+        ((gPlayer[0].arwing.leftWingState <= WINGSTATE_BROKEN) ||
+         (gPlayer[0].arwing.rightWingState <= WINGSTATE_BROKEN))) {
         this->obj.id = OBJ_ITEM_WING_REPAIR;
         Object_SetInfo(&this->info, this->obj.id);
         this->timer_48 = 2000;
@@ -2407,7 +2414,7 @@ void ItemWingRepair_Update(ItemWingRepair* this) {
     Item_CheckBounds(this);
     Item_SpinPickup(this);
     if (this->collected) {
-        func_enmy_80067A40();
+        func_enmy_80067A40(this->playerNum); // COOP: was player 0's (#201)
         Object_Kill(&this->obj, this->sfxSource);
     }
 

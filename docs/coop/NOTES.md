@@ -558,6 +558,46 @@ Unknown:
   index order, but no run had more than one player waiting.
 - Other levels, Solar's down at 0 shields (#200), Windows, two PCs: not run.
 
+### 2026-11-09, #201, lasers for the second player: the pickup counts; what looked at player 0
+
+Observed (two real clients in lockstep, `lockstep_test.py --only laser,laser_wing1,laser_wing0,repair,crate`, base
+`6becd73a` plus this change, Linux, GCC, OpenGL, ROM US 1.0):
+
+- A laser item placed where player 1 will be, with player 0 elsewhere: `gLaserStrength[1]` goes 0 to 1 on the next
+  frame on both clients, its wing health 0 to 60, player 0's lasers stay; hashes and lockstep logs equal over 2100
+  frames. `Player_CheckItemCollect` (`src/engine/fox_play.c:1658`) credits `gPlayerNum` and `ItemPickup_Update`
+  (`src/engine/fox_enmy.c`, case `OBJ_ITEM_LASERS`) raises that slot: the pickup itself is not a defect.
+- Player shots were drawn from `gLaserStrength[0]` (`PlayerShot_DrawLaser`, `fox_beam.c`): player 2's twin shots looked
+  single while Fox was single. A hash cannot see drawing; this change is compiled and read, not run.
+
+Derived (reading, not run on the played build; the test switch exists only from this change on):
+
+- What the player saw ("the host has to pick them up") fits the old pre-collection conversion: `ItemLasers_Update`
+  turned a laser item into a wing repair whenever FOX's wing was broken, and the repair (`func_enmy_80067A40`) healed
+  player 0 whoever collected it.
+
+Rules chosen by the owner on #201 and what changed (all gated on a session, co-op off = upstream):
+
+- Supply crate: one drop from what ANY active player needs (wing repair, silver star below 128 shields, lasers, else
+  bomb). `src/port/coop/game/items.c`, used by `ActorSupplies_Update`. An active player is player 0, or a joined,
+  unparked player who is active or in a U-turn.
+- Laser item: not converted before anyone arrives. The collector decides in `ItemPickup_Update`: with a broken wing
+  their wings are repaired and their lasers not raised, else their lasers go up.
+- Wing repair (`func_enmy_80067A40`, now takes the player): repairs and plays its sound on the collector. Callers:
+  `ItemWingRepair_Update` (collector) and `ActorEvent_8006FE28` (the event actor's repair, any active player in reach).
+- `EVC_SINGLE/TWIN/HYPER/UNK3_LASER`: fire for the best active players (twin, hyper or unk3 if ANY active player has
+  the guns out at that strength; single if no active player has them out).
+
+Open design questions, not decided (player 0 only today):
+
+- `ItemMeteoWarp_Update` (`fox_enmy.c`, the collected branch) warps and sets state on player 0 whoever collected it.
+- `gGoldRingCount[0]` (`ItemSupplyRing_Update`) is one shared count of gold rings, for any collector.
+- `gPlayer[0].alternateView` in `ItemSupplyRing_Update` and `ItemCheckpoint_Update`: a view setting, #30.
+- `Actor_Despawn` (`fox_enmy.c`): only a kill credited to Fox (`dmgSource == AI360_FOX + 1`) adds to `gHitCount` and
+  can start the hit-count drops (`gDropHitCountItem`, 14 hits drops lasers in all-range).
+- `EVC_WING_BROKEN` (`fox_enmy2.c`) fires on player 0's wing alone; `ItemCheckpoint_Update` and `Item_CheckBounds` read
+  player 0 for level flow and path, which co-op players share.
+
 ### 2026-11-08, #191, the level intro skip in a session: the jump back to Play_Init in lockstep
 
 Identity: ROM US 1.0, on top of `4d638b13`, Linux, GCC 16, Release, no window, two games over loopback, input delay 3,

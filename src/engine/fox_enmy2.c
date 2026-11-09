@@ -13,6 +13,8 @@
 #include "assets/ast_venom_2.h"
 #include "assets/ast_titania.h"
 #include "port/coop/game/view.h" // COOP
+#include "port/coop/game/items.h"   // COOP: laser triggers and wing repair look at every player (#201)
+#include "port/coop/game/players.h" // COOP
 #include "assets/ast_7_ti_1.h"
 #include "assets/ast_andross.h"
 #include "assets/ast_area_6.h"
@@ -2037,11 +2039,21 @@ void ActorEvent_ProcessActions(ActorEvent* this) {
 }
 
 void ActorEvent_8006FE28(ActorEvent* this) {
-    if ((fabsf(this->obj.pos.x - gPlayer[0].pos.x) < 100.0f) && (fabsf(this->obj.pos.y - gPlayer[0].pos.y) < 100.0f) &&
-        (fabsf(this->obj.pos.z - gPlayer[0].trueZpos) < 50.0f)) {
-        func_enmy_80067A40();
-        Audio_KillSfxBySourceAndId(this->sfxSource, NA_SE_OB_WING);
-        Object_Kill(&this->obj, this->sfxSource);
+    s32 i;
+
+    // COOP: whoever flies into it is repaired, not only player 0 (#201)
+    for (i = 0; i < (CoopPlayers_IsCoop() ? CoopPlayers_Count() : 1); i++) {
+        if (!CoopItems_Flies(i)) {
+            continue;
+        }
+        if ((fabsf(this->obj.pos.x - gPlayer[i].pos.x) < 100.0f) &&
+            (fabsf(this->obj.pos.y - gPlayer[i].pos.y) < 100.0f) &&
+            (fabsf(this->obj.pos.z - gPlayer[i].trueZpos) < 50.0f)) {
+            func_enmy_80067A40(i);
+            Audio_KillSfxBySourceAndId(this->sfxSource, NA_SE_OB_WING);
+            Object_Kill(&this->obj, this->sfxSource);
+            break;
+        }
     }
 }
 
@@ -2582,25 +2594,25 @@ void ActorEvent_ProcessTriggers(ActorEvent* this) {
             break;
 
         case EVC_SINGLE_LASER:
-            if (gPlayer[0].arwing.laserGunsYpos > -8.0f) {
+            if (CoopItems_LaserEvent(LASERS_SINGLE)) { // COOP: any active player (#201)
                 ActorEvent_TriggerBranch(this);
             }
             break;
 
         case EVC_TWIN_LASER:
-            if ((gPlayer[0].arwing.laserGunsYpos < -8.0f) && (gLaserStrength[0] == LASERS_TWIN)) {
+            if (CoopItems_LaserEvent(LASERS_TWIN)) { // COOP: any active player (#201)
                 ActorEvent_TriggerBranch(this);
             }
             break;
 
         case EVC_HYPER_LASER:
-            if ((gPlayer[0].arwing.laserGunsYpos < -8.0f) && (gLaserStrength[0] == LASERS_HYPER)) {
+            if (CoopItems_LaserEvent(LASERS_HYPER)) { // COOP: any active player (#201)
                 ActorEvent_TriggerBranch(this);
             }
             break;
 
         case EVC_UNK3_LASER:
-            if ((gPlayer[0].arwing.laserGunsYpos < -8.0f) && (gLaserStrength[0] == LASERS_UNK_3)) {
+            if (CoopItems_LaserEvent(LASERS_UNK_3)) { // COOP: any active player (#201)
                 ActorEvent_TriggerBranch(this);
             }
             break;
