@@ -85,6 +85,7 @@ def all_steps():
         Step("checks", SERIAL, ["check.py"]),
         Step("package", SERIAL, ["package_test.py"]),
         Step("math", SERIAL, ["math_test.py"]),
+        Step("rand_order", SERIAL, ["rand_order_test.py"]),
         Step("handover", SERIAL, ["handover_test.py"]),
         Step("net", SERIAL, ["net_test.py"], "build", "net"),
         Step("session", SERIAL, ["session_test.py"], "build", "net"),

@@ -421,8 +421,9 @@ endif()
 if(NOT MSVC)
     # aim.c (#193) chooses the nearest player by comparing squared distances: the same rule, so a near tie must not depend
     # on a fused multiply-add either.
+    # rand_order.c (#199) gives a draw times a scale minus another: the bits of the game's own expression on x86-64.
     set_source_files_properties(src/port/coop/math/sincos.c src/port/coop/math/atan.c src/port/coop/game/aim.c
-        PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
+        src/port/coop/math/rand_order.c PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
 endif()
 
 option(USE_STANDALONE "Build as a standalone executable" OFF)

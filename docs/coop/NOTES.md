@@ -3558,6 +3558,104 @@ player 0 loses 100.
 
 ## Determinism
 
+### 2026-11-09, #199, two random draws in one expression: the Windows and Linux games took them in two orders
+
+Identity: the hand-played session of 2026-11-09, Windows (MSVC) host against Linux (GCC) client, build
+`6becd73ad40b` on both, US 1.0. Tests on `6becd73a` and on this change: Linux, GCC, Release (`-O3`), no window, one PC.
+Line numbers as of this change; in the played `6becd73a` the line of the cause is `fox_tank.c:129`.
+
+Observed:
+
+- `desync_report.py diff` of the two reports of frame 49130: only `effects`, `gEffects[50]`, 7 of 176 bytes. The port's
+  64-bit `Effect` offsets, from the disassembly of `func_tank_800438E0` in the played Linux build: `obj.pos` +0x04,
+  `obj.rot` +0x10, `timer_50` +0x68, `vel` +0x6c, `unk_60` +0x78, `scale2` +0x88. The two floats that differ are
+  `obj.pos.x` (host 34.7548, client 35.3961) and `vel.x` (+0x6c: host `0xbf7c13e8` = -0.98468, client `0xbeafcb4c` =
+  -0.34335). Both differ by 0.6413: `pos.x` is the spawn x plus one step of `vel.x`.
+- The effect is the Landmaster's tread dust, `func_tank_800438E0` (`src/engine/fox_tank.c:121-141`, id 357,
+  `timer_50 = RAND_INT(5.0f) + 8`, 10 after one update). `func_tank_80043AA0` spawns it from `func_tank_80043B18`
+  (`:184-220`), which runs on every frame that a grounded tank moves (`:480-489`). In Macbeth that starts with Fox's
+  first active frame. Corneria, Meteo, Fortuna and Solar, the levels before in that session, run no tank code.
+- The dumped seeds (`rng` region) are the same on both games. The generator (`src/sys/sys_math.c:22-36`) can be walked
+  back, as each seed is multiplied modulo a prime. The eleventh to the second draw before the dump state are the puff's
+ten draws: they give `vel.y`,
+  `vel.z`, `scale2`, timer 11, `rot.x` 218.3405 and `unk_60` bit for bit on both sides. `vel.x` is
+  `RAND_FLOAT(1.0f) - RAND_FLOAT(2.0f)` (`fox_tank.c:131`): with the draws 0.7709018 and 0.5571249 in the order written
+  it is `0xbeafcb4c`, the client's value, and in the other order `0xbf7c13e8`, the host's, bit for bit.
+- GCC, in the played Linux build: `func_tank_800438E0` keeps the first draw, doubles the second and subtracts
+  (`movd %xmm0,%r14d`, `addss %xmm0,%xmm0`, `subss`, store at +0x6c). The left draw comes first.
+- MSVC, measured on Compiler Explorer (compile API only; `x64 msvc v19.44 VS17.14`, "Microsoft (R) C/C++ Optimizing
+  Compiler Version 19.44.35219 for x64"; `/O2 /Ob2 /Oi /Gy /permissive- /DNDEBUG /std:c11`, the project's Release
+  flags; the function as in the repo, with stub types; the owner approved sending it): keeps the first draw, doubles it,
+  subtracts it from the second, stores at +108. The right draw comes first, which gives the host's value.
+- Call arguments, same compiler and flags: `Macbeth_8019A8C8` (`src/overlays/ovl_i5/fox_ma.c:715-743`, the whole
+  function, three calls of 14 draws each), and the calls at `fox_tank.c:689` (`Effect_Effect359_Spawn`) and
+  `src/engine/fox_play.c:247` (`Effect_Effect389_Spawn`), each alone in a function of its own. MSVC takes the arguments
+  right to left: the last argument's draw first. So does GCC: the played build at `fox_tank.c:689`, `fox_play.c:247` and
+  `:258` (disassembly), and at the start of `Macbeth_8019A8C8` (its first draw is the scale, argument 15); the same
+  snippets compiled with GCC `-O3` and run with numbered draws put draw 14 in argument 1 down to draw 1 in argument 15.
+- Single PC, two games of one session as `hash_check.py views` plays them (local index 0 and 1,
+  `gCoopDebugPlayerCount` 2, `gInvincible`, input by rule), started in Macbeth before its intro, player trace on. Fox's
+  intro ends at game frame 264 (state 2 -> 3); player 2 stays parked:
+  - `6becd73a` against itself: `equal on all 2680 frames`, about 2400 of them after the intro.
+  - this change against itself: `equal on all 2680 frames`. Against `6becd73a`, client for client: `no difference on the
+    2741 common frames` and `on the 2774`, every region. On GCC the session path gives the old bits.
+  - `6becd73a` against a throwaway build whose helper takes the right draw first, MSVC's order: `differ: frame 276
+    (gamestate 7, level 11) ... regions differing: effects`. Hash frame 276 is about game frame 271, seven frames after
+    the intro. That is the desync of the session, on one PC.
+  - Co-op off, one player: `hash_check.py base` (Corneria through the menus) `equal on all 5800 frames`; Macbeth as
+    above with one player, `6becd73a` against this change: `equal on all 2680 frames`.
+  - Run (b): `issue/combined-test` with #179 (a tank for every player) and #198 merged, and this change, on a scratch
+    branch (build `677aca4452ea`): `lockstep_test.py --only vehicle_end --levels macbeth`, two real clients in
+    lockstep over loopback, pilots driving both tanks: `ok vehicle_end: same hash; Macbeth 14000 frames, level
+    complete at 9956, player 1 drove on 11410`. Not run without this change: on GCC it gives the old bits (above).
+
+Derived:
+
+- The cause is `fox_tank.c:131` (`:129` in `6becd73a`). C leaves the order of two calls in one expression to the
+  compiler; MSVC 19.44 at `/O2` takes the right one first there, GCC the left one. The generator is not at fault (the
+  same seeds, the same draws), so #186's way, replacing the primitive, cannot help: the draws have to be put in order.
+  In a session the line now calls `CoopRand_Difference` (`src/port/coop/math/rand_order.c`), which draws left to right,
+  as written and as GCC does; co-op off keeps the game's own expression.
+- Any other statement with two draws as operands of one expression (class `operator` in `tools/coop/rand_order.py`)
+  can part the games the same way. The 18 left are in Titania (`src/overlays/ovl_i5/fox_ti.c:1628-1639`, `:1662-1664`,
+  `:3874`, `:5507-5508`, `:5531-5532`, `:5558-5559`, `:5585-5586`), all `((Rand_ZeroOne() < 0.5f) ? -1 : 1) *
+  (a + RAND_FLOAT(b))`. GCC draws the sign first (disassembly of `Titania_TiDesertCrawler_Update`). Not fixed here: with
+  the co-op gate each becomes two or three lines after clang-format. One more helper,
+  `CoopRand_SignedFloat(offset, range)` drawing the sign first, would cover all 18: `(a + RAND_FLOAT(b))` and
+  `(RAND_FLOAT(b) + a)` give the same bits, as do `-1` and `-1.0f`.
+- The 232 statements with draws in two arguments of one call (class `args`): on the sites measured, both compilers go
+  right to left and agree. That fits the 27 minutes of Corneria, Meteo, Fortuna and Solar, each to its end, that stayed
+  in step before Macbeth.
+
+Unknown:
+
+- MSVC on the other argument sites and inside their real functions: a snippet has stub types, and two of the three
+  sites stood alone. Other MSVC versions, and Debug builds. MSVC's documentation promises no order; C leaves it open.
+- MSVC on the Titania sites (not sent).
+- clang: commonly left to right for arguments (not checked here). If so, a macOS game differs from both on all 232.
+- Two calls in one expression where one of them draws inside (the scan sees direct draws only).
+- What Macbeth shows next between Windows and Linux once this is fixed.
+
+The open sites, which `tools/coop/rand_order.py --check` (in `check.py`) holds by file and class, so a new one fails:
+
+| File | Level | `args` | `operator` |
+|---|---|---|---|
+| `src/engine/fox_beam.c`, `fox_effect.c`, `fox_enmy.c`, `fox_enmy2.c`, `fox_hud.c`, `fox_play.c` | every level | 3, 3, 2, 4, 5, 12 | |
+| `src/engine/fox_demo.c` | intros and cutscenes | 5 | |
+| `src/engine/fox_tank.c` | Landmaster: Titania, Macbeth | 3 | |
+| `src/overlays/ovl_i1/fox_co.c` | Corneria | 9 | |
+| `ovl_i2/fox_me.c`, `fox_sx.c` | Meteo, Sector X | 1, 1 | |
+| `ovl_i3/fox_a6.c`, `fox_aq.c`, `fox_so.c`, `fox_zo.c` | Area 6, Aquas, Solar, Zoness | 1, 43, 15, 15 | |
+| `ovl_i4/fox_bo.c`, `fox_fo.c`, `fox_ka.c`, `fox_sz.c` | Bolse, Fortuna, Katina, Sector Z | 9, 4, 3, 3 | |
+| `ovl_i5/fox_ma.c` | Macbeth | 59 | |
+| `ovl_i5/fox_ti.c`, `fox_ti_cs.c` | Titania, its cutscenes | 1, 3 | 18 |
+| `ovl_i6/fox_andross.c`, `fox_sy.c` | Venom 2 (Andross), Sector Y | 20, 8 | |
+
+`python tools/coop/rand_order.py` prints every site with its line. How to name the draws behind a dumped float, for the
+next desync of this kind: walk `sRandSeed1-3` of the report back with the inverse multipliers (171, 172 and 170 modulo
+30269, 30307 and 30323; the seeds can be negative, and C's `%` keeps the sign), compute each draw as
+`Rand_ZeroOne` does in float, and look for the run of draws that gives the fields that agree.
+
 ### 2026-11-09, #192, what the draw writes into hashed state behind a camera test
 
 Identity: two hand-played Windows (MSVC 1944) host against Linux (GCC 16.2) client sessions, US 1.0, build
