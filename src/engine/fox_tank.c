@@ -3,6 +3,7 @@
 #include "assets/ast_titania.h"
 #include "port/hooks/Events.h"
 #include "port/coop/game/players.h" // COOP: who fired, per player (#86)
+#include "port/coop/math/rand_order.h" // COOP: two draws in their written order in a session (#199)
 
 void func_tank_80047754(Player* player);
 void func_tank_80047D38(Player* player, f32);
@@ -126,7 +127,8 @@ void func_tank_800438E0(Effect* effect, f32 xPos, f32 yPos, f32 zPos, f32 scale)
     effect->obj.pos.x = xPos;
     effect->obj.pos.y = yPos;
     effect->obj.pos.z = zPos;
-    effect->vel.x = RAND_FLOAT(1.0f) - RAND_FLOAT(2.0f);
+    // COOP: in a session the left draw first, as written; C leaves it to the compiler, and MSVC took the right (#199)
+    effect->vel.x = CoopPlayers_IsCoop() ? CoopRand_Difference(1.0f, 2.0f) : RAND_FLOAT(1.0f) - RAND_FLOAT(2.0f);
     effect->vel.y = RAND_FLOAT(3.0f) - (gPlayer[0].vel.z / 5.0f) + 3.0f;
     effect->vel.z = RAND_FLOAT(3.0f) - (gPlayer[0].vel.z / 5.0f) + 2.0f;
     effect->scale2 = (RAND_FLOAT(0.8f) + 0.3f) * scale;

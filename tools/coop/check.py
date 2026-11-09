@@ -127,6 +127,13 @@ def main():
         failures.append("tools/coop/crash_test.py failed:\n  "
                         + "\n  ".join((crash.stdout + crash.stderr).strip().splitlines()))
 
+    # 12. Random draws whose order the compiler picks (#199): no new ones, and the scanner still passes its own tests.
+    for args in (("rand_order.py", "--check"), ("rand_order_test.py", "--no-compiler")):
+        order = run_tool(*args)
+        if order.returncode != 0:
+            failures.append(f"tools/coop/{' '.join(args)} failed:\n  "
+                            + "\n  ".join((order.stdout + order.stderr).strip().splitlines()))
+
     # Info: where the fork diverges from upstream game code.
     grep = git("grep", "-n", "COOP:", "--", "src", "include", ":!src/port/coop")
     markers = len(grep.stdout.splitlines()) if grep.returncode == 0 else 0
