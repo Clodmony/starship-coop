@@ -110,7 +110,7 @@ PROBE_RULES_COOP_OFF = {
 PLAYER_ARRAYS = (  # state_hash.c, sPlayerArrays: region players, in co-op only
     "gLeftWingHealth", "gRightWingHealth", "gLaserStrength", "gChargeTimers", "gUturnDownTimers", "gUturnBrakeTimers",
     "gLoopDownTimers", "gLoopBoostTimers", "gLeftWingDebrisTimer", "gRightWingDebrisTimer", "gHasShield",
-    "gShieldTimer", "gShieldAlpha",
+    "gShieldTimer", "gShieldAlpha", "gCoopTankState", "gCoopMarineState",  # the last two: #16, one vehicle set per player
 )
 PLAYER_GLOBALS = ("gLifeCount", "gBombCount", "gPlayerScores")  # HashGlobals: region globals, with co-op off too
 # HashGlobals: one value, region globals, in co-op only (#129). The low-health radio timer: a drifted one would show only
