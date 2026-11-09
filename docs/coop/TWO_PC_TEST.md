@@ -37,7 +37,8 @@ and that a desync, if one happens, is caught and reported.
    join and a ping.
 4. **Both:** pick a character. The host flies Fox; the other player picks a wingman.
 5. **Host:** click **Start the level**. Both games go to Corneria together.
-6. **Fly the level together.** Either player's Start pauses both games. Intro skip is off in a session.
+6. **Fly the level together.** Either player's Start pauses both games. If the host's save has Corneria cleared,
+   either player's Start in the intro skips it on both games; otherwise Start does nothing there (#191).
 7. **Stop at the map** after the level is complete, and quit. The map is not tested yet: each player has their own
    save, and the map reads it.
 

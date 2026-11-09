@@ -519,8 +519,10 @@ BREAKS = [
     ("level_read_byte_2", READ_VALUE, READ_VALUE.replace("((uint32_t) data[2] << 16) |", "0 |"), SIM),
     ("level_read_byte_3", READ_VALUE, READ_VALUE.replace("((uint32_t) data[3] << 24)", "0"), SIM),
     ("level_read_values_lost", "start->values[i] = (int32_t) value;\n", "", SIM),
-    ("level_size_short", "#define LEVEL_START_SIZE (2 + COOP_SESSION_PLAYERS + 4 * COOP_LEVEL_START_VALUES)",
-     "#define LEVEL_START_SIZE (2 + COOP_SESSION_PLAYERS + 4 * COOP_LEVEL_START_VALUES - 1)", SIM),
+    ("level_size_short", "#define LEVEL_START_SIZE (2 + COOP_SESSION_PLAYERS + 4 * COOP_LEVEL_START_VALUES + 1)",
+     "#define LEVEL_START_SIZE (2 + COOP_SESSION_PLAYERS + 4 * COOP_LEVEL_START_VALUES)", SIM),
+    ("level_write_cleared_lost", "*out = start->cleared ? 1 : 0;", "*out = 0;", SIM),
+    ("level_read_cleared_lost", "start->cleared = *data;", "start->cleared = 0;", SIM),
 
     # Level start: what the host owes.
     ("level_stale_buffer", "LevelStart_Write(&s->level, s->buffer);\n", "", SIM),
@@ -567,6 +569,7 @@ BREAKS = [
     ("level_unpicked_skips_first", LEVEL_UNPICKED, LEVEL_UNPICKED.replace("i = 1", "i = 2"), SIM),
     ("level_unpicked_skips_last", LEVEL_UNPICKED,
      LEVEL_UNPICKED.replace("i < COOP_SESSION_PLAYERS", "i < COOP_SESSION_PLAYERS - 1"), SIM),
+    ("level_cleared_any_value", "return data[LEVEL_START_SIZE - 1] <= 1;", "return true;", SIM),
 ]
 
 # Texts the sanitizer breaks use more than once.

@@ -24,19 +24,19 @@ pattern without reading the code, so treat it as a guess.
 
 ## Summary
 
-1904 sites in 431 functions in 46 files.
+1903 sites in 431 functions in 46 files.
 A function whose sites have more than one verdict counts once per verdict in the functions column.
 
 | verdict | sites | functions | `gPlayer[0]` | `gPlayer->` | `gPlayer arg` | `gMainController` | `gCamCount` | `shooter` |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | sim | 1062 | 193 | 1059 | 1 | 2 | 0 | 0 | 0 |
 | view | 216 | 84 | 151 | 0 | 0 | 43 | 3 | 19 |
-| input | 14 | 9 | 0 | 0 | 0 | 9 | 0 | 5 |
+| input | 13 | 9 | 0 | 0 | 0 | 8 | 0 | 5 |
 | flow | 374 | 88 | 334 | 0 | 3 | 3 | 0 | 34 |
 | setup | 53 | 34 | 1 | 0 | 1 | 0 | 51 | 0 |
 | ok | 185 | 83 | 5 | 2 | 15 | 87 | 8 | 68 |
 
-Basis per site: read 269, site 1038, name 597.
+Basis per site: read 269, site 1037, name 597.
 
 ## Sites
 
@@ -341,7 +341,7 @@ Basis per site: read 269, site 1038, name 597.
 | `Play_UpdateLevel` | 6873:P0, 6874:P0, 6875:P0, 6876:P0, 6877:P0, 6890:P0, 6891:P0, 6906:P0, 6915:P0, 6916:P0, 6941:P0, 6946:P0, 6949:P0, 6952:P0, 6955:P0, 6958:P0, 6961:P0, 6971:P0, 6973:P0, 6975:P0, 6976:P0, 6978:P0, 6979:P0, 6981:P0, 6987:P0, 6991:P0, 6993:P0, 6999:P0, 7009:P0, 7015:P0, 7016:P0 | flow | site | per-level triggers on player 0: level complete, warp zone, Solar heat damage to player 0 only, Venom 2 / Aquas checks |
 | `Play_UpdateLevel` | 6878:PA | flow | site | Camera_Update360 for player 0 as Venom 2 ends: level complete is one player's (WP-16) |
 | `Play_Main` | 7169:P0, 7170:P0, 7172:P0, 7173:P0, 7174:P0, 7211:P0, 7243:P0, 7244:P0 | flow | site | all-range z setup for player 0 only |
-| `Play_Main` | 7210:MC, 7243:MC | input | site | Start (intro skip, pause, unpause) and R while paused (toggles gShowReticles[0], no radio here) are read from gMainController only; versus reads R per controller |
+| `Play_Main` | 7243:MC | input | site | R while paused (toggles gShowReticles[0], no radio here) is read from gMainController only; Start (intro skip, pause, unpause) goes through CoopPlayers_PausePressed, any player in co-op (#20, #191); versus reads R per controller |
 | `Play_Main` | 7223:CC | setup | site | intro skip resets gCamCount to 1; its sound cleanup loop is on CoopPlayers_Count() since WP-10 |
 
 ### `src/engine/fox_radio.c`

@@ -27,7 +27,7 @@ src/engine/fox_play.c	Camera_SetStarfieldPos	view	site	starfield from player 0 c
 src/engine/fox_play.c	Camera_SetupLights	view	site	lights depend on player 0 state
 src/engine/fox_play.c	Play_UpdateLevel	flow	site	per-level triggers on player 0: level complete, warp zone, Solar heat damage to player 0 only, Venom 2 / Aquas checks
 src/engine/fox_play.c	Play_Main@gPlayer[0]	flow	site	all-range z setup for player 0 only
-src/engine/fox_play.c	Play_Main@gMainController	input	site	Start (intro skip, pause, unpause) and R while paused (toggles gShowReticles[0], no radio here) are read from gMainController only; versus reads R per controller
+src/engine/fox_play.c	Play_Main@gMainController	input	site	R while paused (toggles gShowReticles[0], no radio here) is read from gMainController only; Start (intro skip, pause, unpause) goes through CoopPlayers_PausePressed, any player in co-op (#20, #191); versus reads R per controller
 src/engine/fox_play.c	Play_Main@gCamCount	setup	site	intro skip resets gCamCount to 1; its sound cleanup loop is on CoopPlayers_Count() since WP-10
 src/engine/fox_game.c	Game_Update	setup	site	viewports from gCamCount (1, 2, 4); GSTATE_INIT resets to 1; player loop for draw
 src/engine/fox_display.c	Display_Update@gCamCount	setup	site	gCamCount != 1 draws the versus HUD; the five player draw loops are on CoopPlayers_Count() since WP-10

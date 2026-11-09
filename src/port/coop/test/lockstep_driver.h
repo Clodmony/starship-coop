@@ -18,7 +18,8 @@
 //   SF64_COOP_LOCKSTEP_MUTE=<frame>    stop sending input from this frame on, with the connection left up
 //   SF64_COOP_LOCKSTEP_POKE=<frame>    flip a bit of game state on this frame, as SF64_COOP_HASH_POKE does
 //   SF64_COOP_LOCKSTEP_SLOW=<n>:<ms>   every n frames this game takes that much longer
-//   SF64_COOP_LOCKSTEP_CLEARED=1       this game's save says Corneria is cleared; saves are each client's own
+//   SF64_COOP_LOCKSTEP_CLEARED=1       this game's save says Corneria is cleared, from boot on; saves are each
+//                                      client's own, and a host's level start carries it (#191)
 //   SF64_COOP_LOCKSTEP_ZERO_SEED=<frame>:<n>  sRandSeed<n> is 0 from this frame on, as a stray write leaves it
 // With none set, no listener is registered and the game runs unchanged. Without a feed or a pilot port 0 stays empty,
 // so no pad on this PC reaches a test.
