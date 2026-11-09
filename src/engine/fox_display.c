@@ -746,18 +746,6 @@ void Display_Arwing(Player* player, s32 reflectY) {
     Vec3f sp4C;
     f32 sp48;
 
-    // COOP: Display_ArwingWings writes these fields into the Player, and the state hash covers them. The cockpit view
-    // never gets there, so the game that looks through this player would hold other values than the others (#192):
-    // every game sets them here, from the same inputs, whatever it draws.
-    if (CoopPlayers_IsCoop()) {
-        player->arwing.laserGunsXpos =
-            (player->arwing.laserGunsYpos < -7.0f) ? (-player->arwing.laserGunsYpos - 7.0f) * 2.5f : 0.0f;
-        if ((gLevelType == LEVELTYPE_SPACE) || (gCurrentLevel == LEVEL_BOLSE)) {
-            player->arwing.unk_28 = player->arwing.upperRightFlapYrot = player->arwing.bottomRightFlapYrot =
-                player->arwing.upperLeftFlapYrot = player->arwing.bottomLeftFlapYrot = 0.0f;
-        }
-    }
-
     if ((gPlayerNum == player->num) && (reflectY == 0)) {
         sp48 = 0.0f;
         if (gChargeTimers[player->num] >= 20) {

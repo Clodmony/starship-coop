@@ -320,6 +320,17 @@ int32_t CoopPlayers_SkipLowHealthMsg(Player* player) {
     return (player->num > 0) && CoopPlayers_IsCoop();
 }
 
+void CoopPlayers_SetLaserGunsX(Player* player) {
+    if (!CoopPlayers_IsCoop()) {
+        return;
+    }
+    // Display_ArwingWings, src/engine/fox_display.c
+    player->arwing.laserGunsXpos = 0.0f;
+    if (player->arwing.laserGunsYpos < -7.0f) {
+        player->arwing.laserGunsXpos = (-player->arwing.laserGunsYpos - 7.0f) * 2.5f;
+    }
+}
+
 int32_t CoopPlayers_PausePressed(void) {
     s32 i;
 

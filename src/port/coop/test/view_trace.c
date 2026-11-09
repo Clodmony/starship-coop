@@ -14,6 +14,7 @@
 extern f32 D_801617AC;
 extern s32 sHudBombCount;
 extern bool sDrawCockpit;
+extern u8 sPlayersVisible[];
 extern SfxRequest sSfxRequests[];
 extern PlayerNoiseModulation sPlayerNoise[];
 extern u8 sSfxRequestWriteIndex;
@@ -35,7 +36,7 @@ typedef struct {
     s32 frame;
     s32 player;
     ViewPokeKind kind;
-    s32 value;
+    f32 value; // a whole number, but for guns, which can take a half step
     bool done;
 } ViewPoke;
 
@@ -51,28 +52,29 @@ static void CoopViewTrace_Poke(ViewPoke* poke) {
 
     switch (poke->kind) {
         case VIEW_POKE_SHIELDS:
-            player->shields = poke->value;
+            player->shields = (s32) poke->value;
             break;
         case VIEW_POKE_BOMBS:
-            gBombCount[poke->player] = poke->value;
+            gBombCount[poke->player] = (s32) poke->value;
             break;
         case VIEW_POKE_LIVES:
-            gLifeCount[poke->player] = poke->value;
+            gLifeCount[poke->player] = (s32) poke->value;
             break;
         case VIEW_POKE_BOOST:
-            player->boostMeter = poke->value;
+            player->boostMeter = (s32) poke->value;
             break;
         case VIEW_POKE_HIT:
-            Player_ApplyDamage(player, 0, poke->value);
+            Player_ApplyDamage(player, 0, (s32) poke->value);
             break;
         case VIEW_POKE_DOWN:
             // What Player_Update wants before it calls Player_Down; gInvincible keeps the timer from being set by a hit.
             player->shields = 0;
-            player->radioDamageTimer = poke->value;
+            player->radioDamageTimer = (s32) poke->value;
             break;
         case VIEW_POKE_GUNS:
-            // Where the laser guns of the Arwing are (-10 fully out); the draw derives laserGunsXpos from it (#192).
-            player->arwing.laserGunsYpos = (f32) poke->value;
+            // Where the laser guns of the Arwing are (-10 fully out, in steps of 0.5 as Player_Shoot moves them);
+            // laserGunsXpos follows from it (#192).
+            player->arwing.laserGunsYpos = poke->value;
             break;
     }
 }
@@ -137,6 +139,15 @@ static void CoopViewTrace_OnGamePostUpdate(IEvent* event) {
                 p->shields, gBombCount[i], gLifeCount[i], p->alternateView, p->sfxSource[0], p->sfxSource[1],
                 p->sfxSource[2], p->pos.x, p->pos.y, p->trueZpos);
     }
+    fputs(" seen=", sFile);
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        fprintf(sFile, "%s%d", (i == 0) ? "" : ",", sPlayersVisible[i]);
+    }
+    fputs(" guns=", sFile);
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        fprintf(sFile, "%s%g/%g", (i == 0) ? "" : ",", gPlayer[i].arwing.laserGunsYpos,
+                gPlayer[i].arwing.laserGunsXpos);
+    }
     fputs(" noise=", sFile);
     for (i = 0; i < CoopPlayers_Count(); i++) {
         fprintf(sFile, "%s%d", (i == 0) ? "" : ",", sPlayerNoise[i].form);
@@ -162,7 +173,7 @@ static void CoopViewTrace_ReadPokes(const char* text) {
         char what[16];
         u32 kind;
 
-        if (sscanf(text, "%d:%d:%15[a-z]:%d", &poke->frame, &poke->player, what, &poke->value) == 4) {
+        if (sscanf(text, "%d:%d:%15[a-z]:%f", &poke->frame, &poke->player, what, &poke->value) == 4) {
             for (kind = 0; kind < ARRAY_COUNT(sPokeNames); kind++) {
                 if (strcmp(what, sPokeNames[kind]) == 0) {
                     poke->kind = (ViewPokeKind) kind;

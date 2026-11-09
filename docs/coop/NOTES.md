@@ -3355,6 +3355,65 @@ Unknown:
 
 ## Determinism
 
+### 2026-11-09, #192, what the draw writes into hashed state behind a camera test
+
+Identity: two hand-played Windows (MSVC 1944) host against Linux (GCC 16.2) client sessions, US 1.0, build
+`fdb12971d982` for the second; the tests on top of `c714860c` (batch A), Linux, GCC 16.2, Release, no window, one PC.
+
+Observed, from the two reports (`desync_report.py diff`; Player layout from `gdb ptype /o` on a build with the game's
+flags, `arwing` at +1196, `laserGunsYpos` +1216, `laserGunsXpos` +1220):
+
+- Meteo, frame 14111: `gPlayer[0].laserGunsXpos` 0 on the host, 1.25 on the client, `laserGunsYpos` -7.5 on both.
+  Player 0 is in cockpit view (`alternateView` 1). The host looks through it and draws the cockpit, which skips
+  `Display_ArwingWings` (`src/engine/fox_display.c:762-773`; line numbers as of this change), the one writer of the
+  field (`:634-636`).
+- Corneria, frame 4461, with the first fix (`6bd6445f`, a block at the top of `Display_Arwing`): `gPlayer[1]`
+  `laserGunsXpos` 7.5 on the host, 6.25 on the client; `laserGunsYpos` is -9.5 on both. So the guns were going in
+  (-10 to -9.5, `Player_Shoot`, `src/engine/fox_play.c:3473-3477`), and the host, not the client, kept the old value.
+  Neither player is in cockpit view. Seen from player 0's rails camera, player 1 sits about 1625 to the side at a depth
+  of about 420, where `Display_CheckPlayerVisible` (`fox_display.c:1440-1461`) allows about 1130: the host culls player
+  1 and `Display_Player_Update` returns before `Display_DrawPlayer` (`:1493`, `:1513`, `:1546`). An estimate from the
+  dumped eye, target and positions that leaves out camera roll; the margin is wide.
+- Run, `view_check.py --section rails`, on batch A with only the new test: `view: rails: guns: ok: ... frames 2121 to
+  2125: player 1's guns out to -9.5 and -9.5, out of view of client 0 on 5 of 5` and `view: rails: hash: FAIL: frame
+  2131 (gamestate 7, level 0): ... regions differing: players` (the hash log counts its own frames, about ten ahead of
+  `gGameFrameCount`). A trace of the field showed client 0 at 0 and client 1 at 1.25 to 6.25 from game frame 2121.
+  The pokes in player 1's cockpit view (frames 1931 to 1935) stayed equal: `6bd6445f` covered that case.
+- The same run after the fix: `view: rails: hash: ok: equal on all 2620 frames`, `view: PASS`.
+
+What the draw writes into a hashed struct, and what decides whether a client runs it. Gates that differ by client:
+the cull in `Display_Player_Update` (also on the water reflection pass), the cockpit branch of `Display_Arwing`
+(`CoopPlayers_IsViewed`), `gPlayerNum == player->num`, the camera player in `Display_Update`, the view tests of
+`Item_Draw`, `Scenery360_Draw` and the sprite loop (`func_enmy_80060FE4`, `src/engine/fox_edisplay.c:1929`):
+
+| Field | Written | Gate | Read by the simulation | Verdict |
+|---|---|---|---|---|
+| `Player.arwing.laserGunsXpos` | `fox_display.c:634-636` | cull, cockpit, reflection | No: draw only (`:617-622`) | Pure function of `laserGunsYpos`. Now set in the simulation after each write of that (`fox_play.c:3478`, `:4981`, `CoopPlayers_SetLaserGunsX`); the draw writes the same value again. `6bd6445f`'s block is gone |
+| `arwing.unk_28`, the four flap angles | `fox_display.c:790-791`, space levels and Bolse | cull, cockpit | Only to step themselves (`fox_play.c:3554-3571`, `:3791-3795`, `fox_demo.c`, overlays) or copy one into another (`src/overlays/ovl_i1/fox_co.c:3377-3378`) | Can differ, stays in these five fields. Left out of the hash since #96 (`src/port/coop/sync/state_hash.c:246-250`) |
+| `Player.shadowing` | `fox_display.c:871-873` | cull (`sPlayersVisible`) | No: draw only | Left out of the hash (`state_hash.c:245`) |
+| `sfxSource`, `sfxVel`, `sfx` | `fox_display.c:1759-1776` | camera space | Sound only | Left out of the hash (`state_hash.c:242-244`) |
+| `camYaw`, `camPitch` | `Display_Update` | camera player | Yes, 27 sites | Handled by #96 (`CoopView_BeginDraw`, `CoopView_EndDraw`) |
+| `arwing.teamFaceXrot`, `teamFaceYrot` | `Display_CsLevelCompleteHandleCamera`, `fox_display.c:1787-1788` | camera player in an all-range level complete | No: draw only (`:670-671`) | Same on every client today: once player 0 leaves ACTIVE or U_TURN every other player is parked (`src/port/coop/game/players.c:208-214`) and a parked client looks through player 0 (`:94-96`). Would part if a flying player other than 0 could be in a level complete while the simulation sets a face angle: Sector Y does every frame of its message (`src/overlays/ovl_i6/fox_sy.c:2265`, all-range by then through `gChangeTo360`, `src/engine/fox_demo.c:788`). Not changed. Cases 1 to 3 never run: `D_display_800CA220` is only ever 0 (`fox_display.c:27`, `fox_play.c:2853`) |
+| `Sprite.obj.pos.y` | `fox_edisplay.c:1105-1107`, adds `gCameraShakeY` and takes it away | the sprite loop's view test, all-range and level intro | Yes: position, hitboxes (`OBJ_SPRITE_FO_POLE`) | Can round, and turns -0.0 into 0.0 with no shake at all: in float32, `(y + s) - s != y` in 3684 of 384000 cases with y from -200 to 1000 in steps of 0.5 and s as the shake (for example y -128, s -0.985 gives -127.99999). The intro is the same on every client (player 1 is parked, all look through player 0); all-range is not. Now put back exactly in co-op. Not run: no test reaches a shaking camera beside a sprite in all-range |
+| `obj.pos.y` of scenery, rails actors, bosses, rails effects | `fox_edisplay.c:1051-1053`, `:1143-1145`, `:1325-1327`, `:1428-1430` | none: every client runs them | Yes | Rounds alike on every client: harmless |
+| `obj.rot.y` of `OBJ_ITEM_METEO_WARP` | `fox_edisplay.c:930` | `Item_Draw` view test | No | Left out of the hash since #96 (`state_hash.c:389`). The other item draw functions write nothing |
+| Actor, boss and effect draw writes (limbs, `iwork`, lock-ons, kills, `D_edisplay_801615D0`) | #96 | #96 | Yes | Handled by #96: run on every client (`CoopView_DrawAnyway`) |
+| `D_display_80161518`, `801613B0`, `801613E0`, `80161548`, `sReticleScales`, `sPlayersVisible`, `gVsLockOnTimers` | player draws | cull, `gPlayerNum` | No (`gVsLockOnTimers` versus only) | Not hashed |
+
+Derived:
+
+- The class is a hashed field written by draw code behind a test only some clients pass. `6bd6445f` covered one of
+  the two tests in front of `Display_ArwingWings` (the cockpit), not the cull, so a field the draw keeps up to date has
+  to come from the simulation, or out of the hash, not from a draw that every client is asked to run.
+- Nothing found here feeds the simulation from the draw that #96 had not already moved; the two that can part the
+  hash are fixed above, and the face angles wait on a game rule for who flies a level complete.
+
+Unknown:
+
+- Whether Fortuna's poles have a height that rounds, and whether any other all-range level has sprites with one.
+- Scenery360 draw functions of Bolse, Katina, Sector Z, Fortuna and Venom 2: #96 says they write nothing; only Sector
+  Y's and Andross's were read again here.
+
 ### 2026-11-06, #96, draw code is part of the simulation: one camera per client
 
 Identity: ROM US 1.0, branch `issue/96-draw-state` on top of `797c678b`, Linux, GCC, Debug, OpenGL on a software

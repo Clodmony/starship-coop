@@ -113,6 +113,12 @@ int32_t CoopPlayers_DmgSource(int32_t sourceId);
 // #87); a later record can change it here.
 int32_t CoopPlayers_SkipLowHealthMsg(struct Player* player);
 
+// Call after every change of player->arwing.laserGunsYpos (Player_Shoot, Player_Setup). In co-op it sets
+// laserGunsXpos from it, as Display_ArwingWings does when it draws the wings, so the field ends every frame the same on
+// every client: a client that looks through the player in cockpit view, or has it out of view, does not draw the wings
+// (#192). Nothing outside co-op, where the draw alone writes it, as upstream.
+void CoopPlayers_SetLaserGunsX(struct Player* player);
+
 // Nonzero when Start went down on this frame for whoever may pause or resume, or skip a level intro (#191): any player
 // in co-op, by the owner's decision on #12, gMainController otherwise. The pad slots hold every player's input on every
 // client (input.h), so all of them pause on the same frame. What the pause menu does next stays on player 0, as

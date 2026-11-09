@@ -3475,6 +3475,7 @@ void Player_Shoot(Player* player) {
                 } else {
                     Math_SmoothStepToF(&player->arwing.laserGunsYpos, 0.0f, 1.0f, 0.5f, 0.0f);
                 }
+                CoopPlayers_SetLaserGunsX(player); // COOP: not left to the draw, which can skip it (#192)
                 if (rapidFire && (gShootButton[player->num] & gInputHold->button)) {
                     if (player->shotTimer <= 0) {
                         player->shotTimer = 3;
@@ -4977,6 +4978,7 @@ void Player_Setup(Player* playerx) {
     if (gLaserStrength[gPlayerNum] > LASERS_SINGLE) {
         player->arwing.laserGunsYpos = -10.0f;
     }
+    CoopPlayers_SetLaserGunsX(player); // COOP: as in Player_Shoot (#192)
     gPauseEnabled = false;
 }
 
