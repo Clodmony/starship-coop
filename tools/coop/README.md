@@ -3,6 +3,29 @@
 Python 3 scripts, so they work the same on Windows (PowerShell), Linux and macOS. Python is already needed to build
 Starship. Run them from the repository root.
 
+## Which steps for which change
+
+`test_all.py` runs everything once per batch of PRs before a merge (CONTRIBUTING.md, #195). On a branch, run the steps
+for what you changed: `python tools/coop/test_all.py --only <steps>` (`--list` prints every step with its tool). The
+rows come from what each tool says it checks; when a bug gets past a row, add the step that would have caught it.
+`checks` runs with every row, as `build.py` runs it anyway.
+
+| You changed | Steps |
+|---|---|
+| Docs, skills, `tools/coop/` scripts | `checks`, plus the tool's own test where it has one: `package`, `replay-test` |
+| `src/port/coop/net/` (transport, relay, Steam) | `net`, `net-asan`, `net-mutants`, `net-mutants-asan`, `steam`, `steam-asan`, `steam-mutants`, `join` |
+| `src/port/coop/session/` (handshake, characters, logs) | `session`, `session-asan`, `session-mutants`, `session-mutants-asan`, `menu`, `menu-asan`, `join` |
+| `src/port/coop/sync/` (lockstep, desync check, hash) | `lockstep`, `lockstep-full`, `lockstep-mutants`, `desync-mutants`, `hash-run-1`, `hash-run-2`, `hash-start-2`, `hash-probe-2`, `join` |
+| `src/port/coop/game/` (players, hits, rules, wingmen) | `rails-2`, `rails-4`, `shots`, `effects`, `effects-allrange`, `lowhealth-rails`, `lowhealth-allrange`, `full-level`, `lockstep`, `wingman`, `coop-off` |
+| `src/port/coop/ui/` (menu, status, build id) | `menu`, `menu-asan`, `version`, `join` |
+| Per-client view, camera, HUD, drawing | `views`, `view-check`, `draw`, `builds`, `rates-rails`, `rates-all-range` |
+| `src/port/coop/test/`, `src/port/hooks/` | `replay-test`, `exit-test`, `hash-run-2`, `lockstep`, and the steps of every tool whose driver you touched |
+| An upstream file (`src/engine/`, `src/overlays/`, `include/`, `src/port/` outside `coop/`, a `// COOP:` line) | `coop-off`, `determinism`, `hash-run-1`, `full-level`, `lockstep`, `draw`, plus the row of the area it serves; `rates-rails` and `rates-all-range` too when it touches interpolation or drawing |
+
+The `rates-*` steps play in real time and are most of a full run (18m33s of 23m50s in Debug, docs/coop/NOTES.md,
+#147), so they stay out of a branch run unless the row names them. Steps marked Linux only in `--list` are skipped
+elsewhere.
+
 | Script | What it does |
 |---|---|
 | `python tools/coop/build.py` | Configure, build and run the checks; prints `build: OK` or `build: FAILED at <step>`. `--quiet` for a summary only, `--config Release`, `--assets` (needs `baserom.z64`), `--clean`. `--build-dir <folder>` holds a second config beside the first, as nothing is shared between build folders (#147); one folder holds one config, and it says so if asked for another. CI runs the same script. |
