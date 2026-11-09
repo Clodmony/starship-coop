@@ -97,7 +97,9 @@ int32_t CoopPlayers_ReleaseLockOns(struct Actor* actor);
 
 // Call at the start of Player_Down. Nonzero means a co-op player other than player 0 went down: it is taken out of
 // the level and Player_Down must return, because it also stops the music, plays the "player down" theme and starts
-// the fade to a level restart for everyone. Respawn rules are WP-16.
+// the fade to a level restart for everyone. The player comes back beside player 0 after 150 game frames, for one life
+// from the pool gLifeCount[0], with full shields (decision 0007 rule 4); CoopPlayers_SkipUpdate brings it back. Player
+// 0 going down is not handled here: it keeps the original restart until a level opens for 0007 rule 3.
 int32_t CoopPlayers_OnPlayerDown(struct Player* player);
 
 // What Actor.dmgSource holds after a hit by `sourceId`: a player index, or an NPC's shot id. Upstream writes
@@ -142,6 +144,16 @@ int32_t CoopPlayers_SlotState(int32_t index);
 
 // Test only: sets what CoopPlayers_SlotState returns. The state hash probe changes a slot, hashes and puts it back.
 void CoopPlayers_SetSlotState(int32_t index, int32_t state);
+
+// Nonzero while player `index` is out after going down and has not come back (decision 0007 rule 4). It is parked then.
+int32_t CoopPlayers_IsDown(int32_t index);
+
+// Game frames until player `index`, down, may come back (decision 0007 rule 4); 0 when none are left or it is not down.
+// Simulation state, for the state hash.
+int32_t CoopPlayers_ReturnTimer(int32_t index);
+
+// Test only: sets what CoopPlayers_ReturnTimer returns, for the state hash probe, as CoopPlayers_SetSlotState.
+void CoopPlayers_SetReturnTimer(int32_t index, int32_t frames);
 
 #ifdef __cplusplus
 }

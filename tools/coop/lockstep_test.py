@@ -21,6 +21,13 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   steer     each client flies its own player. Hashes equal, each game looks through its own player.
   aim       enemies aim at the nearest human (#193): on Corneria's rails some enemy shots or missiles fly at player 1,
             the two games log the same ones (src/port/coop/test/aim_trace.h), and the hashes stay equal.
+  return    a player 2-4 who goes down comes back (decision 0007 rule 4, #14): player 1 is forced down on Corneria's
+            rails, is out for exactly RETURN_FRAMES frames, comes back beside player 0 with full shields, 3 bombs and
+            one life less in the pool, gLifeCount[0]; down again with the pool at 0 it stays out until a life comes in.
+            The two games hash alike on every frame.
+  return_all_range the same in Corneria's all-range section, where a return also waits for player 0 to be ACTIVE.
+  return_fox_down player 1 goes down, and player 0 goes down before player 1 is due back: the return is dropped,
+            the level restarts as for one player, player 0's death spends the life and player 1 joins again for free.
   three     the same with three games, so that input goes through the host to the other client.
   control   the same run with SF64_COOP_TEST_NO_LOCKSTEP: it must differ, or this test says nothing.
   pause     Start on either client pauses both on the same frame, Start on either resumes.
@@ -82,6 +89,7 @@ import join_test  # noqa: E402
 import menu_test  # noqa: E402
 import player_trace  # noqa: E402
 import replay as replay_tool  # noqa: E402
+import view_check  # noqa: E402
 
 IS_LINUX = platform.system() == "Linux"
 BUTTON_A, BUTTON_START, BUTTON_L = 0x8000, 0x1000, 0x0020
@@ -469,6 +477,185 @@ def sc_boost(args, folder):
            f"the two games do not have one level speed ({len(common)} common frames)")
     return (f"same hash on {frames} frames; level speed {seen[0][0]:.1f} -> {seen[0][1]:.1f} in both games while only "
             f"player 1 boosts")
+
+
+RETURN_FRAMES = 150  # COOP_RETURN_FRAMES, src/port/coop/game/players.c: decision 0007 rule 4
+RETURN_SHIELDS = 255  # Play_GetMaxShields without three gold rings: full
+RETURN_BOMBS = 3  # as player 0 gets after a death
+FOX_BOMBS = 6  # poked into player 0 first, with `shields` of the plan, so a return that copies player 0's numbers shows
+# Level frames; a poke lands after its frame (view_trace.h). Rails: the pool is set to 1, player 1 goes down twice, a
+# life comes in while it waits at pool 0. All-range: the same after L (gDebugJumpToAllRange) at `jump`. Granga's fight
+# takes about 140 of player 0's shields in the 1000 frames after `pool` there, so he starts it higher.
+RETURN_PLANS = {
+    "rails": {"pool": JOIN_FRAME + 50, "downs": (JOIN_FRAME + 100, JOIN_FRAME + 400), "life": JOIN_FRAME + 800,
+              "frames": SHORT_FRAMES, "jump": None, "shields": 160},
+    "all-range": {"pool": JOIN_FRAME + 650, "downs": (JOIN_FRAME + 700, JOIN_FRAME + 1000), "life": JOIN_FRAME + 1400,
+                  "frames": JOIN_FRAME + 1600, "jump": JOIN_FRAME + 100, "shields": 230},
+}
+
+
+def return_pokes(plan):
+    """SF64_COOP_VIEW_POKE for a plan: the same list on both games, so they stay one game."""
+    pool = plan["pool"]
+    pokes = [f"{pool}:0:lives:1", f"{pool}:0:shields:{plan['shields']}", f"{pool}:0:bombs:{FOX_BOMBS}"]
+    pokes += [f"{down}:1:down:4" for down in plan["downs"]]
+    pokes.append(f"{plan['life']}:0:lives:2")  # a life comes in: the waiting player takes one of the two
+    return ",".join(pokes)
+
+
+def run_return(args, folder, plan, pokes=None):
+    """Both games through one plan, with sway (and L at plan['jump']). Returns the two, stopped."""
+    folder.mkdir(parents=True, exist_ok=True)
+    frames = plan["frames"]
+    feed = folder / "feed.txt"
+    jump = plan["jump"]
+    write_feed(feed, frames + 16, press(sway, {(jump, 0)}, BUTTON_L) if jump is not None else sway)
+    config = {"CVars": {"gDebugJumpToAllRange": 1}} if jump is not None else None
+    pokes = pokes or return_pokes(plan)
+    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(frames), "SF64_COOP_VIEW_POKE": pokes}
+    traces = {name: folder / f"{name}-view.txt" for name in ("host", "client0")}
+    for path in traces.values():
+        if path.exists():
+            path.unlink()
+    host, client = session(args, folder, host_env={"SF64_COOP_VIEW_TRACE": str(traces["host"])},
+                           client_env={"SF64_COOP_VIEW_TRACE": str(traces["client0"])}, both=env, config=config)
+    try:
+        wait_for([host, client], "done", 900)
+    finally:
+        host.close()
+        client.close()
+    return host, client, traces
+
+
+def check_return(game, view_path, plan, section):
+    """What one game shows of the plan, from its player trace and view trace. Returns a line for the summary."""
+    rows = [r for r in player_trace.parse(game.run / "trace.txt") if r.level == 0 and len(r.players) > 1]
+    by_frame = {r.frame: r for r in rows}
+    view = view_check.read_trace(1, view_path).by_frame
+    mode = player_trace.ALL_RANGE if section == "all-range" else player_trace.ON_RAILS
+    found = []
+
+    def parked_from(frame):
+        later = [r for r in rows if r.frame > frame and r.players[1].parked]
+        return later[0].frame if later else None
+
+    def back_from(frame):
+        later = [r for r in rows if r.frame > frame and not r.players[1].parked]
+        return later[0].frame if later else None
+
+    def pool(frame):
+        return view[frame].players[0].lives if frame in view else None
+
+    def due_from(frame):
+        """A return is due on the first frame from `frame` on that player 0 is ACTIVE: in all-range a U-turn waits."""
+        due = [r.frame for r in rows if r.frame >= frame and r.players[0].state == player_trace.ACTIVE]
+        return due[0] if due else None
+
+    for n, poke in enumerate(plan["downs"]):
+        before = by_frame.get(poke)
+        expect(before is not None and before.mode == mode and not before.players[1].parked
+               and before.players[1].state == player_trace.ACTIVE,
+               f"{game.name}: player 1 does not fly {section} at frame {poke}, where it is poked down: "
+               f"{before.players[1] if before else 'no row'}")
+        down = parked_from(poke)
+        expect(down == poke + 1, f"{game.name}: player 1 went down at frame {down}, want {poke + 1}")
+        back = back_from(down)
+        # Drawn on the frame it goes down, as since WP-11 (NOTES.md, #9): Player_Update sets draw after Player_Down.
+        out = [r for r in rows if down < r.frame < (back if back is not None else rows[-1].frame + 1)]
+        drawn = [r.frame for r in out if r.players[1].draw != 0]
+        expect(not drawn, f"{game.name}: player 1 drawn while out, first at frame {drawn[0] if drawn else None}")
+        if n == 0:
+            due = due_from(down + RETURN_FRAMES)
+            expect(back is not None, f"{game.name}: player 1 went down at frame {down} and never came back "
+                                     f"(pool {pool(down)}, trace to frame {rows[-1].frame})")
+            expect(back == due, f"{game.name}: player 1 back at frame {back}, want {due} ({RETURN_FRAMES} after the "
+                                f"down at {down}, on a frame player 0 is ACTIVE)")
+            r = by_frame[back]
+            p0, p1 = r.players[0], r.players[1]
+            offset = (p1.x - p0.x, p1.y - p0.y, p1.z - p0.z)
+            expect(abs(offset[0] - 250) < 0.2 and abs(offset[1] - 80) < 0.2 and abs(offset[2]) < 0.2,
+                   f"{game.name}: player 1 back at {offset} from player 0, want (250, 80, 0)")
+            expect(p1.shields == RETURN_SHIELDS and p1.state == player_trace.ACTIVE,
+                   f"{game.name}: player 1 back with shields {p1.shields}, state {p1.state}")
+            v = view[back].players
+            expect(pool(back - 1) == 1 and pool(back) == 0,
+                   f"{game.name}: pool {pool(back - 1)} before the return, {pool(back)} after, want 1 and 0")
+            expect(v[1].bombs == RETURN_BOMBS and v[1].lives == 0,
+                   f"{game.name}: player 1 back with {v[1].bombs} bombs and lives slot {v[1].lives}")
+            expect(v[0].bombs == FOX_BOMBS, f"{game.name}: player 0 has {v[0].bombs} bombs, not the poked {FOX_BOMBS}")
+            found.append(f"down {down}, back {back} ({back - down} out) beside player 0, shields {p1.shields}, "
+                         f"bombs {v[1].bombs}, pool 1 -> 0")
+        else:
+            life = plan["life"]
+            due = due_from(life + 1)
+            expect(pool(down) == 0, f"{game.name}: pool {pool(down)} at the second down, want 0")
+            expect(back == due, f"{game.name}: player 1 back at frame {back}, want {due}: a life came in after {life}")
+            expect(back - down > RETURN_FRAMES, f"{game.name}: back after {back - down} frames at pool 0")
+            expect(pool(back) == 1 and by_frame[back].players[1].shields == RETURN_SHIELDS,
+                   f"{game.name}: pool {pool(back)} after the return, want 1 (2 came in, 1 spent)")
+            found.append(f"down {down} at pool 0, out {back - down} frames until a life came in, back {back}, pool 2 -> 1")
+    return "; ".join(found)
+
+
+PLAYERSTATE_DOWN = 4  # include/sf64player.h
+FOX_DOWN_PLAN = {"pool": JOIN_FRAME + 50, "downs": (JOIN_FRAME + 100,), "fox": JOIN_FRAME + 110, "life": None,
+                 "frames": SHORT_FRAMES, "jump": None, "shields": 160}
+
+
+def sc_return_fox_down(args, folder):
+    """0007 rule 3 in a level not open for the refill (all of them, for now): player 0 down with a return waiting."""
+    plan = FOX_DOWN_PLAN
+    pokes = f"{plan['pool']}:0:lives:1,{plan['downs'][0]}:1:down:4,{plan['fox']}:0:down:4"
+    host, client, traces = run_return(args, folder, plan, pokes)
+    frames = compare(host, client, plan["frames"])
+    lines = []
+    for game in (host, client):
+        rows = [r for r in player_trace.parse(game.run / "trace.txt") if r.level == 0 and len(r.players) > 1]
+        restart = next((n for n in range(1, len(rows)) if rows[n].frame < rows[n - 1].frame), None)
+        expect(restart is not None, f"{game.name}: the level did not restart after player 0 went down")
+        before, after = rows[:restart], rows[restart:]
+        view = view_check.read_trace(1, traces[game.name]).rows
+        view_restart = next((n for n in range(1, len(view)) if view[n].frame < view[n - 1].frame), None)
+        expect(view_restart is not None, f"{game.name}: the view trace has no restart")
+        view_before, view_after = view[:view_restart], view[view_restart:]
+        down = next((r.frame for r in before if r.frame > plan["downs"][0] and r.players[1].parked), None)
+        fox = next((r.frame for r in before if r.frame > plan["fox"] and r.players[0].state == PLAYERSTATE_DOWN), None)
+        expect(down == plan["downs"][0] + 1 and fox == plan["fox"] + 1,
+               f"{game.name}: player 1 down at {down}, player 0 at {fox}")
+        back = [r.frame for r in before if r.frame > down and not r.players[1].parked]
+        expect(not back, f"{game.name}: player 1 came back at frame {back[0] if back else None} with player 0 down")
+        last = before[-1].frame
+        joined = next((r for r in after if not r.players[1].parked), None)
+        flies = next((r for r in after if r.players[0].state == player_trace.ACTIVE), None)
+        expect(joined is not None and flies is not None and joined.frame == flies.frame,
+               f"{game.name}: after the restart player 1 joined at {joined.frame if joined else None}, player 0 flies "
+               f"from {flies.frame if flies else None}")
+        pools = (view_before[-1].players[0].lives, view_after[-1].players[0].lives, view_after[-1].players[1].lives)
+        expect(pools == (0, 0, 0), f"{game.name}: pool {pools[0]} before the restart, {pools[1]} at the end, player "
+                                   f"1's slot {pools[2]}; want 0, 0, 0 (player 0's death took the one life)")
+        lines.append(f"player 1 down {down}, player 0 down {fox}, due {down + RETURN_FRAMES}, level restarted after "
+                     f"frame {last}; player 1 out until then, joined with player 0 on restart frame {joined.frame}, "
+                     f"pool 1 -> 0 by player 0's death only")
+    expect(lines[0] == lines[1], f"the games differ: host {lines[0]}, client {lines[1]}")
+    return f"same hash on {frames} frames; {lines[0]}"
+
+
+def return_in(args, folder, section):
+    plan = RETURN_PLANS[section]
+    host, client, traces = run_return(args, folder, plan)
+    frames = compare(host, client, plan["frames"])
+    lines = [check_return(game, traces[game.name], plan, section) for game in (host, client)]
+    expect(lines[0] == lines[1], f"the games saw different returns: host {lines[0]}, client {lines[1]}")
+    return f"same hash on {frames} frames; {lines[0]}"
+
+
+def sc_return(args, folder):
+    """#14: a player 2-4 who goes down comes back after RETURN_FRAMES for a life from the pool, at full shields."""
+    return return_in(args, folder, "rails")
+
+
+def sc_return_all_range(args, folder):
+    return return_in(args, folder, "all-range")
 
 
 def sc_three(args, folder):
@@ -1203,6 +1390,9 @@ SCENARIOS = {
     "steer": sc_steer,
     "aim": sc_aim,
     "boost": sc_boost,
+    "return": sc_return,
+    "return_all_range": sc_return_all_range,
+    "return_fox_down": sc_return_fox_down,
     "three": sc_three,
     "control": sc_control,
     "pause": sc_pause,

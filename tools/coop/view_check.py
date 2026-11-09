@@ -27,7 +27,8 @@ Rules, on the frames they talk about:
   sound-engine    a player who joins starts its engine, each join after leaving starts it again, and it is off while
                   the player is parked
   sound-source    all-range: a client's own player sounds from in front of its camera
-  player-down     all-range: when player 1 goes down its client looks through player 0, and its engine is off
+  player-down     all-range: when player 1 goes down its client looks through player 0, and its engine is off, until
+                  it comes back (lockstep_test.py return checks the return)
   guns            the pokes of player 1's laser guns did what they are there for: its guns moved on both clients,
                   first while it was in cockpit view on its own client, then while client 0 had it out of view; the
                   hash rule then shows that the clients stayed one game through it (#192)
@@ -94,6 +95,7 @@ PAUSE_SPANS = 2
 PAUSE_MIN_ROWS = 15
 ALL_RANGE_NUMBERS = 2300  # both players fly all-range by then
 ALL_RANGE_DOWN = 3060  # player 1 is ACTIVE here; a U-turn has no down check
+RETURN_FRAMES = 150  # a downed player 2-4 is out this long (src/port/coop/game/players.c, COOP_RETURN_FRAMES)
 
 SHIELDS_P0, SHIELDS_P1 = 200, 120
 BOMBS_P0, BOMBS_P1 = 5, 7
@@ -338,7 +340,8 @@ def rule_sound_source(clients):
 
 def rule_player_down(clients):
     client = clients[1]
-    after = [row for row in client.rows if row.frame > ALL_RANGE_DOWN + 5]
+    # Down on the frame after the poke, back RETURN_FRAMES later (decision 0007 rule 4, #14): out until then.
+    after = [row for row in client.rows if ALL_RANGE_DOWN + 5 < row.frame <= ALL_RANGE_DOWN + RETURN_FRAMES]
     wrong = [row.frame for row in after if joined(row) or row.view != 0 or row.noise[1] != FORM_NONE]
     good = len(after) >= 20 and not wrong
     return good, f"{len(after) - len(wrong)} of {len(after)} frames after the poke: out, looks through player 0, engine off"

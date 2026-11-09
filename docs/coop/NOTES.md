@@ -479,6 +479,85 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-09, #14 (WP-16), players 2-4 come back after going down (decision 0007 rule 4)
+
+Identity: ROM US 1.0, on top of `6becd73a` (the combined test branch of 2026-11-09), Linux, GCC, Debug, OpenGL on a
+software renderer, no window, two games over loopback in lockstep, input delay 3, Corneria only.
+
+What changed (`src/port/coop/game/players.c`):
+
+- A player 2-4 that goes down (`CoopPlayers_OnPlayerDown`, the one way `Player_Down` takes for them) is in the new slot
+  `DOWN` (`players.c:230`) with a counter of 150 game frames (`COOP_RETURN_FRAMES`, `:32`), the delay versus uses. It is
+  parked as before: not updated, no camera, hidden, engine off, its client looks through player 0. `OUT` is now only a
+  roster slot nobody flies.
+- The `DOWN` case of `CoopPlayers_SkipUpdate` (`:277`) counts the counter down, inside the player loop, so in game
+  frames and not while paused. Once it is 0 the player comes back on the first frame that the pool `gLifeCount[0]` holds
+  a life and player 0 is `ACTIVE` in a section co-op players fly in (the rejoin's gate): one life is spent from slot 0
+  then, not at the crash, and `CoopPlayers_ReturnFromDown` (`:205`) places it with `CoopPlayers_PlaceBesidePlayer0`
+  (250 to the side and 80 up per index) and gives it what `Player_Setup` gives player 0: `Play_GetMaxShields()`, both
+  wings intact (wing health 60, 10 in expert), 3 bombs, a single laser, the per-player timers at 0, no damage, heal or
+  hit timers from the copy, and `mercyTimer` 30 (`:37`, a starting value). Slot `i` of `gLifeCount` gets the pool, as at
+  a join; it decides nothing (rule 1). The player updates from the next frame, as after a join.
+- So a slot goes: `JOINED` (flies) -> down on frame D: `DOWN`, counter 150 -> counter 0 on frame D + 150 -> waiting while
+  the pool is 0 or player 0 is not `ACTIVE` (a U-turn, the cut to all-range, down, level complete) -> back on frame R,
+  the first frame from D + 150 on where both hold, with the pool one lower -> `JOINED`. Out for R - D frames, 150 at the
+  least. A `Play_Init` (restart or next level) drops a waiting return: the slot is `WAITING`, the counter 0
+  (`players.c:66`), and the player joins again as a copy of player 0, for free.
+- The counter is hashed beside the slot, in co-op only (`state_hash.c:295`), and `hash_check.py probe` checks it
+  (`returnTimer[i]`, `state_hash.c:634`).
+- The co-op log says `player N down, pool P` for a down and `player N flies, pool P` when a player flies again
+  (`log_game.c:181`). Before, it wrote `player N parked` for every kind of parking.
+
+Observed (`lockstep_test.py --only return,return_all_range,return_fox_down`, each game's player trace and view trace;
+pokes from `SF64_COOP_VIEW_POKE` on both games, so they stay one game):
+
+- Rails, pool set to 1: player 2 down on frame 1801, back on 1951 (150 frames out) at (250, 80, 0) from player 0, with
+  255 shields and 3 bombs while player 0 had 160 and 6, pool 1 to 0 on both games. Down again on 2101 at pool 0: out
+  for 400 frames, past its 150, until a life came in (pool set to 2 after frame 2500), back on 2501, pool 2 to 1. Hash
+  equal on all 2700 frames.
+- All-range (L with `gDebugJumpToAllRange`): down on 2401, due on 2551, player 0 in a U-turn from 2549 to 2564, back on
+  2565 (164 out), pool 1 to 0. Down on 2701 at pool 0, life in after 3100, player 0 in a U-turn on 3101, back on 3102.
+  Hash equal on 3300 frames.
+- Player 0 down with a return waiting (pool 1): player 2 down on 1801, player 0 down on 1811, player 2 due on 1951 and
+  refused (player 0 not `ACTIVE`), level restarted after frame 1976, player 2 joined on restart frame 1 with player 0;
+  pool 0 before and after, so only player 0's death spent a life (`Cutscene_KillPlayer`, `src/engine/fox_demo.c:1633`).
+- The same `return` scenario on the base build `6becd73ad40b`: `player 1 went down at frame 1801 and never came back
+  (pool 1, trace to frame 2772)`.
+- A two-player session starts with the pool at 2 (co-op log, `player 2 flies, pool 2` at frame 1674), as one player.
+- Co-op off: `hash_check.py base` against `6becd73ad40b`, equal on all 5800 frames.
+
+Derived:
+
+- The field log of 2026-11-09 (#14): at `6becd73a` an `OUT` slot had no way back before `Play_Init` (`players.c:233` at
+  that commit), `AWAY` came back when player 0 was `ACTIVE` again (`:225`), and the log wrote `player 2 parked` for both
+  (`log_game.c:181` at that commit). So the Corneria span (back when player 0 went from `START_360` to `ACTIVE`) and the
+  Fortuna span (back from `STANDBY` to `ACTIVE`) were section ends, not downs, unless a restart came between them,
+  which the issue does not say. Meteo's span, out to the end of the level, fits a down.
+
+Still open in decision 0007 after this slice:
+
+- Rule 1: the pool starts at 2 for any number of players (`src/engine/fox_play.c:4937`, `src/engine/fox_game.c:425`,
+  `src/overlays/ovl_menu/fox_option.c:4511`, `:4572`); 0007 wants 2 plus 1 per extra player.
+- Rule 2: a 1-up or the sixth gold ring taken by player 2-4 still goes to the collector's slot
+  (`src/engine/fox_enmy.c:2233`, `:2337`, `src/port/mods/PortEnhancements.c:259`), and a join or return then overwrites
+  that slot with the pool, so the life is lost.
+- The draw-path and map writers (`src/engine/fox_hud.c:1090`, `:1093`, `:1174`, `:1540`, `:1553`,
+  `src/overlays/ovl_menu/fox_map.c:1448`, `:1529`, `:3512`) still index `gPlayerNum`. That is 0 there in co-op today,
+  so they reach the pool, but they have to name slot 0 before WP-28 changes it.
+- A player 2-4's client shows `gLifeCount[CoopPlayers_HudIndex()]` (`src/engine/fox_hud.c:3700`), its own slot: right
+  at its join or return, stale after anyone else's return or a life player 0 gains or spends (WP-28, "lives read from
+  slot 0").
+- Rules 3 and 12 (player 0 refilled in place, level by level), 6 (game over when the last player goes down at pool 0),
+  7 (retry is the host's), 9's choice of whom to watch, 10 (Landmaster and Blue Marine, WP-18), 11 (friendly fire,
+  WP-17) and 13 (passing the lead, #183): not touched. Player 0 down still restarts the level for everyone.
+
+Unknown:
+
+- How 150 frames and a `mercyTimer` of 30 play; both are starting values.
+- Three or four players: with one life left and several waiting the lowest index goes first because the loop runs in
+  index order, but no run had more than one player waiting.
+- Other levels, Solar's down at 0 shields (#200), Windows, two PCs: not run.
+
 ### 2026-11-08, #191, the level intro skip in a session: the jump back to Play_Init in lockstep
 
 Identity: ROM US 1.0, on top of `4d638b13`, Linux, GCC 16, Release, no window, two games over loopback, input delay 3,
