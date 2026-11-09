@@ -3411,6 +3411,32 @@ Unknown:
 - Other all-range levels (Fortuna, Katina, Bolse, Sector Z, Venom 2) start in all-range; there player 1 would join
   once player 0 is active after the intro. Not run.
 
+### 2026-11-09, #200, Solar's heat drain for every player
+
+Observed:
+
+- The drain sat in `Play_UpdateLevel`, `case LEVEL_SOLAR` (`src/engine/fox_play.c`): `gPlayer[0].shields--` every
+  `(gGameFrameCount & cycleMask) == 0` frames, `cycleMask` from `gPlayer[0].pos.y` (>500: 7, >300: 3, >200: 1, else 0),
+  while `gPlayer[0].state == PLAYERSTATE_ACTIVE` and `gInvincible` is off.
+- `gSoShieldsEmpty` is written (`fox_play.c` Play_Init clears it, the Solar case sets it at 0 shields) and read
+  nowhere (`git grep gSoShieldsEmpty` over `src/` and `include/`: only declarations and writes).
+- Nothing in Solar turns 0 shields into a down. `Player_UpdateOnRails` and the other form updates call `Player_Down`
+  when `shields <= 0 && radioDamageTimer != 0`; `radioDamageTimer` is set to 4 by `Player_ApplyDamage` (a hit) and
+  to 2 in the fall of a downed player. So a player at 0 from heat goes down on its next hit, through
+  `Player_Down` -> `CoopPlayers_OnPlayerDown` for players 2+. In a test run (no pokes, gInvincible off) player 1 was parked at 0 shields after some 800 level frames
+  while Fox stood at 0 and the level restarted later (view trace; the cause of the park, a hit, is inferred, not logged).
+
+Derived:
+
+- Fix: `CoopPlayers_SolarHeat()` (`src/port/coop/game/players.c`), called from the Solar case after Fox's own drain.
+  It drains players 1 and up that are not parked and ACTIVE, by their own height, with the same steps. Shield warnings
+  are played only for the player the client views; Fox's own warnings got the same gate.
+- The heat alarm (`Audio_SetHeatAlarmParams`) stays on player 0 (#140).
+
+Test: `python tools/coop/solar_check.py`: two clients in Solar, gInvincible off, 400 level frames; both players'
+shields fall by at least 60, hashes equal on all frames. On the build before the fix player 1 loses 20 (hits only),
+player 0 loses 100.
+
 ## Determinism
 
 ### 2026-11-09, #192, what the draw writes into hashed state behind a camera test

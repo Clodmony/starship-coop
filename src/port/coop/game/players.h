@@ -128,6 +128,12 @@ void CoopPlayers_SetLaserGunsX(struct Player* player);
 // gInputPress does.
 int32_t CoopPlayers_PausePressed(void);
 
+// Call in Play_UpdateLevel's LEVEL_SOLAR case, after the heat drain of player 0 (#200). In co-op it drains the shields of
+// every other player who flies (not parked, PLAYERSTATE_ACTIVE) by that player's own height, at the rate player 0's
+// drain has, and plays the shield warnings only for the player this client views. gInvincible stops it, as upstream.
+// Nothing outside co-op. Reads simulation state only.
+void CoopPlayers_SolarHeat(void);
+
 #define COOP_PLAYERS_DEBUG_CVAR "gCoopDebugPlayerCount"
 
 // The slot of player `index` as a plain number, for the state hash: a number has the same size on every compiler, an
