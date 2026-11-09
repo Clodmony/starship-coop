@@ -20,9 +20,10 @@ Classes, for two draws in one statement:
 A statement that calls a CoopRand_ function is handled: its session path draws in order, and its other path is the
 game's own expression, which co-op off keeps.
 
-KNOWN is the list of open sites per file and class, as docs/coop/NOTES.md (2026-11-09, #199) lists them. --check fails
-on a new one, so a change or an upstream sync that adds a statement of this kind shows it, and on a lost one, so the list
-stays exact. Scans the tracked .c files in src/engine, src/overlays and src/sys: the simulation. Reads source only.
+KNOWN is the list of open sites per file and class, as docs/coop/NOTES.md (2026-11-09, #199) lists them. --check
+fails on a new one, so a change or an upstream sync that adds a statement of this kind shows it, and on a lost one, so
+the list stays exact. Scans the tracked .c files in src/engine, src/overlays and src/sys: the simulation. Reads source
+only.
 """
 import argparse
 import re
@@ -72,7 +73,9 @@ LEVELS = {
     "ovl_i1/fox_co.c": "Corneria", "ovl_i1/fox_ve1.c": "Venom 1", "ovl_i1/fox_tr.c": "Training",
     "ovl_i2/fox_me.c": "Meteo", "ovl_i2/fox_sx.c": "Sector X", "ovl_i3/fox_a6.c": "Area 6", "ovl_i3/fox_aq.c": "Aquas",
     "ovl_i3/fox_so.c": "Solar", "ovl_i3/fox_zo.c": "Zoness", "ovl_i4/fox_bo.c": "Bolse", "ovl_i4/fox_fo.c": "Fortuna",
-    "ovl_i4/fox_ka.c": "Katina", "ovl_i4/fox_sz.c": "Sector Z", "ovl_i5/fox_ma.c": "Macbeth", "ovl_i5/fox_ti.c": "Titania",
+    "ovl_i4/fox_ka.c": "Katina", "ovl_i4/fox_sz.c": "Sector Z", "ovl_i5/fox_ma.c": "Macbeth",
+    "ovl_i5/fox_ti.c": "Titania",
+    "ovl_i5/fox_ti_cs.c": "Titania (its cutscenes)",
     "ovl_i6/fox_andross.c": "Venom 2 (Andross)", "ovl_i6/fox_sy.c": "Sector Y", "ovl_i6/fox_ve2.c": "Venom 2",
 }
 

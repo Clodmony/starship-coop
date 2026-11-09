@@ -12,7 +12,8 @@
 // tools/coop/rand_order.py finds the expressions of this kind; tools/coop/rand_order_test.py compiles rand_order.c
 // alone against a Python reference.
 //
-// Rand_ZeroOne is the game's, declared here as in include/sf64math.h, so rand_order.c builds without the game's headers.
+// Rand_ZeroOne is the game's, declared here as in include/sf64math.h, so rand_order.c builds without the game's
+// headers.
 
 #ifdef __cplusplus
 extern "C" {
