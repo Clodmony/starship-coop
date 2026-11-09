@@ -253,11 +253,22 @@ static void ClearPlayerViewState(Player* player) {
 }
 
 // A per-player array, slot by slot. With co-op off that is the same bytes in the same order as hashing the array whole.
+// The zeros a slot that does not count hashes as. As long as every value was an s32 or smaller, four bytes were enough;
+// the vehicle arrays (#16) have 96 and 172 bytes a player, and hashing `size` bytes from a four-byte buffer read the
+// data next to it: asset names on Linux, pointers on Windows, so two games of one platform agreed and a Windows and a
+// Linux game parted at frame 0 in `players` (the 2026-11-09 two-PC test).
+#define EMPTY_VALUE_BYTES 512
+
 static void HashPerPlayer(uint64_t* h, const char* name, const void* array, size_t size) {
-    static const u8 sEmpty[sizeof(s32)] = { 0 };
+    static const u8 sEmpty[EMPTY_VALUE_BYTES] = { 0 };
     const u8* value = (const u8*) array;
     s32 i;
 
+    if (size > sizeof(sEmpty)) { // a new, larger per-player value: make EMPTY_VALUE_BYTES bigger
+        fprintf(stderr, "state hash: %s has %zu bytes a player, more than the %d of an empty slot\n", name, size,
+                EMPTY_VALUE_BYTES);
+        abort();
+    }
     for (i = 0; i < COOP_PLAYERS_MAX; i++, value += size) {
         HashNamed(h, name, i, PlayerValuesCount(i) ? value : sEmpty, size);
     }
