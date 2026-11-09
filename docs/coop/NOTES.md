@@ -3943,6 +3943,36 @@ clients.
   `slots` check beyond 3000 frames.
 - Windows. Run on Linux only.
 
+### 2026-11-09, #187, what a level played earlier in the same process leaves for frame 0
+
+**Observed**
+
+- `lockstep_test.py --only reset` (new): the client starts Corneria alone through the test switch, flies 600 frames,
+  gets `gRightWingHealth[0] = 40` and resets as F4 does (`SF64_COOP_TEST_START_RESET`,
+  `src/port/coop/test/start_level.c`), back to the title; the host starts the session's Corneria at frame 2401. Before
+  the fix both games stop at frame 0 with `differ in players, globals`, as in the #171 run.
+- `desync_report.py diff --all` on the two reports names six values, host (fresh) against client (played before):
+  `gLeftWingHealth[0]` 0 / 60, `gRightWingHealth[0]` 0 / 40, `gUturnDownTimers[0]` 0 / 5, `gLoopDownTimers[0]` 0 / 5,
+  `gObjectLoadIndex` 0 / 22, `gPathVelZ` 0 / 40.0. Nothing else in the hashed state differed.
+- Frame 0 is hashed in `GamePreUpdateEvent`, before any logic of the frame (`src/port/coop/sync/lockstep_game.c`,
+  `CoopSyncGame_OnGamePreUpdate`), and Play_Init leaves every player in `PLAYERSTATE_INIT`
+  (`src/engine/fox_play.c`, Play_Init). The first update runs `Player_Setup` (`src/engine/fox_play.c:4574`), which sets
+  the wing health, the turn and loop timers and `gObjectLoadIndex = gSavedObjectLoadIndex` (`:4728`); the path update
+  sets `gPathVelZ` (`:3643`). `gSavedObjectLoadIndex` itself is cleared by Play_Setup (`:537`).
+
+**Derived**
+
+- The six values are written on frame 0 before anything reads them, so the games would not have parted; the check saw
+  history that the level was about to overwrite. Fix: `CoopLevelStart_Enter` clears every per-player array the hash
+  reads (but `gLaserStrength`, which the level start carries) and the two globals, on every game, as a fresh process
+  holds them (`src/port/coop/game/level_start.c`, `LevelStart_ClearSetupValues`).
+
+**Unknown**
+
+- Leftovers the hash does not read. This run only shows what the hashed state holds.
+- A client coming from a level it played to a checkpoint: the checkpoint values come from CVars per level
+  (`src/engine/fox_play.c:4717-4724`); not tried.
+
 ## Networking
 
 ### 2026-11-07, #132, how long a level load stalls the session, and the menu's time-out

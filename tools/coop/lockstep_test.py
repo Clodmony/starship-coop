@@ -202,7 +202,9 @@ def session(args, folder, host_env=None, client_env=None, both=None, config=None
     host.start(config)
     deadline = time.monotonic() + 180
     while not (port_file.exists() and port_file.read_text(encoding="utf-8").strip()):
-        expect(host.proc.poll() is None and time.monotonic() < deadline, "the host did not report its port")
+        if host.proc.poll() is not None or time.monotonic() >= deadline:
+            host.close()  # a host left running keeps the build from linking Starship.exe
+            raise Fail("the host did not report its port")
         time.sleep(0.2)
     port = port_file.read_text(encoding="utf-8").strip()
     if client_port is not None:
@@ -563,10 +565,12 @@ def sc_reset(args, folder):
     expect(running, "the client never got to the session's level")
     first = int(running[0]["frame"])
     before = [row[1] for row in rows if row[0] < first]
-    alone = sum(1 for state in before if state == replay_tool.GS_PLAY)
+    # Its own level is the first stretch in GSTATE_PLAY; the session's level start is in GSTATE_PLAY too.
+    start = next((i for i, state in enumerate(before) if state == replay_tool.GS_PLAY), len(before))
+    end = next((i for i in range(start, len(before)) if before[i] != replay_tool.GS_PLAY), len(before))
+    alone = end - start
     expect(alone >= RESET_FLY_FRAMES, f"the client played {alone} frames before the session, want {RESET_FLY_FRAMES}")
-    last_play = max(i for i, state in enumerate(before) if state == replay_tool.GS_PLAY)
-    titles = sum(1 for state in before[last_play:] if state == replay_tool.GS_TITLE)
+    titles = sum(1 for state in before[end:] if state == replay_tool.GS_TITLE)
     expect(titles >= hash_check.WHOLE_PATH_FRAMES,
            f"the client was at the title for {titles} frames between its own level and the session's")
     frames = compare(host, client, RESET_FRAMES)
