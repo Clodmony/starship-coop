@@ -3257,6 +3257,54 @@ Unknown:
 - Other all-range levels (Fortuna, Katina, Bolse, Sector Z, Venom 2) start in all-range; there player 1 would join
   once player 0 is active after the intro. Not run.
 
+### 2026-11-10, #211, the lobby's choice of the level to start at
+
+**Observed**
+
+- The lobby started Corneria and nothing else: `CoopMenuGame_Level` passed `LEVEL_CORNERIA` to
+  `CoopLevelStart_FromGame` (`src/port/coop/ui/menu_game.c`). The level-start message already carries the level and the
+  phase, and `CoopSession_StartLevel` accepts any of the 20 ids (`session.c`), so the change is the host's choice and
+  nothing on the wire.
+- Now the host's window has a **Start at** dropdown above the Start button (`menu_window.cpp`, `DrawStartLevel`):
+  17 campaign levels in the order of the first routes; Training, Versus and the two unnamed ids are left out. The choice
+  is a static in `menu_game.c`, Corneria at launch and again when a session ends. A client sees nothing new.
+- `menu_test.py --game --only game_start_level`: the host opens the dropdown and picks Meteo with real mouse clicks (the
+  driver's widgets), a client joins as Falco, Start: both games log `level 1`, same hash on 1441 frames. `game_level`
+  (Corneria, three games) still passes.
+
+**Unknown**
+
+- Which levels run for long in a session: by hand only Corneria, Meteo, Fortuna, Solar and Macbeth, by script the first
+  2400 frames of 15 levels (#129).
+- A level started this way takes the host's globals as they are at the title (lives, bombs, team shields) and none of
+  the route state; what the map does after it is untested.
+
+### 2026-11-09, #200, Solar's heat drain for every player
+
+Observed:
+
+- The drain sat in `Play_UpdateLevel`, `case LEVEL_SOLAR` (`src/engine/fox_play.c`): `gPlayer[0].shields--` every
+  `(gGameFrameCount & cycleMask) == 0` frames, `cycleMask` from `gPlayer[0].pos.y` (>500: 7, >300: 3, >200: 1, else 0),
+  while `gPlayer[0].state == PLAYERSTATE_ACTIVE` and `gInvincible` is off.
+- `gSoShieldsEmpty` is written (`fox_play.c` Play_Init clears it, the Solar case sets it at 0 shields) and read
+  nowhere (`git grep gSoShieldsEmpty` over `src/` and `include/`: only declarations and writes).
+- Nothing in Solar turns 0 shields into a down. `Player_UpdateOnRails` and the other form updates call `Player_Down`
+  when `shields <= 0 && radioDamageTimer != 0`; `radioDamageTimer` is set to 4 by `Player_ApplyDamage` (a hit) and
+  to 2 in the fall of a downed player. So a player at 0 from heat goes down on its next hit, through
+  `Player_Down` -> `CoopPlayers_OnPlayerDown` for players 2+. In a test run (no pokes, gInvincible off) player 1 was parked at 0 shields after some 800 level frames
+  while Fox stood at 0 and the level restarted later (view trace; the cause of the park, a hit, is inferred, not logged).
+
+Derived:
+
+- Fix: `CoopPlayers_SolarHeat()` (`src/port/coop/game/players.c`), called from the Solar case after Fox's own drain.
+  It drains players 1 and up that are not parked and ACTIVE, by their own height, with the same steps. Shield warnings
+  are played only for the player the client views; Fox's own warnings got the same gate.
+- The heat alarm (`Audio_SetHeatAlarmParams`) stays on player 0 (#140).
+
+Test: `python tools/coop/solar_check.py`: two clients in Solar, gInvincible off, 400 level frames; both players'
+shields fall by at least 60, hashes equal on all frames. On the build before the fix player 1 loses 20 (hits only),
+player 0 loses 100.
+
 ## Determinism
 
 ### 2026-11-06, #96, draw code is part of the simulation: one camera per client

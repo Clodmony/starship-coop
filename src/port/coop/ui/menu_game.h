@@ -16,8 +16,14 @@ extern "C" {
 
 // Ticks menu on every game frame from here on. Without a session that is a function that returns at once.
 void CoopMenuGame_Listen(CoopMenu* menu);
-// CoopMenuBackend.levelStart: the first level of the campaign, the only one run so far (docs/coop/NOTES.md, #126).
+// CoopMenuBackend.levelStart: the level the host chose in the lobby, Corneria unless it picked another (#211).
 void CoopMenuGame_Level(CoopLevelStart* out);
+// The levels a host can start a session at (#211): the campaign's, in the order of its first routes. An index is a
+// place in this list, not a LevelId. The choice is the host's alone and goes back to Corneria when the session ends.
+int32_t CoopMenuGame_StartLevelCount(void);
+const char* CoopMenuGame_StartLevelName(int32_t index);
+int32_t CoopMenuGame_StartLevelIndex(void);
+void CoopMenuGame_SetStartLevel(int32_t index);
 // CoopMenuBackend.enterLevel: goes there, and from there on the frames of this game are in lockstep with the others.
 void CoopMenuGame_EnterLevel(const CoopLevelStart* start);
 // CoopMenuBackend.sessionEnded: the next level is the game's own again, with no roster to count players from.

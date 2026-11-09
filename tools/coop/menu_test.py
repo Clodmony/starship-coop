@@ -395,7 +395,7 @@ def host_session(host):
     return host.wait_text("status", r"Hosting on port (\d+), .* players\.").group(1)
 
 
-def check_level(games, characters):
+def check_level(games, characters, level=join_test.LEVEL_CORNERIA):
     """After the click: every game goes to the level and stays in the session, and the logs say it is the same level.
     Returns the frames compared and the host's report of the level."""
     host, *clients = games
@@ -420,7 +420,7 @@ def check_level(games, characters):
     running = in_level(host)
     for game in clients:
         join_test.check_running(game, running)
-    expect(running["level"] == str(join_test.LEVEL_CORNERIA), f"the host went to level {running['level']}")
+    expect(running["level"] == str(level), f"the host went to level {running['level']}, want {level}")
     expect(running["players"] == str(len(games)), f"{running['players']} players in the level")
     expect(running["characters"] == characters, f"the game holds {running['characters']}")
     return join_test.check_same_level(host, clients), running
@@ -479,6 +479,38 @@ def scenario_game_level(args, exe, out):
         stall = max(longest_stall(game) for game in games)
         return (f"3 games from Start: same hash on {frames} frames, {running['characters']}, seeds {running['seeds']}, "
                 f"longest stall {stall} ms")
+
+    return level_run(args, games, body)
+
+
+LEVEL_METEO = 1  # include/sf64level.h
+METEO_CHOICE = 1  # its place in the lobby's list, src/port/coop/ui/menu_game.c: sStartLevels
+
+
+def scenario_game_start_level(args, exe, out):
+    """The host picks the level in the lobby's dropdown (#211) with the mouse, then Start: every game goes there."""
+    host, a = games = [Game(exe, name, out, seeds=join_test.SEEDS[seeds])
+                       for name, seeds in (("host", "host"), ("a", "client0"))]
+
+    def body():
+        open_windows(games)
+        port = host_session(host)
+        host.wait_item("start", enabled=True)
+        join(a, port, 2)
+        host.wait_text("status", r", 2 of 4 players\.")
+        host.wait_item("start-level", label="Corneria")
+        expect("start-level" not in a.items, "a client is offered the dropdown of the level to start at")
+
+        host.click("start-level")
+        host.click(f"start-level-{METEO_CHOICE}")
+        host.wait_item("start-level", label="Meteo")
+        a.click("pick-falco")
+        host.wait_text("player2", r"^Player 2: Falco")
+        host.wait_item("start", enabled=True)
+
+        host.click("start")
+        frames, running = check_level(games, "Fox,Falco,-,-", LEVEL_METEO)
+        return f"2 games from Start at Meteo: same hash on {frames} frames, {running['characters']}"
 
     return level_run(args, games, body)
 
@@ -594,7 +626,8 @@ def scenario_program(mode):
     return run
 
 
-GAME_SCENARIOS = {"game": scenario_game, "game_level": scenario_game_level, "game_level_map": scenario_game_level_map,
+GAME_SCENARIOS = {"game": scenario_game, "game_level": scenario_game_level, "game_start_level": scenario_game_start_level,
+                  "game_level_map": scenario_game_level_map,
                   "game_platform": scenario_game_platform, "game_leave": scenario_game_leave}
 SCENARIOS = {"sim": scenario_program("sim"), "udp": scenario_program("udp"), **GAME_SCENARIOS}
 
