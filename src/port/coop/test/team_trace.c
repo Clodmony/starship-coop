@@ -6,6 +6,8 @@
 
 #include "global.h"
 #include "port/hooks/Events.h"
+#include "port/coop/game/players.h"
+#include "port/coop/game/team.h"
 
 #define TEAM_TRACE_HEARTBEAT 300
 
@@ -22,6 +24,8 @@ typedef struct {
     s32 prev[3];
     s32 map[3];
     s32 ships[3];
+    s32 p1;          // player 1's shields, -1 without a player 1 in co-op
+    u8 scenes[16];   // CoopTeam_Choices: who flies each scene of a human-flown wingman (#15)
 } TeamTraceLine;
 
 static FILE* sTraceFile = NULL;
@@ -53,8 +57,18 @@ static void CoopTeamTrace_Read(TeamTraceLine* line) {
         line->prev[i] = gPrevPlanetTeamShields[TEAM_ID_FALCO + i];
         line->map[i] = D_ctx_80177C58[TEAM_ID_FALCO + i];
     }
+    {
+        s32 count;
+        const u8* choices = CoopTeam_Choices(&count);
+
+        memcpy(line->scenes, choices, MIN(count, (s32) sizeof(line->scenes)));
+    }
+    line->p1 = -1;
     if (gGameState != GSTATE_PLAY) {
         return;
+    }
+    if ((gPlayer != NULL) && CoopPlayers_IsCoop() && (CoopPlayers_Count() > 1) && !CoopPlayers_IsParked(1)) {
+        line->p1 = gPlayer[1].shields;
     }
     for (i = 0; i < ARRAY_COUNT(gActors); i++) {
         const Actor* actor = &gActors[i];
@@ -67,12 +81,18 @@ static void CoopTeamTrace_Read(TeamTraceLine* line) {
 }
 
 static void CoopTeamTrace_Write(const TeamTraceLine* l) {
+    s32 i;
+
     fprintf(sTraceFile,
             "frame=%u gs=%d level=%d phase=%d ps=%d p0=%d mission=%d path=%.1f team=%d,%d,%d saved=%d,%d,%d "
-            "prev=%d,%d,%d map=%d,%d,%d ships=%d,%d,%d\n",
+            "prev=%d,%d,%d map=%d,%d,%d ships=%d,%d,%d p1=%d scenes=",
             sFrame, l->gameState, l->level, l->phase, l->playState, l->playerState, l->mission, gPathProgress,
             l->team[0], l->team[1], l->team[2], l->saved[0], l->saved[1], l->saved[2], l->prev[0], l->prev[1],
-            l->prev[2], l->map[0], l->map[1], l->map[2], l->ships[0], l->ships[1], l->ships[2]);
+            l->prev[2], l->map[0], l->map[1], l->map[2], l->ships[0], l->ships[1], l->ships[2], l->p1);
+    for (i = 0; i < ARRAY_COUNT(l->scenes); i++) {
+        fprintf(sTraceFile, "%s%d", (i > 0) ? "," : "", l->scenes[i]);
+    }
+    fprintf(sTraceFile, "\n");
     fflush(sTraceFile); // tests stop the game from outside, and there are few lines
 }
 

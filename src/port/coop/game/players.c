@@ -1,6 +1,7 @@
 #include "players.h"
 
 #include "input.h"
+#include "team.h"
 
 #include "global.h"
 #include "public/bridge/consolevariablebridge.h"
@@ -48,6 +49,7 @@ void CoopPlayers_LevelInit(void) {
         }
     }
     sCoopPlayerCount = count;
+    CoopTeam_LevelInit();
 
     for (i = 0; i < COOP_PLAYERS_MAX; i++) {
         sSlot[i] = ((gCamCount == 1) && (i > 0) && (i < count)) ? COOP_SLOT_WAITING : COOP_SLOT_JOINED;
@@ -313,6 +315,7 @@ int32_t CoopPlayers_OnPlayerDown(Player* player) {
         return 0;
     }
     CoopPlayers_SetOut(i);
+    CoopTeam_OnPlayerDown(i);
     return 1;
 }
 

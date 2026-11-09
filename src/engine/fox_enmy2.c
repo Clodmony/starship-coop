@@ -13,6 +13,7 @@
 #include "assets/ast_venom_2.h"
 #include "assets/ast_titania.h"
 #include "port/coop/game/view.h" // COOP
+#include "port/coop/game/team.h" // COOP: scenes of a human-flown wingman (WP-17)
 #include "assets/ast_7_ti_1.h"
 #include "assets/ast_andross.h"
 #include "assets/ast_area_6.h"
@@ -1073,6 +1074,9 @@ void ActorEvent_ProcessScript(ActorEvent* this) {
     u16* test;
     s32 i;
     s32 j;
+    s32 msgId;      // COOP: a line of a borrowed scene can change (WP-17)
+    s32 msgSpeaker; // COOP
+    s32 teamId;     // COOP
 
     switch (gCurrentLevel) {
         case LEVEL_VENOM_ANDROSS:
@@ -1262,7 +1266,7 @@ void ActorEvent_ProcessScript(ActorEvent* this) {
             break;
 
         case EV_OPC(EVOP_SET_TEAM_ID):
-            this->iwork[12] = actorScript[this->aiIndex + 1];
+            this->iwork[12] = CoopTeam_SceneTeam(this, actorScript[this->aiIndex + 1]); // COOP: the scene's flyer (WP-17)
 
             if (this->iwork[12] <= TEAM_ID_PEPPY) {
                 gTeamEventActorIndex[this->iwork[12]] = this->index;
@@ -1333,9 +1337,12 @@ void ActorEvent_ProcessScript(ActorEvent* this) {
             break;
 
         case EV_OPC(EVOP_PLAY_MSG):
-            msg = Message_PtrFromId(actorScript[this->aiIndex + 1]);
+            // COOP: a borrowed scene swaps or drops the taken wingman's line (WP-17)
+            msgId = actorScript[this->aiIndex + 1];
+            msgSpeaker = actorScript[this->aiIndex] & 0x1FF;
+            msg = CoopTeam_SceneMessage(this, &msgId, &msgSpeaker) ? Message_PtrFromId(msgId) : NULL;
             if ((msg != NULL) && (gPlayer[0].state == PLAYERSTATE_ACTIVE)) {
-                Radio_PlayMessage(msg, actorScript[this->aiIndex] & 0x1FF);
+                Radio_PlayMessage(msg, msgSpeaker); // COOP: was actorScript[this->aiIndex] & 0x1FF
             }
             this->aiIndex += 2;
             ActorEvent_ProcessScript(this);
@@ -1359,7 +1366,9 @@ void ActorEvent_ProcessScript(ActorEvent* this) {
             break;
 
         case EV_OPC(EVOP_RESTORE_TEAM):
-            gTeamShields[actorScript[this->aiIndex + 1]] = 255;
+            if (!CoopTeam_IsHuman(actorScript[this->aiIndex + 1])) { // COOP: no script restores a human (WP-17)
+                gTeamShields[actorScript[this->aiIndex + 1]] = 255;
+            }
             this->aiIndex += 2;
             ActorEvent_ProcessScript(this);
             break;
@@ -1384,12 +1393,14 @@ void ActorEvent_ProcessScript(ActorEvent* this) {
             break;
 
         case EV_OPC(EVOP_DAMAGE_TEAM):
-            if (this->iwork[12] == actorScript[this->aiIndex + 1]) {
+            teamId = CoopTeam_SceneTeam(this, actorScript[this->aiIndex + 1]); // COOP: the scene's flyer (WP-17)
+            if (CoopTeam_IsHuman(teamId)) {                                    // COOP: no script hurts a human
+            } else if (this->iwork[12] == teamId) {                            // COOP: was the script's id
                 this->dmgType = DMG_BEAM;
                 this->damage = actorScript[this->aiIndex] & 0x1FF;
                 this->dmgSource = DMG_SRC_100;
             } else {
-                gTeamDamage[actorScript[this->aiIndex + 1]] = actorScript[this->aiIndex] & 0x1FF;
+                gTeamDamage[teamId] = actorScript[this->aiIndex] & 0x1FF; // COOP: was the script's id
             }
             this->aiIndex += 2;
             ActorEvent_ProcessScript(this);
@@ -1452,7 +1463,7 @@ void ActorEvent_ProcessScript(ActorEvent* this) {
 
         case EV_OPC(EVOP_SET_TARGET):
             this->state = EVSTATE_WAIT;
-            this->iwork[1] = gTeamEventActorIndex[actorScript[this->aiIndex] & 0x1FF];
+            this->iwork[1] = gTeamEventActorIndex[CoopTeam_SceneTeam(this, actorScript[this->aiIndex] & 0x1FF)]; // COOP
             this->fwork[17] = actorScript[this->aiIndex + 1];
             this->timer_0BC = 0;
             this->aiIndex += 2;
@@ -2116,7 +2127,7 @@ void ActorEvent_800701E0(ActorEvent* this) {
 
     if ((this->dmgType != DMG_NONE) &&
         (((this->eventType == EVID_ME_ROCK_GULL) && (this->dmgPart == 2)) || (this->eventType != EVID_ME_ROCK_GULL))) {
-        if (this->iwork[12] >= TEAM_ID_KATT) {
+        if ((this->iwork[12] >= TEAM_ID_KATT) || CoopTeam_IsHuman(this->iwork[12])) { // COOP: and a human's stand-in
             this->damage = 0;
         }
 
@@ -2408,19 +2419,19 @@ void ActorEvent_ProcessTriggers(ActorEvent* this) {
             break;
 
         case EVC_FALCO_ACTIVE:
-            if (gTeamShields[TEAM_ID_FALCO] > 0) {
+            if (gTeamShields[CoopTeam_SceneTeam(this, TEAM_ID_FALCO)] > 0) { // COOP: the scene's flyer (WP-17)
                 ActorEvent_TriggerBranch(this);
             }
             break;
 
         case EVC_PEPPY_ACTIVE:
-            if (gTeamShields[TEAM_ID_PEPPY] > 0) {
+            if (gTeamShields[CoopTeam_SceneTeam(this, TEAM_ID_PEPPY)] > 0) { // COOP: the scene's flyer (WP-17)
                 ActorEvent_TriggerBranch(this);
             }
             break;
 
         case EVC_SLIPPY_ACTIVE:
-            if (gTeamShields[TEAM_ID_SLIPPY] > 0) {
+            if (gTeamShields[CoopTeam_SceneTeam(this, TEAM_ID_SLIPPY)] > 0) { // COOP: the scene's flyer (WP-17)
                 ActorEvent_TriggerBranch(this);
             }
             break;

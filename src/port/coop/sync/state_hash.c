@@ -37,6 +37,7 @@
 #include "global.h"
 #include "port/hooks/Events.h"
 #include "port/coop/game/players.h"
+#include "port/coop/game/team.h"
 #include "port/coop/test/switches.h"
 
 // src/sys/sys_math.c
@@ -295,11 +296,16 @@ static void HashPlayerArrays(uint64_t* h) {
 static void HashTeamArrays(uint64_t* h) {
     const TeamArray* team;
     s32 i;
+    const uint8_t* choices;
+    int32_t count;
 
     for (i = 0; i < ARRAY_COUNT(sTeamArrays); i++) {
         team = &sTeamArrays[i];
         HashNamed(h, team->name, team->first, &team->array[team->first], (team->end - team->first) * sizeof(s32));
     }
+    // Who flies each scene of a human-flown wingman in this level (decision 0012, src/port/coop/game/team.h).
+    choices = CoopTeam_Choices(&count);
+    HashNamed(h, "sceneChoice", 0, choices, count);
 }
 
 static void HashActors(uint64_t* h) {
