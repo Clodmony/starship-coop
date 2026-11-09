@@ -117,7 +117,9 @@ Each needs a decision record before code depends on it. Proposals in brackets.
 
 1. Who player 2 is: decided in [0005](decisions/0005-players-and-characters.md). Player 1 is always Fox; players 2-4
    each pick Falco, Peppy or Slippy; unpicked wingmen stay computer wingmen. What a human-flown wingman is, with its
-   shields, radio, rail scenes and story events: [0006](decisions/0006-human-flown-wingman.md).
+   shields, radio, rail scenes and story events: [0006](decisions/0006-human-flown-wingman.md); who flies a scene that
+   would show a human-flown wingman: [0012](decisions/0012-taken-wingman-scenes.md) (the next free computer wingman,
+   else Katt, else Bill).
 2. Lives: decided in [0007](decisions/0007-lives-and-respawn.md). One shared pool, 2 plus 1 per extra player; the run
    ends when the pool is 0 and the last player goes down.
 3. A player goes down: decided in [0007](decisions/0007-lives-and-respawn.md). Players 2-4 return after 5 s for a

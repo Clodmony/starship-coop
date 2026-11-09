@@ -1029,6 +1029,57 @@ Unknown:
 - Whether the lines that now play in the substitute's voice say the same thing (0012 C2; no listening pass yet).
 - US 1.1.
 
+### 2026-11-09, #202, who flies a scene when its wingman is a human
+
+Read at `0e5a5cf6`; nothing was run. Scripts are cited as level, script and command (`CO S59:34`), read with
+`python tools/coop/script_reader.py` from a US 1.0 `sf64.o2r`; lines by message id, not quoted. Counts are over every
+script in the ten levels' tables, placed or not, so they include unplaced ones such as `CO S81`. The result is decision
+0012 (Proposed).
+
+**Observed**
+
+- `EVOP_SET_TEAM_ID` writes the team id to `iwork[12]` and, for ids up to Peppy, the actor's index to
+  `gTeamEventActorIndex` (`src/engine/fox_enmy2.c:1264-1272`). `EVID_TEAMMATE` draws one Arwing for all three
+  (`:3980-3987`); the team arrow follows `iwork[12]` (`:4218-4224`).
+- A scene names its wingman in four commands: `EVC_*_ACTIVE` (`:2408-2424`), `EVOP_DAMAGE_TEAM` (own actor if the id is
+  `iwork[12]`, else `gTeamDamage[id]`, `:1386-1392`, drained from `gTeamShields` in `src/engine/fox_play.c:7044-7052`),
+  `EVOP_SET_TARGET` (`gTeamEventActorIndex[id]`, `src/engine/fox_enmy2.c:1453-1458`) and `EVOP_SET_TEAM_ID`.
+- Helper scripts gate on the scene's wingman too: `CO S59` (Falco), `CO S60` (leader) and `CO S61` (chasers) all start
+  with `EVC_FALCO_ACTIVE` at command 0. `CO S59` gates again at command 39, `CO S61` before each of its waves.
+- `EVOP_PLAY_MSG` carries message id and speaker (`:1335-1341`). The voice is picked by message id
+  (`src/engine/fox_radio.c:128-129`), the gate and portrait by speaker (`:80-94`).
+- The retreat check plays the line of `iwork[12]`'s character (`src/engine/fox_enmy2.c:2072-2097`).
+- Scripts that set a wingman's team id, per level (Falco, Slippy, Peppy): Corneria 5, 2, 3; Meteo 4, 3, 7; Sector X 2,
+  1, 3; Area 6 5, 4, 4; Sector Y 5, 4, 6; Solar 2, 3, 3; Zoness 3, 3, 2; Macbeth 4, 3, 2; Titania 6, 0, 4; Venom 1 6,
+  5, 4.
+- In those scripts the scene's own wingman speaks 100 lines. 21 of them belong to a set of three, one per wingman, used
+  at the same step: `MA S26`, `S27`, `S28` play 9100/9110/9120 at command 8, 9130/9140/9150 at 25 and 9160/9170/9180 at
+  35 (Falco, Slippy, Peppy). Other sets: 20315/20316/20317 (`ME S82`, `VE1 S91-S93`), 20319/20320/20321 (`A6 S22`),
+  20306/20305/20304 (`VE1 S71`), retreat 20220/20222/20221 (`src/engine/fox_enmy2.c:2081-2090`). Members recur in
+  other levels' scenes, for example 9130 in `ZO S8`, `TI S7` and `MA S2`.
+- Corneria's rescue lines are not in a set: Falco speaks 2337 (`CO S59:44`, also `MA S2`), 2167 and 2166 (`CO S60`),
+  Peppy 20235 (`CO S60`). Slippy's own rescue `CO S17` has 2062 (also `MA S50`) and 2336.
+- `TI S2` is a Falco scene with Fox lines answering Falco's.
+
+**Derived**
+
+- Swapping who flies a scene is a remap of one id in those four commands, for that scene's scripts only. Flight,
+  timing, enemies and score stay.
+- The substitute then takes the scripted hits: a failed `CO S59` downs Slippy (`CO S59:34`, 255). The Corneria route
+  still reads Falco's value (`src/engine/fox_enmy.c:1189`), the human's under 0006.
+- The remap must be scoped per scene: `CO S8`, `CO S36` and the scripts that only pick a speaker read "Falco up" for
+  content, and that should keep meaning the human.
+
+**Guess**
+
+- The lines of a set say the same thing in each voice. That fits where they sit; nobody has listened.
+- 2062 is Slippy's call for help and 2336/2337 a thanks pair (adjacent ids, used at the same points of rescues).
+
+**Unknown**
+
+- Whether a substitute's own scene can overlap a borrowed one: the object lists' `zPos1` are not read by any tool yet.
+- Which other speakers' lines name the taken wingman (only the ROM text says).
+
 ### 2026-11-08, #7, decision 0007 walk-through: what had moved since the record was written
 
 Read in `b3169ab6` (checkout of `coop`), no build, nothing run. This is the re-check behind the owner's walk-through of
