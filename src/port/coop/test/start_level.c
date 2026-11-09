@@ -21,12 +21,16 @@ typedef enum {
     START_WAIT_TITLE,
     START_WAIT_LEVEL,
     START_PRESSED,
+    START_FLYING,
     START_DONE,
 } StartStep;
 
 static StartStep sStep = START_DONE;
 static s32 sLevel = -1;
 static bool sSkipIntro = false;
+static s32 sTitleFrames = 0;
+static s32 sResetFrames = -1;
+static s32 sFrames = 0;
 static u8 sNormalClear = 0;
 static char sName[32] = "menus";
 
@@ -50,14 +54,20 @@ static void CoopTestStart_PressStart(void) {
     gControllerPress[gMainController].button |= START_BUTTON;
 }
 
+// In the level, with or without its intro: on to the reset if one was asked for.
+static StartStep CoopTestStart_AfterStart(void) {
+    sFrames = 0;
+    return (sResetFrames >= 0) ? START_FLYING : START_DONE;
+}
+
 // HIGH runs last: the replay has restored the seeds and the pads are in place.
 static void CoopTestStart_OnGamePreUpdate(IEvent* event) {
     (void) event;
     switch (sStep) {
         case START_WAIT_TITLE:
-            if (gGameState == GSTATE_TITLE) {
+            if ((gGameState == GSTATE_TITLE) && (sFrames++ >= sTitleFrames)) {
                 CoopTestStart_Enter();
-                sStep = sSkipIntro ? START_WAIT_LEVEL : START_DONE;
+                sStep = sSkipIntro ? START_WAIT_LEVEL : CoopTestStart_AfterStart();
             }
             break;
         case START_WAIT_LEVEL:
@@ -73,7 +83,16 @@ static void CoopTestStart_OnGamePreUpdate(IEvent* event) {
             break;
         case START_PRESSED:
             gSaveFile.save.data.planet[sSaveSlotFromLevel[gCurrentLevel]].normalClear = sNormalClear;
-            sStep = START_DONE;
+            sStep = CoopTestStart_AfterStart();
+            break;
+        case START_FLYING:
+            if ((gGameState == GSTATE_PLAY) && (gPlayState == PLAY_UPDATE) && (sFrames++ >= sResetFrames)) {
+                // What a hit leaves (src/engine/fox_play.c, Player_ApplyDamage) on a game that plays on afterwards.
+                gRightWingHealth[0] = 40;
+                gNextGameState = GSTATE_BOOT; // F4 (src/port/Engine.cpp, GameEngine::StartFrame)
+                LUSLOG_INFO("coop: test switch: reset after %d frames in the level", sResetFrames);
+                sStep = START_DONE;
+            }
             break;
         default:
             break;
@@ -87,6 +106,8 @@ const char* CoopTestStart_Name(void) {
 void CoopTestStart_Init(void) {
     const char* level = getenv("SF64_COOP_TEST_START_LEVEL");
     const char* skipIntro = getenv("SF64_COOP_TEST_START_SKIP_INTRO");
+    const char* titleFrames = getenv("SF64_COOP_TEST_START_TITLE_FRAMES");
+    const char* reset = getenv("SF64_COOP_TEST_START_RESET");
 
     if ((level == NULL) || (level[0] == '\0')) {
         return;
@@ -97,7 +118,10 @@ void CoopTestStart_Init(void) {
         return;
     }
     sSkipIntro = (skipIntro != NULL) && (skipIntro[0] != '\0') && (strcmp(skipIntro, "0") != 0);
-    snprintf(sName, sizeof(sName), "level:%d%s", sLevel, sSkipIntro ? ":skip-intro" : "");
+    sTitleFrames = ((titleFrames != NULL) && (titleFrames[0] != '\0')) ? atoi(titleFrames) : 0;
+    sResetFrames = ((reset != NULL) && (reset[0] != '\0')) ? atoi(reset) : -1;
+    snprintf(sName, sizeof(sName), "level:%d%s%s", sLevel, sSkipIntro ? ":skip-intro" : "",
+             (sResetFrames >= 0) ? ":reset" : "");
     LUSLOG_INFO("coop: test switch: start in %s", sName);
     sStep = START_WAIT_TITLE;
     REGISTER_LISTENER(GamePreUpdateEvent, CoopTestStart_OnGamePreUpdate, EVENT_PRIORITY_HIGH);
