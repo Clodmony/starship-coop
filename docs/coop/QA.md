@@ -191,7 +191,14 @@ number of clients, transport.
 4. **Network conditions (WP-27).** Lag, loss and reordering between the clients with a chaos relay, as in the hub's
    [network chaos testing](https://github.com/cranebeaker/coop-anything/blob/main/playbook/network-chaos-testing.md).
    The transport on its own already runs through that relay: `python tools/coop/net_test.py` (WP-20), which needs a
-   configured build directory but no ROM. WP-27 does the same with real game clients.
+   configured build directory but no ROM. `python tools/coop/chaos_run.py` (WP-27, #25, unattended, exit code 0 when
+   every run passed) does the same with real game clients: per profile of `chaos/profiles.json` and per seed (default
+   1, 2 and 3), one session over loopback with the client's datagrams through the relay, a pilot on each client flying
+   Corneria from its intro (6000 lockstep frames by default, `--frames`). Lockstep stamps every input with its frame,
+   so the flight is the same at any lag: a run passes when both games reach the last frame equal on every frame, hash
+   and input logs, with no desync report, and equal to the first passing run. Per run it reports the frames and the
+   time held, the longest single hold, resends, ping, what the relay dropped and duplicated, and where a session that
+   broke ended, with the profile and seed that repeat it. `--profiles`, `--seeds`, `--lock <file>`.
    Whether those scenarios can fail at all is checked by `python tools/coop/net_mutants.py`: it breaks one behaviour
    of `net_core.c` at a time and requires the named scenario to fail (#44). Run it after changing `net_core.c`.
    `python tools/coop/session_mutants.py` does the same for `session.c` and `session_test.py` (#55; `test_all.py` runs
@@ -255,6 +262,20 @@ result:     automated. Equal on every frame, hash and input logs, from the level
             1 11172, Aquas 8599, Sector Z 6505, Venom 2 17968, Katina 16751, Solar 12711, Macbeth 11315. Equal on every
             frame flown, the pilot did not reach the end: Bolse 26312, Venom (Andross) 26059, Sector Y 36131, Zoness
             26041, Area 6 40270. Downs: 0 on every level.
+```
+
+```
+date:       2026-11-10
+commit:     issue/25-chaos-numbers (chaos_run.py) on 80ff9be6, against the build of issue/181-views-later-parts a36dea0a
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window, 2 clients over loopback through
+            the join driver, the client's datagrams through chaos/relay.py, a pilot on each client, real time
+what ran:   python tools/coop/chaos_run.py --seeds 1,2,3 --frames 6000 --lock <file> (every profile);
+            python tools/coop/chaos_run.py --profiles lan --seeds 1 --outages 5,9,12 --lock <file>
+result:     automated. 18/18 profile runs reached frame 6000 equal on every frame, each equal to the first: lan and
+            good_wifi waited 0 to 44 ms in all, bad_wifi 0.4 to 0.5 s, mobile_tether 3.5 to 6.6 s, transatlantic
+            2.7 to 15.9 s, hell 151 to 154 s (longest single wait 0.8 to 1.4 s, 26 to 28 % of datagrams dropped).
+            Link down 5 s and 9 s: waited out, equal. Link down 12 s: the session ends after 10 s without input
+            (frame 3059). One PC, loopback, no real WAN.
 ```
 
 ```
