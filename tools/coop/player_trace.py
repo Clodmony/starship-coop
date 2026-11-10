@@ -35,12 +35,23 @@ rules and exits 0 when all hold:
 Each test by rule below starts its game straight in Corneria (replay.py, Start): `rails` before the intro, the others
 past it. `run` plays a file from where it was made.
 
-`rails` is the test for WP-12. It plays one replay by rule (see write_rail_replay: pad 0 fires, boosts and brakes, the
-other pads fly stick sweeps, boost, brake and a loop) with one player and with --players at the same time, checks the
-second trace as above, and compares the two on every frame player 0 flies Corneria's rail section with both:
-gPathProgress, gPathVelZ and gPathTexScroll must match single player, the section must end on the same frame, and each
-extra player must have covered --min-sweep units of x, stayed in the flight box, boosted and braked (its camDist only)
-and looped. Both runs set gInvincible: flying by rule, player 0 is shot down half way through the section.
+`rails` is the test for WP-12 and for the team's speed on the rails (#194, #214). It plays input by rule (see
+write_rail_replay: pad 0 fires, boosts and brakes, the other pads fly stick sweeps) three times at once: with one
+player, with --players whose extra players never boost or brake (rail_quiet_pad), and with --players whose extra
+players boost, brake and loop, also while player 0 boosts or brakes (rail_team_pad). It checks both co-op traces as above, then on
+every frame player 0 flies Corneria's rail section:
+  - quiet: gPathProgress, gPathVelZ and gPathTexScroll must match single player and the section must end on the same
+    frame, so a player who does not boost or brake changes nothing along the path (with one player, co-op is off and
+    the path takes player 0's boostSpeed alone, as upstream's);
+  - team: the speed along the path must follow the rule of #194 (team_speed: the highest boostSpeed of the players
+    that fly if above 0, else the lowest, the others as of the previous frame and not when they followed player 0
+    there): gPathVelZ less that must be single player's gPathVelZ less its own, on every frame. Each branch of the rule
+    must be flown, and players 1 and up must set the speed on --min-team frames, so the rule of player 0 alone fails
+    here, and so does a rule that lets a brake beat a boost or adds two boosts.
+Each extra player must have covered --min-sweep units of x and stayed in the flight box; the ones of the team run also
+boosted and braked (their camDist) and looped. Quiet players still get the boost a section starts with, as every flying
+player does: the rule leaves out a player that follows player 0 (#214), so they change nothing. All runs set
+gInvincible: flying by rule, player 0 is shot down half way through the section.
 
 `shots` is the test for #86. It plays one replay by rule into Corneria's all-range section (see write_shot_replay: pad 0
 does not fire, the other pads sweep and fire) with gHyperLaser, so every player starts with upgraded lasers, and with
@@ -121,7 +132,8 @@ ARWING = 0
 
 # One player on one frame and one whole frame, as player_trace.c writes them.
 Slot = namedtuple("Slot", "state cs x y z parked draw zpath camdist xpath ypath width shields somersault form")
-Row = namedtuple("Row", "frame level mode players path pathvel scroll lowmsg radio_state radio_id lasers hits marks")
+Row = namedtuple("Row", "frame level mode players path pathvel scroll lowmsg radio_state radio_id lasers hits marks boost",
+                 defaults=((),))
 Hit = namedtuple("Hit", "actor ai type source shooter")
 
 # OSContPad.button
@@ -269,8 +281,10 @@ def parse_row(line):
     radio = [int(v) for v in f.get("radio", "0,0").split(",")]
     hits = [Hit(*(int(v) for v in h.split(":"))) for h in f["hits"].split(";")] if "hits" in f else []
     lasers = [int(v) for v in f.get("lasers", "0").split(",")]
+    boost = tuple(float(v) for v in f["boost"].split(",")) if "boost" in f else ()
     return Row(int(f["frame"]), int(f["level"]), int(f["mode"]), players, float(f["path"]), float(f["pathvel"]),
-               float(f["scroll"]), int(f.get("lowmsg", 0)), radio[0], radio[1], lasers, hits, int(f.get("marks", 0)))
+               float(f["scroll"]), int(f.get("lowmsg", 0)), radio[0], radio[1], lasers, hits, int(f.get("marks", 0)),
+               boost)
 
 
 def parse(path):
@@ -480,6 +494,32 @@ def rail_pad(flight, index):
     return button, stick_x, stick_y
 
 
+def rail_quiet_pad(flight, index):
+    """rail_pad without boost and brake, so without its loop too: a player who flies the rails and never changes the
+    speed along the path."""
+    button, stick_x, stick_y = rail_pad(flight, index)
+    return button & ~(BUTTON_C_LEFT | BUTTON_C_DOWN), stick_x, stick_y
+
+
+def rail_team_pad(flight, index):
+    """rail_pad, and against player 0's own boost and brake (rail_lead), so that `rails` flies every branch of the
+    team's speed (#194): a brake while player 0 boosts (the boost wins) and, every other cycle, a boost that starts
+    before player 0's and ends first (the higher of two boosts), and a boost while player 0 brakes (the boost wins).
+    rail_pad's own boost, brake and loop come when player 0 does neither."""
+    button, stick_x, stick_y = rail_pad(flight, index)
+    if flight < RAIL_INPUT_START:
+        return button, stick_x, stick_y
+    t = (flight - RAIL_INPUT_START) % RAIL_CYCLE
+    odd = ((flight - RAIL_INPUT_START) // RAIL_CYCLE) % 2 == 1
+    if odd and 190 <= t < 215:
+        button |= BUTTON_C_LEFT
+    if not odd and 203 <= t < 213:
+        button |= BUTTON_C_DOWN
+    if 405 <= t < 420:
+        button |= BUTTON_C_LEFT
+    return button, stick_x, stick_y
+
+
 def rail_lead(flight):
     """Buttons of player 0, `flight` frames after it flies: a boost and a brake every cycle, so that the speed along the
     path changes and a player who does not follow it shows."""
@@ -577,8 +617,71 @@ def compare_path(solo, coop, args):
     return results
 
 
-def check_rail_flight(rows, i, args):
-    """Return the rule results for what extra player i did on rails: its own flight on player 0's path."""
+# What decided the speed along the path on a frame, by the rule of #194 (see team_speed).
+TEAM_KINDS = ("another player's boost alone", "another player's brake", "another player's boost over player 0's brake",
+              "player 0's boost over another player's brake", "the higher of two boosts")
+
+
+def team_speed(rows):
+    """For each rail frame but the first, (row, the boostSpeed the path flew by, what decided it or None when player 0's
+    own did): the rule of #194, CoopPlayers_PathBoostSpeed in src/port/coop/game/players.c. The highest boostSpeed of
+    player 0 and of the players that fly (active, not parked) if it is above 0, else the lowest: a boost wins over a
+    brake. Player 0 updates first and reads the others as they stood after the previous frame; one whose boostSpeed
+    then was player 0's follows player 0 and adds nothing (#214), such as the boost a section starts with."""
+    for prev, row in zip(rows, rows[1:]):
+        own = row.boost[0]
+        values = [own] + [prev.boost[i] for i in range(1, len(row.players))
+                          if prev.players[i].state == ACTIVE and not prev.players[i].parked and
+                          prev.boost[i] != prev.boost[0]]
+        hi, lo = max(values), min(values)
+        team = hi if hi > 0 else lo
+        kind = None
+        if team != own:
+            kind = TEAM_KINDS[4 if own > 0 else 2 if (team > 0 and own < 0) else 0 if team > 0 else 1]
+        elif own > 0 and lo < 0:
+            kind = TEAM_KINDS[3]
+        elif sum(1 for v in values if v > 0) > 1 and hi != lo:
+            kind = TEAM_KINDS[4]
+        yield row, team, kind
+
+
+def compare_team_path(solo, coop, args):
+    """Return the rule results for the speed along the path when players 1 and up boost and brake (#194): on every
+    rail frame, gPathVelZ less the team's boostSpeed (team_speed) must be what single player's gPathVelZ less its own
+    is on that frame; on Corneria's rails that is baseSpeed, 40. Each branch of the rule must have been flown, and
+    other players than player 0 must have set the speed often enough that the rule of player 0 alone fails here."""
+    solo_rail, coop_rail = rail_rows(solo), rail_rows(coop)
+    if not coop_rail or not coop_rail[0].boost:
+        return [("the trace holds each player's boostSpeed (boost=, src/port/coop/test/player_trace.c)", False)]
+    solo_base = {row.frame: row.pathvel - team for row, team, _ in team_speed(solo_rail)}
+    compared = same = by_others = 0
+    worst = 0.0
+    kinds = {kind: 0 for kind in TEAM_KINDS}
+    for row, team, kind in team_speed(coop_rail):
+        if row.frame not in solo_base:
+            continue
+        compared += 1
+        off = abs((row.pathvel - team) - solo_base[row.frame])
+        worst = max(worst, off)
+        same += off <= 0.001  # the trace writes three decimals
+        if kind is not None:
+            kinds[kind] += 1
+            by_others += team != row.boost[0]
+    results = [
+        (f"speed along the path by the team's boost (#194) on {same} of {compared} frames: gPathVelZ less it as in "
+         f"single player less player 0's, largest difference {worst:.3f}",
+         compared >= args.min_rail and same == compared),
+        (f"players 1 and up set the speed on {by_others} frames (min {args.min_team})", by_others >= args.min_team),
+    ]
+    results += [(f"flown: {kind} on {count} frames (min 1)", count >= 1) for kind, count in kinds.items()]
+    solo_end = solo_rail[-1].frame if solo_rail else "-"
+    print(f"player_trace: rail section ends on frame {coop_rail[-1].frame}, with 1 player on {solo_end}")
+    return results
+
+
+def check_rail_flight(rows, i, args, changes_speed=True):
+    """Return the rule results for what extra player i did on rails: its own flight on player 0's path. With
+    changes_speed it must also have boosted, braked and looped."""
     flown = [r for r in rail_rows(rows) if flying(r.players[i])]
     if not flown:
         return [(f"player {i} flew on rails", False)]
@@ -592,12 +695,16 @@ def check_rail_flight(rows, i, args):
     ahead = min(s.camdist for s in slots)
     behind = max(s.camdist for s in slots)
     loops = sum(1 for a, b in zip(slots, slots[1:]) if b.somersault and not a.somersault)
-    return [
+    results = [
         (f"player {i} flew {len(flown)} rail frames, to the end of the section: shields {slots[-1].shields}",
          slots[-1].shields > 0 and len(flown) == len(rail_rows(rows))),
         (f"player {i} swept {sweep:.0f} in x (min {args.min_sweep}), {rise:.0f} in y", sweep >= args.min_sweep),
         (f"player {i} {apart:.0f} from player 0 in x on average (min 100)", apart >= 100),
         (f"player {i} outside the flight box on {outside} frames, loops left out", outside == 0),
+    ]
+    if not changes_speed:
+        return results
+    return results + [
         (f"player {i} camDist {ahead:.0f} to {behind:.0f}: boosted (below -100) and braked (above 50)",
          ahead < -100 and behind > 50),
         (f"player {i} looped {loops} time(s) (min 1)", loops >= 1),
@@ -605,27 +712,33 @@ def check_rail_flight(rows, i, args):
 
 
 def rails(args):
-    replay = ROOT / "local" / "test-trace-rails.sfcr"
+    team = ROOT / "local" / "test-trace-rails.sfcr"
+    quiet = ROOT / "local" / "test-trace-rails-quiet.sfcr"
     args.start = LEVEL
     args.frames = args.frames or args.start.frame(RAIL_FLIGHT)
-    write_rail_replay(replay, args.frames, start=args.start)
-    args.replay = str(replay)
+    # Pad 0 is the same in both, so single player plays either.
+    write_rail_replay(team, args.frames, pad_rule=rail_team_pad, start=args.start)
+    write_rail_replay(quiet, args.frames, pad_rule=rail_quiet_pad, start=args.start)
     args.no_checkpoints = True
     args.cvar = args.cvar + ["gInvincible=1"]  # flying by rule, player 0 would not live through the whole section
-    solo_args = argparse.Namespace(**{**vars(args), "players": 1})
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        solo_job = pool.submit(play, solo_args)
-        coop_job = pool.submit(play, args)
-        solo_trace, coop_trace = solo_job.result(), coop_job.result()
-    if solo_trace is None or coop_trace is None:
+    runs = {"solo": {"players": 1, "replay": str(team)}, "quiet": {"replay": str(quiet)}, "team": {"replay": str(team)}}
+    with ThreadPoolExecutor(max_workers=len(runs)) as pool:
+        jobs = {name: pool.submit(play, argparse.Namespace(**{**vars(args), **extra})) for name, extra in runs.items()}
+        traces = {name: job.result() for name, job in jobs.items()}
+    if any(trace is None for trace in traces.values()):
         print("player_trace: FAIL")
         return 1
-    print(f"player_trace: traces {solo_trace} and {coop_trace}")
-    failed = check_trace(coop_trace, args)
-    solo, coop = parse(solo_trace), parse(coop_trace)
-    ok = report_results(compare_path(solo, coop, args))
+    print(f"player_trace: traces {traces['solo']}, {traces['quiet']} and {traces['team']}")
+    failed = check_trace(traces["quiet"], args) | check_trace(traces["team"], args)
+    solo, quiet_rows, team_rows = (parse(traces[name]) for name in ("solo", "quiet", "team"))
+    print("player_trace: players 1 and up never boost or brake, so the path must be single player's:")
+    ok = report_results(compare_path(solo, quiet_rows, args))
     for i in range(1, args.players):
-        ok = report_results(check_rail_flight(coop, i, args)) and ok
+        ok = report_results(check_rail_flight(quiet_rows, i, args, changes_speed=False)) and ok
+    print("player_trace: players 1 and up boost and brake, so the team's boost sets the speed (#194):")
+    ok = report_results(compare_team_path(solo, team_rows, args)) and ok
+    for i in range(1, args.players):
+        ok = report_results(check_rail_flight(team_rows, i, args)) and ok
     ok = ok and not failed
     print(f"player_trace: rails {'PASS' if ok else 'FAIL'}")
     return 0 if ok else 1
@@ -920,6 +1033,8 @@ def main():
     t.add_argument("--frames", type=int, help=f"replay length (default {RAIL_FLIGHT} past when player 0 flies)")
     t.add_argument("--min-rail", type=int, default=4000, help="rail frames both runs must share (default 4000)")
     t.add_argument("--min-sweep", type=float, default=600.0, help="x range each extra player must cover (default 600)")
+    t.add_argument("--min-team", type=int, default=100,
+                   help="frames players 1 and up must set the speed along the path on (default 100)")
     t.add_argument("--max-path-diff", type=float, default=0.0,
                    help="largest difference from single player on the rail section (default 0)")
     t.add_argument("--box-slack", type=float, default=100.0,
