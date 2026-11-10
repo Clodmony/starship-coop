@@ -591,7 +591,53 @@ Unknown:
 
 ## Engine and players
 
-### 2026-11-10, #145, the stray reads and writes of #141: four of upstream's, and the build folders
+### 2026-11-10, #243, an idle player gets shot and knocked about: the nearest-human aim, not a drift
+
+Identity: ROM US 1.0, base `f3eadf7a` (`issue/combined-test-4`), Linux, GCC, Debug, OpenGL in software, no window.
+`input_test.py` scenario `alone`: Corneria's rails past the intro, 1200 frames, `gInvincible`, player 0 on the scripted
+gamepad, player 1 with no input stream and an idle pad on all 1200 frames.
+
+Observed:
+
+- `alone` on `f3eadf7a96fa` and on `80ff9be6326e`: `FAIL player 1 with no stream moved 424 in its flight box (max
+  100)`. On `coop` `0e5a5cf6`: `PASS ... moved 0`.
+- Player 1's x on `f3eadf7a96fa` (player trace): still at 250 until game frame 180, then three bursts of +20, +19,
+  +18, ... a frame, each about 17 frames long: from frame 180 (250 to 462), from 269 (to 674), and from 547 the other
+  way (to 441). 674 less 250 is the 424. Its shields stayed 255.
+- `SF64_COOP_AIM_TRACE` on the same run: enemy lasers (id 353) aimed at player 1 left at frames 160, 167, 249 (two),
+  256 (two), 513 and 524. On `coop` `0e5a5cf6` the aim code of #193 is not there, and every enemy aims at player 0.
+- One change, a throw-away build of `f3eadf7a` with `CoopAim_Nearest` (`src/port/coop/game/aim.c:26`) returning 0:
+  `PASS player 1 with no stream moved 0 in its flight box (max 100)`, no shot at player 1 (3 at player 0, 50 at
+  nobody).
+- With each player's `knockback` and `hitTimer` in the trace (`knock=`, below): player 1 was hit at frames 179, 268
+  and 546, each time with a knock-back of x ±20, y +20, the values `CoopEffects_ShotHit` sets
+  (`src/port/coop/game/effects.c:66-69`). On no other frame did it move.
+- `gInvincible` stops the damage only: `Player_ApplyDamage` sets `damage` to 0 (`src/engine/fox_play.c:981`), but the
+  hit timer, mercy timer and knock-back still happen, and `Player_Update` adds the knock-back to `pos.x`, `pos.y` and
+  runs it down (`src/engine/fox_play.c:5619-5628`). `Math_SmoothStepToF` (`src/engine/fox_std_lib.c:496`) takes
+  1 a frame off a knock-back of 20 down to 10, then a tenth, and snaps a positive one to 0 below 5; a negative one
+  goes on by 0.5 a frame, as the minimum step is not signed. One shot's knock-back adds up to 212 one way, 233 the
+  other: the three bursts above.
+
+Derived:
+
+- The 424 is the rule of #193 (decision of 2026-11-08, option 1) at work: player 1 sits still at x 250, nearer to
+  some shooters than player 0, so their lasers go at it, hit it and knock it. Nothing moved the idle player without a
+  hit. The check's expectation (no input, no motion) was older than the rule, so the test changed, not the code.
+- `input_test.py` `alone` now counts the x player 1 moved outside of hits (max 100, as before), and allows a hit at
+  most 250 of push (`idle_moves`, `check_idle_place`): a push belongs to a hit from the frame `hitTimer` goes up until
+  the knock-back is 0 on two frames in a row. On the fix: `moved 0 ... besides hits (max 100); 3 hits pushed it 656
+  (max 250 a hit)`. Two throw-away builds show the check still fails: player 1 moved 0.5 x a frame with no hit gives
+  `moved 240 ... besides hits`, a knock-back of 20 with no hit at frame 400 gives `moved 212 ... besides hits`.
+- The new check needs the `knock=` field: on a build before #243 it fails with `player 1's knock-back is in the trace
+  (a build before #243 has none)`.
+
+Unknown:
+
+- Why the drift of 0.5 a frame stopped at 240 and not near 600: a guess is the edge of the flight box (`pathWidth`),
+  not checked.
+- Whether an idle player that is hit often enough is pushed out of the way for good on other levels: this run is
+  Corneria's rails only.
 
 Identity: ROM US 1.0, on `80ff9be6` (the combined test branch 2), Linux, GCC, Debug, OpenGL on a software renderer, no
 window. Disassembly of the base build `80ff9be6`.

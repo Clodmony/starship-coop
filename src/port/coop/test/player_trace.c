@@ -183,6 +183,13 @@ static void CoopTrace_OnGamePostUpdate(IEvent* event) {
     for (i = 1; i < CoopPlayers_Count(); i++) {
         fprintf(sTraceFile, ",%d", gLaserStrength[i]);
     }
+    // What moves a ship by itself after a hit, and the hit's timer (#243): an idle player is pushed only by a hit.
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        const Player* p = &gPlayer[i];
+
+        fprintf(sTraceFile, "%s%.2f,%.2f,%.2f,%d", (i == 0) ? " knock=" : ";", p->knockback.x, p->knockback.y,
+                p->knockback.z, p->hitTimer);
+    }
     CoopTrace_WriteHits();
     CoopTrace_WriteTorpedo();
     fputc('\n', sTraceFile);

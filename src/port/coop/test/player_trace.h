@@ -13,6 +13,7 @@
 //   tframe=<test pad frame> pad0=<hold button>,<hold x>,<hold y>,<press button>,<press x>,<press y> ... pad3=...
 //   shots=<id>:<owner>:<timer>:<exploded>;...  locks=<actors locked by player 0>,...,<by player 3>
 //   lasers=<gLaserStrength per player>
+//   knock=<knockback.x>,<knockback.y>,<knockback.z>,<hitTimer>;... one per player
 //   [hits=<actor>:<aiType>:<dmgType>:<dmgSource>:<shooter>;...] [marks=<n>]
 //   [torpedo=<owner>:<homing>:<target>:<x>,<y>,<z>]
 //
@@ -20,7 +21,9 @@
 // player's draw flag. tools read it to check what each player did without looking at the screen. The pads are
 // gControllerHold and gControllerPress as game code found them at the start of this frame; tframe is
 // CoopTestPad_Frame (test_pad.h), -1 without a test pad. shots lists the bombs and lock-search shots in flight, - for
-// none: those are the shots that answer to a button after they left the ship.
+// none: those are the shots that answer to a button after they left the ship. knock is what moves a ship by itself
+// after a hit, and hitTimer is 20 on the frame Player_ApplyDamage hits it, one less on each frame after (#243).
+// knockback.z runs down in all-range only, so on the rails it can stay where a hit set it.
 //
 // The last two fields appear only on frames with something to say (#86). hits lists wingmen at a boss with a hit they
 // have not read yet. shooter is the sourceId of a shot SF64_COOP_TRACE_STEER carried to that wingman on this frame, -1
