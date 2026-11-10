@@ -1677,7 +1677,8 @@ def team_lines(game, level=0):
             continue
         # p1 and scenes came with #15; a build from before reads as no player 1 and no choice, so it fails on its ships.
         # ai and body came with the all-range part of #15; before it, a wingman read as nobody flying.
-        row = {"p1": "-1", "scenes": ",".join(["0"] * 16), "ai": "0,0,0", "body": "0,0,0",
+        # shown came with the wingman bar of a human with the shield upgrade; before it, the bar drew the held value.
+        row = {"p1": "-1", "scenes": ",".join(["0"] * 16), "ai": "0,0,0", "body": "0,0,0", "shown": "0,0,0",
                **dict(field.split("=", 1) for field in line.split())}
         if row["level"] == str(level) and row["gs"] == "7":  # GSTATE_PLAY
             rows.append({k: [int(v) for v in value.split(",")] if "," in value else value for k, value in row.items()})
@@ -1822,6 +1823,44 @@ def sc_allrange_down(args, folder):
                      f"{len(settled)} lines, gTeamShields[Falco] -1 there, no computer Falco"
                      + (f"; player 1 back from frame {returned[0]['frame']}, body on it again on {len(returned)} lines"
                         if returned else ""))
+    return f"{frames} frames of Katina, {equal} frames equal; " + "; ".join(found)
+
+
+ALLRANGE_RINGS_AFTER = 1500  # frames of player 0 active on Katina before the client gets the rings and its shields
+RINGS_SHIELDS = 300  # of the 383 the upgrade allows
+SHIELD_MAX_UPGRADED = 383  # Play_GetMaxShields with three gold rings (src/engine/fox_play.c)
+
+
+def sc_teambar(args, folder):
+    """The bar of a human-flown wingman, with the team's shield upgrade. On Katina the client flies Falco and gets the
+    three gold rings and 300 of 383 shields (SF64_COOP_TEAM_RINGS). gTeamShields[Falco] stays held to 255 (decision 0006
+    rule 1), so a bar that drew it would be full; the pause, level start and level clear rows and the radio portrait
+    draw Falco's share of the larger gauge instead, 300 * 255 / 383 = 199, and the same on both clients
+    (CoopTeam_DisplayShields)."""
+    frames = ALLRANGE_FRAMES
+    rings = f"{ALLRANGE_LEVEL},{ALLRANGE_RINGS_AFTER},1,{RINGS_SHIELDS}"
+    host, client = run_short(args, folder, frames=frames, host_env={"SF64_COOP_JOIN_LEVEL": str(ALLRANGE_LEVEL)},
+                             both={"SF64_COOP_TEAM_TRACE": "team.txt", "SF64_COOP_TEAM_RINGS": rings})
+    equal = compare(host, client, frames)
+    found = []
+    for game in (host, client):
+        marks = [l for l in (game.run / "team.txt").read_text(encoding="utf-8").splitlines() if l.startswith("# rings")]
+        expect(marks, f"{game.name}: the rings and the shields were never poked")
+        at = int(marks[0].split()[2].split("=")[1])
+        after = [l for l in team_lines(game, ALLRANGE_LEVEL) if int(l["frame"]) > at and int(l["p1"]) >= 1]
+        above = [l for l in after if int(l["p1"]) > 255]
+        expect(above, f"{game.name}: player 1 never held more than 255 shields after frame {at}")
+        held = [l for l in above if l["team"][0] != 255]
+        expect(not held, f"{game.name}: gTeamShields[Falco] is {held[0]['team'][0] if held else 0} at frame "
+                         f"{held[0]['frame'] if held else 0}, not held to 255")
+        wrong = [l for l in after if abs(l["shown"][0] - max(1, int(l["p1"]) * 255 // SHIELD_MAX_UPGRADED)) > 1]
+        expect(not wrong, f"{game.name}: at frame {wrong[0]['frame'] if wrong else 0} player 1 has "
+                          f"{wrong[0]['p1'] if wrong else 0} of {SHIELD_MAX_UPGRADED} and Falco's bar draws "
+                          f"{wrong[0]['shown'][0] if wrong else 0}, want "
+                          f"{int(wrong[0]['p1']) * 255 // SHIELD_MAX_UPGRADED if wrong else 0}")
+        found.append(f"{game.name}: rings at frame {at}, {len(above)} lines with more than 255 shields (the bar draws "
+                     f"{above[0]['shown'][0]} for {above[0]['p1']}, the held value is {above[0]['team'][0]}), "
+                     f"{len(after)} lines in all right")
     return f"{frames} frames of Katina, {equal} frames equal; " + "; ".join(found)
 
 
@@ -2488,6 +2527,7 @@ SCENARIOS = {
     "scenes": sc_scenes,
     "allrange": sc_allrange,
     "allrange_down": sc_allrange_down,
+    "teambar": sc_teambar,
     "audio": sc_audio,
     "release": sc_release,
     "rates": sc_rates,
@@ -2501,7 +2541,8 @@ SCENARIOS = {
     "bosses": sc_bosses,
     "other_bosses": sc_other_bosses,
 }
-LONG = ("full", "scenes", "allrange", "allrange_down", "audio", "release", "rates", "vehicles", "vehicle_end", "bosses", "other_bosses")
+LONG = ("full", "scenes", "allrange", "allrange_down", "teambar", "audio", "release", "rates", "vehicles", "vehicle_end",
+        "bosses", "other_bosses")
 
 
 def main():

@@ -52,6 +52,27 @@ void CoopTeam_Update(void) {
     }
 }
 
+int32_t CoopTeam_DisplayShields(int32_t teamId) {
+    s32 i;
+    s32 max;
+    s32 shown;
+
+    if ((teamId < TEAM_ID_FALCO) || (teamId > TEAM_ID_PEPPY)) {
+        return ((teamId >= 0) && (teamId < TEAM_ID_MAX)) ? gTeamShields[teamId] : 0; // not a wingman: as read before
+    }
+    max = Play_GetMaxShields();
+    if ((gTeamShields[teamId] <= 0) || (max <= 255)) {
+        return gTeamShields[teamId]; // a down or an OK stays as it is, and so does every value without the upgrade
+    }
+    for (i = 1; i < CoopPlayers_Count(); i++) {
+        if ((CoopTeam_OfPlayer(i) == teamId) && !CoopPlayers_IsParked(i)) {
+            shown = (gPlayer[i].shields * 255) / max;
+            return (shown < 1) ? 1 : (shown > 255) ? 255 : shown;
+        }
+    }
+    return gTeamShields[teamId]; // a computer wingman: its value is 0..255 of its own
+}
+
 void CoopTeam_OnPlayerDown(int32_t index) {
     s32 id = CoopTeam_OfPlayer(index);
 

@@ -15,6 +15,7 @@
 //     chosen, else the team id that flies that scene of a human-flown wingman, src/port/coop/game/team.h>
 //     ai=<all-range and boss-fight wingmen flying on their own AI, as Falco, Slippy, Peppy>
 //     body=<CoopTeam_Body of the all-range body of Falco, Slippy, Peppy: 0 none, 1 on its human, 2 away, 3 elsewhere>
+//     shown=<CoopTeam_DisplayShields of Falco, Slippy, Peppy: what their bars draw in the status rows and the radio>
 //
 //     (all on one line). path shows in every line but does not cause one. gGameFrameCount restarts with each level and
 //     screen, so it would not say where in a replay a line belongs.
@@ -27,6 +28,11 @@
 //     timer (radioDamageTimer) once, after player 0
 //     has been active for that many frames of that level, so the game takes that player down its own way, and logs a
 //     "# down" line. Set it on every client (#15, the all-range body's away state).
+//
+//   SF64_COOP_TEAM_RINGS=<level>,<frames>,<player>,<shields>   once, after player 0 has been active for that many frames
+//     of that level: gGoldRingCount[0] = 3 (the team's shield upgrade, up to 383 shields) and co-op player <player>'s
+//     (1..3) shields to <shields>, and logs a "# rings" line. Set it on every client (the wingman bar of a human with
+//     the upgrade, CoopTeam_DisplayShields).
 
 #ifdef __cplusplus
 extern "C" {

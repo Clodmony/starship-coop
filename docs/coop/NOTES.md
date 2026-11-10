@@ -9,6 +9,47 @@ Private notes (your paths, your PC, your logs) go in `local/`, not here.
 
 ## Build and run
 
+### 2026-11-10, the pause bar of a human-flown wingman with the shield upgrade drew a full bar
+
+Identity: ROM US 1.0, branch from `ed61d6fd` (the test branch of 2026-11-10), Linux, GCC, Debug, two games over
+loopback (`lockstep_test.py --only teambar`), no window. Found in the first hand test on that build: a Windows host
+flying Fox and a Linux client flying Falco, Corneria.
+
+Reported: the client's pause menu showed a full bar for its Falco while its own shield gauge was lower. The same
+player lost its upgraded laser at a crash with a damaged wing: that is upstream (`Player_Shoot` sets the laser back to
+single when either wing is broken, `src/engine/fox_play.c:3469-3472`, for any player), no change.
+
+Observed:
+
+- With three gold rings (`gGoldRingCount[0] >= 3`) `Play_GetMaxShields` is 383 and the player's own gauge is 1.5 times
+  as wide and fills to `shields / 383` (`HUD_PlayerShieldGauge_Update`, `src/engine/fox_hud.c`). The status rows (pause,
+  level start, level clear: the loop over `gTeamShields[3 - j]` in `HUD_TeammateStatus_Draw`) and the radio portrait
+  (`src/engine/fox_radio.c`) draw a wingman's bar at normal width and fill it to `value / 255`.
+- For a human-flown wingman `CoopTeam_Update` holds `gTeamShields[id]` to 1..255 (decision 0006 rule 1;
+  `src/port/coop/game/team.c`). A human at 300 of 383 therefore had a full bar in the rows and 78 % on its own gauge.
+- Before the fix, in a Corneria trace of both games (`scenes`, 191 lines) the held value equalled the human's shields
+  on every line: the value is right in the normal range; only the part above 255 was cut off.
+- The client's session log (`coop-log-*-player2.txt` in its folder) shows no down and no restart, only a drop in shields
+  at the crash (295 to 193) and a U-turn; it records no wing state.
+
+Changed: `CoopTeam_DisplayShields(id)` (`src/port/coop/game/team.c`) is what the three draw calls read. It returns
+`gTeamShields[id]` for a computer wingman, a down (-1) or when the team has no upgrade, and for a joined human with the
+upgrade its share of the larger gauge on the bar's scale, `shields * 255 / 383`, held to 1..255. It is draw only:
+`gTeamShields` and everything that reads it (gates, medals, radio, routes) is unchanged, so the simulation and the
+state hash are too. Co-op off: `gTeamShields` as before.
+
+Test: `lockstep_test.py --only teambar` (new, `SF64_COOP_TEAM_RINGS` in `src/port/coop/test/team_trace.h`): on Katina the
+client flies Falco and gets the rings and 300 shields; the bar draws 199 for 300 while `gTeamShields[Falco]` stays 255,
+on both games, 4000 frames equal. With the helper's early return forced the same scenario fails (`player 1 has 300 of
+383 and Falco's bar draws 255, want 199`). `allrange`, `allrange_down`, `scenes` and `hash_check.py base` pass.
+
+Unknown:
+
+- How the bar looks on screen: the trace holds the number the draw call gets, not the picture.
+- Whether a human's own gauge and its row should agree at the level start and level clear screens too: they call the
+  same helper, but only the number was checked.
+- Whether a wing was broken at the crash: the log does not say. The player reported a damaged wing.
+
 ### 2026-11-10, #158, the lock a test game's crash handler stops on
 
 Identity: ROM US 1.0, base `80ff9be6` and the fix on top, Linux, GCC, Debug, OpenGL in software, no window. Load made
