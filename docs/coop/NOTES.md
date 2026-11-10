@@ -591,6 +591,23 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-10, #252, each human's own hits on the status screen
+
+Identity: ROM US 1.0, branch `issue/252-player-hits` on `ed61d6fd` (`issue/combined-test-4`), Windows 11, MSVC v143,
+Debug, `lockstep_test.py --exe <build> --only player_hits` (pilots, Corneria, 3500 frames).
+
+Observed in the code: `gPlayerScores[4]` is written only in versus (`src/engine/fox_enmy.c` `Actor_Despawn`,
+`src/engine/fox_beam.c` lock-on) and zeroed per level in `Play_Init`; it is in the state hash
+(`src/port/coop/sync/state_hash.c:437`). Pause and level clear draw the same status screen,
+`HUD_LevelClearStatusScreen_Draw`. The shooter is known at three adds to `gHitCount`: `Actor_Despawn` (dmgSource),
+the Sector Z missile (`fox_360.c`), the lock-on bonus (`shot->sourceId`); the other adds have none.
+
+Observed in the run: team 18, players 11 and 7, the same on host and client, hashes equal on 3500 frames. On the
+build before (`ed61d6fd`) the trace has no per-player field.
+
+Unknown: how the row looks on screen (no screenshot taken; the owner checks it in the next two-PC run); Fortuna's
+and Bolse's own checkpoint restores (`fox_fo.c:247`, `fox_bo.c:228`) do not restore the per-player counts.
+
 ### 2026-11-10, #210, items and level triggers that looked at player 0: what decision 0007 and 0008 answer
 
 Identity: ROM US 1.0, on top of `f869efa4` (the test branch `issue/combined-test-4` with #231, #232, #243), Linux,
