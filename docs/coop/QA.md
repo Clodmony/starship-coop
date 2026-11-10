@@ -217,6 +217,23 @@ Running tests must never use or modify the owner's own `starship.cfg.json`, save
 Newest first. One block per run that matters (a milestone, a release, a QA level change).
 
 ```
+date:       2026-11-10
+commit:     issue/181-views-later-parts (pilot_aim.c, views --pilot), on 80ff9be6
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window, one game per run (local index 0
+            and 1, the second 6 frames ahead since boot, high and low audio sample counts), no transport, 2 players by
+            gCoopDebugPlayerCount, gInvincible, each level started past its intro
+what ran:   python tools/coop/hash_check.py views --pilot --level <name>, one level per run, all 17 campaign levels and
+            level 4; hash_check.py slots --level meteo,katina,zoness,area-6 --frames 9000
+result:     QA level none (one game per run). Equal on every frame to the map or what follows level complete:
+            Corneria 10215, Meteo 14828, Sector X 12517, Solar 10212, Fortuna 8811, Katina 15823, Sector Z 5572,
+            Venom 2 17911, Venom 1 10147, Aquas 7973, Titania 53552, Macbeth 11524 (there the pilot's own game
+            differed from both clients on 6 single frames, gRadioState). Equal on every frame flown, level not
+            finished by the pilot: Area 6 60014, Sector Y 36014, Zoness 24014, Bolse 24014, Andross 24014, level 4
+            24014 (no end). Not covered: Training (no level complete), level 15 (crashes with co-op off too).
+            slots: PASS, co-op minus single player median effects 0 to +12; the explosion mark piles up in Katina.
+```
+
+```
 date:       2026-11-08
 commit:     issue/145-windows-release, game code at 4283e076
 identity:   ROM US 1.0, Windows 11, MSVC 19.44 (14.44.35207), Release and Debug from build.py (Visual Studio 2022),

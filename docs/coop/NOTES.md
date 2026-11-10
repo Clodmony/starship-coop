@@ -3971,6 +3971,112 @@ player 0 loses 100.
 
 ## Determinism
 
+### 2026-11-10, #181, two views through each level's boss and end: what a pilot gets through
+
+Identity: ROM US 1.0, branch `issue/181-views-later-parts` on `80ff9be6`, Linux, GCC, Debug, OpenGL on a software
+renderer, no window. `python tools/coop/hash_check.py views --pilot --level <name>`: per level one game with 2 players
+(`gCoopDebugPlayerCount`) and `gInvincible`, started past its intro (`SF64_COOP_TEST_START_LEVEL`, #148); the pilot
+flies both players, then two games play its replay with local index 0 and 1, the second 6 frames ahead since boot and
+the two at the high and low audio sample counts (#129). One game per run, no transport. Most levels ran on the build
+with the generic aim only; Venom 1, Sector Y, Bolse and Andross again after the boss table (`pilot_aim.c`), whose
+entries act only on the Gorgon, Andross and Bolse's core, so the other levels fly the same on the final code (derived
+from the code, not re-run). Titania and Area 6 ran last, on the final code, with 70000 and 60000 frames at most.
+
+**Observed (runs)**
+
+| Level | Result | Replay frames | Level complete at | Downs |
+|---|---|---|---|---|
+| Corneria | equal on every frame to the end | 10215 | 8820 | 0, 0 |
+| Meteo | equal on every frame to the end | 14828 | 13147 | 0, 0 |
+| Sector X | equal on every frame to the end | 12517 | 11242 | 0, 0 |
+| Solar | equal on every frame to the end | 10212 | 8586 | 0, 0 |
+| Fortuna | equal on every frame to the end | 8811 | 7130 | 0, 0 |
+| Katina | equal on every frame to the end (the mothership fired: the mission-failed end) | 15823 | 14023 | 0, 0 |
+| Sector Z | equal on every frame to the end (which of its two ends: not logged) | 5572 | 3772 | 0, 0 |
+| Venom 2 | equal on every frame to the end | 17911 | 17325 | 0, 0 |
+| Venom 1 | equal on every frame to the end, on into Andross's level | 10147 | 9568 | 0, 0 |
+| Aquas | equal on every frame to the end | 7973 | 6534 | 0, 0 |
+| Macbeth | clients equal on every frame to the end; the pilot's own game differs from them on 6 single frames (below) | 11524 | 10165 | 0, 0 |
+| Area 6 | pilot cannot finish: the Gorgon at 400 of 780 after 60014 frames, its three arm rounds done and its core hit (660 after 24014 frames with the generic cycle alone) | 60014, equal | - | 0, 0 |
+| Sector Y | pilot cannot finish: two Shoguns left, health 150 and 20, both in state 0 for the last 12000 frames | 36014, equal | - | 0, 0 |
+| Zoness | pilot cannot finish: the Sarumarine untouched (health 300) | 24014, equal | - | 0, 0 |
+| Bolse | pilot cannot finish: the core stays in state 0 | 24014, equal | - | 0, 0 |
+| Venom (Andross) | pilot cannot finish: Andross at health 100, his hands not down | 24014, equal | - | 0, 0 |
+| Titania | equal on every frame to the end (40014 frames were not enough: Goras at half its bar) | 53552 | 52032 | 0, 0 |
+| Level 4 | no end: a rail path with nothing on it | 24014, equal | - | 0, 0 |
+| Training | not covered: no level complete | - | - | - |
+| Level 15 | not covered: no level | - | - | - |
+
+In every run the cameras drawn differ on most sampled frames (33 of 56 in Sector Z to 172 of 180 in Venom 2), both
+clients `PASS` every checkpoint of the pilot's replay, and both fly in the level for more than half of the frames.
+
+- *Macbeth.* Index 0 and 1 are equal on all 11524 frames. The pilot's own game differs from them on frames 1835, 1845,
+  1849, 10052, 10062 and 10066 only, region `globals`, each time equal again on the next frame. The first 2200 frames
+  of the replay played alone 8 more times give two variants at frame 1835 (5 of one, 3 of the other); with the trace on
+  or off, and with `SF64_COOP_TEST_SYS_FRAME_OFFSET` 1, 2 or 3, both variants show. A per-value hash print (a local
+  patch, not kept) names the value: `gRadioState`, at level frames 1822 (6 against 4), 1832 (7 against 6) and 1836 (0
+  against 7). One game leaves radio states 4, 6 and 7 some 10 and 4 frames earlier than the other.
+- *Venom 1* ends at its exit in Venom 2's id: the game sets `gCurrentLevel = LEVEL_VENOM_2` and level complete there
+  (`src/overlays/ovl_i6/fox_andross.c:681-684`) and goes on to Andross in the same game. The first run looked for level
+  complete in level 6 only and said "flew only 9557 of 24014 frames in level 6"; the tool now takes it in any level.
+- *Level 4* (`LEVEL_UNK_4`): 24014 frames of a rail path with no actor near the players, no boss and path progress
+  wrapping from about 480000 to 0 near frame 12500; the pads the trace saw were empty and both players kept their start
+  positions (why the pilot's pads did not show: unknown). Its level script is its own, `D_A6_60289FC`
+  (`src/engine/fox_enmy2.c:1102-1104`), and only `src/mods/levelselect.c:125` starts it.
+- *Level 15* (`LEVEL_UNK_15`): the game crashes in `Play_InitEnvironment` on entry, with co-op off as well (one run each
+  on the base build): its entry in `D_800D2F98` is NULL (`src/engine/fox_play.c:562`).
+- *Effects past 7500 frames.* `python tools/coop/hash_check.py slots --level meteo,katina,zoness,area-6 --frames 9000`
+  (input by rule, `gInvincible`, 1 player against 2): PASS, median effects in use with 2 players minus with 1: Meteo 0,
+  Katina +12, Zoness +2.5, Area 6 +6.5 (the check allows 15). By thirds of the run, Katina with 2 players holds 7, 10
+  and 14 (1 player: 0, 1, 1), Area 6 2, 11 and 13 (1, 6, 3). In Katina the climb is `OBJ_EFFECT_EXPLOSION_MARK_1`
+  (344), the mark an enemy leaves on the ground: 1 to 10 slots over the run, never fewer, and none with 1 player. Its
+  update ends a mark only when another one lies on the same spot (`src/engine/fox_effect.c:2315-2341`); in single player
+  the view cull frees it, in co-op nothing does (#96), as with the laser mark of #129.
+
+**Observed (code)**, what each boss needs (read for the pilot):
+
+- Meteo: the Crusher's four sides and two more parts, each only while open (`src/overlays/ovl_i2/fox_me.c:978-1051`).
+  The generic cycle over its 26 boxes finished it.
+- Area 6: the Gorgon's arms, hitbox entries 1 to 3, in state 4, three rounds (`swork[25]` from 3), then the core,
+  entry 0 (`src/overlays/ovl_i3/fox_a6.c:503-570`, `:1306-1311`, `:1740-1752`). Aiming at entries 1 to 3 alone did no
+  damage in 40014 frames, so the table keeps the generic cycle until the rounds are done.
+- Zoness: the Sarumarine takes only bombs (`DMG_BOMB`) on parts 0 and 3 to 5 before its laser part counts
+  (`src/overlays/ovl_i3/fox_zo.c:2873-2955`). The pilot never bombs.
+- Andross: his hands, entries 2 and 3 (200 each), then his eyes (`src/overlays/ovl_i6/fox_andross.c:1727-1830`).
+- Bolse: the shield reactors (actors, health counted up to 100 by hits, `src/overlays/ovl_i4/fox_bo.c:705-764`), then
+  the core's parts 0 to 7 in state 2 (`:1939-1952`). With the core left alone the pilot shot at the nearest actors, which
+  the log does not tell apart from the fighters that keep coming.
+- Fortuna, Katina and Sector Z end by themselves when the pilot only stays alive: the base's timer
+  (`src/overlays/ovl_i4/fox_fo.c:170-200`), the mothership's laser (`fox_ka.c:1211-1225`), a missile at the Great Fox
+  or six shot down (`fox_sz.c:40-70`, `:165-200`).
+
+**Derived**
+
+- Every level that the pilot flew, to its end or to the frame cap, is equal between two clients with different cameras,
+  boot times and audio sample counts on every frame: 18 levels, 5572 to 60014 frames each, the vehicle levels included;
+  12 of them to the map or what follows level complete.
+- The Macbeth radio is a timing that one replay does not fix: `gRadioState` goes from 4 to 6 when
+  `Audio_GetCurrentVoice()` is 0 (`src/engine/fox_radio.c:627-631`), which reads the voice sequence player
+  (`src/audio/audio_general.c:1891-1903`) that the audio thread runs. Two clients whose voice ends on different frames
+  hash apart for a few frames, and the desync check would end their session there. It did not show between the two
+  clients of `views` here, nor in the hand-played campaign of 2026-11-09 (#2), which went through Macbeth.
+
+- The explosion mark is a slow leak of the #129 kind: about one slot per 900 frames in Katina, so a long all-range
+  fight in co-op runs with fewer free effect slots than single player. The two clients still agree: it is the same on
+  both.
+
+**Guess**
+
+- The voice's end moves with how far the audio thread is behind the game thread, which a test game at full speed
+  changes from run to run; #137 found the sequences locked to the frame, so the moving part may be the loading of the
+  voice's samples. Not checked.
+
+**Unknown**
+
+- The levels the pilot did not finish: Area 6, Sector Y, Zoness, Bolse and Andross.
+- Any level with a player that goes down: every run had `gInvincible` (`--mortal` exists, not run).
+- Real clients over a network through these ends: `views` is one game per run. Windows: not run.
+
 ### 2026-11-09, #199, two random draws in one expression: the Windows and Linux games took them in two orders
 
 Identity: the hand-played session of 2026-11-09, Windows (MSVC) host against Linux (GCC) client, build
