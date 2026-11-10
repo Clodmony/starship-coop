@@ -1,4 +1,5 @@
 #include "pilot.h"
+#include "pilot_aim.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -24,12 +25,6 @@ extern f32 sCoGrangaWork[68]; // src/overlays/ovl_i1/fox_co.c
 #define PILOT_MIN_HEIGHT 220.0f
 #define PILOT_LOOK_AHEAD 1700.0f // on rails, about 40 frames at the speed of the path
 #define PILOT_BOX_MAX 256
-
-typedef struct {
-    u16 button;
-    f32 x;
-    f32 y;
-} PilotPad;
 
 // Something ahead on rails, as a box across the path that a spot has to stay out of.
 typedef struct {
@@ -185,6 +180,7 @@ static void CoopPilot_FlyRails(const Player* p, s32 i, PilotPad* pad) {
     f32 t = gGameFrameCount;
     f32 wantX = p->xPath + ((i == 0) ? -250.0f : 250.0f) + 180.0f * sinf(t * 0.045f + i);
     f32 wantY = p->yPath + 500.0f + 90.0f * sinf(t * 0.07f + i);
+    f32 wantWeight = CoopPilot_RailAim(p, i, &wantX, &wantY) ? 1.5f : 0.3f; // a boss ahead: line up with it (#181)
     f32 targetX = wantX;
     f32 targetY = wantY;
     f32 best = 1e9f;
@@ -198,7 +194,7 @@ static void CoopPilot_FlyRails(const Player* p, s32 i, PilotPad* pad) {
 
             if (CoopPilot_IsClear(spotX, spotY)) {
                 f32 cost = fabsf(spotX - p->pos.x) + fabsf(spotY - p->pos.y) +
-                           (fabsf(spotX - wantX) + fabsf(spotY - wantY)) * 0.3f;
+                           (fabsf(spotX - wantX) + fabsf(spotY - wantY)) * wantWeight;
 
                 if (cost < best) {
                     best = cost;
@@ -452,7 +448,7 @@ extern s16 D_i5_801BE320[35]; // fox_ma.c
 // state 18 and then kills player 0 outright. Aim at its middle whenever it is ahead.
 // Where box n of an object's hitbox list sits in the world: its offset turned by the object's rotation, as it is drawn
 // (Y, then X, then Z). Markers are skipped. Returns false past the list's end.
-static bool CoopPilot_BoxCenter(const Object* obj, const f32* data, s32 n, Vec3f* at) {
+bool CoopPilot_BoxCenter(const Object* obj, const f32* data, s32 n, Vec3f* at) {
     s32 count = (s32) *data++;
     s32 i;
 
@@ -836,7 +832,7 @@ static f32 CoopPilot_Wrap(f32 degrees) {
 
 // Steers at a point in all-range and returns how far off the nose is, in degrees. rot follows 0.68 of the stick, and
 // the ship flies along yRot_114 + rot.y + 180 (Player_MoveArwing360). A negative stick_y climbs.
-static f32 CoopPilot_SteerAt(const Player* p, f32 x, f32 y, f32 z, PilotPad* pad) {
+f32 CoopPilot_SteerAt(const Player* p, f32 x, f32 y, f32 z, PilotPad* pad) {
     f32 dx = x - p->pos.x;
     f32 dy = y - p->pos.y;
     f32 dz = z - p->pos.z;
@@ -892,7 +888,7 @@ static void CoopPilot_FlyAllRange(const Player* p, s32 i, PilotPad* pad) {
     const Boss* boss = &gBosses[0];
 
     if ((boss->obj.status != OBJ_ACTIVE) || (boss->obj.id != OBJ_BOSS_CO_GRANGA)) {
-        CoopPilot_SteerAt(p, 0.0f, 500.0f, 0.0f, pad);
+        CoopPilot_FlyAllRangeAim(p, i, pad); // pilot_aim.c, #181
     } else if ((i != 0) || CoopPilot_IsAlone(i)) {
         CoopPilot_AttackRun(p, boss, GRANGA_WORK_62, -1.0f, pad);
     } else if (boss->swork[GRANGA_RIGHT_ARM_DMG_IND] != DMG_DESTROYED) {
@@ -1041,6 +1037,7 @@ static void CoopPilot_Note(const Player* p, s32 i) {
                 boss->swork[21], boss->swork[9], boss->swork[10], boss->swork[11], boss->swork[12], gBossHealthBar,
                 p->pos.x, p->trueZpos, p->unk_17C, boss->swork[29], sAimPart, sAimAt.x, sAimAt.y, sAimAt.z);
     }
+    CoopPilot_NoteAim(sLog, p, i); // pilot_aim.c, #181
 }
 
 void CoopPilot_Fly(OSContPad* hold, OSContPad* press) {
