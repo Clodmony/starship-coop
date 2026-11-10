@@ -3028,6 +3028,14 @@ void Effect_Effect356_Update(Effect356* this) {
 }
 
 void Effect_Effect376_Update(Effect376* this) {
+    // COOP: in all-range the view cull frees a plasma ball that is out of view (Effect_DrawAllRange); in a session
+    // nothing is freed for leaving the view (#96), so the ball ends when the timer_50 of its setup runs out, 100 frames
+    // (func_effect_8007E6B8), as the enemy lasers of that setup do. By then it has faded to 50 for 67 frames (#246).
+    if (CoopPlayers_IsCoop() && (gLevelMode == LEVELMODE_ALL_RANGE) && (this->timer_50 == 0)) {
+        Object_Kill(&this->obj, this->sfxSource);
+        return;
+    }
+
     this->obj.rot.z += 8.0f;
     this->scale2 += 0.1f;
     // It seems they forgot that unk_4A is s16 and not a float...
