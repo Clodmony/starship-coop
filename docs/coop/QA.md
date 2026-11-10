@@ -68,6 +68,15 @@ number of clients, transport.
    a run shows that a line was played. `python tools/coop/hash_check.py slots --level katina,fortuna,corneria` plays a level
    with 1 player and with 2 and fails when co-op holds more than 15 more effect slots (median): the draw code frees nothing
    for leaving the view in co-op (#96), so an effect that only that freed would stay for the whole level (#129).
+   `python tools/coop/hash_check.py views --pilot` (#181, unattended, exit code 0 on `PASS`) takes the same two clients
+   through the rest of each level: the boss and the end. Per level, one game with 2 players and `gInvincible` starts past
+   the intro, and a pilot that reads game state (`src/port/coop/test/pilot.h`, `pilot_aim.h`) flies every player to level
+   complete and on to the map or whatever comes next, and writes a replay; the two clients then play it and must `PASS`
+   every checkpoint, hash alike on every frame and equal the pilot's game. Every campaign level, the vehicle levels and
+   level 4 by default, or `--level`; `--mortal` leaves `gInvincible` off. The summary gives per level the result, the
+   frames, the frame of level complete and the downs per player; a level the pilot does not finish says so, with the
+   frames that were compared. Like `views` this is one game per run, so it says nothing about two clients over a
+   network: that is `lockstep_test.py`.
    `python tools/coop/hash_check.py builds --debug <exe> --release <exe>` (unattended, exit code 0 on `PASS`) plays the
    same two sections on two Release runs and a Debug run of one commit, and all three must hash alike on every frame.
    `python tools/coop/hash_check.py rates --exe <exe>` (unattended, exit code 0 on `PASS`) does the same across
