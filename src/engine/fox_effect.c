@@ -3848,14 +3848,17 @@ void Effect_Effect395_Update(Effect395* this) {
                         this->unk_46--;
                     }
                     if (((gGameFrameCount % 16) == 0) && (this->timer_50 == 0)) {
-                        D_800D18EC =
-                            RAD_TO_DEG(Math_Atan2F(gPlayer[0].cam.eye.x - gBosses[0].obj.pos.x,
-                                                   gPlayer[0].cam.eye.z - (gBosses[0].obj.pos.z + gPathProgress)));
+                        // COOP: the beam turns to the Gorgon's own target, was player 0 (#213)
+                        Player* aimed = &gPlayer[CoopAim_BossTarget(0, gBosses[0].obj.pos.x, gBosses[0].obj.pos.y,
+                                                                    gBosses[0].obj.pos.z)];
+
+                        D_800D18EC = RAD_TO_DEG(Math_Atan2F(aimed->cam.eye.x - gBosses[0].obj.pos.x,
+                                                            aimed->cam.eye.z - (gBosses[0].obj.pos.z + gPathProgress)));
 
                         D_800D18E8 = RAD_TO_DEG(
-                            -Math_Atan2F(gPlayer[0].cam.eye.y - gBosses[0].obj.pos.y,
-                                         sqrtf(SQ(gPlayer[0].cam.eye.z - (gBosses[0].obj.pos.z + gPathProgress)) +
-                                               SQ(gPlayer[0].cam.eye.x - gBosses[0].obj.pos.x))));
+                            -Math_Atan2F(aimed->cam.eye.y - gBosses[0].obj.pos.y,
+                                         sqrtf(SQ(aimed->cam.eye.z - (gBosses[0].obj.pos.z + gPathProgress)) +
+                                               SQ(aimed->cam.eye.x - gBosses[0].obj.pos.x))));
                     }
                     if (gBosses[0].timer_050 == 0) {
                         gBosses[0].swork[39] = this->index;

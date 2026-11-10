@@ -5,6 +5,8 @@
 #include "assets/ast_andross.h"
 #include "assets/ast_arwing.h"
 #include "port/coop/game/hits.h" // COOP: hits on the other players (#136)
+#include "port/coop/game/aim.h"  // COOP: Andross follows the nearest human (#213)
+#include "port/coop/game/players.h" // COOP: a co-op player's own pad in the mouth (#213)
 #include "assets/ast_bg_planet.h"
 #include "prevent_bss_reordering.h"
 #include "prevent_bss_reordering2.h"
@@ -429,6 +431,7 @@ void Andross_801888F4(ActorAllRange* this) {
 }
 
 void Andross_80188A4C(AndBrain* this) {
+    Player* aimed; // COOP (#213)
 
     if (this->damage > 20) {
         this->damage = 20;
@@ -480,8 +483,11 @@ void Andross_80188A4C(AndBrain* this) {
                             this->swork[8] = 0;
                             this->state = 12;
                             this->timer_050 = 50;
-                            this->fwork[3] = gPlayer[0].pos.x;
-                            this->fwork[5] = gPlayer[0].trueZpos;
+                            // COOP: it warps to the nearest human, picked again now, was player 0 (#213)
+                            aimed = &gPlayer[CoopAim_RepickBoss(this->index, this->obj.pos.x, this->obj.pos.y,
+                                                                this->obj.pos.z)];
+                            this->fwork[3] = aimed->pos.x;
+                            this->fwork[5] = aimed->trueZpos;
                             AUDIO_PLAY_SFX(NA_SE_EN_ANDROSS_WARP, this->sfxSource, 4);
                         }
                     }
@@ -797,6 +803,9 @@ void Andross_AndBrain_Update(AndBrain* this) {
     Vec3f sp64;
     Vec3f sp58;
     s32 pad;
+    Player* aimed; // COOP: the player it chases, was player 0 (#213)
+    Player* held;  // COOP: the player it holds in its catch, was player 0 (#213)
+    s32 caught;    // COOP
 
     Andross_80188A4C(this);
     Andross_80188CB8(this);
@@ -812,9 +821,11 @@ void Andross_AndBrain_Update(AndBrain* this) {
         Math_SmoothStepToF(&this->fwork[25], 100.0f, 1.0f, 10.0f, 0);
     }
 
-    if ((fabsf(this->obj.pos.x - gPlayer[0].pos.x) < 300.0f) &&
-        (fabsf(this->obj.pos.y - 300.0f - gPlayer[0].pos.y) < 300.0f) &&
-        (fabsf(this->obj.pos.z - gPlayer[0].trueZpos) < 300.0f) && (this->state < 11) && (this->timer_05A == 0)) {
+    aimed = &gPlayer[CoopAim_BossTarget(this->index, this->obj.pos.x, this->obj.pos.y, this->obj.pos.z)]; // COOP
+    // COOP: the nearest flying human in reach, was player 0 only (#213, owner's choice A)
+    caught = CoopAim_BrainCatch(this->obj.pos.x, this->obj.pos.y, this->obj.pos.z);
+    if ((caught >= 0) && (this->state < 11) && (this->timer_05A == 0)) {
+        CoopAim_SetHeld(this->index, caught); // COOP: held until the catch ends (#213)
         this->state = 11;
         this->timer_050 = 150;
         AUDIO_PLAY_SFX(NA_SE_EN_ANDROSS_CATCH, this->sfxSource, 4);
@@ -882,25 +893,26 @@ void Andross_AndBrain_Update(AndBrain* this) {
             break;
 
         case 11:
+            held = &gPlayer[CoopAim_Held(this->index)]; // COOP: held was gPlayer[0] in this case (#213)
             this->info.hitbox = SEGMENTED_TO_VIRTUAL(&gNoHitbox);
             if (this->timer_050 < 120) {
                 gFillScreenRed = gFillScreenGreen = gFillScreenBlue = 255;
                 gFillScreenAlphaTarget = 80;
                 gFillScreenAlphaStep = 1;
-                gPlayer[0].dmgEffectTimer = gGameFrameCount % 8U;
-                gPlayer[0].radioDamageTimer = 3;
+                held->dmgEffectTimer = gGameFrameCount % 8U;
+                held->radioDamageTimer = 3;
 
                 Math_SmoothStepToF(&D_ctx_801779A8[gMainController], 40.0f, 1.0f, 3.0f, 0.0f);
 
-                if (((gGameFrameCount % 32) == 0) && (gPlayer[0].state == PLAYERSTATE_ACTIVE)) {
-                    Player_ApplyDamage(&gPlayer[0], 3, 10);
+                if (((gGameFrameCount % 32) == 0) && (held->state == PLAYERSTATE_ACTIVE)) {
+                    Player_ApplyDamage(held, 3, 10);
                 }
             }
 
-            Math_SmoothStepToF(&gPlayer[0].baseSpeed, 0.0f, 2.0f, 2.0f, 0.0f);
-            Math_SmoothStepToF(&gPlayer[0].pos.x, this->obj.pos.x, 0.8f, 50.0f, 0.0f);
-            Math_SmoothStepToF(&gPlayer[0].pos.y, this->obj.pos.y - 300.0f, 0.8f, 50.0f, 0.0f);
-            Math_SmoothStepToF(&gPlayer[0].pos.z, this->obj.pos.z, 0.8f, 50.0f, 0.0f);
+            Math_SmoothStepToF(&held->baseSpeed, 0.0f, 2.0f, 2.0f, 0.0f);
+            Math_SmoothStepToF(&held->pos.x, this->obj.pos.x, 0.8f, 50.0f, 0.0f);
+            Math_SmoothStepToF(&held->pos.y, this->obj.pos.y - 300.0f, 0.8f, 50.0f, 0.0f);
+            Math_SmoothStepToF(&held->pos.z, this->obj.pos.z, 0.8f, 50.0f, 0.0f);
 
             this->fwork[11] = 45.0f;
             this->fwork[12] = 0.8f;
@@ -908,7 +920,7 @@ void Andross_AndBrain_Update(AndBrain* this) {
             this->fwork[19] = 23.0f;
             this->fwork[1] = 0.0f;
 
-            gPlayer[0].alternateView = true;
+            held->alternateView = true; // COOP: held was gPlayer[0]
 
             Math_SmoothStepToF(&gCamDistortion, 0.15f, 0.2f, 0.004f, 0.0f);
 
@@ -916,8 +928,10 @@ void Andross_AndBrain_Update(AndBrain* this) {
                 AUDIO_PLAY_SFX(NA_SE_VO_ANDROSS_LAUGH, this->sfxSource, 4);
             }
             if (this->timer_050 == 0) {
-                gPlayer[0].baseSpeed = gArwingSpeed;
-                gPlayer[0].alternateView = false;
+                held->baseSpeed = gArwingSpeed;   // COOP: held was gPlayer[0]
+                held->alternateView = false;      // COOP: held was gPlayer[0]
+                CoopAim_SetHeld(this->index, -1); // COOP: it lets go, and chases whoever is nearest now (#213)
+                CoopAim_ForgetBoss(this->index);  // COOP
 
                 gFillScreenAlphaTarget = 0;
 
@@ -937,9 +951,9 @@ void Andross_AndBrain_Update(AndBrain* this) {
         case 3:
             this->fwork[1] = 42.0f;
             this->fwork[2] = 1.3f;
-            this->fwork[3] = gPlayer[0].pos.x;
-            this->fwork[4] = gPlayer[0].pos.y;
-            this->fwork[5] = gPlayer[0].trueZpos;
+            this->fwork[3] = aimed->pos.x; // COOP: aimed was gPlayer[0], here and below (#213)
+            this->fwork[4] = aimed->pos.y;
+            this->fwork[5] = aimed->trueZpos;
             break;
 
         case 12:
@@ -1411,7 +1425,10 @@ void Andross_8018C390(Player* player) {
             Math_SmoothStepToF(&player->pos.y, gBosses[0].obj.pos.y - 150.0f, 0.5f, 30.0f, 0);
             Math_SmoothStepToF(&player->pos.z, gBosses[0].obj.pos.z - 100.0f, 0.5f, 60.0f, 0);
 
-            gPathProgress = player->zPath = -player->pos.z;
+            player->zPath = -player->pos.z;
+            if (player->num == 0) { // COOP: only player 0 drives the path, a co-op player in the mouth does not (#213)
+                gPathProgress = player->zPath;
+            }
 
             Math_SmoothStepToF(&player->cam.eye.z, 2000.0f, 0.05f, 20.0f, 0);
             Math_SmoothStepToF(&player->cam.eye.x, 0.0f, 0.05f, 10.0f, 0);
@@ -1436,7 +1453,9 @@ void Andross_8018C390(Player* player) {
             Math_SmoothStepToF(&player->cam.eye.z, 400.0f, 0.05f, 20.0f, 0.0f);
 
             if (player->csTimer != 0) {
-                if (gControllerPress[gMainController].button != 0) {
+                // COOP: a co-op player's own buttons, was gMainController for whoever is in the mouth (#213)
+                if (gControllerPress[(player->num == 0) ? gMainController : CoopPlayers_PadOf(player->num)].button !=
+                    0) {
                     player->csTimer--;
                 }
             }
@@ -1862,6 +1881,7 @@ void Andross_8018D2B0(AndAndross* this) {
 }
 
 void Andross_8018D9C0(AndAndross* this) {
+    CoopAim_ForgetBoss(this->index); // COOP: each new attack goes to the nearest human (#213)
     switch (this->state) {
         case 2:
             this->state = 3;
@@ -1930,6 +1950,14 @@ void Andross_AndAndross_Update(AndAndross* this) {
     PlayerShot* playerShot;
     Boss* boss1;
     Player* player = &gPlayer[0];
+    // COOP: the player in its mouth, player 0 while nobody is: was player in the chew and the spit (#213, choice A)
+    s32 inMouth = CoopAim_InMouth(this->index);
+    Player* mouth = &gPlayer[(inMouth >= 0) ? inMouth : 0];
+    // COOP: whom its eyes, punches and slaps follow, was player; the one in its mouth while there is one (#213)
+    Player* aimed = (inMouth >= 0)
+                        ? mouth
+                        : &gPlayer[CoopAim_BossTarget(this->index, this->obj.pos.x, this->obj.pos.y, this->obj.pos.z)];
+    s32 swallowed; // COOP
     f32 yaw;
     f32 pitch;
     s16 limbCount;
@@ -1996,7 +2024,8 @@ void Andross_AndAndross_Update(AndAndross* this) {
         }
     }
 
-    Math_SmoothStepToF(&this->obj.pos.z, gPlayer[0].pos.z + this->fwork[6], this->fwork[8], this->fwork[7], 0);
+    // COOP: the chew follows the player in its mouth, was gPlayer[0] (#213)
+    Math_SmoothStepToF(&this->obj.pos.z, mouth->pos.z + this->fwork[6], this->fwork[8], this->fwork[7], 0);
     Math_SmoothStepToF(&this->obj.pos.x, this->fwork[0], this->fwork[2], this->fwork[1], 0);
     Math_SmoothStepToF(&this->obj.pos.y, this->fwork[3], this->fwork[5], this->fwork[4], 0);
 
@@ -2004,10 +2033,10 @@ void Andross_AndAndross_Update(AndAndross* this) {
     Math_SmoothStepToF(&this->fwork[12], 0.0f, 0.1f, 2.0f, 0);
     Math_SmoothStepToF(&this->fwork[13], 0.0f, 0.1f, 2.0f, 0);
 
-    if (player->draw) {
-        xDisplacement = gPlayer[0].pos.x - this->vwork[2].x;
-        yDisplacement = gPlayer[0].pos.y - this->vwork[2].y;
-        zDisplacement = gPlayer[0].trueZpos - this->vwork[2].z;
+    if (aimed->draw) { // COOP: aimed was player and gPlayer[0], here and for the other eye (#213)
+        xDisplacement = aimed->pos.x - this->vwork[2].x;
+        yDisplacement = aimed->pos.y - this->vwork[2].y;
+        zDisplacement = aimed->trueZpos - this->vwork[2].z;
         yaw = Math_RadToDeg(Math_Atan2F(xDisplacement, zDisplacement));
         pitch = Math_RadToDeg(Math_Atan2F(yDisplacement, sqrtf(SQ(xDisplacement) + SQ(zDisplacement))));
 
@@ -2031,10 +2060,10 @@ void Andross_AndAndross_Update(AndAndross* this) {
     Math_SmoothStepToAngle(&this->vwork[4].x, pitch, 0.5f, 5.0f, 0);
     Math_SmoothStepToAngle(&this->vwork[4].y, yaw, 0.5f, 5.0f, 0);
 
-    if (player->draw) {
-        xDisplacement = gPlayer[0].pos.x - this->vwork[3].x;
-        yDisplacement = gPlayer[0].pos.y - this->vwork[3].y;
-        zDisplacement = gPlayer[0].trueZpos - this->vwork[3].z;
+    if (aimed->draw) {
+        xDisplacement = aimed->pos.x - this->vwork[3].x;
+        yDisplacement = aimed->pos.y - this->vwork[3].y;
+        zDisplacement = aimed->trueZpos - this->vwork[3].z;
 
         yaw = Math_RadToDeg(Math_Atan2F(xDisplacement, zDisplacement));
         pitch = Math_RadToDeg(Math_Atan2F(yDisplacement, sqrtf(SQ(xDisplacement) + SQ(zDisplacement))));
@@ -2153,8 +2182,8 @@ void Andross_AndAndross_Update(AndAndross* this) {
             if (this->swork[4] < 0) {
                 Andross_8018D9C0(this);
             } else {
-                this->fwork[0] = player->pos.x;
-                this->fwork[3] = player->pos.y + 1000.0f;
+                this->fwork[0] = aimed->pos.x; // COOP: was player (#213)
+                this->fwork[3] = aimed->pos.y + 1000.0f;
 
                 if (this->animFrame == 60) {
                     AUDIO_PLAY_SFX(NA_SE_VO_ANDROSS_PUNCH, this->sfxSource, 4);
@@ -2211,8 +2240,8 @@ void Andross_AndAndross_Update(AndAndross* this) {
             if (this->swork[4] < 0) {
                 Andross_8018D9C0(this);
             } else {
-                this->fwork[0] = player->pos.x;
-                this->fwork[3] = player->pos.y;
+                this->fwork[0] = aimed->pos.x; // COOP: was player (#213)
+                this->fwork[3] = aimed->pos.y;
 
                 if (this->animFrame == 55) {
                     AUDIO_PLAY_SFX(NA_SE_VO_ANDROSS_PUNCH, this->sfxSource, 4);
@@ -2253,8 +2282,8 @@ void Andross_AndAndross_Update(AndAndross* this) {
             if (this->swork[5] < 0) {
                 Andross_8018D9C0(this);
             } else {
-                this->fwork[0] = player->pos.x;
-                this->fwork[3] = player->pos.y + 500.0f;
+                this->fwork[0] = aimed->pos.x; // COOP: was player (#213)
+                this->fwork[3] = aimed->pos.y + 500.0f;
                 if (this->timer_050 != 0) {
                     this->fwork[6] = -4000.0f;
                     this->fwork[8] = 0.05f;
@@ -2315,8 +2344,8 @@ void Andross_AndAndross_Update(AndAndross* this) {
                     Math_SmoothStepToF(&this->fwork[1], 30.0f, 1.0f, 1.0f, 0);
                     Math_SmoothStepToF(&this->fwork[4], 30.0f, 1.0f, 1.0f, 0);
 
-                    this->fwork[0] = player->pos.x;
-                    this->fwork[3] = player->pos.y + 300.0f;
+                    this->fwork[0] = aimed->pos.x; // COOP: was player (#213)
+                    this->fwork[3] = aimed->pos.y + 300.0f;
                 } else {
                     this->animFrame++;
 
@@ -2379,8 +2408,8 @@ void Andross_AndAndross_Update(AndAndross* this) {
                     Math_SmoothStepToF(&this->fwork[21], 0.5f, 1.0f, 0.11f, 0.001f);
                 }
 
-                this->fwork[0] = player->pos.x + 500.0f;
-                this->fwork[3] = player->pos.y + 750.0f;
+                this->fwork[0] = aimed->pos.x + 500.0f; // COOP: was player (#213)
+                this->fwork[3] = aimed->pos.y + 750.0f;
                 this->fwork[6] = -5000.0f;
                 this->fwork[8] = 0.05f;
 
@@ -2423,8 +2452,8 @@ void Andross_AndAndross_Update(AndAndross* this) {
                 Math_SmoothStepToF(&this->fwork[1], 20.0f, 1.0f, 1.0f, 0);
                 Math_SmoothStepToF(&this->fwork[4], 20.0f, 1.0f, 1.0f, 0);
 
-                this->fwork[0] = player->pos.x;
-                this->fwork[3] = player->pos.y;
+                this->fwork[0] = aimed->pos.x; // COOP: was player (#213)
+                this->fwork[3] = aimed->pos.y;
 
                 Math_SmoothStepToF(&this->fwork[9], 1.0f, 1.0f, 0.01f, 0);
 
@@ -2457,8 +2486,8 @@ void Andross_AndAndross_Update(AndAndross* this) {
                 Math_SmoothStepToF(&this->fwork[1], 20.0f, 1.0f, 1.0f, 0);
                 Math_SmoothStepToF(&this->fwork[4], 20.0f, 1.0f, 1.0f, 0);
 
-                this->fwork[0] = player->pos.x;
-                this->fwork[3] = player->pos.y;
+                this->fwork[0] = aimed->pos.x; // COOP: was player (#213)
+                this->fwork[3] = aimed->pos.y;
 
                 Math_SmoothStepToF(&this->fwork[9], 1.0f, 1.0f, 0.01f, 0);
 
@@ -2487,8 +2516,8 @@ void Andross_AndAndross_Update(AndAndross* this) {
             Math_SmoothStepToF(&this->fwork[1], 20.0f, 1.0f, 1.0f, 0);
             Math_SmoothStepToF(&this->fwork[4], 20.0f, 1.0f, 1.0f, 0);
 
-            this->fwork[0] = player->pos.x;
-            this->fwork[3] = player->pos.y;
+            this->fwork[0] = aimed->pos.x; // COOP: was player (#213)
+            this->fwork[3] = aimed->pos.y;
 
             Math_SmoothStepToF(&this->fwork[9], 1.0f, 1.0f, 0.01f, 0);
 
@@ -2530,12 +2559,12 @@ void Andross_AndAndross_Update(AndAndross* this) {
             }
             if ((this->animFrame > 35) && (this->animFrame < 150) && ((this->animFrame % 32) == 0)) {
                 AUDIO_PLAY_SFX(NA_SE_EN_ANDROSS_BITE1, this->sfxSource, 4);
-                if (player->state == PLAYERSTATE_ANDROSS_MOUTH) {
+                if (mouth->state == PLAYERSTATE_ANDROSS_MOUTH) { // COOP: mouth was player, here and below (#213)
                     gControllerRumbleTimers[0] = 10;
                 }
             }
-            if ((this->animFrame == 20) && (player->state == PLAYERSTATE_ANDROSS_MOUTH)) {
-                player->draw = false;
+            if ((this->animFrame == 20) && (mouth->state == PLAYERSTATE_ANDROSS_MOUTH)) {
+                mouth->draw = false;
                 for (i = 0; i < ARRAY_COUNT(gEffects); i++) {
                     if (gEffects[i].obj.id == OBJ_EFFECT_396) {
                         Object_Kill(&gEffects[i].obj, gEffects[i].sfxSource);
@@ -2582,8 +2611,8 @@ void Andross_AndAndross_Update(AndAndross* this) {
             Math_SmoothStepToF(&this->fwork[1], 20.0f, 1.0f, 1.0f, 0);
             Math_SmoothStepToF(&this->fwork[4], 20.0f, 1.0f, 1.0f, 0);
 
-            this->fwork[0] = player->pos.x;
-            this->fwork[3] = player->pos.y + 100.0f;
+            this->fwork[0] = aimed->pos.x; // COOP: was player (#213)
+            this->fwork[3] = aimed->pos.y + 100.0f;
 
             Math_SmoothStepToF(&this->fwork[9], 1.0f, 1.0f, 0.01f, 0);
 
@@ -2602,23 +2631,24 @@ void Andross_AndAndross_Update(AndAndross* this) {
                 AUDIO_PLAY_SFX(NA_SE_EN_ANDROSS_VOMIT, this->sfxSource, 4);
             }
 
-            if ((this->animFrame == 13) && (player->state == PLAYERSTATE_ANDROSS_MOUTH)) {
-                player->draw = true;
-                player->csState = 1;
-                player->csTimer = 60;
-                player->mercyTimer = 50;
+            // COOP: mouth was player, and the wings are its own, were player 0's, in this block (#213)
+            if ((this->animFrame == 13) && (mouth->state == PLAYERSTATE_ANDROSS_MOUTH)) {
+                mouth->draw = true;
+                mouth->csState = 1;
+                mouth->csTimer = 60;
+                mouth->mercyTimer = 50;
                 this->swork[8] = 0;
                 gControllerRumbleTimers[0] = 30;
 
-                if (player->arwing.rightWingState == 2) {
-                    gRightWingHealth[0] = 0;
-                    player->arwing.rightWingState = 1;
+                if (mouth->arwing.rightWingState == 2) {
+                    gRightWingHealth[mouth->num] = 0;
+                    mouth->arwing.rightWingState = 1;
                     Andross_Effect396_Spawn2(this->obj.pos.x, this->obj.pos.y - 200.0f, this->obj.pos.z,
                                              RAND_FLOAT_CENTERED(10.0f), RAND_FLOAT_CENTERED(10.0f), 10.0f, 8);
                 }
-                if (player->arwing.leftWingState == 2) {
-                    gLeftWingHealth[0] = 0;
-                    player->arwing.leftWingState = 1;
+                if (mouth->arwing.leftWingState == 2) {
+                    gLeftWingHealth[mouth->num] = 0;
+                    mouth->arwing.leftWingState = 1;
                     Andross_Effect396_Spawn2(this->obj.pos.x, this->obj.pos.y - 200.0f, this->obj.pos.z,
                                              RAND_FLOAT_CENTERED(10.0f), RAND_FLOAT_CENTERED(10.0f), 10.0f, 9);
                 }
@@ -2690,16 +2720,22 @@ void Andross_AndAndross_Update(AndAndross* this) {
 
                 Math_SmoothStepToF(&player->pos.x, this->obj.pos.x, 0.1f, this->fwork[16], 0);
                 Math_SmoothStepToF(&player->pos.y, this->obj.pos.y - 150.0f, 0.1f, this->fwork[16], 0);
+                // COOP: it pulls every human that flies, and swallows the first whose z reaches the mouth, was player 0
+                // alone (#213, owner's choice A)
+                CoopAim_AndrossPull(this->obj.pos.x, this->obj.pos.y - 150.0f, this->fwork[16]);
                 Math_SmoothStepToF(&this->fwork[16], 35.0f, 1.0f, 0.5f, 0);
 
-                if (fabsf(player->trueZpos - this->obj.pos.z) < 200.0f) {
+                swallowed = CoopAim_AndrossSwallow(this->obj.pos.x, this->obj.pos.y - 150.0f, this->obj.pos.z);
+                if (swallowed >= 0) {            // COOP: was fabsf(player->trueZpos - this->obj.pos.z) < 200.0f
+                    mouth = &gPlayer[swallowed]; // COOP: mouth was player, here and below
+                    CoopAim_SetHeld(this->index, swallowed);
                     this->state = 15;
                     this->swork[8] = 1;
                     this->fwork[9] = 0.2f;
                     this->animFrame = 0;
-                    if (player->state == PLAYERSTATE_ACTIVE) {
-                        player->state = PLAYERSTATE_ANDROSS_MOUTH;
-                        player->csState = 0;
+                    if (mouth->state == PLAYERSTATE_ACTIVE) {
+                        mouth->state = PLAYERSTATE_ANDROSS_MOUTH;
+                        mouth->csState = 0;
                     }
                     break;
                 }
@@ -2908,8 +2944,8 @@ void Andross_AndAndross_Update(AndAndross* this) {
 
             Math_SmoothStepToF(&this->fwork[7], 60.0f, 1.0f, 3.0f, 0);
 
-            this->fwork[0] = player->pos.x;
-            this->fwork[3] = player->pos.y;
+            this->fwork[0] = aimed->pos.x; // COOP: was player (#213)
+            this->fwork[3] = aimed->pos.y;
 
             Math_SmoothStepToF(&this->fwork[9], 1.0f, 1.0f, 0.05f, 0);
 

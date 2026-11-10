@@ -47,6 +47,7 @@
 #define HASH_CRASH_END 1 // CoopStateHash_EndCrash, see CoopStopSignal_AddCrashEnd (stop_signal.h)
 #endif
 #include "port/coop/game/team.h"
+#include "port/coop/game/aim.h"
 #include "port/coop/test/switches.h"
 
 // src/sys/sys_math.c
@@ -322,6 +323,15 @@ static void HashPlayerArrays(uint64_t* h) {
     }
 }
 
+// Whom each boss and all-range enemy follows, and whom a boss holds (#213, aim.h). Co-op only: outside co-op the slots
+// are never read.
+static void HashKeptTargets(uint64_t* h) {
+    int32_t count;
+    const int8_t* kept = CoopAim_KeptSlots(&count);
+
+    HashNamed(h, "keptTarget", 0, kept, (size_t) count);
+}
+
 static void HashTeamArrays(uint64_t* h) {
     const TeamArray* team;
     s32 i;
@@ -470,6 +480,7 @@ static void HashGlobals(uint64_t* h) {
         // The low-health radio timer (#87). A drifted one shows only at the next limit that draws a number, so it is
         // hashed on its own. Co-op only, so a single-player log lines up with one from an older build.
         HASH_VAR(h, gTeamLowHealthMsgTimer);
+        HashKeptTargets(h);
     }
 }
 
@@ -696,6 +707,13 @@ static void Probe(void) {
         ProbeReturnTimer(i);
     }
     ProbeBit("gTeamLowHealthMsgTimer", 0, &gTeamLowHealthMsgTimer);
+    {
+        int32_t count;
+        int8_t* kept = CoopAim_KeptSlots(&count);
+
+        ProbeBit("keptTarget[0]", 0, &kept[0]);            // the first boss
+        ProbeBit("keptTarget[last]", 0, &kept[count - 1]); // the last boss's held player
+    }
     for (k = 0; k < ARRAY_COUNT(sTeamArrays); k++) {
         for (i = 0; i < sTeamArrays[k].count; i++) {
             char target[40];

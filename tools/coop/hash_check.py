@@ -119,6 +119,9 @@ PLAYER_GLOBALS = ("gLifeCount", "gBombCount", "gPlayerScores")  # HashGlobals: r
 # HashGlobals: one value, region globals, in co-op only (#129). The low-health radio timer: a drifted one would show only
 # at the next limit that draws a number (#87).
 COOP_GLOBALS = ("gTeamLowHealthMsgTimer",)
+# HashKeptTargets: whom each boss and all-range enemy follows and whom a boss holds (#213, aim.h), region globals, in
+# co-op only. Probed as keptTarget[0] (the first boss's target) and keptTarget[last] (the last boss's held player).
+KEPT_TARGETS = "keptTarget"
 PLAYER_SLOTS = 4
 # state_hash.c, sTeamArrays: one value per team member, region globals, in co-op only. name -> (slots, first slot read,
 # slot after the last one read); the slots nobody reads must leave the hash alone.
@@ -332,7 +335,7 @@ def probe_rule(target, parked, players):
         return (True, "players") if coop and parked == "0" else (False, None)
     if name in PLAYER_GLOBALS:
         return (True, "globals") if parked == "0" else (False, None)
-    if name in COOP_GLOBALS:
+    if name in COOP_GLOBALS or name == KEPT_TARGETS:
         return (True, "globals") if coop else (False, None)
     if name in TEAM_ARRAYS:
         _, first, end = TEAM_ARRAYS[name]
@@ -389,6 +392,7 @@ def check_probes(probes, players):
                    for state in states]
     wanted += [(f"{name}[{i}]", "0") for name, (slots, _, _) in TEAM_ARRAYS.items() for i in range(slots)]
     wanted += [(name, "0") for name in COOP_GLOBALS]
+    wanted += [(f"{KEPT_TARGETS}[{i}]", "0") for i in ("0", "last")]
     for target, parked in wanted:
         if (target, parked) not in groups:
             failures.append(f"no probe of {target}{' parked' if parked == '1' else ''} ran")

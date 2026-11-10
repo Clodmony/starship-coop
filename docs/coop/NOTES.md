@@ -828,6 +828,175 @@ Derived:
 - The fix leaves one known gap: a partner whose boostSpeed equals player 0's on one frame by chance (both at 30) adds
   nothing on the next, so when player 0 lets go first the level drops by 1 for that one frame.
 
+### 2026-11-10, #213, the last bosses and the dogfighters go after the nearest human
+
+Read at `80ff9be6` (the combined test branch 2). Owner's report on #213: in Area 6 and Venom/Andross the bosses "just
+followed Fox and never me"; their attacks hit the second player only by accident. Owner's choices on #213: the rule
+of #193 (the nearest human) for aim and chase, kept stable; the Andross brain's catch takes the nearest flying human
+in reach (option A); the face's inhale pulls every human and swallows the first to reach the mouth (option D, built
+as the owner's A for it, see "The inhale" below). Line numbers are the base's unless named.
+
+Observed (code), the player-0 sites the audit lists (`tools/coop/sp_audit.py`, patterns P0 `gPlayer[0]`, MC
+`gMainController`, PA a bare `gPlayer`, SH who fired):
+
+`src/overlays/ovl_i3/fox_a6.c`, 31 sites:
+
+| function | sites | what each does | verdict |
+|---|---|---|---|
+| `Area6_A6Gorgon_Update` | 27 P0 | `:492-496` faces player 0's `cam.eye` every frame in states 0-5 and 8-11 (its beam and missile ring fire along that facing); `:613-624` wander point = random 500 or 1000 around player 0's `cam.eye` x/y; `:632` z = player 0's `cam.eye.z` plus its distance `fwork[3]`; `:719-728` the entrance flies at player 0's ship, then its camera; `:769-771`, `:798-799`, `:817-819` the warp-ins put it on player 0's camera | aim and chase: changed |
+| `Area6_A6Gorgon_Update` | (same) | `:1199-1201` its death sets player 0 to level complete | flow: left |
+| `<file scope>` | 1 SH | a cutscene shot's id | ok |
+| `Area6_8018D804`, `Area6_8018EB3C`, `Area6_8018EC38` | 1 P0 each | intro and level complete cutscenes | flow: left |
+
+Not in the file but the Gorgon's: `Effect_Effect395_Update` state 10 (`src/engine/fox_effect.c:3852-3858`), its big
+beam, turns the boss to player 0's `cam.eye` every 16 frames (aim: changed); the beam's hit already tests every
+player (`CoopEffects_BeamHit`, #100). Its homing missiles (`Area6_ActorMissileSeekPlayer_Spawn`, run by
+`ActorMissileSeek_Update`) seek the nearest human since #193.
+
+`src/overlays/ovl_i6/fox_andross.c`, 114 sites in the audit (the issue counted 117 lines). The face's own update reads
+player 0 through a local `Player* player = &gPlayer[0]` on 41 more lines the audit's patterns do not see:
+
+| function | sites | what each does | verdict |
+|---|---|---|---|
+| `Andross_ActorTeamArwing_Update` | 3 P0 | James in the escape flies faster when player 0 is near | flow (the escape, WP-19): left |
+| `Andross_AndBrainWaste_Update` | 2 P0 | a billboard turned to player 0's `camYaw`/`camPitch` | view: left |
+| `Andross_80188A4C` | 3 P0 | `:460` the brain's death sets player 0 to standby; `:483-484` after 6 hits elsewhere the brain warps to 4000 from player 0 | flow: left; chase: changed |
+| `Andross_80188CB8` | 1 P0 | a wobble worked out in player 0's camera yaw | view: left |
+| `Andross_80189214` | 2 P0 (+12 alias) | sets player 0 and its camera up for the rails | flow: left |
+| `Andross_AndBossTimer_Update` | 2 P0 | the fight's timer starts when player 0 is within 1000 | trigger: left |
+| `Andross_AndJamesTrigger_Update` | 6 P0 (+9 alias) | James' radio and the hard route's end when player 0 reaches him | trigger and flow: left |
+| `Andross_AndExplosion_Update` | 10 P0 | escape explosions: smoke near player 0, they kill player 0 within 500 | damage in the escape (WP-19): left, as the spec says |
+| `Andross_AndBrain_Update` | 55 P0, 3 MC, 1 PA | `:815-817` the catch when player 0 is in a 300 box; `:848`, `:853-856`, `:861` the brain's start puts player 0 into all-range; `:890-920` the catch drags, slows and drains player 0; `:940-942` state 3 chases player 0; `:987-1101` the brain's death moves player 0's camera and starts the escape; `:1131-1168` escape smoke around player 0; `:1188-1190` it turns its face to player 0's `camYaw`; MC rumble | catch and chase: changed; flow, view: left |
+| `Andross_AndBrain_Draw` | 1 P0 | draw | view |
+| `Andross_8018C390` | 1 MC | the mouth cutscene: `:1426` writes `gPathProgress` from the swallowed player; any button on `gMainController` shortens the spit-out timer | flow and input: changed for D |
+| `Andross_Effect396_Update` | 2 P0 | debris hits, `func_effect_8007A774`, every player since #100 | ok |
+| `Andross_8018D0D8` | 4 P0 | the hand's reach, `CoopHits_AndrossReach` does the others (#136) | ok |
+| `Andross_8018D2B0` | 2 P0 | the face's death sets player 0 to level complete | flow: left |
+| `Andross_AndAndross_Update` | 13 P0, 1 MC (+41 alias) | `:1999` z keeps `fwork[6]` ahead of player 0's `pos.z` (on rails every player's `pos.z`); `:2008-2037` the eyes look at player 0; `fwork[0]`/`fwork[3]` = player 0's x/y (+ an offset) in the punches, slaps, the sweep and the last phase (states 3-7, 9, 12-14, 16); `:2645-2647` inhale debris around player 0's camera; `:2691-2702` the inhale pulls and swallows player 0; the mouth, chew and spit (states 15, 16) on `player`; camera roll; effect speeds from player 0's `vel.z` | aim and chase (eyes, punches, slaps): changed; inhale, chew and spit: changed for D; path, camera, view: left |
+| `Andross_AndDoor_Update` | 1 P0 | a door opens when player 0 is within 1800 | trigger: left |
+| `Andross_801939A0` | 1 P0 | a cutscene actor at player 0's `cam.at.y` | flow: left |
+
+`src/engine/fox_360.c` (the dogfight AI), 51 sites (37 P0, 1 MC, 13 SH):
+
+| function | sites | what each does | verdict |
+|---|---|---|---|
+| `ActorAllRange_Update` | 17 P0 | `:1407-1427` wingmen's radio on player 0's shields; `:1506` waits for player 0's `START_360`; `:1577-1602`, `:1660-1662` an actor whose target is Fox (`aiIndex` `AI360_FOX`) breaks off on player 0's somersault, resets on its hit, flies at player 0's position plus a wobble at player 0's speed; `:1578` Bolse waits while player 0 stands by; `:1606` wingmen match player 0's speed in Great Fox's escort; `:1929` Katina while player 0 stands by | chase (enemies only): changed; wingmen, radio, flow: left |
+| `ActorAllRange_UpdateStarWolfEvents` | 9 P0, 1 SH | Star Wolf's entrance cutscene on player 0; the rescue by player 0's hit (WP-17) | flow: left |
+| `ActorAllRange_CheckPlayerNearby` | 4 P0 | a wingman counts frames near player 0 for its radio line | team radio: left |
+| `ActorAllRange_SpawnSupplies` | 2 P0, 1 MC | supplies when player 0 is low, on C-right | team: left |
+| `AllRange_PlayMessage`, `ActorAllRange_PlayMessage`, `ActorAllRange_UpdateEvents`, `ActorAllRange_CheckObjectNearby` | 1 P0 each | radio and events wait on player 0's state | flow: left |
+| `ActorAllRange_UpdateEnemyEvents`, `ActorAllRange_ApplyDamage` | 13 SH | who shot (WP-16, WP-17) | flow: left |
+
+Who runs the Fox branch of `ActorAllRange_Update` (`aiIndex` `AI360_FOX`): Star Wolf (Venom 2 sets it at
+`fox_360.c:569-575`; Fortuna, Bolse, Katina, Sector Z set it too, `fox_bo.c:171`, `fox_sz.c:403`), the Andross brain's
+two eyes (`fox_andross.c:579`, `:593`), Training's targets (`fox_tr360.c:228`), and the wingmen when an event points
+them at Fox (`fox_ka.c:2309-2313`, `fox_sz.c:606-610`, `fox_fo.c:384-388`, `fox_bo.c:408-412`). Corneria's
+all-range enemies did not take it in 4000 frames of a run (they go after the wingmen).
+
+Built:
+
+- Kept targets (`src/port/coop/game/aim.c`): one slot per boss and per actor, the player it follows. A call with the
+  object's position returns the kept player and picks again with `CoopAim_Nearest` when the slot is empty or that
+  player can no longer be aimed at (parked, down, out). The slot empties at the level start (`CoopPlayers_LevelInit`),
+  for a new object (`ObjectInitEvent`) and where the AI makes a new choice: the Gorgon picks again as it warps in
+  (`fox_a6.c:774`, `:806`), Andross' face at each new attack (`Andross_8018D9C0`), the brain when it warps
+  (`Andross_80188A4C`) and when a catch ends, a dogfighter when it starts a new chase of Fox (STATE360_3 to
+  STATE360_2, `fox_360.c:1965`). The slots (and the held players below) are hashed in the globals region in co-op
+  (`HashKeptTargets`) and probed (`keptTarget[0]`, `keptTarget[last]`, `hash_check.py` `KEPT_TARGETS`).
+- The Gorgon faces, wanders around, keeps its distance to and warps to its kept player's camera; the entrance flies at
+  that player; its beam turns to that player's camera (`fox_effect.c:3852`). Its death still sets player 0 to level
+  complete.
+- Andross' face: eyes, punches, slaps, the sweep and the last phase follow the kept player's x and y. Its z keeps to the
+  path (player 0's `pos.z`, which every player shares on rails).
+- The brain chases its kept player (state 3) and warps to it. Its catch (owner's A): `CoopAim_BrainCatch` takes the
+  nearest player in the upstream box (300 around the brain, 300 below it), players after 0 only while they fly, a tie to
+  the lower index; outside co-op it is player 0 or nobody, as upstream. The caught player is held (`CoopAim_SetHeld`)
+  until the catch ends: dragged, slowed, drained, its own `alternateView`; then the brain chases whoever is nearest.
+- Dogfighters: `CoopAim_Chased` gives an enemy (Star Wolf, `aiType` `AI360_ENEMY` up to the Great Fox) whose target is
+  Fox its kept human; Fox's own side (Falco, Slippy, Peppy, Katt, Bill) stays with player 0.
+- `SF64_COOP_BOSS_TRACE` (`src/port/coop/test/boss_trace.h`) logs the bosses, the Fox-chasing enemies with their kept
+  slots, and every player's position, camera, `hitTimer`, `csState` and `hitDirection`, each frame; it only reads.
+
+Observed (run), `lockstep_test.py --only bosses`, US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window,
+two games over loopback, `gInvincible` on both, player 0 steered away, player 1 near the fight; each run ends with a
+flipped bit so both games write a dump of that frame:
+
+- This branch: `gorgon: same hash on 9800 frames; boss at x 12, y 380; player 0 -687,526, player 1 122,526; kept
+  player 1 on 381 frames, player 0 on 0; andross: same hash on 2900 frames; boss at x 1100, y 94; player 0 -1100,612,
+  player 1 1100,40; kept player 1 on 1334 frames, player 0 on 0; dogfight: same hash on 4100 frames; gActors[4] 1135
+  from player 0, 14360 from player 1, gActors[5] 16531 from player 0, 13020 from player 1, gActors[6] 14002 from
+  player 0, 388 from player 1, gActors[7] 14191 from player 0, 667 from player 1; kept player 1 on 3528 frames, player
+  0 on 2573`.
+- The base build `80ff9be6`, the same runs and the same check on the dump: `gorgon: the boss is with player 0: boss at
+  x -797, y 380; player 0 -687,526, player 1 122,526`; `andross: the boss is with player 0: boss at x -1100, y 645;
+  player 0 -1100,612, player 1 1100,40`; `dogfight: Star Wolf stays with player 0: gActors[4] 5743 from player 0,
+  15778 from player 1, ... gActors[6] 763 from player 0, 15239 from player 1, gActors[7] 1241 from player 0, 14555 from
+  player 1`.
+- Exploration runs: Area 6's Gorgon appears at level frame about 9430, 14000 frames of Area 6 hashed alike; in Venom 2
+  Star Wolf kept player 1 on most frames while player 0 circled away (Wolf 778 from player 1, 24663 from player 0 at
+  frame 4000). With player 0 holding the stick down, Area 6's path went slower (20 a frame instead of 27).
+- `gDebugJumpToAllRange` in Venom/Andross before the face dies crashes the game in `Play_Main`: it frees
+  `gScenery360`'s slots, which that level allocates only later (`src/engine/fox_play.c:7155-7160`). Upstream, not
+  co-op.
+
+Derived:
+
+- With the slot kept until the AI's own next choice, a boss or a dogfighter does not flip between two players at about
+  the same distance; it changes players at a warp, a new attack, the end of a catch or a new chase, or when its player
+  goes down or is parked. The face and the Gorgon move toward whom they keep, so that player stays the nearest and they
+  stay with it.
+- Upstream, Andross' inhale pulls only player 0, so after it player 0 sits in front of the face and the next attack
+  can pick player 0; the test keeps both players on the walls for that reason (written before the inhale change below,
+  which pulls every player that flies).
+
+The inhale (option D, the owner's A for it, 2026-11-10), in its own commit:
+
+- Observed (code), what tied the mouth to player 0 besides `player`: the mouth state's update `Andross_8018C390`
+  (`fox_andross.c:1417`) writes `gPathProgress = player->zPath = -player->pos.z`, so the level's path follows whoever
+  is in the mouth; during the chew (face states 15 and 16, `swork[8]` 1) the face's z goes to player 0's `pos.z + 100`
+  (`:1999`); the spit-out timer `csTimer` counts down only on a press of `gControllerPress[gMainController]`; while
+  player 0 is in the mouth every other player is parked (`CoopPlayers_SkipUpdate`, player 0 not ACTIVE).
+- Built: `CoopAim_AndrossPull` pulls every player after 0 that flies as the face pulls player 0;
+  `CoopAim_AndrossSwallow` takes of the players within 200 of the face's z (upstream's test; player 0 in any state, the
+  others while they fly) the one nearest the mouth, a tie to the lower index, and the face holds it
+  (`CoopAim_SetHeld`); `CoopAim_InMouth` names it while it is in `PLAYERSTATE_ANDROSS_MOUTH`. The face's chew z, the
+  chew and the spit (draw, `csState`, `mercyTimer`, the wings, which break for that player) and its x/y follow that
+  player; only player 0 writes `gPathProgress` in the mouth; a co-op player's spit-out timer counts its own presses
+  (`CoopPlayers_PadOf`). With player 0 in the mouth every line reads as before.
+- Observed (run), `lockstep_test.py --only bosses --levels inhale` (as above, with player 1 boosting into the mouth
+  during the first inhale and pressing A every other frame from level frame 2300): `inhale: same hash on 3300 frames;
+  wing health of player 0 (60, 60), of player 1 (0, 0); player 1 in the mouth on 282 frames (2207 to 2488), spat out on
+  40, then flying; player 0 flying throughout, not bumped by the face, nearest it 978; other hits on player 0
+  meanwhile: none`. The base build, the same run: `inhale: player 1 was not spat out: wing health of player 0 (0, 0),
+  of player 1 (60, 60)` (there player 0 was swallowed, as upstream).
+- Observed (run), a first version of the script that held the sticks from the level start (both ships scraped the
+  tunnel walls, wings broken before the fight): player 1 swallowed at 2255 and back at about 2560; player 0 was hit
+  once, at 2264, 9 frames into the chew, by an effect (`hitDirection` 0, so not the face's hitbox, which uses 1 to 4,
+  `fox_play.c:2128`), 304 behind the face in z and 1117 to its side; no hit after that, also when player 0 flew past
+  the face's z at about 2400.
+- Derived: the effect was the inhale's debris (`Andross_Effect396_Update`, state 0 after the inhale, flying out at 70 a
+  frame and testing every player through `func_effect_8007A774`); upstream they do the same to a flying player 0
+  whenever the inhale swallows nobody, and they are cleared at chew frame 20. So the hit is the inhale's ordinary
+  hazard, not a bump by the chewing face. The test fails on a hit by the face's hitbox and reports any other hit.
+- Derived: while a co-op player is chewed the team flies on and the face's z holds still with the swallowed player,
+  so player 0 passes the face's z during the chew (it did at about 2400) off to the side.
+- Unknown: whether the face would bump a player 0 that flies straight through its middle during a chew (the runs kept
+  player 0 at the left wall); how the chew looks from player 0's and the swallowed player's screens.
+
+Left on player 0 (not changed here): every trigger and level flow listed above (the fight timer, doors, James,
+level complete, the brain's start into all-range, the escape and its explosions), the cameras, player 0 down
+restarting the level for everyone (decision 0007), the brain turning its face to player 0's `camYaw` (draw state: the
+draw code writes it), the wingmen.
+
+Unknown:
+
+- Hand play: whether a boss that changes players at a warp or a new attack reads well to two humans. Nothing was played
+  by hand; Windows, two PCs and three or four players were not run.
+- The brain's catch of a player other than 0 at run time: the brain fight was not reached by script (its debug jump
+  crashes, and the face has to die first); the catch is read code only.
+- The other bosses (Granga, Meteo, Fortuna, Solar, Macbeth and the rest) were not read for this; Star Wolf in Fortuna,
+  Bolse, Katina and Sector Z goes through the same dogfight code but was not run.
+
 ### 2026-11-09, #14 (WP-16), players 2-4 come back after going down (decision 0007 rule 4)
 
 Identity: ROM US 1.0, on top of `6becd73a` (the combined test branch of 2026-11-09), Linux, GCC, Debug, OpenGL on a
