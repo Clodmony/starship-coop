@@ -9,6 +9,53 @@ Private notes (your paths, your PC, your logs) go in `local/`, not here.
 
 ## Build and run
 
+### 2026-11-10, #158, the lock a test game's crash handler stops on
+
+Identity: ROM US 1.0, base `80ff9be6` and the fix on top, Linux, GCC, Debug, OpenGL in software, no window. Load made
+with one burner process of busy threads at idle priority (`SCHED_IDLE`, nice 19, as the test games), and in the sweeps
+marked "pinned" the game and four burner threads held on two cores.
+
+Observed:
+
+- The stack of a stuck crash handler, taken by gdb (a `crash-segv` signal from outside, not a gdb fault, the game at
+  `SF64_COOP_TEST_SPEED=max`, pinned): the main thread waits in `__lll_lock_wait_private` under `backtrace_symbols`,
+  called by `Ship::ErrorHandler` (`libultraship/src/debug/CrashHandler.cpp:148`), on top of the signal frame, which
+  landed inside glibc's `free`, called from the destructor of a map in `src/port/interpolation/FrameInterpolation.cpp:156`
+  (`previous_recording`, cleared each frame). A second one, from the alarm's report after the fix: inside `operator new`
+  under `FrameInterpolation_RecordMatrixMtxFToMtx`, `Matrix_SetGfxMtx`, `Background_DrawStarfield`, `Game_Draw`.
+- Rates on the base build, crash signal at a random moment: real pacing, 39 of 39 unpinned at load 8 to 39, 40 of 40
+  pinned, 40 of 40 pinned with the signal during loading (the hash log's first line as the ready point): no hang.
+  At test speed, pinned: 39 of 40, the 40th stuck as above.
+- A normal crash handler took 0.10 to 0.86 s, with 60 to 76 minor and no major page faults, and offscreen started no
+  process (an `LD_PRELOAD` that logs `fork`, `posix_spawn`, `execve`: none). `backtrace_symbols` of its 4096 slots took
+  60 ms at load 35.
+- With the fix, same pinned setup at test speed: 120 of 120 `crash-segv`, `crash-fpe`, `crash-record`, `crash-play`
+  passed `exit_test.py`'s own checks; 3 of them hit the lock and ended by the alarm 5.07 to 5.11 s after the signal,
+  with exit code 1, the alarm's report, the hash log's closing line and, recording, a report one frame ahead of it.
+- With the fix, the whole `exit_test.py --repeat 4` (16 scenarios, 64 games) passed at load 19 to 37, in 556 s;
+  `fault-stuck` 4 of 4 by the alarm (4.94 to 5.11 s), `fault-main` and `fault-audio` 8 of 8 by libultraship's handler.
+- `steam_mutants.py` `message_released_too_early` on Release survived with the old fake (`lan still pass`) and is
+  caught with the fix (`a corrupt message was delivered`). GCC `-O2` and `-O3` compile `Fake_Release` to a `free`
+  without the `memset` before it; `-O0` keeps it. All 38 breaks caught on Release and on Debug; `steam_test.py` 52 of 52
+  on both.
+
+Derived:
+
+- The lock is glibc's malloc arena lock, held by the `malloc` or `free` the crash signal interrupted. The crash
+  handler allocates before it writes the log, so it waits for itself for good. FrameInterpolation allocates per matrix
+  while the game draws.
+- Load matters because of where the main thread is when the signal comes: on a quiet machine mostly in
+  `GameEngine::EndAudioFrame`'s condition wait (`push_frame`), under load and at test speed in the frame's work.
+- A real crash inside `malloc` or `free` (heap corruption, an `abort` from glibc's checks) would hang a player's game
+  the same way, before the message box and with no log. That is upstream's handler; this repo changes it for test
+  runs only.
+- Steam mutant: a test gap, not a mutant that does not apply. A store just before `free` is dead to the compiler.
+
+Unknown:
+
+- Why the issue's full runs saw it at real pacing as often as 2 of 4 (#147): not reproduced at real pacing here.
+- Windows and macOS: not run; the alarm is Linux only, as the handler it wraps.
+
 ### 2026-11-07, #116, how a crashed test game looks to the tools
 
 Identity: no game run; `tools/coop/crash_test.py` with a stand-in for the game, Windows 11, Python 3, on `issue/116`.

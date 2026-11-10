@@ -15,13 +15,19 @@ without a replay asks for it with SF64_COOP_HASH_LOG. The scenario plain sets no
 game keeps upstream's handler, which never ends it with exit code 0. It waits PLAIN_WAIT seconds for that, then SIGKILL.
 
 The crash-* scenarios send a crash signal instead. The game must end within EXIT_LIMIT seconds with the exit code of
-libultraship's crash handler, 1, and leave its crash log in logs/Starship.log. crash-plain is the other side again: a
-game with no test variable hangs after a crash as upstream's does, and its crash log is there all the same.
+libultraship's crash handler, 1, and leave a crash report in logs/Starship.log: the signal, its name and a traceback.
+libultraship's handler can stop for good on a lock that the code the signal interrupted held (#158). Then the alarm of
+src/port/coop/test/stop_signal.c ends the test output and writes the report itself, CRASH_LIMIT_SECONDS (5) after
+the crash. Where a signal from outside lands is chance, so a crash-* run takes either, and its line says which ("report by
+the alarm"). crash-plain is the other side again: a game with no test variable hangs after a crash as upstream's does,
+and its crash log is there all the same.
 
 The fault-* scenarios need gdb, which starts the game and sends the program counter to address 0 in the middle of a
 frame: a real fault, not a signal from outside. fault-main does that on the main thread, fault-audio on the audio
-thread. fault-stuck also makes the crash handler itself stop for good before it writes anything, where a lock taken by
-the crashed code would stop it: only the time limit in stop_signal.c ends that game, by SIGALRM, and there is no log.
+thread, both where a function starts, so the crashed code holds no lock and libultraship's handler must finish by
+itself: a report by the alarm fails them. fault-stuck also makes the crash handler itself stop for good before it
+writes anything, where a lock taken by the crashed code would stop it: the alarm must end that game with exit code 1,
+the report of its own and the test output.
 
 Needs a build with assets (python tools/coop/build.py --assets) or --exe. Exit code 0 when every run holds, 1 otherwise.
 
@@ -53,7 +59,8 @@ PLAIN_WAIT = 3  # seconds; ten times what the slowest test run took to end
 READY_LIMIT = 120  # seconds until the game must have drawn frames
 READY_FILE = "imgui.ini"  # ImGui writes it 5 s after it starts to draw, on the clock at any game speed (IniSavingRate)
 MAX_DELAY = 1.5  # seconds after READY_FILE, so the signal does not land on the same point of a frame each time
-CRASH_CODE = 1  # the exit(1) of Ship::ErrorHandler, libultraship/src/debug/CrashHandler.cpp:202
+CRASH_CODE = 1  # the exit(1) of Ship::ErrorHandler, libultraship/src/debug/CrashHandler.cpp:202, and the alarm's _exit(1)
+STUCK_LINE = "COOP: the crash handler did not finish"  # COOP_CRASH_STUCK_LINE in src/port/coop/test/stop_signal.h
 CRASH_LOG = Path("logs") / "Starship.log"
 # What Ship::ErrorHandler writes for each signal it handles, libultraship/src/debug/CrashHandler.cpp:154-165
 CRASH_LINES = {
@@ -177,7 +184,7 @@ def stop_fault(proc, run, scenario):
         return None, [f"still running {EXIT_LIMIT}s after the fault"]
     elapsed = time.monotonic() - start
     ending = fault_ending(run)
-    want = "SIGALRM" if scenario.fault == "stuck" else f"exit code {CRASH_CODE}"
+    want = f"exit code {CRASH_CODE}"
     return elapsed, [] if ending == want else [f"{ending}, want {want}"]
 
 
@@ -228,19 +235,38 @@ def check_replay_file(replay, report_frames):
     return []
 
 
-def check_crash_log(run, sig):
-    """The crash log Ship::ErrorHandler leaves, libultraship/src/debug/CrashHandler.cpp:150-198."""
+def crash_log(run):
     log = run / CRASH_LOG
-    text = log.read_text(encoding="utf-8", errors="replace") if log.exists() else ""
+    return log.read_text(encoding="utf-8", errors="replace") if log.exists() else ""
+
+
+def by_alarm(run):
+    """True when the alarm of stop_signal.c wrote a crash report: libultraship's handler did not finish in time."""
+    return STUCK_LINE in crash_log(run)
+
+
+def check_crash_log(run, sig):
+    """The crash report: the lines of Ship::ErrorHandler (libultraship/src/debug/CrashHandler.cpp:150-198), which the
+    alarm's report repeats."""
+    text = crash_log(run)
     return [f"{CRASH_LOG} lacks {line!r}" for line in (f"Signal: {int(sig)}", CRASH_LINES[sig], "Traceback:")
             if line not in text]
 
 
+def check_report_kind(run, scenario):
+    """Whose crash report a fault must have: fault-stuck the alarm's, the other faults libultraship's (see above)."""
+    if scenario.fault is None or scenario.mode == "plain":
+        return []
+    if scenario.fault == "stuck":
+        return [] if by_alarm(run) else [f"{CRASH_LOG} lacks the alarm's report ({STUCK_LINE!r})"]
+    return [f"the crash handler did not finish by itself: {CRASH_LOG} holds the alarm's report"] if by_alarm(run) else []
+
+
 def check_files(run, scenario, replay):
     """What the game must have written on its way out. Returns (failures, frames in the report or None)."""
-    if scenario.fault == "stuck":
-        return [], None  # stopped before the crash handler wrote anything, and it never got to exit
-    failures = check_crash_log(run, scenario.signal) if scenario.signal in CRASH_LINES else []
+    crashed = scenario.signal in CRASH_LINES
+    failures = check_crash_log(run, scenario.signal) if crashed else []
+    failures += check_report_kind(run, scenario)
     if scenario.mode == "plain":
         return failures, None
     frames = None
@@ -258,11 +284,15 @@ def check_files(run, scenario, replay):
     log = run / "state-hash.txt"
     lines = log.read_text(encoding="utf-8", errors="replace").splitlines() if log.exists() else []
     end = re.fullmatch(r"# end frames=(\d+)", lines[-1]) if lines else None
+    # The replay counts its frame in a listener that runs before the hash log's (LOW and NORMAL, src/port/coop/test/
+    # replay.c:452, src/port/coop/sync/state_hash.c:906; listeners run in ascending priority). A crash between the two
+    # leaves the report one frame ahead, never behind (#137). A stop waits for the end of the frame, so both agree.
+    ahead = 1 if crashed else 0
     if end is None:
         failures.append("hash log has lost its closing line")
     elif frames is None:
         frames = int(end.group(1))
-    elif int(end.group(1)) != frames:
+    elif not 0 <= frames - int(end.group(1)) <= ahead:
         failures.append(f"hash log says {end.group(1)} frames, the report {frames}")
     if log.exists():
         failures += hash_check.too_few_draws("game", ({"log": log},), want=1)
@@ -296,6 +326,8 @@ def run_once(exe, folder, name, scenario, number):
     took = "no exit" if elapsed is None else f"{elapsed:.2f}s"
     ending = fault_ending(run) if scenario.fault is not None else f"exit code {proc.returncode}"
     line = f"{took}, {ending}" + (f", {frames} frames" if frames is not None else "")
+    if scenario.signal in CRASH_LINES and scenario.mode != "plain" and by_alarm(run):
+        line += ", report by the alarm"
     return elapsed, line, failures, run
 
 
@@ -331,18 +363,21 @@ def main():
     start = time.monotonic()
     runs = []
     failed = 0
+    alarmed = 0
     slowest = 0.0
     for name in chosen:
         for number in range(args.repeat):
             elapsed, line, failures, run = run_once(exe, folder, name, SCENARIOS[name], number)
             runs.append(run)
             failed += bool(failures)
+            alarmed += line.endswith("report by the alarm") and SCENARIOS[name].fault is None
             slowest = max(slowest, elapsed or 0.0)
             print(f"exit_test: {name} {number + 1}: {'FAIL' if failures else 'OK'}, {line}"
                   + "".join(f"\n  {f}" for f in failures), flush=True)
 
     total = len(chosen) * args.repeat
-    print(f"exit_test: {total - failed}/{total} runs OK, slowest exit {slowest:.2f}s, {time.monotonic() - start:.0f}s")
+    print(f"exit_test: {total - failed}/{total} runs OK, slowest exit {slowest:.2f}s, {time.monotonic() - start:.0f}s"
+          + (f"; {alarmed} crash signal(s) ended by the alarm, as libultraship's handler stopped" if alarmed else ""))
     if failed:
         print(f"exit_test: FAIL, folders kept under {ROOT / 'local'}")
         return 1

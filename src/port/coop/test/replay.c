@@ -14,6 +14,7 @@
 #include "replay.h"
 #include "pilot.h"
 #include "start_level.h"
+#include "stop_signal.h"
 #include "switches.h"
 #include "test_pad.h"
 
@@ -25,6 +26,14 @@
 #include "port/coop/game/input.h"
 #include "port/coop/game/players.h"
 #include "port/hooks/Events.h"
+
+#if defined(__linux__) && !defined(__ANDROID__)
+#include <fcntl.h>
+#include <signal.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#define REPLAY_CRASH_END 1 // CoopReplay_EndCrash, see CoopStopSignal_AddCrashEnd (stop_signal.h)
+#endif
 
 // src/sys/sys_math.c
 extern s32 sRandSeed1;
@@ -84,6 +93,10 @@ static s32 sLevelCompleteLevel = -1;
 static bool sLiveLocal = false;
 static ReplayFrame sPlaying; // the frame being played, for the input source below
 static FILE* sPilotFile = NULL; // what the pilot flew, as a replay (pilot.h)
+#ifdef REPLAY_CRASH_END
+static int sRecordFd = -1;                    // sFile's file while recording, for CoopReplay_EndCrash
+static volatile sig_atomic_t sReportDone = 0; // a report is in its file
+#endif
 
 static void CoopReplay_TakeCheckpoint(ReplayCheckpoint* cp) {
     memset(cp, 0, sizeof(*cp));
@@ -164,6 +177,10 @@ static void CoopReplay_WriteReport(const char* mode, const char* result) {
     fprintf(f, "final=%s\n", got);
     // Written last: tools/coop/replay.py waits for this line.
     fprintf(f, "result=%s\n", result);
+    fflush(f);
+#ifdef REPLAY_CRASH_END
+    sReportDone = 1;
+#endif
     fclose(f);
 }
 
@@ -205,6 +222,56 @@ static void CoopReplay_OnExit(void) {
         CoopReplay_FinishPlayback("FAIL_INCOMPLETE");
     }
 }
+
+#ifdef REPLAY_CRASH_END
+// The report, from a signal handler, when a crash handler did not get to exit() (stop_signal.h, #158): what
+// CoopReplay_OnExit writes, without stdio and without the checkpoint lines, which say so. A recording counts the whole
+// frames in its file, as each frame is flushed, and cuts off one it ends inside.
+static void CoopReplay_EndCrash(void) {
+    CoopCrashText t;
+    u32 frames = sFrame;
+    int fd;
+
+    if (sReportDone || ((sMode != REPLAY_RECORD) && (sMode != REPLAY_PLAY))) {
+        return;
+    }
+    sReportDone = 1;
+    if ((sMode == REPLAY_RECORD) && (sRecordFd >= 0)) {
+        struct stat st;
+
+        frames = 0;
+        if ((fstat(sRecordFd, &st) == 0) && (st.st_size >= (off_t) sizeof(ReplayHeader))) {
+            const off_t body = st.st_size - (off_t) sizeof(ReplayHeader);
+
+            frames = (u32) (body / (off_t) sizeof(ReplayFrame));
+            if ((body % (off_t) sizeof(ReplayFrame)) != 0) {
+                (void) ftruncate(sRecordFd,
+                                 (off_t) sizeof(ReplayHeader) + (off_t) frames * (off_t) sizeof(ReplayFrame));
+            }
+        }
+    }
+    t.used = 0;
+    CoopCrashText_Add(&t, (sMode == REPLAY_RECORD) ? "mode=record\nstart=" : "mode=play\nstart=");
+    CoopCrashText_Add(&t, CoopTestStart_Name());
+    CoopCrashText_Add(&t, "\nframes=");
+    CoopCrashText_AddNumber(&t, frames);
+    CoopCrashText_Add(&t, "\nrecorded_frames=");
+    CoopCrashText_AddNumber(&t, (sMode == REPLAY_RECORD) ? frames : sRecordedFrames);
+    CoopCrashText_Add(&t, "\nfirst_mismatch=");
+    CoopCrashText_AddNumber(&t, sFirstMismatch);
+    CoopCrashText_Add(&t, "\nlevel_complete_frame=");
+    CoopCrashText_AddNumber(&t, sLevelCompleteFrame);
+    CoopCrashText_Add(&t, "\nlevel_complete_level=");
+    CoopCrashText_AddNumber(&t, sLevelCompleteLevel);
+    CoopCrashText_Add(&t, "\ncrash=the crash handler did not finish: no checkpoint lines (stop_signal.h)\nresult=");
+    CoopCrashText_Add(&t, (sMode == REPLAY_RECORD) ? "RECORDED\n" : "FAIL_INCOMPLETE\n");
+    fd = open(sReportPath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd >= 0) {
+        (void) write(fd, t.text, t.used);
+        close(fd);
+    }
+}
+#endif
 
 static bool CoopReplay_StartRecord(void) {
     ReplayHeader header;
@@ -299,9 +366,9 @@ static void CoopReplay_OnGamePreUpdate(IEvent* event) {
         memcpy(frame.press, gControllerPress, sizeof(frame.press));
         frame.cp = cp;
         fwrite(&frame, sizeof(frame), 1, sFile);
-        if ((sFrame % 60) == 0) {
-            fflush(sFile);
-        }
+        // Every frame: the file then holds whole frames, including after a crash handler that never gets to exit()
+        // (CoopReplay_EndCrash, #158).
+        fflush(sFile);
         sFrame++;
         // The report is written here, not at exit: on Windows a tool can only end the game with TerminateProcess,
         // which runs no atexit handler (#156).
@@ -384,4 +451,8 @@ void CoopReplay_Init(void) {
     // (WP-04), looks at them.
     REGISTER_LISTENER(GamePreUpdateEvent, CoopReplay_OnGamePreUpdate, EVENT_PRIORITY_LOW);
     atexit(CoopReplay_OnExit);
+#ifdef REPLAY_CRASH_END
+    sRecordFd = (sMode == REPLAY_RECORD) ? fileno(sFile) : -1;
+    CoopStopSignal_AddCrashEnd(CoopReplay_EndCrash);
+#endif
 }

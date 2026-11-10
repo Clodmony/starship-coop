@@ -38,6 +38,14 @@
 #include "port/hooks/Events.h"
 #include "port/coop/game/players.h"
 #include "port/coop/game/vehicles.h"
+#include "port/coop/test/stop_signal.h"
+
+#if defined(__linux__) && !defined(__ANDROID__)
+#include <signal.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#define HASH_CRASH_END 1 // CoopStateHash_EndCrash, see CoopStopSignal_AddCrashEnd (stop_signal.h)
+#endif
 #include "port/coop/game/team.h"
 #include "port/coop/test/switches.h"
 
@@ -100,6 +108,10 @@ static const PlayerArray sPlayerArrays[] = {
 };
 
 static FILE* sLog = NULL;
+#ifdef HASH_CRASH_END
+static int sLogFd = -1;                  // sLog's file, for CoopStateHash_EndCrash, which may not use stdio
+static volatile sig_atomic_t sEnded = 0; // the closing line is in the file
+#endif
 static CoopStateDump* sDump = NULL;         // while ComputeDump runs
 static const uint64_t* sDumpRegions = NULL; // its out->region, to name the region of a chunk from its hash pointer
 static bool sStarted = false;
@@ -809,10 +821,56 @@ void CoopStateHash_PokeNow(void) {
 static void CoopStateHash_OnExit(void) {
     if (sLog != NULL) {
         fprintf(sLog, "# end frames=%u\n", sFrame);
+        fflush(sLog);
+#ifdef HASH_CRASH_END
+        sEnded = 1;
+#endif
         fclose(sLog);
         sLog = NULL;
     }
 }
+
+#ifdef HASH_CRASH_END
+// The closing line, from a signal handler, when a crash handler did not get to exit() (stop_signal.h, #158). Straight
+// to the file, without stdio: what stdio still holds of the frame that was running is lost, and a line the file ends
+// inside is cut off, so the log holds sFrame whole frames and then this line, as after a clean exit.
+static void CoopStateHash_EndCrash(void) {
+    CoopCrashText line;
+    char tail[512];
+    struct stat st;
+    off_t end;
+
+    if ((sLogFd < 0) || sEnded || (fstat(sLogFd, &st) != 0)) {
+        return;
+    }
+    sEnded = 1;
+    end = st.st_size;
+    while (end > 0) {
+        const off_t from = (end > (off_t) sizeof(tail)) ? end - (off_t) sizeof(tail) : 0;
+        const ssize_t got = pread(sLogFd, tail, (size_t) (end - from), from);
+        ssize_t i = got;
+
+        if (got <= 0) {
+            break;
+        }
+        while ((i > 0) && (tail[i - 1] != '\n')) {
+            i--;
+        }
+        end = from + i;
+        if (i > 0) {
+            break;
+        }
+    }
+    if ((end != st.st_size) && (ftruncate(sLogFd, end) != 0)) {
+        return;
+    }
+    line.used = 0;
+    CoopCrashText_Add(&line, "# end frames=");
+    CoopCrashText_AddNumber(&line, sFrame);
+    CoopCrashText_Add(&line, "\n");
+    (void) pwrite(sLogFd, line.text, line.used, end);
+}
+#endif
 
 void CoopStateHash_Init(void) {
     const char* logPath = getenv("SF64_COOP_HASH_LOG");
@@ -847,4 +905,8 @@ void CoopStateHash_Init(void) {
 
     REGISTER_LISTENER(GamePreUpdateEvent, CoopStateHash_OnGamePreUpdate, EVENT_PRIORITY_NORMAL);
     atexit(CoopStateHash_OnExit);
+#ifdef HASH_CRASH_END
+    sLogFd = fileno(sLog);
+    CoopStopSignal_AddCrashEnd(CoopStateHash_EndCrash);
+#endif
 }
