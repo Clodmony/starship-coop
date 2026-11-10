@@ -1277,6 +1277,7 @@ void HUD_LevelClearStatusScreen_Draw(void) {
         HUD_TeammateStatus_Draw();
         HUD_TeamDownWrench_Draw(0);
         HUD_PlayerShieldGauge_Draw(20.0f, 18.0f);
+        CoopScore_DrawStatus(); // COOP: each human's own hits beside the team's, display only (#252)
     }
 }
 void HUD_SetMissionTeamStatus(void) {
