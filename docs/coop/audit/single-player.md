@@ -24,19 +24,19 @@ pattern without reading the code, so treat it as a guess.
 
 ## Summary
 
-1762 sites in 419 functions in 46 files.
+1746 sites in 419 functions in 46 files.
 A function whose sites have more than one verdict counts once per verdict in the functions column.
 
 | verdict | sites | functions | `gPlayer[0]` | `gPlayer->` | `gPlayer arg` | `gMainController` | `gCamCount` | `shooter` |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| sim | 834 | 169 | 829 | 1 | 2 | 0 | 0 | 2 |
+| sim | 805 | 168 | 800 | 1 | 2 | 0 | 0 | 2 |
 | view | 217 | 84 | 151 | 0 | 0 | 43 | 3 | 20 |
 | input | 13 | 9 | 0 | 0 | 0 | 8 | 0 | 5 |
-| flow | 451 | 99 | 411 | 0 | 3 | 3 | 0 | 34 |
+| flow | 464 | 100 | 424 | 0 | 3 | 3 | 0 | 34 |
 | setup | 53 | 34 | 1 | 0 | 1 | 0 | 51 | 0 |
 | ok | 194 | 84 | 14 | 2 | 15 | 87 | 8 | 68 |
 
-Basis per site: read 321, site 940, name 501.
+Basis per site: read 334, site 911, name 501.
 
 ## Sites
 
@@ -503,18 +503,18 @@ Basis per site: read 321, site 940, name 501.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Zoness_8018FF50` | 480:P0, 481:P0, 482:P0, 483:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Zoness_ZGull_Update` | 972:P0, 973:P0, 974:P0, 977:P0, 1031:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Zoness_ZoTroika_Update` | 1144:P0, 1145:P0, 1146:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Zoness_Effect394_Setup3` | 1707:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Zoness_ZoSarumarine_Update` | 2079:P0, 2113:P0, 2337:P0, 2369:P0, 2370:P0, 2371:P0, 2394:P0, 2395:P0, 2396:P0, 2588:P0, 2590:P0, 2591:P0, 2592:P0, 2593:P0, 2594:P0, 2596:P0, 2597:P0, 2599:P0, 2600:P0, 2696:P0, 2697:P0, 2714:P0, 2715:P0, 2731:P0, 2732:P0, 2733:P0, 2743:P0, 2744:P0, 2745:P0 | sim | site | boss; on death sets player 0 to LEVEL_COMPLETE |
-| `Zoness_ZoBall_Update` | 3522:SH | ok | site | DMG_SRC_2 before Actor_Despawn: no player gets the kill |
-| `Zoness_ZoMine_Update` | 3630:SH, 3648:SH | ok | site | DMG_SRC_2 before Actor_Despawn: no player gets the kill |
-| `Zoness_ZoMine_Update` | 3636:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Zoness_ZoSpikeBall_Update` | 3831:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Zoness_ZoTanker_Update` | 4135:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Zoness_ZoSupplyCrane_Update` | 4416:P0, 4448:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Zoness_LevelStart` | 4740:MC, 4741:MC, 4753:MC | flow | read | intro fakes a boost press on gMainController |
+| `Zoness_8018FF50` | 481:P0, 482:P0, 483:P0, 484:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Zoness_ZGull_Update` | 973:P0, 974:P0, 975:P0, 978:P0, 1032:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Zoness_ZoTroika_Update` | 1145:P0, 1146:P0, 1147:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Zoness_Effect394_Setup3` | 1708:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Zoness_ZoSarumarine_Update` | 2083:P0, 2117:P0, 2342:P0, 2593:P0, 2595:P0, 2596:P0, 2597:P0, 2598:P0, 2599:P0, 2601:P0, 2602:P0, 2604:P0, 2605:P0 | flow | read | its guns and head turn to its kept human, picked again at a new state (#220, aim.h); left: its z on the path (player 0's camera), the taunt when player 0 is hit, level complete |
+| `Zoness_ZoBall_Update` | 3530:SH | ok | site | DMG_SRC_2 before Actor_Despawn: no player gets the kill |
+| `Zoness_ZoMine_Update` | 3638:SH, 3656:SH | ok | site | DMG_SRC_2 before Actor_Despawn: no player gets the kill |
+| `Zoness_ZoMine_Update` | 3644:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Zoness_ZoSpikeBall_Update` | 3839:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Zoness_ZoTanker_Update` | 4143:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Zoness_ZoSupplyCrane_Update` | 4424:P0, 4456:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Zoness_LevelStart` | 4748:MC, 4749:MC, 4761:MC | flow | read | intro fakes a boost press on gMainController |
 
 ### `src/overlays/ovl_i4/fox_bo.c`
 
