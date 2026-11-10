@@ -2120,7 +2120,10 @@ void Map_Prologue_Update(void) {
                     }
                 }
 
-                if (sPrologueTextYpos < D_menu_801B6934[sPrologueTexIdx]) {
+                // COOP: the last text (index 6) has no entry; its fade is never drawn (Map_Prologue_Draw), so stop
+                // there instead of reading past the table (#145)
+                if ((sPrologueTexIdx < ARRAY_COUNT(D_menu_801B6934)) &&
+                    (sPrologueTextYpos < D_menu_801B6934[sPrologueTexIdx])) {
                     sPrologueNextTexAlpha += 8;
                     if (sPrologueNextTexAlpha > 255) {
                         sPrologueNextTexAlpha = 255;
