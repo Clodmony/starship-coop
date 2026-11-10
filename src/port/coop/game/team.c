@@ -483,8 +483,9 @@ void CoopTeam_Init(void) {
     REGISTER_LISTENER(ObjectDrawPreSetupEvent, CoopTeam_OnObjectDrawPreSetup, EVENT_PRIORITY_NORMAL);
 }
 
-// Decision 0013: a line of the taken wingman in a borrowed scene that plays as a named line of the substitute, or of
-// another speaker naming the substitute. Checked before the sets of three; a line in neither is dropped (0012 rule 5).
+// Decision 0013: a line in a borrowed scene, of the taken wingman or of another speaker naming him, that plays as a
+// named line of the substitute, or of another speaker naming the substitute. Checked before the sets of three; a
+// taken wingman's line in neither is dropped (0012 rule 5).
 typedef struct {
     u8 level;
     u8 team; // the scene's own wingman, the one a human flies
@@ -500,6 +501,93 @@ static const CoopRescueLine sRescueLines[] = {
     { LEVEL_CORNERIA, TEAM_ID_FALCO, TEAM_ID_SLIPPY, 2167, 2062, RCID_SLIPPY }, // CO S60:7, his ship fails: a call for help
     { LEVEL_CORNERIA, TEAM_ID_FALCO, TEAM_ID_SLIPPY, 2166, 2061, RCID_PEPPY },  // CO S60:25, asks for help: Peppy warns
     { LEVEL_CORNERIA, TEAM_ID_FALCO, TEAM_ID_SLIPPY, 2337, 2336, RCID_SLIPPY }, // CO S59:44, thanks
+    // Corneria, Falco's lead to the waterfall (S14) flown by Slippy: Slippy sets off and reports something ahead, two
+    // of his own lines from other levels, and Fox's question to Falco becomes Peppy calling Slippy back, Peppy's line
+    // to Slippy from his fly-in (CO S51:3).
+    { LEVEL_CORNERIA, TEAM_ID_FALCO, TEAM_ID_SLIPPY, 2181, 6028, RCID_SLIPPY },  // CO S14:10, Falco leads off
+    { LEVEL_CORNERIA, TEAM_ID_FALCO, TEAM_ID_SLIPPY, 2185, 20267, RCID_PEPPY },  // CO S14:19, Fox asks Falco
+    { LEVEL_CORNERIA, TEAM_ID_FALCO, TEAM_ID_SLIPPY, 2188, 14190, RCID_SLIPPY }, // CO S14:28, Falco found it
+};
+
+// Decision 0013, by kind: every line a wingman speaks in a scene of the table above, by what it does in the scene, and
+// for each kind one line each of Falco, Slippy and Peppy recorded (0 where one has none). A taken wingman's line of a
+// kind plays as the substitute's line of that kind. Lines tied to one level's story (Solar's heat, Titania's talk,
+// tutorial tips) are in no kind and stay dropped. Sorted from the scene scripts (tools/coop/script_reader.py) and the
+// message texts decoded from a US 1.0 archive; nobody has listened yet.
+typedef enum {
+    COOP_LINE_HELP,     // an enemy on the tail, asks Fox for help
+    COOP_LINE_TROUBLE,  // the ship is in trouble
+    COOP_LINE_HIT,      // just took a hit
+    COOP_LINE_THANKS,   // thanks for the rescue
+    COOP_LINE_RELIEF,   // that was close
+    COOP_LINE_ATTACK,   // goes after the enemy
+    COOP_LINE_KILL,     // got one
+    COOP_LINE_BACK_OFF, // tells Fox to leave this one alone
+    COOP_LINE_LEAD,     // flies ahead, Fox to follow
+    COOP_LINE_FOUND,    // reports something ahead
+    COOP_LINE_INCOMING, // enemies coming
+    COOP_LINE_PERSIST,  // the enemy does not give up
+    COOP_LINE_ALERT,    // the team should stay alert
+    COOP_LINE_SIDE,     // takes one side
+    COOP_LINE_PRAISE,   // praises Fox
+    COOP_LINE_KINDS,
+} CoopLineKind;
+
+static const u16 sKindLines[COOP_LINE_KINDS][3] = {
+    // Falco, Slippy, Peppy
+    { 2166, 2062, 7066 },   // HELP
+    { 2167, 20013, 7066 },  // TROUBLE
+    { 9151, 9152, 9153 },   // HIT
+    { 2337, 2336, 5230 },   // THANKS
+    { 9430, 20015, 20016 }, // RELIEF
+    { 9190, 3110, 9210 },   // ATTACK
+    { 9220, 9230, 9240 },   // KILL
+    { 2095, 20150, 20070 }, // BACK_OFF
+    { 2181, 6028, 5460 },   // LEAD
+    { 2188, 14190, 0 },     // FOUND
+    { 18035, 20272, 4075 }, // INCOMING
+    { 6050, 11240, 5420 },  // PERSIST
+    { 11060, 3005, 8130 },  // ALERT
+    { 8060, 21081, 8070 },  // SIDE
+    { 20262, 19410, 17160 }, // PRAISE
+};
+
+typedef struct {
+    u16 msgId;
+    u8 kind;
+} CoopLineKindRow;
+
+static const CoopLineKindRow sLineKinds[] = {
+    // Falco's scene lines
+    { 2165, COOP_LINE_ATTACK }, { 9190, COOP_LINE_ATTACK }, { 2090, COOP_LINE_KILL }, { 2095, COOP_LINE_BACK_OFF },
+    { 2181, COOP_LINE_LEAD }, { 2188, COOP_LINE_FOUND }, { 2337, COOP_LINE_THANKS }, { 2167, COOP_LINE_TROUBLE },
+    { 2166, COOP_LINE_HELP }, { 5010, COOP_LINE_ATTACK }, { 7065, COOP_LINE_HELP }, { 20301, COOP_LINE_ATTACK },
+    { 7020, COOP_LINE_ATTACK }, { 20262, COOP_LINE_PRAISE }, { 14030, COOP_LINE_ATTACK },
+    { 6045, COOP_LINE_INCOMING }, { 6050, COOP_LINE_PERSIST }, { 6051, COOP_LINE_ATTACK }, { 11060, COOP_LINE_ALERT },
+    { 9430, COOP_LINE_RELIEF }, { 18035, COOP_LINE_INCOMING }, { 4031, COOP_LINE_INCOMING }, { 8060, COOP_LINE_SIDE },
+    // Slippy's scene lines
+    { 3110, COOP_LINE_ATTACK }, { 3120, COOP_LINE_ATTACK }, { 9152, COOP_LINE_HIT }, { 14140, COOP_LINE_ATTACK },
+    { 14150, COOP_LINE_ATTACK }, { 14160, COOP_LINE_HELP }, { 6055, COOP_LINE_INCOMING }, { 6028, COOP_LINE_LEAD },
+    { 2062, COOP_LINE_HELP }, { 2336, COOP_LINE_THANKS }, { 8040, COOP_LINE_ATTACK }, { 21081, COOP_LINE_SIDE },
+    // Peppy's scene lines
+    { 7013, COOP_LINE_ALERT }, { 7066, COOP_LINE_HELP }, { 5230, COOP_LINE_THANKS }, { 8130, COOP_LINE_ALERT },
+    { 5460, COOP_LINE_LEAD }, { 5220, COOP_LINE_HIT }, { 14040, COOP_LINE_ALERT }, { 10255, COOP_LINE_INCOMING },
+    { 8070, COOP_LINE_SIDE },
+};
+
+// Other speakers' lines in these scenes that name a wingman: dropped when that wingman is the taken one, unless a row
+// of sRescueLines replaces them.
+typedef struct {
+    u16 msgId;
+    u8 team;
+} CoopNamesWingman;
+
+static const CoopNamesWingman sNamesWingman[] = {
+    { 2185, TEAM_ID_FALCO },  // CO S14:19, Fox
+    { 4022, TEAM_ID_FALCO },  // TI S2:24, Fox
+    { 4024, TEAM_ID_FALCO },  // TI S2:60, Peppy
+    { 20267, TEAM_ID_SLIPPY }, // CO S51:3, Peppy
+    { 2061, TEAM_ID_SLIPPY },  // CO S51:13, Peppy
 };
 
 int32_t CoopTeam_SceneMessage(Actor* actor, int32_t* msgId, int32_t* speaker) {
@@ -507,9 +595,10 @@ int32_t CoopTeam_SceneMessage(Actor* actor, int32_t* msgId, int32_t* speaker) {
     s32 sub = CoopTeam_SceneSubstitute(actor, &scene);
     s32 i;
 
-    if ((sub == 0) || (sub == scene->team) || (*speaker != sSpeaker[scene->team])) {
-        return 1; // not a borrowed scene, or not the taken wingman's line
+    if ((sub == 0) || (sub == scene->team)) {
+        return 1; // not a borrowed scene
     }
+    // The table first, any speaker: it also holds other speakers' lines that name the taken wingman (0013).
     for (i = 0; i < ARRAY_COUNT(sRescueLines); i++) {
         const CoopRescueLine* line = &sRescueLines[i];
 
@@ -520,9 +609,31 @@ int32_t CoopTeam_SceneMessage(Actor* actor, int32_t* msgId, int32_t* speaker) {
             return 1;
         }
     }
+    if (*speaker != sSpeaker[scene->team]) {
+        // Another speaker's line. One that names the taken wingman, with no row above, is dropped (0013).
+        for (i = 0; i < ARRAY_COUNT(sNamesWingman); i++) {
+            if ((sNamesWingman[i].msgId == *msgId) && (sNamesWingman[i].team == scene->team)) {
+                return 0;
+            }
+        }
+        return 1;
+    }
     for (i = 0; i < ARRAY_COUNT(sLineSets); i++) {
         if (sLineSets[i][scene->team - TEAM_ID_FALCO] == *msgId) {
             *msgId = sLineSets[i][sub - TEAM_ID_FALCO];
+            *speaker = sSpeaker[sub];
+            return 1;
+        }
+    }
+    // 0013 by kind: the substitute's own line of the same kind, where it has one.
+    for (i = 0; i < ARRAY_COUNT(sLineKinds); i++) {
+        if (sLineKinds[i].msgId == *msgId) {
+            u16 line = sKindLines[sLineKinds[i].kind][sub - TEAM_ID_FALCO];
+
+            if (line == 0) {
+                return 0;
+            }
+            *msgId = line;
             *speaker = sSpeaker[sub];
             return 1;
         }
