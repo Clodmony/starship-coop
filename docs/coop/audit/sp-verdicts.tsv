@@ -221,6 +221,7 @@ src/overlays/ovl_i3/fox_aq.c	Aquas_CsAqFishGroup_Update	flow	name	cutscene fish
 src/overlays/ovl_i3/fox_aq.c	Aquas_801ABA40	sim	site	Blue Marine torpedoes culled by player 0 camera; aimed by the firing marine since #16
 src/overlays/ovl_i3/fox_so.c	Solar_LevelStart	flow	name	intro on player 0
 src/overlays/ovl_i3/fox_so.c	Solar_801A3C4C	flow	site	Vulkain death: rumble and player 0 to level complete
+src/overlays/ovl_i3/fox_so.c	Solar_SoVulkain_Update	flow	read	its head, and the fireballs it spits along it, turn to its kept human, picked again at a new move (#220, aim.h); left: its z keeps to the path (player 0's z on rails)
 src/overlays/ovl_i4/fox_bo.c	Bolse_UpdateEventHandler	flow	read	Bolse events: level complete and standby cutscene on player 0
 src/overlays/ovl_i4/fox_bo.c	Bolse_LevelComplete	flow	name	level complete on player 0
 src/overlays/ovl_i4/fox_ka.c	Katina_KaSaucerer_Update	sim	site	boss; its death puts player 0 in standby and moves player 0 camera (flow mixed in)

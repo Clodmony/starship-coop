@@ -24,19 +24,19 @@ pattern without reading the code, so treat it as a guess.
 
 ## Summary
 
-1737 sites in 419 functions in 46 files.
+1734 sites in 419 functions in 46 files.
 A function whose sites have more than one verdict counts once per verdict in the functions column.
 
 | verdict | sites | functions | `gPlayer[0]` | `gPlayer->` | `gPlayer arg` | `gMainController` | `gCamCount` | `shooter` |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| sim | 785 | 167 | 780 | 1 | 2 | 0 | 0 | 2 |
+| sim | 781 | 166 | 776 | 1 | 2 | 0 | 0 | 2 |
 | view | 217 | 84 | 151 | 0 | 0 | 43 | 3 | 20 |
 | input | 13 | 9 | 0 | 0 | 0 | 8 | 0 | 5 |
-| flow | 475 | 101 | 435 | 0 | 3 | 3 | 0 | 34 |
+| flow | 476 | 102 | 436 | 0 | 3 | 3 | 0 | 34 |
 | setup | 53 | 34 | 1 | 0 | 1 | 0 | 51 | 0 |
 | ok | 194 | 84 | 14 | 2 | 15 | 87 | 8 | 68 |
 
-Basis per site: read 345, site 891, name 501.
+Basis per site: read 346, site 891, name 497.
 
 ## Sites
 
@@ -475,29 +475,29 @@ Basis per site: read 345, site 891, name 501.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Solar_SoWave_Update` | 254:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Solar_SoRock_Update` | 498:P0, 499:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Solar_8019FAA4` | 593:P0, 609:P0, 617:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Solar_8019FDE0` | 643:P0, 645:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Solar_Effect392_Update` | 746:P0, 747:P0, 821:P0, 825:P0, 826:P0, 873:P0, 875:P0, 876:P0, 901:P0, 903:P0, 904:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Solar_801A0FD4` | 1026:P0, 1027:P0, 1028:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Solar_LevelStart` | 1218:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Solar_LevelStart` | 1252:P0 | flow | name | intro on player 0 |
-| `Solar_801A1F80` | 1357:MC, 1398:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Solar_801A2C98` | 1652:MC, 1653:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Solar_801A2C98` | 1677:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Solar_801A3128` | 1749:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Solar_801A3128` | 1758:MC, 1759:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Solar_801A3510` | 1876:MC, 1877:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Solar_801A3510` | 1961:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Solar_801A3C4C` | 2036:MC, 2037:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Solar_801A3C4C` | 2046:P0, 2047:P0, 2048:P0, 2049:P0, 2051:P0, 2052:P0, 2053:P0, 2055:P0, 2056:P0, 2058:P0 | flow | site | Vulkain death: rumble and player 0 to level complete |
-| `Solar_801A4214` | 2093:MC, 2192:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Solar_801A48B8` | 2222:MC, 2223:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Solar_801A4EF8` | 2357:MC, 2358:MC, 2391:MC, 2392:MC, 2421:MC, 2422:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Solar_801A4EF8` | 2378:P0, 2412:P0, 2431:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Solar_SoVulkain_Update` | 2601:P0, 2766:P0, 2767:P0, 2768:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Solar_801A7750` | 3129:P0, 3130:P0, 3131:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Solar_SoWave_Update` | 255:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Solar_SoRock_Update` | 499:P0, 500:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Solar_8019FAA4` | 594:P0, 610:P0, 618:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Solar_8019FDE0` | 644:P0, 646:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Solar_Effect392_Update` | 747:P0, 748:P0, 822:P0, 826:P0, 827:P0, 874:P0, 876:P0, 877:P0, 902:P0, 904:P0, 905:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Solar_801A0FD4` | 1027:P0, 1028:P0, 1029:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Solar_LevelStart` | 1219:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Solar_LevelStart` | 1253:P0 | flow | name | intro on player 0 |
+| `Solar_801A1F80` | 1358:MC, 1399:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Solar_801A2C98` | 1653:MC, 1654:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Solar_801A2C98` | 1678:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Solar_801A3128` | 1750:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Solar_801A3128` | 1759:MC, 1760:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Solar_801A3510` | 1877:MC, 1878:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Solar_801A3510` | 1962:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Solar_801A3C4C` | 2037:MC, 2038:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Solar_801A3C4C` | 2047:P0, 2048:P0, 2049:P0, 2050:P0, 2052:P0, 2053:P0, 2054:P0, 2056:P0, 2057:P0, 2059:P0 | flow | site | Vulkain death: rumble and player 0 to level complete |
+| `Solar_801A4214` | 2094:MC, 2193:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Solar_801A48B8` | 2223:MC, 2224:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Solar_801A4EF8` | 2358:MC, 2359:MC, 2392:MC, 2393:MC, 2422:MC, 2423:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Solar_801A4EF8` | 2379:P0, 2413:P0, 2432:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Solar_SoVulkain_Update` | 2602:P0 | flow | read | its head, and the fireballs it spits along it, turn to its kept human, picked again at a new move (#220, aim.h); left: its z keeps to the path (player 0's z on rails) |
+| `Solar_801A7750` | 3138:P0, 3139:P0, 3140:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 
 ### `src/overlays/ovl_i3/fox_zo.c`
 
