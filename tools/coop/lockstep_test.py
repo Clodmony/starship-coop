@@ -76,7 +76,10 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             poke; with src/port/coop/test/boss_trace.h the boss trace is alike on both games and shows player 1 kept.
             `inhale`: the face's inhale swallows player 1, chews and spits it out (its wings break), and player 0 flies
             on and is not hit meanwhile (owner's choice A for #213's option D).
-  log       the co-op log (#172): each game's folder holds its own log and the other player's, streamed during the
+  other_bosses the other bosses go after the nearer human too (#220), read from the boss trace, which the base build
+            writes as well: `granga`, Corneria's Granga walks at and turns to player 1 on most frames that player 1 is
+            the nearer. Hashes and boss traces equal on both games.
+  log     the co-op log (#172): each game's folder holds its own log and the other player's, streamed during the
             session; the hash stays equal with streaming on; nothing personal is in the files; coop_log.py merges them.
 
 Every scenario that compares two games also checks that neither wrote a desync report (WP-23).
@@ -1087,6 +1090,107 @@ def sc_bosses(args, folder):
     return "; ".join(lines)
 
 
+# ---- #220: the other bosses go after the nearest human ----
+#
+# Each run flies one level with gInvincible on both games and reads the boss trace (src/port/coop/test/boss_trace.h,
+# in every build since #213, so the base build runs the same check and fails it): where the boss is, where it faces or
+# goes, and where each player is, frame by frame. The two games' traces and hash logs must be alike up to the end.
+# Frames of the plans are level frames (the feed's), as in BOSS_RUNS.
+
+
+def granga_script(frame, player):
+    """Corneria: player 0 presses L (gDebugJumpToAllRange) at JOIN_FRAME + 100, and once the cut to all-range is over
+    it circles to the left, at the edge of the Granga's ground; player 1 flies straight, through the middle and back
+    (the game turns it at the edge), so on most frames of the fight it is the nearer one."""
+    if frame == JOIN_FRAME + 100 and player == 0:
+        return BUTTON_L, 0, 0
+    if frame < JOIN_FRAME + 380:
+        return 0, 0, 0
+    return (0, -70, 0) if player == 0 else (0, 0, 0)
+
+
+OTHER_BOSS_RUNS = {  # name: level, frames, script, CVars beyond gInvincible
+    "granga": (0, JOIN_FRAME + 100 + 3900, granga_script, {"gDebugJumpToAllRange": 1}),
+}
+GRANGA_WALKS = (1, 2, 3)  # GRANGA_FORWARD_MISSILE, _BACKWARDS_LASER_PLASMA, _FORWARD_LASER_PLASMA: it walks at its target
+FACING, NOT_FACING = 20.0, 40.0  # degrees: the boss faces a player within FACING, and the other one not within NOT_FACING
+
+
+def other_boss_run(args, folder, name):
+    """One run of OTHER_BOSS_RUNS: both games to the plan's last frame. Returns (the host's boss trace, frames)."""
+    level, frames, script, cvars = OTHER_BOSS_RUNS[name]
+    folder.mkdir(parents=True, exist_ok=True)
+    feed = folder / "feed.txt"
+    write_feed(feed, frames + 16, script)
+    traces = {game: folder / f"{game}-boss.txt" for game in ("host", "client")}
+    for path in traces.values():
+        if path.exists():
+            path.unlink()  # the trace appends
+    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(frames)}
+    host, client = session(args, folder, {"SF64_COOP_JOIN_LEVEL": str(level), "SF64_COOP_BOSS_TRACE": str(traces["host"])},
+                           {"SF64_COOP_BOSS_TRACE": str(traces["client"])}, env,
+                           config={"CVars": {"gInvincible": 1, **cvars}})
+    try:
+        wait_for([host, client], "done", 900)
+    finally:
+        host.close()
+        client.close()
+    compared = compare(host, client, frames)
+    # A game can run a little past `done` before it is stopped, so only the lines both traces hold are compared.
+    ours, theirs = boss_trace(traces["host"]), boss_trace(traces["client"])
+    n = min(len(ours), len(theirs))
+    expect(n >= frames - 40, f"{name}: only {n} lines of boss trace")
+    expect(ours[:n] == theirs[:n], f"{name}: the boss traces differ")
+    return ours[:n], compared
+
+
+def facing_story(trace, slot, states, boss_y=None):
+    """Frames on which the boss in `slot`, in one of `states`, faces player 1 and not player 0 (by its rot y, the way
+    it walks or turns), the other way round, and on which player 1 is the nearer; and its kept slot per value."""
+    def turn(a):
+        return (a + 180.0) % 360.0 - 180.0
+
+    count = {"walk": 0, "near1": 0, "face1": 0, "face0": 0}
+    kept = {}
+    for row in trace:
+        if slot not in row or "p1" not in row:
+            continue
+        b = row[slot].split(",")
+        if int(b[1]) not in states:
+            continue
+        pos = (float(b[2]), float(b[3]) if boss_y is None else boss_y, float(b[4]))
+        yaw = float(b[6])
+        players = [[float(v) for v in row[f"p{i}"].split(",")[2:5]] for i in (0, 1)]
+        dist = [math.dist(pos, p) for p in players]
+        off = [abs(turn(yaw - math.degrees(math.atan2(p[0] - pos[0], p[2] - pos[2])))) for p in players]
+        count["walk"] += 1
+        count["near1"] += dist[1] < dist[0]
+        count["face1"] += off[1] < FACING and off[0] > NOT_FACING
+        count["face0"] += off[0] < FACING and off[1] > NOT_FACING
+        kept[b[7]] = kept.get(b[7], 0) + 1
+    return count, kept
+
+
+def sc_other_bosses(args, folder):
+    """#220: the bosses other than Area 6's and Andross go after the nearer human. granga: Corneria's Granga walks at
+    and turns its guns to player 1 when player 1 is the nearer. --levels picks some of OTHER_BOSS_RUNS."""
+    only = getattr(args, "levels", None)
+    lines = []
+    for name in OTHER_BOSS_RUNS:
+        if only and name not in only:
+            continue
+        trace, frames = other_boss_run(args, folder / name, name)
+        if name == "granga":
+            count, kept = facing_story(trace, "b0", GRANGA_WALKS)
+            text = (f"{count['walk']} walking frames, player 1 the nearer on {count['near1']}; it faces player 1 on "
+                    f"{count['face1']}, player 0 on {count['face0']}; kept "
+                    f"{', '.join(f'{k}: {v}' for k, v in sorted(kept.items()))}")
+            expect(count["near1"] * 2 > count["walk"], f"granga: player 1 was not the nearer one: {text}")
+            expect(count["face1"] > 2 * count["face0"], f"granga: the Granga goes after player 0: {text}")
+            lines.append(f"granga: same hash on {frames} frames; {text}")
+    return "; ".join(lines)
+
+
 # A level, its frames from the join to well past level complete with the pilot and gInvincible (#16): Titania reached
 # level complete at frame 29169 in the first run, Macbeth at 9523, Aquas at 7240 (the join is close to its boss), so
 # there is room for a slower fight. Macbeth's boss
@@ -1992,8 +2096,9 @@ SCENARIOS = {
     "vehicles": sc_vehicles,
     "vehicle_end": sc_vehicle_end,
     "bosses": sc_bosses,
+    "other_bosses": sc_other_bosses,
 }
-LONG = ("full", "scenes", "audio", "release", "rates", "vehicles", "vehicle_end", "bosses")
+LONG = ("full", "scenes", "audio", "release", "rates", "vehicles", "vehicle_end", "bosses", "other_bosses")
 
 
 def main():
@@ -2012,7 +2117,8 @@ def main():
     ap.add_argument("--rates", default="60,120", help="for `rates`: the two clients' gInterpolationFPS")
     ap.add_argument("--levels", type=lambda t: t.lower().split(","),
                     help="for `vehicles` and `vehicle_end`: some of titania,aquas,macbeth (default all); for "
-                         "`bosses`: some of gorgon,andross,dogfight,inhale")
+                         "`bosses`: some of gorgon,andross,dogfight,inhale; for `other_bosses`: some of "
+                         + ",".join(OTHER_BOSS_RUNS))
     args = ap.parse_args()
     if args.list:
         print("\n".join(SCENARIOS))

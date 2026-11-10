@@ -24,19 +24,19 @@ pattern without reading the code, so treat it as a guess.
 
 ## Summary
 
-1811 sites in 424 functions in 46 files.
+1783 sites in 423 functions in 46 files.
 A function whose sites have more than one verdict counts once per verdict in the functions column.
 
 | verdict | sites | functions | `gPlayer[0]` | `gPlayer->` | `gPlayer arg` | `gMainController` | `gCamCount` | `shooter` |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| sim | 921 | 182 | 916 | 1 | 2 | 0 | 0 | 2 |
+| sim | 872 | 177 | 867 | 1 | 2 | 0 | 0 | 2 |
 | view | 217 | 84 | 151 | 0 | 0 | 43 | 3 | 20 |
 | input | 13 | 9 | 0 | 0 | 0 | 8 | 0 | 5 |
-| flow | 422 | 92 | 382 | 0 | 3 | 3 | 0 | 34 |
+| flow | 443 | 96 | 403 | 0 | 3 | 3 | 0 | 34 |
 | setup | 53 | 34 | 1 | 0 | 1 | 0 | 51 | 0 |
 | ok | 185 | 83 | 5 | 2 | 15 | 87 | 8 | 68 |
 
-Basis per site: read 283, site 944, name 584.
+Basis per site: read 304, site 944, name 535.
 
 ## Sites
 
@@ -133,7 +133,7 @@ Basis per site: read 283, site 944, name 584.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `<file scope>` | 20:CC, 51:MC | ok | read | definitions |
+| `<file scope>` | 22:CC, 53:MC | ok | read | definitions |
 
 ### `src/engine/fox_demo.c`
 
@@ -206,19 +206,19 @@ Basis per site: read 283, site 944, name 584.
 | `Effect_Effect339_Update` | 2030:P0, 2043:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
 | `Effect_Effect374_Update` | 2276:P0, 2277:P0, 2278:P0, 2279:P0 | sim | site | tests player 0, CoopEffects_ColumnHit does the others (#100) |
 | `Effect_Effect374_Update` | 2280:PA | ok | read | Player_ApplyDamage for player 0; CoopEffects_ColumnHit right after it does the others (#100) |
-| `Effect_Effect345_Update` | 2345:CC | setup | site | gCamCount != 1 as versus flag |
-| `func_effect_8007FD84` | 2911:SH | ok | site | enemy effect hitting an actor writes CS_SHOT_ID |
-| `Effect_Effect353_354_Update` | 2935:P0, 2939:P0, 2940:P0, 2941:P0, 2942:P0, 2954:P0, 2958:P0, 2960:P0, 2962:P0, 2965:P0, 2967:P0 | sim | read | enemy projectile hits, deflects and knocks back player 0; CoopEffects_ShotHit does the others (#100); wingman and roll reach still read player 0 |
-| `Effect_Effect353_354_Update` | 2959:PA | ok | read | Player_ApplyDamage for player 0; CoopEffects_ShotHit right after it does the others (#100) |
-| `Effect_Effect376_Update` | 3030:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
-| `Effect_Effect398_Update` | 3073:P0, 3077:P0, 3078:P0, 3079:P0, 3080:P0, 3092:P0, 3096:P0, 3098:P0, 3100:P0, 3102:P0, 3104:P0 | sim | read | aimed at the nearest human (#193); hits and knocks back player 0, CoopEffects_ShotHit does the others (#100) |
-| `Effect_Effect398_Update` | 3097:PA, 3135:PA | ok | read | Player_ApplyDamage for player 0, CoopEffects_ShotHit after it does the others; func_effect_8007A774 tests them too (#100) |
-| `Effect_Effect395_Update` | 3662:P0, 3904:P0, 3909:P0, 3910:P0, 3911:P0 | sim | site | tests player 0, CoopEffects_BeamHit does the others (#100); the Gorgon beam turns to the Gorgon's kept target (#213) |
-| `Effect_Effect395_Update` | 3912:PA, 3939:PA | ok | site | beam: Player_ApplyDamage for player 0, CoopEffects_BeamHit just before it does the others; func_effect_8007A774 tests them too (#100) |
-| `Effect_Effect391_Update` | 4150:P0 | view | site | faces player 0 camera |
-| `func_effect_80083D2C` | 4212:P0, 4213:P0, 4214:P0 | sim | site | aims at player 0 |
-| `Effect_Effect399_Update` | 4251:P0, 4252:P0 | view | site | faces player 0 camera |
-| `Effect_Effect399_Update` | 4281:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
+| `Effect_Effect345_Update` | 2353:CC | setup | site | gCamCount != 1 as versus flag |
+| `func_effect_8007FD84` | 2919:SH | ok | site | enemy effect hitting an actor writes CS_SHOT_ID |
+| `Effect_Effect353_354_Update` | 2943:P0, 2947:P0, 2948:P0, 2949:P0, 2950:P0, 2962:P0, 2966:P0, 2968:P0, 2970:P0, 2973:P0, 2975:P0 | sim | read | enemy projectile hits, deflects and knocks back player 0; CoopEffects_ShotHit does the others (#100); wingman and roll reach still read player 0 |
+| `Effect_Effect353_354_Update` | 2967:PA | ok | read | Player_ApplyDamage for player 0; CoopEffects_ShotHit right after it does the others (#100) |
+| `Effect_Effect376_Update` | 3038:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
+| `Effect_Effect398_Update` | 3081:P0, 3085:P0, 3086:P0, 3087:P0, 3088:P0, 3100:P0, 3104:P0, 3106:P0, 3108:P0, 3110:P0, 3112:P0 | sim | read | aimed at the nearest human (#193); hits and knocks back player 0, CoopEffects_ShotHit does the others (#100) |
+| `Effect_Effect398_Update` | 3105:PA, 3143:PA | ok | read | Player_ApplyDamage for player 0, CoopEffects_ShotHit after it does the others; func_effect_8007A774 tests them too (#100) |
+| `Effect_Effect395_Update` | 3670:P0, 3912:P0, 3917:P0, 3918:P0, 3919:P0 | sim | site | tests player 0, CoopEffects_BeamHit does the others (#100); the Gorgon beam turns to the Gorgon's kept target (#213) |
+| `Effect_Effect395_Update` | 3920:PA, 3947:PA | ok | site | beam: Player_ApplyDamage for player 0, CoopEffects_BeamHit just before it does the others; func_effect_8007A774 tests them too (#100) |
+| `Effect_Effect391_Update` | 4158:P0 | view | site | faces player 0 camera |
+| `func_effect_80083D2C` | 4220:P0, 4221:P0, 4222:P0 | sim | site | aims at player 0 |
+| `Effect_Effect399_Update` | 4259:P0, 4260:P0 | view | site | faces player 0 camera |
+| `Effect_Effect399_Update` | 4289:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
 
 ### `src/engine/fox_enmy.c`
 
@@ -371,21 +371,20 @@ Basis per site: read 283, site 944, name 584.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Corneria_Granga_Init` | 108:P0, 109:P0, 110:P0 | sim | site | boss; sets player 0 to START_360 (switch to all-range) |
-| `Corneria_CoGranga_HandleDamage` | 193:P0, 194:P0, 195:P0, 196:P0, 198:P0, 199:P0, 201:P0, 202:P0, 204:P0 | sim | site | boss; on death sets player 0 state for the level end |
-| `Corneria_CoGranga_Attack` | 450:P0, 451:P0, 452:P0, 454:P0, 455:P0, 456:P0, 461:P0, 462:P0, 463:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Corneria_CoGranga_1UpCheck` | 547:P0, 553:P0, 554:P0, 555:P0, 582:P0, 596:P0, 597:P0, 598:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Corneria_CoGranga_Update` | 629:P0, 677:P0, 679:P0, 784:P0, 785:P0, 786:P0, 830:P0, 831:P0, 832:P0, 851:P0, 852:P0, 853:P0, 876:P0, 877:P0, 878:P0, 901:P0, 902:P0, 903:P0, 922:P0, 923:P0, 924:P0, 1088:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Corneria_CoGarudaDestroy_Update` | 1542:P0, 1543:P0, 1544:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Corneria_CoCarrier_Init` | 1673:P0, 1675:P0, 1682:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Corneria_CoCarrier_Update` | 1799:P0, 1847:P0, 1919:P0, 1938:P0, 2070:P0, 2099:P0, 2202:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Corneria_CoCarrier_Update` | 2203:PA | flow | site | Boss_CompleteLevel for player 0: level complete is one player's (WP-16) |
-| `Corneria_SpawnTerrainBumps` | 2790:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Corneria_SetupClouds` | 2810:P0, 2811:P0 | view | name | clouds around player 0 camera |
-| `Corneria_SpawnClouds` | 2829:P0 | view | name | clouds around player 0 camera |
-| `Corneria_CsTeamSetup` | 2849:P0, 2850:P0, 2851:P0, 2853:P0, 2854:P0, 2855:P0 | flow | name | team cutscene around player 0 |
-| `Corneria_LevelStart` | 2960:P0, 2993:P0 | flow | site | intro on player 0 |
-| `Corneria_CsLevelComplete1_TeamSetup` | 3405:P0 | flow | name | level complete cutscene |
+| `Corneria_Granga_Init` | 109:P0, 110:P0, 111:P0 | sim | site | boss; sets player 0 to START_360 (switch to all-range) |
+| `Corneria_CoGranga_HandleDamage` | 194:P0, 195:P0, 196:P0, 197:P0, 199:P0, 200:P0, 202:P0, 203:P0, 205:P0 | sim | site | boss; on death sets player 0 state for the level end |
+| `Corneria_CoGranga_1UpCheck` | 554:P0, 560:P0, 561:P0, 562:P0, 589:P0, 603:P0, 604:P0, 605:P0 | flow | read | the 1-up for a loop under the Granga: player 0's hit timer, place and loop, the item in front of player 0; a trigger, left on player 0 (#220) |
+| `Corneria_CoGranga_Update` | 637:P0, 685:P0, 687:P0 | flow | read | walks at, turns its guns to and stops on a somersault of its kept target (#220, aim.h); left: the fight waits for player 0's cut to all-range, the HUD arrow flags on player 0 |
+| `Corneria_CoGarudaDestroy_Update` | 1554:P0, 1555:P0, 1556:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Corneria_CoCarrier_Init` | 1685:P0, 1687:P0, 1694:P0 | flow | read | starts 2000 ahead of player 0 on the path (#220) |
+| `Corneria_CoCarrier_Update` | 1811:P0, 1859:P0, 1931:P0, 1950:P0, 2082:P0, 2111:P0, 2214:P0 | flow | read | its z keeps to the path (player 0's camera on rails), its beams and missiles aim at the nearest human (#193); left: the beam's start by z, player 0's shadow, level complete (#220) |
+| `Corneria_CoCarrier_Update` | 2215:PA | flow | site | Boss_CompleteLevel for player 0: level complete is one player's (WP-16) |
+| `Corneria_SpawnTerrainBumps` | 2802:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Corneria_SetupClouds` | 2822:P0, 2823:P0 | view | name | clouds around player 0 camera |
+| `Corneria_SpawnClouds` | 2841:P0 | view | name | clouds around player 0 camera |
+| `Corneria_CsTeamSetup` | 2861:P0, 2862:P0, 2863:P0, 2865:P0, 2866:P0, 2867:P0 | flow | name | team cutscene around player 0 |
+| `Corneria_LevelStart` | 2972:P0, 3005:P0 | flow | site | intro on player 0 |
+| `Corneria_CsLevelComplete1_TeamSetup` | 3417:P0 | flow | name | level complete cutscene |
 
 ### `src/overlays/ovl_i1/fox_tr.c`
 
@@ -621,23 +620,23 @@ Basis per site: read 283, site 944, name 584.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Titania_801891F4` | 144:P0, 145:P0, 157:P0, 158:P0, 159:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_80189380` | 178:P0, 179:P0, 180:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiDesertRover_Update` | 237:P0, 246:P0, 255:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiFekuda_Update` | 373:P0, 374:P0, 375:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiLandmine_Update` | 643:P0, 644:P0, 645:P0, 646:P0, 647:P0, 648:P0, 649:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiRasco_Update` | 792:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiBomb_Update` | 951:P0, 952:P0, 953:P0, 981:P0, 982:P0, 983:P0, 984:P0, 985:P0, 987:P0, 988:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiBomb_Update` | 979:PA | sim | read | right for now: an actor on Titania, rails in a Landmaster, where co-op players stay parked (CoopPlayers_SectionSupported); WP-18 |
-| `Titania_TiDesertCrawler_Update` | 1290:P0, 1294:P0, 1354:P->, 1362:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiDelphorHead_Update` | 1792:P0, 1793:P0, 1794:P0, 1873:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_Cactus_Update` | 2031:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiPillar_Update` | 2116:P0, 2118:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_80190A08` | 2839:P0, 2840:P0, 2841:P0, 2848:P0, 2849:P0, 2850:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_80192118` | 3226:P0, 3227:P0, 3228:P0, 3284:P0, 3293:P0, 3366:P0, 3367:P0, 3368:P0, 3510:P0 | sim | site | enemy follows player 0 and changes player 0 state fields |
-| `Titania_80193DF0` | 4341:P0, 4343:P0, 4346:P0, 4357:P0, 4358:P0, 4394:P0, 4400:P0, 4401:P0, 4428:P0, 4519:P0, 4964:P0 | sim | site | enemy follows player 0 and changes player 0 state fields |
-| `Titania_TiGoras_Update` | 4987:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiGoras_Dying` | 5524:P0, 5543:P0, 5545:P0, 5572:P0, 5574:P0, 5599:P0, 5601:P0, 5610:P0, 5612:P0, 5613:P0 | flow | name | boss death cutscene |
+| `Titania_801891F4` | 146:P0, 147:P0, 159:P0, 160:P0, 161:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_80189380` | 180:P0, 181:P0, 182:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiDesertRover_Update` | 239:P0, 248:P0, 257:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiFekuda_Update` | 375:P0, 376:P0, 377:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiLandmine_Update` | 645:P0, 646:P0, 647:P0, 648:P0, 649:P0, 650:P0, 651:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiRasco_Update` | 794:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiBomb_Update` | 953:P0, 954:P0, 955:P0, 983:P0, 984:P0, 985:P0, 986:P0, 987:P0, 989:P0, 990:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiBomb_Update` | 981:PA | sim | read | right for now: an actor on Titania, rails in a Landmaster, where co-op players stay parked (CoopPlayers_SectionSupported); WP-18 |
+| `Titania_TiDesertCrawler_Update` | 1292:P0, 1296:P0, 1356:P->, 1364:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiDelphorHead_Update` | 1809:P0, 1810:P0, 1811:P0, 1890:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_Cactus_Update` | 2048:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiPillar_Update` | 2133:P0, 2135:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_80190A08` | 2856:P0, 2857:P0, 2858:P0, 2865:P0, 2866:P0, 2867:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_80192118` | 3243:P0, 3244:P0, 3245:P0, 3301:P0, 3310:P0, 3383:P0, 3384:P0, 3385:P0, 3527:P0 | sim | site | enemy follows player 0 and changes player 0 state fields |
+| `Titania_80193DF0` | 4361:P0, 4363:P0, 4366:P0, 4377:P0, 4378:P0, 4414:P0, 4420:P0, 4421:P0, 4448:P0, 4539:P0, 4984:P0 | sim | site | enemy follows player 0 and changes player 0 state fields |
+| `Titania_TiGoras_Update` | 5007:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiGoras_Dying` | 5549:P0, 5573:P0, 5575:P0, 5607:P0, 5609:P0, 5639:P0, 5641:P0, 5650:P0, 5652:P0, 5653:P0 | flow | name | boss death cutscene |
 
 ### `src/overlays/ovl_i5/fox_ti_cs.c`
 
@@ -712,14 +711,14 @@ Basis per site: read 283, site 944, name 584.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Map_Prologue_Update` | 2153:MC | ok | site | menu input from gMainController |
-| `Map_LylatCard_Update` | 2373:MC | ok | site | menu input from gMainController |
-| `Map_ZoomPlanet_Update` | 2538:MC, 2542:MC, 2546:MC | ok | site | menu input from gMainController |
-| `Map_GameOver_Update` | 3152:MC | ok | site | menu input from gMainController |
-| `Map_PathChange_Input` | 3593:MC, 3597:MC | ok | site | menu input from gMainController |
-| `Map_Input_CursorY` | 3775:MC, 3781:MC, 3783:MC | ok | site | menu input from gMainController |
-| `Map_LevelStart_Update` | 3957:MC, 3965:MC, 3970:MC | ok | site | menu input from gMainController |
-| `Map_Idle_Update` | 6750:MC, 6771:MC, 6787:MC, 6788:MC, 6830:MC, 6837:MC, 6844:MC, 6851:MC, 6858:MC, 6865:MC | ok | site | menu input from gMainController |
+| `Map_Prologue_Update` | 2156:MC | ok | site | menu input from gMainController |
+| `Map_LylatCard_Update` | 2376:MC | ok | site | menu input from gMainController |
+| `Map_ZoomPlanet_Update` | 2541:MC, 2545:MC, 2549:MC | ok | site | menu input from gMainController |
+| `Map_GameOver_Update` | 3155:MC | ok | site | menu input from gMainController |
+| `Map_PathChange_Input` | 3596:MC, 3600:MC | ok | site | menu input from gMainController |
+| `Map_Input_CursorY` | 3778:MC, 3784:MC, 3786:MC | ok | site | menu input from gMainController |
+| `Map_LevelStart_Update` | 3960:MC, 3968:MC, 3973:MC | ok | site | menu input from gMainController |
+| `Map_Idle_Update` | 6753:MC, 6774:MC, 6790:MC, 6791:MC, 6833:MC, 6840:MC, 6847:MC, 6854:MC, 6861:MC, 6868:MC | ok | site | menu input from gMainController |
 
 ### `src/overlays/ovl_menu/fox_option.c`
 

@@ -207,6 +207,10 @@ src/overlays/ovl_i1/fox_co.c	Corneria_LevelStart	flow	site	intro on player 0
 src/overlays/ovl_i1/fox_co.c	Corneria_CsLevelComplete1_TeamSetup	flow	name	level complete cutscene
 src/overlays/ovl_i1/fox_co.c	Corneria_SetupClouds	view	name	clouds around player 0 camera
 src/overlays/ovl_i1/fox_co.c	Corneria_SpawnClouds	view	name	clouds around player 0 camera
+src/overlays/ovl_i1/fox_co.c	Corneria_CoGranga_Update	flow	read	walks at, turns its guns to and stops on a somersault of its kept target (#220, aim.h); left: the fight waits for player 0's cut to all-range, the HUD arrow flags on player 0
+src/overlays/ovl_i1/fox_co.c	Corneria_CoGranga_1UpCheck	flow	read	the 1-up for a loop under the Granga: player 0's hit timer, place and loop, the item in front of player 0; a trigger, left on player 0 (#220)
+src/overlays/ovl_i1/fox_co.c	Corneria_CoCarrier_Init	flow	read	starts 2000 ahead of player 0 on the path (#220)
+src/overlays/ovl_i1/fox_co.c	Corneria_CoCarrier_Update	flow	read	its z keeps to the path (player 0's camera on rails), its beams and missiles aim at the nearest human (#193); left: the beam's start by z, player 0's shadow, level complete (#220)
 src/overlays/ovl_i2/fox_me.c	Meteo_LevelStart_SetupTeam	flow	name	intro team around player 0
 src/overlays/ovl_i2/fox_me.c	Meteo_LevelComplete_SetupTeam	flow	name	level complete team around player 0
 src/overlays/ovl_i2/fox_sx.c	SectorX_8018F030	flow	site	Slippy placed at player 0 camera for a cutscene

@@ -10,6 +10,7 @@
 #include "fox_co.h"
 #include "port/hooks/Events.h"
 #include "fox_record.h"
+#include "port/coop/game/aim.h" // COOP: the Granga follows and aims at the nearest human (#220)
 
 u8 sFightCarrier;
 f32 sCoGrangaWork[68];
@@ -447,20 +448,25 @@ void Corneria_CoGranga_Attack(CoGranga* this) {
 
         case GRANGA_ATTACK_PLASMA:
             if (this->swork[GRANGA_GUN_DMG_IND] != DMG_DESTROYED) {
-                savedPlayerPos.x = gPlayer[0].pos.x;
-                savedPlayerPos.y = gPlayer[0].pos.y;
-                savedPlayerPos.z = gPlayer[0].trueZpos;
+                // COOP: the spread is on the player Effect_EnemyLaser aims at, the nearest human (#193); was gPlayer[0]
+                // here and below (#220)
+                Player* aimed = &gPlayer[CoopAim_Nearest(sCoGrangaWork[GRANGA_WORK_12], sCoGrangaWork[GRANGA_WORK_13],
+                                                         sCoGrangaWork[GRANGA_WORK_14])];
 
-                gPlayer[0].pos.x += RAND_FLOAT_CENTERED(300.0f);
-                gPlayer[0].pos.y += RAND_FLOAT_CENTERED(300.0f);
-                gPlayer[0].trueZpos += RAND_FLOAT_CENTERED(300.0f);
+                savedPlayerPos.x = aimed->pos.x;
+                savedPlayerPos.y = aimed->pos.y;
+                savedPlayerPos.z = aimed->trueZpos;
+
+                aimed->pos.x += RAND_FLOAT_CENTERED(300.0f);
+                aimed->pos.y += RAND_FLOAT_CENTERED(300.0f);
+                aimed->trueZpos += RAND_FLOAT_CENTERED(300.0f);
 
                 Effect_EnemyLaser(OBJ_EFFECT_376, sCoGrangaWork[GRANGA_WORK_12], sCoGrangaWork[GRANGA_WORK_13],
                                   sCoGrangaWork[GRANGA_WORK_14], 60.0f);
 
-                gPlayer[0].pos.x = savedPlayerPos.x;
-                gPlayer[0].pos.y = savedPlayerPos.y;
-                gPlayer[0].trueZpos = savedPlayerPos.z;
+                aimed->pos.x = savedPlayerPos.x;
+                aimed->pos.y = savedPlayerPos.y;
+                aimed->trueZpos = savedPlayerPos.z;
             }
             this->swork[GRANGA_ATTACK_STATE] = GRANGA_ATTACK_IDLE;
             break;
@@ -469,6 +475,7 @@ void Corneria_CoGranga_Attack(CoGranga* this) {
 
 void Corneria_CoGranga_DecideNextAction(CoGranga* this) {
     if (this->timer_050 == 0) {
+        CoopAim_ForgetBoss(this->index); // COOP: a new action picks the nearest human again (#220)
         this->state = GRANGA_STATIONARY;
         this->timer_050 = RAND_INT(20.0f) + 20;
         this->fwork[GRANGA_FWK_14] = 0.0f;
@@ -625,6 +632,7 @@ void Corneria_CoGranga_Update(CoGranga* this) {
     Vec3f sp78 = { 0.0f, 0.0f, 40.0f };
     Vec3f sp6C = { 0.0f, 0.0f, -30.0f };
     f32 sp5C;
+    Player* aimed; // COOP: the player it walks to, turns its guns to and watches, was player 0 (#220)
 
     if (gPlayer[0].state != PLAYERSTATE_START_360) {
         if (!this->swork[GRANGA_INIT]) {
@@ -778,12 +786,16 @@ void Corneria_CoGranga_Update(CoGranga* this) {
 
         Matrix_RotateY(gCalcMatrix, this->obj.rot.y * M_DTOR, MTXF_NEW);
 
+        // COOP: kept until its next action (Corneria_CoGranga_DecideNextAction); aimed was gPlayer[0] in the states
+        // below and in the somersault test at the end (#220)
+        aimed = &gPlayer[CoopAim_BossTarget(this->index, this->obj.pos.x, this->obj.pos.y, this->obj.pos.z)];
+
         switch (this->state) {
             case GRANGA_STATIONARY:
                 this->animFrame = 0;
-                sCoGrangaWork[GRANGA_TARGET_X] = gPlayer[0].pos.x;
-                sCoGrangaWork[GRANGA_TARGET_Y] = gPlayer[0].pos.y;
-                sCoGrangaWork[GRANGA_TARGET_Z] = gPlayer[0].trueZpos;
+                sCoGrangaWork[GRANGA_TARGET_X] = aimed->pos.x;
+                sCoGrangaWork[GRANGA_TARGET_Y] = aimed->pos.y;
+                sCoGrangaWork[GRANGA_TARGET_Z] = aimed->trueZpos;
 
                 if (this->timer_050 == 0) {
                     switch (this->swork[GRANGA_NEXT_STATE]) {
@@ -827,9 +839,9 @@ void Corneria_CoGranga_Update(CoGranga* this) {
                 break;
 
             case GRANGA_FORWARD_MISSILE:
-                sCoGrangaWork[GRANGA_TARGET_X] = sCoGrangaWork[GRANGA_WORK_66] = gPlayer[0].pos.x;
-                sCoGrangaWork[GRANGA_TARGET_Y] = gPlayer[0].pos.y;
-                sCoGrangaWork[GRANGA_TARGET_Z] = sCoGrangaWork[GRANGA_WORK_67] = gPlayer[0].trueZpos;
+                sCoGrangaWork[GRANGA_TARGET_X] = sCoGrangaWork[GRANGA_WORK_66] = aimed->pos.x;
+                sCoGrangaWork[GRANGA_TARGET_Y] = aimed->pos.y;
+                sCoGrangaWork[GRANGA_TARGET_Z] = sCoGrangaWork[GRANGA_WORK_67] = aimed->trueZpos;
 
                 this->animFrame += 2;
                 if (this->animFrame >= Animation_GetFrameCount(&aCoGrangaWalkingAnim)) {
@@ -848,9 +860,9 @@ void Corneria_CoGranga_Update(CoGranga* this) {
                 break;
 
             case GRANGA_BACKWARDS_LASER_PLASMA:
-                sCoGrangaWork[GRANGA_TARGET_X] = sCoGrangaWork[GRANGA_WORK_66] = gPlayer[0].pos.x;
-                sCoGrangaWork[GRANGA_TARGET_Y] = gPlayer[0].pos.y;
-                sCoGrangaWork[GRANGA_TARGET_Z] = sCoGrangaWork[GRANGA_WORK_67] = gPlayer[0].trueZpos;
+                sCoGrangaWork[GRANGA_TARGET_X] = sCoGrangaWork[GRANGA_WORK_66] = aimed->pos.x;
+                sCoGrangaWork[GRANGA_TARGET_Y] = aimed->pos.y;
+                sCoGrangaWork[GRANGA_TARGET_Z] = sCoGrangaWork[GRANGA_WORK_67] = aimed->trueZpos;
 
                 this->animFrame -= 4;
                 if (this->animFrame < 0) {
@@ -873,9 +885,9 @@ void Corneria_CoGranga_Update(CoGranga* this) {
                 break;
 
             case GRANGA_FORWARD_LASER_PLASMA:
-                sCoGrangaWork[GRANGA_TARGET_X] = sCoGrangaWork[GRANGA_WORK_66] = gPlayer[0].pos.x;
-                sCoGrangaWork[GRANGA_TARGET_Y] = gPlayer[0].pos.y;
-                sCoGrangaWork[GRANGA_TARGET_Z] = sCoGrangaWork[GRANGA_WORK_67] = gPlayer[0].trueZpos;
+                sCoGrangaWork[GRANGA_TARGET_X] = sCoGrangaWork[GRANGA_WORK_66] = aimed->pos.x;
+                sCoGrangaWork[GRANGA_TARGET_Y] = aimed->pos.y;
+                sCoGrangaWork[GRANGA_TARGET_Z] = sCoGrangaWork[GRANGA_WORK_67] = aimed->trueZpos;
 
                 this->animFrame += 4;
                 if (this->animFrame > 100) {
@@ -898,9 +910,9 @@ void Corneria_CoGranga_Update(CoGranga* this) {
                 break;
 
             case GRANGA_FORWARD:
-                sCoGrangaWork[GRANGA_TARGET_X] = gPlayer[0].pos.x;
-                sCoGrangaWork[GRANGA_TARGET_Y] = gPlayer[0].pos.y;
-                sCoGrangaWork[GRANGA_TARGET_Z] = gPlayer[0].trueZpos;
+                sCoGrangaWork[GRANGA_TARGET_X] = aimed->pos.x;
+                sCoGrangaWork[GRANGA_TARGET_Y] = aimed->pos.y;
+                sCoGrangaWork[GRANGA_TARGET_Z] = aimed->trueZpos;
 
                 this->animFrame += 4;
                 if (this->animFrame > 100) {
@@ -919,9 +931,9 @@ void Corneria_CoGranga_Update(CoGranga* this) {
                 gGroundClipMode = 1;
 
                 if ((gGameFrameCount % 8) == 0) {
-                    sCoGrangaWork[GRANGA_TARGET_X] = gPlayer[0].pos.x + RAND_FLOAT_CENTERED(2000.0f);
-                    sCoGrangaWork[GRANGA_TARGET_Y] = gPlayer[0].pos.y;
-                    sCoGrangaWork[GRANGA_TARGET_Z] = gPlayer[0].trueZpos + RAND_FLOAT_CENTERED(2000.0f);
+                    sCoGrangaWork[GRANGA_TARGET_X] = aimed->pos.x + RAND_FLOAT_CENTERED(2000.0f);
+                    sCoGrangaWork[GRANGA_TARGET_Y] = aimed->pos.y;
+                    sCoGrangaWork[GRANGA_TARGET_Z] = aimed->trueZpos + RAND_FLOAT_CENTERED(2000.0f);
                 }
 
                 this->fwork[GRANGA_FWK_12] += 0.05f;
@@ -1085,7 +1097,7 @@ void Corneria_CoGranga_Update(CoGranga* this) {
                 AUDIO_PLAY_SFX(NA_SE_EN_HEAVY_WALK, this->sfxSource, 4);
             }
 
-            if (gPlayer[0].somersault && (this->state != GRANGA_STATIONARY)) {
+            if (aimed->somersault && (this->state != GRANGA_STATIONARY)) { // COOP: aimed was gPlayer[0] (#220)
                 this->state = GRANGA_STATIONARY;
                 this->swork[GRANGA_NEXT_STATE] = GRANGA_FORWARD_MISSILE;
                 this->timer_050 = 100;
