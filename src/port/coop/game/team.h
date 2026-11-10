@@ -42,6 +42,17 @@ int32_t CoopTeam_IsHuman(int32_t teamId);
 // wingman and a human flies it, otherwise `teamId`.
 int32_t CoopTeam_SceneTeam(struct Actor* actor, int32_t teamId);
 
+// Decision 0012 B4, the guests: with no computer wingman free, Katt flies the scene, else Bill. For the scene's
+// EVC_*_ACTIVE gate: nonzero when the flyer is up (a guest always is).
+int32_t CoopTeam_SceneActive(struct Actor* actor, int32_t teamId);
+// For EVOP_SET_TARGET: the actor index of the scene's flyer (gTeamEventActorIndex has no slot for a guest).
+int32_t CoopTeam_SceneTarget(struct Actor* actor, int32_t teamId);
+// For EVOP_INIT_ACTOR: EVID_KATT or EVID_BILL in place of EVID_TEAMMATE in a scene's own wingman script flown by a
+// guest; `eventType` otherwise.
+int32_t CoopTeam_SceneEventType(struct Actor* actor, int32_t eventType);
+// Nonzero when `actor`'s scene is flown by a guest: its arrival fanfare does not play.
+int32_t CoopTeam_SceneGuest(struct Actor* actor);
+
 // For EVOP_PLAY_MSG in `actor`'s script. Returns 0 when the line must not play; otherwise it may have changed
 // *msgId and *speaker to the substitute's line of the same set.
 int32_t CoopTeam_SceneMessage(struct Actor* actor, int32_t* msgId, int32_t* speaker);

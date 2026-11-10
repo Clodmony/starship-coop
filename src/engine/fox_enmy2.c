@@ -1137,7 +1137,8 @@ void ActorEvent_ProcessScript(ActorEvent* this) {
 
         case EV_OPC(EVOP_INIT_ACTOR):
             Audio_KillSfxBySource(this->sfxSource);
-            this->eventType = actorScript[this->aiIndex + 1];
+            // COOP: a guest flies a taken wingman's scene in its own ship (decision 0012 B4, #15)
+            this->eventType = CoopTeam_SceneEventType(this, actorScript[this->aiIndex + 1]);
 
             if (this->eventType == EVID_EVENT_HANDLER) {
                 this->timer_0C2 = 10000;
@@ -1191,7 +1192,7 @@ void ActorEvent_ProcessScript(ActorEvent* this) {
                 this->drawShadow = true;
             }
 
-            if (gPlayer[0].state == PLAYERSTATE_ACTIVE) {
+            if ((gPlayer[0].state == PLAYERSTATE_ACTIVE) && !CoopTeam_SceneGuest(this)) { // COOP: no fanfare for a guest
                 if (this->eventType == EVID_KATT) {
                     Audio_PlayFanfare(NA_BGM_KATT, 20, 10, 10);
                 }
@@ -1463,7 +1464,7 @@ void ActorEvent_ProcessScript(ActorEvent* this) {
 
         case EV_OPC(EVOP_SET_TARGET):
             this->state = EVSTATE_WAIT;
-            this->iwork[1] = gTeamEventActorIndex[CoopTeam_SceneTeam(this, actorScript[this->aiIndex] & 0x1FF)]; // COOP
+            this->iwork[1] = CoopTeam_SceneTarget(this, actorScript[this->aiIndex] & 0x1FF); // COOP: the flyer, a guest too
             this->fwork[17] = actorScript[this->aiIndex + 1];
             this->timer_0BC = 0;
             this->aiIndex += 2;
@@ -2419,19 +2420,19 @@ void ActorEvent_ProcessTriggers(ActorEvent* this) {
             break;
 
         case EVC_FALCO_ACTIVE:
-            if (gTeamShields[CoopTeam_SceneTeam(this, TEAM_ID_FALCO)] > 0) { // COOP: the scene's flyer (WP-17)
+            if (CoopTeam_SceneActive(this, TEAM_ID_FALCO)) { // COOP: the scene's flyer, a guest too (WP-17)
                 ActorEvent_TriggerBranch(this);
             }
             break;
 
         case EVC_PEPPY_ACTIVE:
-            if (gTeamShields[CoopTeam_SceneTeam(this, TEAM_ID_PEPPY)] > 0) { // COOP: the scene's flyer (WP-17)
+            if (CoopTeam_SceneActive(this, TEAM_ID_PEPPY)) { // COOP: the scene's flyer, a guest too (WP-17)
                 ActorEvent_TriggerBranch(this);
             }
             break;
 
         case EVC_SLIPPY_ACTIVE:
-            if (gTeamShields[CoopTeam_SceneTeam(this, TEAM_ID_SLIPPY)] > 0) { // COOP: the scene's flyer (WP-17)
+            if (CoopTeam_SceneActive(this, TEAM_ID_SLIPPY)) { // COOP: the scene's flyer, a guest too (WP-17)
                 ActorEvent_TriggerBranch(this);
             }
             break;
