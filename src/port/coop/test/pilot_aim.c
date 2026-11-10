@@ -50,18 +50,17 @@ static s32 CoopPilotAim_BoxCount(const f32* hitbox) {
 // many it wrote, 0 for every box, or -1 for none now: then the pilot leaves the boss alone and shoots at something
 // else.
 
-// The Gorgon (Area 6, src/overlays/ovl_i3/fox_a6.c): while swork[25] counts rounds (3 at the start), only its three
-// arms, hitbox entries 1 to 3, take hits, in state 4 (Area6_8018A2C4); with all three down a round ends. After the last
-// round only the core, entry 0, takes hits, health 660 of 780 by then (Area6_A6Gorgon_Update).
+// The Gorgon (Area 6, src/overlays/ovl_i3/fox_a6.c): while swork[25] counts rounds (3 at the start), its three arms,
+// hitbox entries 1 to 3, take hits in state 4 (Area6_8018A2C4), and a round ends with all three down; the generic
+// cycle gets through them (two rounds in 24000 frames in #181's run, where aiming at the three alone did no damage in
+// 40000: why is not known). After the last round only the core, entry 0, takes hits, 660 of 780 health by then
+// (Area6_A6Gorgon_Update).
 static s32 CoopPilotAim_Gorgon(const Boss* b, s32* boxes) {
     if (b->swork[25] == 0) {
         boxes[0] = 0;
         return 1;
     }
-    boxes[0] = 1;
-    boxes[1] = 2;
-    boxes[2] = 3;
-    return 3;
+    return 0;
 }
 
 // Andross (src/overlays/ovl_i6/fox_andross.c, Andross_8018D2B0): his hands, hitbox entries 2 and 3, take hits until

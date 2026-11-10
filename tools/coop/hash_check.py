@@ -655,8 +655,9 @@ PILOT_NO_END = {"training": "no level complete: its path change starts the all-r
                 "level-15": "no level: its environment is NULL (src/engine/fox_play.c), and the game crashes in "
                             "Play_InitEnvironment, with co-op off too"}
 PILOT_FRAMES = 24000  # most frames of a pilot's flight; Corneria took 11200 to the map, Sector X 11529 to level complete
-# Goras took to 29169 in #16's run; Sector Y's last Shogun had 20 health left at 24000, the Gorgon 660.
-PILOT_LEVEL_FRAMES = {"titania": 40000, "sector-y": 36000, "area-6": 40000}
+# Goras took to 29169 in #16's run with a pilot on each of two clients, and was at half its health after 40000 frames
+# of one pilot flying both; Sector Y's last Shogun had 20 health left at 24000, the Gorgon 660 of 780.
+PILOT_LEVEL_FRAMES = {"titania": 70000, "sector-y": 36000, "area-6": 60000}
 PILOT_TAIL = 60  # frames kept after the game leaves the level: the map, the next level or an ending
 PILOT_END_TAIL = 1800  # or this many after level complete, whichever comes first: some endings run long
 PILOT_CUT_MARGIN = 300  # the pilot's game runs this much past the cut, so that nothing it buffered is missing
