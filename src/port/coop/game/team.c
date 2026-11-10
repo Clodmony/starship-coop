@@ -355,6 +355,14 @@ static s32 CoopTeam_BodyInPlay(void) {
            (gPlayer[0].state == PLAYERSTATE_U_TURN);
 }
 
+// The body stays a body in play, and out of play while its human is down: the game's wingman would come back for the
+// scene only to read -1 and retreat in view, where a wingman of the game that went down is gone (src/engine/
+// fox_360.c:1445-1480). Seen in Fortuna's mid-level scene and while player 0 goes down (#15). A level restart sets
+// the value above 0 again, and the game's wingman is back for the intro.
+static s32 CoopTeam_BodyHeld(const Actor* actor) {
+    return CoopTeam_BodyInPlay() || (gTeamShields[actor->aiType] <= 0);
+}
+
 // The human flies the character of `actor`'s slot: joined, not parked, and up.
 static Player* CoopTeam_BodyFlier(const Actor* actor) {
     s32 index = CoopTeam_PlayerOf(actor->aiType);
@@ -409,7 +417,7 @@ static void CoopTeam_OnObjectUpdate(IEvent* event) {
     if (!CoopTeam_IsBodySlot(actor)) {
         return;
     }
-    if (!CoopTeam_BodyInPlay()) {
+    if (!CoopTeam_BodyHeld(actor)) {
         CoopTeam_ReleaseBody(actor);
         return;
     }
@@ -420,7 +428,8 @@ static void CoopTeam_OnObjectUpdate(IEvent* event) {
 static void CoopTeam_OnObjectDrawPreSetup(IEvent* event) {
     ObjectDrawPreSetupEvent* ev = (ObjectDrawPreSetupEvent*) event;
 
-    if ((ev->type == OBJECT_TYPE_ACTOR) && CoopTeam_IsBodySlot((Actor*) ev->object) && CoopTeam_BodyInPlay()) {
+    if ((ev->type == OBJECT_TYPE_ACTOR) && CoopTeam_IsBodySlot((Actor*) ev->object) &&
+        CoopTeam_BodyHeld((Actor*) ev->object)) {
         ev->event.cancelled = true;
     }
 }
