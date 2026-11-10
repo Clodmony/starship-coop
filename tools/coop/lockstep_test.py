@@ -68,6 +68,8 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             gTeamShields[Falco] holds the client's shields while it flies, and no computer Falco joins the boss fight.
   allrange  Katina with the client as Falco (#15): Falco's all-range slot is a body on the client's ship, and no
             computer Falco flies while the client does.
+  allrange_others the allrange check on Fortuna, Bolse, Sector Z and Venom 2 (#15).
+  allrange_down_others the allrange_down check on Fortuna, Bolse, Sector Z and Venom 2 (#15).
   allrange_down Katina with the client as Falco, downed on purpose (#15): Falco's body waits away, gTeamShields[Falco]
             is -1, and no computer Falco takes over.
   audio     the plain run with the two clients at different audio sample counts, as a radio line follows the sound thread.
@@ -1745,17 +1747,17 @@ ALLRANGE_LEVEL = 16  # LEVEL_KATINA: all-range from the start
 ALLRANGE_FRAMES = 4000
 
 
-def sc_allrange(args, folder):
-    """#15: on Katina the client flies Falco. While it flies, Falco's slot holds a body on the client's ship and no
-    computer Falco flies; Slippy and Peppy fly as before (decision 0006 rule 3, all-range)."""
+def allrange_run(args, folder, level, name):
+    """#15: on all-range `level` the client flies Falco. While it flies, Falco's slot holds a body on the client's
+    ship and no computer Falco flies; Slippy and Peppy fly as before (decision 0006 rule 3, all-range)."""
     frames = ALLRANGE_FRAMES
-    host, client = run_short(args, folder, frames=frames, host_env={"SF64_COOP_JOIN_LEVEL": str(ALLRANGE_LEVEL)},
+    host, client = run_short(args, folder, frames=frames, host_env={"SF64_COOP_JOIN_LEVEL": str(level)},
                              both={"SF64_COOP_TEAM_TRACE": "team.txt"})
     equal = compare(host, client, frames)
     found = []
     for game in (host, client):
-        lines = team_lines(game, ALLRANGE_LEVEL)
-        expect(lines, f"{game.name}: no Katina lines in the team trace")
+        lines = team_lines(game, level)
+        expect(lines, f"{game.name}: no {name} lines in the team trace")
         # PLAYERSTATE_ACTIVE, DOWN and U_TURN (player 0 turns at the map's edge), player 1 flying
         play = [l for l in lines if l["p0"] in ("3", "4", "5") and int(l["p1"]) >= 0]
         expect(play, f"{game.name}: player 1 never flew while player 0 was active")
@@ -1769,20 +1771,41 @@ def sc_allrange(args, folder):
         expect(others, f"{game.name}: Slippy and Peppy never flew")
         found.append(f"{game.name}: {len(play)} lines in play, Falco's body on player 1 in all of them, "
                      f"computer Slippy or Peppy in {len(others)}")
-    return f"{frames} frames of Katina, {equal} frames equal; " + "; ".join(found)
+    return f"{frames} frames of {name}, {equal} frames equal; " + "; ".join(found)
+
+
+def sc_allrange(args, folder):
+    """#15: allrange_run on Katina."""
+    return allrange_run(args, folder, ALLRANGE_LEVEL, "Katina")
+
+
+# The other all-range levels with wingmen (include/sf64level.h). Katina is `allrange`.
+ALLRANGE_OTHERS = ((14, "Fortuna"), (17, "Bolse"), (18, "Sector Z"), (19, "Venom 2"))
+
+
+def sc_allrange_others(args, folder):
+    """#15: allrange_run on each other all-range level; every level runs, and the failures are named together."""
+    done, failed = [], []
+    for level, name in ALLRANGE_OTHERS:
+        try:
+            done.append(allrange_run(args, folder / name.replace(" ", "_"), level, name))
+        except Exception as e:  # noqa: BLE001, a level's failure is reported with the others
+            failed.append(f"{name}: {e}")
+    expect(not failed, " | ".join(failed) + (" | passed: " + " | ".join(done) if done else ""))
+    return " | ".join(done)
 
 
 ALLRANGE_DOWN_AFTER = 1500  # frames of player 0 active on Katina before the client's shields drop to 0
 
 
-def sc_allrange_down(args, folder):
-    """#15: on Katina the client flies Falco and goes down (SF64_COOP_TEAM_DOWN). From then on Falco's body waits in
-    the retreat state, gTeamShields[Falco] is -1, no computer Falco flies and the body is never somewhere the client
-    is not (decision 0006 rules 1 and 3, all-range). Where the client returns in place (#205), the body is on it
+def allrange_down_run(args, folder, level, name):
+    """#15: on all-range `level` the client flies Falco and goes down (SF64_COOP_TEAM_DOWN). From then on Falco's body
+    waits in the retreat state, gTeamShields[Falco] is -1, no computer Falco flies and the body is never somewhere the
+    client is not (decision 0006 rules 1 and 3, all-range). Where the client returns in place (#205), the body is on it
     again from the first frame it flies."""
     frames = ALLRANGE_FRAMES
-    down = f"{ALLRANGE_LEVEL},{ALLRANGE_DOWN_AFTER},1"
-    host, client = run_short(args, folder, frames=frames, host_env={"SF64_COOP_JOIN_LEVEL": str(ALLRANGE_LEVEL)},
+    down = f"{level},{ALLRANGE_DOWN_AFTER},1"
+    host, client = run_short(args, folder, frames=frames, host_env={"SF64_COOP_JOIN_LEVEL": str(level)},
                              both={"SF64_COOP_TEAM_TRACE": "team.txt", "SF64_COOP_TEAM_DOWN": down})
     equal = compare(host, client, frames)
     found = []
@@ -1790,12 +1813,16 @@ def sc_allrange_down(args, folder):
         marks = [l for l in (game.run / "team.txt").read_text(encoding="utf-8").splitlines() if l.startswith("# down")]
         expect(marks, f"{game.name}: the client's shields were never dropped")
         at = int(marks[0].split()[2].split("=")[1])
-        lines = team_lines(game, ALLRANGE_LEVEL)
+        lines = team_lines(game, level)
         play = [l for l in lines if l["p0"] in ("3", "4", "5")]  # PLAYERSTATE_ACTIVE, DOWN, U_TURN
         before = [l for l in play if int(l["frame"]) < at and int(l["p1"]) >= 0]
         expect(before and all(l["body"][0] == 1 for l in before),
                f"{game.name}: Falco's body was not on player 1 before it went down")
-        after = [l for l in play if int(l["frame"]) > at]
+        # Every line after the down, scenes and player 0's own down included, up to a level reload (gPlayState
+        # PLAY_INIT, or PLAYERSTATE_INIT): the reload clears the actors and brings everyone back, as the game does.
+        after = [l for l in lines if int(l["frame"]) > at]
+        restart = [i for i, l in enumerate(after) if l["ps"] == "1" or l["p0"] == "1"]
+        after = after[:restart[0]] if restart else after
         expect(after, f"{game.name}: no lines in play after frame {at}")
         ai = [l for l in after if l["ai"][0] > 0]
         expect(not ai, f"{game.name}: a computer Falco flies after player 1 went down, first at frame "
@@ -1823,7 +1850,24 @@ def sc_allrange_down(args, folder):
                      f"{len(settled)} lines, gTeamShields[Falco] -1 there, no computer Falco"
                      + (f"; player 1 back from frame {returned[0]['frame']}, body on it again on {len(returned)} lines"
                         if returned else ""))
-    return f"{frames} frames of Katina, {equal} frames equal; " + "; ".join(found)
+    return f"{frames} frames of {name}, {equal} frames equal; " + "; ".join(found)
+
+
+def sc_allrange_down(args, folder):
+    """#15: allrange_down_run on Katina."""
+    return allrange_down_run(args, folder, ALLRANGE_LEVEL, "Katina")
+
+
+def sc_allrange_down_others(args, folder):
+    """#15: allrange_down_run on each other all-range level; every level runs, and the failures are named together."""
+    done, failed = [], []
+    for level, name in ALLRANGE_OTHERS:
+        try:
+            done.append(allrange_down_run(args, folder / name.replace(" ", "_"), level, name))
+        except Exception as e:  # noqa: BLE001, a level's failure is reported with the others
+            failed.append(f"{name}: {e}")
+    expect(not failed, " | ".join(failed) + (" | passed: " + " | ".join(done) if done else ""))
+    return " | ".join(done)
 
 
 ALLRANGE_RINGS_AFTER = 1500  # frames of player 0 active on Katina before the client gets the rings and its shields
@@ -2527,6 +2571,8 @@ SCENARIOS = {
     "scenes": sc_scenes,
     "allrange": sc_allrange,
     "allrange_down": sc_allrange_down,
+    "allrange_others": sc_allrange_others,
+    "allrange_down_others": sc_allrange_down_others,
     "teambar": sc_teambar,
     "audio": sc_audio,
     "release": sc_release,
@@ -2541,8 +2587,8 @@ SCENARIOS = {
     "bosses": sc_bosses,
     "other_bosses": sc_other_bosses,
 }
-LONG = ("full", "scenes", "allrange", "allrange_down", "teambar", "audio", "release", "rates", "vehicles", "vehicle_end",
-        "bosses", "other_bosses")
+LONG = ("full", "scenes", "allrange", "allrange_down", "allrange_others", "allrange_down_others", "teambar",
+        "audio", "release", "rates", "vehicles", "vehicle_end", "bosses", "other_bosses")
 
 
 def main():

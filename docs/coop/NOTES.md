@@ -1945,6 +1945,32 @@ Unknown:
   not merged. `CoopTeam_HoldBody` sets `STATE360_3` when its human flies again; not run.
 - Whether other player 0 states during play (for example the all-range loop or a warp) need the same treatment.
 
+### 2026-11-10, #15 (WP-17), the all-range body on the other levels, and while its human is down out of play
+
+Identity: ROM US 1.0, branch `issue/15-wingman-allrange` on `bb806193` plus this change, Windows 11, MSVC v143, Debug,
+two games over loopback (`lockstep_test.py --exe <build> --only allrange,allrange_others,allrange_down,
+allrange_down_others,scenes,steer,three,desync`), no window, 4000 frames per all-range level.
+
+Observed in runs (client flying Falco):
+
+- `allrange_others`: Fortuna, Bolse, Sector Z and Venom 2 pass as Katina did: the body on player 1 on every line in
+  play, computer Slippy and Peppy flying, hashes equal. 4000 frames reach none of their bosses.
+- `allrange_down_others` before this change: with player 1 down, the game's Falco came back for a scene out of play
+  and retreated in view. Fortuna: player 0 in `PLAYERSTATE_STANDBY` from frame 3487 (a mid-level scene); Venom 2 and
+  Bolse: player 0 went down himself and the level restarted. After: the body stays away through both, until the
+  reload, and the test stops at the reload (`gPlayState` 1 or `PLAYERSTATE_INIT`), which brings everyone back.
+- Shields at 0 without a hit leave a player flying (`src/engine/fox_play.c:5736`, see the entry above).
+- A run by mistake on the combined test build `ed61d6fd` (which has #205's return in place) showed the way back on
+  Katina: player 1 back 150 frames after the down with 255, and the body on player 1 again (`body=1`). Only one run,
+  not a planned check.
+
+Tooling: with `--no-build`, `lockstep_test.py` takes the newest `Starship.exe` of the default build folders
+(`tools/coop/replay.py:109`, `find_exe`) and ignores `--build-dir`. A build in a second folder needs `--exe`.
+
+Unknown:
+
+- Bosses of the four levels with a human Falco; the level-clear scene with a down human.
+
 ### 2026-11-10, #15 (WP-17), the all-range body and the boss fights, first run
 
 Identity: ROM US 1.0, branch `issue/15-wingman-allrange` on `6204f57a` (#212), Windows 11, MSVC v143, Debug, two
