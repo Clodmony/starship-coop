@@ -44,17 +44,15 @@ static s32 CoopPilotAim_BoxCount(const f32* hitbox) {
     return (hitbox != NULL) ? (s32) hitbox[0] : 0;
 }
 
-static bool CoopPilotAim_BossUp(const Boss* b) {
-    return (b->obj.status == OBJ_ACTIVE) && (CoopPilotAim_BoxCount(b->info.hitbox) > 0);
-}
+#define AIM_BOXES_MAX 8
 
-#define AIM_BOXES_MAX 4
+// Level knowledge, for a boss the generic cycle takes too long with: the boxes whose hits count now. Each returns how
+// many it wrote, 0 for every box, or -1 for none now: then the pilot leaves the boss alone and shoots at something
+// else.
 
-// Level knowledge, for a boss the generic cycle takes too long with: the boxes whose hits count now. Returns how many
-// it wrote, 0 for every box. The Gorgon (Area 6, src/overlays/ovl_i3/fox_a6.c): while swork[25] counts rounds (3 at the
-// start), only its three arms, hitbox entries 1 to 3, take hits, in state 4 (Area6_8018A2C4); with all three down a
-// round ends. After the last round only the core, entry 0, takes hits, health 660 of 780 by then
-// (Area6_A6Gorgon_Update).
+// The Gorgon (Area 6, src/overlays/ovl_i3/fox_a6.c): while swork[25] counts rounds (3 at the start), only its three
+// arms, hitbox entries 1 to 3, take hits, in state 4 (Area6_8018A2C4); with all three down a round ends. After the last
+// round only the core, entry 0, takes hits, health 660 of 780 by then (Area6_A6Gorgon_Update).
 static s32 CoopPilotAim_Gorgon(const Boss* b, s32* boxes) {
     if (b->swork[25] == 0) {
         boxes[0] = 0;
@@ -85,28 +83,56 @@ static s32 CoopPilotAim_Andross(const Boss* b, s32* boxes) {
     return n;
 }
 
+// Bolse (src/overlays/ovl_i4/fox_bo.c): the base's core takes hits only in state 2, on its parts 0 to 7
+// (Bolse_BoBaseCore_Update), and it gets there once the shield reactors are down, actors the lock-on can take
+// (Bolse_8018D584). Until then the pilot leaves the core alone, so it goes for the reactors.
+static s32 CoopPilotAim_BolseCore(const Boss* b, s32* boxes) {
+    s32 n;
+
+    if (b->state != 2) {
+        return -1;
+    }
+    for (n = 0; n < 8; n++) {
+        boxes[n] = n;
+    }
+    return 8;
+}
+
 static const struct {
     s32 id;
     s32 (*boxes)(const Boss* b, s32* boxes);
 } sBossBoxes[] = {
     { OBJ_BOSS_A6_GORGON, CoopPilotAim_Gorgon },
     { OBJ_BOSS_AND_ANDROSS, CoopPilotAim_Andross },
+    { OBJ_BOSS_BO_BASE_CORE, CoopPilotAim_BolseCore },
 };
 
-// Box n of the boxes to try on boss b, counted from the first one: every box, or the table's.
-static s32 CoopPilotAim_Box(const Boss* b, s32 n, s32* count) {
-    s32 boxes[AIM_BOXES_MAX];
+static s32 CoopPilotAim_Table(const Boss* b, s32* boxes) {
     s32 k;
 
     for (k = 0; k < ARRAY_COUNT(sBossBoxes); k++) {
         if (sBossBoxes[k].id == b->obj.id) {
-            s32 found = sBossBoxes[k].boxes(b, boxes);
-
-            if (found > 0) {
-                *count = found;
-                return boxes[n % found];
-            }
+            return sBossBoxes[k].boxes(b, boxes);
         }
+    }
+    return 0;
+}
+
+static bool CoopPilotAim_BossUp(const Boss* b) {
+    s32 boxes[AIM_BOXES_MAX];
+
+    return (b->obj.status == OBJ_ACTIVE) && (CoopPilotAim_BoxCount(b->info.hitbox) > 0) &&
+           (CoopPilotAim_Table(b, boxes) >= 0);
+}
+
+// Box n of the boxes to try on boss b, counted from the first one: every box, or the table's.
+static s32 CoopPilotAim_Box(const Boss* b, s32 n, s32* count) {
+    s32 boxes[AIM_BOXES_MAX];
+    s32 found = CoopPilotAim_Table(b, boxes);
+
+    if (found > 0) {
+        *count = found;
+        return boxes[n % found];
     }
     *count = CoopPilotAim_BoxCount(b->info.hitbox);
     return n % *count;
