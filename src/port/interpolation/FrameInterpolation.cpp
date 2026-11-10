@@ -164,6 +164,9 @@ struct Recording {
 };
 
 bool is_recording;
+// COOP: how many skip regions are open on this frame, and whether recording was on when the outermost began (#153)
+int skip_depth;
+bool skip_saved;
 vector<Path*> current_path;
 uint32_t camera_epoch;
 uint32_t previous_camera_epoch;
@@ -425,7 +428,23 @@ bool camera_interpolation = true;
 
 void FrameInterpolation_ShouldInterpolateFrame(bool shouldInterpolate) {
     // camera_interpolation = shouldInterpolate;
-    is_recording = shouldInterpolate;
+    // COOP: a (false) ... (true) pair skips what it draws, then gives back the state it found (#153). Upstream's (true)
+    // turned recording on whatever it was, so a pair inside a frame that records nothing (a camera jump, a pause,
+    // gInterpolationFPS 20) or inside another pair turned it on mid-frame, and a CloseChild then popped a path it had
+    // not opened: the abort of #100, which RecordCloseChild now stops at the root (#169). A (true) with no (false)
+    // open on this frame still turns recording on, as upstream's does.
+    if (!shouldInterpolate) {
+        if (skip_depth++ == 0) {
+            skip_saved = is_recording;
+        }
+        is_recording = false;
+    } else if (skip_depth > 0) {
+        if (--skip_depth == 0) {
+            is_recording = skip_saved;
+        }
+    } else {
+        is_recording = true;
+    }
 }
 
 void FrameInterpolation_StartRecord(void) {
@@ -433,6 +452,7 @@ void FrameInterpolation_StartRecord(void) {
     current_recording = {};
     current_path.clear();
     current_path.push_back(&current_recording.root_path);
+    skip_depth = 0; // COOP: a skip region left open ends with its frame (#153)
     if (!camera_interpolation) {
         // default to interpolating
         camera_interpolation = true;
