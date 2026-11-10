@@ -84,9 +84,41 @@ static void CoopBossTrace_OnGamePostUpdate(IEvent* event) {
     fflush(sFile); // tests stop the game from outside
 }
 
+// SF64_COOP_BOSS_POKE (#220): <slot>:<from>:<to>:<timer>. The first time gBosses[slot] is in state `from` after a
+// frame, it is put in state `to` with timer_050 `timer`, once per level.
+static s32 sPoke[4];
+static s32 sPoked = 1;
+static s32 sPokeLevelFrame = -1;
+
+static void CoopBossTrace_OnPokeUpdate(IEvent* event) {
+    Boss* boss;
+
+    if (!CoopBossTrace_InLevel()) {
+        return;
+    }
+    if ((s32) gGameFrameCount < sPokeLevelFrame) { // a new level
+        sPoked = 0;
+    }
+    sPokeLevelFrame = gGameFrameCount;
+    if (sPoked || (sPoke[0] < 0) || (sPoke[0] >= ARRAY_COUNT(gBosses))) {
+        return;
+    }
+    boss = &gBosses[sPoke[0]];
+    if ((boss->obj.status == OBJ_ACTIVE) && (boss->state == sPoke[1])) {
+        boss->state = sPoke[2];
+        boss->timer_050 = sPoke[3];
+        sPoked = 1;
+    }
+}
+
 void CoopBossTrace_Init(void) {
     const char* path = getenv("SF64_COOP_BOSS_TRACE");
+    const char* poke = getenv("SF64_COOP_BOSS_POKE");
 
+    if ((poke != NULL) && (sscanf(poke, "%d:%d:%d:%d", &sPoke[0], &sPoke[1], &sPoke[2], &sPoke[3]) == 4)) {
+        sPoked = 0;
+        REGISTER_LISTENER(GamePostUpdateEvent, CoopBossTrace_OnPokeUpdate, EVENT_PRIORITY_NORMAL);
+    }
     if ((path == NULL) || (path[0] == '\0')) {
         return;
     }

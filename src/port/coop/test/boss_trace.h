@@ -19,6 +19,11 @@
 //
 // kept and held are the slots of src/port/coop/game/aim.h, -1 for an empty one. The trace only reads; it does not ask
 // the aim code to pick, so it changes nothing.
+//
+// SF64_COOP_BOSS_POKE=<slot>:<from>:<to>:<timer> (#220), separate from the trace: the first time gBosses[slot] is in
+// state `from` after a game frame of a co-op level, it is put in state `to` with timer_050 `timer`, once per level, so
+// a test reaches a boss's attack that takes the players' hits to get to. Every game of a session gets the same value,
+// so they stay one game.
 
 #ifdef __cplusplus
 extern "C" {
