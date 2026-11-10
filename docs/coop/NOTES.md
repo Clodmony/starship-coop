@@ -5114,6 +5114,102 @@ player 0 loses 100.
 
 ## Determinism
 
+### 2026-11-11, the Aquas boss desync: a dying eel read its smoke's place from before its array
+
+Identity: ROM US 1.0. The real session: Windows host (MSVC), Linux client (GCC), both build `5b0e2204ed9e`
+(`issue/combined-test-4`). The runs here: the base with the trace only (`c30b1cac`) and with the fix (`d50fa1c5`, build
+`d50fa1c53bd6`), Linux, GCC, Debug, OpenGL on a software renderer, no window, two games on one PC over loopback
+(`lockstep_test.py`).
+
+Observed, from the two desync reports of the session (frame 32969, Aquas, the boss fight):
+
+- One region differs, `effects`, in one slot: `gEffects[93]`, free on both games, the leftovers of a smoke puff
+  (`OBJ_EFFECT_FIRE_SMOKE_1`, 339). Host `pos` (0, 0, 0), client (0, 340, -640); every other byte equal. Its `scale2` is
+  3.0, its `scale1` still the 0.5 of `EffectFireSmoke_Setup`, `vel` 0, `unk_4C` 0: its update never ran once.
+- In Aquas only `Aquas_Actor255_Update` (`src/overlays/ovl_i3/fox_aq.c`, the eel a pod of the Bacoon lets out) spawns
+  that smoke with scale 3.0: a dying eel (state 2) blows up one piece every 4 frames, each with a puff at a place from
+  `D_i3_801C27C8`, a history of the eel's last 50 positions, 50 entries per pod.
+- `gActors[7]` in both reports is such an eel: `iwork[0]` 0 (pod 0), state 2, health 0, `counter_04E` 8, `iwork[1]` 2
+  and `timer_0BC` 4, so it blew up a piece on this very frame, with `iwork[1]` 3 before the decrement. The index the
+  code computes for that piece is `0 * 50 + 8 - D_i3_801BFB64[3]` = 8 - 24 = -16.
+- `iwork` is `uintptr_t iwork[25]` in the port (`include/sf64object.h:286`; the offsets in the comments beside it give
+  4 bytes each, an `s32`, on the N64). The wrap of that index reads `if (var_v0 < this->iwork[0] * 50)`: a signed
+  value against an unsigned 64-bit one, so -16 compares as a huge number, the test is false and the index stays -16.
+  For pods 1 and 2 the index is positive before the wrap and the code is right; only pod 0's eel is hit.
+- In the Linux reference build (`nm`, build `5b0e2204ed9e`) `D_i3_801C4308` lies 384 bytes before `D_i3_801C27C8`:
+  16 entries of 24 bytes. Entry -16 is `D_i3_801C4308[0..5]`. `[1]` and `[2]` are the x of pods 0 and 1 that
+  `Aquas_AqBacoon_PostLimbDraw` writes, 340 and -640 while the Bacoon sits at x 0 (the pods' `pos.x` in the reports:
+  340, -640, 760), and nothing but the level's reset writes `[0]`. So the Linux game read (0, 340, -640), to the byte
+  what the client's report holds.
+- `Effect_Update` runs `Effect_Move` before the puff's own update, and `Effect_Move` frees an effect that lies behind
+  player 0's camera on rails (`src/engine/fox_enmy.c`). Both places lie about 94000 behind it, so both games freed
+  the puff on the frame they spawned it. Only the dead slot kept the two places.
+
+Observed, on Linux:
+
+- `lockstep_test.py --only eels` (new): Aquas from the join, 9000 frames, `gInvincible`, both marines hold their
+  place and fire their lasers every other frame, so the eels swim into the fire and die. `SF64_COOP_SMOKE_TRACE`
+  (new, `src/port/coop/test/smoke_trace.h`) names every smoke spawn with its place and its callers.
+  On the base with the trace (`c30b1cac`): `FAILED eels: 34 of 171 eel puffs lie outside the fight, the first at
+  level frame 5711: (0, 0, 0) with the path at 94780`. The trace of that run holds, at level frame 5905, a puff at
+  `0.00,340.00,-640.00`, and others at (0, 0, 0) and at (740, -96716, -96676); all from `Aquas_Actor255_Update`
+  (`addr2line` on the callers). The two Linux games stayed equal on all 9000 frames: they read the same memory.
+- With the fix (`d50fa1c5`): `ok eels: same hash on 9000 frames; 171 eel puffs of 185 puffs, all in the fight`. The
+  puff of level frame 5905 is at (351, 30, -94962), on the eel.
+- `Aquas_Actor255_Draw` holds the same comparison: before the fix it drew the pieces of pod 0's eel from the same
+  entries before the array. Draw only.
+- A free effect slot's leftovers are read by game code. `Aquas_AqGaroa_Update` (`fox_aq.c`) keeps the slots of its
+  beams in `iwork[2..3]` and later reads that slot's `obj.id`, `state`, `timer_50` and `obj.pos` and writes its
+  `unk_44`, with no test of its status; `Area6_A6Gorgon_Update` (`src/overlays/ovl_i3/fox_a6.c`, state 7) writes
+  `unk_60` of the slot in `swork[A6_SWK_39]` the same way. `Katina` and `Andross` free effects by id alone, which
+  changes nothing in a free slot.
+- Every slot that is taken into use is cleared first, in `src/engine` and `src/overlays` (a script over every
+  `obj.status = OBJ_INIT` or `OBJ_ACTIVE`): effects 87 sites, all behind `Effect_Initialize` or `Effect_Load`; actors
+  148, bosses 18, items 12, scenery 5, sprites 5, all behind their `_Initialize`, `_Load` or `Game_SpawnActor`, or
+  they are objects already in use (`*_Update`, `Titania_TiGoras_Init`, the `EVID_SX_LASER` actors). Shots: 8 status
+  writes and 9 calls of `PlayerShot_Initialize`, not matched one by one. `gTexturedLines` has no such function: a
+  line is taken by writing `mode` and the fields its user needs (`fox_enmy2.c:1416`, `fox_ma.c:3821`,
+  `fox_ti.c:1969`, `:4643`, `:5461`, `fox_andross.c:564`, `:3638`, `fox_turret.c:102`), the rest keeps what the last
+  user left.
+- No slot is cleared when it is freed: `Object_Kill` sets the status alone. So every array the hash covers keeps a
+  dead object's last values, and the hash reads them (but `gScenery360` in a session, `HashScenery360`).
+- Other uses of the unsigned `iwork`, read one by one: nine tests for a negative value that can never be true
+  (`fox_360.c:2324`, `fox_demo.c:2403`, `fox_end1.c:1737`, `fox_a6.c:2792`, `:2796`, `fox_aq.c:1805`, `:6497`,
+  `fox_ma.c:3149`, `fox_sy.c:3688`), and about 35 comparisons of an `iwork` with a variable (most in `fox_ma.c`, against
+  `D_MA_801BE2F0[3]`). None of them takes an unwrapped negative value as an array index. They can differ from the
+  N64, but not between two 64-bit builds: every one computes with the same unsigned 64 bits.
+
+Derived:
+
+- The cause is the port's unsigned `iwork` in one comparison, a bug of upstream's port on every platform: the place
+  of a dying pod 0 eel's smoke (and of its drawn pieces) came from up to 30 entries before `D_i3_801C27C8`, memory
+  that each compiler lays out its own way. Windows and Linux each read their own.
+- It can part a session whenever pod 0's eel dies with `counter_04E` behind a piece's offset (34 of 171 puffs in
+  the run above). The world itself had not parted in the session: the puff was freed on its first frame on both
+  games, and nothing else differed.
+- The restart from the checkpoint 2,456 frames earlier, the parked player, the camera and the nearest-human aim
+  (#220) have no part in it: the index is computed from the eel's own fields, equal on both games in the reports.
+- The fix makes the comparison signed, as on the N64 (`fox_aq.c`, `Aquas_Actor255_Update` and `_Draw`), in a session
+  and outside one: there is no upstream behaviour to keep, the read left the array.
+- The hash must not treat a free effect slot as empty: the Garoa and the Gorgon read a slot they remember without
+  testing that it is still in use, so a free slot's leftovers can reach the game. And the leftovers found this bug:
+  with free slots emptied the two games would have gone on, reading different memory, unseen until a stray place
+  happened to lie in view.
+
+Guess:
+
+- Why the session did not part at an earlier eel: a stray puff's slot is taken again by the next puff (the search
+  for a free slot starts at the top) before the next hash, 10 frames apart, unless the eel's last stray piece is the
+  one the hash sees. Not checked against the session's earlier frames; the logs do not hold the eels.
+
+Unknown:
+
+- What lies before `D_i3_801C27C8` in the MSVC build, which the host read as (0, 0, 0). Not needed for the cause.
+- Windows, MSVC, two PCs: the fix was run on Linux only. The same C on MSVC compares the same way
+  (`uintptr_t` is 64 bits and unsigned there too), not run.
+- Multi-line statements and macros the scans of `iwork` and of the status writes did not match.
+- Whether a Garoa or Gorgon ever reads a remembered slot after it was freed in play; only the code was read.
+
 ### 2026-11-10, the map and the host's save: two saves part a session on the map, and every read of the save
 
 Identity: ROM US 1.0. Base `b98c3870` (`issue/combined-test-4`, build `b98c38708b44`); this change at `00a34694`
