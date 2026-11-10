@@ -23,6 +23,7 @@
 #include "assets/ast_zoness.h"
 #include "port/hooks/Events.h"
 #include "port/coop/game/players.h" // COOP: player count apart from camera count (WP-10)
+#include "port/coop/game/score.h"   // COOP: each player's own hit count (#252)
 #include "port/coop/game/team.h"    // COOP: a human-flown wingman's gTeamShields (WP-17)
 #include "port/coop/sync/lockstep_game.h" // COOP: whether a session runs the frames (#20)
 #include "port/coop/game/level_start.h"   // COOP: the host's save in a session, for the intro skip (#191)
@@ -2959,6 +2960,7 @@ void Play_Init(void) {
         gControllerRumbleTimers[i] = 0;
         gPlayerScores[i] = 0;
     }
+    CoopScore_LevelInit(); // COOP: a checkpoint restart gives back each player's own count (#252)
 
     if (gLevelMode == LEVELMODE_ALL_RANGE) {
         MEM_ARRAY_ALLOCATE(gScenery360, 200);

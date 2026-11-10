@@ -192,6 +192,11 @@ static void CoopTrace_OnGamePostUpdate(IEvent* event) {
     }
     CoopTrace_WriteHits();
     CoopTrace_WriteTorpedo();
+    // The team's hit count and each player's own (#252): score=<gHitCount>:<gPlayerScores 0>,<1>,...
+    fprintf(sTraceFile, " score=%d:%d", gHitCount, gPlayerScores[0]);
+    for (i = 1; i < CoopPlayers_Count(); i++) {
+        fprintf(sTraceFile, ",%d", gPlayerScores[i]);
+    }
     fputc('\n', sTraceFile);
     if ((gGameFrameCount % 60) == 0) {
         fflush(sTraceFile); // tests may kill the game on a timeout

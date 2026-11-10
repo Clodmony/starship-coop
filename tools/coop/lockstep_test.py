@@ -64,6 +64,7 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   frozen    a client stops dead (SIGSTOP): the session ends on the transport's timeout, and it can be thawed.
   menu      the whole way through the real menu, with real widgets.
   full      all of Corneria: pilots fly it live, one on each client, then plain runs repeat what they flew. Takes a while.
+  player_hits Corneria with pilots (#252): each human's own hits count, add up to at most the team's, same on both.
   scenes    Corneria to Granga with the client as Falco (#15): no scene shows a second Falco, his rescue goes to Slippy,
             gTeamShields[Falco] holds the client's shields while it flies, and no computer Falco joins the boss fight.
   allrange  Katina with the client as Falco (#15): Falco's all-range slot is a body on the client's ship, and no
@@ -1707,6 +1708,40 @@ def fly_for(args, folder, frames, extra_env):
     return host, client
 
 
+HITS_FRAMES = 3500  # Corneria's rails to past the first enemy groups, before the rescue
+
+
+def score_rows(game):
+    """(frame-ordered) [(gHitCount, [gPlayerScores...])] from the player trace's score= field (#252)."""
+    rows = []
+    for line in (game.run / "trace.txt").read_text(encoding="utf-8", errors="replace").splitlines():
+        field = next((f for f in line.split() if f.startswith("score=")), None)
+        if field:
+            team, _, own = field[6:].partition(":")
+            rows.append((int(team), [int(v) for v in own.split(",")]))
+    return rows
+
+
+def sc_player_hits(args, folder):
+    """#252: pilots fly Corneria, one on each client. Each human's own kills go to gPlayerScores[index] next to the
+    team's gHitCount: both players score, their sum never passes the team count, and both games agree (the hash)."""
+    frames = HITS_FRAMES
+    host, client = fly_for(args, folder, frames, {})
+    equal = compare(host, client, frames)
+    found = []
+    for game in (host, client):
+        rows = score_rows(game)
+        expect(rows, f"{game.name}: no score= field in the player trace")
+        team, own = rows[-1]
+        expect(len(own) >= 2, f"{game.name}: one player only in the trace")
+        expect(own[0] > 0 and own[1] > 0, f"{game.name}: a player scored nothing: team {team}, players {own}")
+        over = [r for r in rows if sum(r[1]) > r[0]]
+        expect(not over, f"{game.name}: players {over[0][1] if over else 0} add up past the team's {over[0][0] if over else 0}")
+        found.append(f"{game.name}: team {team}, players {own}")
+    expect(score_rows(host)[-1] == score_rows(client)[-1], "host and client end on different counts")
+    return f"{frames} frames of Corneria, {equal} frames equal; " + "; ".join(found)
+
+
 def sc_scenes(args, folder):
     """#15: the client flies Falco. No scene shows a second Falco, his rescue goes to Slippy, and gTeamShields[Falco]
     is the human's shields on every frame he flies (decisions 0006 rule 1, 0012)."""
@@ -2486,6 +2521,7 @@ SCENARIOS = {
     "menu": sc_menu,
     "full": sc_full,
     "scenes": sc_scenes,
+    "player_hits": sc_player_hits,
     "allrange": sc_allrange,
     "allrange_down": sc_allrange_down,
     "audio": sc_audio,

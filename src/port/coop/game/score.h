@@ -31,6 +31,24 @@ int32_t CoopScore_HumanShot(int32_t sourceId);
 // The gLifeCount slot a life gained by player `slot` goes to: the pool, slot 0, in co-op; `slot` otherwise.
 int32_t CoopScore_LifeSlot(int32_t slot);
 
+// Hits per player, for display only (#252, decision 0008 4d on top of 4b). In co-op a human's kill also adds its hits
+// to gPlayerScores[that player], next to the team's gHitCount, where the game knows the shooter: an actor's dmgSource
+// or a PlayerShot's sourceId. Hits with no shooter (chain blasts, scripted kills, bosses) count for the team only, so
+// the per-player numbers add up to at most gHitCount. Versus and co-op off: nothing.
+void CoopScore_CreditKill(int32_t dmgSource, int32_t hits);
+void CoopScore_CreditShot(int32_t sourceId, int32_t hits);
+
+// Call where the game saves gHitCount at a checkpoint: the per-player hits are saved with it.
+void CoopScore_Checkpoint(void);
+
+// Call after the level start zeroes gPlayerScores: a restart from a checkpoint (gSavedHitCount above 0) gives back the
+// hits saved there, as the game gives back gHitCount; a new level keeps 0 and forgets the saved ones.
+void CoopScore_LevelInit(void);
+
+// The status screen (pause and level clear): one row per human, the character's face and that player's own hits,
+// right of the team's "enemies down". Nothing outside co-op or with one player.
+void CoopScore_DrawStatus(void);
+
 #ifdef __cplusplus
 }
 #endif

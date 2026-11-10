@@ -2291,6 +2291,7 @@ void PlayerShot_UpdateShot(PlayerShot* shot, s32 index) {
                         }
                         BonusText_Display(shot->obj.pos.x, shot->obj.pos.y, shot->obj.pos.z, bonus);
                         gHitCount += shot->bonus;
+                        CoopScore_CreditShot(shot->sourceId, shot->bonus); // COOP: the shooter's own count (#252)
                     }
                     if ((shot->bonus >= 7) && !gBossActive && (gLevelMode == LEVELMODE_ON_RAILS) &&
                         ((gTeamShields[TEAM_ID_FALCO] > 0) || (gTeamShields[TEAM_ID_SLIPPY] > 0) ||

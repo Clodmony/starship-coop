@@ -926,6 +926,7 @@ void ActorAllRange_ApplyDamage(ActorAllRange* this) {
                         }
                         BonusText_Display(this->obj.pos.x, this->obj.pos.y, this->obj.pos.z, 10);
                         gHitCount += 11;
+                        CoopScore_CreditKill(this->dmgSource, 11); // COOP: the shooter's own count, display (#252)
                         D_ctx_80177850 = 15;
                     } else {
                         switch (this->dmgSource) {

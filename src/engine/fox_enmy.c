@@ -1771,6 +1771,7 @@ void Actor_Despawn(Actor* this) {
         // COOP: was dmgSource == AI360_FOX + 1; a kill by any human scores (decision 0008 4b, #210)
         if (CoopScore_HumanKill(this->dmgSource) && (this->info.bonus != 0)) {
             gHitCount += this->info.bonus;
+            CoopScore_CreditKill(this->dmgSource, this->info.bonus); // COOP: the shooter's own count, display (#252)
             D_ctx_80177850 = 15;
 
             if ((gLevelMode == LEVELMODE_ALL_RANGE) && (gDropHitCountItem != 0)) {
@@ -2514,6 +2515,7 @@ void ItemCheckpoint_Update(ItemCheckpoint* this) {
             gSavedObjectLoadIndex = gObjectLoadIndex;
             gSavedZoSearchlightStatus = gMissedZoSearchlight;
             gSavedHitCount = gHitCount;
+            CoopScore_Checkpoint(); // COOP: each player's own count is saved with the team's (#252)
             for (i = TEAM_ID_FALCO; i <= TEAM_ID_PEPPY; i++) {
                 gSavedTeamShields[i] = gTeamShields[i];
             }
