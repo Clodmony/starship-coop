@@ -912,6 +912,143 @@ Derived:
 - The fix leaves one known gap: a partner whose boostSpeed equals player 0's on one frame by chance (both at 30) adds
   nothing on the next, so when player 0 lets go first the level drops by 1 for that one frame.
 
+### 2026-11-10, #220, the other bosses go after the nearest human
+
+Read at `f869efa4` (the test branch `issue/combined-test-4` with #231, #232 and #243). Rule, decided on #193 and #213:
+aim and chase the nearest human, one pick kept until the boss's own AI chooses again (`CoopAim_BossTarget`,
+`CoopAim_ForgetBoss`, `src/port/coop/game/aim.c`). Level flow, triggers, the path and "player 0 down restarts the
+level" stay player 0's (decisions 0007, 0008). Line numbers are this branch's; "path" means a z taken from player 0
+on rails, where every player shares it.
+
+Observed (code), the bosses of the issue and every `gPlayer[0]` site of their functions (counts are lines with a site
+at the base, as `sp_audit.py` lists them; MC `gMainController`, bare a bare `gPlayer` argument):
+
+| level | boss: function | sites | what they do | verdict |
+|---|---|---|---|---|
+| Corneria | Granga: `Corneria_CoGranga_Update` | 22 | `:796-798`, `:842-844`, `:863-865`, `:888-890`, `:913-915`, `:934-936` the point its guns turn to and the point it walks to (`sCoGrangaWork` target and `GRANGA_WORK_66/67`); `:1100` it stops when that player somersaults | aim and chase: changed |
+| | (same) | | `:637` the fight waits for player 0's cut to all-range; `:685-687` the HUD arrow flags (`flags_228`, read by `fox_hud.c`) | flow, view: left |
+| | `Corneria_CoGranga_Attack` | 9 | `:453-469` the plasma's spread: the aimed player moved by up to 150 for one `Effect_EnemyLaser` call, which aims at the nearest human since #193 | aim: changed, the spread is on that human |
+| | `Corneria_CoGranga_DecideNextAction` | 0 | `:478` its next action | the kept target is picked again here |
+| | `Corneria_CoGranga_1UpCheck` | 8 | a 1-up for a loop under the Granga: player 0's hit timer, place and loop | trigger: left |
+| | `Corneria_Granga_Init`, `Corneria_CoGranga_HandleDamage` | 3, 9 | the cut to all-range, level complete | flow: left |
+| | Attack Carrier: `Corneria_CoCarrier_Update` | 7 + 1 bare | `:1859`, `:1931`, `:1950`, `:2082` its z to player 0's camera or z; `:2111` its beam only when 700 away in z; `:1811` player 0's shadow; `:2214-2215` level complete | path, view, flow: left; its beams (`Effect_Effect398_Update`) and missiles aim at the nearest human since #193 |
+| | `Corneria_CoCarrier_Init`, `Corneria_CarrierLeft/Upper/Bottom_Update` | 3, 0 | starts 2000 ahead on the path | path: left |
+| Katina | Saucerer: `Katina_KaSaucerer_Update`, `Katina_BossHandleDamage` | 62 + 3 MC, 2 | cutscene cameras, player 0 to standby, active and level complete, the checkpoint; it flies to random points (`vwork[0]`) and aims at nobody; its enemies follow other actors (`Katina_EnemyUpdate`) | flow: left; nothing to change |
+| Meteo | Crusher: `Meteo_MeCrusher_Update` | 4 | `:1053-1055` level complete, `:1382` the wait for `PLAYERSTATE_NEXT`; it moves by the path and random draws, its missiles seek the nearest human (#193) | flow: left |
+| | `Meteo_MeCrusherShield_Update` | 0 | | nothing |
+| | the Crusher's rings: `Meteo_Effect371_Update` | 5 | `:810`, `:817`, `:824`, `:831` home in on player 0's x and y; `:800` gone at player 0's level complete | aim: changed (the nearest human each frame, as #193's homing missiles); flow: left |
+| Sector Y | Shoguns: `SectorY_8019B6E8` | 8 | `:1167-1168`, `:1180-1185` its target: the nearer of player 0 (z - 1000) and the three wingmen, with the target's speed for its lead | aim and chase: changed, the kept human in player 0's place |
+| | `SectorY_8019BBBC` | 6 | `:1224-1229` the dash's target | chase: changed |
+| | `SectorY_801983E4`, `SectorY_80199DAC` | 2, 1 | `:259`, `:294`, `:749` it dodges by player 0's heading (`yRot_114`) and U-turn | chase: changed |
+| | `SectorY_8019BC14` | 9 | `:1283-1298` a shot at the lead point by moving player 0 there for one `Effect_EnemyLaser` call | aim: kept, with the other humans moved there too (`CoopAim_PointShot`, `:1291`, `:1295`) |
+| | `SectorY_SyShogun_Update` | 3 | `:1432` the fight waits for player 0's cut to all-range; `:1749-1751` HUD arrow flags | flow, view: left; `:1466-1471` a new move picks again |
+| | `SectorY_SyShogun_Init`, `SectorY_80198F5C`, `SectorY_80199438`, `SectorY_8019AEEC`, `SectorY_SyShogun_Draw` | | cut to all-range, death and level complete, cutscene cameras, draw | flow, view: left |
+| Zoness | Sarumarine: `Zoness_ZoSarumarine_Update` | 29 | `:2374-2376`, `:2399-2401` its two guns; `:2704-2705`, `:2722-2723` its head; `:2739-2741`, `:2751-2753` the two cannons whose balls `Zoness_801986FC` fires | aim: changed; `:2156`, `:2699-2701` a new state picks again |
+| | (same) | | `:2083`, `:2342` its z to player 0's camera (the path); `:2117` its taunt when player 0 is hit; `:2593-2605` level complete | path, flow: left |
+| Venom 1 | `Venom1_BossTrigger1-4_Update` | 0 | they test the Golemech's z against their own | nothing |
+| | Golemech: `Venom1_Ve1Golemech_Update`, `_Dying` | 13, 2 | player 0's `trueZpos`, `pos.z` and `vel.z` only (the path); it fires nothing at a player | path: left; nothing to change |
+| Aquas | `Aquas_Boss301_Update` | 0 | empty upstream (`/* Unimplemented */`) | nothing |
+| | Bacoon: `Aquas_AqBacoon_Update` | 20 | `:3227-3229`, `:3265-3270` where its head and two eyes look; those angles (`D_i3_801C4308[14-19]`) only turn its limbs in the draw | aim (what it looks at): changed; `:2668`, `:2944-2946` a new state picks again |
+| | (same) | | `:2691` its start by z (the path); `:3011-3019` player 0's boost lock and camera pull while it roars; `:3133-3136` level complete | path, camera, flow: left |
+
+The rest (the bosses the issue had not looked at), by `gPlayer[0]` count of the boss's functions (lines with a site at
+the base, as `sp_audit.py` counts them):
+
+| level | boss: function | `gPlayer[0]` | verdict |
+|---|---|---|---|
+| Solar | Vulkain: `Solar_SoVulkain_Update` | 4 | `:2773-2777` its head, along which it spits its fireballs (`Solar_801A23F4`, state 5), turned to player 0: the same small aim edit, changed, a new move picks again (`:2672-2677`); `:2602` its z (the path): left. Its helpers `Solar_801A2C98`, `Solar_801A3128`, `Solar_801A4EF8` (1, 1, 3: the path), `Solar_801A3C4C` (12: death and level complete), `Solar_801A3510`, `Solar_801A0FD4`, `Solar_801A7750` (cutscene actors): left |
+| Sector X | Spyborg: `SectorX_SxSpyborg_Update` | 37 | its head turn (`:379-384`), its arms and fists that move to player 0's x and y (`:591-616`, `:649-697`, `:735-787`, `:869-926`), its z (the path, `:395`), flow (`:506-518`, `:905`, `:1090-1093`). Aim and chase on about 30 lines: not the small edit; not changed |
+| Titania | Goras: `Titania_TiGoras_Update`, `Titania_80192118`, `Titania_80193DF0`, `Titania_TiGoras_Dying` | 1, 9, 11, 10 | it follows player 0's x (`Titania_80193DF0`, `:4361-4366`) and jumps when player 0 is on the ground (`:5007`); a Landmaster fight, chase on about 20 lines and a trigger: not changed |
+| Macbeth | the train's end: `Macbeth_Actor207_Update`, `Macbeth_Actor207_FacePlayer` | 32 + 2 MC, 3 | it moves to player 0's x and y and keeps ahead in z, faces player 0; and kills player 0 at the end of the track (`:5058`). Chase and aim on about 30 lines in a Landmaster fight: not changed |
+| Sector Z | `SectorZ_SzGreatFox_Update` | 0 | the Great Fox is the one defended; the missiles (`SectorZ_Missile_Update`, 10) go for it; Star Wolf is #213's dogfight | nothing for this issue |
+| Fortuna | the base (`OBJ_BOSS_FO_BASE`, no update of its own with player sites), `Fortuna_UpdateEvents` | 7 | the fight is Star Wolf (#213's dogfight); events wait on player 0 | flow: left |
+| Bolse | `Bolse_BoBase_Update`, `_BoBaseCore_Update`, `_BoBaseShield_Update`, `_BoShieldReactor_Update` | 0 | the base aims at nobody; its cannons `Bolse_BoLaserCannon_Update` (2) are not a boss; Star Wolf is #213's | nothing for this issue |
+| Katina | front line base `Katina_KaFrontlineBase_Update` | 0 | the base the players defend | nothing |
+
+Built (one commit per boss):
+
+- Corneria: the Granga keeps the nearest human from one action to the next (`CoopAim_BossTarget` at the top of its walk
+  states, `CoopAim_ForgetBoss` in `Corneria_CoGranga_DecideNextAction`) and walks at it, turns its guns to it and
+  stops on its somersault. The plasma's spread is on the human `Effect_EnemyLaser` aims at (`CoopAim_Nearest` from the
+  gun).
+- Meteo: the Crusher's rings home in on the nearest human, picked each frame from the ring, as #193's homing missiles.
+- Sector Y: in each Shogun's target choice the kept human takes player 0's place; it is picked again whenever the Shogun
+  starts a new move (`swork[20]` changes around the move table in `SectorY_SyShogun_Update`). The dash and the dodges
+  follow it. Its shot goes at a lead point by moving player 0 there for one `Effect_EnemyLaser` call; since #193 that
+  call aims at the nearest human, so `CoopAim_PointShot` moves every other human that may be aimed at to the same point
+  for the call and `CoopAim_PointShotEnd` puts them back (`aim.c`): the nearest is then player 0 by the tie rule, and
+  the shot flies at the point as upstream.
+- Zoness, Aquas: the Sarumarine's guns and head, the Bacoon's head and eyes, turn to the kept human, picked again at a
+  new `state` (compared around the state switch).
+- Solar (of the bosses not looked at before): the Vulkain's head, and the fireballs along it, turn to the kept human,
+  picked again at a new move.
+- Tests only: the boss trace (`SF64_COOP_BOSS_TRACE`) also writes the Crusher rings (`e<i>=`), the Sarumarine balls
+  (`o<i>=`) and where the Bacoon looks (`aq=`); `SF64_COOP_BOSS_POKE=<slot>:<from>:<to>:<timer>` puts a boss from one
+  state into another once per level (`src/port/coop/test/boss_trace.h`). `lockstep_test.py --only other_bosses` has the
+  runs `granga`, `shogun`, `crusher`, `sarumarine`, `bacoon`.
+
+Deterministic: every pick reads simulation state (positions, states) only; no random draw is added or moved, but a boss
+that goes after another player takes other branches of its own code, and with them its own draws, the same on every
+game. The kept slots are #213's, hashed in co-op. Co-op off: `CoopAim_BossTarget` and `CoopAim_Nearest` return 0,
+`CoopAim_PointShot` does nothing.
+
+Observed (run), `lockstep_test.py --only other_bosses`, two real games in lockstep over loopback, US 1.0, Linux, GCC,
+Debug, OpenGL on a software renderer, no window, `gInvincible` on both. Each run reads the host's boss trace; the
+traces and the hash logs of the two games are equal over the whole run. The base for `granga` and `shogun` is the build
+of `wave3-base` (`f869efa4`), which writes the boss trace of #213; for `crusher`, `sarumarine` and `bacoon` it is
+`f869efa4` with only the two test commits of this branch (the trace lines and the poke), as those runs read what only
+they add:
+
+- `granga` (Corneria, the debug jump to all-range, player 0 circling about 4500 from the middle, player 1 circling in
+  it): this branch `same hash on 5700 frames; 1274 walking frames, player 1 the nearer on 1019; it turns toward player 1
+  on 400, toward player 0 on 161; faces player 1 on 374, player 0 on 249; kept 0: 315, 1: 959`. The base: `the Granga
+  goes after player 0: 1272 walking frames, player 1 the nearer on 1052; it turns toward player 1 on 3, toward player 0
+  on 371; faces player 1 on 0, player 0 on 591; kept -1: 1272`.
+- `shogun` (Sector Y, the same script): this branch `same hash on 5700 frames; 11580 Shogun frames, player 1 kept on
+  3805; keeping player 1 it turns toward player 1 on 640, toward player 0 on 293; keeping player 0 toward player 0 on
+  376, toward player 1 on 164`. The base: `the Shoguns seldom keep player 1: 11580 Shogun frames, player 1 kept on 0`.
+  Counted without the kept slot, over all frames of the three Shoguns, a first run of each turned toward player 1 on
+  837 and toward player 0 on 676 (this branch), toward player 1 on 399 and player 0 on 874 (the base).
+- `crusher` (Meteo, the poke into the rings): this branch `same hash on 19000 frames; 800 rings, 400 came nearest
+  player 1, 400 player 0`; with the test commits alone `800 rings, 4 came nearest player 1, 796 player 0`.
+- `sarumarine` (Zoness): this branch `same hash on 19000 frames; 75 balls, 72 came nearest player 1, 3 player 0; boss
+  kept -1: 15, 1: 5935`; with the test commits alone `78 balls, 3 came nearest player 1, 75 player 0`.
+- `bacoon` (Aquas): this branch `same hash on 9000 frames; 952 frames it looks about, at player 1 on 862, at player 0
+  on 84`; with the test commits alone `at player 1 on 3, at player 0 on 945`.
+
+Exploration (one game, debug co-op with two players from a replay, no network): Meteo's Crusher comes about 14500
+frames after the start without the intro, Zoness' Sarumarine about 14000. With nobody shooting, the Crusher stays in
+state 3 (4000 frames of it in one run): its rings come only in states 9 and 10. In a first two-client Corneria run
+(both flying straight after the cut) player 1 passed the middle about 376 frames after the L press; the `granga` and
+`shogun` scripts turn it into a circle there.
+
+Derived:
+
+- A boss that moves or turns toward whom it keeps stays nearest to that player, so the kept target changes rarely: at
+  a new action, move or state, or when its player goes down or is parked.
+- The Granga turns at most 3 degrees a frame, so a player circling close by is seldom right in front of it; the way it
+  turns shows whom it goes after (the `granga` check counts turns, and frames facing within 20 degrees only as
+  context).
+- The Shoguns choose among their human and the three wingmen by distance, so with the kept human they still go after a
+  wingman often; the check counts how they turn while they keep player 1.
+- Since #193, an upstream "move player 0, fire, move it back" no longer aims the shot at the moved point by itself:
+  `Effect_EnemyLaser` picks the nearest human, which can be another player. The Shogun's shot now moves the others too
+  (`CoopAim_PointShot`). Sector Y's robots (`SectorY_SyRobot_Update`, `:3691-3699`) do the same with a spread and are
+  not a boss; they were left as they are.
+
+Left on player 0 (not changed here): the fights' starts on player 0's state (the cut to all-range), the HUD arrow flags,
+Corneria's 1-up under the Granga, the Sarumarine's taunt on player 0's hit, the Bacoon's boost lock and camera pull,
+every level complete and cutscene listed above, and the path.
+
+Unknown:
+
+- Hand play: how a boss that changes players at a new move reads to two humans. Nothing was played by hand; Windows, two
+  PCs and three or four players were not run.
+- Solar's Vulkain has no run: its head angles and fireballs are not in the trace; read code and build only.
+- The Granga's plasma spread and the Shogun's `CoopAim_PointShot` are read code; the runs count turns and kept slots,
+  not where each of these shots went.
+- Katina's Saucerer, Venom 1 and the Attack Carrier needed no change by reading; none of them was run for this.
+
 ### 2026-11-10, #213, the last bosses and the dogfighters go after the nearest human
 
 Read at `80ff9be6` (the combined test branch 2). Owner's report on #213: in Area 6 and Venom/Andross the bosses "just
