@@ -12,6 +12,10 @@
 //                                                                      1 to 4 for a hitbox's (Player_ApplyDamage)
 //   a<i>=<aiType>,<state>,<x>,<y>,<z>,<to x>,<to y>,<to z>,<kept>      every active all-range enemy aimed at Fox
 //                                                                      (aiIndex AI360_FOX), with the point it flies to
+//   e<i>=<id>,<x>,<y>,<z>                                              every active Meteo Crusher ring (OBJ_EFFECT_371)
+//   o<i>=<id>,<x>,<y>,<z>                                              every active Sarumarine ball (OBJ_ACTOR_ZO_BALL)
+//                                                                      (#220): the bosses' shots that go where they aim
+//   aq=<head yaw>,<head pitch>,<eye yaw>,<eye yaw>                     Aquas' Bacoon, where it looks (#220)
 //
 // kept and held are the slots of src/port/coop/game/aim.h, -1 for an empty one. The trace only reads; it does not ask
 // the aim code to pick, so it changes nothing.
