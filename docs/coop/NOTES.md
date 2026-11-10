@@ -4651,6 +4651,95 @@ player 0 loses 100.
 
 ## Determinism
 
+### 2026-11-10, #230, the voice sequence's clock: why one Macbeth replay steps the radio on two frames
+
+Identity: ROM US 1.0, the reference build of `f869efa4` (build `f869efa47d87`) and this change (`399a680b`). The
+two-client runs ran on build `399a680bc7f8`; the single games of this change on `f869efa47d87-dirty` and `start` on
+`bb4c8a7b9d49-dirty`, the same code with two comments worded otherwise. Linux, GCC, Debug, OpenGL on a software
+renderer, no window, one PC. Games at test speed unless a line says otherwise. The audio trace below is a local patch
+(one line per audio update: the voice sequence player and its channel 15), not kept.
+
+Observed:
+
+- The reference build, `hash_check.py views --pilot --level macbeth`: pilot 11524 frames, index 0 and 1 equal on all of
+  them, the pilot's own game and index 0 differ first at frame 1835, region `globals`, as in #181.
+- The first 2200 frames of that pilot's replay played alone, one game at a time, with `SF64_COOP_TRACE`: radio line
+  20272 leaves state 4 on level frame 1822 in 3 of 5 runs and on 1823 in 2 (6 to 7 on 1832 or 1833, 7 to 0 on 1836 or
+  1837); every other radio step of those frames is on one frame in all runs. With `SF64_COOP_TEST_AUDIO_SAMPLES=low`:
+  1822 in 2 of 5, 1823 in 3. With `high`: 2 and 3.
+- The audio trace, 6 runs (1823 in 5, 1822 in 1), one run of each kind side by side:
+  - The voice sequence player (`SEQ_PLAYER_VOICE`) starts at audio update 31 after boot, in the boot logo, and nothing
+    restarts it before the level: the audio spec is 14 (`AUDIOSPEC_MA`) from the logo on (`src/engine/fox_load.c:194`)
+    and Macbeth asks for the same, and `Audio_ProcessSeqCmd` resets the audio heap only when the spec changes
+    (`src/audio/audio_general.c:912`).
+  - The boot logo's wait (1000 ms of wall-clock time, #137) took 8132 audio updates in one run and 7630 in the other.
+    At level frame 0 the voice player stood at `tempoAcc` 990 against 7050 and `delay` 19656 against 20462: 806
+    sequence ticks for the 502 updates.
+  - The line itself: layer 0 of channel 15 ends on the same audio update in both (level frame 1821; its delay of 126
+    sequence ticks, set at frame 1782, ran out). The channel's script then clears its IO port 1, which
+    `Audio_GetCurrentVoice` reads (`src/audio/audio_general.c:1891-1905`), at its next sequence tick: on the same update
+    in one run, on the next one in the other, which falls in the next game frame. Radio state 4 goes to 6 when that port
+    says the line is over (`src/engine/fox_radio.c:628`).
+  - Per audio update the player adds 3 times its tempo of 5760 and takes a sequence tick for each 10770 (`gMaxTempo`,
+    `src/audio/audio_seqplayer.c:1274-1280`): 1.60 sequence ticks per update, two updates per game frame. IO ports 0, 2
+    and 3 of channel 15 stay -1 on all 12528 updates of a run: the voice script loads no sample slowly.
+  - Corneria (spec `AUDIOSPEC_CO`, so its level start resets the heap), 3 runs: the voice player restarts on level
+    frame 7, 30 updates after level frame 0, at `tempoAcc` 6510 and `delay` 32720 in all three.
+- A client flying Macbeth alone (test start) when the host, at its title, starts the session's Macbeth, two games over
+  loopback (a scenario tried for this, not kept): the host gets to `Play_Init` 5 frames after the level start (frames
+  2401 to 2406), the client 3 frames after (2025 to 2028). `Game_ChangeScene` holds 2 frames when the scene changes
+  (`src/engine/fox_game.c:139-160`), and the client was in Macbeth's scene already. On the reference build the session
+  ended at lockstep frame 1451, region `players`: `gPlayer[0].rot.x` 0 against 4.7e-27. On this change it ended at
+  lockstep frame 10, region `globals`: one game's voice player had started again and the other's not yet.
+- This change:
+  - Macbeth's first 2200 frames alone, 5 runs: hash logs equal on all 2200 frames, the voice clock included, and every
+    radio step on one frame.
+  - `views --pilot --level macbeth`, 5 runs: PASS each time; the pilot's game, index 0 and index 1 equal on all 11524
+    frames, level complete at replay frame 10165.
+  - `hash_check.py start --players 2`: the way in through the menus and the map, and the start in the level, equal on
+    2699 level frames with the voice clock.
+  - `hash_check.py probe`: with 2 players `voiceClock` changes `globals` only (13 of 13), with 1 it leaves the hash
+    alone (14 of 14). On the reference build: `no probe of voiceClock ran`, FAIL.
+  - `hash_check.py base` against `coop` (`0e5a5cf6`): co-op off equal on all 5800 frames.
+  - Two games over loopback, both from the title through the join driver: `lockstep_test.py --only audio` with the
+    Corneria feed of a `full` run of the reference build (one client at the high and one at the low sample count):
+    equal on 8900 frames, the radio changed state 213 times. `campaign.py --levels macbeth` (a pilot on each client):
+    equal on every frame to the end, 11315 frames, level complete at level frame 9956, the radio changed state 233
+    times. `--only reset` (a client that flew Corneria alone and went back to the title): equal on 900 frames.
+    `--only vehicles --levels macbeth`: equal on 6000 frames. All with the voice clock in the hash.
+
+Derived:
+
+- What moves the radio is where the voice sequence's tempo stands when a line ends, and that comes from what the
+  sound thread played since its last audio heap reset. Neither the test speed nor the sample count per update: forced
+  low and forced high both gave both frames, and the line's length counts in sequence ticks. A game that starts
+  straight in Macbeth keeps the phase of its boot, and the boot logo waits on wall-clock time, so one replay ends a line
+  on one frame or the next. The difference #181 saw is the test start, not two real clients.
+- Games that reach a level the same way (from the title or the lobby, from the map, from one level of a session to the
+  next) reset the heap on the way in and start the voice player on the same frame: Corneria 3 of 3, `start` 2699
+  frames, `views` 5 of 5, and the two clients above. On those ways two real clients do not part on the radio.
+- `CoopLevelStart_Enter` now resets the heap also when the level's spec is the one loaded (it asks as from the map,
+  `AUDIOSPEC_24`), so the voice player's history before a session level never counts. That fixes the test start. By
+  reading, not run: it also lines up two games that are both in the level when a session starts it (after a session
+  there ended, say), as both then take the same short way in.
+- One way in that real play can reach still leaves two games apart: one game in the level's scene when the session
+  starts that level, the other from elsewhere. The lobby works in any state past the logo
+  (`src/port/coop/ui/menu_game.c:27`). The way in is 2 frames shorter for the first, so the voice player starts 2
+  frames apart, and other state parts too (`rot.x` above). Not fixed here; a follow-up.
+- In co-op the hash now holds the voice clock in a level (`src/port/coop/sync/voice_clock.c`): a pair whose lines
+  would end apart differs from the frames after the voice player starts, not at a radio step that may come much later.
+
+Unknown:
+
+- Windows, a second PC, a real audio device, a hand-played session: not run. By reading, the clock counts ticks per
+  audio update and no sample count, and the high and low sample counts hashed alike.
+- Voice assets installed from a JP or EU ROM: a different line length would change when a line ends. `gVoiceLanguage`
+  is compared at the handshake (`src/port/coop/session/sim_cvars.c:44`); the installed voice assets: unknown.
+- `gAudioRandom` takes `osGetCount` (wall-clock time, `src/audio/audio_thread.c:87`) and changes sound effect pitch.
+  Nothing hashed followed it in these runs; not shown in general.
+- How it sounds: a level start into the spec that is loaded now fades the sound out and starts it again, as one from
+  the map does. The games ran silent; not listened to.
+
 ### 2026-11-10, #231, the explosion mark in a session: 80 frames of its own, and what else the view cull freed
 
 Identity: ROM US 1.0, on `f3eadf7a` (the combined test branch 4, build `f3eadf7a96fa`) and with this change (build
