@@ -9,6 +9,41 @@ Private notes (your paths, your PC, your logs) go in `local/`, not here.
 
 ## Build and run
 
+### 2026-11-10, #1 (WP-01), the build notes of all three OSes in one place
+
+Identity: ROM US 1.0, on `80ff9be6` (test branch `issue/combined-test-2`), Linux, GCC, Debug, OpenGL on a software
+renderer, no window. The Windows rows are not from this session: they come from the entries named.
+
+What changed: `docs/BUILDING.md` has a new first section, "Co-op fork notes", marked as the fork's addition (the rest
+of the page is upstream's text, unchanged): the one-command build, the minimum versions the build asks for, 14 gotchas
+with a source each, and the macOS state. `tools/coop/README.md` links to it.
+
+Observed (this session):
+
+- `build.py --jobs 2 --quiet` on a fresh worktree, submodule files copied in without `.git`, no ROM needed for it:
+  `build: OK (Linux, Debug, 4m42s)`, which includes `check.py`. With
+  the two generated archives copied in from an earlier build, `exit_test.py --only record --exe build-cmake/Starship`:
+  `3/3 runs OK`, 127 to 152 frames drawn each, exit code 0, `exit_test: PASS`. That shows the build starts and draws
+  with its game data; the title screen itself was not looked at again (the Linux entry of 2026-11-04 did).
+- A v64-order dump (first bytes `37 80 40 12`) swapped with the one-line Python in the notes gives the US 1.0 SHA-1
+  `d8b1088520f7c5f81433292a9258c1184afa1457` (`config.yml:34`).
+- `libultraship/CMakeLists.txt:1` asks CMake 3.24, the root file 3.16 (`CMakeLists.txt:1`), Torch 3.12; the standards are
+  C11 and C++20 (`CMakeLists.txt:31-32`). No CMake file checks a compiler version.
+- `.github/macports.yml` carries SDL2_net with a `COOP:` comment; the macOS line in `docs/BUILDING.md` does not name it.
+  The Debian/Ubuntu list of that page has no `libglew-dev`, `coop-build.yml` installs it.
+
+Derived:
+
+- The lowest working compiler versions are not known: only the CI images' own (`windows-2022`, `ubuntu-24.04`) have been
+  shown to work, so the notes call them unknown rather than naming a number.
+
+Unknown, and not run:
+
+- Windows (this session), Release on any OS (this session; earlier entries cover them), `--assets` (the generated
+  archives were copied from an earlier build here), a build without `libglew-dev`, macOS.
+- macOS: nobody on the project has a Mac. The notes pass on upstream's text, marked "not tried here". Issue #1 stays
+  open for that box.
+
 ### 2026-11-07, #116, how a crashed test game looks to the tools
 
 Identity: no game run; `tools/coop/crash_test.py` with a stand-in for the game, Windows 11, Python 3, on `issue/116`.

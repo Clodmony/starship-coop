@@ -3,6 +3,8 @@
 Python 3 scripts, so they work the same on Windows (PowerShell), Linux and macOS. Python is already needed to build
 Starship. Run them from the repository root.
 
+Building, versions and the gotchas of each OS: [docs/BUILDING.md](../../docs/BUILDING.md), "Co-op fork notes".
+
 ## Which steps for which change
 
 `test_all.py` runs everything once per batch of PRs before a merge (CONTRIBUTING.md, #195). On a branch, run the steps
