@@ -34,6 +34,16 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   laser_wing0 only Fox's wing is broken and player 1 collects a laser item: player 1's lasers go up, Fox's wings stay.
   repair    a wing repair item collected by player 1 repairs player 1's wings, not Fox's.
   crate     a supply crate bursts with Fox at twin lasers and player 1 at single: it drops lasers.
+  kill      the team scores (decision 0008 4b, #210): in Corneria's all-range section an enemy killed by player 1 adds
+            its hit to gHitCount and, with the drop counter at 14, drops lasers; one with DMG_SRC_2 and one shot down
+            by Falco add nothing, one by player 0 adds its hit (src/port/coop/test/score_probe.h).
+  lives     the sixth gold ring and a 1-up, collected by player 1, add a life to the pool gLifeCount[0] and not to
+            player 1's own slot (decision 0007 rule 2, #210).
+  wing      EVC_WING_BROKEN fires on player 1's broken wing (#210, the owner's "any active player" of #201): the
+            event actor of Corneria's script 39 turns into a wing repair item, and with every wing whole it does not.
+  saucerer  Katina's Saucerer takes damage from player 1's shot (decision 0008 1a, #210): put into its fight state as
+            Katina's own restart from the checkpoint does, a laser of player 1 in a hatch takes 10 off it, as one of
+            player 0 does in another.
   three     the same with three games, so that input goes through the host to the other client.
   control   the same run with SF64_COOP_TEST_NO_LOCKSTEP: it must differ, or this test says nothing.
   pause     Start on either client pauses both on the same frame, Start on either resumes.
@@ -765,6 +775,148 @@ def sc_crate(args, folder):
         expect(drops, f"game {n}: the crate dropped nothing")
         expect(drops[0]["lasers"] == "1", f"game {n}: the crate dropped item {drops[0]['id']}, not lasers")
     return f"same hash on {frames} frames; the crate dropped lasers on both games"
+
+# ---- #210: who scores, where a life goes, the wing-broken event, the Saucerer (src/port/coop/test/score_probe.h) ----
+SCORE_AT = 1900  # feed frame of the pokes on Corneria's rails (lives, wing), as LASER_AT
+SCORE_ALL_RANGE_AT = JOIN_FRAME + 650  # kill: after L at JOIN_FRAME + 100, as return_all_range; both fly by then
+SAUCERER_FROM = 600  # Katina: from here the poke waits for the first frame both players fly
+LEVEL_KATINA = 16  # include/sf64level.h
+EVID_ITEM_WING_REPAIR, EVID_FFF = 71, 4095  # include/sf64event.h; EVID_FFF is what ActorEvent_Load starts with
+DMG_SRC_2, FALCO_SHOT = 2, 102  # include/sf64player.h; NPC_SHOT_ID + AI360_FALCO + 1, as CoopPlayers_DmgSource gives it
+PLAYER_1_KILL, PLAYER_0_KILL = 11, 1  # COOP_DMG_SRC_PLAYER + 1 (src/port/coop/game/players.h); AI360_FOX + 1
+SCORE_LINE = re.compile(r"(\w+)=(\S+)")
+
+
+def steer(frame, player):
+    """sway with the fire button never down: only the probe's enemies die by a player's hand."""
+    _, x, y = sway(frame, player)
+    return 0, x, y
+
+
+def score_rows(path):
+    """The score probe's report as [(kind, {field: text})], or [] without one (a build without score_probe.c)."""
+    if not path.exists():
+        return []
+    rows = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        kind, _, rest = line.partition(" ")
+        rows.append((kind, dict(SCORE_LINE.findall(rest))))
+    return rows
+
+
+def run_score(args, folder, probe, frames, level=None, jump=None):
+    """Both games with SF64_COOP_SCORE_PROBE=probe, steered by `steer` (and L at `jump`). Returns (frames compared, the
+    report rows), after hashes and lockstep logs matched and both games reported alike."""
+    folder.mkdir(parents=True, exist_ok=True)
+    feed = folder / "feed.txt"
+    write_feed(feed, frames + 16, press(steer, {(jump, 0)}, BUTTON_L) if jump is not None else steer)
+    config = {"CVars": {"gDebugJumpToAllRange": 1}} if jump is not None else None
+    reports = {name: folder / f"{name}-score.txt" for name in ("host", "client")}
+    for path in reports.values():
+        if path.exists():
+            path.unlink()
+    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(frames), "SF64_COOP_SCORE_PROBE": probe}
+    host_env = {"SF64_COOP_SCORE_REPORT": str(reports["host"])}
+    if level is not None:
+        host_env["SF64_COOP_JOIN_LEVEL"] = str(level)
+    host, client = session(args, folder, host_env, {"SF64_COOP_SCORE_REPORT": str(reports["client"])}, env,
+                           config=config)
+    try:
+        wait_for([host, client], "done", 900)
+    finally:
+        host.close()
+        client.close()
+    compared = compare(host, client, frames)
+    rows = [score_rows(reports[name]) for name in ("host", "client")]
+    expect(rows[0], "no score probe report (a build without src/port/coop/test/score_probe.c)")
+    expect(rows[0] == rows[1], f"the two games saw different things: host {rows[0]}, client {rows[1]}")
+    for kind, row in rows[0]:
+        expect(kind != "error", f"the probe said: error {row}")
+    return compared, rows[0]
+
+
+def fly_rows(rows):
+    """Every `players` line of a report says player 0 and player 1 fly at the poke (ACTIVE 3 or U_TURN 5, unparked)."""
+    for kind, row in rows:
+        if kind == "players":
+            expect(all(state in ("3", "5") for state in row["states"].split(",")) and row["parked"] == "0,0",
+                   f"a poke with the players not both flying: {row}")
+
+
+def sc_kill(args, folder):
+    """#210, decision 0008 4b: a kill by any human scores as one by player 0 does, DMG_SRC_2 and computer wingmen
+    score nothing, and the hit-count drop (14: lasers) follows a kill of player 1 in all-range."""
+    frames, rows = run_score(args, folder, f"kill:{SCORE_ALL_RANGE_AT}:1", SCORE_ALL_RANGE_AT + 200,
+                             jump=JOIN_FRAME + 100)
+    fly_rows(rows)
+    kills = {int(row["source"]): row for kind, row in rows if kind == "kill"}
+    expect(set(kills) == {PLAYER_1_KILL, DMG_SRC_2, FALCO_SHOT, PLAYER_0_KILL}, f"kills seen: {sorted(kills)}")
+    texts = []
+    for source, gained, dropped in ((PLAYER_1_KILL, 1, 1), (DMG_SRC_2, 0, 0), (FALCO_SHOT, 0, 0),
+                                    (PLAYER_0_KILL, 1, 0)):
+        row = kills[source]
+        hits = [int(v) for v in row["hits"].split(",")]
+        drop = [int(v) for v in row["drop"].split(",")]
+        lasers = [int(v) for v in row["lasers"].split(",")]
+        expect(row["gone"] == "1", f"the enemy of source {source} did not die: {row}")
+        expect(hits[1] - hits[0] == gained,
+               f"a kill of source {source}: gHitCount {hits[0]} -> {hits[1]}, want +{gained}")
+        if source == PLAYER_1_KILL:
+            expect(drop == [14, 0] and lasers[1] - lasers[0] == 1,
+                   f"player 1's kill at drop counter 14: counter {drop[0]} -> {drop[1]}, laser items {lasers[0]} -> "
+                   f"{lasers[1]}; want 14 -> 0 and one more")
+        texts.append(f"source {source} +{hits[1] - hits[0]}")
+    return (f"same hash on {frames} frames; on both games {', '.join(texts)} (player 1, DMG_SRC_2, Falco, player 0); "
+            "player 1's kill dropped lasers at the counter's 14")
+
+
+def sc_lives(args, folder):
+    """#210, decision 0007 rule 2: the sixth gold ring and a 1-up taken by player 1 go to the pool, not slot 1."""
+    frames, rows = run_score(args, folder, f"lives:{SCORE_AT}:1", SCORE_AT + 200)
+    fly_rows(rows)
+    lives = [row for kind, row in rows if kind == "lives"]
+    expect(lives, "no `lives` line")
+    first, last = lives[0], lives[-1]
+    expect(first["rings"] == "5", f"the ring count was not set: {first}")
+    expect(last["rings"] == "6", f"player 1 did not take the sixth ring: {last}")
+    pool, slot = (int(first["pool"]), int(last["pool"])), (int(first["slot"]), int(last["slot"]))
+    expect(pool[1] == pool[0] + 2 and slot[1] == slot[0],
+           f"pool {pool[0]} -> {pool[1]}, player 1's slot {slot[0]} -> {slot[1]}; want the pool +2 (ring and 1-up), "
+           "the slot unchanged")
+    return (f"same hash on {frames} frames; on both games the sixth ring and a 1-up of player 1: pool {pool[0]} -> "
+            f"{pool[1]}, player 1's slot stays {slot[1]}")
+
+
+def sc_wing(args, folder):
+    """#210: EVC_WING_BROKEN fires when player 1's wing is broken and player 0's is whole, and not with every wing
+    whole: CO S39 turns into a wing repair item, or despawns."""
+    frames, rows = run_score(args, folder, f"wing:{SCORE_AT}:1", SCORE_AT + 200)
+    fly_rows(rows)
+    events = {}
+    for kind, row in rows:
+        if kind == "event":
+            events.setdefault(row["n"], []).append(int(row["type"]))
+    expect(set(events) == {"1", "2"}, f"events seen: {events}")
+    expect(EVID_ITEM_WING_REPAIR in events["1"],
+           f"player 1's broken wing did not fire EVC_WING_BROKEN: event 1 went through {events['1']}")
+    expect(events["2"] == [EVID_FFF] * len(events["2"]), f"with every wing whole the event fired: {events['2']}")
+    return (f"same hash on {frames} frames; on both games player 1's broken wing made CO S39 a wing repair "
+            f"(type {EVID_ITEM_WING_REPAIR}), with every wing whole it stayed {EVID_FFF} and despawned")
+
+
+def sc_saucerer(args, folder):
+    """#210, decision 0008 1a: Katina's Saucerer takes damage from player 1's shot, as from player 0's."""
+    frames, rows = run_score(args, folder, f"saucerer:{SAUCERER_FROM}:1", SAUCERER_FROM + 2400, level=LEVEL_KATINA)
+    fly_rows(rows)
+    shots = [row for kind, row in rows if kind == "shot"]
+    hatches = [[int(v) for v in row["hp"].split(",")] for kind, row in rows if kind == "hatch"]
+    expect(len(shots) == 2, f"shots placed: {shots}")
+    expect(hatches, "no `hatch` line: the Saucerer was not put into its fight")
+    expect(hatches[-1][1] == 90, f"player 0's shot did not hit the second hatch: {hatches}")
+    expect(hatches[-1][0] == 90, f"player 1's shot did not hurt the Saucerer: hatches {hatches[0]} -> {hatches[-1]}")
+    return (f"same hash on {frames} frames; on both games player 1's laser took the first hatch {hatches[0][0]} -> "
+            f"{hatches[-1][0]}, player 0's the second {hatches[0][1]} -> {hatches[-1][1]}, from frame "
+            f"{shots[0]['frame']} (the fight poked in)")
 
 # Name, LevelId (include/sf64level.h), and whether co-op has opened it: there player 1 drives too, elsewhere it stays
 # parked (CoopPlayers_SectionSupported, src/port/coop/game/players.c).
@@ -1964,6 +2116,10 @@ SCENARIOS = {
     "laser_wing0": sc_laser_wing0,
     "repair": sc_repair,
     "crate": sc_crate,
+    "kill": sc_kill,
+    "lives": sc_lives,
+    "wing": sc_wing,
+    "saucerer": sc_saucerer,
     "three": sc_three,
     "control": sc_control,
     "pause": sc_pause,
