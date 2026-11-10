@@ -1962,6 +1962,24 @@ Unknown:
   not merged. `CoopTeam_HoldBody` sets `STATE360_3` when its human flies again; not run.
 - Whether other player 0 states during play (for example the all-range loop or a warp) need the same treatment.
 
+### 2026-11-10, #15 (WP-17), decision 0012 B4: Katt and Bill fly a scene when no computer wingman is free
+
+Identity: ROM US 1.0, branch `issue/15-guests` on `487f2e37`, Windows 11, MSVC v143, Debug,
+`lockstep_test.py --exe <build> --only guests,scenes`.
+
+Observed in the code: `gTeamShields` and `gTeamDamage` have six slots (`include/sf64context.h:23,26`), so Katt (4)
+and Bill (5) fit; `gTeamEventActorIndex` has four (`include/variables.h:80`), so `EVOP_SET_TARGET` on a guest needs
+another way to its actor. An event actor with `iwork[12] >= TEAM_ID_KATT` takes no damage
+(`src/engine/fox_enmy2.c`, the `dmgType` check). `EVID_KATT` and `EVID_BILL` have their own ship and play their
+fanfare at init (`fox_enmy2.c`, `EVOP_INIT_ACTOR`); a guest in a borrowed scene skips the fanfare.
+
+Observed in the run (client as Falco, Slippy and Peppy set to -1 at 100 frames, `SF64_COOP_TEAM_POKE` with two
+pairs): Falco's scenes go to Katt, her ship from frame 3350 on 88 trace lines, Falco's rescue to Katt at 4985, no
+Falco shown, hashes equal on 5600 frames. `scenes` still passes.
+
+Unknown: Bill (needs Katt busy at the same time; not run); Katt's and Bill's lines (few fit, most taken-wingman
+lines drop for a guest); how a guest looks flying an Arwing's script path; four real players.
+
 ### 2026-11-10, #15 (WP-17), decision 0013 by kind: a borrowed scene's lines in all ten levels
 
 Identity: ROM US 1.0, branch `issue/15-rescue-lines`, Windows 11, MSVC v143, Debug, `lockstep_test.py --only scenes`.

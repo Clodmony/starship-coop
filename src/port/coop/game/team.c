@@ -227,7 +227,7 @@ static const u16 sLineSets[][3] = {
     { 20319, 20320, 20321 }, { 20306, 20305, 20304 }, { 20220, 20222, 20221 },
 };
 
-static const s32 sSpeaker[] = { 0, RCID_FALCO, RCID_SLIPPY, RCID_PEPPY };
+static const s32 sSpeaker[] = { 0, RCID_FALCO, RCID_SLIPPY, RCID_PEPPY, RCID_KATT, RCID_BILL };
 
 #define COOP_TEAM_SCENES_MAX 16 // the most scenes one level has is 15 (Sector Y, Venom 1)
 
@@ -291,6 +291,24 @@ static s32 CoopTeam_IsFree(s32 id) {
 
 // Who flies a scene of a human-flown `team`: the next free computer wingman after it, Falco, Slippy, Peppy, round, else
 // the stand-in (0006 C1) under its own id.
+// The live event actor flying as `id` (Katt or Bill have no gTeamEventActorIndex slot), or -1.
+static s32 CoopTeam_EventActorOf(s32 id) {
+    s32 i;
+
+    for (i = 0; i < ARRAY_COUNT(gActors); i++) {
+        if ((gActors[i].obj.status == OBJ_ACTIVE) && (gActors[i].obj.id == OBJ_ACTOR_EVENT) &&
+            (gActors[i].iwork[12] == id)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// Decision 0012 B4: a guest is free when no live event actor carries its id.
+static s32 CoopTeam_GuestFree(s32 id) {
+    return CoopTeam_EventActorOf(id) < 0;
+}
+
 static s32 CoopTeam_Choose(s32 team) {
     s32 step;
     s32 id;
@@ -300,6 +318,13 @@ static s32 CoopTeam_Choose(s32 team) {
         if (CoopTeam_IsFree(id)) {
             return id;
         }
+    }
+    // No computer wingman is free (four players, or the others down): a guest, Katt, else Bill, else the stand-in.
+    if (CoopTeam_GuestFree(TEAM_ID_KATT)) {
+        return TEAM_ID_KATT;
+    }
+    if (CoopTeam_GuestFree(TEAM_ID_BILL)) {
+        return TEAM_ID_BILL;
     }
     return team;
 }
@@ -331,6 +356,47 @@ int32_t CoopTeam_SceneTeam(Actor* actor, int32_t teamId) {
         return teamId;
     }
     return sub;
+}
+
+int32_t CoopTeam_SceneActive(Actor* actor, int32_t teamId) {
+    s32 id = CoopTeam_SceneTeam(actor, teamId);
+
+    if (id >= TEAM_ID_KATT) {
+        return 1; // 0012 rule 3: a guest's gate counts as true while it flies
+    }
+    return gTeamShields[id] > 0;
+}
+
+int32_t CoopTeam_SceneTarget(Actor* actor, int32_t teamId) {
+    s32 id = CoopTeam_SceneTeam(actor, teamId);
+
+    if (id >= TEAM_ID_KATT) {
+        s32 index = CoopTeam_EventActorOf(id);
+
+        return (index >= 0) ? index : actor->index;
+    }
+    return gTeamEventActorIndex[id];
+}
+
+int32_t CoopTeam_SceneEventType(Actor* actor, int32_t eventType) {
+    const CoopScene* scene = NULL;
+    s32 sub;
+
+    if (eventType != EVID_TEAMMATE) {
+        return eventType;
+    }
+    sub = CoopTeam_SceneSubstitute(actor, &scene);
+    if ((sub == 0) || (actor->aiType != scene->scripts[0])) {
+        return eventType; // only the scene's own wingman script flies the guest's ship
+    }
+    return (sub == TEAM_ID_KATT) ? EVID_KATT : (sub == TEAM_ID_BILL) ? EVID_BILL : eventType;
+}
+
+int32_t CoopTeam_SceneGuest(Actor* actor) {
+    const CoopScene* scene = NULL;
+    s32 sub = CoopTeam_SceneSubstitute(actor, &scene);
+
+    return sub >= TEAM_ID_KATT;
 }
 
 // ---- 0006 rule 3: the all-range body and the boss fights ---------------------------------------------------------
@@ -533,23 +599,23 @@ typedef enum {
     COOP_LINE_KINDS,
 } CoopLineKind;
 
-static const u16 sKindLines[COOP_LINE_KINDS][3] = {
-    // Falco, Slippy, Peppy
-    { 2166, 2062, 7066 },   // HELP
-    { 2167, 20013, 7066 },  // TROUBLE
-    { 9151, 9152, 9153 },   // HIT
-    { 2337, 2336, 5230 },   // THANKS
-    { 9430, 20015, 20016 }, // RELIEF
-    { 9190, 3110, 9210 },   // ATTACK
-    { 9220, 9230, 9240 },   // KILL
-    { 2095, 20150, 20070 }, // BACK_OFF
-    { 2181, 6028, 5460 },   // LEAD
-    { 2188, 14190, 0 },     // FOUND
-    { 18035, 20272, 4075 }, // INCOMING
-    { 6050, 11240, 5420 },  // PERSIST
-    { 11060, 3005, 8130 },  // ALERT
-    { 8060, 21081, 8070 },  // SIDE
-    { 20262, 19410, 17160 }, // PRAISE
+static const u16 sKindLines[COOP_LINE_KINDS][5] = {
+    // Falco, Slippy, Peppy, and the guests Katt and Bill (0012 B4), who recorded few lines that fit
+    { 2166, 2062, 7066, 0, 0 }, // HELP
+    { 2167, 20013, 7066, 0, 0 }, // TROUBLE
+    { 9151, 9152, 9153, 0, 0 }, // HIT
+    { 2337, 2336, 5230, 0, 0 }, // THANKS
+    { 9430, 20015, 20016, 0, 0 }, // RELIEF
+    { 9190, 3110, 9210, 16135, 0 }, // ATTACK
+    { 9220, 9230, 9240, 0, 0 }, // KILL
+    { 2095, 20150, 20070, 0, 0 }, // BACK_OFF
+    { 2181, 6028, 5460, 16135, 0 }, // LEAD
+    { 2188, 14190, 0, 0, 0 }, // FOUND
+    { 18035, 20272, 4075, 0, 0 }, // INCOMING
+    { 6050, 11240, 5420, 0, 0 }, // PERSIST
+    { 11060, 3005, 8130, 0, 0 }, // ALERT
+    { 8060, 21081, 8070, 0, 0 }, // SIDE
+    { 20262, 19410, 17160, 0, 18100 }, // PRAISE
 };
 
 typedef struct {
@@ -618,7 +684,7 @@ int32_t CoopTeam_SceneMessage(Actor* actor, int32_t* msgId, int32_t* speaker) {
         }
         return 1;
     }
-    for (i = 0; i < ARRAY_COUNT(sLineSets); i++) {
+    for (i = 0; (sub <= TEAM_ID_PEPPY) && (i < ARRAY_COUNT(sLineSets)); i++) {
         if (sLineSets[i][scene->team - TEAM_ID_FALCO] == *msgId) {
             *msgId = sLineSets[i][sub - TEAM_ID_FALCO];
             *speaker = sSpeaker[sub];

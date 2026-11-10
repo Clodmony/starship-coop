@@ -262,16 +262,16 @@ Basis per site: read 345, site 893, name 497.
 | `CoMoleMissile_Update` | 437:P0 | sim | site | distance to player 0 |
 | `ActorDebris_Update` | 557:P0, 558:P0 | sim | site | debris placed relative to player 0 |
 | `func_enmy2_8006D0F4` | 889:P0 | sim | site | scenery search ahead of player 0 |
-| `ActorEvent_ProcessScript` | 1196:P0, 1256:P0, 1346:P0, 1355:P0 | sim | site | event scripts check player 0 state and position; radio only when player 0 active |
-| `ActorEvent_ProcessScript` | 1403:SH | ok | site | script damage writes DMG_SRC_100 |
-| `<file scope>` | 1733:SH, 1745:SH | ok | site | NPC shot setup: writes NPC ids |
-| `ActorEvent_ProcessActions` | 1859:P0, 1873:P0, 1924:P0, 1932:P0, 1939:P0, 1940:P0, 1941:P0, 1942:P0, 1945:P0, 1946:P0, 2005:P0 | sim | read | event actors aim at player 0 (temporarily jitters player 0 position to aim off) |
-| `ActorEvent_800701E0` | 2282:SH | flow | site | on-rails wingman line only for player 0's hit; WP-17 (#15) |
-| `ActorEvent_ProcessTriggers` | 2392:P0, 2452:P0, 2458:P0, 2464:P0, 2470:P0, 2476:P0, 2482:P0, 2488:P0, 2494:P0, 2500:P0, 2506:P0, 2512:P0, 2518:P0, 2524:P0, 2530:P0, 2536:P0, 2542:P0, 2548:P0, 2554:P0, 2560:P0, 2566:P0, 2572:P0, 2578:P0, 2584:P0, 2590:P0, 2596:P0, 2602:P0 | sim | read | event conditions read player 0 position, shields and speed; the laser levels read every active player since #201, the broken wing since #210 |
-| `ActorEvent_ProcessTriggers` | 2720:MC | input | site | C-right condition read from gMainController |
-| `ActorEvent_800720E8` | 2946:SH, 2947:SH | ok | site | tests NPC ids only (Bill) |
-| `ActorEvent_80072474` | 3038:P0 | sim | site | angle to player 0 |
-| `ActorEvent_Update` | 3070:P0, 3091:P0, 3154:P0, 3155:P0, 3156:P0, 3158:P0, 3159:P0, 3160:P0, 3218:P0, 3219:P0, 3220:P0, 3222:P0, 3223:P0, 3224:P0, 3487:P0 | sim | site | event actors aim at player 0 and set player 0 damage type; killed on player 0 level complete |
+| `ActorEvent_ProcessScript` | 1197:P0, 1257:P0, 1347:P0, 1356:P0 | sim | site | event scripts check player 0 state and position; radio only when player 0 active |
+| `ActorEvent_ProcessScript` | 1404:SH | ok | site | script damage writes DMG_SRC_100 |
+| `<file scope>` | 1734:SH, 1746:SH | ok | site | NPC shot setup: writes NPC ids |
+| `ActorEvent_ProcessActions` | 1860:P0, 1874:P0, 1925:P0, 1933:P0, 1940:P0, 1941:P0, 1942:P0, 1943:P0, 1946:P0, 1947:P0, 2006:P0 | sim | read | event actors aim at player 0 (temporarily jitters player 0 position to aim off) |
+| `ActorEvent_800701E0` | 2283:SH | flow | site | on-rails wingman line only for player 0's hit; WP-17 (#15) |
+| `ActorEvent_ProcessTriggers` | 2393:P0, 2453:P0, 2459:P0, 2465:P0, 2471:P0, 2477:P0, 2483:P0, 2489:P0, 2495:P0, 2501:P0, 2507:P0, 2513:P0, 2519:P0, 2525:P0, 2531:P0, 2537:P0, 2543:P0, 2549:P0, 2555:P0, 2561:P0, 2567:P0, 2573:P0, 2579:P0, 2585:P0, 2591:P0, 2597:P0, 2603:P0 | sim | read | event conditions read player 0 position, shields and speed; the laser levels read every active player since #201, the broken wing since #210 |
+| `ActorEvent_ProcessTriggers` | 2721:MC | input | site | C-right condition read from gMainController |
+| `ActorEvent_800720E8` | 2947:SH, 2948:SH | ok | site | tests NPC ids only (Bill) |
+| `ActorEvent_80072474` | 3039:P0 | sim | site | angle to player 0 |
+| `ActorEvent_Update` | 3071:P0, 3092:P0, 3155:P0, 3156:P0, 3157:P0, 3159:P0, 3160:P0, 3161:P0, 3219:P0, 3220:P0, 3221:P0, 3223:P0, 3224:P0, 3225:P0, 3488:P0 | sim | site | event actors aim at player 0 and set player 0 damage type; killed on player 0 level complete |
 
 ### `src/engine/fox_game.c`
 

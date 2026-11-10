@@ -17,12 +17,14 @@
 //     body=<CoopTeam_Body of the all-range body of Falco, Slippy, Peppy: 0 none, 1 on its human, 2 away, 3 elsewhere>
 //     shown=<CoopTeam_DisplayShields of Falco, Slippy, Peppy: what their bars draw in the status rows and the radio>
 //     radio=<gRadioMsgId of the last radio line>,<gRadioMsgRadioId, its speaker>
+//     guests=<event actors flying as Katt, as Bill, in their own ships>
 //
 //     (all on one line). path shows in every line but does not cause one. gGameFrameCount restarts with each level and
 //     screen, so it would not say where in a replay a line belongs.
 //
 //   SF64_COOP_TEAM_POKE=<level>,<frames>,<id>,<value>   writes value to gTeamShields[id] once, after player 0 has been
-//     active for that many frames of that level, and logs a "# poke" line. Stands in for the hits a wingman takes.
+//     active for that many frames of that level, and logs a "# poke" line. An optional second <id>,<value> pair is
+//     written on the same frame. Stands in for the hits a wingman takes.
 //     tools/coop/wingman_check.py uses both.
 //
 //   SF64_COOP_TEAM_DOWN=<level>,<frames>,<player>   sets co-op player <player>'s (1..3) shields to 0 and starts its hit

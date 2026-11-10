@@ -65,6 +65,7 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   menu      the whole way through the real menu, with real widgets.
   full      all of Corneria: pilots fly it live, one on each client, then plain runs repeat what they flew. Takes a while.
   player_hits Corneria with pilots (#252): each human's own hits count, add up to at most the team's, same on both.
+  guests    Corneria, client as Falco, Slippy and Peppy down (#15, 0012 B4): Katt flies Falco's scenes.
   scenes    Corneria to Granga with the client as Falco (#15): no scene shows a second Falco, his rescue goes to Slippy,
             gTeamShields[Falco] holds the client's shields while it flies, and no computer Falco joins the boss fight.
   allrange  Katina with the client as Falco (#15): Falco's all-range slot is a body on the client's ship, and no
@@ -1682,8 +1683,9 @@ def team_lines(game, level=0):
         # ai and body came with the all-range part of #15; before it, a wingman read as nobody flying.
         # shown came with the wingman bar of a human with the shield upgrade; before it, the bar drew the held value.
         # radio came with the rescue lines of decision 0013; before it, no line was logged.
+        # guests came with Katt and Bill flying a taken wingman's scene (0012 B4); before it, nobody.
         row = {"p1": "-1", "scenes": ",".join(["0"] * 16), "ai": "0,0,0", "body": "0,0,0", "shown": "0,0,0",
-               "radio": "0,0",
+               "radio": "0,0", "guests": "0,0",
                **dict(field.split("=", 1) for field in line.split())}
         if row["level"] == str(level) and row["gs"] == "7":  # GSTATE_PLAY
             rows.append({k: [int(v) for v in value.split(",")] if "," in value else value for k, value in row.items()})
@@ -1753,6 +1755,35 @@ CO_RESCUE_FALCO_LINES = {2166, 2167, 2337}
 CO_RESCUE_SLIPPY_CALLS = {2062, 2061}
 CO_RESCUE_SLIPPY_THANKS = 2336
 CO_FOX_ASKS_FALCO = 2185  # CO S14:19; with Slippy in Falco's lead, Peppy's 20267 plays instead
+
+
+GUESTS_FRAMES = 5600  # Corneria past the choice of Falco's rescue (near frame 5000)
+TEAM_PEPPY = 3
+TEAM_KATT = 4
+
+
+def sc_guests(args, folder):
+    """#15, decision 0012 B4: the client flies Falco, and Slippy and Peppy are down early (SF64_COOP_TEAM_POKE), so no
+    computer wingman is free. Falco's scenes go to Katt, who flies them in her own ship, and no Falco shows."""
+    frames = GUESTS_FRAMES
+    poke = f"0,100,{TEAM_SLIPPY},-1,{TEAM_PEPPY},-1"  # Corneria, Slippy and Peppy down
+    host, client = fly_for(args, folder, frames, {"SF64_COOP_TEAM_TRACE": "team.txt", "SF64_COOP_TEAM_POKE": poke})
+    equal = compare(host, client, frames)
+    found = []
+    for game in (host, client):
+        lines = team_lines(game)
+        expect(lines, f"{game.name}: no Corneria lines in the team trace")
+        falco = [l for l in lines if l["ships"][0] > 0]
+        expect(not falco, f"{game.name}: a scene shows Falco, first at frame {falco[0]['frame'] if falco else 0}")
+        rescue = [l for l in lines if l["scenes"][CO_RESCUE_SCENE] != 0]
+        expect(rescue, f"{game.name}: Falco's rescue (S59) never chose a flyer")
+        expect(rescue[0]["scenes"][CO_RESCUE_SCENE] == TEAM_KATT,
+               f"{game.name}: Falco's rescue went to team {rescue[0]['scenes'][CO_RESCUE_SCENE]}, not Katt")
+        katt = [l for l in lines if l["guests"][0] > 0]
+        expect(katt, f"{game.name}: Katt never flew in her own ship")
+        found.append(f"{game.name}: Falco's rescue to Katt from frame {rescue[0]['frame']}, Katt's ship on "
+                     f"{len(katt)} lines from frame {katt[0]['frame']}, no Falco")
+    return f"{frames} frames of Corneria, {equal} frames equal; " + "; ".join(found)
 
 
 def sc_scenes(args, folder):
@@ -2631,6 +2662,7 @@ SCENARIOS = {
     "full": sc_full,
     "scenes": sc_scenes,
     "player_hits": sc_player_hits,
+    "guests": sc_guests,
     "allrange": sc_allrange,
     "allrange_down": sc_allrange_down,
     "allrange_others": sc_allrange_others,

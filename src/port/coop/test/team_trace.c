@@ -30,6 +30,7 @@ typedef struct {
     s32 body[3];     // per team: 0 no body, 1 a body on its human, 2 a body away, 3 a body elsewhere (#15)
     s32 shown[3];    // CoopTeam_DisplayShields: what the wingmen's bars draw in the status rows and the radio
     s32 radio[2];    // the last radio line: gRadioMsgId and gRadioMsgRadioId (#15, decision 0013)
+    s32 guests[2];   // event actors flying as Katt and Bill in their own ships (#15, decision 0012 B4)
 } TeamTraceLine;
 
 static FILE* sTraceFile = NULL;
@@ -43,6 +44,8 @@ static s32 sPokeLevel;
 static s32 sPokeFrames;
 static s32 sPokeId;
 static s32 sPokeValue;
+static s32 sPokeId2 = 0; // an optional second id and value in the same poke, 0 for none (#15, the guests)
+static s32 sPokeValue2;
 static s32 sPokeActiveFrames = 0;
 
 static bool sDownWaiting = false; // SF64_COOP_TEAM_DOWN, team_trace.h
@@ -99,6 +102,11 @@ static void CoopTeamTrace_Read(TeamTraceLine* line) {
             (actor->iwork[12] >= TEAM_ID_FALCO) && (actor->iwork[12] <= TEAM_ID_PEPPY)) {
             line->ships[actor->iwork[12] - TEAM_ID_FALCO]++;
         }
+        if ((actor->obj.status == OBJ_ACTIVE) && (actor->obj.id == OBJ_ACTOR_EVENT) &&
+            (((actor->iwork[12] == TEAM_ID_KATT) && (actor->eventType == EVID_KATT)) ||
+             ((actor->iwork[12] == TEAM_ID_BILL) && (actor->eventType == EVID_BILL)))) {
+            line->guests[actor->iwork[12] - TEAM_ID_KATT]++;
+        }
         if ((actor->obj.status == OBJ_ACTIVE) &&
             ((actor->obj.id == OBJ_ACTOR_ALLRANGE) || (actor->obj.id == OBJ_ACTOR_TEAM_BOSS)) &&
             (actor->aiType >= AI360_FALCO) && (actor->aiType <= AI360_PEPPY)) {
@@ -126,8 +134,9 @@ static void CoopTeamTrace_Write(const TeamTraceLine* l) {
     for (i = 0; i < ARRAY_COUNT(l->scenes); i++) {
         fprintf(sTraceFile, "%s%d", (i > 0) ? "," : "", l->scenes[i]);
     }
-    fprintf(sTraceFile, " ai=%d,%d,%d body=%d,%d,%d shown=%d,%d,%d radio=%d,%d\n", l->ai[0], l->ai[1], l->ai[2],
-            l->body[0], l->body[1], l->body[2], l->shown[0], l->shown[1], l->shown[2], l->radio[0], l->radio[1]);
+    fprintf(sTraceFile, " ai=%d,%d,%d body=%d,%d,%d shown=%d,%d,%d radio=%d,%d guests=%d,%d\n", l->ai[0], l->ai[1],
+            l->ai[2], l->body[0], l->body[1], l->body[2], l->shown[0], l->shown[1], l->shown[2], l->radio[0],
+            l->radio[1], l->guests[0], l->guests[1]);
     fflush(sTraceFile); // tests stop the game from outside, and there are few lines
 }
 
@@ -140,6 +149,9 @@ static void CoopTeamTrace_UpdatePoke(void) {
         return;
     }
     gTeamShields[sPokeId] = sPokeValue;
+    if (sPokeId2 != 0) {
+        gTeamShields[sPokeId2] = sPokeValue2;
+    }
     sPokeWaiting = false;
     if (sTraceFile != NULL) {
         fprintf(sTraceFile, "# poke frame=%u id=%d value=%d\n", sFrame, sPokeId, sPokeValue);
@@ -216,8 +228,10 @@ void CoopTeamTrace_Init(void) {
     const char* down = getenv("SF64_COOP_TEAM_DOWN");
     const char* rings = getenv("SF64_COOP_TEAM_RINGS");
 
-    if ((poke != NULL) && (sscanf(poke, "%d,%d,%d,%d", &sPokeLevel, &sPokeFrames, &sPokeId, &sPokeValue) == 4) &&
-        (sPokeId >= TEAM_ID_FALCO) && (sPokeId <= TEAM_ID_PEPPY)) {
+    if ((poke != NULL) &&
+        (sscanf(poke, "%d,%d,%d,%d,%d,%d", &sPokeLevel, &sPokeFrames, &sPokeId, &sPokeValue, &sPokeId2, &sPokeValue2) >=
+         4) &&
+        (sPokeId >= TEAM_ID_FALCO) && (sPokeId <= TEAM_ID_PEPPY) && (sPokeId2 >= 0) && (sPokeId2 <= TEAM_ID_PEPPY)) {
         sPokeWaiting = true;
     }
     if ((path != NULL) && (path[0] != '\0')) {
