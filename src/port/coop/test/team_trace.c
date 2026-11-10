@@ -28,6 +28,7 @@ typedef struct {
     u8 scenes[16];   // CoopTeam_Choices: who flies each scene of a human-flown wingman (#15)
     s32 ai[3];       // all-range and boss-fight wingmen flying on their own AI, per team (#15)
     s32 body[3];     // per team: 0 no body, 1 a body on its human, 2 a body away, 3 a body elsewhere (#15)
+    s32 radio[2];    // the last radio line: gRadioMsgId and gRadioMsgRadioId (#15, decision 0013)
 } TeamTraceLine;
 
 static FILE* sTraceFile = NULL;
@@ -71,6 +72,8 @@ static void CoopTeamTrace_Read(TeamTraceLine* line) {
 
         memcpy(line->scenes, choices, MIN(count, (s32) sizeof(line->scenes)));
     }
+    line->radio[0] = gRadioMsgId;
+    line->radio[1] = (s32) gRadioMsgRadioId;
     line->p1 = -1;
     if (gGameState != GSTATE_PLAY) {
         return;
@@ -112,8 +115,8 @@ static void CoopTeamTrace_Write(const TeamTraceLine* l) {
     for (i = 0; i < ARRAY_COUNT(l->scenes); i++) {
         fprintf(sTraceFile, "%s%d", (i > 0) ? "," : "", l->scenes[i]);
     }
-    fprintf(sTraceFile, " ai=%d,%d,%d body=%d,%d,%d\n", l->ai[0], l->ai[1], l->ai[2], l->body[0], l->body[1],
-            l->body[2]);
+    fprintf(sTraceFile, " ai=%d,%d,%d body=%d,%d,%d radio=%d,%d\n", l->ai[0], l->ai[1], l->ai[2], l->body[0],
+            l->body[1], l->body[2], l->radio[0], l->radio[1]);
     fflush(sTraceFile); // tests stop the game from outside, and there are few lines
 }
 
