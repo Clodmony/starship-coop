@@ -906,7 +906,7 @@ def sc_wing(args, folder):
 
 def sc_saucerer(args, folder):
     """#210, decision 0008 1a: Katina's Saucerer takes damage from player 1's shot, as from player 0's."""
-    frames, rows = run_score(args, folder, f"saucerer:{SAUCERER_FROM}:1", SAUCERER_FROM + 2400, level=LEVEL_KATINA)
+    frames, rows = run_score(args, folder, f"saucerer:{SAUCERER_FROM}:1", SAUCERER_FROM + 600, level=LEVEL_KATINA)
     fly_rows(rows)
     shots = [row for kind, row in rows if kind == "shot"]
     hatches = [[int(v) for v in row["hp"].split(",")] for kind, row in rows if kind == "hatch"]

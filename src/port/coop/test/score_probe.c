@@ -139,7 +139,6 @@ static void Kill_Place(s32 frame, s32 dmgSource) {
 }
 
 static void Kill_Update(s32 frame) {
-    static const s32 sources[] = { 0, 1, 2, 3 }; // by step: the player, DMG_SRC_2, Falco, player 0
     s32 step;
 
     if ((sKillSlot >= 0) && (frame > sLastFrame)) {
@@ -148,11 +147,11 @@ static void Kill_Update(s32 frame) {
                (int) sKillLasers, (int) Probe_LaserItems(), (int) (gActors[sKillSlot].obj.status == OBJ_FREE));
         sKillSlot = -1;
     }
-    for (step = 0; step < ARRAY_COUNT(sources); step++) {
+    for (step = 0; step < 4; step++) { // the player, DMG_SRC_2, Falco, player 0
         if (frame != sFrame + (step * PROBE_STEP)) {
             continue;
         }
-        switch (sources[step]) {
+        switch (step) {
             case 0:
                 Kill_Place(frame, CoopPlayers_DmgSource(sPlayer));
                 break;
