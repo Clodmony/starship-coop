@@ -190,35 +190,35 @@ Basis per site: read 345, site 893, name 497.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `BonusText_Update` | 68:P0, 69:P0, 70:P0 | view | site | bonus text follows player 0 |
-| `Effect_Effect384_Draw` | 249:P0 | view | site | player 0 state |
-| `Effect_Effect393_Update` | 567:P0, 568:P0, 569:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect357_Setup` | 627:P0, 628:P0, 629:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect357_Update` | 723:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect357_Draw` | 750:P0 | view | site | player 0 state |
-| `Effect_Effect372_Setup1` | 1130:P0, 1131:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect347_Update` | 1401:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
-| `Effect_Effect362_Setup` | 1502:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect362_Update` | 1519:P0, 1520:P0, 1521:P0, 1523:P0 | view | site | faces player 0 camera |
-| `Effect_Effect360_Update` | 1555:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect343_Setup` | 1756:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect387_Update` | 1794:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect339_Update` | 2030:P0, 2043:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
-| `Effect_Effect374_Update` | 2276:P0, 2277:P0, 2278:P0, 2279:P0 | sim | site | tests player 0, CoopEffects_ColumnHit does the others (#100) |
-| `Effect_Effect374_Update` | 2280:PA | ok | read | Player_ApplyDamage for player 0; CoopEffects_ColumnHit right after it does the others (#100) |
-| `Effect_Effect345_Update` | 2353:CC | setup | site | gCamCount != 1 as versus flag |
-| `func_effect_8007FD84` | 2919:SH | ok | site | enemy effect hitting an actor writes CS_SHOT_ID |
-| `Effect_Effect353_354_Update` | 2943:P0, 2947:P0, 2948:P0, 2949:P0, 2950:P0, 2962:P0, 2966:P0, 2968:P0, 2970:P0, 2973:P0, 2975:P0 | sim | read | enemy projectile hits, deflects and knocks back player 0; CoopEffects_ShotHit does the others (#100); wingman and roll reach still read player 0 |
-| `Effect_Effect353_354_Update` | 2967:PA | ok | read | Player_ApplyDamage for player 0; CoopEffects_ShotHit right after it does the others (#100) |
-| `Effect_Effect376_Update` | 3046:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
-| `Effect_Effect398_Update` | 3089:P0, 3093:P0, 3094:P0, 3095:P0, 3096:P0, 3108:P0, 3112:P0, 3114:P0, 3116:P0, 3118:P0, 3120:P0 | sim | read | aimed at the nearest human (#193); hits and knocks back player 0, CoopEffects_ShotHit does the others (#100) |
-| `Effect_Effect398_Update` | 3113:PA, 3151:PA | ok | read | Player_ApplyDamage for player 0, CoopEffects_ShotHit after it does the others; func_effect_8007A774 tests them too (#100) |
-| `Effect_Effect395_Update` | 3678:P0, 3920:P0, 3925:P0, 3926:P0, 3927:P0 | sim | site | tests player 0, CoopEffects_BeamHit does the others (#100); the Gorgon beam turns to the Gorgon's kept target (#213) |
-| `Effect_Effect395_Update` | 3928:PA, 3955:PA | ok | site | beam: Player_ApplyDamage for player 0, CoopEffects_BeamHit just before it does the others; func_effect_8007A774 tests them too (#100) |
-| `Effect_Effect391_Update` | 4166:P0 | view | site | faces player 0 camera |
-| `func_effect_80083D2C` | 4228:P0, 4229:P0, 4230:P0 | sim | site | aims at player 0 |
-| `Effect_Effect399_Update` | 4267:P0, 4268:P0 | view | site | faces player 0 camera |
-| `Effect_Effect399_Update` | 4297:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
+| `BonusText_Update` | 69:P0, 70:P0, 71:P0 | view | site | bonus text follows player 0 |
+| `Effect_Effect384_Draw` | 250:P0 | view | site | player 0 state |
+| `Effect_Effect393_Update` | 568:P0, 569:P0, 570:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect357_Setup` | 628:P0, 629:P0, 630:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect357_Update` | 724:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect357_Draw` | 751:P0 | view | site | player 0 state |
+| `Effect_Effect372_Setup1` | 1131:P0, 1132:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect347_Update` | 1402:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
+| `Effect_Effect362_Setup` | 1503:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect362_Update` | 1520:P0, 1521:P0, 1522:P0, 1524:P0 | view | site | faces player 0 camera |
+| `Effect_Effect360_Update` | 1556:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect343_Setup` | 1757:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect387_Update` | 1795:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect339_Update` | 2032:P0, 2045:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
+| `Effect_Effect374_Update` | 2278:P0, 2279:P0, 2280:P0, 2281:P0 | sim | site | tests player 0, CoopEffects_ColumnHit does the others (#100) |
+| `Effect_Effect374_Update` | 2282:PA | ok | read | Player_ApplyDamage for player 0; CoopEffects_ColumnHit right after it does the others (#100) |
+| `Effect_Effect345_Update` | 2355:CC | setup | site | gCamCount != 1 as versus flag |
+| `func_effect_8007FD84` | 2921:SH | ok | site | enemy effect hitting an actor writes CS_SHOT_ID |
+| `Effect_Effect353_354_Update` | 2945:P0, 2949:P0, 2950:P0, 2951:P0, 2952:P0, 2964:P0, 2968:P0, 2970:P0, 2972:P0, 2975:P0, 2977:P0 | sim | read | enemy projectile hits, deflects and knocks back player 0; CoopEffects_ShotHit does the others (#100); wingman and roll reach still read player 0 |
+| `Effect_Effect353_354_Update` | 2969:PA | ok | read | Player_ApplyDamage for player 0; CoopEffects_ShotHit right after it does the others (#100) |
+| `Effect_Effect376_Update` | 3048:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
+| `Effect_Effect398_Update` | 3091:P0, 3095:P0, 3096:P0, 3097:P0, 3098:P0, 3110:P0, 3114:P0, 3116:P0, 3118:P0, 3120:P0, 3122:P0 | sim | read | aimed at the nearest human (#193); hits and knocks back player 0, CoopEffects_ShotHit does the others (#100) |
+| `Effect_Effect398_Update` | 3115:PA, 3153:PA | ok | read | Player_ApplyDamage for player 0, CoopEffects_ShotHit after it does the others; func_effect_8007A774 tests them too (#100) |
+| `Effect_Effect395_Update` | 3680:P0, 3922:P0, 3927:P0, 3928:P0, 3929:P0 | sim | site | tests player 0, CoopEffects_BeamHit does the others (#100); the Gorgon beam turns to the Gorgon's kept target (#213) |
+| `Effect_Effect395_Update` | 3930:PA, 3957:PA | ok | site | beam: Player_ApplyDamage for player 0, CoopEffects_BeamHit just before it does the others; func_effect_8007A774 tests them too (#100) |
+| `Effect_Effect391_Update` | 4168:P0 | view | site | faces player 0 camera |
+| `func_effect_80083D2C` | 4230:P0, 4231:P0, 4232:P0 | sim | site | aims at player 0 |
+| `Effect_Effect399_Update` | 4269:P0, 4270:P0 | view | site | faces player 0 camera |
+| `Effect_Effect399_Update` | 4299:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
 
 ### `src/engine/fox_enmy.c`
 
@@ -456,20 +456,20 @@ Basis per site: read 345, site 893, name 497.
 | `Aquas_Effect366_Setup` | 1391:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 | `Aquas_Effect366_Update` | 1427:P0, 1428:P0, 1453:P0, 1454:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 | `Aquas_Actor255_Update` | 1679:P0, 1721:P0, 1722:P0, 1723:P0, 1724:P0, 1760:P0, 1761:P0, 1762:P0, 1764:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_Actor255_Update` | 1803:SH | ok | site | DMG_SRC_2 before Actor_Despawn: no player gets the kill |
-| `Aquas_Actor255_Draw` | 1888:P0, 1889:P0, 1890:P0, 1891:P0, 1892:P0, 1893:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqPearl_Update` | 2521:SH | ok | site | DMG_SRC_2 before Actor_Despawn: no player gets the kill |
-| `Aquas_AqBacoon_Update` | 2691:P0, 3011:P0, 3013:P0, 3016:P0, 3017:P0, 3018:P0, 3019:P0, 3133:P0, 3134:P0, 3135:P0, 3136:P0 | flow | read | its head and eyes turn to its kept human, picked again at a new state (#220, aim.h); left: the start by z, player 0's boost lock and camera pull in its roar, level complete |
-| `Aquas_AqSculpin_Update` | 3920:P0, 3921:P0, 3941:P0, 3942:P0, 3959:P0, 3961:P0, 3968:P0, 3969:P0, 3970:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqAnglerFish_Update` | 4301:P0, 4359:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqSpindlyFish_Update` | 4435:P0, 4436:P0, 4437:P0, 4447:P0, 4448:P0, 4449:P0, 4456:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqGaroa_Update` | 4709:P0, 4711:P0, 4731:P0, 4816:P0, 4817:P0, 4818:P0, 4850:P0, 4851:P0, 4852:P0, 4889:P0, 4890:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqSquid_Update` | 5189:P0, 5190:P0, 5191:P0, 5192:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqSeaweed_Update` | 5390:P0, 5391:P0, 5392:P0, 5404:P0, 5405:P0, 5406:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqCoral_Update` | 5567:P0, 5568:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqFishGroup_Update` | 6448:P0, 6463:P0, 6464:P0, 6465:P0, 6471:P0, 6472:P0, 6473:P0, 6489:P0, 6490:P0, 6491:P0, 6522:P0, 6523:P0, 6524:P0, 6530:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_CsAqFishGroup_Update` | 6628:P0 | flow | name | cutscene fish |
-| `Aquas_AqOyster_Update` | 6694:P0, 6715:P0, 6717:P0, 6718:P0, 6719:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_Actor255_Update` | 1807:SH | ok | site | DMG_SRC_2 before Actor_Despawn: no player gets the kill |
+| `Aquas_Actor255_Draw` | 1893:P0, 1894:P0, 1895:P0, 1896:P0, 1897:P0, 1898:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqPearl_Update` | 2526:SH | ok | site | DMG_SRC_2 before Actor_Despawn: no player gets the kill |
+| `Aquas_AqBacoon_Update` | 2696:P0, 3016:P0, 3018:P0, 3021:P0, 3022:P0, 3023:P0, 3024:P0, 3138:P0, 3139:P0, 3140:P0, 3141:P0 | flow | read | its head and eyes turn to its kept human, picked again at a new state (#220, aim.h); left: the start by z, player 0's boost lock and camera pull in its roar, level complete |
+| `Aquas_AqSculpin_Update` | 3925:P0, 3926:P0, 3946:P0, 3947:P0, 3964:P0, 3966:P0, 3973:P0, 3974:P0, 3975:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqAnglerFish_Update` | 4306:P0, 4364:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqSpindlyFish_Update` | 4440:P0, 4441:P0, 4442:P0, 4452:P0, 4453:P0, 4454:P0, 4461:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqGaroa_Update` | 4714:P0, 4716:P0, 4736:P0, 4821:P0, 4822:P0, 4823:P0, 4855:P0, 4856:P0, 4857:P0, 4894:P0, 4895:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqSquid_Update` | 5194:P0, 5195:P0, 5196:P0, 5197:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqSeaweed_Update` | 5395:P0, 5396:P0, 5397:P0, 5409:P0, 5410:P0, 5411:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqCoral_Update` | 5572:P0, 5573:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqFishGroup_Update` | 6453:P0, 6468:P0, 6469:P0, 6470:P0, 6476:P0, 6477:P0, 6478:P0, 6494:P0, 6495:P0, 6496:P0, 6527:P0, 6528:P0, 6529:P0, 6535:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_CsAqFishGroup_Update` | 6633:P0 | flow | name | cutscene fish |
+| `Aquas_AqOyster_Update` | 6699:P0, 6720:P0, 6722:P0, 6723:P0, 6724:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 
 ### `src/overlays/ovl_i3/fox_so.c`
 
