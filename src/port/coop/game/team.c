@@ -37,11 +37,54 @@ int32_t CoopTeam_IsHuman(int32_t teamId) {
     return 0;
 }
 
+// Decision 0006 rule 2: shields carry from a cleared level to the next, plus COOP_LEVEL_HEAL, at most 255; a player who
+// was down comes back at COOP_LEVEL_HEAL. Taken when the level is cleared, used once per player at the next level's
+// Player_Setup. Without one (the first level of a run, a retry) every player starts at 255, as the original does.
+#define COOP_LEVEL_HEAL 64
+
+static s16 sCarry[COOP_PLAYERS_MAX];      // shields at the clear, -1 for a player who was down or out
+static bool sCarryPending[COOP_PLAYERS_MAX];
+static bool sCarryTaken = false; // this level's clear was already taken
+
+static void CoopTeam_TakeCarry(void) {
+    s32 i;
+
+    if (sCarryTaken || (gPlayer[0].state != PLAYERSTATE_LEVEL_COMPLETE)) {
+        return;
+    }
+    sCarryTaken = true;
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        bool down = CoopPlayers_IsParked(i) || (gPlayer[i].state == PLAYERSTATE_DOWN) || (gPlayer[i].shields <= 0);
+
+        sCarry[i] = down ? -1 : (s16) MIN(gPlayer[i].shields, 255);
+        sCarryPending[i] = true;
+    }
+}
+
+void CoopTeam_ForgetCarry(void) {
+    s32 i;
+
+    for (i = 0; i < COOP_PLAYERS_MAX; i++) {
+        sCarryPending[i] = false;
+    }
+}
+
+void CoopTeam_LevelShields(Player* player) {
+    s32 i = player->num;
+
+    if (!CoopPlayers_IsCoop() || gVersusMode || (i < 0) || (i >= COOP_PLAYERS_MAX) || !sCarryPending[i]) {
+        return;
+    }
+    sCarryPending[i] = false;
+    player->shields = (sCarry[i] < 0) ? COOP_LEVEL_HEAL : MIN(sCarry[i] + COOP_LEVEL_HEAL, 255);
+}
+
 void CoopTeam_Update(void) {
     s32 i;
     s32 id;
     s32 shields;
 
+    CoopTeam_TakeCarry();
     for (i = 1; i < CoopPlayers_Count(); i++) {
         id = CoopTeam_OfPlayer(i);
         if ((id < 0) || CoopPlayers_IsParked(i)) {
@@ -216,6 +259,11 @@ static u8 sChoice[COOP_TEAM_SCENES_MAX];
 
 void CoopTeam_LevelInit(void) {
     s32 i;
+
+    sCarryTaken = false;
+    if (!CoopPlayers_IsCoop()) {
+        CoopTeam_ForgetCarry();
+    }
 
     for (i = 0; i < COOP_TEAM_SCENES_MAX; i++) {
         sChoice[i] = 0;

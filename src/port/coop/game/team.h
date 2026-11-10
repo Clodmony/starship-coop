@@ -29,8 +29,17 @@ struct Actor;
 // Call from CoopPlayers_LevelInit: forgets the scene choices of the last level.
 void CoopTeam_LevelInit(void);
 
-// Call once per frame after the player loop: writes each joined human's shields to its character's gTeamShields.
+// Call once per frame after the player loop: writes each joined human's shields to its character's gTeamShields, and
+// at a level clear keeps every player's shields for the next level (decision 0006 rule 2).
 void CoopTeam_Update(void);
+
+// Call in Player_Setup, after it sets full shields: in a co-op session, the first setup of a level after a clear gives
+// the shields carried from that clear plus 64 (at most 255), or 64 for a player who was down. Else nothing.
+struct Player;
+void CoopTeam_LevelShields(struct Player* player);
+
+// Forget the carried shields: a session starts or ends.
+void CoopTeam_ForgetCarry(void);
 
 // Call when co-op player `index` goes down: its character's gTeamShields becomes -1.
 void CoopTeam_OnPlayerDown(int32_t index);
