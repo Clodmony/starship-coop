@@ -21,7 +21,7 @@ Observed (read in the repo or on the tracker):
 - Nearly all rules the played build had are not on `coop` (`0e5a5cf6`): `git log origin/coop..HEAD` lists #14, #15,
   #16, #191, #193, #194, #199 to #201 and #211 as commits that `coop` lacks. The README marks them "(test build)".
 - The F1 label is the first 8 characters of the build id (`src/port/coop/ui/version_label.cpp`), where
-  `TWO_PC_TEST.md` says `Co-op <id>`. The refusal text for a different build is in `src/port/coop/session/identity.c:332-334`.
+  `TWO_PC_TEST.md` says `Co-op <id>`. The refusal text for a different build is in `src/port/coop/session/identity.c:334`.
 - The lobby's labels and status lines are in `src/port/coop/ui/menu.c` and `menu_window.cpp`; only the host sees
   **Start at** and **Start the level** (`view.showStart`).
 - The campaign run (Corneria to the ending, 66 minutes, 0 desync lines) is the comment of 2026-11-10 on #2; its numbers
