@@ -4595,6 +4595,7 @@ void Player_Setup(Player* playerx) {
                 break;
         }
     }
+    CoopTeam_LevelShields(player); // COOP: shields carried from the last cleared level, plus a heal (0006 rule 2, #15)
 
     player->arwing.rightWingState = WINGSTATE_INTACT;
     player->arwing.leftWingState = WINGSTATE_INTACT;

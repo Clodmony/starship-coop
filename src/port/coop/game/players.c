@@ -84,6 +84,8 @@ void CoopPlayers_LevelInit(void) {
 void CoopPlayers_SetRoster(const uint8_t* roster) {
     s32 i;
 
+    CoopTeam_ForgetCarry(); // a new session, or none, starts at full shields (0006 rule 2)
+
     sRosterCount = 0;
     for (i = 0; i < COOP_PLAYERS_MAX; i++) {
         sRoster[i] = (roster != NULL) ? roster[i] : 0;

@@ -1962,6 +1962,22 @@ Unknown:
   not merged. `CoopTeam_HoldBody` sets `STATE360_3` when its human flies again; not run.
 - Whether other player 0 states during play (for example the all-range loop or a warp) need the same treatment.
 
+### 2026-11-10, #15 (WP-17), decision 0006 rule 2: shields carry from level to level
+
+Identity: ROM US 1.0, branch `issue/15-guests`, Windows 11, MSVC v143, Debug.
+
+Observed in the code: `Player_Setup` sets `shields = 255` (`src/engine/fox_play.c:4584`) and runs on
+`PLAYERSTATE_INIT` (`:5955`), after `Play_Init` reallocates `gPlayer`. So the shields of a cleared level must be
+kept before the next `Play_Init`: they are taken on the first frame with player 0 in `PLAYERSTATE_LEVEL_COMPLETE`
+(`CoopTeam_Update`) and used once per player in `Player_Setup` (`CoopTeam_LevelShields`). Venom 2's phase 2 and
+Andross restore player 0's shields themselves afterwards (`:4696-4700`), left as the game has it.
+
+Observed in runs: `scenes`, `guests`, `steer`, `three` pass (no level is cleared in them).
+
+Unknown: the carry itself is not run: no test here clears a level and loads the next (`tools/coop/campaign.py` on
+`issue/combined-test-4` does, and is the check to run). A retry from the map starts at 255, since the carry is
+used once.
+
 ### 2026-11-10, #15 (WP-17), decision 0012 B4: Katt and Bill fly a scene when no computer wingman is free
 
 Identity: ROM US 1.0, branch `issue/15-guests` on `487f2e37`, Windows 11, MSVC v143, Debug,
