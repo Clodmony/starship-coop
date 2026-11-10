@@ -479,6 +479,49 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-10, #180, a test game that died at boot: the co-op log's sink and spdlog's worker
+
+Identity: ROM US 1.0, base `80ff9be6` and the fix on top, Linux, GCC, Debug, OpenGL in software, no window.
+
+Observed:
+
+- A game of a crash sweep died before its first frame with SIGSEGV (exit -11), `state-hash.txt` empty, a
+  `Starship.log` of one line, while another game started. Its core (systemd-coredump), thread by thread:
+  - spdlog's worker (`thread_pool::worker_loop`, `async_logger::backend_sink_it_`) faulted in `sink::should_log`. The
+    crash handler ran on that thread and called `spdlog::shutdown()`. That destroyed the thread pool from the pool's own
+    thread: `std::terminate` from the destructor of a `std::thread` it could not join, then `abort`. The handler ran
+    again for SIGABRT and faulted in `spdlog::logger::log` (the default logger was gone). A SIGSEGV inside the handler of
+    a SIGSEGV ended the process.
+  - A resource load (`ResourceManager::LoadFileProcess`, `BS::thread_pool`) faulted in `spdlog::logger::log` too, and
+    waited in its own crash handler.
+- `CoopLogSpdlog_Install` (`src/port/coop/log/log_spdlog.cpp`, called at `src/port/Engine.cpp:193`) did
+  `logger->sinks().push_back(...)` on libultraship's logger. That logger is asynchronous with one worker
+  (`spdlog::init_thread_pool(8192, 1)`, `libultraship/src/Context.cpp:104`), and its worker walks `sinks_` for every
+  message without a lock (`spdlog/async_logger-inl.h`, `backend_sink_it_`). Resource loads log from their own threads
+  while the game starts (`GenericArray Count:` is one of them), and `ResourceManager::LoadResource` waits for such a
+  load (`libultraship/src/resource/ResourceManager.cpp:218`).
+- Rates, base build against the fix, rounds of two games started at once, taking turns (`boot2.py`, scratch):
+  - pinned to two cores with four burner threads: 0 of 120 and 0 of 120 died before their first frame;
+  - with the console sink's `fflush(stdout)` made to sleep 2 ms (`LD_PRELOAD`), so the worker stays longer in its
+    loop over the sinks, and glibc's `glibc.malloc.perturb=165`: 29 of 40 against 0 of 40; without the perturb, 19 of
+    20 against 0 of 20. Every dead one printed `terminate called without an active exception`, left `state-hash.txt`
+    empty and a log of one line, as in #180.
+- With the fix the sink is in place when the game starts (`sInstalled` true at `CoopLogGame_Init`, gdb).
+
+Derived:
+
+- #180 is this race: the `push_back` grew the vector while the worker read it. `terminate called without an active
+  exception` is the crash handler's `spdlog::shutdown()` on the worker's own thread, not the first fault. Two games
+  in the same second only add load; load keeps the worker in its loop longer.
+- The fix holds the worker in a sink of a logger of our own on the same thread pool while the sink goes in, so nothing
+  reads `sinks_` while it changes. That relies on the pool's one thread; more threads would need one gate each.
+- The handler's `spdlog::shutdown()` from the worker thread is upstream's; any crash on spdlog's thread ends the same
+  way, with `terminate` and no log.
+
+Unknown:
+
+- The rate without the widened window in a full run (1 in 40 in one sweep at load about 36, 0 in 240 boots here).
+
 ### 2026-11-09, #14 (WP-16), players 2-4 come back after going down (decision 0007 rule 4)
 
 Identity: ROM US 1.0, on top of `6becd73a` (the combined test branch of 2026-11-09), Linux, GCC, Debug, OpenGL on a
