@@ -24,19 +24,19 @@ pattern without reading the code, so treat it as a guess.
 
 ## Summary
 
-1746 sites in 419 functions in 46 files.
+1737 sites in 419 functions in 46 files.
 A function whose sites have more than one verdict counts once per verdict in the functions column.
 
 | verdict | sites | functions | `gPlayer[0]` | `gPlayer->` | `gPlayer arg` | `gMainController` | `gCamCount` | `shooter` |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| sim | 805 | 168 | 800 | 1 | 2 | 0 | 0 | 2 |
+| sim | 785 | 167 | 780 | 1 | 2 | 0 | 0 | 2 |
 | view | 217 | 84 | 151 | 0 | 0 | 43 | 3 | 20 |
 | input | 13 | 9 | 0 | 0 | 0 | 8 | 0 | 5 |
-| flow | 464 | 100 | 424 | 0 | 3 | 3 | 0 | 34 |
+| flow | 475 | 101 | 435 | 0 | 3 | 3 | 0 | 34 |
 | setup | 53 | 34 | 1 | 0 | 1 | 0 | 51 | 0 |
 | ok | 194 | 84 | 14 | 2 | 15 | 87 | 8 | 68 |
 
-Basis per site: read 334, site 911, name 501.
+Basis per site: read 345, site 891, name 501.
 
 ## Sites
 
@@ -449,27 +449,27 @@ Basis per site: read 334, site 911, name 501.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Aquas_801A95C8` | 401:P0, 402:P0, 403:P0, 405:P0, 406:P0, 407:P0 | flow | site | cutscene moves player 0 camera |
-| `Aquas_801A96DC` | 411:P0, 412:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_801AA20C` | 655:P0, 670:P0, 683:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_801ABA40` | 1101:P0, 1102:P0, 1103:P0, 1140:SH, 1141:SH | sim | site | Blue Marine torpedoes culled by player 0 camera; aimed by the firing marine since #16 |
-| `Aquas_Effect366_Setup` | 1390:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_Effect366_Update` | 1426:P0, 1427:P0, 1452:P0, 1453:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_Actor255_Update` | 1678:P0, 1720:P0, 1721:P0, 1722:P0, 1723:P0, 1759:P0, 1760:P0, 1761:P0, 1763:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_Actor255_Update` | 1802:SH | ok | site | DMG_SRC_2 before Actor_Despawn: no player gets the kill |
-| `Aquas_Actor255_Draw` | 1887:P0, 1888:P0, 1889:P0, 1890:P0, 1891:P0, 1892:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqPearl_Update` | 2520:SH | ok | site | DMG_SRC_2 before Actor_Despawn: no player gets the kill |
-| `Aquas_AqBacoon_Update` | 2687:P0, 3004:P0, 3006:P0, 3009:P0, 3010:P0, 3011:P0, 3012:P0, 3126:P0, 3127:P0, 3128:P0, 3129:P0, 3220:P0, 3221:P0, 3222:P0, 3258:P0, 3259:P0, 3260:P0, 3261:P0, 3262:P0, 3263:P0 | sim | site | boss; changes player 0 camera distance and state |
-| `Aquas_AqSculpin_Update` | 3913:P0, 3914:P0, 3934:P0, 3935:P0, 3952:P0, 3954:P0, 3961:P0, 3962:P0, 3963:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqAnglerFish_Update` | 4294:P0, 4352:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqSpindlyFish_Update` | 4428:P0, 4429:P0, 4430:P0, 4440:P0, 4441:P0, 4442:P0, 4449:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqGaroa_Update` | 4702:P0, 4704:P0, 4724:P0, 4809:P0, 4810:P0, 4811:P0, 4843:P0, 4844:P0, 4845:P0, 4882:P0, 4883:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqSquid_Update` | 5182:P0, 5183:P0, 5184:P0, 5185:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqSeaweed_Update` | 5383:P0, 5384:P0, 5385:P0, 5397:P0, 5398:P0, 5399:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqCoral_Update` | 5560:P0, 5561:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqFishGroup_Update` | 6441:P0, 6456:P0, 6457:P0, 6458:P0, 6464:P0, 6465:P0, 6466:P0, 6482:P0, 6483:P0, 6484:P0, 6515:P0, 6516:P0, 6517:P0, 6523:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_CsAqFishGroup_Update` | 6621:P0 | flow | name | cutscene fish |
-| `Aquas_AqOyster_Update` | 6687:P0, 6708:P0, 6710:P0, 6711:P0, 6712:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_801A95C8` | 402:P0, 403:P0, 404:P0, 406:P0, 407:P0, 408:P0 | flow | site | cutscene moves player 0 camera |
+| `Aquas_801A96DC` | 412:P0, 413:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_801AA20C` | 656:P0, 671:P0, 684:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_801ABA40` | 1102:P0, 1103:P0, 1104:P0, 1141:SH, 1142:SH | sim | site | Blue Marine torpedoes culled by player 0 camera; aimed by the firing marine since #16 |
+| `Aquas_Effect366_Setup` | 1391:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_Effect366_Update` | 1427:P0, 1428:P0, 1453:P0, 1454:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_Actor255_Update` | 1679:P0, 1721:P0, 1722:P0, 1723:P0, 1724:P0, 1760:P0, 1761:P0, 1762:P0, 1764:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_Actor255_Update` | 1803:SH | ok | site | DMG_SRC_2 before Actor_Despawn: no player gets the kill |
+| `Aquas_Actor255_Draw` | 1888:P0, 1889:P0, 1890:P0, 1891:P0, 1892:P0, 1893:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqPearl_Update` | 2521:SH | ok | site | DMG_SRC_2 before Actor_Despawn: no player gets the kill |
+| `Aquas_AqBacoon_Update` | 2691:P0, 3011:P0, 3013:P0, 3016:P0, 3017:P0, 3018:P0, 3019:P0, 3133:P0, 3134:P0, 3135:P0, 3136:P0 | flow | read | its head and eyes turn to its kept human, picked again at a new state (#220, aim.h); left: the start by z, player 0's boost lock and camera pull in its roar, level complete |
+| `Aquas_AqSculpin_Update` | 3920:P0, 3921:P0, 3941:P0, 3942:P0, 3959:P0, 3961:P0, 3968:P0, 3969:P0, 3970:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqAnglerFish_Update` | 4301:P0, 4359:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqSpindlyFish_Update` | 4435:P0, 4436:P0, 4437:P0, 4447:P0, 4448:P0, 4449:P0, 4456:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqGaroa_Update` | 4709:P0, 4711:P0, 4731:P0, 4816:P0, 4817:P0, 4818:P0, 4850:P0, 4851:P0, 4852:P0, 4889:P0, 4890:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqSquid_Update` | 5189:P0, 5190:P0, 5191:P0, 5192:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqSeaweed_Update` | 5390:P0, 5391:P0, 5392:P0, 5404:P0, 5405:P0, 5406:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqCoral_Update` | 5567:P0, 5568:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqFishGroup_Update` | 6448:P0, 6463:P0, 6464:P0, 6465:P0, 6471:P0, 6472:P0, 6473:P0, 6489:P0, 6490:P0, 6491:P0, 6522:P0, 6523:P0, 6524:P0, 6530:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_CsAqFishGroup_Update` | 6628:P0 | flow | name | cutscene fish |
+| `Aquas_AqOyster_Update` | 6694:P0, 6715:P0, 6717:P0, 6718:P0, 6719:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 
 ### `src/overlays/ovl_i3/fox_so.c`
 

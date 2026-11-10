@@ -264,7 +264,7 @@ src/overlays/ovl_i1/fox_co.c	Corneria_CoGranga_HandleDamage	sim	site	boss; on de
 src/overlays/ovl_i2/fox_me.c	Meteo_MeCrusher_Update	flow	read	its moves follow the path and random draws, its missiles seek the nearest human (#193), its rings too (#220); left: level complete and the wait for PLAYERSTATE_NEXT on player 0
 src/overlays/ovl_i2/fox_sx.c	SectorX_SxSlippy_Update	sim	site	Slippy rescue; moves player 0 camera for the cutscene
 src/overlays/ovl_i2/fox_sx.c	SectorX_SxSpyborg_Update	sim	site	boss; on death sets player 0 state
-src/overlays/ovl_i3/fox_aq.c	Aquas_AqBacoon_Update	sim	site	boss; changes player 0 camera distance and state
+src/overlays/ovl_i3/fox_aq.c	Aquas_AqBacoon_Update	flow	read	its head and eyes turn to its kept human, picked again at a new state (#220, aim.h); left: the start by z, player 0's boost lock and camera pull in its roar, level complete
 src/overlays/ovl_i3/fox_zo.c	Zoness_ZoSarumarine_Update	flow	read	its guns and head turn to its kept human, picked again at a new state (#220, aim.h); left: its z on the path (player 0's camera), the taunt when player 0 is hit, level complete
 src/overlays/ovl_i4/fox_sz.c	SectorZ_MissileExplode	sim	site	missile reaching Great Fox sets player 0 to LEVEL_COMPLETE (mission failed path)
 src/overlays/ovl_i4/fox_sz.c	SectorZ_Missile_Update	sim	site	missiles; set player 0 state and camera
