@@ -4603,6 +4603,34 @@ player 0 loses 100.
 
 ## Determinism
 
+### 2026-11-10, #232, Goras' 8 dying sites run in a two-client campaign run
+
+Identity: ROM US 1.0, the code of `f3eadf7a` for `fox_ti.c` (build `1d1bbbfc837e-dirty`: this branch, whose changes
+are the mixer table, the F1 label and docs), Linux, GCC, Debug, OpenGL on a software renderer, no window, two games on
+one PC over loopback.
+
+Observed:
+
+- `campaign.py --levels titania` (two real clients, a pilot each, `gInvincible`), both games started under gdb by a
+  wrapper given as `--exe` (scratch, not in the repo): a breakpoint on `CoopRand_SignedFloat` logs its caller's
+  function and line, one on `Titania_TiGoras_Dying` counts the frames it runs. Result: `titania: equal on every frame
+  to the end; 45111 frames compared, level complete at level frame 43591`.
+- Calls per client, the same on host and client: `Titania_TiGoras_Dying` ran on 280 frames. Its 8 sites:
+  `fox_ti.c:5529` and `:5532` (the debris of the first frame, `work_044 == 0`) 33 times each; `:5558`, `:5561`
+  (`timer_050` 100), `:5590`, `:5593` (120) and `:5622`, `:5625` (140) once each. Besides: `Titania_80193DF0`
+  (`:3893`) 512 times, `Titania_TiDesertCrawler_Update` 21 times (`:1630-1636` 4 each, `:1641-1680` 1 each). 605
+  `CoopRand_SignedFloat` calls on each client.
+
+Derived:
+
+- All 18 signed draws of #209 run in a session now, the 8 Goras sites among them, and the two clients stayed equal on
+  every frame through them. `#209`'s unknown "whether the 8 sites of `Titania_TiGoras_Dying` run in a session" is
+  answered: they do, in a run that reaches level complete.
+
+Unknown:
+
+- MSVC's order (as in #209); Windows and two PCs.
+
 ### 2026-11-10, #209, Titania's 18 signed draws: the sign first, in a session
 
 Identity: ROM US 1.0, on `80ff9be6` (the combined test branch 2), Linux, GCC, Debug, OpenGL on a software renderer, no
