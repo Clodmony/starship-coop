@@ -43,8 +43,9 @@ this section says "observed", a person played it; "from the code" and "from the 
 ### Both players run the same build
 
 Press **F1** to open the menu bar. Its right end shows `Co-op <build id>` (the first 8 characters of the build id).
-Both players must see the same id, and no `-dirty` in a build made from the same commit. A joining player whose build
-differs is **refused**: the join fails and the Co-op window prints
+Both players must see the same 8 characters. The label cuts the id short, so a `-dirty` ending (a build made from
+uncommitted changes carries one) is not visible there: build from a clean checkout of the same commit. A joining player
+whose build differs is **refused**: the join fails and the Co-op window prints
 `Different game builds: host <id>, joining player <id>. Both need the same Starship Co-op build.` (`src/port/coop/session/identity.c`).
 A different ROM version or a different game setting is refused the same way and names what differs. A different
 platform (Windows against Linux) is **not** refused: both players see a warning that names the two platforms, and the
