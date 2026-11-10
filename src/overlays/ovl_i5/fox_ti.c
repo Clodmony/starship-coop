@@ -14,6 +14,8 @@
 #include "assets/ast_A_ti.h"
 #include "assets/ast_landmaster.h"
 #include "assets/ast_enmy_planet.h"
+#include "port/coop/game/players.h"    // COOP: the session gate (#209)
+#include "port/coop/math/rand_order.h" // COOP: two draws in their written order in a session (#209)
 
 typedef struct {
     /* 0x00 */ PosRot unk_00;
@@ -1624,19 +1626,27 @@ void Titania_TiDesertCrawler_Update(TiDesertCrawler* this) {
                             actorPtr->iwork[0] = 1;
                             actorPtr->iwork[1] = 1;
                             if (i != 8) {
-                                actorPtr->fwork[0] =
-                                    ((Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f) * (4.0f + RAND_FLOAT(3.0f));
-                                actorPtr->fwork[1] =
-                                    ((Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f) * (4.0f + RAND_FLOAT(3.0f));
-                                actorPtr->fwork[2] =
-                                    ((Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f) * (4.0f + RAND_FLOAT(3.0f));
+                                // COOP: in a session the sign first, then the value, as GCC builds draw them (#209)
+                                actorPtr->fwork[0] = CoopPlayers_IsCoop() ? CoopRand_SignedFloat(4.0f, 3.0f)
+                                                                          : ((Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f) *
+                                                                                (4.0f + RAND_FLOAT(3.0f));
+                                actorPtr->fwork[1] = CoopPlayers_IsCoop() ? CoopRand_SignedFloat(4.0f, 3.0f)
+                                                                          : ((Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f) *
+                                                                                (4.0f + RAND_FLOAT(3.0f));
+                                actorPtr->fwork[2] = CoopPlayers_IsCoop() ? CoopRand_SignedFloat(4.0f, 3.0f)
+                                                                          : ((Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f) *
+                                                                                (4.0f + RAND_FLOAT(3.0f));
                             } else {
-                                actorPtr->fwork[0] =
-                                    ((Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f) * (RAND_FLOAT(1.0f) + 0.5f);
-                                actorPtr->fwork[1] =
-                                    ((Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f) * (RAND_FLOAT(1.0f) + 0.5f);
-                                actorPtr->fwork[2] =
-                                    ((Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f) * (RAND_FLOAT(1.0f) + 0.5f);
+                                // COOP: in a session the sign first, then the value, as GCC builds draw them (#209)
+                                actorPtr->fwork[0] = CoopPlayers_IsCoop() ? CoopRand_SignedFloat(0.5f, 1.0f)
+                                                                          : ((Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f) *
+                                                                                (RAND_FLOAT(1.0f) + 0.5f);
+                                actorPtr->fwork[1] = CoopPlayers_IsCoop() ? CoopRand_SignedFloat(0.5f, 1.0f)
+                                                                          : ((Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f) *
+                                                                                (RAND_FLOAT(1.0f) + 0.5f);
+                                actorPtr->fwork[2] = CoopPlayers_IsCoop() ? CoopRand_SignedFloat(0.5f, 1.0f)
+                                                                          : ((Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f) *
+                                                                                (RAND_FLOAT(1.0f) + 0.5f);
                             }
                             actorPtr->gravity = 0.8f;
                         }
@@ -1659,9 +1669,16 @@ void Titania_TiDesertCrawler_Update(TiDesertCrawler* this) {
                                 actorPtr->vel.y = 7.0f + RAND_FLOAT(10.0f);
                                 actorPtr->iwork[0] = 1;
                                 actorPtr->iwork[1] = 1;
-                                actorPtr->fwork[0] = ((Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f) * RAND_FLOAT(0.7f);
-                                actorPtr->fwork[1] = ((Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f) * RAND_FLOAT(0.7f);
-                                actorPtr->fwork[2] = ((Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f) * RAND_FLOAT(0.7f);
+                                // COOP: in a session the sign first, then the value, as GCC builds draw them (#209)
+                                actorPtr->fwork[0] = CoopPlayers_IsCoop()
+                                                         ? CoopRand_SignedFloat(0.0f, 0.7f)
+                                                         : ((Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f) * RAND_FLOAT(0.7f);
+                                actorPtr->fwork[1] = CoopPlayers_IsCoop()
+                                                         ? CoopRand_SignedFloat(0.0f, 0.7f)
+                                                         : ((Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f) * RAND_FLOAT(0.7f);
+                                actorPtr->fwork[2] = CoopPlayers_IsCoop()
+                                                         ? CoopRand_SignedFloat(0.0f, 0.7f)
+                                                         : ((Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f) * RAND_FLOAT(0.7f);
                                 actorPtr->gravity = 0.8f;
                             }
                         }
@@ -3871,7 +3888,10 @@ void Titania_80193DF0(TiGoras* this) {
 
                     actor->vel.x = spC8.x;
                     // pad2 = ((Rand_ZeroOne() < 0.5f) ? -1 : 1);
-                    actor->vel.y = ((Rand_ZeroOne() < 0.5f) ? -1 : 1) * (15.0f + RAND_FLOAT(2.0f));
+                    // COOP: in a session the sign first, then the value, as GCC builds draw them (#209)
+                    actor->vel.y = CoopPlayers_IsCoop()
+                                       ? CoopRand_SignedFloat(15.0f, 2.0f)
+                                       : ((Rand_ZeroOne() < 0.5f) ? -1 : 1) * (15.0f + RAND_FLOAT(2.0f));
                     actor->vel.z = spC8.z;
                     actor->gravity = 2.5f;
                 }
@@ -5504,8 +5524,13 @@ void Titania_TiGoras_Dying(TiGoras* this) {
                         debris->vel.z = -30.0f;
                         debris->gravity = 0.1f;
                     } else {
-                        debris->fwork[0] = ((Rand_ZeroOne() < 0.5f) ? -1 : 1) * (RAND_FLOAT(5.0f) + 5.0f);
-                        debris->fwork[1] = ((Rand_ZeroOne() < 0.5f) ? -1 : 1) * (RAND_FLOAT(5.0f) + 5.0f);
+                        // COOP: in a session the sign first, then the value, as GCC builds draw them (#209)
+                        debris->fwork[0] = CoopPlayers_IsCoop()
+                                               ? CoopRand_SignedFloat(5.0f, 5.0f)
+                                               : ((Rand_ZeroOne() < 0.5f) ? -1 : 1) * (RAND_FLOAT(5.0f) + 5.0f);
+                        debris->fwork[1] = CoopPlayers_IsCoop()
+                                               ? CoopRand_SignedFloat(5.0f, 5.0f)
+                                               : ((Rand_ZeroOne() < 0.5f) ? -1 : 1) * (RAND_FLOAT(5.0f) + 5.0f);
                         Matrix_Push(&gCalcMatrix);
                         Matrix_RotateY(gCalcMatrix, RAND_FLOAT(360.0f) * M_DTOR, MTXF_NEW);
                         Matrix_MultVec3f(gCalcMatrix, &D_i5_801B8E44, &sp60);
@@ -5528,8 +5553,13 @@ void Titania_TiGoras_Dying(TiGoras* this) {
         case 100:
             debris = Game_SpawnActor(OBJ_ACTOR_DEBRIS);
             if (debris != NULL) {
-                debris->fwork[0] = ((Rand_ZeroOne() < 0.5f) ? -1 : 1) * (RAND_FLOAT(1.0f) + 1.0f);
-                debris->fwork[1] = ((Rand_ZeroOne() < 0.5f) ? -1 : 1) * (RAND_FLOAT(1.0f) + 1.0f);
+                // COOP: in a session the sign first, then the value, as GCC builds draw them (#209)
+                debris->fwork[0] = CoopPlayers_IsCoop()
+                                       ? CoopRand_SignedFloat(1.0f, 1.0f)
+                                       : ((Rand_ZeroOne() < 0.5f) ? -1 : 1) * (RAND_FLOAT(1.0f) + 1.0f);
+                debris->fwork[1] = CoopPlayers_IsCoop()
+                                       ? CoopRand_SignedFloat(1.0f, 1.0f)
+                                       : ((Rand_ZeroOne() < 0.5f) ? -1 : 1) * (RAND_FLOAT(1.0f) + 1.0f);
 
                 debris->state = 40;
 
@@ -5555,8 +5585,13 @@ void Titania_TiGoras_Dying(TiGoras* this) {
         case 120:
             debris = Game_SpawnActor(OBJ_ACTOR_DEBRIS);
             if (debris != NULL) {
-                debris->fwork[0] = ((Rand_ZeroOne() < 0.5f) ? -1 : 1) * (RAND_FLOAT(5.0f) + 5.0f);
-                debris->fwork[1] = ((Rand_ZeroOne() < 0.5f) ? -1 : 1) * (RAND_FLOAT(5.0f) + 5.0f);
+                // COOP: in a session the sign first, then the value, as GCC builds draw them (#209)
+                debris->fwork[0] = CoopPlayers_IsCoop()
+                                       ? CoopRand_SignedFloat(5.0f, 5.0f)
+                                       : ((Rand_ZeroOne() < 0.5f) ? -1 : 1) * (RAND_FLOAT(5.0f) + 5.0f);
+                debris->fwork[1] = CoopPlayers_IsCoop()
+                                       ? CoopRand_SignedFloat(5.0f, 5.0f)
+                                       : ((Rand_ZeroOne() < 0.5f) ? -1 : 1) * (RAND_FLOAT(5.0f) + 5.0f);
 
                 debris->state = 40;
 
@@ -5582,8 +5617,13 @@ void Titania_TiGoras_Dying(TiGoras* this) {
         case 140:
             debris = Game_SpawnActor(OBJ_ACTOR_DEBRIS);
             if (debris != NULL) {
-                debris->fwork[0] = ((Rand_ZeroOne() < 0.5f) ? -1 : 1) * (RAND_FLOAT(1.0f) + 1.0f);
-                debris->fwork[1] = ((Rand_ZeroOne() < 0.5f) ? -1 : 1) * (RAND_FLOAT(1.0f) + 1.0f);
+                // COOP: in a session the sign first, then the value, as GCC builds draw them (#209)
+                debris->fwork[0] = CoopPlayers_IsCoop()
+                                       ? CoopRand_SignedFloat(1.0f, 1.0f)
+                                       : ((Rand_ZeroOne() < 0.5f) ? -1 : 1) * (RAND_FLOAT(1.0f) + 1.0f);
+                debris->fwork[1] = CoopPlayers_IsCoop()
+                                       ? CoopRand_SignedFloat(1.0f, 1.0f)
+                                       : ((Rand_ZeroOne() < 0.5f) ? -1 : 1) * (RAND_FLOAT(1.0f) + 1.0f);
 
                 debris->state = 40;
 

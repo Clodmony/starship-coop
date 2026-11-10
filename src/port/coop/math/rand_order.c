@@ -12,3 +12,10 @@ float CoopRand_Difference(float a, float b) {
 
     return first - second;
 }
+
+float CoopRand_SignedFloat(float offset, float range) {
+    float sign = (Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f;
+    float value = Rand_ZeroOne() * range;
+
+    return sign * (offset + value);
+}

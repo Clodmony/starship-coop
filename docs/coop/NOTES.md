@@ -3971,6 +3971,51 @@ player 0 loses 100.
 
 ## Determinism
 
+### 2026-11-10, #209, Titania's 18 signed draws: the sign first, in a session
+
+Identity: ROM US 1.0, on `80ff9be6` (the combined test branch 2), Linux, GCC, Debug, OpenGL on a software renderer, no
+window, one PC. The helper's test also compiles it alone with the system's `cc` (GCC). MSVC not run.
+
+Observed:
+
+- The 18 statements `((Rand_ZeroOne() < 0.5f) ? -1 : 1) * (a + RAND_FLOAT(b))` of #199's list sit in three functions
+  of `src/overlays/ovl_i5/fox_ti.c`: `Titania_TiDesertCrawler_Update` (the debris of a Desert Crawler: 3 + 3 + 3, as
+  `(4, 3)`, `(0.5, 1)` and `(0, 0.7)`), `Titania_80193DF0` (Goras, 1, `(15, 2)`) and `Titania_TiGoras_Dying` (8, `(5, 5)`
+  and `(1, 1)`). Six spellings: `-1.0f : 1.0f` or `-1 : 1`, `a + RAND_FLOAT(b)`, `RAND_FLOAT(b) + a`, or no offset.
+- GCC, in the base build (`80ff9be6`, Debug): in all three functions the call for the sign comes first (`call
+  Rand_ZeroOne`, `comiss` with 0.5), then the call for the value, then `mulss`/`addss` and the product with the sign.
+  `RAND_FLOAT(1.0f)` is a plain draw, `RAND_FLOAT(2.0f)` an `addss` of the draw to itself; neither changes a bit. The
+  `-1 : 1` spelling loads float constants.
+- `rand_order_test.py` (the six spellings compiled alone with `cc -O2 -ffp-contract=off`, against a Python reference in
+  float arithmetic): each spelling gives `CoopRand_SignedFloat`'s bits, sign drawn first, on every case where the two
+  orders differ (538 cases); none takes the value first. So `-1` and `-1.0f`, and `a + RAND_FLOAT(b)` and
+  `RAND_FLOAT(b) + a`, give the same bits here, as #199 derived. Swapping the helper's two draws fails 1436 of its
+  checks.
+- `lockstep_test.py --only vehicles --levels titania` (6000 frames, input by rule) reaches none of the 18: its hash log
+  equals, on all 6626 common frames, that of a throwaway build whose helper draws the value first.
+- `lockstep_test.py --only vehicle_end --levels titania` (pilots, `gInvincible`, 34000 frames), both games under gdb
+  with a breakpoint on `CoopRand_SignedFloat`: 402 calls on each client, the same on both: 12 + 3 + 3 from a Desert
+  Crawler at game frame 1309, 384 of `(15, 2)` from Goras between game frames 7708 and 33559. Hash logs and lockstep
+  logs equal on all 34000 frames, no desync report. `Titania_TiGoras_Dying` never ran: the scenario fails on "player 0
+  never reached level complete in 34000 frames".
+- The same scenario on the base build fails the same way, and its hash logs equal this change's, from the frame the
+  level runs on (as `join_test.py` aligns them): host for host on all 34025 common frames, client for client on all
+  34028. On GCC the helper gives the game's bits, over a run with 402 calls in a session.
+
+Derived:
+
+- On GCC the helper gives the bits the game's own expression gives, so a Linux session plays as before, and a session
+  of any compiler now draws as GCC does.
+- The `args` site of `fox_ti.c` (`:481`, `Titania_TiBoulder_Spawn` with three draws in three arguments) is the same kind
+  of risk as the other 231 of #199's list: C leaves argument order open. Where #199 measured, MSVC and GCC both went
+  right to left. This one is not measured. Not changed here.
+
+Unknown:
+
+- MSVC's order for this form. `python tools/coop/rand_order_test.py` on Windows prints it (`cl` compiled alone), and
+  the helper pins the order in a session whatever it is.
+- Whether the 8 sites of `Titania_TiGoras_Dying` run in a session: the pilots did not beat Goras in 34000 frames.
+
 ### 2026-11-09, #199, two random draws in one expression: the Windows and Linux games took them in two orders
 
 Identity: the hand-played session of 2026-11-09, Windows (MSVC) host against Linux (GCC) client, build

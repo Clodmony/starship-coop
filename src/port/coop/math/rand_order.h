@@ -1,7 +1,7 @@
 #pragma once
 
 // Two random draws in one expression of the game, taken in the order the source writes them, for a co-op session
-// (#199).
+// (#199, #209).
 //
 // C leaves the order of two calls in one expression to the compiler. Rand_ZeroOne is one sequence for the whole game,
 // so the order decides which draw lands in which operand. In Macbeth, `RAND_FLOAT(1.0f) - RAND_FLOAT(2.0f)` for the
@@ -23,6 +23,11 @@ float Rand_ZeroOne(void);
 
 // RAND_FLOAT(a) - RAND_FLOAT(b), with the draw for a first.
 float CoopRand_Difference(float a, float b);
+
+// ((Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f) * (offset + RAND_FLOAT(range)), with the sign drawn first, as GCC builds
+// draw it (#209: Titania, src/overlays/ovl_i5/fox_ti.c). The same bits as the game's spellings of it with `-1 : 1`,
+// `RAND_FLOAT(range) + offset`, or no offset (pass 0.0f; a draw is never -0.0f).
+float CoopRand_SignedFloat(float offset, float range);
 
 #ifdef __cplusplus
 }

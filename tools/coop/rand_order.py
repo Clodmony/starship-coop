@@ -8,7 +8,8 @@ from Rand_ZeroOne where C does not say which comes first.
 Rand_ZeroOne is one sequence for the whole game, so when two draws sit in one expression, the order the compiler
 evaluates them in decides which value lands where. C leaves that order open. In Macbeth a Windows game (MSVC) took the
 right draw of `RAND_FLOAT(1.0f) - RAND_FLOAT(2.0f)` first and a Linux game (GCC) the left one, and the session parted
-(#199). In a session that statement now goes through src/port/coop/math/rand_order.h, which draws in the written order.
+(#199). In a session that statement and Titania's 18 of the same class (#209) go through src/port/coop/math/rand_order.h,
+which draws in the written order.
 
 Classes, for two draws in one statement:
   operator  operands of one arithmetic expression: unsequenced, the compiler picks. The class of #199.
@@ -40,7 +41,8 @@ HANDLED = re.compile(r"\bCoopRand_\w+\s*\(")
 OPEN_CLASSES = ("operator", "args", "init")
 
 # Open sites, file -> {class: count}. Listed with their levels in docs/coop/NOTES.md (2026-11-09, #199); the owner
-# decides on them. Titania's 18 operator sites are the shape `((Rand_ZeroOne() < 0.5f) ? -1 : 1) * (a + RAND_FLOAT(b))`.
+# decides on them. No operator site is open: Titania's 18, `((Rand_ZeroOne() < 0.5f) ? -1 : 1) * (a + RAND_FLOAT(b))`,
+# call CoopRand_SignedFloat in a session (#209), so a new one fails the check.
 KNOWN = {
     "src/engine/fox_beam.c": {"args": 3},
     "src/engine/fox_demo.c": {"args": 5},
@@ -62,7 +64,7 @@ KNOWN = {
     "src/overlays/ovl_i4/fox_ka.c": {"args": 3},
     "src/overlays/ovl_i4/fox_sz.c": {"args": 3},
     "src/overlays/ovl_i5/fox_ma.c": {"args": 59},
-    "src/overlays/ovl_i5/fox_ti.c": {"operator": 18, "args": 1},
+    "src/overlays/ovl_i5/fox_ti.c": {"args": 1},
     "src/overlays/ovl_i5/fox_ti_cs.c": {"args": 3},
     "src/overlays/ovl_i6/fox_andross.c": {"args": 20},
     "src/overlays/ovl_i6/fox_sy.c": {"args": 8},
