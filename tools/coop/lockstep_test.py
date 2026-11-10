@@ -1777,7 +1777,8 @@ ALLRANGE_DOWN_AFTER = 1500  # frames of player 0 active on Katina before the cli
 def sc_allrange_down(args, folder):
     """#15: on Katina the client flies Falco and goes down (SF64_COOP_TEAM_DOWN). From then on Falco's body waits in
     the retreat state, gTeamShields[Falco] is -1, no computer Falco flies and the body is never somewhere the client
-    is not (decision 0006 rules 1 and 3, all-range)."""
+    is not (decision 0006 rules 1 and 3, all-range). Where the client returns in place (#205), the body is on it
+    again from the first frame it flies."""
     frames = ALLRANGE_FRAMES
     down = f"{ALLRANGE_LEVEL},{ALLRANGE_DOWN_AFTER},1"
     host, client = run_short(args, folder, frames=frames, host_env={"SF64_COOP_JOIN_LEVEL": str(ALLRANGE_LEVEL)},
@@ -1803,13 +1804,24 @@ def sc_allrange_down(args, folder):
                         f"{bad[0]['frame'] if bad else 0}")
         away = [l for l in after if l["body"][0] == 2]
         expect(away, f"{game.name}: Falco's body never went away after frame {at}")
-        settled = [l for l in after if int(l["frame"]) >= int(away[0]["frame"])]
-        wrong = [l for l in settled if l["body"][0] != 2 or l["team"][0] != -1 or int(l["p1"]) >= 0]
+        # The body stays away while player 1 stays out. Where the return in place is in (#205, decision 0007: a downed
+        # player comes back after 150 frames) the first line with player 1 flying again ends the away window, and from
+        # there on the body is on player 1 again with its shields in the team (not away, not a computer Falco).
+        later = [l for l in after if int(l["frame"]) >= int(away[0]["frame"])]
+        back = next((i for i, l in enumerate(later) if int(l["p1"]) >= 0), len(later))
+        settled, returned = later[:back], later[back:]
+        wrong = [l for l in settled if l["body"][0] != 2 or l["team"][0] != -1]
         expect(not wrong, f"{game.name}: after going away at frame {away[0]['frame']}, line at frame "
                           f"{wrong[0]['frame'] if wrong else 0} has body={wrong[0]['body'][0] if wrong else 0} "
                           f"team={wrong[0]['team'][0] if wrong else 0} p1={wrong[0]['p1'] if wrong else 0}")
+        wrong = [l for l in returned if l["body"][0] != 1 or l["team"][0] < 0]
+        expect(not wrong, f"{game.name}: player 1 flies again from frame {returned[0]['frame'] if returned else 0}, "
+                          f"line at frame {wrong[0]['frame'] if wrong else 0} has body={wrong[0]['body'][0] if wrong else 0} "
+                          f"team={wrong[0]['team'][0] if wrong else 0} p1={wrong[0]['p1'] if wrong else 0}")
         found.append(f"{game.name}: down at frame {at}, body away from frame {away[0]['frame']} on "
-                     f"{len(settled)} lines, gTeamShields[Falco] -1 there, no computer Falco")
+                     f"{len(settled)} lines, gTeamShields[Falco] -1 there, no computer Falco"
+                     + (f"; player 1 back from frame {returned[0]['frame']}, body on it again on {len(returned)} lines"
+                        if returned else ""))
     return f"{frames} frames of Katina, {equal} frames equal; " + "; ".join(found)
 
 
