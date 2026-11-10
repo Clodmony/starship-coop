@@ -261,7 +261,7 @@ src/engine/fox_enmy.c	Actor_Update@gCamCount	ok	read	versus branch, loops all pl
 # --- boss and enemy functions that also switch the level phase by writing player 0 state or camera (checked by site)
 src/overlays/ovl_i1/fox_co.c	Corneria_Granga_Init	sim	site	boss; sets player 0 to START_360 (switch to all-range)
 src/overlays/ovl_i1/fox_co.c	Corneria_CoGranga_HandleDamage	sim	site	boss; on death sets player 0 state for the level end
-src/overlays/ovl_i2/fox_me.c	Meteo_MeCrusher_Update	sim	site	boss; on death sets player 0 to LEVEL_COMPLETE
+src/overlays/ovl_i2/fox_me.c	Meteo_MeCrusher_Update	flow	read	its moves follow the path and random draws, its missiles seek the nearest human (#193), its rings too (#220); left: level complete and the wait for PLAYERSTATE_NEXT on player 0
 src/overlays/ovl_i2/fox_sx.c	SectorX_SxSlippy_Update	sim	site	Slippy rescue; moves player 0 camera for the cutscene
 src/overlays/ovl_i2/fox_sx.c	SectorX_SxSpyborg_Update	sim	site	boss; on death sets player 0 state
 src/overlays/ovl_i3/fox_aq.c	Aquas_AqBacoon_Update	sim	site	boss; changes player 0 camera distance and state
@@ -343,6 +343,7 @@ src/overlays/ovl_i1/fox_co.c	Corneria_CoCarrier_Update@gPlayer arg	flow	site	Bos
 src/overlays/ovl_i2/fox_me.c	Meteo_Effect369_Update@gPlayer arg	ok	read	func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0
 src/overlays/ovl_i2/fox_me.c	Meteo_Effect370_Update@gPlayer arg	ok	read	func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0
 src/overlays/ovl_i2/fox_me.c	Meteo_Effect371_Update@gPlayer arg	ok	read	func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0
+src/overlays/ovl_i2/fox_me.c	Meteo_Effect371_Update	flow	read	the Crusher's rings home in on the nearest human, as #193's missiles (#220); left: they go at player 0's level complete
 src/overlays/ovl_i4/fox_bo.c	Bolse_8018E05C@gPlayer arg	ok	read	Player_ApplyDamage for player 0; CoopHits_BolseBeam after it does the others (#136)
 src/overlays/ovl_i4/fox_bo.c	Bolse_Effect397_Update@gPlayer arg	ok	read	func_effect_8007A774 tests the others; each player's own roll counts, and player 0's roll no longer covers them (#100)
 src/overlays/ovl_i5/fox_ma.c	Macbeth_Effect380_Update@gPlayer arg	sim	read	right for now: Macbeth is rails in a Landmaster, where co-op players stay parked (CoopPlayers_SectionSupported); WP-18

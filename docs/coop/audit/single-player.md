@@ -24,19 +24,19 @@ pattern without reading the code, so treat it as a guess.
 
 ## Summary
 
-1783 sites in 423 functions in 46 files.
+1779 sites in 423 functions in 46 files.
 A function whose sites have more than one verdict counts once per verdict in the functions column.
 
 | verdict | sites | functions | `gPlayer[0]` | `gPlayer->` | `gPlayer arg` | `gMainController` | `gCamCount` | `shooter` |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| sim | 872 | 177 | 867 | 1 | 2 | 0 | 0 | 2 |
+| sim | 863 | 175 | 858 | 1 | 2 | 0 | 0 | 2 |
 | view | 217 | 84 | 151 | 0 | 0 | 43 | 3 | 20 |
 | input | 13 | 9 | 0 | 0 | 0 | 8 | 0 | 5 |
-| flow | 443 | 96 | 403 | 0 | 3 | 3 | 0 | 34 |
+| flow | 448 | 98 | 408 | 0 | 3 | 3 | 0 | 34 |
 | setup | 53 | 34 | 1 | 0 | 1 | 0 | 51 | 0 |
 | ok | 185 | 83 | 5 | 2 | 15 | 87 | 8 | 68 |
 
-Basis per site: read 304, site 944, name 535.
+Basis per site: read 309, site 940, name 530.
 
 ## Sites
 
@@ -413,15 +413,15 @@ Basis per site: read 304, site 944, name 535.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Meteo_MeLaserCannon2_Update` | 257:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Meteo_Effect369_Update` | 727:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
-| `Meteo_Effect370_Update` | 791:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
-| `Meteo_Effect371_Update` | 795:P0, 805:P0, 812:P0, 819:P0, 826:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Meteo_Effect371_Update` | 833:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
-| `Meteo_MeCrusher_Update` | 1048:P0, 1049:P0, 1050:P0, 1377:P0 | sim | site | boss; on death sets player 0 to LEVEL_COMPLETE |
-| `Meteo_LevelStart_SetupTeam` | 1907:P0, 1908:P0, 1909:P0 | flow | name | intro team around player 0 |
-| `Meteo_LevelComplete_SetupTeam` | 2390:P0, 2391:P0, 2392:P0 | flow | name | level complete team around player 0 |
-| `Meteo_8018ED9C` | 2692:P0, 2693:P0, 2694:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Meteo_MeLaserCannon2_Update` | 258:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Meteo_Effect369_Update` | 728:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
+| `Meteo_Effect370_Update` | 792:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
+| `Meteo_Effect371_Update` | 800:P0 | flow | read | the Crusher's rings home in on the nearest human, as #193's missiles (#220); left: they go at player 0's level complete |
+| `Meteo_Effect371_Update` | 838:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
+| `Meteo_MeCrusher_Update` | 1053:P0, 1054:P0, 1055:P0, 1382:P0 | flow | read | its moves follow the path and random draws, its missiles seek the nearest human (#193), its rings too (#220); left: level complete and the wait for PLAYERSTATE_NEXT on player 0 |
+| `Meteo_LevelStart_SetupTeam` | 1912:P0, 1913:P0, 1914:P0 | flow | name | intro team around player 0 |
+| `Meteo_LevelComplete_SetupTeam` | 2395:P0, 2396:P0, 2397:P0 | flow | name | level complete team around player 0 |
+| `Meteo_8018ED9C` | 2697:P0, 2698:P0, 2699:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 
 ### `src/overlays/ovl_i2/fox_sx.c`
 
