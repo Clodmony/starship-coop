@@ -18,6 +18,9 @@ extern s32 sSeededRandSeed3;
 // src/overlays/ovl_menu/fox_map.c
 void Map_LevelStart_AudioSpecSetup(LevelId level);
 
+// src/audio/audio_general.c: the audio spec the game last asked for
+extern u8 sAudioSpecId;
+
 // src/engine/fox_play.c
 extern u8 sSaveSlotFromLevel[20];
 
@@ -159,6 +162,13 @@ void CoopLevelStart_Enter(const CoopLevelStart* start) {
     gNextLevel = start->level;
     gNextLevelPhase = start->phase;
     gNextGameState = GSTATE_PLAY;
+    // As from the map, whose spec no level uses, so the level's spec always resets the audio heap. A spec that is the
+    // one already loaded resets nothing, and then the voice sequence runs on with the tempo where this game's own
+    // history left it, so a radio line ends one frame apart on two games (#230). Going into Macbeth from the boot logo
+    // or from Macbeth, for example: both use AUDIOSPEC_MA. After the reset the voice player starts over a fixed number
+    // of frames after this call. A game that is in the level's scene already gets to Play_Init 2 frames sooner
+    // (Game_ChangeScene loads no scene), so it is in step with the others only if they come from that scene too.
+    sAudioSpecId = AUDIOSPEC_24;
     Map_LevelStart_AudioSpecSetup((LevelId) start->level);
 }
 

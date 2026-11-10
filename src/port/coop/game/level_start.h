@@ -33,7 +33,8 @@ void CoopLevelStart_FromGame(CoopLevelStart* out, uint8_t level, uint8_t phase);
 
 // Puts the values in place and sends the game to the level on this frame, from whatever it is doing. Call it from a
 // GamePreUpdateEvent listener or anywhere else outside Game_Update, so that nothing runs between the values and the
-// level. The players of the roster stay in the level until CoopPlayers_SetRoster(NULL).
+// level. The players of the roster stay in the level until CoopPlayers_SetRoster(NULL). The audio heap is reset on the
+// way in, also when the level's audio spec is the one loaded, so every game's sound thread starts over there (#230).
 void CoopLevelStart_Enter(const CoopLevelStart* start);
 
 // Nonzero when the last level start this game entered said the host's save has `level` cleared: what the intro skip
