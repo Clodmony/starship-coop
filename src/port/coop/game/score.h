@@ -45,9 +45,20 @@ void CoopScore_Checkpoint(void);
 // hits saved there, as the game gives back gHitCount; a new level keeps 0 and forgets the saved ones.
 void CoopScore_LevelInit(void);
 
-// The status screen (pause and level clear): one row per human, the character's face and that player's own hits,
-// right of the team's "enemies down". Nothing outside co-op or with one player.
+// The status screen (pause and level clear): a window at the top right with a title and one row per human, the
+// character's face, name and that player's own hits. On the level clear screen also "OK" for each human who has
+// pressed A, and "PRESS A" while the scene holds. Nothing outside co-op or with one player.
 void CoopScore_DrawStatus(void);
+
+// The results hold: in a co-op session the level clear status screen stays until every human has pressed A or B, 30 s
+// at most (see score.c for the frames). Registers a PlayUpdateEvent listener that holds the scene; call once at boot.
+void CoopScore_Init(void);
+
+// Nonzero while the scene holds for the results. Simulation state: the same frames on every game of a session.
+int32_t CoopScore_ResultsHolding(void);
+
+// Nonzero once player `index` has pressed A or B on the level clear screen shown now.
+int32_t CoopScore_ResultsReady(int32_t index);
 
 #ifdef __cplusplus
 }

@@ -632,6 +632,27 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-11, #252, the level clear status screen: how long it stays, and where its tally runs
+
+Identity: ROM US 1.0, branch `issue/252-results-time` on `5b0e2204` (`issue/combined-test-4`), Windows 11, MSVC v143,
+Debug, `lockstep_test.py --exe build/x64-wip/Debug/Starship.exe --no-build --only results`.
+
+Observed in the code: every level turns `gShowLevelClearStatusScreen` on and off by its cutscene frame counter, 200
+frames apart in all of them (e.g. `src/overlays/ovl_i1/fox_co.c` 981 to 1181, `src/engine/fox_demo.c` 961 to 1161;
+Macbeth's second window, `fox_ma.c` 755 to 1025, is longer). The tally on that screen (hits counting up, the team's
+shields filled, the life for 100 hits) runs in its draw, `HUD_LevelClearStatusScreen_Draw`, on timers that
+`HUD_DrawStatusScreens` counts down, so it goes on while `Play_Update` is skipped. `PlayUpdateEvent` listeners run
+LOW first, HIGH last (`src/port/hooks/impl/EventSystem.cpp` sorts by priority); the port's debug pause
+(`src/port/mods/PortEnhancements.c` `OnPlayUpdateEvent`) sets `cancelled` outright, so a co-op listener that cancels
+has to run after it.
+
+Observed in the run: the scene held from frame 1950 (the screen on at 1800, plus 150) until the frame after player
+1's press at 2200; a press at 1820 (before 2 s) did not count. With player 1 idle it held 900 frames. Hashes equal on
+2300 and 2950 frames.
+
+Unknown: how the new window looks on screen. A drawn run for screenshots (960x720 windows, drawing on) never joined
+the session and fell back to the title, cause not looked into.
+
 ### 2026-11-10, #252, each human's own hits on the status screen
 
 Identity: ROM US 1.0, branch `issue/252-player-hits` on `ed61d6fd` (`issue/combined-test-4`), Windows 11, MSVC v143,

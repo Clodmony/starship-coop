@@ -68,6 +68,8 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   menu      the whole way through the real menu, with real widgets.
   full      all of Corneria: pilots fly it live, one on each client, then plain runs repeat what they flew. Takes a while.
   player_hits Corneria with pilots (#252): each human's own hits count, add up to at most the team's, same on both.
+  results   the level clear status screen out of Corneria (#252): the scene holds until both pressed A, a press
+            before 2 s does not count; then again with player 1 idle: it goes on alone after 30 s. Same on both.
   guests    Corneria, client as Falco, Slippy and Peppy down (#15, 0012 B4): Katt flies Falco's scenes.
   map_saves two PCs with two saves (decision 0009 item 8): the host's blank, the client's with every level cleared
             and its own sound settings. Pilots fly Corneria to its end, the map writes the save, and the games go on
@@ -1765,7 +1767,7 @@ def fly_for(args, folder, frames, extra_env):
 HITS_FRAMES = 3500  # Corneria's rails to past the first enemy groups, before the rescue
 
 
-def score_rows(game):
+def hit_rows(game):
     """(frame-ordered) [(gHitCount, [gPlayerScores...])] from the player trace's score= field (#252)."""
     rows = []
     for line in (game.run / "trace.txt").read_text(encoding="utf-8", errors="replace").splitlines():
@@ -1784,7 +1786,7 @@ def sc_player_hits(args, folder):
     equal = compare(host, client, frames)
     found = []
     for game in (host, client):
-        rows = score_rows(game)
+        rows = hit_rows(game)
         expect(rows, f"{game.name}: no score= field in the player trace")
         team, own = rows[-1]
         expect(len(own) >= 2, f"{game.name}: one player only in the trace")
@@ -1792,8 +1794,99 @@ def sc_player_hits(args, folder):
         over = [r for r in rows if sum(r[1]) > r[0]]
         expect(not over, f"{game.name}: players {over[0][1] if over else 0} add up past the team's {over[0][0] if over else 0}")
         found.append(f"{game.name}: team {team}, players {own}")
-    expect(score_rows(host)[-1] == score_rows(client)[-1], "host and client end on different counts")
+    expect(hit_rows(host)[-1] == hit_rows(client)[-1], "host and client end on different counts")
     return f"{frames} frames of Corneria, {equal} frames equal; " + "; ".join(found)
+
+
+RESULTS_AT = JOIN_FRAME + 100      # the probe turns the level clear screen on
+RESULTS_READY_FROM = 60             # src/port/coop/game/score.c: presses count from here
+RESULTS_HOLD_AT = 150               # the scene holds from here
+RESULTS_TIMEOUT = 900               # and goes on alone after this many held frames
+RESULTS_EARLY = RESULTS_AT + 20     # player 1's press before 2 s: not counted
+RESULTS_HOST = RESULTS_AT + 90      # player 0 ready
+RESULTS_CLIENT = RESULTS_AT + 400   # player 1 ready, well into the hold
+
+
+def results_runs(rows):
+    """The `results` lines as [(frame, holding, (ready 0, ready 1))], and the frames the screen went on and off."""
+    held, on, off = [], None, None
+    for kind, row in rows:
+        if kind != "results":
+            continue
+        if "on" in row:
+            if row["on"] == "1":
+                on = int(row["frame"])
+            else:
+                off = int(row["frame"])
+        else:
+            held.append((int(row["frame"]), int(row["holding"]), tuple(int(v) for v in row["ready"].split(","))))
+    return held, on, off
+
+
+def sc_results(args, folder):
+    """#252: the level clear status screen holds the scene in a session until every human pressed A or B, presses in
+    its first 2 s do not count, and it goes on alone after 30 s. The probe turns the screen on in Corneria, as a
+    level's end does. Both games report the same frames, and their hashes match through the hold."""
+    def idle(frame, player):
+        return 0, 0, 0
+
+    texts = []
+    both = press(idle, {(RESULTS_EARLY, 1), (RESULTS_HOST, 0), (RESULTS_CLIENT, 1)}, BUTTON_A)
+    frames = RESULTS_CLIENT + 100
+    compared, rows = run_results(args, folder / "pressed", both, frames)
+    held, on, off = results_runs(rows)
+    expect(on == RESULTS_AT, f"the screen went on at {on}, want {RESULTS_AT}")
+    ready0 = next((f for f, _, r in held if r[0]), None)
+    ready1 = next((f for f, _, r in held if r[1]), None)
+    start = next((f for f, h, _ in held if h), None)
+    end = next((f for f, h, _ in held if start is not None and f > start and not h), None)
+    # Report lines come one frame after the update that changed them (the probe reads in GamePreUpdate).
+    expect(ready0 == RESULTS_HOST + 1, f"player 0 counted ready at {ready0}, pressed at {RESULTS_HOST}")
+    expect(ready1 == RESULTS_CLIENT + 1, f"player 1 counted ready at {ready1}, pressed at {RESULTS_CLIENT} "
+                                          f"(and early at {RESULTS_EARLY}, which must not count)")
+    expect(start is not None and abs(start - (RESULTS_AT + RESULTS_HOLD_AT)) <= 2,
+           f"the hold began at {start}, want about {RESULTS_AT + RESULTS_HOLD_AT}")
+    expect(end == RESULTS_CLIENT + 1, f"the hold ended at {end}, want the frame after player 1's press")
+    expect(off == end + 30, f"the probe's screen went off at {off}")
+    texts.append(f"both pressed: held {start} to {end}, {compared} frames equal")
+
+    one = press(idle, {(RESULTS_HOST, 0)}, BUTTON_A)
+    frames = RESULTS_AT + RESULTS_HOLD_AT + RESULTS_TIMEOUT + 100
+    compared, rows = run_results(args, folder / "timeout", one, frames)
+    held, on, off = results_runs(rows)
+    start = next((f for f, h, _ in held if h), None)
+    end = next((f for f, h, _ in held if start is not None and f > start and not h), None)
+    expect(start is not None and end is not None, f"no hold, or it never ended: {held}")
+    expect(abs((end - start) - RESULTS_TIMEOUT) <= 2, f"held {end - start} frames with player 1 idle, want "
+                                                       f"{RESULTS_TIMEOUT}")
+    expect(not any(r[1] for _, _, r in held), "player 1 counted ready without a press")
+    texts.append(f"player 1 idle: held {end - start} frames, {compared} frames equal")
+    return "; ".join(texts)
+
+
+def run_results(args, folder, script, frames):
+    """run_score with the `results` probe and a feed of its own: nothing but the presses in `script`."""
+    folder.mkdir(parents=True, exist_ok=True)
+    feed = folder / "feed.txt"
+    write_feed(feed, frames + 16, script)
+    reports = {name: folder / f"{name}-score.txt" for name in ("host", "client")}
+    for path in reports.values():
+        if path.exists():
+            path.unlink()
+    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(frames),
+           "SF64_COOP_SCORE_PROBE": f"results:{RESULTS_AT}"}
+    host, client = session(args, folder, {"SF64_COOP_SCORE_REPORT": str(reports["host"])},
+                           {"SF64_COOP_SCORE_REPORT": str(reports["client"])}, env)
+    try:
+        wait_for([host, client], "done", 900)
+    finally:
+        host.close()
+        client.close()
+    compared = compare(host, client, frames)
+    rows = [score_rows(reports[name]) for name in ("host", "client")]
+    expect(rows[0], "no score probe report (a build without the results probe)")
+    expect(rows[0] == rows[1], f"the two games saw different things: host {rows[0]}, client {rows[1]}")
+    return compared, rows[0]
 
 
 # Decision 0013, Corneria's Falco rescue flown by Slippy: Falco's lines (CO S60:7, :25, S59:44) do not play; Slippy's
@@ -2847,6 +2940,7 @@ SCENARIOS = {
     "full": sc_full,
     "scenes": sc_scenes,
     "player_hits": sc_player_hits,
+    "results": sc_results,
     "guests": sc_guests,
     "allrange": sc_allrange,
     "allrange_down": sc_allrange_down,
