@@ -2318,6 +2318,14 @@ void Effect_Effect344_Update(Effect344* this) {
     f32 z;
     f32 y;
 
+    // COOP: in all-range the view cull frees a mark that is out of view (Effect_DrawAllRange); in a session nothing is
+    // freed for leaving the view (#96), so the mark ends 80 frames after its spawn, as a laser mark does (#129). The
+    // spawn sets unk_46 to 80 (PlayerShot_SetupEffect344) and nothing else reads it here (#231).
+    if (CoopPlayers_IsCoop() && (gLevelMode == LEVELMODE_ALL_RANGE) && (--this->unk_46 <= 0)) {
+        Object_Kill(&this->obj, this->sfxSource);
+        return;
+    }
+
     if (gGroundType == 4) {
         Ground_801B6E20(this->obj.pos.x, this->obj.pos.z + gPathProgress, &x, &y, &z);
         this->obj.pos.y = y + 3.0f;
