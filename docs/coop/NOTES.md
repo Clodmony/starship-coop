@@ -735,6 +735,34 @@ Unknown:
 
 - The rate without the widened window in a full run (1 in 40 in one sweep at load about 36, 0 in 240 boots here).
 
+### 2026-11-10, #214, the team's speed on the rails, frame by frame
+
+Identity: ROM US 1.0, base `80ff9be6` and the fix on top, Linux, GCC, Debug, OpenGL in software, no window, test speed.
+
+Observed (`player_trace.py rails`, the trace now holds each player's `boostSpeed`, `boost=`):
+
+- With one player, gPathVelZ less player 0's boostSpeed is 40.000 (baseSpeed) on 4524 of 4525 rail frames of Corneria;
+  the other is the section's first frame, where gPathVelZ is 0.
+- With two players, the #194 code (`CoopPlayers_PathBoostSpeed`, `src/port/coop/game/players.c`): gPathVelZ less the
+  team's boostSpeed (the highest of the flying players if above 0, else the lowest, the others as they stood after the
+  previous frame) is 40.000 on 4457 of 4458 rail frames. Read without that lag it missed by +1, -0.5 and -2 on 829 frames,
+  the per-frame steps of boostSpeed.
+- A second player who never presses boost or brake still changed the path: every flying player gets the boost a section
+  starts with (both 2, 4, 6 ... from frame 1675, then -1 a frame), and read a frame late the second player's ramp down is
+  one above player 0's. gPathVelZ was 68 where single player had 67 from frame 1689, on 28 frames; gPathProgress stayed
+  28 ahead, and the section ended on the same frame, 6198. The same with four players.
+- With the fix (a player whose boostSpeed was player 0's after the previous frame adds nothing) and both checks
+  strict: quiet partners as single player on 4525 of 4525 frames; partners that boost and brake by the rule on 4252 of
+  4252, setting the speed on 1224 frames, the section ending on 5926. The same with four players.
+  `lockstep_test.py --only boost`: same hash on 2700 frames, level speed 35.6 -> 69.3 in both games.
+
+Derived:
+
+- `rails-2` and `rails-4` failed because their expectation, "the path as in single player" for a partner who boosts,
+  is older than #194. The start boost was a defect against the rule.
+- The fix leaves one known gap: a partner whose boostSpeed equals player 0's on one frame by chance (both at 30) adds
+  nothing on the next, so when player 0 lets go first the level drops by 1 for that one frame.
+
 ### 2026-11-09, #14 (WP-16), players 2-4 come back after going down (decision 0007 rule 4)
 
 Identity: ROM US 1.0, on top of `6becd73a` (the combined test branch of 2026-11-09), Linux, GCC, Debug, OpenGL on a

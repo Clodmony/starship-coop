@@ -45,6 +45,10 @@ static s32 sRosterCount = 0;
 // The player this client looks through, as asked for. Only counts in co-op, and only for a player in the level.
 static s32 sLocalIndex = 0;
 
+// Player 0's boostSpeed as it stood after the previous frame, taken before its update (CoopPlayers_SkipUpdate), so it
+// is read as the others are in CoopPlayers_PathBoostSpeed (#214). Set from hashed state every frame before it is read.
+static f32 sOwnBoostBefore = 0.0f;
+
 // How far a joining player is placed from player 0, per player index (x to the side, y up), in world units.
 #define COOP_JOIN_OFFSET_X 250.0f
 #define COOP_JOIN_OFFSET_Y 80.0f
@@ -255,6 +259,9 @@ static s32 CoopPlayers_SectionSupported(void) {
 }
 
 int32_t CoopPlayers_SkipUpdate(int32_t index) {
+    if (index == 0) {
+        sOwnBoostBefore = gPlayer[0].boostSpeed;
+    }
     if ((index <= 0) || !CoopPlayers_IsCoop() || (index >= COOP_PLAYERS_MAX)) {
         return 0;
     }
@@ -315,7 +322,10 @@ int32_t CoopPlayers_SkipUpdate(int32_t index) {
 // boosts the strongest brake slows it. boostSpeed is what single player uses (ramps +2 a frame to 30, -1 a frame back,
 // brake to -20), so the level speeds up as smoothly as it does for Fox alone. Boost wins over a brake. Only players
 // that fly count; player 0 always does, as it owns the path. Every game reads the same players in the same order, so
-// the result is the same everywhere. A player later in the loop is read as it stood after the previous frame.
+// the result is the same everywhere. A player later in the loop is read as it stood after the previous frame, and one
+// whose boostSpeed then was player 0's follows player 0 and adds nothing (#214): every flying player gets the boost a
+// section starts with, and read a frame late its ramp down would be one above player 0's, so a player who presses
+// nothing would speed the level.
 f32 CoopPlayers_PathBoostSpeed(const Player* player) {
     f32 hi = gPlayer[0].boostSpeed;
     f32 lo = hi;
@@ -325,7 +335,8 @@ f32 CoopPlayers_PathBoostSpeed(const Player* player) {
         return player->boostSpeed;
     }
     for (i = 1; i < CoopPlayers_Count(); i++) {
-        if (!CoopPlayers_IsParked(i) && (gPlayer[i].state == PLAYERSTATE_ACTIVE)) {
+        if (!CoopPlayers_IsParked(i) && (gPlayer[i].state == PLAYERSTATE_ACTIVE) &&
+            (gPlayer[i].boostSpeed != sOwnBoostBefore)) { // #214
             hi = MAX(hi, gPlayer[i].boostSpeed);
             lo = MIN(lo, gPlayer[i].boostSpeed);
         }

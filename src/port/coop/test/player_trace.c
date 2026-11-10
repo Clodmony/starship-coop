@@ -167,6 +167,11 @@ static void CoopTrace_OnGamePostUpdate(IEvent* event) {
                 p->csState, p->pos.x, p->pos.y, p->trueZpos, CoopPlayers_IsParked(i), p->draw, p->zPath, p->camDist,
                 p->xPath, p->yPath, p->pathWidth, p->shields, p->somersault, p->form);
     }
+    // Each player's boostSpeed: on the rails the team's sets the speed along the path (#194, #214).
+    fprintf(sTraceFile, " boost=%.3f", gPlayer[0].boostSpeed);
+    for (i = 1; i < CoopPlayers_Count(); i++) {
+        fprintf(sTraceFile, ",%.3f", gPlayer[i].boostSpeed);
+    }
     fprintf(sTraceFile, " tframe=%d", sPadFrame);
     for (i = 0; i < COOP_PLAYERS_MAX; i++) {
         fprintf(sTraceFile, " pad%d=%d,%d,%d,%d,%d,%d", i, sHold[i].button, sHold[i].stick_x, sHold[i].stick_y,
