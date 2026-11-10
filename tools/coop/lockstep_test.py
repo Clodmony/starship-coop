@@ -40,6 +40,7 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             gTeamShields[Falco] holds the client's shields while it flies, and no computer Falco joins the boss fight.
   allrange  Katina with the client as Falco (#15): Falco's all-range slot is a body on the client's ship, and no
             computer Falco flies while the client does.
+  allrange_others the allrange check on Fortuna, Bolse, Sector Z and Venom 2 (#15).
   allrange_down Katina with the client as Falco, downed on purpose (#15): Falco's body waits away, gTeamShields[Falco]
             is -1, and no computer Falco takes over.
   audio     the plain run with the two clients at different audio sample counts, as a radio line follows the sound thread.
@@ -576,17 +577,17 @@ ALLRANGE_LEVEL = 16  # LEVEL_KATINA: all-range from the start
 ALLRANGE_FRAMES = 4000
 
 
-def sc_allrange(args, folder):
-    """#15: on Katina the client flies Falco. While it flies, Falco's slot holds a body on the client's ship and no
-    computer Falco flies; Slippy and Peppy fly as before (decision 0006 rule 3, all-range)."""
+def allrange_run(args, folder, level, name):
+    """#15: on all-range `level` the client flies Falco. While it flies, Falco's slot holds a body on the client's
+    ship and no computer Falco flies; Slippy and Peppy fly as before (decision 0006 rule 3, all-range)."""
     frames = ALLRANGE_FRAMES
-    host, client = run_short(args, folder, frames=frames, host_env={"SF64_COOP_JOIN_LEVEL": str(ALLRANGE_LEVEL)},
+    host, client = run_short(args, folder, frames=frames, host_env={"SF64_COOP_JOIN_LEVEL": str(level)},
                              both={"SF64_COOP_TEAM_TRACE": "team.txt"})
     equal = compare(host, client, frames)
     found = []
     for game in (host, client):
-        lines = team_lines(game, ALLRANGE_LEVEL)
-        expect(lines, f"{game.name}: no Katina lines in the team trace")
+        lines = team_lines(game, level)
+        expect(lines, f"{game.name}: no {name} lines in the team trace")
         # PLAYERSTATE_ACTIVE, DOWN and U_TURN (player 0 turns at the map's edge), player 1 flying
         play = [l for l in lines if l["p0"] in ("3", "4", "5") and int(l["p1"]) >= 0]
         expect(play, f"{game.name}: player 1 never flew while player 0 was active")
@@ -600,7 +601,28 @@ def sc_allrange(args, folder):
         expect(others, f"{game.name}: Slippy and Peppy never flew")
         found.append(f"{game.name}: {len(play)} lines in play, Falco's body on player 1 in all of them, "
                      f"computer Slippy or Peppy in {len(others)}")
-    return f"{frames} frames of Katina, {equal} frames equal; " + "; ".join(found)
+    return f"{frames} frames of {name}, {equal} frames equal; " + "; ".join(found)
+
+
+def sc_allrange(args, folder):
+    """#15: allrange_run on Katina."""
+    return allrange_run(args, folder, ALLRANGE_LEVEL, "Katina")
+
+
+# The other all-range levels with wingmen (include/sf64level.h). Katina is `allrange`.
+ALLRANGE_OTHERS = ((14, "Fortuna"), (17, "Bolse"), (18, "Sector Z"), (19, "Venom 2"))
+
+
+def sc_allrange_others(args, folder):
+    """#15: allrange_run on each other all-range level; every level runs, and the failures are named together."""
+    done, failed = [], []
+    for level, name in ALLRANGE_OTHERS:
+        try:
+            done.append(allrange_run(args, folder / name.replace(" ", "_"), level, name))
+        except Exception as e:  # noqa: BLE001, a level's failure is reported with the others
+            failed.append(f"{name}: {e}")
+    expect(not failed, " | ".join(failed) + (" | passed: " + " | ".join(done) if done else ""))
+    return " | ".join(done)
 
 
 ALLRANGE_DOWN_AFTER = 1500  # frames of player 0 active on Katina before the client's shields drop to 0
@@ -1155,6 +1177,7 @@ SCENARIOS = {
     "scenes": sc_scenes,
     "allrange": sc_allrange,
     "allrange_down": sc_allrange_down,
+    "allrange_others": sc_allrange_others,
     "audio": sc_audio,
     "release": sc_release,
     "rates": sc_rates,
@@ -1163,7 +1186,7 @@ SCENARIOS = {
     "desync_three": sc_desync_three,
     "log": sc_log,
 }
-LONG = ("full", "scenes", "allrange", "allrange_down", "audio", "release", "rates")
+LONG = ("full", "scenes", "allrange", "allrange_down", "allrange_others", "audio", "release", "rates")
 
 
 def main():
