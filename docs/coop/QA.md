@@ -171,7 +171,14 @@ number of clients, transport.
 4. **Network conditions (WP-27).** Lag, loss and reordering between the clients with a chaos relay, as in the hub's
    [network chaos testing](https://github.com/cranebeaker/coop-anything/blob/main/playbook/network-chaos-testing.md).
    The transport on its own already runs through that relay: `python tools/coop/net_test.py` (WP-20), which needs a
-   configured build directory but no ROM. WP-27 does the same with real game clients.
+   configured build directory but no ROM. `python tools/coop/chaos_run.py` (WP-27, #25, unattended, exit code 0 when
+   every run passed) does the same with real game clients: per profile of `chaos/profiles.json` and per seed (default
+   1, 2 and 3), one session over loopback with the client's datagrams through the relay, a pilot on each client flying
+   Corneria from its intro (6000 lockstep frames by default, `--frames`). Lockstep stamps every input with its frame,
+   so the flight is the same at any lag: a run passes when both games reach the last frame equal on every frame, hash
+   and input logs, with no desync report, and equal to the first passing run. Per run it reports the frames and the
+   time held, the longest single hold, resends, ping, what the relay dropped and duplicated, and where a session that
+   broke ended, with the profile and seed that repeat it. `--profiles`, `--seeds`, `--lock <file>`.
    Whether those scenarios can fail at all is checked by `python tools/coop/net_mutants.py`: it breaks one behaviour
    of `net_core.c` at a time and requires the named scenario to fail (#44). Run it after changing `net_core.c`.
    `python tools/coop/session_mutants.py` does the same for `session.c` and `session_test.py` (#55; `test_all.py` runs
