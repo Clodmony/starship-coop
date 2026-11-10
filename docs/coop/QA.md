@@ -12,7 +12,7 @@ Every PR states the QA level it reached and how. Levels follow Co-op Anything:
 `automated` needs at least two game clients sharing state. A run of one game is `none`, even when a script drove it and
 checked its state: the PR says what ran.
 
-Current project level: `automated`. Two real game clients in one session, on one PC, stay equal on every frame through all of Corneria (`python tools/coop/lockstep_test.py`). Nobody has played it, and it has not run on two PCs.
+Current project level: `automated`. Two real game clients in one session, on one PC, stay equal on every frame through all of Corneria (`python tools/coop/lockstep_test.py`), and, a level per session, from the start to the end of 12 of the 17 campaign levels (`python tools/coop/campaign.py`, #28): Corneria, Meteo, Fortuna, Sector X, Titania, Venom 1, Aquas, Sector Z, Venom 2, Katina, Solar, Macbeth. Not covered with real clients: the ends of Bolse, Venom (Andross), Sector Y, Zoness, Area 6 (the pilot does not beat their bosses; every frame it flew was equal), a level that follows from the one before (each starts as a new game, no route state), a player who goes down (all but Corneria with `gInvincible`), two PCs, Windows, a real network, a Release build and more than two players. A full campaign was played by hand on two PCs on 2026-11-09 (issue #2); that record is not this one, and its level stays the owner's to enter.
 
 ## Test identity
 
@@ -217,6 +217,19 @@ Running tests must never use or modify the owner's own `starship.cfg.json`, save
 ## Results
 
 Newest first. One block per run that matters (a milestone, a release, a QA level change).
+
+```
+date:       2026-11-10
+commit:     issue/28-campaign-run (campaign.py) on 80ff9be6, against the build of issue/181-views-later-parts a36dea0a
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window, 2 clients per level over loopback
+            through the join driver, lockstep, a pilot on each client, gInvincible on both but in Corneria
+what ran:   python tools/coop/campaign.py --route all --lock <file>; then --levels corneria and --levels titania
+result:     automated. Equal on every frame, hash and input logs, from the level start to the map or what follows level
+            complete, no desync report: Corneria 10291, Meteo 21410, Fortuna 9426, Sector X 12155, Titania 45111, Venom
+            1 11172, Aquas 8599, Sector Z 6505, Venom 2 17968, Katina 16751, Solar 12711, Macbeth 11315. Equal on every
+            frame flown, the pilot did not reach the end: Bolse 26312, Venom (Andross) 26059, Sector Y 36131, Zoness
+            26041, Area 6 40270. Downs: 0 on every level.
+```
 
 ```
 date:       2026-11-08

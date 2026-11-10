@@ -3971,6 +3971,68 @@ player 0 loses 100.
 
 ## Determinism
 
+### 2026-11-10, #28 (WP-32), the campaign with two real clients per level
+
+Identity: ROM US 1.0, branch `issue/28-campaign-run` on `80ff9be6` (the tool), run against the build of
+`issue/181-views-later-parts` at `a36dea0a` (its pilot, `src/port/coop/test/pilot_aim.c`), Linux, GCC, Debug, OpenGL on
+a software renderer, no window. Two games per level on one PC over loopback, host and client through the join driver,
+the level started with `SF64_COOP_JOIN_LEVEL` as the lobby's "Start at" does (#211), a pilot on each client
+(`SF64_COOP_LOCKSTEP_PILOT`) and `gInvincible` on both but in Corneria. Games at the speed of games that meet over
+sockets (`MEETING_SPEED`, 8 times real time). `python tools/coop/campaign.py --route all --lock <nettest lock>`, then
+Corneria and Titania again (see below).
+
+**Observed (runs)**
+
+| Level | Result | Frames compared | Level complete at (level frame) | Downs | gInvincible | Seconds |
+|---|---|---|---|---|---|---|
+| Corneria | equal on every frame to the end (gInvincible off) | 10291 | 8896 | 0, 0 | off | 418 |
+| Meteo | equal on every frame to the end | 21410 | 19729 | 0, 0 | on | 193 |
+| Fortuna | equal on every frame to the end | 9426 | 7745 | 0, 0 | on | 270 |
+| Sector X | equal on every frame to the end | 12155 | 10880 | 0, 0 | on | 279 |
+| Titania | equal on every frame to the end | 45111 | 43591 | 0, 0 | on | 831 |
+| Bolse | pilot cannot finish (frame cap); equal on the 26312 frames flown | 26312 | - | 0, 0 | on | 351 |
+| Venom 1 | equal on every frame to the end | 11172 | 1 | 0, 0 | on | 276 |
+| Venom (Andross) | pilot cannot finish (frame cap); equal on the 26059 frames flown | 26059 | - | 0, 0 | on | 336 |
+| Sector Y | pilot cannot finish (frame cap); equal on the 36131 frames flown | 36131 | - | 0, 0 | on | 384 |
+| Aquas | equal on every frame to the end | 8599 | 7160 | 0, 0 | on | 834 |
+| Zoness | pilot cannot finish (frame cap); equal on the 26041 frames flown | 26041 | - | 0, 0 | on | 336 |
+| Sector Z | equal on every frame to the end | 6505 | 4428 | 0, 0 | on | 260 |
+| Area 6 | pilot cannot finish (frame cap); equal on the 40270 frames flown | 40270 | - | 0, 0 | on | 399 |
+| Venom 2 | equal on every frame to the end | 17968 | 17384 | 0, 0 | on | 305 |
+| Katina | equal on every frame to the end | 16751 | 14881 | 0, 0 | on | 300 |
+| Solar | equal on every frame to the end | 12711 | 11085 | 0, 0 | on | 282 |
+| Macbeth | equal on every frame to the end | 11315 | 9956 | 0, 0 | on | 393 |
+
+- Frames compared count lockstep frames from the first frame in the level to the map, or to what follows level
+  complete, plus 60. Level complete is the frame the host's trace shows `PLAYERSTATE_LEVEL_COMPLETE` (its
+  `gGameFrameCount`). Venom 1 shows 1: its level complete comes in Venom 2's id, where the count starts again
+  (`src/overlays/ovl_i6/fox_andross.c:681-684`), and the session goes on into Andross.
+- In every level the host looked through player 0 and the client through player 1 (and through player 0 before it
+  joined), so the two games drew different cameras on most frames.
+- No game wrote a desync report, and the input logs were equal on every frame as well.
+- Corneria with `gInvincible` on both games (the route's run): Granga lost a leg near frame 14000 and lay still
+  (state 6) with its backpack at 110 to the cap at 26511, while the pilots shot its other leg down from 140 to 70. The
+  tool now flies Corneria without `gInvincible`, as `lockstep_test.py --only full` does, and that run is the row above.
+- Titania: Goras was not down in the 40276 frames of the route's run; again with 60000 at most it reached level
+  complete (the row above).
+- Macbeth: equal to the end, no desync report. The radio state that a single game of #181's `views --pilot` passed on
+  other frames than its own replay did not part these two clients.
+
+**Derived**
+
+- With two real clients, 12 of 17 campaign levels are equal on every frame from the level start through
+  the boss to the map or what follows. The other 5 are equal on every frame the pilots flew, and the pilot is
+  what stops there, not the session.
+- A level started this way carries no route state: lives, score, lasers, the team's shields and the medals start as
+  for a new game, so what a route builds up from one level to the next is not tested here.
+
+**Unknown**
+
+- The bosses the pilot does not beat, and so the ends of those levels with two clients: see the #181 entry.
+- Two PCs, Windows, a real network, a Release build, more than two players: not run here. The hand-played campaign of
+  2026-11-09 (#2) is the record for two PCs.
+- Any level with a player who goes down, but Corneria: `gInvincible` was on.
+
 ### 2026-11-09, #199, two random draws in one expression: the Windows and Linux games took them in two orders
 
 Identity: the hand-played session of 2026-11-09, Windows (MSVC) host against Linux (GCC) client, build
