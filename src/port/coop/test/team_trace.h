@@ -22,6 +22,11 @@
 //   SF64_COOP_TEAM_POKE=<level>,<frames>,<id>,<value>   writes value to gTeamShields[id] once, after player 0 has been
 //     active for that many frames of that level, and logs a "# poke" line. Stands in for the hits a wingman takes.
 //     tools/coop/wingman_check.py uses both.
+//
+//   SF64_COOP_TEAM_DOWN=<level>,<frames>,<player>   sets co-op player <player>'s (1..3) shields to 0 and starts its hit
+//     timer (radioDamageTimer) once, after player 0
+//     has been active for that many frames of that level, so the game takes that player down its own way, and logs a
+//     "# down" line. Set it on every client (#15, the all-range body's away state).
 
 #ifdef __cplusplus
 extern "C" {

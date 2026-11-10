@@ -40,6 +40,8 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             gTeamShields[Falco] holds the client's shields while it flies, and no computer Falco joins the boss fight.
   allrange  Katina with the client as Falco (#15): Falco's all-range slot is a body on the client's ship, and no
             computer Falco flies while the client does.
+  allrange_down Katina with the client as Falco, downed on purpose (#15): Falco's body waits away, gTeamShields[Falco]
+            is -1, and no computer Falco takes over.
   audio     the plain run with the two clients at different audio sample counts, as a radio line follows the sound thread.
   release   the plain run on a Release build (--release-exe) and on Debug: all four clients have to hash alike.
   rates     the plain run at real time, with the two clients at different gInterpolationFPS.
@@ -585,7 +587,8 @@ def sc_allrange(args, folder):
     for game in (host, client):
         lines = team_lines(game, ALLRANGE_LEVEL)
         expect(lines, f"{game.name}: no Katina lines in the team trace")
-        play = [l for l in lines if l["p0"] == "3" and int(l["p1"]) >= 0]  # PLAYERSTATE_ACTIVE, player 1 flying
+        # PLAYERSTATE_ACTIVE, DOWN and U_TURN (player 0 turns at the map's edge), player 1 flying
+        play = [l for l in lines if l["p0"] in ("3", "4", "5") and int(l["p1"]) >= 0]
         expect(play, f"{game.name}: player 1 never flew while player 0 was active")
         ai = [l for l in play if l["ai"][0] > 0]
         expect(not ai, f"{game.name}: a computer Falco flies beside player 1 on {len(ai)} of {len(play)} lines, "
@@ -597,6 +600,48 @@ def sc_allrange(args, folder):
         expect(others, f"{game.name}: Slippy and Peppy never flew")
         found.append(f"{game.name}: {len(play)} lines in play, Falco's body on player 1 in all of them, "
                      f"computer Slippy or Peppy in {len(others)}")
+    return f"{frames} frames of Katina, {equal} frames equal; " + "; ".join(found)
+
+
+ALLRANGE_DOWN_AFTER = 1500  # frames of player 0 active on Katina before the client's shields drop to 0
+
+
+def sc_allrange_down(args, folder):
+    """#15: on Katina the client flies Falco and goes down (SF64_COOP_TEAM_DOWN). From then on Falco's body waits in
+    the retreat state, gTeamShields[Falco] is -1, no computer Falco flies and the body is never somewhere the client
+    is not (decision 0006 rules 1 and 3, all-range)."""
+    frames = ALLRANGE_FRAMES
+    down = f"{ALLRANGE_LEVEL},{ALLRANGE_DOWN_AFTER},1"
+    host, client = run_short(args, folder, frames=frames, host_env={"SF64_COOP_JOIN_LEVEL": str(ALLRANGE_LEVEL)},
+                             both={"SF64_COOP_TEAM_TRACE": "team.txt", "SF64_COOP_TEAM_DOWN": down})
+    equal = compare(host, client, frames)
+    found = []
+    for game in (host, client):
+        marks = [l for l in (game.run / "team.txt").read_text(encoding="utf-8").splitlines() if l.startswith("# down")]
+        expect(marks, f"{game.name}: the client's shields were never dropped")
+        at = int(marks[0].split()[2].split("=")[1])
+        lines = team_lines(game, ALLRANGE_LEVEL)
+        play = [l for l in lines if l["p0"] in ("3", "4", "5")]  # PLAYERSTATE_ACTIVE, DOWN, U_TURN
+        before = [l for l in play if int(l["frame"]) < at and int(l["p1"]) >= 0]
+        expect(before and all(l["body"][0] == 1 for l in before),
+               f"{game.name}: Falco's body was not on player 1 before it went down")
+        after = [l for l in play if int(l["frame"]) > at]
+        expect(after, f"{game.name}: no lines in play after frame {at}")
+        ai = [l for l in after if l["ai"][0] > 0]
+        expect(not ai, f"{game.name}: a computer Falco flies after player 1 went down, first at frame "
+                       f"{ai[0]['frame'] if ai else 0}")
+        bad = [l for l in after if l["body"][0] == 3]
+        expect(not bad, f"{game.name}: Falco's body is somewhere player 1 is not, first at frame "
+                        f"{bad[0]['frame'] if bad else 0}")
+        away = [l for l in after if l["body"][0] == 2]
+        expect(away, f"{game.name}: Falco's body never went away after frame {at}")
+        settled = [l for l in after if int(l["frame"]) >= int(away[0]["frame"])]
+        wrong = [l for l in settled if l["body"][0] != 2 or l["team"][0] != -1 or int(l["p1"]) >= 0]
+        expect(not wrong, f"{game.name}: after going away at frame {away[0]['frame']}, line at frame "
+                          f"{wrong[0]['frame'] if wrong else 0} has body={wrong[0]['body'][0] if wrong else 0} "
+                          f"team={wrong[0]['team'][0] if wrong else 0} p1={wrong[0]['p1'] if wrong else 0}")
+        found.append(f"{game.name}: down at frame {at}, body away from frame {away[0]['frame']} on "
+                     f"{len(settled)} lines, gTeamShields[Falco] -1 there, no computer Falco")
     return f"{frames} frames of Katina, {equal} frames equal; " + "; ".join(found)
 
 
@@ -1109,6 +1154,7 @@ SCENARIOS = {
     "full": sc_full,
     "scenes": sc_scenes,
     "allrange": sc_allrange,
+    "allrange_down": sc_allrange_down,
     "audio": sc_audio,
     "release": sc_release,
     "rates": sc_rates,
@@ -1117,7 +1163,7 @@ SCENARIOS = {
     "desync_three": sc_desync_three,
     "log": sc_log,
 }
-LONG = ("full", "scenes", "allrange", "audio", "release", "rates")
+LONG = ("full", "scenes", "allrange", "allrange_down", "audio", "release", "rates")
 
 
 def main():

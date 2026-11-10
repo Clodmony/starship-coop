@@ -43,6 +43,12 @@ static s32 sPokeId;
 static s32 sPokeValue;
 static s32 sPokeActiveFrames = 0;
 
+static bool sDownWaiting = false; // SF64_COOP_TEAM_DOWN, team_trace.h
+static s32 sDownLevel;
+static s32 sDownFrames;
+static s32 sDownPlayer;
+static s32 sDownActiveFrames = 0;
+
 static void CoopTeamTrace_Read(TeamTraceLine* line) {
     s32 i;
 
@@ -126,6 +132,24 @@ static void CoopTeamTrace_UpdatePoke(void) {
     }
 }
 
+static void CoopTeamTrace_UpdateDown(void) {
+    if (!sDownWaiting || (gGameState != GSTATE_PLAY) || (gCurrentLevel != sDownLevel) || (gPlayer == NULL) ||
+        (gPlayer[0].state != PLAYERSTATE_ACTIVE) || (sDownPlayer >= CoopPlayers_Count())) {
+        return;
+    }
+    if (sDownActiveFrames++ < sDownFrames) {
+        return;
+    }
+    // Shields at 0 alone do not take a player down: Player_Update asks for a hit on that frame too, as
+    // radioDamageTimer (src/engine/fox_play.c:5736), which Player_ApplyDamage sets to 4 (:998).
+    gPlayer[sDownPlayer].shields = 0;
+    gPlayer[sDownPlayer].radioDamageTimer = 4;
+    sDownWaiting = false;
+    if (sTraceFile != NULL) {
+        fprintf(sTraceFile, "# down frame=%u player=%d\n", sFrame, sDownPlayer);
+    }
+}
+
 // Counts as a replay does: on this event, from GSTATE_START (src/port/coop/test/replay.c). GamePostUpdateEvent cannot
 // count, the game skips it on some frames.
 static void CoopTeamTrace_OnGamePreUpdate(IEvent* event) {
@@ -143,6 +167,7 @@ static void CoopTeamTrace_OnGamePostUpdate(IEvent* event) {
         return;
     }
     CoopTeamTrace_UpdatePoke();
+    CoopTeamTrace_UpdateDown();
     if (sTraceFile == NULL) {
         return;
     }
@@ -157,6 +182,7 @@ static void CoopTeamTrace_OnGamePostUpdate(IEvent* event) {
 void CoopTeamTrace_Init(void) {
     const char* path = getenv("SF64_COOP_TEAM_TRACE");
     const char* poke = getenv("SF64_COOP_TEAM_POKE");
+    const char* down = getenv("SF64_COOP_TEAM_DOWN");
 
     if ((poke != NULL) && (sscanf(poke, "%d,%d,%d,%d", &sPokeLevel, &sPokeFrames, &sPokeId, &sPokeValue) == 4) &&
         (sPokeId >= TEAM_ID_FALCO) && (sPokeId <= TEAM_ID_PEPPY)) {
@@ -165,7 +191,11 @@ void CoopTeamTrace_Init(void) {
     if ((path != NULL) && (path[0] != '\0')) {
         sTraceFile = fopen(path, "w");
     }
-    if (sPokeWaiting || (sTraceFile != NULL)) {
+    if ((down != NULL) && (sscanf(down, "%d,%d,%d", &sDownLevel, &sDownFrames, &sDownPlayer) == 3) &&
+        (sDownPlayer >= 1) && (sDownPlayer < COOP_PLAYERS_MAX)) {
+        sDownWaiting = true;
+    }
+    if (sPokeWaiting || sDownWaiting || (sTraceFile != NULL)) {
         REGISTER_LISTENER(GamePreUpdateEvent, CoopTeamTrace_OnGamePreUpdate, EVENT_PRIORITY_NORMAL);
         REGISTER_LISTENER(GamePostUpdateEvent, CoopTeamTrace_OnGamePostUpdate, EVENT_PRIORITY_NORMAL);
     }

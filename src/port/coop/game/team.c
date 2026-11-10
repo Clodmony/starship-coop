@@ -348,8 +348,11 @@ static s32 CoopTeam_IsBodySlot(const Actor* actor) {
 
 // The body holds the slot while the level is played. In the intro and the level-clear scenes the game's own wingman
 // flies, as a scene keeps its stand-in on rails (0006 C1): those scenes move gActors[1] to [3] themselves.
+// PLAYERSTATE_U_TURN is play too: player 0 turns back at the edge of the map. Leaving it out let the game's wingman
+// fly for the turn, and if its human was down then, it retreated and its slot was gone for the level.
 static s32 CoopTeam_BodyInPlay(void) {
-    return (gPlayer[0].state == PLAYERSTATE_ACTIVE) || (gPlayer[0].state == PLAYERSTATE_DOWN);
+    return (gPlayer[0].state == PLAYERSTATE_ACTIVE) || (gPlayer[0].state == PLAYERSTATE_DOWN) ||
+           (gPlayer[0].state == PLAYERSTATE_U_TURN);
 }
 
 // The human flies the character of `actor`'s slot: joined, not parked, and up.
