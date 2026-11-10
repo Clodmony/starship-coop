@@ -46,6 +46,8 @@ static u16 sLastButton[COOP_PLAYERS_MAX];
 static s32 sDropping[COOP_PLAYERS_MAX];
 static s32 sFoundClear[COOP_PLAYERS_MAX];
 static f32 sTargetX[COOP_PLAYERS_MAX];
+static u16 sBank[COOP_PLAYERS_MAX];    // the trigger held to bank into a turn in all-range, 0 for none (#238)
+static s32 sBankOff[COOP_PLAYERS_MAX]; // frames since a bank was let go
 static PilotBox sBoxes[PILOT_BOX_MAX];
 static s32 sBoxCount;
 
@@ -843,12 +845,31 @@ static f32 CoopPilot_SteerAt(const Player* p, f32 x, f32 y, f32 z, PilotPad* pad
     f32 heading = p->yRot_114 + p->rot.y + 180.0f;
     f32 yaw = CoopPilot_Wrap(Math_RadToDeg(Math_Atan2F(dx, dz)) - heading);
     f32 pitch = CoopPilot_Wrap(Math_RadToDeg(Math_Atan2F(dy, sqrtf(SQ(dx) + SQ(dz)))));
+    s32 i = p - gPlayer;
 
     if ((p->pos.y < PILOT_MIN_HEIGHT) && (pitch < 12.0f)) {
         pitch = 12.0f;
     }
-    pad->x = -(p->rot.y + yaw) / 0.68f;
+    // The heading is yRot_114 + rot.y, and yRot_114 goes on turning by yRotVel_11C (0.03 of rot.y) every frame, while
+    // rot.y closes a tenth of its gap a frame. Asking for rot.y + yaw left the nose about 0.3 rot.y behind after a
+    // turn, 10 degrees and more, so the pilot seldom fired and a Granga fight could outlast the run (#238). The stick
+    // now also takes out ten frames of that turn. In a model of these steps a gain of 3 on yaw settles within about 3
+    // degrees also when the stick acts three frames late, as in a lockstep session (COOP_LOCKSTEP_INPUT_DELAY).
+    pad->x = -(p->rot.y + 3.0f * yaw - 10.0f * p->yRotVel_11C) / 0.68f;
     pad->y = -(pitch - p->xRot_120) / 0.68f;
+    // A wide turn is flown banked: Z held into a left turn or R into a right one doubles the turn rate
+    // (Player_MoveArwing360), so the ship turns back in a circle about 1700 wide instead of 2800 (#238). It banks again
+    // only 20 frames after letting go, as a second press within 10 frames is a barrel roll (Player_ArwingBank).
+    if ((sBank[i] != 0) && ((fabsf(yaw) < 10.0f) || ((sBank[i] == Z_TRIG) != (yaw > 0.0f)))) {
+        sBank[i] = 0;
+        sBankOff[i] = 0;
+    } else if ((sBank[i] == 0) && (fabsf(yaw) > 30.0f) && (sBankOff[i] > 20)) {
+        sBank[i] = (yaw > 0.0f) ? Z_TRIG : R_TRIG;
+    }
+    if (sBank[i] == 0) {
+        sBankOff[i]++;
+    }
+    pad->button |= sBank[i];
     return fabsf(yaw) + fabsf(CoopPilot_Wrap(pitch - (p->xRot_120 + p->rot.x)));
 }
 
