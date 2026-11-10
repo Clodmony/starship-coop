@@ -47,7 +47,6 @@ static FILE* sLog = NULL;
 static FeedRow* sFeed = NULL;
 static s32 sFeedRows = 0;
 static bool sPilot = false;
-static bool sCleared = false;
 static s32 sEndFrame = -1;
 static s32 sMuteFrame = -1;
 static s32 sPokeFrame = -1;
@@ -321,9 +320,6 @@ static void CoopLockstepDriver_OnGamePreUpdate(IEvent* event) {
     s32 frame;
 
     (void) event;
-    if (sCleared) { // from boot on, so the host's level start already carries it (#191)
-        gSaveFile.save.data.planet[PLANET_CORNERIA].normalClear = 1;
-    }
     frame = Driver_Frame();
     if (frame < 0) {
         Driver_After();
@@ -387,7 +383,6 @@ void CoopLockstepDriver_Init(void) {
         Feed_Load(feed);
     }
     sPilot = Env_Text("SF64_COOP_LOCKSTEP_PILOT") != NULL;
-    sCleared = Env_Text("SF64_COOP_LOCKSTEP_CLEARED") != NULL;
     sEndFrame = Env_Number("SF64_COOP_LOCKSTEP_END");
     sMuteFrame = Env_Number("SF64_COOP_LOCKSTEP_MUTE");
     sPokeFrame = Env_Number("SF64_COOP_LOCKSTEP_POKE");

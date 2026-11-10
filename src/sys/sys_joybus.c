@@ -1,4 +1,5 @@
 #include "sys.h"
+#include "port/coop/game/save.h" // COOP: no real save is written in a co-op session
 
 OSContPad gControllerHold[4];
 OSContPad gControllerPress[4];
@@ -101,7 +102,7 @@ bool Save_ReadData(void) {
 }
 
 bool Save_WriteData(void) {
-    return Save_WriteEeprom(&gSaveIOBuffer) == 0;
+    return CoopSave_WriteBlocked() || (Save_WriteEeprom(&gSaveIOBuffer) == 0); // COOP: no write in a session (0009)
 }
 
 void Controller_Rumble(void) {

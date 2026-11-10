@@ -47,9 +47,12 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   three     the same with three games, so that input goes through the host to the other client.
   control   the same run with SF64_COOP_TEST_NO_LOCKSTEP: it must differ, or this test says nothing.
   pause     Start on either client pauses both on the same frame, Start on either resumes.
-  save      the intro skip goes by the host's save, as the level start carries it (#191): with Corneria cleared there,
-            the client's Start in the intro skips it on both games and both players fly; with it cleared only in the
+  save      the intro skip goes by the host's save, which every game holds in a session (decision 0009 item 8, #191),
+            with real save files: with Corneria cleared in the host's and the client's blank, the host's Start in the
+            intro skips it on both games and both players fly, and so does the client's; with it cleared only in the
             client's save, nobody's Start does anything.
+  save_own  the control for the session's save: a client that keeps its own save, one byte apart from the host's,
+            parts from it at frame 0 in region globals, and desync_report.py names gSaveFile.planet.
   zero_seed a seed zeroed on both clients: no clock read, so they stay equal.
   reset     a client flew Corneria alone, took a hit on a wing and went back to the title through the reset (F4), in the
             same process: the session's level is equal from frame 0 on (#187).
@@ -64,6 +67,13 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   frozen    a client stops dead (SIGSTOP): the session ends on the transport's timeout, and it can be thawed.
   menu      the whole way through the real menu, with real widgets.
   full      all of Corneria: pilots fly it live, one on each client, then plain runs repeat what they flew. Takes a while.
+  map_saves two PCs with two saves (decision 0009 item 8): the host's blank, the client's with every level cleared
+            and its own sound settings. Pilots fly Corneria to its end, the map writes the save, and the games go on
+            through the map into the next level: equal on every frame. Then the client leaves: both save files are
+            byte for byte as before, each game's save in memory is its file's again, and in the session both held the
+            host's progress with their own sound settings. About 15 minutes.
+  map_saves_host_full the same with the host's save all cleared and the client's blank.
+  map_saves_equal the same with one save on both, all cleared.
   scenes    Corneria to Granga with the client as Falco (#15): no scene shows a second Falco, his rescue goes to Slippy,
             gTeamShields[Falco] holds the client's shields while it flies, and no computer Falco joins the boss fight.
   allrange  Katina with the client as Falco (#15): Falco's all-range slot is a body on the client's ship, and no
@@ -130,6 +140,7 @@ import desync_report  # noqa: E402
 import full_level  # noqa: E402
 import hash_check  # noqa: E402
 import join_test  # noqa: E402
+import make_save  # noqa: E402
 import menu_test  # noqa: E402
 import player_trace  # noqa: E402
 import replay as replay_tool  # noqa: E402
@@ -152,6 +163,8 @@ AIM_FRAMES = 4000  # Corneria's rails from the join on, long enough for some ene
 LEVEL_COMPLETE, MAP, PLAY_PAUSE = 7, 4, 100  # PLAYERSTATE_LEVEL_COMPLETE, GSTATE_MAP, PLAY_PAUSE
 PLAY_INIT, PLAY_UPDATE, LEVEL_INTRO = 1, 2, 2  # PLAY_INIT, PLAY_UPDATE, PLAYERSTATE_LEVEL_INTRO
 MAP_TAIL = 60
+MAP_FRAMES = 3000  # the map after Corneria, on its way to the next level with A every 30 frames: room enough
+GSTATE_PLAY = 7
 FLY_FRAMES = 14000  # Corneria took 11200 frames from level start to the map in #142, the rest is room
 DESYNC_PERIOD = 10  # COOP_DESYNC_PERIOD: a desync shows within this many frames plus the input delay
 DESYNC_SEEN_WITHIN = 2 * DESYNC_PERIOD + 2 * INPUT_DELAY + 10  # frames from the flipped bit to the session's end
@@ -254,7 +267,8 @@ def session(args, folder, host_env=None, client_env=None, both=None, config=None
     """A host and its clients through the join driver, on their way to a level. Returns them started: with one client as
     (host, client), with more as (host, client, client, ...). client_envs holds one more dict per client. saves maps a
     game's name (host, client0, ...) to a save file that goes into its folder before it starts: a game holds a blank
-    save otherwise, and a real pair of PCs holds two different ones."""
+    save otherwise (it writes gDefaultSave at boot), and a real pair of PCs holds two different ones. A save is a file
+    or its bytes (make_save.save_file()); None is no file."""
     folder.mkdir(parents=True, exist_ok=True)
     port_file = folder / "port"
     env = dict(both or {})
@@ -263,8 +277,8 @@ def session(args, folder, host_env=None, client_env=None, both=None, config=None
                                          "SF64_COOP_JOIN_CLIENTS": str(clients), "SF64_COOP_JOIN_LEVEL": "0",
                                          "SF64_COOP_JOIN_START_FRAME": str(START_FRAME), **(host_env or {})},
                   replay_frames)
-    if saves and "host" in saves:
-        shutil.copy2(saves["host"], host.run / "default.sav")
+    if saves and saves.get("host") is not None:
+        put_save(saves["host"], host.run)
     host.start(config)
     deadline = time.monotonic() + 180
     while not (port_file.exists() and port_file.read_text(encoding="utf-8").strip()):
@@ -280,10 +294,19 @@ def session(args, folder, host_env=None, client_env=None, both=None, config=None
         games.append(Client(args, folder, f"client{n}", {**env, "SF64_COOP_JOIN_CONNECT": f"127.0.0.1:{port}",
                                                          "SF64_COOP_JOIN_PICKS": pick, **(client_env or {}),
                                                          **((client_envs or [{}] * clients)[n])}, replay_frames))
-        if saves and f"client{n}" in saves:
-            shutil.copy2(saves[f"client{n}"], games[-1].run / "default.sav")
+        if saves and saves.get(f"client{n}") is not None:
+            put_save(saves[f"client{n}"], games[-1].run)
         games[-1].start(client_config if client_config is not None else config)
     return tuple(games)
+
+
+def put_save(save, folder):
+    """A save file into a game's folder, where the game reads it (default.sav, libultraship os_eeprom.cpp)."""
+    path = folder / "default.sav"
+    if isinstance(save, (bytes, bytearray)):
+        path.write_bytes(bytes(save))
+    else:
+        shutil.copy2(save, path)
 
 
 def wait_for(games, word, seconds, what=None):
@@ -384,13 +407,14 @@ def played(game):
     return f"{game.name} held {held[0]['held']} frames, {held[0]['held_ms']} ms" if held else ""
 
 
-def run_short(args, folder, script=sway, frames=SHORT_FRAMES, host_env=None, client_env=None, both=None, seconds=900):
-    """Both games fed by script, to frame `frames`. Returns the two, stopped."""
+def run_short(args, folder, script=sway, frames=SHORT_FRAMES, host_env=None, client_env=None, both=None, seconds=900,
+              saves=None):
+    """Both games fed by script, to frame `frames`. Returns the two, stopped. saves: see session()."""
     folder.mkdir(parents=True, exist_ok=True)
     feed = folder / "feed.txt"
     write_feed(feed, frames + 16, script)
     env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(frames), **(both or {})}
-    host, client = session(args, folder, host_env, client_env, env)
+    host, client = session(args, folder, host_env, client_env, env, saves=saves)
     try:
         wait_for([host, client], "done", seconds)
     finally:
@@ -1578,22 +1602,31 @@ def log_rows(game):
     return [line.split() for line in game.sync_log.read_text(encoding="utf-8").splitlines() if line.count(" ") >= 26]
 
 
-def fly(args, folder, extra_env=None, saves=None, tail=MAP_TAIL):
+def fly(args, folder, extra_env=None, saves=None, tail=MAP_TAIL, next_level=None, before_close=None, client_env=None):
     """Pilots fly Corneria, one on each client. Returns (host, client, frames to the map and its tail of `tail`
-    frames). saves: see session()."""
+    frames). With next_level, the games go on through the map into the next level, which player 0's A every 30 frames
+    picks (lockstep_driver.h), and the frames run to `next_level` frames into it. host.at_map and host.at_next hold the
+    rows where the map and that level began. before_close(host, client) runs while both games still run. saves: see
+    session(); client_env goes to the client alone."""
     env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt", **(extra_env or {})}
     folder.mkdir(parents=True, exist_ok=True)
-    host, client = session(args, folder, both=env, saves=saves)
+    host, client = session(args, folder, both=env, saves=saves, client_env=client_env)
     deadline = time.monotonic() + args.level_seconds
-    at_map = None
+    at_map = at_next = None
     try:
         while True:
             rows = log_rows(host) if host.sync_log.exists() else []
             if at_map is None:
                 at_map = next((i for i, row in enumerate(rows) if int(row[1]) == MAP), None)
-            if at_map is not None and len(rows) >= at_map + tail:
+            if at_map is not None and at_next is None and next_level is not None:
+                at_next = next((i for i in range(at_map, len(rows)) if int(rows[i][1]) == GSTATE_PLAY), None)
+            if next_level is None and at_map is not None and len(rows) >= at_map + tail:
                 break
-            expect(len(rows) < FLY_FRAMES, f"no map in {FLY_FRAMES} frames")
+            if at_next is not None and len(rows) >= at_next + next_level:
+                break
+            expect(at_map is not None or len(rows) < FLY_FRAMES, f"no map in {FLY_FRAMES} frames")
+            expect(at_map is None or at_next is not None or next_level is None or len(rows) < at_map + MAP_FRAMES,
+                   f"no level after {MAP_FRAMES} frames of the map")
             for game in (host, client):
                 expect(game.proc.poll() is None, f"{game.name} ended with code {game.proc.returncode} at {len(rows)}")
             # A desync ends the lockstep log for good and the games run on alone: do not wait for rows that cannot come.
@@ -1602,10 +1635,13 @@ def fly(args, folder, extra_env=None, saves=None, tail=MAP_TAIL):
                                f"the map began at row {at_map}")
             expect(time.monotonic() < deadline, f"no map after {args.level_seconds} s, at frame {len(rows)}")
             time.sleep(2)
+        host.at_map, host.at_next = at_map, at_next
+        if before_close is not None:
+            before_close(host, client)
     finally:
         client.close()
         host.close()
-    return host, client, at_map + tail
+    return host, client, (at_next + next_level) if next_level is not None else (at_map + tail)
 
 
 def level_story(game, frames):
@@ -1940,22 +1976,132 @@ def sc_teambar(args, folder):
     return f"{frames} frames of Katina, {equal} frames equal; " + "; ".join(found)
 
 
-MAP_SAVES_TAIL = 900  # frames on the map after Corneria: its route lines start within the first second or two
-ALL_CLEARED_SAVE_ENV = "COOP_TEST_ALL_CLEARED_SAVE"  # a save with every level cleared, made by make_save.py
+MAP_SAVES_NEXT = 300  # frames into the level after the map: its level start and a little of it
+OWN_VOLUMES = (40, 50, 60)  # a game's own music, voice and sfx volumes, which it keeps when it takes the host's save
+OWN_SOUND_MODE = 1  # mono
+
+
+def save_lines(game, word):
+    """The saves of the join driver's `save_session` or `save_after` lines, as bytes (256 each)."""
+    return [bytes.fromhex(values["save"]) for values in join_test.said(game.report(), word)]
+
+
+def progress(save):
+    """The bytes of a save that are the session's (src/port/coop/game/save.c): all but the settings, the language bytes
+    and the checksum."""
+    data = bytearray(save[:make_save.DATA_SIZE])
+    data[make_save.SETTINGS] = b"\0" * 4
+    data[make_save.LANGUAGES] = b"\0" * 2
+    return bytes(data)
+
+
+def leave_and_check_saves(host, client, files):
+    """The client leaves the session (SF64_COOP_JOIN_LEAVE_FILE), the host sees it go, and both end their session.
+    Then: every game's default.sav is byte for byte what it was before the session (files: name -> bytes), its save in
+    memory after the session is that file's save again, and in the session each game held the host's progress with its
+    own settings. Returns a line about it."""
+    (client.run / "leave").write_text("now\n", encoding="utf-8")
+    deadline = time.monotonic() + 120
+    while not all(save_lines(game, "save_after") for game in (host, client)):
+        for game in (host, client):
+            expect(game.proc.poll() is None, f"{game.name} ended with code {game.proc.returncode} before `save_after`")
+        expect(time.monotonic() < deadline, "no `save_after` from both games within 120 s of the client's leaving")
+        time.sleep(1)
+    for game in (host, client):
+        now = (game.run / "default.sav").read_bytes()
+        expect(not make_save.check(now, game.name), f"{game.name}: {make_save.check(now, game.name)}")
+        expect(now == files[game.name], f"{game.name}'s default.sav changed in the session: planets "
+                                        f"{make_save.planets(files[game.name])} before, {make_save.planets(now)} after")
+        after = save_lines(game, "save_after")[-1]
+        expect(after == now[:make_save.SAVE_SIZE], f"{game.name}: its save in memory after the session is not its "
+                                                   f"file's: planets {make_save.planets(after)}")
+        held = save_lines(game, "save_session")
+        expect(len(held) == 1, f"{game.name}: {len(held)} `save_session` lines")
+        expect(progress(held[0]) == progress(files["host"]), f"{game.name}: in the session it held planets "
+                                                             f"{make_save.planets(held[0])}, the host's are "
+                                                             f"{make_save.planets(files['host'])}")
+        expect(make_save.settings(held[0]) == make_save.settings(files[game.name]),
+               f"{game.name}: in the session its sound settings were {make_save.settings(held[0])}, its own are "
+               f"{make_save.settings(files[game.name])}")
+        expect(held[0][make_save.LANGUAGES] == files[game.name][make_save.LANGUAGES], f"{game.name}: language bytes")
+    return (f"after the session both default.sav are byte for byte as before and back in memory; in it both held the "
+            f"host's planets {make_save.planets(files['host'])}, the client its own sound settings "
+            f"{make_save.settings(files['client0'])}")
+
+
+def map_saves_run(args, folder, host_save, client_save, what):
+    """Pilots fly Corneria to its end, the map writes the save (src/overlays/ovl_menu/fox_map.c, Map_Setup...), and
+    the games go on through the map into the next level. host_save and client_save are save files, or None for none:
+    the game writes gDefaultSave at boot. The hashes and lockstep logs must be equal on every frame, from the level
+    start through the map into the next level; then leave_and_check_saves."""
+    blank = make_save.save_file()
+    files = {"host": host_save or blank, "client0": client_save or blank}
+    leave = {"SF64_COOP_JOIN_LEAVE_FILE": "leave"}  # in the game's own folder, where it runs
+    checked = []
+    host, client, frames = fly(args, folder, saves={"host": host_save, "client0": client_save}, next_level=MAP_SAVES_NEXT,
+                               client_env=leave,
+                               before_close=lambda h, c: checked.append(leave_and_check_saves(h, c, files)))
+    equal = compare(host, client, frames)
+    return (f"{what}: equal on {equal} frames, Corneria to the map at {host.at_map}, the next level at {host.at_next} "
+            f"and {MAP_SAVES_NEXT} frames of it; {checked[0]}")
 
 
 def sc_map_saves(args, folder):
     """Two PCs hold two different saves, as a real pair does: the host's is blank, the client's has every level
-    cleared. The pilots fly Corneria to the map and the games run on in it. The map reads the save of the PC it runs
-    on (which planets are played and cleared decides what it shows and when), and nothing hands the host's save to the
-    client, so the first real Windows and Linux session parted 41 frames into the map (route line 15 of
-    gTexturedLines started on one game and not on the other). Both games must stay one game."""
-    full = os.environ.get(ALL_CLEARED_SAVE_ENV, "")
-    expect(full and Path(full).is_file(), f"{ALL_CLEARED_SAVE_ENV} does not name a save file")
-    host, client, frames = fly(args, folder, saves={"client0": Path(full)}, tail=MAP_SAVES_TAIL)
-    equal = compare(host, client, frames)
-    return (f"{frames} frames of Corneria to the map and {MAP_SAVES_TAIL} of it, equal with a blank save on the host and "
-            f"a save with every level cleared on the client; {equal} frames compared")
+    cleared and its own sound settings. The map reads the save (which planets are played and cleared decides what it
+    shows and when: a planet played for the first time gets a stage of its own, D_menu_801CD980), so before the host's
+    save went to the clients the first real Windows and Linux session parted 41 frames into the map after Corneria
+    (route line 15 of gTexturedLines started on one game only, and the random numbers). Both games must stay one game
+    through the map into the next level, and neither save file may change."""
+    client = make_save.save_file(clear=make_save.slots("all"), volumes=OWN_VOLUMES, sound_mode=OWN_SOUND_MODE)
+    return map_saves_run(args, folder, None, client, "host blank, client all cleared")
+
+
+def sc_map_saves_host_full(args, folder):
+    """map_saves the other way round: the host's save has every level cleared and its own sound settings, the client's
+    is blank."""
+    host = make_save.save_file(clear=make_save.slots("all"), volumes=OWN_VOLUMES, sound_mode=OWN_SOUND_MODE)
+    return map_saves_run(args, folder, host, None, "host all cleared, client blank")
+
+
+def sc_map_saves_equal(args, folder):
+    """map_saves with the same save on both, every level cleared."""
+    both = make_save.save_file(clear=make_save.slots("all"))
+    return map_saves_run(args, folder, both, both, "both all cleared")
+
+
+def sc_save_own(args, folder):
+    """The control for the session's save (decision 0009 item 8): the client keeps its own save
+    (SF64_COOP_JOIN_KEEP_OWN_SAVE), which differs from the host's in one byte, Corneria played. That has to show at
+    frame 0 as a desync in region globals, and desync_report.py has to name gSaveFile.planet: a save that drifted is
+    a named difference, not a map that parts later."""
+    one_byte = make_save.save_file(played=make_save.slots("corneria"))
+    folder.mkdir(parents=True, exist_ok=True)
+    feed = folder / "feed.txt"
+    write_feed(feed, 400, idle)
+    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": "300"}
+    host, client = session(args, folder, both=env, client_env={"SF64_COOP_JOIN_KEEP_OWN_SAVE": "1"},
+                           saves={"host": None, "client0": one_byte})
+    try:
+        wait_for([host, client], "over", 600, "with the client on its own save")
+    finally:
+        host.close()
+        client.close()
+    reports = {}
+    for game in (host, client):
+        found = own_reports(game)
+        expect(len(found) == 1, f"{game.name} wrote {len(found)} desync reports")
+        reports[game.name] = desync_report.Report(found[0])
+        header = reports[game.name].header
+        expect(header.get("frame") == "0", f"{game.name}: {found[0].name} says frame {header.get('frame')}, want 0")
+        expect(header.get("regions differing") == "globals", f"{game.name}: regions {header.get('regions differing')}")
+        problems = reports[game.name].verify()
+        expect(not problems, f"{game.name}: {problems[0] if problems else ''}")
+    done = report_diff(own_reports(host)[0], own_reports(client)[0])
+    first = next((line.strip() for line in done.stdout.splitlines() if "differs" in line and ":" in line), None)
+    expect(first is not None and first.startswith("globals: gSaveFile.planet differs in 1 of"),
+           f"desync_report.py diff did not name gSaveFile.planet: {done.stdout[-400:]}")
+    return f"a save one byte apart parts the games at frame 0, in globals: `{first}`"
 
 
 def play_states(game):
@@ -2002,25 +2148,36 @@ def both_fly(row):
     return row.players[0].state == player_trace.ACTIVE and not any(p.parked for p in row.players)
 
 
+def check_skipped(game, frames, skip):
+    """Start at `skip` skipped the intro on this game: Play_Init again on the next frame, and both players fly."""
+    inits = [i for i, state in enumerate(play_states(game)[:frames]) if state == PLAY_INIT]
+    expect(inits == [skip + 1], f"{game.name}: Play_Init on lockstep frames {inits}, want [{skip + 1}]: the Start did "
+                                f"not skip the intro")
+    rows = level_trace(game, frames)
+    intro = sum(1 for r in rows if r.players[0].state == LEVEL_INTRO)
+    expect(intro <= skip + 2, f"{game.name}: player 0 in the intro on {intro} frames, the skip was at {skip}")
+    flying = next((n for n, r in enumerate(rows) if both_fly(r)), None)
+    expect(flying is not None, f"{game.name}: after the skip the two players never flew together")
+    return flying
+
+
 def sc_save(args, folder):
-    """Saves are each client's own, and the level start carries the host's word on the level (#191). Corneria cleared on
-    the host only: the client's Start in the intro skips it, Play_Init runs again on both games on the same frame, and
-    both players fly. Cleared on the client only: neither Start does anything, the intro goes on."""
+    """The intro skip goes by the host's save, which every game holds in a session (decision 0009 item 8, #191), with
+    real save files that differ at the session start. Corneria cleared in the host's save, the client's blank: the
+    host's Start in the intro skips it on both games, Play_Init runs again on both on the same frame and both players
+    fly; the same with the client's Start. Cleared in the client's save only: neither Start does anything."""
     frames, skip = 900, 300
-    host, client = run_short(args, folder / "host_cleared", press(idle, {(skip, 1)}), frames=frames,
-                             host_env={"SF64_COOP_LOCKSTEP_CLEARED": "1"})
-    equal = compare(host, client, frames)
-    for game in (host, client):
-        inits = [i for i, state in enumerate(play_states(game)[:frames]) if state == PLAY_INIT]
-        expect(inits == [skip + 1], f"{game.name}: Play_Init on lockstep frames {inits}, want [{skip + 1}]: "
-                                    f"the client's Start did not skip the intro")
-        rows = level_trace(game, frames)
-        intro = sum(1 for r in rows if r.players[0].state == LEVEL_INTRO)
-        expect(intro <= skip + 2, f"{game.name}: player 0 in the intro on {intro} frames, the skip was at {skip}")
-        flying = next((n for n, r in enumerate(rows) if both_fly(r)), None)
-        expect(flying is not None, f"{game.name}: after the skip the two players never flew together")
+    cleared = make_save.save_file(clear=make_save.slots("corneria"))
+    found = []
+    for who, player in (("host", 0), ("client", 1)):
+        host, client = run_short(args, folder / f"host_cleared_{who}_start", press(idle, {(skip, player)}),
+                                 frames=frames, saves={"host": cleared, "client0": None})
+        equal = compare(host, client, frames)
+        flying = [check_skipped(game, frames, skip) for game in (host, client)]
+        found.append(f"the {who}'s Start skipped the intro on both, Play_Init again on frame {skip + 1}, both fly "
+                     f"{flying[0]} frames into the level, same hash on {equal} frames")
     host, client = run_short(args, folder / "client_cleared", press(idle, {(skip, 0), (skip + 60, 1)}), frames=frames,
-                             client_env={"SF64_COOP_LOCKSTEP_CLEARED": "1"})
+                             saves={"host": None, "client0": cleared})
     kept = compare(host, client, frames)
     for game in (host, client):
         states = set(play_states(game)[1:frames])
@@ -2029,9 +2186,8 @@ def sc_save(args, folder):
         rows = level_trace(game, frames)
         expect(len(rows) >= frames - 2 and all(r.players[0].state == LEVEL_INTRO for r in rows[2:]),
                f"{game.name}: player 0 left the intro within {frames} frames with the host's save not cleared")
-    return (f"host's save cleared: the client's Start skipped the intro on both, Play_Init again on frame {skip + 1}, "
-            f"both fly {flying} frames into the level, same hash on {equal} frames; client's save cleared only: Start "
-            f"from either did nothing, same hash on {kept} frames")
+    return (f"host's save cleared, client's blank: {found[0]}; {found[1]}; client's save cleared only: Start from "
+            f"either did nothing, same hash on {kept} frames")
 
 
 def sc_zero_seed(args, folder):
@@ -2625,6 +2781,9 @@ SCENARIOS = {
     "allrange_down_others": sc_allrange_down_others,
     "teambar": sc_teambar,
     "map_saves": sc_map_saves,
+    "map_saves_host_full": sc_map_saves_host_full,
+    "map_saves_equal": sc_map_saves_equal,
+    "save_own": sc_save_own,
     "audio": sc_audio,
     "release": sc_release,
     "rates": sc_rates,
@@ -2639,7 +2798,7 @@ SCENARIOS = {
     "other_bosses": sc_other_bosses,
 }
 LONG = ("full", "scenes", "allrange", "allrange_down", "allrange_others", "allrange_down_others", "teambar",
-        "map_saves", "audio", "release", "rates", "vehicles", "vehicle_end", "bosses", "other_bosses")
+        "map_saves", "map_saves_host_full", "map_saves_equal", "audio", "release", "rates", "vehicles", "vehicle_end", "bosses", "other_bosses")
 
 
 def main():

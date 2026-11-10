@@ -167,6 +167,11 @@ def level_values():
     return [w - (1 << 32) if w >= 1 << 31 else w for w in words]
 
 
+def level_save():
+    """The host's save the bots start from, as Save_Value in coop_session_test.c."""
+    return [1 + (i * 37 + 11) % 255 for i in range(256)]
+
+
 def level_party(run, picks, via=None, seed=SEED, client_args=()):
     """party(), with the host trying to start LEVEL as soon as every client has joined, and the clients staying until
     it has started."""
@@ -175,11 +180,12 @@ def level_party(run, picks, via=None, seed=SEED, client_args=()):
 
 
 def check_level(h, clients):
-    """Every side saw one level start, and the same one: the level, the values and the host's last roster."""
+    """Every side saw one level start, and the same one: the level, the values, the save and the host's last roster."""
     start = h["level_start"]
     expect(start is not None, f"the host never started: {h['events']}")
     expect(start["level"] == LEVEL and start["phase"] == PHASE, f"level {start['level']} phase {start['phase']}")
     expect(start["values"] == level_values(), "the host's values are not the ones the bot gave it")
+    expect(start["save"] == level_save(), "the host's save is not the one the bot gave it")
     expect(start["roster"][:len(clients) + 1] == h["roster"][:len(clients) + 1], f"host started from {start['roster']}")
     for side in [h, *clients]:
         expect(len(events(side, "level_start")) == 1, f"{side['role']}: {side['events']}")

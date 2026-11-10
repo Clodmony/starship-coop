@@ -19,10 +19,10 @@
 //
 // Co-op hashes differently from single player: negative numbers in Actor.iwork[] (NormalizeWord), free gScenery360
 // slots (HashScenery360), the per-player arrays, the co-op slots and return counters (HashPlayerArrays), the team
-// member arrays (HashTeamArrays), and it leaves out the per-player values of players who are not in the level
-// (HashPerPlayer) and what follows the camera a client draws and only sound or draw code reads (ClearViewState,
-// ClearPlayerViewState). With co-op off the hash stays as it was, so a single-player log still lines up with one from
-// an older build (docs/coop/QA.md, test plan item 1).
+// member arrays (HashTeamArrays), the progress in the save (HashSave), and it leaves out the per-player values of
+// players who are not in the level (HashPerPlayer) and what follows the camera a client draws and only sound or draw
+// code reads (ClearViewState, ClearPlayerViewState). With co-op off the hash stays as it was, so a single-player log
+// still lines up with one from an older build (docs/coop/QA.md, test plan item 1).
 //
 // The listener runs on GamePreUpdateEvent, before any game logic of the frame, so the hash of frame N is the state
 // after frame N-1. It runs after the input replay listener (EVENT_PRIORITY_LOW runs first, see
@@ -37,6 +37,7 @@
 #include "global.h"
 #include "port/hooks/Events.h"
 #include "port/coop/game/players.h"
+#include "port/coop/game/save.h"
 #include "port/coop/game/vehicles.h"
 #include "port/coop/test/stop_signal.h"
 
@@ -469,6 +470,19 @@ static void HashVoiceClock(uint64_t* h) {
     }
 }
 
+// The save (decision 0009 item 8): a session plays on the host's progress on every game, and the map, the intro skip
+// and the briefing read it, so a copy that drifted shows here, named, rather than as a map that parts later. The
+// settings each game keeps of its own are left out (CoopSave_ProgressRanges).
+static void HashSave(uint64_t* h) {
+    const CoopSaveRange* ranges;
+    int32_t count = CoopSave_ProgressRanges(&ranges);
+    int32_t i;
+
+    for (i = 0; i < count; i++) {
+        HashNamed(h, ranges[i].name, -1, gSaveFile.save.raw + ranges[i].offset, ranges[i].size);
+    }
+}
+
 static void HashGlobals(uint64_t* h) {
     HASH_VAR(h, gGameState);
     HASH_VAR(h, gNextGameStateTimer);
@@ -502,6 +516,7 @@ static void HashGlobals(uint64_t* h) {
         HASH_VAR(h, gTeamLowHealthMsgTimer);
         HashKeptTargets(h);
         HashVoiceClock(h);
+        HashSave(h);
     }
 }
 
@@ -564,7 +579,7 @@ size_t CoopStateHash_DumpBytes(void) {
     for (i = 0; i < ARRAY_COUNT(sTeamArrays); i++) {
         bytes += sTeamArrays[i].count * sizeof(s32);
     }
-    return bytes + 1024; // the slots, the seeds and HashGlobals take far less
+    return bytes + sizeof(SaveData) + 1024; // the save, then the slots, the seeds and HashGlobals take far less
 }
 
 void CoopStateHash_ComputeDump(CoopStateHash* out, CoopStateDump* dump) {

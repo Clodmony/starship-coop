@@ -8,6 +8,7 @@
 
 #include "global.h"
 #include "port/coop/game/players.h"
+#include "port/coop/game/save.h"
 #include "port/coop/net/protocol.h"
 #include "port/coop/sync/handover_game.h"
 #include "port/coop/sync/lockstep_game.h"
@@ -118,6 +119,7 @@ static void Link_Identity(int peer, char* out, size_t cap) {
 static const CoopSyncLink sLink = { Link_Send, Link_Pump, Link_Fail, Link_Identity };
 
 void CoopMenuGame_EnterLevel(const CoopLevelStart* start) {
+    CoopSave_Enter(start->save); // the host's progress for the session, until CoopSyncGame_End (decision 0009 item 8)
     CoopLevelStart_Enter(start);
     CoopSyncGame_Begin(&sLink, start->roster, sMenu->self, sMenu->phase == COOP_MENU_HOSTING);
 }
