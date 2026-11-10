@@ -479,6 +479,72 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-10, #145, the stray reads and writes of #141: four of upstream's, and the build folders
+
+Identity: ROM US 1.0, on `80ff9be6` (the combined test branch 2), Linux, GCC, Debug, OpenGL on a software renderer, no
+window. Disassembly of the base build `80ff9be6`.
+
+Observed:
+
+- (a) `D_ctx_8017782C`: `include/sf64context.h:12` declares `s32`, `src/engine/fox_context.c:10` defined `bool`, which
+  is C's 1-byte `_Bool` here (`include/libc/stdbool.h` is switched off by its first line, `<stdbool.h>` comes through
+  `libultraship.h`). In the base build the symbol is 1 byte at `0x1d2ba0c`, `gGameState` 4 bytes on, and the users
+  write it with `movl` and read it with `mov` into `%eax`: 4 bytes. On the N64 `bool` is `s32` (`include/common.h:16`).
+  No state hash region holds it (`src/port/coop/sync/state_hash.c` hashes named globals, not this one).
+- (b) `Map_Prologue_Update` (`src/overlays/ovl_menu/fox_map.c`) compares with `D_menu_801B6934[sPrologueTexIdx]`, a
+  table of 6. `Map_Prologue_Draw` moves `sPrologueTexIdx` up to 6 (7 textures, the next is drawn while
+  `sPrologueTexIdx + 1 < 7`), so the last text reads entry 6. What it sets there, `sPrologueNextTexAlpha`, only that
+  same draw reads, and at index 6 it does not draw; case 0 sets it to 0 for the next prologue.
+- (c) `AudioSynth_ProcessNote` (`src/audio/audio_synthesis.c`) loads `ALIGN16(nFramesToDecode * frameSize + 16)` bytes
+  from the first frame it decodes, aligned down to 16 bytes; the decoders (`aADPCMdecImpl`, `aS8DecImpl`, `src/audio/mixer.c`) take
+  `ROUND_UP_32(nbytes)` of output, that is `nFramesToDecode` frames. So the bytes past a sample's end that #141's ASan
+  run saw read are never decoded. `aLoadBufferImpl` copies `ROUND_DOWN_16(nbytes)`, so clamping the load to the sample's
+  end can cut bytes that are decoded. The `#if __SANITIZE_ADDRESS__` clamp before it used `samplesToLoadAddr` and
+  `sampleDataChunkAlignPad` before this pass sets them: the last pass's values, or unset ones on the first pass. That
+  is the crash in `aLoadBufferImpl` #141 worked around with `-U__SANITIZE_ADDRESS__`.
+- (d) `Rand_ZeroOne` (`src/sys/sys_math.c:27`) tests `sRandSeed2` twice and never `sRandSeed3` before the Linux and
+  Switch clock re-seed. In a session the line never runs (`!CoopPlayers_IsCoop()`, decision 0002).
+- (e) `build.py --build-dir`: #147 (`1fb07a70`, 2026-11-07) gave libultraship its folder in the build folder
+  (`CMakeLists.txt`, `add_subdirectory(libultraship ${CMAKE_CURRENT_BINARY_DIR}/libultraship)`, guarded by `check.py`).
+  After a full Debug build here the source tree holds no archive; a second folder configured for Release builds
+  `libultraship/src/libultraship.a`, `libImGui.a` and `libstb.a` of its own (143 steps, its Release rule, its own
+  objects), and the Debug folder's three keep their size and time. The only file a configure writes into the source tree
+  is `properties.h`, the same for every config.
+- AddressSanitizer, one game through the menus into Corneria with input by rule (the input `hash_check.py base` plays,
+  which goes through the whole prologue), recover mode, ASan builds of this folder with GCC:
+  - the base (`80ff9be6`): stops after 3 s with `CRASH`, after a `global-buffer-overflow` WRITE and a
+    `heap-buffer-overflow` READ in `aLoadBufferImpl` (`mixer.c:152`) from `audio_synthesis.c:1086`: the ASan-only clamp
+    of (c) at work.
+  - the base with `-U__SANITIZE_ADDRESS__` (#141's way round it): plays through, 8 reports: (a) at `fox_play.c:542`,
+    `:582`, `:4819`, `:4826` and `fox_map.c:4298`, (b) at `fox_map.c:2123`, (c) a 64-byte `memcpy` past a sample in
+    `aLoadBufferImpl` (`mixer.c:155`) from `:1086`, and one more: `aADPCMdecImpl` (`mixer.c:299`) loads 8 bytes from
+    `lower_2bit`, a table of two `uint16_t` (`mixer.c:280`), with `_mm_loadl_epi64`.
+  - this change, the ASan block on: plays through (47 s), 1 report: `mixer.c:299`.
+
+Derived:
+
+- (a) A 4-byte write onto a 1-byte object is safe here only because padding follows. Defined `s32` now, as the header
+  and the N64 have it: the same values, and every read and write is the object's own.
+- (b) The read past the table changes nothing a player sees; it now stops at the table's end.
+- (c) The over-read of a sample's end is in the N64's 16-byte load and changes no sound. Bounding it would take an
+  exact-size load in `mixer.c` (every `aLoadBuffer` caller) or padded sample buffers in the sample importer, so it is
+  left. The ASan-only clamp now runs after this pass's address is known. It still cuts the last load of a sample to a
+  multiple of 16 below its end, so an ASan build may decode the last frame of a sample from older bytes; builds without
+  ASan do not have the block.
+- (d) The fix (`(sRandSeed3 == 0)` for the second `sRandSeed2`) would make single player on Linux and Switch re-seed
+  from the clock when seed 3 is 0 and seeds 1 and 2 are not, where upstream keeps the zero seed. Not changed here, as
+  co-op off is upstream's behaviour (owner's call, 2026-11-10): to offer upstream later through
+  `docs/coop/MAINTAINING.md`, with the owner's go.
+- (e) Fixed by #147; nothing left for this issue.
+
+Unknown:
+
+- Windows Release: `hash_check.py builds` and `rates` passed there on 2026-11-08 at `4283e076` (PR #176), not on this
+  code. A heap read past a sample's end could fault where a sample's buffer ends at a page with nothing mapped after
+  it; not seen, not looked for.
+- `mixer.c:299` (upstream's too, not in this issue's list): whether the two 16-bit lanes of `mask_2bit` loaded from
+  past `lower_2bit` reach a decoded sample. Not fixed here; a follow-up.
+
 ### 2026-11-09, #14 (WP-16), players 2-4 come back after going down (decision 0007 rule 4)
 
 Identity: ROM US 1.0, on top of `6becd73a` (the combined test branch of 2026-11-09), Linux, GCC, Debug, OpenGL on a
