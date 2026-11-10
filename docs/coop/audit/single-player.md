@@ -206,23 +206,23 @@ Basis per site: read 269, site 1038, name 597.
 | `Effect_Effect339_Update` | 2029:P0, 2042:P0 | view | name | effect moves with or faces player 0 (velocity, camera), or keys on player 0 state |
 | `Effect_Effect374_Update` | 2275:P0, 2276:P0, 2277:P0, 2278:P0 | sim | site | tests player 0, CoopEffects_ColumnHit does the others (#100) |
 | `Effect_Effect374_Update` | 2279:PA | ok | read | Player_ApplyDamage for player 0; CoopEffects_ColumnHit right after it does the others (#100) |
-| `Effect_Effect345_Update` | 2343:CC | setup | site | gCamCount != 1 as versus flag |
-| `func_effect_8007E6B8` | 2451:P0, 2452:P0, 2453:P0 | sim | site | enemy shot aimed at player 0 |
-| `func_effect_8007E93C` | 2505:P0, 2506:P0, 2507:P0 | sim | site | enemy shot aimed at player 0 camera |
-| `Effect_EnemyLaser` | 2652:P0 | sim | site | enemy laser only spawned near player 0 |
-| `func_effect_8007F20C` | 2667:P0 | sim | site | only spawned near player 0 camera |
-| `func_effect_8007FD84` | 2903:SH | ok | site | enemy effect hitting an actor writes CS_SHOT_ID |
-| `Effect_Effect353_354_Update` | 2927:P0, 2931:P0, 2932:P0, 2933:P0, 2934:P0, 2946:P0, 2950:P0, 2952:P0, 2954:P0, 2957:P0, 2959:P0 | sim | read | enemy projectile hits, deflects and knocks back player 0; CoopEffects_ShotHit does the others (#100); wingman and roll reach still read player 0 |
-| `Effect_Effect353_354_Update` | 2951:PA | ok | read | Player_ApplyDamage for player 0; CoopEffects_ShotHit right after it does the others (#100) |
-| `Effect_Effect376_Update` | 3022:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
-| `Effect_Effect398_Update` | 3036:P0, 3037:P0, 3038:P0, 3063:P0, 3067:P0, 3068:P0, 3069:P0, 3070:P0, 3082:P0, 3086:P0, 3088:P0, 3090:P0, 3092:P0, 3094:P0 | sim | read | aims at player 0; hits and knocks back player 0, CoopEffects_ShotHit does the others (#100) |
-| `Effect_Effect398_Update` | 3087:PA, 3125:PA | ok | read | Player_ApplyDamage for player 0, CoopEffects_ShotHit after it does the others; func_effect_8007A774 tests them too (#100) |
-| `Effect_Effect395_Update` | 3652:P0, 3842:P0, 3843:P0, 3846:P0, 3847:P0, 3848:P0, 3891:P0, 3896:P0, 3897:P0, 3898:P0 | sim | site | tests player 0, CoopEffects_BeamHit does the others (#100); boss faces player 0 camera |
-| `Effect_Effect395_Update` | 3899:PA, 3926:PA | ok | site | beam: Player_ApplyDamage for player 0, CoopEffects_BeamHit just before it does the others; func_effect_8007A774 tests them too (#100) |
-| `Effect_Effect391_Update` | 4137:P0 | view | site | faces player 0 camera |
-| `func_effect_80083D2C` | 4199:P0, 4200:P0, 4201:P0 | sim | site | aims at player 0 |
-| `Effect_Effect399_Update` | 4238:P0, 4239:P0 | view | site | faces player 0 camera |
-| `Effect_Effect399_Update` | 4268:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
+| `Effect_Effect345_Update` | 2344:CC | setup | site | gCamCount != 1 as versus flag |
+| `func_effect_8007E6B8` | 2452:P0, 2453:P0, 2454:P0 | sim | site | enemy shot aimed at player 0 |
+| `func_effect_8007E93C` | 2506:P0, 2507:P0, 2508:P0 | sim | site | enemy shot aimed at player 0 camera |
+| `Effect_EnemyLaser` | 2653:P0 | sim | site | enemy laser only spawned near player 0 |
+| `func_effect_8007F20C` | 2668:P0 | sim | site | only spawned near player 0 camera |
+| `func_effect_8007FD84` | 2904:SH | ok | site | enemy effect hitting an actor writes CS_SHOT_ID |
+| `Effect_Effect353_354_Update` | 2928:P0, 2932:P0, 2933:P0, 2934:P0, 2935:P0, 2947:P0, 2951:P0, 2953:P0, 2955:P0, 2958:P0, 2960:P0 | sim | read | enemy projectile hits, deflects and knocks back player 0; CoopEffects_ShotHit does the others (#100); wingman and roll reach still read player 0 |
+| `Effect_Effect353_354_Update` | 2952:PA | ok | read | Player_ApplyDamage for player 0; CoopEffects_ShotHit right after it does the others (#100) |
+| `Effect_Effect376_Update` | 3023:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
+| `Effect_Effect398_Update` | 3037:P0, 3038:P0, 3039:P0, 3064:P0, 3068:P0, 3069:P0, 3070:P0, 3071:P0, 3083:P0, 3087:P0, 3089:P0, 3091:P0, 3093:P0, 3095:P0 | sim | read | aims at player 0; hits and knocks back player 0, CoopEffects_ShotHit does the others (#100) |
+| `Effect_Effect398_Update` | 3088:PA, 3126:PA | ok | read | Player_ApplyDamage for player 0, CoopEffects_ShotHit after it does the others; func_effect_8007A774 tests them too (#100) |
+| `Effect_Effect395_Update` | 3653:P0, 3843:P0, 3844:P0, 3847:P0, 3848:P0, 3849:P0, 3892:P0, 3897:P0, 3898:P0, 3899:P0 | sim | site | tests player 0, CoopEffects_BeamHit does the others (#100); boss faces player 0 camera |
+| `Effect_Effect395_Update` | 3900:PA, 3927:PA | ok | site | beam: Player_ApplyDamage for player 0, CoopEffects_BeamHit just before it does the others; func_effect_8007A774 tests them too (#100) |
+| `Effect_Effect391_Update` | 4138:P0 | view | site | faces player 0 camera |
+| `func_effect_80083D2C` | 4200:P0, 4201:P0, 4202:P0 | sim | site | aims at player 0 |
+| `Effect_Effect399_Update` | 4239:P0, 4240:P0 | view | site | faces player 0 camera |
+| `Effect_Effect399_Update` | 4269:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
 
 ### `src/engine/fox_enmy.c`
 
@@ -263,22 +263,22 @@ Basis per site: read 269, site 1038, name 597.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `MeteoBall_IsCloseToPlayer` | 128:P0 | sim | site | distance to player 0 |
-| `MeteoBall_Update` | 143:P0, 145:P0, 146:P0 | view | site | faces player 0 camera |
-| `CoMoleMissile_Update` | 434:P0 | sim | site | distance to player 0 |
-| `ActorDebris_Update` | 554:P0, 555:P0 | sim | site | debris placed relative to player 0 |
-| `func_enmy2_8006D0F4` | 886:P0 | sim | site | scenery search ahead of player 0 |
-| `ActorEvent_ProcessScript` | 1190:P0, 1250:P0, 1337:P0, 1346:P0 | sim | site | event scripts check player 0 state and position; radio only when player 0 active |
-| `ActorEvent_ProcessScript` | 1390:SH | ok | site | script damage writes DMG_SRC_100 |
-| `<file scope>` | 1720:SH, 1732:SH | ok | site | NPC shot setup: writes NPC ids |
-| `ActorEvent_ProcessActions` | 1846:P0, 1860:P0, 1911:P0, 1919:P0, 1926:P0, 1927:P0, 1928:P0, 1929:P0, 1932:P0, 1933:P0, 1992:P0 | sim | read | event actors aim at player 0 (temporarily jitters player 0 position to aim off) |
-| `ActorEvent_8006FE28` | 2040:P0, 2041:P0 | sim | site | contact with player 0 |
-| `ActorEvent_800701E0` | 2259:SH | flow | site | on-rails wingman line only for player 0's hit; WP-17 (#15) |
-| `ActorEvent_ProcessTriggers` | 2369:P0, 2429:P0, 2435:P0, 2441:P0, 2447:P0, 2453:P0, 2459:P0, 2465:P0, 2471:P0, 2477:P0, 2483:P0, 2489:P0, 2495:P0, 2501:P0, 2507:P0, 2513:P0, 2519:P0, 2525:P0, 2531:P0, 2537:P0, 2543:P0, 2549:P0, 2555:P0, 2561:P0, 2567:P0, 2573:P0, 2579:P0, 2585:P0, 2591:P0, 2597:P0, 2603:P0, 2706:P0, 2707:P0 | sim | read | event conditions read player 0 position, shields, speed and laser level |
-| `ActorEvent_ProcessTriggers` | 2697:MC | input | site | C-right condition read from gMainController |
-| `ActorEvent_800720E8` | 2924:SH, 2925:SH | ok | site | tests NPC ids only (Bill) |
-| `ActorEvent_80072474` | 3016:P0 | sim | site | angle to player 0 |
-| `ActorEvent_Update` | 3048:P0, 3069:P0, 3132:P0, 3133:P0, 3134:P0, 3136:P0, 3137:P0, 3138:P0, 3196:P0, 3197:P0, 3198:P0, 3200:P0, 3201:P0, 3202:P0, 3465:P0 | sim | site | event actors aim at player 0 and set player 0 damage type; killed on player 0 level complete |
+| `MeteoBall_IsCloseToPlayer` | 129:P0 | sim | site | distance to player 0 |
+| `MeteoBall_Update` | 144:P0, 146:P0, 147:P0 | view | site | faces player 0 camera |
+| `CoMoleMissile_Update` | 435:P0 | sim | site | distance to player 0 |
+| `ActorDebris_Update` | 555:P0, 556:P0 | sim | site | debris placed relative to player 0 |
+| `func_enmy2_8006D0F4` | 887:P0 | sim | site | scenery search ahead of player 0 |
+| `ActorEvent_ProcessScript` | 1194:P0, 1254:P0, 1344:P0, 1353:P0 | sim | site | event scripts check player 0 state and position; radio only when player 0 active |
+| `ActorEvent_ProcessScript` | 1401:SH | ok | site | script damage writes DMG_SRC_100 |
+| `<file scope>` | 1731:SH, 1743:SH | ok | site | NPC shot setup: writes NPC ids |
+| `ActorEvent_ProcessActions` | 1857:P0, 1871:P0, 1922:P0, 1930:P0, 1937:P0, 1938:P0, 1939:P0, 1940:P0, 1943:P0, 1944:P0, 2003:P0 | sim | read | event actors aim at player 0 (temporarily jitters player 0 position to aim off) |
+| `ActorEvent_8006FE28` | 2051:P0, 2052:P0 | sim | site | contact with player 0 |
+| `ActorEvent_800701E0` | 2270:SH | flow | site | on-rails wingman line only for player 0's hit; WP-17 (#15) |
+| `ActorEvent_ProcessTriggers` | 2380:P0, 2440:P0, 2446:P0, 2452:P0, 2458:P0, 2464:P0, 2470:P0, 2476:P0, 2482:P0, 2488:P0, 2494:P0, 2500:P0, 2506:P0, 2512:P0, 2518:P0, 2524:P0, 2530:P0, 2536:P0, 2542:P0, 2548:P0, 2554:P0, 2560:P0, 2566:P0, 2572:P0, 2578:P0, 2584:P0, 2590:P0, 2596:P0, 2602:P0, 2608:P0, 2614:P0, 2717:P0, 2718:P0 | sim | read | event conditions read player 0 position, shields, speed and laser level |
+| `ActorEvent_ProcessTriggers` | 2708:MC | input | site | C-right condition read from gMainController |
+| `ActorEvent_800720E8` | 2935:SH, 2936:SH | ok | site | tests NPC ids only (Bill) |
+| `ActorEvent_80072474` | 3027:P0 | sim | site | angle to player 0 |
+| `ActorEvent_Update` | 3059:P0, 3080:P0, 3143:P0, 3144:P0, 3145:P0, 3147:P0, 3148:P0, 3149:P0, 3207:P0, 3208:P0, 3209:P0, 3211:P0, 3212:P0, 3213:P0, 3476:P0 | sim | site | event actors aim at player 0 and set player 0 damage type; killed on player 0 level complete |
 
 ### `src/engine/fox_game.c`
 
@@ -290,59 +290,59 @@ Basis per site: read 269, site 1038, name 597.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `HUD_TeamDownWrench_Draw` | 198:P0 | view | site | player 0 state |
-| `HUD_TeamShields_Draw` | 518:P0 | view | site | player 0 state |
-| `HUD_PauseScreen_Update` | 1486:P0, 1496:P0, 1608:P0, 1610:P0 | flow | site | pause menu retry and quit set player 0 state only |
-| `HUD_RadarMark_Arwing_Draw` | 1798:CC | setup | site | gCamCount != 1 as versus flag |
-| `HUD_RadarMark_Draw` | 1885:CC | setup | site | gCamCount != 1 as versus flag |
-| `HUD_RadarWindow_Draw` | 1965:CC | setup | site | gCamCount != 1 as versus flag |
-| `HUD_RadarMarks_Setup` | 1992:CC | setup | site | loops players for radar marks |
-| `HUD_PlayerShieldGauge_Update` | 2452:P0 | sim | site | gold ring heal goes to player 0; the gauge shows the local player (#30) |
-| `HUD_RadioDamage_Type` | 2584:P0 | view | site | player 0 radio damage |
-| `HUD_Draw` | 3819:CC | setup | site | gCamCount != 1 draws the versus HUD |
-| `FoBase_ExplodeCs` | 3891:P0 | flow | site | Fortuna base explosion cutscene on player 0 |
-| `ActorTeamBoss_SlippyEscapeFromTiBoss` | 4095:P0, 4097:P0, 4098:P0, 4099:P0, 4107:P0, 4109:P0 | sim | site | wingman AI flies relative to player 0 |
-| `ActorTeamBoss_FlyAlongPlayer` | 4244:P0, 4246:P0, 4247:P0, 4248:P0, 4251:P0 | sim | site | wingmen fly alongside player 0 |
-| `ActorTeamBoss_SetAction` | 4328:P0 | flow | site | player 0 level complete |
-| `ActorTeamBoss_HandleDamage` | 4557:SH, 4571:SH, 4585:SH | flow | read | friendly lines only for player 0's hit, WP-17 (#15); the enemy line is enemies only since #86, so players 1 and up get no line |
-| `ActorTeamBoss_DmgEffect` | 4615:P0 | flow | site | player 0 level complete |
-| `ActorTeamBoss_UTurn` | 4799:P0 | sim | site | player 0 path height |
-| `ActorTeamBoss_Update` | 4911:P0, 4918:P0 | flow | site | player 0 level complete |
-| `Aquas_CsIntroActors_Update` | 4953:P0 | flow | site | Aquas intro on player 0 |
-| `Aquas_Effect363_Update` | 5496:P0 | view | site | bubbles around player 0 |
-| `Aquas_Effect363_Draw` | 5553:P0 | view | site | player 0 intro state |
-| `Venom1_LevelStart2` | 6171:P0 | flow | site | level start sets player 0 speed |
+| `HUD_TeamDownWrench_Draw` | 199:P0 | view | site | player 0 state |
+| `HUD_TeamShields_Draw` | 519:P0 | view | site | player 0 state |
+| `HUD_PauseScreen_Update` | 1487:P0, 1497:P0, 1609:P0, 1611:P0 | flow | site | pause menu retry and quit set player 0 state only |
+| `HUD_RadarMark_Arwing_Draw` | 1799:CC | setup | site | gCamCount != 1 as versus flag |
+| `HUD_RadarMark_Draw` | 1886:CC | setup | site | gCamCount != 1 as versus flag |
+| `HUD_RadarWindow_Draw` | 1966:CC | setup | site | gCamCount != 1 as versus flag |
+| `HUD_RadarMarks_Setup` | 1993:CC | setup | site | loops players for radar marks |
+| `HUD_PlayerShieldGauge_Update` | 2453:P0 | sim | site | gold ring heal goes to player 0; the gauge shows the local player (#30) |
+| `HUD_RadioDamage_Type` | 2585:P0 | view | site | player 0 radio damage |
+| `HUD_Draw` | 3820:CC | setup | site | gCamCount != 1 draws the versus HUD |
+| `FoBase_ExplodeCs` | 3892:P0 | flow | site | Fortuna base explosion cutscene on player 0 |
+| `ActorTeamBoss_SlippyEscapeFromTiBoss` | 4096:P0, 4098:P0, 4099:P0, 4100:P0, 4108:P0, 4110:P0 | sim | site | wingman AI flies relative to player 0 |
+| `ActorTeamBoss_FlyAlongPlayer` | 4245:P0, 4247:P0, 4248:P0, 4249:P0, 4252:P0 | sim | site | wingmen fly alongside player 0 |
+| `ActorTeamBoss_SetAction` | 4329:P0 | flow | site | player 0 level complete |
+| `ActorTeamBoss_HandleDamage` | 4558:SH, 4572:SH, 4586:SH | flow | read | friendly lines only for player 0's hit, WP-17 (#15); the enemy line is enemies only since #86, so players 1 and up get no line |
+| `ActorTeamBoss_DmgEffect` | 4616:P0 | flow | site | player 0 level complete |
+| `ActorTeamBoss_UTurn` | 4800:P0 | sim | site | player 0 path height |
+| `ActorTeamBoss_Update` | 4913:P0, 4920:P0 | flow | site | player 0 level complete |
+| `Aquas_CsIntroActors_Update` | 4955:P0 | flow | site | Aquas intro on player 0 |
+| `Aquas_Effect363_Update` | 5498:P0 | view | site | bubbles around player 0 |
+| `Aquas_Effect363_Draw` | 5555:P0 | view | site | player 0 intro state |
+| `Venom1_LevelStart2` | 6173:P0 | flow | site | level start sets player 0 speed |
 
 ### `src/engine/fox_play.c`
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Play_InitEnvironment` | 584:P0 | view | site | kills a sound on player 0 source |
-| `Player_CollisionCheck` | 1839:CC, 2264:CC | setup | site | gCamCount != 1 and == 4 mean versus (mercy rules, player-vs-player hits); a co-op gCamCount of 2 would turn half of this on |
-| `Player_CollisionCheck` | 2178:P0 | view | site | warp ring sound played on player 0 source |
-| `Player_CollisionCheck` | 2192:SH | ok | site | dmgSource through CoopPlayers_DmgSource since #86 |
-| `Player_FloorCheck` | 2399:CC, 2414:CC | setup | site | gCamCount == 1 / != 1 as versus flag |
-| `Play_Init` | 2930:CC, 2933:CC | setup | read | sets gCamCount 1 (4 in versus), then CoopPlayers_LevelInit; since WP-10 CoopPlayers_Count() sizes the player allocation, the clear (Player_InitializeAll) and the init loop |
-| `Play_Init` | 2952:PA | setup | read | MEM_ARRAY_ALLOCATE(gPlayer, CoopPlayers_Count()): allocates every player, nothing to do |
-| `Player_SetupArwingShot` | 3092:SH | ok | site | writes player->num |
-| `Player_SetupTankShot` | 3142:SH | ok | site | writes player->num |
-| `Player_SetupOnFootShot` | 3292:SH | ok | site | writes player->num |
-| `Player_CanLockOn` | 3320:CC | setup | site | loops gCamCount players |
-| `Player_UpdateLockOn` | 3433:CC | setup | site | loops gCamCount players |
-| `Player_CheckBounds360` | 3698:CC | setup | read | gCamCount != 1 as versus flag: wraps the arena at 12000 |
-| `Player_Setup` | 4938:CC | setup | site | gCamCount == gPlayerNum + 1: HUD and hit counters reset only when the last player is set up |
-| `Player_UpdateTankJets` | 5478:CC, 5482:CC | setup | site | gCamCount == 1 as "not versus" for jet effects |
-| `Player_UpdateEffects` | 5524:CC | setup | site | loops gCamCount players |
-| `Player_Update` | 5902:MC, 5903:MC, 5904:MC | ok | read | with co-op off; in co-op CoopPlayers_SelectInput points at the player's own slot right after (WP-14) |
-| `Player_Update` | 6140:CC | setup | site | gCamCount == 4: down in versus goes to VS_STANDBY, else fade out and restart level |
-| `Player_Update` | 6150:P0, 6219:P0 | flow | site | death restart resets gPlayer[0].zPath and path progress; boost check reads player 0 state for every player |
-| `Camera_SetStarfieldPos` | 6648:P0, 6660:P0 | view | site | starfield from player 0 camera |
-| `Camera_SetupLights` | 6743:P0 | view | site | lights depend on player 0 state |
-| `Play_UpdateLevel` | 6873:P0, 6874:P0, 6875:P0, 6876:P0, 6877:P0, 6890:P0, 6891:P0, 6906:P0, 6915:P0, 6916:P0, 6941:P0, 6946:P0, 6949:P0, 6952:P0, 6955:P0, 6958:P0, 6961:P0, 6971:P0, 6973:P0, 6975:P0, 6976:P0, 6978:P0, 6979:P0, 6981:P0, 6987:P0, 6991:P0, 6993:P0, 6999:P0, 7009:P0, 7015:P0, 7016:P0 | flow | site | per-level triggers on player 0: level complete, warp zone, Solar heat damage to player 0 only, Venom 2 / Aquas checks |
-| `Play_UpdateLevel` | 6878:PA | flow | site | Camera_Update360 for player 0 as Venom 2 ends: level complete is one player's (WP-16) |
-| `Play_Main` | 7169:P0, 7170:P0, 7172:P0, 7173:P0, 7174:P0, 7211:P0, 7243:P0, 7244:P0 | flow | site | all-range z setup for player 0 only |
-| `Play_Main` | 7210:MC, 7243:MC | input | site | Start (intro skip, pause, unpause) and R while paused (toggles gShowReticles[0], no radio here) are read from gMainController only; versus reads R per controller |
-| `Play_Main` | 7223:CC | setup | site | intro skip resets gCamCount to 1; its sound cleanup loop is on CoopPlayers_Count() since WP-10 |
+| `Play_InitEnvironment` | 585:P0 | view | site | kills a sound on player 0 source |
+| `Player_CollisionCheck` | 1840:CC, 2265:CC | setup | site | gCamCount != 1 and == 4 mean versus (mercy rules, player-vs-player hits); a co-op gCamCount of 2 would turn half of this on |
+| `Player_CollisionCheck` | 2179:P0 | view | site | warp ring sound played on player 0 source |
+| `Player_CollisionCheck` | 2193:SH | ok | site | dmgSource through CoopPlayers_DmgSource since #86 |
+| `Player_FloorCheck` | 2400:CC, 2415:CC | setup | site | gCamCount == 1 / != 1 as versus flag |
+| `Play_Init` | 2931:CC, 2934:CC | setup | read | sets gCamCount 1 (4 in versus), then CoopPlayers_LevelInit; since WP-10 CoopPlayers_Count() sizes the player allocation, the clear (Player_InitializeAll) and the init loop |
+| `Play_Init` | 2953:PA | setup | read | MEM_ARRAY_ALLOCATE(gPlayer, CoopPlayers_Count()): allocates every player, nothing to do |
+| `Player_SetupArwingShot` | 3093:SH | ok | site | writes player->num |
+| `Player_SetupTankShot` | 3143:SH | ok | site | writes player->num |
+| `Player_SetupOnFootShot` | 3293:SH | ok | site | writes player->num |
+| `Player_CanLockOn` | 3321:CC | setup | site | loops gCamCount players |
+| `Player_UpdateLockOn` | 3434:CC | setup | site | loops gCamCount players |
+| `Player_CheckBounds360` | 3699:CC | setup | read | gCamCount != 1 as versus flag: wraps the arena at 12000 |
+| `Player_Setup` | 4939:CC | setup | site | gCamCount == gPlayerNum + 1: HUD and hit counters reset only when the last player is set up |
+| `Player_UpdateTankJets` | 5479:CC, 5483:CC | setup | site | gCamCount == 1 as "not versus" for jet effects |
+| `Player_UpdateEffects` | 5525:CC | setup | site | loops gCamCount players |
+| `Player_Update` | 5903:MC, 5904:MC, 5905:MC | ok | read | with co-op off; in co-op CoopPlayers_SelectInput points at the player's own slot right after (WP-14) |
+| `Player_Update` | 6141:CC | setup | site | gCamCount == 4: down in versus goes to VS_STANDBY, else fade out and restart level |
+| `Player_Update` | 6151:P0, 6220:P0 | flow | site | death restart resets gPlayer[0].zPath and path progress; boost check reads player 0 state for every player |
+| `Camera_SetStarfieldPos` | 6649:P0, 6661:P0 | view | site | starfield from player 0 camera |
+| `Camera_SetupLights` | 6744:P0 | view | site | lights depend on player 0 state |
+| `Play_UpdateLevel` | 6874:P0, 6875:P0, 6876:P0, 6877:P0, 6878:P0, 6891:P0, 6892:P0, 6907:P0, 6916:P0, 6917:P0, 6942:P0, 6947:P0, 6950:P0, 6953:P0, 6956:P0, 6959:P0, 6962:P0, 6972:P0, 6974:P0, 6976:P0, 6977:P0, 6979:P0, 6980:P0, 6982:P0, 6988:P0, 6992:P0, 6994:P0, 7000:P0, 7010:P0, 7016:P0, 7017:P0 | flow | site | per-level triggers on player 0: level complete, warp zone, Solar heat damage to player 0 only, Venom 2 / Aquas checks |
+| `Play_UpdateLevel` | 6879:PA | flow | site | Camera_Update360 for player 0 as Venom 2 ends: level complete is one player's (WP-16) |
+| `Play_Main` | 7171:P0, 7172:P0, 7174:P0, 7175:P0, 7176:P0, 7213:P0, 7245:P0, 7246:P0 | flow | site | all-range z setup for player 0 only |
+| `Play_Main` | 7212:MC, 7245:MC | input | site | Start (intro skip, pause, unpause) and R while paused (toggles gShowReticles[0], no radio here) are read from gMainController only; versus reads R per controller |
+| `Play_Main` | 7225:CC | setup | site | intro skip resets gCamCount to 1; its sound cleanup loop is on CoopPlayers_Count() since WP-10 |
 
 ### `src/engine/fox_radio.c`
 
@@ -550,15 +550,15 @@ Basis per site: read 269, site 1038, name 597.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Katina_BossHandleDamage` | 662:P0, 746:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Katina_KaSaucerer_Update` | 919:P0, 923:P0, 925:P0, 926:P0, 927:P0, 929:P0, 930:P0, 931:P0, 933:P0, 955:P0, 976:P0, 977:P0, 978:P0, 979:P0, 980:P0, 981:P0, 1047:P0, 1048:P0, 1049:P0, 1052:P0, 1179:P0, 1195:P0, 1197:P0, 1199:P0, 1200:P0, 1201:P0, 1203:P0, 1204:P0, 1205:P0, 1220:P0, 1221:P0, 1222:P0, 1229:P0, 1230:P0, 1232:P0, 1242:P0, 1243:P0, 1244:P0, 1245:P0, 1246:P0, 1247:P0, 1248:P0, 1269:P0, 1328:P0, 1329:P0, 1330:P0, 1332:P0, 1333:P0, 1334:P0, 1351:P0, 1365:P0, 1374:P0, 1375:P0, 1376:P0, 1381:P0, 1383:P0, 1384:P0, 1385:P0, 1387:P0, 1407:P0, 1408:P0, 1409:P0 | sim | site | boss; its death puts player 0 in standby and moves player 0 camera (flow mixed in) |
-| `Katina_KaSaucerer_Update` | 957:MC, 1268:MC, 1364:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Katina_SFTeamMissionAccomUpdate` | 1705:P0, 1706:P0, 1707:P0 | flow | name | mission accomplished cutscene |
-| `Katina_SFTeam_LevelComplete_Update` | 1781:P0, 1782:P0, 1783:P0, 1787:P0, 1788:P0, 1789:P0 | flow | name | level complete cutscene |
-| `Katina_801981F8` | 2180:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Katina_UpdateEvents` | 2340:P0 | flow | name | level events on player 0 |
-| `Katina_EnemyUpdate` | 2502:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Katina_EnemyDraw` | 2635:P0, 2636:P0 | view | name | drawing by player 0 |
+| `Katina_BossHandleDamage` | 663:P0, 747:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Katina_KaSaucerer_Update` | 920:P0, 924:P0, 926:P0, 927:P0, 928:P0, 930:P0, 931:P0, 932:P0, 934:P0, 956:P0, 977:P0, 978:P0, 979:P0, 980:P0, 981:P0, 982:P0, 1048:P0, 1049:P0, 1050:P0, 1053:P0, 1180:P0, 1196:P0, 1198:P0, 1200:P0, 1201:P0, 1202:P0, 1204:P0, 1205:P0, 1206:P0, 1221:P0, 1222:P0, 1223:P0, 1230:P0, 1231:P0, 1233:P0, 1243:P0, 1244:P0, 1245:P0, 1246:P0, 1247:P0, 1248:P0, 1249:P0, 1270:P0, 1329:P0, 1330:P0, 1331:P0, 1333:P0, 1334:P0, 1335:P0, 1352:P0, 1366:P0, 1375:P0, 1376:P0, 1377:P0, 1382:P0, 1384:P0, 1385:P0, 1386:P0, 1388:P0, 1408:P0, 1409:P0, 1410:P0 | sim | site | boss; its death puts player 0 in standby and moves player 0 camera (flow mixed in) |
+| `Katina_KaSaucerer_Update` | 958:MC, 1269:MC, 1365:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Katina_SFTeamMissionAccomUpdate` | 1706:P0, 1707:P0, 1708:P0 | flow | name | mission accomplished cutscene |
+| `Katina_SFTeam_LevelComplete_Update` | 1782:P0, 1783:P0, 1784:P0, 1788:P0, 1789:P0, 1790:P0 | flow | name | level complete cutscene |
+| `Katina_801981F8` | 2181:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Katina_UpdateEvents` | 2341:P0 | flow | name | level events on player 0 |
+| `Katina_EnemyUpdate` | 2503:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Katina_EnemyDraw` | 2636:P0, 2637:P0 | view | name | drawing by player 0 |
 
 ### `src/overlays/ovl_i4/fox_sz.c`
 

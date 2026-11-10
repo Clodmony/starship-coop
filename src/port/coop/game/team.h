@@ -13,6 +13,9 @@
 // wingman's lines play in the substitute's voice where the game recorded the line for all three, and not otherwise.
 // With no free computer wingman the scene keeps its stand-in (0006 C1); Katt and Bill (0012 B4) are a later step.
 //
+// Decision 0006 rule 3 (B3) off rails: in all-range the human's slot holds a hidden body on the human, and in boss
+// fights the computer wingman of a human-flown character does not spawn (CoopTeam_Init, CoopTeam_LeavesBossFight).
+//
 // Co-op off, or a character no human flies: every function here leaves the game as upstream.
 
 #include <stdint.h>
@@ -45,6 +48,22 @@ int32_t CoopTeam_SceneMessage(struct Actor* actor, int32_t* msgId, int32_t* spea
 
 // The scene choices of this level, for the state hash: one byte per scene, 0 while not chosen, else the team id.
 const uint8_t* CoopTeam_Choices(int32_t* count);
+
+// Decision 0006 rule 3, all-range and boss fights. Call once at start-up: registers the listeners that turn the
+// all-range wingman in a human-flown character's slot (gActors[1] to [3]) into a body while the level is played: no
+// AI, shots, hitbox or model, placed on its human every frame so enemies aimed at the slot aim at the human, and in
+// the retreat state while the human is down or not flying. Intro and level-clear scenes keep the game's wingman.
+void CoopTeam_Init(void);
+
+// Nonzero when the boss-fight wingman (ActorTeamBoss) of `teamId` must not spawn: a human flies that character.
+int32_t CoopTeam_LeavesBossFight(int32_t teamId);
+
+// What `actor` is as a human-flown wingman's all-range body, for tests.
+#define COOP_TEAM_BODY_NONE 0 // not a body: any other actor, or the wingman's own AI flies it
+#define COOP_TEAM_BODY_ON 1   // a body on its human, who flies
+#define COOP_TEAM_BODY_AWAY 2 // a body in the retreat state, its human down or not flying
+#define COOP_TEAM_BODY_OFF 3  // a body somewhere its human is not: a fault
+int32_t CoopTeam_Body(const struct Actor* actor);
 
 #ifdef __cplusplus
 }

@@ -26,6 +26,8 @@ typedef struct {
     s32 ships[3];
     s32 p1;          // player 1's shields, -1 without a player 1 in co-op
     u8 scenes[16];   // CoopTeam_Choices: who flies each scene of a human-flown wingman (#15)
+    s32 ai[3];       // all-range and boss-fight wingmen flying on their own AI, per team (#15)
+    s32 body[3];     // per team: 0 no body, 1 a body on its human, 2 a body away, 3 a body elsewhere (#15)
 } TeamTraceLine;
 
 static FILE* sTraceFile = NULL;
@@ -77,6 +79,18 @@ static void CoopTeamTrace_Read(TeamTraceLine* line) {
             (actor->iwork[12] >= TEAM_ID_FALCO) && (actor->iwork[12] <= TEAM_ID_PEPPY)) {
             line->ships[actor->iwork[12] - TEAM_ID_FALCO]++;
         }
+        if ((actor->obj.status == OBJ_ACTIVE) &&
+            ((actor->obj.id == OBJ_ACTOR_ALLRANGE) || (actor->obj.id == OBJ_ACTOR_TEAM_BOSS)) &&
+            (actor->aiType >= AI360_FALCO) && (actor->aiType <= AI360_PEPPY)) {
+            s32 team = actor->aiType - AI360_FALCO;
+            s32 body = CoopTeam_Body(actor);
+
+            if (body == COOP_TEAM_BODY_NONE) {
+                line->ai[team]++;
+            } else {
+                line->body[team] = body;
+            }
+        }
     }
 }
 
@@ -92,7 +106,8 @@ static void CoopTeamTrace_Write(const TeamTraceLine* l) {
     for (i = 0; i < ARRAY_COUNT(l->scenes); i++) {
         fprintf(sTraceFile, "%s%d", (i > 0) ? "," : "", l->scenes[i]);
     }
-    fprintf(sTraceFile, "\n");
+    fprintf(sTraceFile, " ai=%d,%d,%d body=%d,%d,%d\n", l->ai[0], l->ai[1], l->ai[2], l->body[0], l->body[1],
+            l->body[2]);
     fflush(sTraceFile); // tests stop the game from outside, and there are few lines
 }
 
