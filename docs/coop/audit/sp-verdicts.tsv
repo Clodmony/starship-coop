@@ -284,6 +284,8 @@ src/overlays/ovl_i5/fox_ma.c	Macbeth_MaBombDrop_Update	sim	read	blast hits playe
 src/overlays/ovl_i6/fox_sy.c	SectorY_SyShogun_Init	sim	site	boss; sets player 0 to START_360
 src/overlays/ovl_i6/fox_sy.c	SectorY_80198F5C	sim	site	boss; sets player 0 state and camera
 src/overlays/ovl_i6/fox_sy.c	SectorY_80199438	sim	site	boss cutscene; moves player 0 camera
+src/overlays/ovl_i6/fox_sy.c	SectorY_8019BC14	ok	read	shoots at its target's lead by moving player 0 there for Effect_EnemyLaser, the other humans with it (CoopAim_PointShot, #220)
+src/overlays/ovl_i6/fox_sy.c	SectorY_SyShogun_Update	flow	read	a new move picks the nearest human again; its target, dash and dodges follow its kept human (#220, aim.h); left: the fight waits for player 0's cut to all-range, the HUD arrow flags on player 0
 #
 # --- who fired: dmgSource and sourceId (#86, NOTES.md). flow rows name the work package that owns the rule
 include/sf64object.h	<file scope>@shooter	ok	read	the dmgSource field

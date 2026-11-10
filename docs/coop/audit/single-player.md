@@ -24,19 +24,19 @@ pattern without reading the code, so treat it as a guess.
 
 ## Summary
 
-1779 sites in 423 functions in 46 files.
+1762 sites in 419 functions in 46 files.
 A function whose sites have more than one verdict counts once per verdict in the functions column.
 
 | verdict | sites | functions | `gPlayer[0]` | `gPlayer->` | `gPlayer arg` | `gMainController` | `gCamCount` | `shooter` |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| sim | 863 | 175 | 858 | 1 | 2 | 0 | 0 | 2 |
+| sim | 834 | 169 | 829 | 1 | 2 | 0 | 0 | 2 |
 | view | 217 | 84 | 151 | 0 | 0 | 43 | 3 | 20 |
 | input | 13 | 9 | 0 | 0 | 0 | 8 | 0 | 5 |
-| flow | 448 | 98 | 408 | 0 | 3 | 3 | 0 | 34 |
+| flow | 451 | 99 | 411 | 0 | 3 | 3 | 0 | 34 |
 | setup | 53 | 34 | 1 | 0 | 1 | 0 | 51 | 0 |
-| ok | 185 | 83 | 5 | 2 | 15 | 87 | 8 | 68 |
+| ok | 194 | 84 | 14 | 2 | 15 | 87 | 8 | 68 |
 
-Basis per site: read 309, site 940, name 530.
+Basis per site: read 321, site 940, name 501.
 
 ## Sites
 
@@ -674,26 +674,22 @@ Basis per site: read 309, site 940, name 530.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `SectorY_80197B30` | 40:P0, 41:P0, 42:P0, 44:P0, 46:P0, 47:P0, 48:P0, 50:P0, 51:P0, 52:P0 | flow | site | actor copies player 0 position, speed and rotation (cutscene double) |
-| `SectorY_SyShogun_Init` | 87:P0, 118:P0, 119:P0, 120:P0 | sim | site | boss; sets player 0 to START_360 |
-| `SectorY_801983E4` | 255:P0, 290:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `SectorY_80198F5C` | 445:P0, 447:P0, 448:P0, 449:P0, 450:P0, 451:P0, 452:P0, 454:P0, 455:P0, 457:P0, 483:P0, 485:P0, 487:P0, 488:P0 | sim | site | boss; sets player 0 state and camera |
-| `SectorY_80199438` | 570:MC, 571:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `SectorY_80199438` | 588:P0, 589:P0, 590:P0, 591:P0, 592:P0, 593:P0, 639:P0, 640:P0, 641:P0 | sim | site | boss cutscene; moves player 0 camera |
-| `SectorY_80199DAC` | 744:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `SectorY_8019AEEC` | 1021:P0, 1022:P0, 1023:P0, 1024:P0, 1025:P0, 1026:P0, 1027:P0, 1042:P0, 1044:P0, 1056:P0, 1058:P0, 1059:P0, 1104:P0, 1105:P0, 1106:P0 | flow | site | cutscene moves player 0 camera |
-| `SectorY_8019B6E8` | 1158:P0, 1159:P0, 1171:P0, 1172:P0, 1173:P0, 1174:P0, 1175:P0, 1176:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `SectorY_8019BBBC` | 1212:P0, 1213:P0, 1214:P0, 1215:P0, 1216:P0, 1217:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `SectorY_8019BC14` | 1271:P0, 1272:P0, 1273:P0, 1275:P0, 1276:P0, 1277:P0, 1281:P0, 1282:P0, 1283:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `SectorY_SyShogun_Update` | 1417:P0, 1729:P0, 1731:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `SectorY_SyShogun_Draw` | 1959:P0, 1960:P0, 1961:P0 | view | name | drawing by player 0 |
-| `SectorY_8019EB80` | 2099:P0, 2100:P0, 2101:P0, 2105:P0, 2106:P0, 2107:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `SectorY_LevelComplete` | 2157:P0 | flow | name | level complete |
-| `SectorY_8019FF00` | 2512:P0, 2513:P0, 2515:P0, 2536:P0, 2537:P0, 2552:P0, 2553:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `SectorY_801A06A4` | 2649:P0, 2650:P0, 2651:P0, 2653:P0, 2654:P0, 2655:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `SectorY_801A0AC0` | 2972:MC, 3372:MC, 3373:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `SectorY_801A0AC0` | 3239:P0, 3243:P0, 3248:P0, 3395:P0 | flow | site | cutscene moves player 0 to the centre |
-| `SectorY_SyRobot_Update` | 3671:P0, 3672:P0, 3674:P0, 3675:P0, 3678:P0, 3679:P0, 3767:P0, 3768:P0, 3769:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `SectorY_80197B30` | 41:P0, 42:P0, 43:P0, 45:P0, 47:P0, 48:P0, 49:P0, 51:P0, 52:P0, 53:P0 | flow | site | actor copies player 0 position, speed and rotation (cutscene double) |
+| `SectorY_SyShogun_Init` | 88:P0, 119:P0, 120:P0, 121:P0 | sim | site | boss; sets player 0 to START_360 |
+| `SectorY_80198F5C` | 449:P0, 451:P0, 452:P0, 453:P0, 454:P0, 455:P0, 456:P0, 458:P0, 459:P0, 461:P0, 487:P0, 489:P0, 491:P0, 492:P0 | sim | site | boss; sets player 0 state and camera |
+| `SectorY_80199438` | 574:MC, 575:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `SectorY_80199438` | 592:P0, 593:P0, 594:P0, 595:P0, 596:P0, 597:P0, 643:P0, 644:P0, 645:P0 | sim | site | boss cutscene; moves player 0 camera |
+| `SectorY_8019AEEC` | 1027:P0, 1028:P0, 1029:P0, 1030:P0, 1031:P0, 1032:P0, 1033:P0, 1048:P0, 1050:P0, 1062:P0, 1064:P0, 1065:P0, 1110:P0, 1111:P0, 1112:P0 | flow | site | cutscene moves player 0 camera |
+| `SectorY_8019BC14` | 1283:P0, 1284:P0, 1285:P0, 1287:P0, 1288:P0, 1289:P0, 1296:P0, 1297:P0, 1298:P0 | ok | read | shoots at its target's lead by moving player 0 there for Effect_EnemyLaser, the other humans with it (CoopAim_PointShot, #220) |
+| `SectorY_SyShogun_Update` | 1432:P0, 1749:P0, 1751:P0 | flow | read | a new move picks the nearest human again; its target, dash and dodges follow its kept human (#220, aim.h); left: the fight waits for player 0's cut to all-range, the HUD arrow flags on player 0 |
+| `SectorY_SyShogun_Draw` | 1979:P0, 1980:P0, 1981:P0 | view | name | drawing by player 0 |
+| `SectorY_8019EB80` | 2119:P0, 2120:P0, 2121:P0, 2125:P0, 2126:P0, 2127:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `SectorY_LevelComplete` | 2177:P0 | flow | name | level complete |
+| `SectorY_8019FF00` | 2532:P0, 2533:P0, 2535:P0, 2556:P0, 2557:P0, 2572:P0, 2573:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `SectorY_801A06A4` | 2669:P0, 2670:P0, 2671:P0, 2673:P0, 2674:P0, 2675:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `SectorY_801A0AC0` | 2992:MC, 3392:MC, 3393:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `SectorY_801A0AC0` | 3259:P0, 3263:P0, 3268:P0, 3415:P0 | flow | site | cutscene moves player 0 to the centre |
+| `SectorY_SyRobot_Update` | 3691:P0, 3692:P0, 3694:P0, 3695:P0, 3698:P0, 3699:P0, 3787:P0, 3788:P0, 3789:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 
 ### `src/overlays/ovl_i6/fox_turret.c`
 

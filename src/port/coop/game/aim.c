@@ -217,6 +217,43 @@ int32_t CoopAim_Held(int32_t boss) {
     return ((held >= 0) && (held < CoopPlayers_Count())) ? held : 0;
 }
 
+// Where CoopAim_PointShot found the players it moved (#220); moved[i] is nonzero for those.
+static Vec3f sPointPos[4];
+static f32 sPointTrueZ[4];
+static s8 sPointMoved[4];
+
+void CoopAim_PointShot(float x, float y, float z) {
+    s32 i;
+
+    if (!CoopPlayers_IsCoop() || (gPlayer == NULL)) {
+        return;
+    }
+    for (i = 1; (i < CoopPlayers_Count()) && (i < ARRAY_COUNT(sPointMoved)); i++) {
+        Player* p = &gPlayer[i];
+
+        sPointMoved[i] = CoopAim_CanAimAt(i);
+        if (sPointMoved[i]) {
+            sPointPos[i] = p->pos;
+            sPointTrueZ[i] = p->trueZpos;
+            p->pos.x = x;
+            p->pos.y = y;
+            p->trueZpos = p->pos.z = z;
+        }
+    }
+}
+
+void CoopAim_PointShotEnd(void) {
+    s32 i;
+
+    for (i = 1; i < ARRAY_COUNT(sPointMoved); i++) {
+        if (sPointMoved[i] && (gPlayer != NULL)) {
+            gPlayer[i].pos = sPointPos[i];
+            gPlayer[i].trueZpos = sPointTrueZ[i];
+        }
+        sPointMoved[i] = 0;
+    }
+}
+
 void CoopAim_LevelInit(void) {
     s32 i;
 
