@@ -56,6 +56,36 @@ Unknown:
 - Why the issue's full runs saw it at real pacing as often as 2 of 4 (#147): not reproduced at real pacing here.
 - Windows and macOS: not run; the alarm is Linux only, as the handler it wraps.
 
+### 2026-11-10, #27, the player docs: where each statement of the README's "How to play" comes from
+
+Identity: docs only, nothing was built or run for this entry. Read at `80ff9be6` (the test branch `issue/combined-test-2`).
+
+Observed (read in the repo or on the tracker):
+
+- `gh release list` returns nothing: the repository has no release. GitHub CI is off (#164), so the only packages are
+  those of past manual runs of `.github/workflows/coop-build.yml` (artifact retention 14 days). The README therefore
+  names no download and says how a package is made and how a source build goes.
+- Nearly all rules the played build had are not on `coop` (`0e5a5cf6`): `git log origin/coop..HEAD` lists #14, #15,
+  #16, #191, #193, #194, #199 to #201 and #211 as commits that `coop` lacks. The README marks them "(test build)".
+- The F1 label is the first 8 characters of the build id (`src/port/coop/ui/version_label.cpp`), where
+  `TWO_PC_TEST.md` says `Co-op <id>`. The refusal text for a different build is in `src/port/coop/session/identity.c:334`.
+- The lobby's labels and status lines are in `src/port/coop/ui/menu.c` and `menu_window.cpp`; only the host sees
+  **Start at** and **Start the level** (`view.showStart`).
+- The campaign run (Corneria to the ending, 66 minutes, 0 desync lines) is the comment of 2026-11-10 on #2; its numbers
+  come from the joining player's co-op log, which is not attached anywhere.
+
+Contradictions and unknowns found:
+
+- Decision 0007 rule 1 says the pool starts at 2 plus 1 per extra player. `git grep gLifeCount src/port/coop` shows no
+  code that sets it (only reads, the return's `gLifeCount[0]--`, and the HUD index). **Unknown** whether the pool is 2 or 3
+  for two players in the test build; the README says so.
+- Decision 0007's refill in place for Fox is not built (NOTES.md, 2026-11-08, #7: "has not been built or run, in any
+  level"). The README describes the original rule for Fox going down.
+- `docs/coop/TWO_PC_TEST.md` still says "There are no co-op rules for lives yet ... If the other player goes down, they
+  stay out until the next level". That is right for `coop` and wrong for the test build (#14). Not edited here; it
+  becomes wrong for everyone when #205 merges.
+- Nobody reported a hand-played return after going down: #14's evidence is scripted two-client runs.
+
 ### 2026-11-07, #116, how a crashed test game looks to the tools
 
 Identity: no game run; `tools/coop/crash_test.py` with a stand-in for the game, Windows 11, Python 3, on `issue/116`.
