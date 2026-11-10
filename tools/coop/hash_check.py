@@ -118,7 +118,9 @@ PLAYER_ARRAYS = (  # state_hash.c, sPlayerArrays: region players, in co-op only
 PLAYER_GLOBALS = ("gLifeCount", "gBombCount", "gPlayerScores")  # HashGlobals: region globals, with co-op off too
 # HashGlobals: one value, region globals, in co-op only (#129). The low-health radio timer: a drifted one would show only
 # at the next limit that draws a number (#87).
-COOP_GLOBALS = ("gTeamLowHealthMsgTimer",)
+COOP_GLOBALS = ("gTeamLowHealthMsgTimer", "voiceClock")
+# voiceClock (#230, src/port/coop/sync/voice_clock.h): the voice sequence's tempo in the sound thread, which says on which
+# frame the radio leaves a line. Probed in a level only, while the voice player runs.
 # HashKeptTargets: whom each boss and all-range enemy follows and whom a boss holds (#213, aim.h), region globals, in
 # co-op only. Probed as keptTarget[0] (the first boss's target) and keptTarget[last] (the last boss's held player).
 KEPT_TARGETS = "keptTarget"

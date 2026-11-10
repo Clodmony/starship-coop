@@ -48,6 +48,7 @@
 #endif
 #include "port/coop/game/team.h"
 #include "port/coop/game/aim.h"
+#include "port/coop/sync/voice_clock.h"
 #include "port/coop/test/switches.h"
 
 // src/sys/sys_math.c
@@ -449,6 +450,25 @@ static void HashShots(uint64_t* h) {
     }
 }
 
+// The voice line's clock in the sound thread (#230, voice_clock.h): where it stands says on which frame the radio
+// leaves a line. In a level only: the way in from the map and the session's level start (level_start.c) reset the
+// audio heap and start the voice player over, so games that came the same way hold the same clock from there on.
+// Before the first such reset the player runs on from boot, and the boot logo runs on wall-clock time. Nothing while
+// the player is stopped, as its fields are left from before the reset.
+static void HashVoiceClock(uint64_t* h) {
+    CoopVoiceClock clock;
+    u8 running;
+
+    if (gGameState != GSTATE_PLAY) {
+        return;
+    }
+    running = CoopVoiceClock_Read(&clock);
+    HashNamed(h, "voicePlayerRunning", -1, &running, sizeof(running));
+    if (running) {
+        HashNamed(h, "voiceClock", -1, &clock, sizeof(clock));
+    }
+}
+
 static void HashGlobals(uint64_t* h) {
     HASH_VAR(h, gGameState);
     HASH_VAR(h, gNextGameStateTimer);
@@ -481,6 +501,7 @@ static void HashGlobals(uint64_t* h) {
         // hashed on its own. Co-op only, so a single-player log lines up with one from an older build.
         HASH_VAR(h, gTeamLowHealthMsgTimer);
         HashKeptTargets(h);
+        HashVoiceClock(h);
     }
 }
 
@@ -707,6 +728,9 @@ static void Probe(void) {
         ProbeReturnTimer(i);
     }
     ProbeBit("gTeamLowHealthMsgTimer", 0, &gTeamLowHealthMsgTimer);
+    if (CoopVoiceClock_ProbeByte() != NULL) {
+        ProbeBit("voiceClock", 0, CoopVoiceClock_ProbeByte()); // not while an audio reset stops the player (#230)
+    }
     {
         int32_t count;
         int8_t* kept = CoopAim_KeptSlots(&count);

@@ -65,7 +65,9 @@ number of clients, transport.
    (or a list, or `all`) flies another Arwing level for 2400 frames instead, and `--cvar NAME=VALUE` sets a CVar on both.
    The two clients also render different sample counts per audio update (`SF64_COOP_TEST_AUDIO_SAMPLES` high and low,
    `--audio`), as a radio line follows the voice sequence of the sound thread; the log counts the radio state changes, so
-   a run shows that a line was played. `python tools/coop/hash_check.py slots --level katina,fortuna,corneria` plays a level
+   a run shows that a line was played. In co-op the hash also holds that sequence's clock in a level (#230,
+   `src/port/coop/sync/voice_clock.h`), so two games whose radio lines would end on different frames differ from the
+   frames after the voice player starts, not only at a radio step. `python tools/coop/hash_check.py slots --level katina,fortuna,corneria` plays a level
    with 1 player and with 2 and fails when co-op holds more than 15 more effect slots (median): the draw code frees nothing
    for leaving the view in co-op (#96), so an effect that only that freed would stay for the whole level (#129).
    `python tools/coop/hash_check.py views --pilot` (#181, unattended, exit code 0 on `PASS`) takes the same two clients
