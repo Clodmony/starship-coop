@@ -1209,6 +1209,84 @@ Unknown:
 - The squared distance is plain float code in an upstream-style file, so with fused multiply-add on a target that has
   it, a near tie could go to another player there than on x86-64. Decision 0010's platforms are x86-64 only.
 
+### 2026-11-10, #238, why the scripted pilots stopped finishing Corneria: the Granga fight, not boost or aim
+
+Identity: ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window, one PC. Base build `80ff9be6`
+(`issue/combined-test-2`); throw-away builds of it with one change each; test branch 4 at `bd3be601`.
+
+Observed:
+
+- On the base build `full_level.py` ends `FAIL, the pilot did not reach: level complete, map`. The rails are not the
+  problem: the cut to all-range comes at replay frame 9392 as before, and the Granga fight then runs to the end of
+  the replay. In the pilot log the arms and the gun are gone in 550 frames, the right leg takes 4600 and Granga falls
+  (state 6, `rot.x` and `rot.z` to 60), and the backpack, the only part that ends the fight, is at 70 of 130 when the
+  replay runs out.
+- Neither pilot ever boosts or brakes: the trace's pads (`SF64_COOP_TRACE`) hold only 0 and `A_BUTTON` for both
+  players, as `CoopPilot_FlyRails` and `CoopPilot_FlyAllRange` (`src/port/coop/test/pilot.c`) set nothing else. The
+  boost seen at the start of the rails (`boostSpeed` up to 28 at game frames 1675-1688, both players alike) is the
+  section's own.
+- One change at a time, `full_level.py` on the base build: with `CoopPlayers_PathBoostSpeed` returning the player's own
+  `boostSpeed` (#194's rule off) it PASSES, level complete at frame 11711, the frames of the #193-only bisect build;
+  with `CoopAim_Nearest` returning 0 (#193 off) it FAILS, player 0 down at 15509, the frames of the #194-only build. The
+  flight with the rule off parts from the base's at replay frame 4790 (`players`, `shots`, `globals`), in that boost's
+  ramp down: the lag PR #235 (#214) found and fixes. Test branch 4 holds #235 and still failed.
+- Aim: in the base flight's runs, in range, the nose was within the pilot's 6 degree limit on 17 of 187 samples for
+  player 0 and 5 of 181 for player 1 (one every 10 frames). `CoopPilot_SteerAt` asked for `rot.y + yaw`, but the
+  heading is `yRot_114 + rot.y` and `yRot_114` goes on turning by `yRotVel_11C`, 0.03 of `rot.y`
+  (`Player_MoveArwing360`, `src/engine/fox_play.c`). Played offline with those steps, the old law ends 4 degrees off
+  after a 20 degree turn and 13 off after 60; `rot.y + 10 (yaw - yRotVel_11C)` holds 0, but with the stick acting 3
+  frames late (`COOP_LOCKSTEP_INPUT_DELAY`, `src/port/coop/sync/lockstep.h`) it swings by 3 to 6; `rot.y + 3 yaw -
+  10 yRotVel_11C` scored best over gains 1-10 with and without the delay.
+- The delay is real for the pilots: `lockstep_test.py --only full` flies them live, each client's stick 3 frames late.
+  With the gain-10 law and the runs below, Granga took 4260 frames there (map at lockstep frame 12137) against 1000 to
+  2500 in `full_level.py`, and on test branch 4 the flight ran out (`no map in 14000 frames`). With the gain-3 law the
+  base flight's fight took 1740 frames (map at 9646).
+- Runs: a run had to stay in the cone behind its part (cos 0.75) and started 1300 out. The ship turns back in a circle
+  about 2800 wide (`rot.y` at most 54, 0.03 of it a frame, at 40 a frame), so the run left the cone before the nose came
+  round. With Granga lying still player 1 flew the same 440-frame loop from game frame 11700 to the end without a shot.
+  Started 2000 out, the turn brought the ship back in just as it reached break-off. Started 3000 out (run start 3600),
+  a Granga fallen to its right side went in 700 frames, but on test branch 4 one fallen to its left stayed at 120 for
+  4500 frames: the 2800-wide turn still took most of the way in, two shots a run. Banked (Z or R held into the turn,
+  which doubles the turn rate in `Player_MoveArwing360`) the circle is about 1700 wide; a second press of the same
+  trigger within 10 frames would be a barrel roll (`Player_ArwingBank`).
+- Player 0 crashed into Granga's hitboxes six times in all-range (damage type 40 with a direction, Granga within a few
+  hundred units), 240 shields. It then flew on at 0 shields: a player goes down while `shields <= 0` and
+  `radioDamageTimer != 0` (`fox_play.c`, `Player_UpdateOnRails` and the other form updates), a hit sets that timer
+  to 4 (`Player_ApplyDamage`), and its damage drains 2 a frame for about 19, so the last hit runs out first and the
+  player goes down on the next one.
+- Granga, from `Corneria_CoGranga_Update` (`src/overlays/ovl_i1/fox_co.c`): walks at 40 a frame in states 3 and 4
+  (`sp78`), as fast as an Arwing, backwards at 30, at 5 in state 1; a leg hit that leaves the leg stops it (state 0),
+  a leg shot off fells it for good. Its 10 hitboxes (z, y, x as offset and half size, local, read from
+  `info.hitbox` at run time): backpack -241/87, 434/132, 0/82; arms 0/145, 590/45, +-228/73; gun 0/120, 715/45, 0/73;
+  legs 0/90, 204/239, +-220/60; four body boxes up to y 631. Granga stands at y 10, so the pilot's run height of 750
+  is inside the gun's box. A laser flies 133 a frame for 35 frames (`Player_SetupArwingShot`). Corneria's all-range
+  ends at 8000 from the middle (`Player_CheckBounds360`, a U-turn).
+- `full_level.py`'s "went down N times" counts `PLAYERSTATE_DOWN` only. A co-op player 1 who goes down is parked by
+  `CoopPlayers_OnPlayerDown` and is not counted: in the base flight player 1 went down near game frame 10797 and came
+  back at 10947 with 255, and the summary said 0.
+- With the steering (gain 3, banked turns) and the runs as above (`pilot.c`), `full_level.py` passes on five flights.
+  Frames from all-range to level complete: base 1187, rule off 776, aim at player 0 847, test branch 4 877, and 2767
+  on a throw-away build where player 0 shoots a leg off first and player 1 holds its fire until Granga has fallen
+  (fallen at game frame 8400). `lockstep_test.py --only full` passes on the base (map at 9506) and on test branch 4
+  (8773). With the first steering fix alone the first three `full_level.py` flights passed too, but when player 1 held
+  its fire until the fall the fallen backpack stayed at 130 for 2000 frames, and test branch 4 failed.
+
+Derived:
+
+- Neither #193 nor #194 makes Corneria unflyable for these pilots. Each changes the flight a little, and the old
+  pilot's Granga fight took anywhere from 2000 to over 6400 frames, so either change could decide whether the map came
+  within the test's 16000 frames.
+- `lockstep_test.py --only full` flies the same pilot, each client with the input delay on top, so it fails or passes
+  on its own flight, which is why it and `full_level.py` went different ways on the #193-only build.
+
+Unknown:
+
+- Whether the climb away from Granga and the side the backpack is come at from are each needed: they were tested
+  together only. Whether a banked turn ever rolls by accident: no roll was looked for in the logs.
+- The pilot in other all-range levels: `pilot_aim.c` of #181 (test branch 4) steers with `CoopPilot_SteerAt` too; its
+  `views --pilot` was not run with the new steering.
+- Windows, two PCs.
+
 ### 2026-11-08, #16, how Aquas's boss (Bacoon) goes down, for the marine pilot
 
 Read in `d29a6f24` (`issue/16-vehicles` merged with `coop` at `0e5a5cf6`), no build, nothing run. US 1.0 source;

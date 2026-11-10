@@ -20,8 +20,12 @@ extern f32 sCoGrangaWork[68]; // src/overlays/ovl_i1/fox_co.c
 #define PILOT_SHOT_SPEED 133.0f // Player_ArwingLaser
 #define PILOT_SHOT_RANGE 3500.0f
 #define PILOT_BREAK_OFF 1300.0f // a run at the boss turns away here: at this speed it takes that much room to miss it
-#define PILOT_RUN_START 2600.0f
+#define PILOT_RUN_START 3600.0f
+#define PILOT_RUN_MIN 3000.0f // a run starts no nearer, so that after the turn back in there is room to fire (#238)
+#define PILOT_RUN_FRAMES 300  // and gives up after this long: the boss can walk as fast as an Arwing flies
 #define PILOT_RUN_HEIGHT 750.0f
+#define PILOT_AVOID_FRAMES 20     // looks this far ahead for the boss in the way (#238)
+#define PILOT_AVOID_MARGIN 120.0f // the ship's own size and some
 #define PILOT_MIN_HEIGHT 220.0f
 #define PILOT_LOOK_AHEAD 1700.0f // on rails, about 40 frames at the speed of the path
 #define PILOT_BOX_MAX 256
@@ -41,6 +45,9 @@ static u16 sLastButton[COOP_PLAYERS_MAX];
 static s32 sDropping[COOP_PLAYERS_MAX];
 static s32 sFoundClear[COOP_PLAYERS_MAX];
 static f32 sTargetX[COOP_PLAYERS_MAX];
+static s32 sRun[COOP_PLAYERS_MAX];     // frames into a run at the boss, 0 while the player gets into place (#238)
+static u16 sBank[COOP_PLAYERS_MAX];    // the trigger held to bank into a turn in all-range, 0 for none (#238)
+static s32 sBankOff[COOP_PLAYERS_MAX]; // frames since a bank was let go
 static PilotBox sBoxes[PILOT_BOX_MAX];
 static s32 sBoxCount;
 
@@ -839,18 +846,60 @@ f32 CoopPilot_SteerAt(const Player* p, f32 x, f32 y, f32 z, PilotPad* pad) {
     f32 heading = p->yRot_114 + p->rot.y + 180.0f;
     f32 yaw = CoopPilot_Wrap(Math_RadToDeg(Math_Atan2F(dx, dz)) - heading);
     f32 pitch = CoopPilot_Wrap(Math_RadToDeg(Math_Atan2F(dy, sqrtf(SQ(dx) + SQ(dz)))));
+    s32 i = p - gPlayer;
 
     if ((p->pos.y < PILOT_MIN_HEIGHT) && (pitch < 12.0f)) {
         pitch = 12.0f;
     }
-    pad->x = -(p->rot.y + yaw) / 0.68f;
+    // The heading is yRot_114 + rot.y, and yRot_114 goes on turning by yRotVel_11C (0.03 of rot.y) every frame, while
+    // rot.y closes a tenth of its gap a frame. Asking for rot.y + yaw left the nose about 0.3 rot.y behind after a
+    // turn, 10 degrees and more, so the pilot seldom fired and a Granga fight could outlast the run (#238). The stick
+    // now also takes out ten frames of that turn. In a model of these steps a gain of 3 on yaw settles within about 3
+    // degrees also when the stick acts three frames late, as in a lockstep session (COOP_LOCKSTEP_INPUT_DELAY).
+    pad->x = -(p->rot.y + 3.0f * yaw - 10.0f * p->yRotVel_11C) / 0.68f;
     pad->y = -(pitch - p->xRot_120) / 0.68f;
+    // A wide turn is flown banked: Z held into a left turn or R into a right one doubles the turn rate
+    // (Player_MoveArwing360), so the ship turns back in a circle about 1700 wide instead of 2800 (#238). It banks again
+    // only 20 frames after letting go, as a second press within 10 frames is a barrel roll (Player_ArwingBank).
+    if ((sBank[i] != 0) && ((fabsf(yaw) < 10.0f) || ((sBank[i] == Z_TRIG) != (yaw > 0.0f)))) {
+        sBank[i] = 0;
+        sBankOff[i] = 0;
+    } else if ((sBank[i] == 0) && (fabsf(yaw) > 30.0f) && (sBankOff[i] > 20)) {
+        sBank[i] = (yaw > 0.0f) ? Z_TRIG : R_TRIG;
+    }
+    if (sBank[i] == 0) {
+        sBankOff[i]++;
+    }
+    pad->button |= sBank[i];
     return fabsf(yaw) + fabsf(CoopPilot_Wrap(pitch - (p->xRot_120 + p->rot.x)));
 }
 
+// Whether the ship flies into the boss within PILOT_AVOID_FRAMES, both moving on as they move now (#238). Granga walks
+// at up to 40 a frame (Corneria_CoGranga_Update), as fast as the ship, and a crash takes 40 shields.
+static bool CoopPilot_BossAhead(const Player* p, const Boss* boss) {
+    Object ahead = boss->obj;
+    s32 t;
+
+    for (t = 2; t <= PILOT_AVOID_FRAMES; t += 2) {
+        ahead.pos.x = boss->obj.pos.x + boss->vel.x * t;
+        ahead.pos.y = boss->obj.pos.y + boss->vel.y * t;
+        ahead.pos.z = boss->obj.pos.z + boss->vel.z * t;
+        if (CoopPilot_InHitboxes(&ahead, boss->info.hitbox, p->pos.x + p->vel.x * t, p->pos.y + p->vel.y * t,
+                                 p->trueZpos + p->vel.z * t, PILOT_AVOID_MARGIN)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // One run at a part of the boss from one side: side 1 is where it faces, -1 is behind it. A run starts far out, fires
-// on the way in with the shot's flight time in the aim, and turns away before the boss is in the way.
+// on the way in with the shot's flight time in the aim, and turns away before the boss is in the way. Once started it
+// goes on until it turns away or PILOT_RUN_FRAMES have passed (#238): the ship turns back in a circle 2800 wide (rot.y
+// at most 54, yRot_114 0.03 of that a frame, at 40 a frame; 1700 banked), so a run that started 1300 out and had to
+// stay in the narrow cone behind its part left it before the nose came round, and the pilot circled a boss lying
+// still without ever firing.
 static void CoopPilot_AttackRun(const Player* p, const Boss* boss, s32 part, f32 side, PilotPad* pad) {
+    s32 i = p - gPlayer;
     f32 forwardX = SIN_DEG(boss->obj.rot.y) * side;
     f32 forwardZ = COS_DEG(boss->obj.rot.y) * side;
     f32 x = sCoGrangaWork[part];
@@ -860,8 +909,24 @@ static void CoopPilot_AttackRun(const Player* p, const Boss* boss, s32 part, f32
     f32 dz = p->pos.z - z;
     f32 dist = sqrtf(SQ(dx) + SQ(dz));
     f32 flight = dist / PILOT_SHOT_SPEED;
+    f32 outX = x - boss->obj.pos.x;
+    f32 outZ = z - boss->obj.pos.z;
+    f32 out = sqrtf(SQ(outX) + SQ(outZ));
 
-    if (((dx * forwardX + dz * forwardZ) < (dist * 0.75f)) || (dist < PILOT_BREAK_OFF)) {
+    // The backpack is come at from where it points: behind the boss while it stands, to a side once it has fallen over
+    // (rot.x and rot.z go to 60).
+    if ((part == GRANGA_WORK_62) && (out > 100.0f)) {
+        forwardX = outX / out;
+        forwardZ = outZ / out;
+    }
+    if ((dist < PILOT_BREAK_OFF) || (sRun[i] > PILOT_RUN_FRAMES)) {
+        sRun[i] = 0;
+    } else if ((sRun[i] > 0) || (((dx * forwardX + dz * forwardZ) >= (dist * 0.75f)) && (dist >= PILOT_RUN_MIN))) {
+        sRun[i]++;
+    }
+    if (CoopPilot_BossAhead(p, boss)) {
+        CoopPilot_SteerAt(p, p->pos.x + p->vel.x * 30.0f, p->pos.y + 1200.0f, p->trueZpos + p->vel.z * 30.0f, pad);
+    } else if (sRun[i] == 0) {
         CoopPilot_SteerAt(p, x + forwardX * PILOT_RUN_START, PILOT_RUN_HEIGHT, z + forwardZ * PILOT_RUN_START, pad);
     } else if ((CoopPilot_SteerAt(p, x + boss->vel.x * flight, y, z + boss->vel.z * flight, pad) < 6.0f) &&
                (dist < PILOT_SHOT_RANGE) && ((gGameFrameCount % PILOT_FIRE_PERIOD) == 0)) {
