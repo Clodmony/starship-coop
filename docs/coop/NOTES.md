@@ -4567,6 +4567,66 @@ player 0 loses 100.
 
 ## Determinism
 
+### 2026-11-10, #231, the explosion mark in a session: 80 frames of its own, and what else the view cull freed
+
+Identity: ROM US 1.0, on `f3eadf7a` (the combined test branch 4, build `f3eadf7a96fa`) and with this change (build
+`3001adbde3eb`), Linux, GCC, Debug, OpenGL on a software renderer, no window, one PC. Input by rule, `gInvincible`.
+
+Observed:
+
+- `OBJ_EFFECT_EXPLOSION_MARK_1` (344) is set up by `PlayerShot_SetupEffect344` (`src/engine/fox_beam.c`) in effect
+  slots 0 to 49 only (`PlayerShot_SpawnEffect344`), on planet levels but Solar, Bolse, Training and Zoness, not on
+  water, from a crash near the ground (`unk_44` 0, `timer_50` 0) or a shot on a Corneria building (`unk_44` 1,
+  `timer_50` 20: smoke while `timer_50 % 4 == 1`). The setup writes `unk_46 = 80`, which neither the mark's update nor
+  its draw reads (`src/engine/fox_effect.c`). The update ends a mark only when another one lies within 20 units, so of
+  two close marks the newer goes.
+- What frees it otherwise: on rails `Effect_Move` (`src/engine/fox_enmy.c`) kills an effect behind player 0's camera
+  (`cullDistance`, -200 for the mark) while `gCullObjects`, which `Object_Update` sets on rails only; in all-range
+  `Effect_DrawAllRange` (`src/engine/fox_edisplay.c`) kills every effect it does not draw, but clouds and timed sounds,
+  and none in versus. In a session `CoopView_DrawAnyway` draws everything, so nothing is freed there (#96).
+- `hash_check.py slots --level meteo,katina,zoness,area-6 --frames 9000`, median effects in use after frame 300, one
+  player against two: the base 2 / 2, 0 / 12, 13 / 15, 4 / 10; this change 2 / 2, 0 / 5, 12 / 14.5, 4 / 10. PASS both
+  times. Katina, the base, two players: 344 holds 1, 4, 7, 8, 8, 10 slots at frames 1500, 3000, ... 9000 (one player:
+  at most 1). This change: at most 1 in any sample (every 100 frames). No other id grows in the four levels.
+- `hash_check.py base` (co-op off, this change against `f3eadf7a96fa`): equal on all 5800 frames, PASS.
+- Two clients over loopback: `campaign.py --levels katina` (a pilot on each): equal on every frame to the end, 16751
+  frames, level complete at level frame 14881; 344 holds at most 2 slots in either hash log. `lockstep_test.py --only
+  steer,full`: 2 of 2, steer equal on 2700 frames, full 8773 frames of Corneria to the map equal (its all-range Granga
+  fight included).
+- Every effect update listed in `src/engine/fox_edata_info.c`, read for an end of its own: besides the two marks only
+  `OBJ_EFFECT_376` has none. It is Granga's plasma ball (`GRANGA_ATTACK_PLASMA`, `src/overlays/ovl_i1/fox_co.c`):
+  `Effect_Effect376_Update` turns it, grows it and fades it to 50, and the setup's `timer_50 = 100` is not read.
+  `Effect_Effect388_Update` is empty, but nothing in `src/` spawns 388.
+- `slots --level fortuna,corneria --frames 9000` (beyond the issue's list), the base and this change alike for
+  Corneria: median 7 / 37, FAIL. Id 376 holds 0, 0, 0, 34, 84, 96 of the 100 slots at frames 1500 to 9000 with two
+  players (the Granga fight), at most 6 with one.
+- Fortuna: median 0 / 20.5 on the base, 0 / 16 with this change (FAIL, the limit is 15 more). With two players the same
+  set stays from about frame 7000 to the end of the run: 386 ×1 and 390 ×9 (emitters that end when `timer_50` is 0),
+  with what they emit, 339 ×16 and 389 ×about 25. One player has the same set at frame 8000 and none at 7000 or 9000.
+- Katina, two clients: at the Saucerer's charge 95 of 100 slots hold `OBJ_EFFECT_KA_ENERGY_PARTICLES` (358); each ends
+  on reaching the Saucerer, and 200 frames later none is left.
+
+Derived:
+
+- In an all-range session a mark now ends 80 frames after its spawn, counted in `unk_46`, as a laser mark ends by its
+  timer (#129). On rails nothing changes: upstream's cull by player 0's camera frees it, as in single player. The rule
+  reads `CoopPlayers_IsCoop()`, `gLevelMode` and the mark's own field, all simulated, so every client ends it on the
+  same frame; no draw or camera state, no random draw.
+- 376 piles up as the mark did: a slot per plasma shot for the rest of the Granga fight. At 100 of 100 no effect can
+  spawn (explosions, enemy shots), the same on every client, so no desync, but a fight that looks and plays different
+  from single player. Not fixed here (a follow-up).
+- Fortuna's set is held, not growing.
+
+Guess:
+
+- Fortuna's set is the smoke of something burning that keeps spawning emitters while it burns; one player frees what
+  is out of view each frame. Not checked.
+
+Unknown:
+
+- How 80 frames look against single player, where a mark lasts while it is in view; not compared by eye.
+- Windows, and two PCs.
+
 ### 2026-11-10, #209, Titania's 18 signed draws: the sign first, in a session
 
 Identity: ROM US 1.0, on `80ff9be6` (the combined test branch 2), Linux, GCC, Debug, OpenGL on a software renderer, no
