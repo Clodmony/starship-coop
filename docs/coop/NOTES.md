@@ -4651,6 +4651,76 @@ player 0 loses 100.
 
 ## Determinism
 
+### 2026-11-10, #246, Granga's plasma ball ends with its 100 frame timer; Fortuna's burning base is held, not growing
+
+Identity: ROM US 1.0, base `f869efa4` (build `f869efa47d87`) and this change (`3ab9f78f`), Linux, GCC, Debug, OpenGL
+on a software renderer, no window, one PC. `hash_check.py slots`: input by rule, `gInvincible`, one game with
+`gCoopDebugPlayerCount` 1 and one with 2, "# effects" counts every 100 frames.
+
+Observed:
+
+- `OBJ_EFFECT_376` is set up by `func_effect_8007E6B8` (`src/engine/fox_effect.c:2444`, through `Effect_EnemyLaser`,
+  `fox_effect.c:2661`) from `GRANGA_ATTACK_PLASMA` (`src/overlays/ovl_i1/fox_co.c:448`), once per 9 frames while
+  Granga is in a plasma phase (`timer_054 = 9`, `fox_co.c:868`, `fox_co.c:893`). The setup writes `timer_50 = 100`
+  (`fox_effect.c:2455`), `unk_4A = 180`, `scale2 = 5.0f` (`fox_effect.c:2490`); `Effect_Update`
+  (`src/engine/fox_enmy.c:3054`) counts `timer_50` down before each update. `Effect_Effect376_Update`
+  (`fox_effect.c:3030`) turns the ball, grows it by 0.1 a frame, takes 3.5 off the s16 `unk_4A` (4 a frame after the
+  truncation) and holds it at 50, the alpha of its draw, from its 33rd update on; it tests the players for a hit and
+  does not end on one. The enemy lasers of the same setup end when `timer_50` is 0
+  (`Effect_Effect353_354_Update`, `fox_effect.c:2927`).
+- A temporary trace (not committed) of Corneria with one player: 51 plasma balls, the view cull
+  (`Effect_DrawAllRange`, `src/engine/fox_edisplay.c:1494`) freed 36 on the frame of their spawn (out of view) and the
+  others after 5 to 80 frames; none reached `timer_50` 0. Distance from the gun to the player aimed at, at the spawn:
+  835 to 7688, median 2758. With two players 96 balls, 18 of them aimed at player 1, none freed.
+- `slots --level corneria,fortuna --frames 9000`, median effects in use after frame 300, one player against two. The
+  base: Corneria 7 / 37 FAIL (two players: 376 holds 15, 34, 65, 84, 95, 96 slots at frames 5500, 6000, 7000, 7500,
+  8000, 9000, the array 100 of 100 at 9000); Fortuna 0 / 16.5 FAIL. This change: Corneria 7 / 19 PASS (peak 63, 376 at
+  most 11 in any sample); Fortuna 0 / 16 FAIL, the same game as the base on every common frame (`hash_check.py diff`).
+- Fortuna's set is the base on fire: `FoBase_Update` (`src/engine/fox_hud.c:4016`) calls `FoBase_BurnEffects`
+  (`fox_hud.c:3841`) every frame with `gAllRangeEventTimer`; from 7000 on it spawns a 390 (`timer_50` 20) on 2 frames
+  of 4 and a 386 (`timer_50` 10) on 1 frame of 8 at one of 36 points of the base. Each ends by its own timer
+  (`fox_effect.c:1636`, `fox_effect.c:1698`), and what they emit ends by itself too (389 after about 14 frames,
+  `fox_effect.c:1368`; 339, `fox_effect.c:2028`).
+- `slots --level fortuna --frames 15000` (this change), every sample of 100 frames: two players hold 16 × 339,
+  1 × 386, 21 to 29 × 389 and 9 × 390 (47 to 68 slots in all) from frame 6900 to 9700; at 9800 and 9900 twice that
+  (83 to 89 slots), and one player the same there (84, 89); none from 10000 on, still in Fortuna (the game leaves it
+  for the map at frame 11341). One player holds the set (29 to 48 slots) at 7200 to 7400, 7900 to 8100 and 8700 to
+  8800, and none at the other samples. Median 0 / 10, PASS. The highest sample with two players, 95, is at frame 2100,
+  before the burn.
+- `player_trace.py effects --all-range`: the probe's 376 still hits each of the two targets, 40 of 40 lines.
+- Two clients, this change. `hash_check.py views --level corneria --frames 9000` (the input of `slots`, index 0 and
+  1): equal on all 9000 frames; 376 in 17 samples of each log, at most 11. `lockstep_test.py --only full`: 8773
+  frames of Corneria to the map equal over loopback; no sample of its hash logs holds a 376. `campaign.py --levels
+  fortuna` (a pilot on each): equal on every frame to the end, 7806 frames, level complete at level frame 6125; the
+  burn's set (390 × 10, 389 × 20 to 21, 339 × 16 to 17, 386 × 1) in the last 3 samples of both logs.
+
+Derived:
+
+- In an all-range session a plasma ball now ends on its 100th update, when the `timer_50` of its setup runs out, as
+  the lasers of that setup do. 100 is more than any life single player gave a ball in the run (80), and from its 33rd
+  update the ball is at its faintest (50 of 255), so it ends faint and after the cull would have taken it in single
+  player. A ball reaches 6000 units in 100 frames (speed 60); single player freed even the balls fired from 7150 to
+  7688 units away after 75 to 80 frames. With one plasma shot per 9 frames, at most 11 balls are alive.
+- The rule reads `CoopPlayers_IsCoop()`, `gLevelMode` and the ball's own timer, all simulated, so every client ends a
+  ball on the same frame; no draw or camera state, no random draw. On rails and with co-op off nothing changes.
+- Fortuna needs no change. In single player the view cull frees what of the fire is out of player 0's view on the
+  frame it spawns; in a session every piece lives its own short life (390 20 frames, 386 10, 389 14), a plateau of
+  about 50 slots that does not grow and is gone about 3000 frames later, before the level ends. It is what single
+  player holds while the base is in view, the same on every client. `slots --frames 9000` fails on it because the run
+  ends in the middle of the burn (16 against the limit 15); a run past the burn passes.
+- The ball is aimed at the nearest human (`CoopAim_Nearest`, #193). Granga's spread moves player 0 by up to 150 in each
+  axis for the aim (`fox_co.c:448`), so a ball aimed at player 1 has no spread.
+
+Guess:
+
+- At 9800 to 9900 the base explodes: `FoBase_ExplodeCs` (`fox_hud.c:3883`) burns it a second time per frame, as the
+  doubled set shows, and the burn ends with it. Not checked beyond the counts.
+
+Unknown:
+
+- How 100 frames look against single player, where a ball lasts while it is in view; not compared by eye.
+- Windows, and two PCs.
+
 ### 2026-11-10, #231, the explosion mark in a session: 80 frames of its own, and what else the view cull freed
 
 Identity: ROM US 1.0, on `f3eadf7a` (the combined test branch 4, build `f3eadf7a96fa`) and with this change (build
