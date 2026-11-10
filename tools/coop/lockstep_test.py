@@ -111,6 +111,10 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             ring attack, which takes its shields shot away to reach); `sarumarine`, Zoness' Sarumarine balls fly at
             player 1; `bacoon`, Aquas' Bacoon looks at player 1. On rails player 0 holds the top left and player 1
             the bottom right, the nearer one. Hashes and boss traces equal on both games.
+  eels    Aquas' boss fight with both marines firing, so the eels of the Bacoon's pods (actor 255) are shot and
+            explode piece by piece. src/port/coop/test/smoke_trace.h names every smoke puff: each puff of an eel has to
+            lie in the fight, not at a position read from outside the eel's history (the desync of a real Windows and
+            Linux session, NOTES.md 2026-11-11). Hashes and smoke traces equal on both games.
   log     the co-op log (#172): each game's folder holds its own log and the other player's, streamed during the
             session; the hash stays equal with streaming on; nothing personal is in the files; coop_log.py merges them.
 
@@ -1527,6 +1531,71 @@ def sc_other_bosses(args, folder):
     return "; ".join(lines)
 
 
+EELS_FRAMES = 9000  # Aquas from the join: the Bacoon lets its eels out from about level frame 5600 on
+EEL_PUFF_SCALE = 3.0  # the smoke of an eel's piece (Aquas_Actor255_Update); nothing else in Aquas spawns this size here
+EEL_REACH = 6000.0  # an eel swims between the Bacoon and the marines, about 3000 apart along the path
+SMOKE_LINE = re.compile(r"smoke frame=(\d+) level=(\d+) slot=(\d+) pos=([-\d.]+),([-\d.]+),([-\d.]+) scale=([-\d.]+) "
+                        r"path=([-\d.]+)")
+
+
+def eels_script(frame, player):
+    """Aquas: both marines stay where they join, near the middle of the path, and fire their lasers every other frame.
+    The eels swim at player 0, into the fire."""
+    if frame < JOIN_FRAME + 100:
+        return 0, 0, 0
+    return (BUTTON_A if frame % 2 == player else 0), 0, 0
+
+
+def smoke_trace(path):
+    """The smoke trace (src/port/coop/test/smoke_trace.h) as (frame, level, slot, x, y, z, scale, path) rows."""
+    if not path.exists():
+        return []
+    rows = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        m = SMOKE_LINE.match(line)
+        if m:
+            rows.append((int(m[1]), int(m[2]), int(m[3])) + tuple(float(m[i]) for i in range(4, 9)))
+    return rows
+
+
+def sc_eels(args, folder):
+    """The eels of Aquas' boss die where they are. An eel (actor 255) that is shot explodes piece by piece, each piece
+    with a smoke puff at a place from the eel's history of positions. The port's iwork is unsigned, so for the eel of
+    pod 0 the index into that history was not wrapped and the place was read from before the array: memory that a
+    Windows and a Linux build lay out differently, which parted a real session (NOTES.md, 2026-11-11). Read from the
+    smoke trace, so one build on one PC shows it: every eel puff lies in the fight."""
+    folder.mkdir(parents=True, exist_ok=True)
+    feed = folder / "feed.txt"
+    write_feed(feed, EELS_FRAMES + 16, eels_script)
+    traces = {game: folder / f"{game}-smoke.txt" for game in ("host", "client")}
+    for path in traces.values():
+        if path.exists():
+            path.unlink()  # the trace appends
+    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(EELS_FRAMES)}
+    host, client = session(args, folder, {"SF64_COOP_JOIN_LEVEL": "13", "SF64_COOP_SMOKE_TRACE": str(traces["host"])},
+                           {"SF64_COOP_SMOKE_TRACE": str(traces["client"])}, env, config={"CVars": {"gInvincible": 1}})
+    try:
+        wait_for([host, client], "done", 900)
+    finally:
+        host.close()
+        client.close()
+    compared = compare(host, client, EELS_FRAMES)
+    ours, theirs = smoke_trace(traces["host"]), smoke_trace(traces["client"])
+    expect(ours, "no smoke trace (a build before this scenario has none)")
+    # A game runs on a little past `done` before it is stopped: compare what both hold.
+    n = min(len(ours), len(theirs))
+    expect(ours[:n] == theirs[:n], "the smoke traces differ")
+    puffs = [row for row in ours[:n] if row[1] == 13 and row[6] == EEL_PUFF_SCALE]
+    expect(len(puffs) >= 20, f"only {len(puffs)} eel puffs of {n} puffs: too few eels died to tell")
+    # z runs against the path: a puff in the fight has z near -path.
+    stray = [row for row in puffs if abs(row[5] + row[7]) > EEL_REACH or abs(row[3]) > EEL_REACH]
+    if stray:
+        frame, _, _, x, y, z, _, path = stray[0]
+        raise Fail(f"{len(stray)} of {len(puffs)} eel puffs lie outside the fight, the first at level frame {frame}: "
+                   f"({x:.0f}, {y:.0f}, {z:.0f}) with the path at {path:.0f}")
+    return f"same hash on {compared} frames; {len(puffs)} eel puffs of {n} puffs, all in the fight"
+
+
 # A level, its frames from the join to well past level complete with the pilot and gInvincible (#16): Titania reached
 # level complete at frame 29169 in the first run, Macbeth at 9523, Aquas at 7240 (the join is close to its boss), so
 # there is room for a slower fight. Macbeth's boss
@@ -2869,9 +2938,11 @@ SCENARIOS = {
     "vehicle_end": sc_vehicle_end,
     "bosses": sc_bosses,
     "other_bosses": sc_other_bosses,
+    "eels": sc_eels,
 }
 LONG = ("full", "scenes", "allrange", "allrange_down", "allrange_others", "allrange_down_others", "teambar",
-        "map_saves", "map_saves_host_full", "map_saves_equal", "audio", "release", "rates", "vehicles", "vehicle_end", "bosses", "other_bosses")
+        "map_saves", "map_saves_host_full", "map_saves_equal", "audio", "release", "rates", "vehicles", "vehicle_end", "bosses", "other_bosses",
+        "eels")
 
 
 def main():

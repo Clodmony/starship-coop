@@ -27,6 +27,7 @@
 #include "port/mods/PortEnhancements.h"
 #include "port/coop/game/effects.h" // COOP: enemy effects against the other players (#100)
 #include "port/coop/game/aim.h"     // COOP: enemies aim at the nearest human (#193)
+#include "port/coop/test/smoke_trace.h" // COOP: test-only trace of the smoke spawns, off unless asked for
 #include "sf64_tagging.h"
 
 // rodata
@@ -1863,6 +1864,7 @@ void EffectFireSmoke_Setup(EffectFireSmoke* this, f32 xPos, f32 yPos, f32 zPos, 
     } else {
         this->unk_44 = 255;
     }
+    CoopSmokeTrace_Note(this); // COOP: test-only, does nothing unless SF64_COOP_SMOKE_TRACE is set
 }
 
 void Effect_Effect340_Setup(Effect340* this, f32 xPos, f32 yPos, f32 zPos, f32 scale2) {
