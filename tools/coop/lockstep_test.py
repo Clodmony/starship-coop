@@ -250,9 +250,11 @@ class Client(join_test.LevelLog):
 
 
 def session(args, folder, host_env=None, client_env=None, both=None, config=None, client_config=None, client_port=None,
-            clients=1, client_envs=None, replay_frames=REPLAY_FRAMES):
+            clients=1, client_envs=None, replay_frames=REPLAY_FRAMES, saves=None):
     """A host and its clients through the join driver, on their way to a level. Returns them started: with one client as
-    (host, client), with more as (host, client, client, ...). client_envs holds one more dict per client."""
+    (host, client), with more as (host, client, client, ...). client_envs holds one more dict per client. saves maps a
+    game's name (host, client0, ...) to a save file that goes into its folder before it starts: a game holds a blank
+    save otherwise, and a real pair of PCs holds two different ones."""
     folder.mkdir(parents=True, exist_ok=True)
     port_file = folder / "port"
     env = dict(both or {})
@@ -261,6 +263,8 @@ def session(args, folder, host_env=None, client_env=None, both=None, config=None
                                          "SF64_COOP_JOIN_CLIENTS": str(clients), "SF64_COOP_JOIN_LEVEL": "0",
                                          "SF64_COOP_JOIN_START_FRAME": str(START_FRAME), **(host_env or {})},
                   replay_frames)
+    if saves and "host" in saves:
+        shutil.copy2(saves["host"], host.run / "default.sav")
     host.start(config)
     deadline = time.monotonic() + 180
     while not (port_file.exists() and port_file.read_text(encoding="utf-8").strip()):
@@ -276,6 +280,8 @@ def session(args, folder, host_env=None, client_env=None, both=None, config=None
         games.append(Client(args, folder, f"client{n}", {**env, "SF64_COOP_JOIN_CONNECT": f"127.0.0.1:{port}",
                                                          "SF64_COOP_JOIN_PICKS": pick, **(client_env or {}),
                                                          **((client_envs or [{}] * clients)[n])}, replay_frames))
+        if saves and f"client{n}" in saves:
+            shutil.copy2(saves[f"client{n}"], games[-1].run / "default.sav")
         games[-1].start(client_config if client_config is not None else config)
     return tuple(games)
 
@@ -1572,11 +1578,12 @@ def log_rows(game):
     return [line.split() for line in game.sync_log.read_text(encoding="utf-8").splitlines() if line.count(" ") >= 26]
 
 
-def fly(args, folder, extra_env=None):
-    """Pilots fly Corneria, one on each client. Returns (host, client, frames to the map and its tail)."""
+def fly(args, folder, extra_env=None, saves=None, tail=MAP_TAIL):
+    """Pilots fly Corneria, one on each client. Returns (host, client, frames to the map and its tail of `tail`
+    frames). saves: see session()."""
     env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt", **(extra_env or {})}
     folder.mkdir(parents=True, exist_ok=True)
-    host, client = session(args, folder, both=env)
+    host, client = session(args, folder, both=env, saves=saves)
     deadline = time.monotonic() + args.level_seconds
     at_map = None
     try:
@@ -1584,17 +1591,21 @@ def fly(args, folder, extra_env=None):
             rows = log_rows(host) if host.sync_log.exists() else []
             if at_map is None:
                 at_map = next((i for i, row in enumerate(rows) if int(row[1]) == MAP), None)
-            if at_map is not None and len(rows) >= at_map + MAP_TAIL:
+            if at_map is not None and len(rows) >= at_map + tail:
                 break
             expect(len(rows) < FLY_FRAMES, f"no map in {FLY_FRAMES} frames")
             for game in (host, client):
                 expect(game.proc.poll() is None, f"{game.name} ended with code {game.proc.returncode} at {len(rows)}")
+            # A desync ends the lockstep log for good and the games run on alone: do not wait for rows that cannot come.
+            parted = sorted(host.run.glob("coop-desync-*-player1.txt"))
+            expect(not parted, f"the games parted: {parted[0].name if parted else ''}, the log ends at {len(rows)} rows, "
+                               f"the map began at row {at_map}")
             expect(time.monotonic() < deadline, f"no map after {args.level_seconds} s, at frame {len(rows)}")
             time.sleep(2)
     finally:
         client.close()
         host.close()
-    return host, client, at_map + MAP_TAIL
+    return host, client, at_map + tail
 
 
 def level_story(game, frames):
@@ -1927,6 +1938,24 @@ def sc_teambar(args, folder):
                      f"{above[0]['shown'][0]} for {above[0]['p1']}, the held value is {above[0]['team'][0]}), "
                      f"{len(after)} lines in all right")
     return f"{frames} frames of Katina, {equal} frames equal; " + "; ".join(found)
+
+
+MAP_SAVES_TAIL = 900  # frames on the map after Corneria: its route lines start within the first second or two
+ALL_CLEARED_SAVE_ENV = "COOP_TEST_ALL_CLEARED_SAVE"  # a save with every level cleared, made by make_save.py
+
+
+def sc_map_saves(args, folder):
+    """Two PCs hold two different saves, as a real pair does: the host's is blank, the client's has every level
+    cleared. The pilots fly Corneria to the map and the games run on in it. The map reads the save of the PC it runs
+    on (which planets are played and cleared decides what it shows and when), and nothing hands the host's save to the
+    client, so the first real Windows and Linux session parted 41 frames into the map (route line 15 of
+    gTexturedLines started on one game and not on the other). Both games must stay one game."""
+    full = os.environ.get(ALL_CLEARED_SAVE_ENV, "")
+    expect(full and Path(full).is_file(), f"{ALL_CLEARED_SAVE_ENV} does not name a save file")
+    host, client, frames = fly(args, folder, saves={"client0": Path(full)}, tail=MAP_SAVES_TAIL)
+    equal = compare(host, client, frames)
+    return (f"{frames} frames of Corneria to the map and {MAP_SAVES_TAIL} of it, equal with a blank save on the host and "
+            f"a save with every level cleared on the client; {equal} frames compared")
 
 
 def play_states(game):
@@ -2595,6 +2624,7 @@ SCENARIOS = {
     "allrange_others": sc_allrange_others,
     "allrange_down_others": sc_allrange_down_others,
     "teambar": sc_teambar,
+    "map_saves": sc_map_saves,
     "audio": sc_audio,
     "release": sc_release,
     "rates": sc_rates,
@@ -2609,7 +2639,7 @@ SCENARIOS = {
     "other_bosses": sc_other_bosses,
 }
 LONG = ("full", "scenes", "allrange", "allrange_down", "allrange_others", "allrange_down_others", "teambar",
-        "audio", "release", "rates", "vehicles", "vehicle_end", "bosses", "other_bosses")
+        "map_saves", "audio", "release", "rates", "vehicles", "vehicle_end", "bosses", "other_bosses")
 
 
 def main():
