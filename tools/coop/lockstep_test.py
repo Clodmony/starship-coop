@@ -1680,7 +1680,9 @@ def team_lines(game, level=0):
         # p1 and scenes came with #15; a build from before reads as no player 1 and no choice, so it fails on its ships.
         # ai and body came with the all-range part of #15; before it, a wingman read as nobody flying.
         # shown came with the wingman bar of a human with the shield upgrade; before it, the bar drew the held value.
+        # radio came with the rescue lines of decision 0013; before it, no line was logged.
         row = {"p1": "-1", "scenes": ",".join(["0"] * 16), "ai": "0,0,0", "body": "0,0,0", "shown": "0,0,0",
+               "radio": "0,0",
                **dict(field.split("=", 1) for field in line.split())}
         if row["level"] == str(level) and row["gs"] == "7":  # GSTATE_PLAY
             rows.append({k: [int(v) for v in value.split(",")] if "," in value else value for k, value in row.items()})
@@ -1710,6 +1712,13 @@ def fly_for(args, folder, frames, extra_env):
     return host, client
 
 
+# Decision 0013, Corneria's Falco rescue flown by Slippy: Falco's lines (CO S60:7, :25, S59:44) do not play; Slippy's
+# call for help (2062) and Peppy's warning to Slippy (2061) do, and Slippy's thanks (2336) if he comes through.
+CO_RESCUE_FALCO_LINES = {2166, 2167, 2337}
+CO_RESCUE_SLIPPY_CALLS = {2062, 2061}
+CO_RESCUE_SLIPPY_THANKS = 2336
+
+
 def sc_scenes(args, folder):
     """#15: the client flies Falco. No scene shows a second Falco, his rescue goes to Slippy, and gTeamShields[Falco]
     is the human's shields on every frame he flies (decisions 0006 rule 1, 0012)."""
@@ -1737,8 +1746,20 @@ def sc_scenes(args, folder):
         expect(not boss, f"{game.name}: a computer Falco flies at the boss from frame {boss[0]['frame'] if boss else 0}")
         others = [l for l in lines if l["ai"][1] + l["ai"][2] > 0]
         expect(others, f"{game.name}: no computer wingman flew at the boss in {frames} frames")
+        # Decision 0013: the borrowed rescue's radio, from the choice to the boss fight.
+        window = [l for l in lines if int(rescue[0]["frame"]) <= int(l["frame"]) < int(others[0]["frame"])]
+        heard = {l["radio"][0] for l in window}
+        falco_lines = sorted(heard & CO_RESCUE_FALCO_LINES)
+        expect(not falco_lines, f"{game.name}: Falco's rescue lines {falco_lines} played with Slippy flying the rescue")
+        missing = sorted(CO_RESCUE_SLIPPY_CALLS - heard)
+        expect(not missing, f"{game.name}: the rescue's lines {missing} never played (heard {sorted(heard)})")
+        saved = window[-1]["team"][1] > 0
+        expect(not saved or CO_RESCUE_SLIPPY_THANKS in heard,
+               f"{game.name}: Slippy came through the rescue but his thanks ({CO_RESCUE_SLIPPY_THANKS}) never played")
         found.append(f"{game.name}: {len(flying)} lines with player 1 flying, shields {shields[0]}..{shields[-1]}, "
-                     f"Falco's rescue to Slippy from frame {rescue[0]['frame']}, computer wingmen at the boss from "
+                     f"Falco's rescue to Slippy from frame {rescue[0]['frame']} with lines "
+                     f"{sorted(heard & (CO_RESCUE_SLIPPY_CALLS | {CO_RESCUE_SLIPPY_THANKS}))}"
+                     f"{'' if saved else ' (Slippy downed, no thanks due)'}, computer wingmen at the boss from "
                      f"frame {others[0]['frame']} and no Falco among them")
     return f"{frames} frames of Corneria to Granga, {equal} frames equal; " + "; ".join(found)
 

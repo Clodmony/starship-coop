@@ -483,6 +483,25 @@ void CoopTeam_Init(void) {
     REGISTER_LISTENER(ObjectDrawPreSetupEvent, CoopTeam_OnObjectDrawPreSetup, EVENT_PRIORITY_NORMAL);
 }
 
+// Decision 0013: a line of the taken wingman in a borrowed scene that plays as a named line of the substitute, or of
+// another speaker naming the substitute. Checked before the sets of three; a line in neither is dropped (0012 rule 5).
+typedef struct {
+    u8 level;
+    u8 team; // the scene's own wingman, the one a human flies
+    u8 sub;  // the substitute flying the scene
+    u16 msgId;
+    u16 newMsgId;
+    s16 newSpeaker;
+} CoopRescueLine;
+
+static const CoopRescueLine sRescueLines[] = {
+    // Corneria, Falco's rescue (S59, S60, S61) flown by Slippy: Slippy's own rescue lines (CO S17:8, :33) and Peppy's
+    // warning to Slippy from his fly-in (CO S51:13).
+    { LEVEL_CORNERIA, TEAM_ID_FALCO, TEAM_ID_SLIPPY, 2167, 2062, RCID_SLIPPY }, // CO S60:7, his ship fails: a call for help
+    { LEVEL_CORNERIA, TEAM_ID_FALCO, TEAM_ID_SLIPPY, 2166, 2061, RCID_PEPPY },  // CO S60:25, asks for help: Peppy warns
+    { LEVEL_CORNERIA, TEAM_ID_FALCO, TEAM_ID_SLIPPY, 2337, 2336, RCID_SLIPPY }, // CO S59:44, thanks
+};
+
 int32_t CoopTeam_SceneMessage(Actor* actor, int32_t* msgId, int32_t* speaker) {
     const CoopScene* scene = NULL;
     s32 sub = CoopTeam_SceneSubstitute(actor, &scene);
@@ -490,6 +509,16 @@ int32_t CoopTeam_SceneMessage(Actor* actor, int32_t* msgId, int32_t* speaker) {
 
     if ((sub == 0) || (sub == scene->team) || (*speaker != sSpeaker[scene->team])) {
         return 1; // not a borrowed scene, or not the taken wingman's line
+    }
+    for (i = 0; i < ARRAY_COUNT(sRescueLines); i++) {
+        const CoopRescueLine* line = &sRescueLines[i];
+
+        if ((line->level == scene->level) && (line->team == scene->team) && (line->sub == sub) &&
+            (line->msgId == *msgId)) {
+            *msgId = line->newMsgId;
+            *speaker = line->newSpeaker;
+            return 1;
+        }
     }
     for (i = 0; i < ARRAY_COUNT(sLineSets); i++) {
         if (sLineSets[i][scene->team - TEAM_ID_FALCO] == *msgId) {

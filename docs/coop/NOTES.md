@@ -1945,6 +1945,35 @@ Unknown:
   not merged. `CoopTeam_HoldBody` sets `STATE360_3` when its human flies again; not run.
 - Whether other player 0 states during play (for example the all-range loop or a warp) need the same treatment.
 
+### 2026-11-10, #15 (WP-17), decision 0013: Corneria's Falco rescue flown by Slippy keeps its radio
+
+Identity: ROM US 1.0, branch `issue/15-rescue-lines` on `42dfa3a8`, Windows 11, MSVC v143, Debug, two games over
+loopback with the lockstep pilots (`lockstep_test.py --exe <build> --only scenes`), no window. The team trace now
+writes `radio=<gRadioMsgId>,<gRadioMsgRadioId>`.
+
+Observed in the code: `Radio_PlayMessage` stores the line's id in `gRadioMsgId` (`src/engine/fox_radio.c:128`) and
+its speaker in `gRadioMsgRadioId` (`:102`). `Message_PtrFromId` looks a line up in one table for the whole game
+(`src/engine/fox_message.c:4-15`), so a line of another scene can be played anywhere.
+
+Observed in the run (host; the client the same, frames offset by its later start):
+
+| frame | line | from |
+|---|---|---|
+| 2647, 2776 | 20267, 2061 (Peppy) | Slippy's fly-in S51, as the game has it |
+| 2910, 3063 | 2062, 2336 (Slippy) | Slippy's own rescue S17, as the game has it |
+| 4985 | 2062 (Slippy) | Falco's rescue, `CO S60:7`, in place of Falco's 2167 |
+| 5114 | 20235 (Peppy) | `CO S60:17`, unchanged |
+| 5253 | 2061 (Peppy) | `CO S60:25`, in place of Falco's 2166 |
+| 5275 | 20222 (Slippy) | Slippy's retreat line: the pilots did not save him, the 255 at `CO S59:34` downed him |
+
+None of Falco's 2166, 2167, 2337 played; hashes equal on all 8500 frames.
+
+Unknown:
+
+- Slippy's thanks (2336 in place of `CO S59:44`): not reached, the pilots never save the rescue. The same table row
+  and code path as the two lines that played.
+- How the three lines sound in place; nobody has listened yet.
+
 ### 2026-11-10, #15 (WP-17), the all-range body on the other levels, and while its human is down out of play
 
 Identity: ROM US 1.0, branch `issue/15-wingman-allrange` on `bb806193` plus this change, Windows 11, MSVC v143, Debug,

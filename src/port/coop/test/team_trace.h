@@ -16,6 +16,7 @@
 //     ai=<all-range and boss-fight wingmen flying on their own AI, as Falco, Slippy, Peppy>
 //     body=<CoopTeam_Body of the all-range body of Falco, Slippy, Peppy: 0 none, 1 on its human, 2 away, 3 elsewhere>
 //     shown=<CoopTeam_DisplayShields of Falco, Slippy, Peppy: what their bars draw in the status rows and the radio>
+//     radio=<gRadioMsgId of the last radio line>,<gRadioMsgRadioId, its speaker>
 //
 //     (all on one line). path shows in every line but does not cause one. gGameFrameCount restarts with each level and
 //     screen, so it would not say where in a replay a line belongs.
