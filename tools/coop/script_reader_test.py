@@ -6,13 +6,15 @@
     python tools/coop/script_reader_test.py --list
 
 Each scenario writes a small archive with made-up scripts and runs the tool on it, so no ROM and no game data are
-involved. The archive has its own writer and its own CRC here, not the tool's: a mistake on one side shows. Two
+involved; past-end runs the tool's --past-end and --check (#112) on every level's table. The archive has its own writer and its own CRC here, not the tool's: a mistake on one side shows. Two
 scenarios read the repo's sources instead: the tool's level table against the switch in `ActorEvent_ProcessScript`,
 and its command list against the same function and the header. `check.py` runs this file. No build, a few seconds.
 Exit code 0 when every scenario holds, 1 otherwise. Everything lands under local/test-scriptreader-*: deleted when
 all scenarios hold, kept for reading when one fails.
 """
 import argparse
+import contextlib
+import io
 import re
 import shutil
 import struct
@@ -372,6 +374,58 @@ def scenario_commands_match_source(work):
     expect(set(formats) == set(header), f"tool and header differ: {set(formats) ^ set(header)}")
 
 
+def write_every_table(path, extra_scripts, gap=None):
+    """Every level's table with two plain scripts, plus `extra_scripts` {prefix: [pairs, ...]} after them. A table
+    named in `gap` numbers its entries 0 and 2, as no Torch export does."""
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("version", bytes([1]) + struct.pack(">I", 0x12345678))
+        for level in tool_namespace()["LEVELS"]:
+            base = f"ast_x/{level.symbol}"
+            scripts = [wait_cmds(1), wait_cmds(2, 3)] + extra_scripts.get(level.prefix, [])
+            numbers = [0, 2] + list(range(3, len(scripts) + 1)) if level.prefix == gap else range(len(scripts))
+            names = [f"{base}_cmd_{n}" for n in numbers]
+            archive.writestr(base, table(names))
+            for name, pairs in zip(names, scripts):
+                archive.writestr(name, commands(pairs))
+    return path
+
+
+def past_end_check(archive, known):
+    """print_past_end --check in this process, with `known` as its list: (exit code, output)."""
+    tool = tool_namespace()
+    tool["KNOWN_PAST_END"] = known
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = tool["print_past_end"](tool["Archive"](archive), tool["Names"](tool["load_enums"]()), True)
+    return code, out.getvalue()
+
+
+def scenario_past_end(work):
+    """#112: a branch at or past its script's end is listed, one inside is not, and --check holds the list."""
+    loop, trigger = 126, 96  # EVOP_LOOP, EVOP_SET_TRIGGER
+    archive = write_every_table(work / "a.o2r", {
+        "CO": [[op(loop, 0, 1), op(trigger, 2, 7), op(loop, 3, 1)]],  # S2: targets 0 and 2 inside, 3 one past the end
+        "SX": [[op(trigger, 200 + 3, 7), op(loop, 200 + 2, 1)]],  # S2: script 3 past the table of 3, script 2 inside
+    })
+    found = {"CO S2:2": "command 3 of 0-2", "SX S2:0": "script 3 of 0-2"}
+    tool = tool_namespace()
+    have, unordered = tool["past_end"](tool["Archive"](archive), tool["Names"](tool["load_enums"]()))
+    expect(have == found and unordered == [], f"found {have}, unordered {unordered}")
+    code, out, err = run(work, "--o2r", archive, "--past-end")
+    expect(code == 0 and "CO S2:2 -> command 3 of 0-2" in out and "2 branches in 14 tables" in out, f"{code} {out}{err}")
+    code, out, err = run(work, "--o2r", archive, "--past-end", "--check")
+    expect(code == 1 and "CO S2:2 is new" in out and "A6 S26:53 is listed" in out, f"the real list passed: {out}")
+    code, out = past_end_check(archive, dict.fromkeys(found, "why"))
+    expect(code == 0 and "past the end: ok" in out, f"the matching list failed: {out}")
+    code, out = past_end_check(archive, {"CO S2:2": "why"})
+    expect(code == 1 and "SX S2:0 is new" in out, f"a new branch passed: {out}")
+    code, out = past_end_check(archive, {**dict.fromkeys(found, "why"), "ME S0:0": "why"})
+    expect(code == 1 and "ME S0:0 is listed" in out, f"a lost branch passed: {out}")
+    gap = write_every_table(work / "gap.o2r", {}, gap="VE1")
+    code, out = past_end_check(gap, {})
+    expect(code == 1 and "VE1 (ast_x/aVe1EventScript)" in out, f"a table out of ROM order passed: {out}")
+
+
 SCENARIOS = {
     "crc": scenario_crc,
     "forms": scenario_forms,
@@ -387,6 +441,7 @@ SCENARIOS = {
     "read-only": scenario_read_only,
     "levels-match-source": scenario_levels_match_source,
     "commands-match-source": scenario_commands_match_source,
+    "past-end": scenario_past_end,
 }
 
 

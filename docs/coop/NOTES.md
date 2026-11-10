@@ -545,6 +545,65 @@ Unknown:
 - `mixer.c:299` (upstream's too, not in this issue's list): whether the two 16-bit lanes of `mask_2bit` loaded from
   past `lower_2bit` reach a decoded sample. Not fixed here; a follow-up.
 
+### 2026-11-10, #112, two level scripts branch past their end: one cannot, one does, and what the N64 read there
+
+Identity: ROM US 1.0 (`76924CA9`), on `80ff9be6` (the combined test branch 2), Linux, GCC, Debug, OpenGL on a software
+renderer, no window, one game at a time under gdb. Script references as `tools/coop/script_reader.py` takes them; the
+scripts are game data and are described here, not copied.
+
+Observed:
+
+- Only two opcodes set where a script goes on: `EVOP_LOOP` (`aiIndex = (arg1 & 0x1FF) * 2`, or a script switch from
+  200 on) and `EVOP_SET_TRIGGER` (target into `iwork[3]`, condition into `iwork[2]`, taken by
+  `ActorEvent_TriggerBranch` when `ActorEvent_ProcessTriggers` finds the condition true; all in
+  `src/engine/fox_enmy2.c`). `script_reader.py --past-end` reads every branch of these two in every level's table:
+  two have a command target at or past their script's last command, none switches to a script past its table.
+- `A6 S26:53` is `EVOP_SET_TRIGGER` with condition `EVC_NONE` and target 59 (the script has 0-58). `ActorEvent_
+  ProcessTriggers` does nothing for `EVC_NONE` (`case EVC_NONE: break;`); for an event actor only `EVOP_SET_TRIGGER`
+  writes `iwork[2]`, always with `iwork[3]`, and `ActorEvent_TriggerBranch` and the team retreat
+  (`ActorEvent_800700A4`) set it to 0. The other writers of `iwork[2]` in `fox_enmy.c`, `fox_enmy2.c` and `fox_a6.c`
+  are other actors (`ActorDebris_Update`, `ActorMissileSeek_Update`, `Area6_8018EA88`). So 59 is never used. It reads as
+  `EVENT_CLEAR_TRIGGER` (`include/sf64event.h`) with a leftover number: it cancels the z trigger of command 45.
+- `VE1 S40:6` is `EVOP_LOOP count=1` to command 21 (the script has 0-20). Commands 4-6: a trigger on `EVC_FALCO_ACTIVE`
+  to command 7 (`gTeamShields` of the scene's Falco above 0, `CoopTeam_SceneTeam`), a wait of one frame, the loop. The
+  same three-command pattern later in the script skips one message each (to 13, to 18); this one skips to 21. So the
+  loop is taken whenever the scene's Falco is not active then: shot down earlier, or out for the level.
+- The port: each script is a `ScriptCMDs` buffer of its own (`std::vector<uint16_t>`, `src/port/resource/type/
+  Script.cpp:13`, filled by `push_back`), and the table holds pointers into those. A read past command 20 reads past
+  the vector's elements.
+- tools/Torch (`src/factories/sf64/ScriptFactory.cpp`, `parse`) reads a table's scripts as one run of commands, from
+  the lowest pointer to the table itself, cuts it at the sorted pointers, and names each piece `<table>_cmd_<n>` in that
+  order (`ScriptBinaryExporter`). In the US 1.0 archive all 14 tables are numbered 0 to n-1 (`--past-end`). Slot 40 of
+  Venom 1 is entry `cmd_40`; `cmd_41` follows it in the ROM.
+- `script_end_check.py`, Venom 1 from past its intro, `gInvincible`, gdb setting Falco's shields to 0 when script 40
+  checks its trigger: on the base build (`80ff9be6`) script 40 takes the loop on its first pass, and past its end it
+  runs `0000 0000` at command 21, then `1F00 F76A` at command 22 on every frame after: what lay behind its buffer.
+  With the fix (build `296547f3`), the same run: past command 20 the actor runs the next script's commands in
+  order: `EVOP_INIT_ACTOR`, the trigger on `EVC_PEPPY_ACTIVE` to command 4, a wait of one frame. Peppy is active,
+  so the trigger takes it to script 40's command 4, and the actor goes round that way, without a message, for the
+  rest of the run (2751 times in 3000 frames). Every one of the 8253 commands it ran past the end was the next
+  script's own.
+
+Derived:
+
+- On the N64 (from Torch's layout, not run on hardware or an emulator): command 21 of `VE1 S40` is command 0 of the
+  next script, an `EVOP_INIT_ACTOR` of an event handler, and the actor then runs that script with its branch targets
+  still counted from script 40's start. Its trigger on `EVC_PEPPY_ACTIVE` goes to command 4, which is script 40's
+  Falco trigger, not the Peppy message: while Peppy is active the actor cycles there without a message, and without
+  Peppy it stops at that script's `EVOP_STOP_SCRIPT`. Either way the player hears none of script 40's messages after
+  the first one, the same as when the conversation is skipped.
+- So the fix copies that layout: `ResourceFactoryBinaryScriptV0` (`src/port/resource/importers/ScriptFactory.cpp`)
+  joins a level's scripts in Torch's order into one block and points the table into it, with 200 `EVOP_STOP_SCRIPT`
+  after the last script, so any command target below `EV_CHANGE_AI` from any script stays in the block. A table whose
+  entries are not numbered 0 to n-1, or not script entries (a mod), keeps its buffers as before.
+- Only a branch past an end reads differently; every other read gets the same commands from the block as from the
+  script's own buffer.
+
+Unknown:
+
+- What the N64 itself does there: derived from the extractor, not observed.
+- Where in Venom 1 script 40 runs in a normal flight: in the check it ran within the 3000 frames after the intro.
+
 ### 2026-11-09, #14 (WP-16), players 2-4 come back after going down (decision 0007 rule 4)
 
 Identity: ROM US 1.0, on top of `6becd73a` (the combined test branch of 2026-11-09), Linux, GCC, Debug, OpenGL on a

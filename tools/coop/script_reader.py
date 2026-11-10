@@ -7,6 +7,8 @@
     python tools/coop/script_reader.py CO              # the scripts of a level and their sizes
     python tools/coop/script_reader.py                 # the levels that have scripts
     python tools/coop/script_reader.py CO S59 --o2r <file>
+    python tools/coop/script_reader.py --past-end      # every branch past its script's end, in every table (#112)
+    python tools/coop/script_reader.py --past-end --check   # exit 1 when they differ from KNOWN_PAST_END
 
 The scripts are ROM data, so docs/coop/NOTES.md cites them as level, script and command: the script is the slot in the
 level's table (`levelScripts[this->aiType]`), the command is `aiIndex / 2`. This follows the same steps as the game:
@@ -14,6 +16,13 @@ the level picks a table (`ActorEvent_ProcessScript`, src/engine/fox_enmy2.c), a 
 an entry's path, and that entry holds the commands. The file format is what tools/Torch writes in
 src/factories/sf64/ScriptFactory.cpp, the arguments are printed as the interpreter reads them, and the names come from
 the headers in include/, so they follow the source. Message ids stay numbers.
+
+--past-end lists, for every level's table, each EVOP_SET_TRIGGER or EVOP_LOOP whose command target is at or past its
+script's last command, and each script switch past the table, as references only. The N64 holds a level's scripts in
+one run, so such a branch ran on into the next script; the port joins them the same way
+(src/port/resource/importers/ScriptFactory.cpp), which holds only while the entries are numbered in ROM order, so it
+checks that too. KNOWN_PAST_END is the list docs/coop/NOTES.md (2026-11-10, #112) explains; --check fails on a new
+one, a lost one, or a table out of order, so an upstream change to the scripts or to Torch shows.
 
 It reads the one file you name and writes nothing. What it prints is game data: keep it out of git, issues and PRs.
 Exit code 0, or 2 with one line on stderr saying what is wrong.
@@ -56,6 +65,13 @@ HEADER_SIZE = 0x40  # BaseExporter::WriteHeader in tools/Torch
 RESOURCE_SCRIPT = 0x53435250  # src/port/resource/type/ResourceType.h
 RESOURCE_COMMANDS = 0x53434D44
 CHANGE_SCRIPT = 200  # EV_CHANGE_AI: a branch target from here on is a script, below it a command
+BRANCHES = ("EVOP_SET_TRIGGER", "EVOP_LOOP")  # the opcodes whose arg1 sets aiIndex or aiType (ActorEvent_ProcessScript)
+
+# Branches past their script's end, as the US 1.0 data has them, and what each does (docs/coop/NOTES.md, #112).
+KNOWN_PAST_END = {
+    "A6 S26:53": "unreachable: EVOP_SET_TRIGGER with EVC_NONE, which ActorEvent_ProcessTriggers never takes",
+    "VE1 S40:6": "reachable while the scene's Falco is not active: runs on into the next script, as on the N64",
+}
 CLOSE_Z = "EVC_CLOSE_Z"
 
 ENUMS = {
@@ -340,13 +356,62 @@ def print_script(archive, names, level, script, command):
         print(f"{mark} {index:4}  {word1:04X} {word2:04X}  {name:<22} {text}".rstrip())
 
 
+def past_end(archive, names):
+    """({reference: what it targets} for every branch past its script's end, [tables not numbered in ROM order])."""
+    found, unordered = {}, []
+    for level in LEVELS:
+        table_entry, slots = archive.table(level)
+        numbers = set()
+        for script, slot in enumerate(slots):
+            entry, commands = archive.commands(table_entry, script, slot)
+            head, _, number = entry.rpartition("_cmd_")
+            if head == table_entry and number.isdigit():
+                numbers.add(int(number))
+            else:
+                numbers.add(-1)
+            for index, (word1, word2) in enumerate(commands):
+                if names.enums["EventOpcode"].get(word1 >> 9) not in BRANCHES:
+                    continue
+                target = word1 & 0x1FF
+                if target < CHANGE_SCRIPT and target >= len(commands):
+                    found[f"{level.prefix} S{script}:{index}"] = f"command {target} of 0-{len(commands) - 1}"
+                elif target >= CHANGE_SCRIPT and target - CHANGE_SCRIPT >= len(slots):
+                    found[f"{level.prefix} S{script}:{index}"] = (f"script {target - CHANGE_SCRIPT} of "
+                                                                  f"0-{len(slots) - 1}")
+        if sorted(numbers) != list(range(len(numbers))):
+            unordered.append(f"{level.prefix} ({table_entry})")
+    return found, unordered
+
+
+def print_past_end(archive, names, check):
+    found, unordered = past_end(archive, names)
+    for reference, target in found.items():
+        print(f"{reference} -> {target}: {KNOWN_PAST_END.get(reference, 'NEW, not in KNOWN_PAST_END')}")
+    failures = [f"{reference} is new: show whether it is reachable and what it reads, then list it in KNOWN_PAST_END"
+                for reference in found if reference not in KNOWN_PAST_END]
+    failures += [f"{reference} is listed in KNOWN_PAST_END and no longer in the data" for reference in KNOWN_PAST_END
+                 if reference not in found]
+    failures += [f"{table}: the entries are not numbered 0 to n-1, so the port cannot join them in ROM order"
+                 for table in unordered]
+    if check:
+        for failure in failures:
+            print(f"FAIL: {failure}")
+    state = "FAILED" if check and failures else "ok" if check else "listed"
+    print(f"script_reader: past the end: {state}, {len(found)} branches in {len(LEVELS)} tables, {archive.version()}")
+    return 1 if check and failures else 0
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("reference", nargs="*", help="a level, or a level and a script: CO S59:34")
     parser.add_argument("--o2r", type=Path, help=f"your {ARCHIVE_NAME}; default: the first in " +
                         ", ".join(ARCHIVE_FOLDERS))
+    parser.add_argument("--past-end", action="store_true", help="every branch past its script's end (#112)")
+    parser.add_argument("--check", action="store_true", help="with --past-end: exit 1 when they differ from the list")
     args = parser.parse_args()
     try:
+        if args.past_end:
+            return print_past_end(Archive(args.o2r or find_archive()), Names(load_enums()), args.check)
         if not args.reference:
             print_levels()
             return 0
