@@ -65,6 +65,14 @@ Slippy, Fox's 2185 at `CO S14:19` still asks Falco where he is going. It plays a
 back, his line from Slippy's fly-in at `CO S51:3`). Falco's own lines in S14 (2181, 2188) stay dropped: Slippy
 recorded no lead lines (searched in the decoded texts; the "follow me" lines are Falco's and James's).
 
+**By kind, for every other scene** (the owner, 2026-11-10: "not scene by scene"): every line a wingman speaks in a
+scene of 0012's table is sorted into one of 15 kinds (help, trouble, hit, thanks, relief, attack, got one, back off,
+lead, found, incoming, persist, alert, side, praise), and each kind names one recorded line of Falco, Slippy and
+Peppy. A taken wingman's line of a kind plays as the substitute's line of that kind; Peppy as substitute is covered
+the same way. Order: a row of the table above, then a set of three (0012), then the kind, else dropped. Lines tied to
+one level's story stay in no kind. Other speakers' lines that name the taken wingman are dropped unless a row
+replaces them.
+
 ## Consequences
 
 - The table is fixed data keyed by the shared choice of substitute (0012 rule 2), so every client plays the same line
