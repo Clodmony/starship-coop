@@ -484,8 +484,8 @@ Unknown:
 Read at `80ff9be6` (the combined test branch 2). Owner's report on #213: in Area 6 and Venom/Andross the bosses "just
 followed Fox and never me"; their attacks hit the second player only by accident. Owner's choices on #213: the rule
 of #193 (the nearest human) for aim and chase, kept stable; the Andross brain's catch takes the nearest flying human
-in reach (option A); the face's inhale pulls every human and swallows the first to reach the mouth (option D, open,
-see the end). Line numbers are the base's unless named.
+in reach (option A); the face's inhale pulls every human and swallows the first to reach the mouth (option D, built
+as the owner's A for it, see "The inhale" below). Line numbers are the base's unless named.
 
 Observed (code), the player-0 sites the audit lists (`tools/coop/sp_audit.py`, patterns P0 `gPlayer[0]`, MC
 `gMainController`, PA a bare `gPlayer`, SH who fired):
@@ -519,11 +519,11 @@ player 0 through a local `Player* player = &gPlayer[0]` on 41 more lines the aud
 | `Andross_AndExplosion_Update` | 10 P0 | escape explosions: smoke near player 0, they kill player 0 within 500 | damage in the escape (WP-19): left, as the spec says |
 | `Andross_AndBrain_Update` | 55 P0, 3 MC, 1 PA | `:815-817` the catch when player 0 is in a 300 box; `:848`, `:853-856`, `:861` the brain's start puts player 0 into all-range; `:890-920` the catch drags, slows and drains player 0; `:940-942` state 3 chases player 0; `:987-1101` the brain's death moves player 0's camera and starts the escape; `:1131-1168` escape smoke around player 0; `:1188-1190` it turns its face to player 0's `camYaw`; MC rumble | catch and chase: changed; flow, view: left |
 | `Andross_AndBrain_Draw` | 1 P0 | draw | view |
-| `Andross_8018C390` | 1 MC | the mouth cutscene: any button on `gMainController` spits faster | input: for D |
+| `Andross_8018C390` | 1 MC | the mouth cutscene: `:1426` writes `gPathProgress` from the swallowed player; any button on `gMainController` shortens the spit-out timer | flow and input: changed for D |
 | `Andross_Effect396_Update` | 2 P0 | debris hits, `func_effect_8007A774`, every player since #100 | ok |
 | `Andross_8018D0D8` | 4 P0 | the hand's reach, `CoopHits_AndrossReach` does the others (#136) | ok |
 | `Andross_8018D2B0` | 2 P0 | the face's death sets player 0 to level complete | flow: left |
-| `Andross_AndAndross_Update` | 13 P0, 1 MC (+41 alias) | `:1999` z keeps `fwork[6]` ahead of player 0's `pos.z` (on rails every player's `pos.z`); `:2008-2037` the eyes look at player 0; `fwork[0]`/`fwork[3]` = player 0's x/y (+ an offset) in the punches, slaps, the sweep and the last phase (states 3-7, 9, 12-14, 16); `:2645-2647` inhale debris around player 0's camera; `:2691-2702` the inhale pulls and swallows player 0; the mouth, chew and spit (states 15, 16) on `player`; camera roll; effect speeds from player 0's `vel.z` | aim and chase (eyes, punches, slaps): changed; inhale and mouth: D, open; path, camera, view: left |
+| `Andross_AndAndross_Update` | 13 P0, 1 MC (+41 alias) | `:1999` z keeps `fwork[6]` ahead of player 0's `pos.z` (on rails every player's `pos.z`); `:2008-2037` the eyes look at player 0; `fwork[0]`/`fwork[3]` = player 0's x/y (+ an offset) in the punches, slaps, the sweep and the last phase (states 3-7, 9, 12-14, 16); `:2645-2647` inhale debris around player 0's camera; `:2691-2702` the inhale pulls and swallows player 0; the mouth, chew and spit (states 15, 16) on `player`; camera roll; effect speeds from player 0's `vel.z` | aim and chase (eyes, punches, slaps): changed; inhale, chew and spit: changed for D; path, camera, view: left |
 | `Andross_AndDoor_Update` | 1 P0 | a door opens when player 0 is within 1800 | trigger: left |
 | `Andross_801939A0` | 1 P0 | a cutscene actor at player 0's `cam.at.y` | flow: left |
 
@@ -566,7 +566,7 @@ Built:
 - Dogfighters: `CoopAim_Chased` gives an enemy (Star Wolf, `aiType` `AI360_ENEMY` up to the Great Fox) whose target is
   Fox its kept human; Fox's own side (Falco, Slippy, Peppy, Katt, Bill) stays with player 0.
 - `SF64_COOP_BOSS_TRACE` (`src/port/coop/test/boss_trace.h`) logs the bosses, the Fox-chasing enemies with their kept
-  slots, and every player's position and camera, each frame; it only reads.
+  slots, and every player's position, camera, `hitTimer`, `csState` and `hitDirection`, each frame; it only reads.
 
 Observed (run), `lockstep_test.py --only bosses`, US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window,
 two games over loopback, `gInvincible` on both, player 0 steered away, player 1 near the fight; each run ends with a
@@ -596,8 +596,43 @@ Derived:
   the same distance; it changes players at a warp, a new attack, the end of a catch or a new chase, or when its player
   goes down or is parked. The face and the Gorgon move toward whom they keep, so that player stays the nearest and they
   stay with it.
-- Andross' first inhale pulls only player 0 (upstream, D is open), so after it player 0 sits in front of the face and
-  the next attack can pick player 0; the test keeps both players on the walls for that reason.
+- Upstream, Andross' inhale pulls only player 0, so after it player 0 sits in front of the face and the next attack
+  can pick player 0; the test keeps both players on the walls for that reason (written before the inhale change below,
+  which pulls every player that flies).
+
+The inhale (option D, the owner's A for it, 2026-11-10), in its own commit:
+
+- Observed (code), what tied the mouth to player 0 besides `player`: the mouth state's update `Andross_8018C390`
+  (`fox_andross.c:1417`) writes `gPathProgress = player->zPath = -player->pos.z`, so the level's path follows whoever
+  is in the mouth; during the chew (face states 15 and 16, `swork[8]` 1) the face's z goes to player 0's `pos.z + 100`
+  (`:1999`); the spit-out timer `csTimer` counts down only on a press of `gControllerPress[gMainController]`; while
+  player 0 is in the mouth every other player is parked (`CoopPlayers_SkipUpdate`, player 0 not ACTIVE).
+- Built: `CoopAim_AndrossPull` pulls every player after 0 that flies as the face pulls player 0;
+  `CoopAim_AndrossSwallow` takes of the players within 200 of the face's z (upstream's test; player 0 in any state, the
+  others while they fly) the one nearest the mouth, a tie to the lower index, and the face holds it
+  (`CoopAim_SetHeld`); `CoopAim_InMouth` names it while it is in `PLAYERSTATE_ANDROSS_MOUTH`. The face's chew z, the
+  chew and the spit (draw, `csState`, `mercyTimer`, the wings, which break for that player) and its x/y follow that
+  player; only player 0 writes `gPathProgress` in the mouth; a co-op player's spit-out timer counts its own presses
+  (`CoopPlayers_PadOf`). With player 0 in the mouth every line reads as before.
+- Observed (run), `lockstep_test.py --only bosses --levels inhale` (as above, with player 1 boosting into the mouth
+  during the first inhale and pressing A every other frame from level frame 2300): `inhale: same hash on 3300 frames;
+  wing health of player 0 (60, 60), of player 1 (0, 0); player 1 in the mouth on 282 frames (2207 to 2488), spat out on
+  40, then flying; player 0 flying throughout, not bumped by the face, nearest it 978; other hits on player 0
+  meanwhile: none`. The base build, the same run: `inhale: player 1 was not spat out: wing health of player 0 (0, 0),
+  of player 1 (60, 60)` (there player 0 was swallowed, as upstream).
+- Observed (run), a first version of the script that held the sticks from the level start (both ships scraped the
+  tunnel walls, wings broken before the fight): player 1 swallowed at 2255 and back at about 2560; player 0 was hit
+  once, at 2264, 9 frames into the chew, by an effect (`hitDirection` 0, so not the face's hitbox, which uses 1 to 4,
+  `fox_play.c:2128`), 304 behind the face in z and 1117 to its side; no hit after that, also when player 0 flew past
+  the face's z at about 2400.
+- Derived: the effect was the inhale's debris (`Andross_Effect396_Update`, state 0 after the inhale, flying out at 70 a
+  frame and testing every player through `func_effect_8007A774`); upstream they do the same to a flying player 0
+  whenever the inhale swallows nobody, and they are cleared at chew frame 20. So the hit is the inhale's ordinary
+  hazard, not a bump by the chewing face. The test fails on a hit by the face's hitbox and reports any other hit.
+- Derived: while a co-op player is chewed the team flies on and the face's z holds still with the swallowed player,
+  so player 0 passes the face's z during the chew (it did at about 2400) off to the side.
+- Unknown: whether the face would bump a player 0 that flies straight through its middle during a chew (the runs kept
+  player 0 at the left wall); how the chew looks from player 0's and the swallowed player's screens.
 
 Left on player 0 (not changed here): every trigger and level flow listed above (the fight timer, doors, James,
 level complete, the brain's start into all-range, the escape and its explosions), the cameras, player 0 down

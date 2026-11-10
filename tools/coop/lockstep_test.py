@@ -74,6 +74,8 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             in Venom 2, with player 1 the nearer one. Each run ends with a bit flipped, and the boss's or Star Wolf's
             place is read from the desync report's dump, so the check runs on an old build too. Hashes equal up to the
             poke; with src/port/coop/test/boss_trace.h the boss trace is alike on both games and shows player 1 kept.
+            `inhale`: the face's inhale swallows player 1, chews and spits it out (its wings break), and player 0 flies
+            on and is not hit meanwhile (owner's choice A for #213's option D).
   log       the co-op log (#172): each game's folder holds its own log and the other player's, streamed during the
             session; the hash stays equal with streaming on; nothing personal is in the files; coop_log.py merges them.
 
@@ -860,6 +862,7 @@ BOSS_RUNS = {  # name: level, frame of the poke (state hash numbering), what the
     "gorgon": (3, 9800),
     "andross": (9, 2900),
     "dogfight": (19, 4100),
+    "inhale": (9, 3300),
 }
 OBJ_BOSS_A6_GORGON, OBJ_BOSS_AND_ANDROSS, OBJ_ACTOR_ALLRANGE = 302, 320, 197  # include/sf64object.h
 OBJ_ACTIVE = 2
@@ -871,6 +874,9 @@ BOSS_TRACE_LINE = re.compile(r"(\w+)=(\S+)")
 
 
 GORGON_NUDGE = 9200  # level frame: Area 6's Gorgon comes at about 9430; debris knocks the ships about before that
+ANDROSS_WALLS = 1560  # level frame: the tunnel ends and the face is up from about 1520
+INHALE_BOOST = 2190  # level frame: the face's first inhale (state 17) runs from about 2170 in the andross script
+INHALE_MASH = 2300  # from here player 1 presses A every other frame: a spat-out player leaves the mouth on presses
 
 
 def boss_script(name):
@@ -879,10 +885,19 @@ def boss_script(name):
     just before the Gorgon it goes right for 30 frames and left for 15: from any place on the path that ends it well
     away from the left wall (a ship crosses about 30 a frame). Andross: see below."""
     def script(frame, player):
-        if name == "andross":
+        if name in ("andross", "inhale"):
             # The face's punches knock ships about and its inhale pulls player 0 to the middle, so both hold a wall:
             # player 0 the left one and the top, player 1 the right one at the height it joined, nearer the face.
-            return (0, -70, -60) if player == 0 else (0, 70, 0)
+            # Not before the tunnel ends, or both scrape its walls the whole way and break their wings.
+            if frame < ANDROSS_WALLS:
+                return 0, 0, 0
+            if player == 0:
+                return 0, -70, -60
+            if name == "inhale" and INHALE_BOOST <= frame < INHALE_BOOST + 60:
+                return BUTTON_C_LEFT, 70, 0  # a boost takes player 1 400 ahead, into the mouth first
+            if name == "inhale" and frame >= INHALE_MASH and frame % 2 == 0:
+                return BUTTON_A, 70, 0
+            return 0, 70, 0
         if frame < JOIN_FRAME + 100:
             return 0, 0, 0
         if player == 0:
@@ -901,13 +916,15 @@ def vec(data, offset):
 
 def dump_state(report):
     """{players: [(pos x, y, trueZpos, eye x, y)], bosses: {slot: (id, pos)}, wolves: {slot: pos}} of a desync report."""
-    state = {"players": [], "bosses": {}, "wolves": {}}
+    state = {"players": [], "bosses": {}, "wolves": {}, "wings": {}}
     for chunk in report.chunks:
         data = bytes(chunk.data)
         if chunk.name == "gPlayer":
             x, y, _ = vec(data, PLAYER_POS)
             eye = vec(data, PLAYER_EYE)
             state["players"].append((x, y, struct.unpack_from("<f", data, PLAYER_TRUE_Z)[0], eye[0], eye[1]))
+        elif chunk.name in ("gLeftWingHealth", "gRightWingHealth"):
+            state["wings"][(chunk.name, chunk.index)] = struct.unpack_from("<i", data, 0)[0]
         elif chunk.name == "gBosses" and data[0] != 0:
             state["bosses"][chunk.index] = (struct.unpack_from("<H", data, 2)[0], vec(data, OBJECT_POS))
         elif (chunk.name == "gActors" and data[0] == OBJ_ACTIVE and struct.unpack_from("<H", data, 2)[0] ==
@@ -968,6 +985,13 @@ def nearer(a, b, point):
 def check_boss_dump(name, state):
     """What the dump says the boss or Star Wolf went after. Returns a line."""
     p0, p1 = state["players"][0], state["players"][1]
+    if name == "inhale":
+        # Spat out, the swallowed player's wings break (Andross_AndAndross_Update, state 16): its wing health is 0.
+        wings = {player: (state["wings"].get(("gLeftWingHealth", player)), state["wings"].get(("gRightWingHealth", player)))
+                 for player in (0, 1)}
+        text = f"wing health of player 0 {wings[0]}, of player 1 {wings[1]}"
+        expect(wings[1] == (0, 0) and wings[0][0] > 0 and wings[0][1] > 0, f"inhale: player 1 was not spat out: {text}")
+        return text
     if name == "dogfight":
         wolves = state["wolves"]
         expect(wolves, "dogfight: no Star Wolf in the dump")
@@ -1002,9 +1026,49 @@ def boss_trace_story(name, trace):
     return kept
 
 
+def inhale_story(trace):
+    """From the boss trace of `inhale`: player 1 swallowed, chewed, spat out and flying again, player 0 flying and not
+    hit by the face meanwhile. Returns a line."""
+    def player(row, i):
+        values = row.get(f"p{i}", "").split(",")
+        return values if len(values) >= 12 else None
+
+    mouth = [n for n, row in enumerate(trace) if player(row, 1) and player(row, 1)[0] == "11"]
+    expect(mouth, "inhale: player 1 was never in the mouth (PLAYERSTATE_ANDROSS_MOUTH)")
+    first, last = mouth[0], mouth[-1]
+    expect(last - first + 1 == len(mouth), "inhale: player 1 left the mouth and came back")
+    spat = [n for n in mouth if player(trace[n], 1)[10] == "1"]
+    expect(spat, "inhale: player 1 was never spat out (csState 1)")
+    expect(last + 1 < len(trace) and player(trace[last + 1], 1)[0] == "3",
+           "inhale: player 1 did not fly again after the mouth")
+    hits = []
+    nearest = None
+    before = int(player(trace[first - 1], 0)[9]) if first > 0 else 0
+    for n in range(first, last + 1):
+        p0 = player(trace[n], 0)
+        expect(p0[0] == "3" and p0[1] == "0", f"inhale: player 0 was not flying at {trace[n]['frame']}: state {p0[0]}")
+        if int(p0[9]) > before:  # Player_ApplyDamage sets hitTimer to 20, gInvincible or not; it counts down after
+            hits.append(f"{trace[n]['frame']} ({'an effect' if p0[11] == '0' else 'a hitbox, direction ' + p0[11]})")
+        before = int(p0[9])
+        if "b0" in trace[n]:
+            b = [float(v) for v in trace[n]["b0"].split(",")[2:5]]
+            d = math.dist(b, (float(p0[2]), float(p0[3]), float(p0[4])))
+            nearest = d if nearest is None else min(nearest, d)
+    # A bump is the face's hitbox (Player_CollisionCheck, direction 1 to 4). The inhale's debris fly back out once it
+    # ends, as they do upstream when the inhale swallows nobody, and may hit a flying player 0: an effect, direction 0,
+    # reported and not counted as a bump.
+    bumps = [hit for hit in hits if "hitbox" in hit]
+    expect(not bumps, f"inhale: the face bumped player 0 while player 1 was in the mouth, at {', '.join(bumps)}; "
+                      f"nearest the face {nearest:.0f}")
+    return (f"player 1 in the mouth on {len(mouth)} frames ({trace[first]['frame']} to {trace[last]['frame']}), spat out "
+            f"on {len(spat)}, then flying; player 0 flying throughout, not bumped by the face, nearest it {nearest:.0f}; "
+            f"other hits on player 0 meanwhile: {', '.join(hits) or 'none'}")
+
+
 def sc_bosses(args, folder):
     """#213: Area 6's Gorgon, Andross' face and Star Wolf in Venom 2 go after player 1 when it is the nearer human,
-    with the hashes equal on both games up to the poke. --levels picks some of gorgon,andross,dogfight."""
+    and the face's inhale swallows, chews and spits out player 1 while player 0 flies on unhit, with the hashes equal on
+    both games up to the poke. --levels picks some of gorgon,andross,dogfight,inhale."""
     only = getattr(args, "levels", None)
     lines = []
     for name in BOSS_RUNS:
@@ -1012,8 +1076,11 @@ def sc_bosses(args, folder):
             continue
         state, trace, frames = boss_run(args, folder / name, name)
         text = check_boss_dump(name, state)
-        kept = boss_trace_story(name, trace)
         expect(trace, f"{name}: no boss trace (a build without src/port/coop/test/boss_trace.c)")
+        if name == "inhale":
+            lines.append(f"{name}: same hash on {frames} frames; {text}; {inhale_story(trace)}")
+            continue
+        kept = boss_trace_story(name, trace)
         expect(kept[1] > kept[0], f"{name}: kept player 1 on {kept[1]} frames, player 0 on {kept[0]}")
         lines.append(f"{name}: same hash on {frames} frames; {text}; kept player 1 on {kept[1]} frames, player 0 on "
                      f"{kept[0]}")
@@ -1945,7 +2012,7 @@ def main():
     ap.add_argument("--rates", default="60,120", help="for `rates`: the two clients' gInterpolationFPS")
     ap.add_argument("--levels", type=lambda t: t.lower().split(","),
                     help="for `vehicles` and `vehicle_end`: some of titania,aquas,macbeth (default all); for "
-                         "`bosses`: some of gorgon,andross,dogfight")
+                         "`bosses`: some of gorgon,andross,dogfight,inhale")
     args = ap.parse_args()
     if args.list:
         print("\n".join(SCENARIOS))

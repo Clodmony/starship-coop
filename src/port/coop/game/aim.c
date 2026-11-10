@@ -140,6 +140,67 @@ int32_t CoopAim_BrainCatch(float x, float y, float z) {
     return best;
 }
 
+void CoopAim_AndrossPull(float x, float y, float step) {
+    s32 i;
+
+    if (!CoopPlayers_IsCoop() || (gPlayer == NULL)) {
+        return;
+    }
+    for (i = 1; i < CoopPlayers_Count(); i++) {
+        Player* p = &gPlayer[i];
+
+        if (CoopAim_CanAimAt(i)) { // as Andross_AndAndross_Update pulls player 0
+            Math_SmoothStepToF(&p->pos.x, x, 0.1f, step, 0);
+            Math_SmoothStepToF(&p->pos.y, y, 0.1f, step, 0);
+        }
+    }
+}
+
+int32_t CoopAim_AndrossSwallow(float x, float y, float z) {
+    s32 best = -1;
+    f32 bestDist = 0.0f;
+    s32 count = CoopPlayers_IsCoop() ? CoopPlayers_Count() : 1;
+    s32 i;
+
+    if (gPlayer == NULL) {
+        return -1;
+    }
+    for (i = 0; i < count; i++) {
+        const Player* p = &gPlayer[i];
+        f32 dx;
+        f32 dy;
+        f32 dz;
+        f32 dist;
+
+        // The test of Andross_AndAndross_Update, state 17. Player 0 needs no state, as upstream.
+        if (!(fabsf(p->trueZpos - z) < 200.0f) || ((i > 0) && !CoopAim_CanAimAt(i))) {
+            continue;
+        }
+        dx = p->pos.x - x;
+        dy = p->pos.y - y;
+        dz = p->trueZpos - z;
+        dist = (dx * dx) + (dy * dy) + (dz * dz);
+        if ((best < 0) || (dist < bestDist)) { // strictly nearer: a tie stays with the lower index
+            best = i;
+            bestDist = dist;
+        }
+    }
+    return best;
+}
+
+int32_t CoopAim_InMouth(int32_t boss) {
+    s32 held;
+
+    if (!CoopPlayers_IsCoop() || (gPlayer == NULL) || (boss < 0) || (boss >= AIM_BOSSES)) {
+        return -1;
+    }
+    held = sKept[AIM_HELD + boss];
+    if ((held < 0) || (held >= CoopPlayers_Count()) || (gPlayer[held].state != PLAYERSTATE_ANDROSS_MOUTH)) {
+        return -1;
+    }
+    return held;
+}
+
 void CoopAim_SetHeld(int32_t boss, int32_t player) {
     if ((boss >= 0) && (boss < AIM_BOSSES)) {
         sKept[AIM_HELD + boss] = (s8) player;

@@ -37,9 +37,9 @@ static void CoopBossTrace_OnGamePostUpdate(IEvent* event) {
     for (i = 0; i < CoopPlayers_Count(); i++) {
         const Player* p = &gPlayer[i];
 
-        fprintf(sFile, " p%d=%d,%d,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%d", (int) i, (int) p->state,
+        fprintf(sFile, " p%d=%d,%d,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%d,%d,%d,%d", (int) i, (int) p->state,
                 (int) CoopPlayers_IsParked(i), p->pos.x, p->pos.y, p->trueZpos, p->cam.eye.x, p->cam.eye.y,
-                p->cam.eye.z, (int) p->draw);
+                p->cam.eye.z, (int) p->draw, (int) p->hitTimer, (int) p->csState, (int) p->hitDirection);
     }
     for (i = 0; i < ARRAY_COUNT(gActors); i++) {
         const Actor* actor = &gActors[i];

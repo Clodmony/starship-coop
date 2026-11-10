@@ -42,12 +42,22 @@ void CoopAim_ForgetActor(int32_t actor);
 // ---- Held players (#213) ----
 //
 // The Andross brain catches one player at a time (owner's choice A on #213): the player it catches is held until the
-// catch ends, whatever its kept target does meanwhile.
+// catch ends, whatever its kept target does meanwhile. Andross' face holds the player it swallowed the same way.
 
 // The player the Andross brain at (x, y, z) catches: of the players in its reach (Andross_AndBrain_Update's box, 300
 // around (x, y - 300, z)) the nearest, a tie to the lower index; players after player 0 only while they fly. -1 for
 // nobody. Outside co-op: 0 when player 0 is in reach, else -1, as upstream.
 int32_t CoopAim_BrainCatch(float x, float y, float z);
+// Andross' inhale (owner's choice A for option D on #213): it pulls every human that flies, and the first whose z
+// reaches the mouth is swallowed. CoopAim_AndrossPull pulls the players after player 0 that fly toward (x, y) by at
+// most `step` a frame, as Andross_AndAndross_Update pulls player 0; nothing outside co-op.
+void CoopAim_AndrossPull(float x, float y, float step);
+// The player the face at z with its mouth at (x, y) swallows: of the players within 200 of z (upstream's test, player
+// 0 in any state, the others while they fly) the nearest to (x, y, z), a tie to the lower index; -1 for nobody.
+// Outside co-op: 0 when player 0 is within 200, else -1, as upstream.
+int32_t CoopAim_AndrossSwallow(float x, float y, float z);
+// The player boss `boss` holds while it is in PLAYERSTATE_ANDROSS_MOUTH, else -1; always -1 outside co-op.
+int32_t CoopAim_InMouth(int32_t boss);
 // Sets the player boss `boss` holds (-1 for none).
 void CoopAim_SetHeld(int32_t boss, int32_t player);
 // The player boss `boss` holds; 0 when none, and outside co-op.

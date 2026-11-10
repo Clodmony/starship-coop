@@ -6,6 +6,7 @@
 #include "assets/ast_arwing.h"
 #include "port/coop/game/hits.h" // COOP: hits on the other players (#136)
 #include "port/coop/game/aim.h"  // COOP: Andross follows the nearest human (#213)
+#include "port/coop/game/players.h" // COOP: a co-op player's own pad in the mouth (#213)
 #include "assets/ast_bg_planet.h"
 #include "prevent_bss_reordering.h"
 #include "prevent_bss_reordering2.h"
@@ -1424,7 +1425,10 @@ void Andross_8018C390(Player* player) {
             Math_SmoothStepToF(&player->pos.y, gBosses[0].obj.pos.y - 150.0f, 0.5f, 30.0f, 0);
             Math_SmoothStepToF(&player->pos.z, gBosses[0].obj.pos.z - 100.0f, 0.5f, 60.0f, 0);
 
-            gPathProgress = player->zPath = -player->pos.z;
+            player->zPath = -player->pos.z;
+            if (player->num == 0) { // COOP: only player 0 drives the path, a co-op player in the mouth does not (#213)
+                gPathProgress = player->zPath;
+            }
 
             Math_SmoothStepToF(&player->cam.eye.z, 2000.0f, 0.05f, 20.0f, 0);
             Math_SmoothStepToF(&player->cam.eye.x, 0.0f, 0.05f, 10.0f, 0);
@@ -1449,7 +1453,9 @@ void Andross_8018C390(Player* player) {
             Math_SmoothStepToF(&player->cam.eye.z, 400.0f, 0.05f, 20.0f, 0.0f);
 
             if (player->csTimer != 0) {
-                if (gControllerPress[gMainController].button != 0) {
+                // COOP: a co-op player's own buttons, was gMainController for whoever is in the mouth (#213)
+                if (gControllerPress[(player->num == 0) ? gMainController : CoopPlayers_PadOf(player->num)].button !=
+                    0) {
                     player->csTimer--;
                 }
             }
@@ -1944,8 +1950,14 @@ void Andross_AndAndross_Update(AndAndross* this) {
     PlayerShot* playerShot;
     Boss* boss1;
     Player* player = &gPlayer[0];
-    // COOP: whom its eyes, punches and slaps follow, was player (#213)
-    Player* aimed = &gPlayer[CoopAim_BossTarget(this->index, this->obj.pos.x, this->obj.pos.y, this->obj.pos.z)];
+    // COOP: the player in its mouth, player 0 while nobody is: was player in the chew and the spit (#213, choice A)
+    s32 inMouth = CoopAim_InMouth(this->index);
+    Player* mouth = &gPlayer[(inMouth >= 0) ? inMouth : 0];
+    // COOP: whom its eyes, punches and slaps follow, was player; the one in its mouth while there is one (#213)
+    Player* aimed = (inMouth >= 0)
+                        ? mouth
+                        : &gPlayer[CoopAim_BossTarget(this->index, this->obj.pos.x, this->obj.pos.y, this->obj.pos.z)];
+    s32 swallowed; // COOP
     f32 yaw;
     f32 pitch;
     s16 limbCount;
@@ -2012,7 +2024,8 @@ void Andross_AndAndross_Update(AndAndross* this) {
         }
     }
 
-    Math_SmoothStepToF(&this->obj.pos.z, gPlayer[0].pos.z + this->fwork[6], this->fwork[8], this->fwork[7], 0);
+    // COOP: the chew follows the player in its mouth, was gPlayer[0] (#213)
+    Math_SmoothStepToF(&this->obj.pos.z, mouth->pos.z + this->fwork[6], this->fwork[8], this->fwork[7], 0);
     Math_SmoothStepToF(&this->obj.pos.x, this->fwork[0], this->fwork[2], this->fwork[1], 0);
     Math_SmoothStepToF(&this->obj.pos.y, this->fwork[3], this->fwork[5], this->fwork[4], 0);
 
@@ -2546,12 +2559,12 @@ void Andross_AndAndross_Update(AndAndross* this) {
             }
             if ((this->animFrame > 35) && (this->animFrame < 150) && ((this->animFrame % 32) == 0)) {
                 AUDIO_PLAY_SFX(NA_SE_EN_ANDROSS_BITE1, this->sfxSource, 4);
-                if (player->state == PLAYERSTATE_ANDROSS_MOUTH) {
+                if (mouth->state == PLAYERSTATE_ANDROSS_MOUTH) { // COOP: mouth was player, here and below (#213)
                     gControllerRumbleTimers[0] = 10;
                 }
             }
-            if ((this->animFrame == 20) && (player->state == PLAYERSTATE_ANDROSS_MOUTH)) {
-                player->draw = false;
+            if ((this->animFrame == 20) && (mouth->state == PLAYERSTATE_ANDROSS_MOUTH)) {
+                mouth->draw = false;
                 for (i = 0; i < ARRAY_COUNT(gEffects); i++) {
                     if (gEffects[i].obj.id == OBJ_EFFECT_396) {
                         Object_Kill(&gEffects[i].obj, gEffects[i].sfxSource);
@@ -2618,23 +2631,24 @@ void Andross_AndAndross_Update(AndAndross* this) {
                 AUDIO_PLAY_SFX(NA_SE_EN_ANDROSS_VOMIT, this->sfxSource, 4);
             }
 
-            if ((this->animFrame == 13) && (player->state == PLAYERSTATE_ANDROSS_MOUTH)) {
-                player->draw = true;
-                player->csState = 1;
-                player->csTimer = 60;
-                player->mercyTimer = 50;
+            // COOP: mouth was player, and the wings are its own, were player 0's, in this block (#213)
+            if ((this->animFrame == 13) && (mouth->state == PLAYERSTATE_ANDROSS_MOUTH)) {
+                mouth->draw = true;
+                mouth->csState = 1;
+                mouth->csTimer = 60;
+                mouth->mercyTimer = 50;
                 this->swork[8] = 0;
                 gControllerRumbleTimers[0] = 30;
 
-                if (player->arwing.rightWingState == 2) {
-                    gRightWingHealth[0] = 0;
-                    player->arwing.rightWingState = 1;
+                if (mouth->arwing.rightWingState == 2) {
+                    gRightWingHealth[mouth->num] = 0;
+                    mouth->arwing.rightWingState = 1;
                     Andross_Effect396_Spawn2(this->obj.pos.x, this->obj.pos.y - 200.0f, this->obj.pos.z,
                                              RAND_FLOAT_CENTERED(10.0f), RAND_FLOAT_CENTERED(10.0f), 10.0f, 8);
                 }
-                if (player->arwing.leftWingState == 2) {
-                    gLeftWingHealth[0] = 0;
-                    player->arwing.leftWingState = 1;
+                if (mouth->arwing.leftWingState == 2) {
+                    gLeftWingHealth[mouth->num] = 0;
+                    mouth->arwing.leftWingState = 1;
                     Andross_Effect396_Spawn2(this->obj.pos.x, this->obj.pos.y - 200.0f, this->obj.pos.z,
                                              RAND_FLOAT_CENTERED(10.0f), RAND_FLOAT_CENTERED(10.0f), 10.0f, 9);
                 }
@@ -2706,16 +2720,22 @@ void Andross_AndAndross_Update(AndAndross* this) {
 
                 Math_SmoothStepToF(&player->pos.x, this->obj.pos.x, 0.1f, this->fwork[16], 0);
                 Math_SmoothStepToF(&player->pos.y, this->obj.pos.y - 150.0f, 0.1f, this->fwork[16], 0);
+                // COOP: it pulls every human that flies, and swallows the first whose z reaches the mouth, was player 0
+                // alone (#213, owner's choice A)
+                CoopAim_AndrossPull(this->obj.pos.x, this->obj.pos.y - 150.0f, this->fwork[16]);
                 Math_SmoothStepToF(&this->fwork[16], 35.0f, 1.0f, 0.5f, 0);
 
-                if (fabsf(player->trueZpos - this->obj.pos.z) < 200.0f) {
+                swallowed = CoopAim_AndrossSwallow(this->obj.pos.x, this->obj.pos.y - 150.0f, this->obj.pos.z);
+                if (swallowed >= 0) {            // COOP: was fabsf(player->trueZpos - this->obj.pos.z) < 200.0f
+                    mouth = &gPlayer[swallowed]; // COOP: mouth was player, here and below
+                    CoopAim_SetHeld(this->index, swallowed);
                     this->state = 15;
                     this->swork[8] = 1;
                     this->fwork[9] = 0.2f;
                     this->animFrame = 0;
-                    if (player->state == PLAYERSTATE_ACTIVE) {
-                        player->state = PLAYERSTATE_ANDROSS_MOUTH;
-                        player->csState = 0;
+                    if (mouth->state == PLAYERSTATE_ACTIVE) {
+                        mouth->state = PLAYERSTATE_ANDROSS_MOUTH;
+                        mouth->csState = 0;
                     }
                     break;
                 }

@@ -24,7 +24,7 @@ pattern without reading the code, so treat it as a guess.
 
 ## Summary
 
-1812 sites in 424 functions in 46 files.
+1811 sites in 424 functions in 46 files.
 A function whose sites have more than one verdict counts once per verdict in the functions column.
 
 | verdict | sites | functions | `gPlayer[0]` | `gPlayer->` | `gPlayer arg` | `gMainController` | `gCamCount` | `shooter` |
@@ -32,11 +32,11 @@ A function whose sites have more than one verdict counts once per verdict in the
 | sim | 921 | 182 | 916 | 1 | 2 | 0 | 0 | 2 |
 | view | 217 | 84 | 151 | 0 | 0 | 43 | 3 | 20 |
 | input | 13 | 9 | 0 | 0 | 0 | 8 | 0 | 5 |
-| flow | 423 | 92 | 383 | 0 | 3 | 3 | 0 | 34 |
+| flow | 422 | 92 | 382 | 0 | 3 | 3 | 0 | 34 |
 | setup | 53 | 34 | 1 | 0 | 1 | 0 | 51 | 0 |
 | ok | 185 | 83 | 5 | 2 | 15 | 87 | 8 | 68 |
 
-Basis per site: read 284, site 944, name 584.
+Basis per site: read 283, site 944, name 584.
 
 ## Sites
 
@@ -650,26 +650,26 @@ Basis per site: read 284, site 944, name 584.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Andross_ActorTeamArwing_Update` | 286:P0, 287:P0, 288:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Andross_AndBrainWaste_Update` | 359:P0, 360:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Andross_80188A4C` | 462:P0 | flow | read | the brain's death sets player 0 to STANDBY; its warp goes to the nearest human (#213) |
-| `Andross_80188CB8` | 548:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Andross_80189214` | 611:P0, 621:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Andross_AndBossTimer_Update` | 642:P0, 643:P0 | flow | name | boss timer on player 0 |
-| `Andross_AndJamesTrigger_Update` | 671:P0, 673:P0, 674:P0, 675:P0, 682:P0, 683:P0 | flow | site | James appears when player 0 is near |
-| `Andross_AndExplosion_Update` | 725:P0, 726:P0, 747:P0, 748:P0, 749:P0, 750:P0, 752:P0, 753:P0, 755:P0, 759:P0 | flow | read | escape explosions follow and kill player 0: the escape is a cutscene (WP-19, #17), not changed in #136 |
-| `Andross_AndBrain_Update` | 858:P0, 863:P0, 864:P0, 866:P0, 871:P0, 1000:P0, 1025:P0, 1026:P0, 1027:P0, 1029:P0, 1030:P0, 1031:P0, 1033:P0, 1040:P0, 1074:P0, 1096:P0, 1097:P0, 1098:P0, 1099:P0, 1100:P0, 1101:P0, 1102:P0, 1103:P0, 1104:P0, 1105:P0, 1106:P0, 1107:P0, 1108:P0, 1113:P0, 1144:P0, 1145:P0, 1150:P0, 1152:P0, 1153:P0, 1180:P0, 1181:P0, 1201:P0, 1203:P0 | flow | read | chases its kept target, catches the nearest flying human in reach, one at a time (#213, owner's choice A); left: player 0 to START_360, its camera as the brain dies, the escape start, faces player 0's camera (camYaw is draw state) |
-| `Andross_AndBrain_Update` | 904:MC, 1067:MC, 1140:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Andross_AndBrain_Update` | 1114:PA | flow | site | Camera_Update360 for player 0 as the brain dies: level complete is one player's (WP-16) |
-| `Andross_AndBrain_Draw` | 1349:P0 | view | name | drawing by player 0 |
-| `Andross_8018C390` | 1452:MC | input | site | any button on gMainController shortens a cutscene timer |
-| `Andross_Effect396_Update` | 1623:P0, 1635:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Andross_8018D0D8` | 1704:P0, 1705:P0, 1706:P0, 1707:P0 | ok | read | tests player 0, CoopHits_AndrossReach does the others (#136) |
-| `Andross_8018D2B0` | 1760:P0, 1761:P0 | sim | site | sets player 0 state |
-| `Andross_AndAndross_Update` | 1946:P0, 2015:P0, 2661:P0, 2662:P0, 2663:P0, 2942:P0, 2962:P0 | flow | read | eyes, punches and slaps follow its kept target (#213); left: z keeps to player 0's path, the inhale and the mouth hold player 0, camera roll, debris around player 0's camera |
-| `Andross_AndAndross_Update` | 2657:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Andross_AndDoor_Update` | 3679:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Andross_801939A0` | 3808:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Andross_ActorTeamArwing_Update` | 287:P0, 288:P0, 289:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Andross_AndBrainWaste_Update` | 360:P0, 361:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Andross_80188A4C` | 463:P0 | flow | read | the brain's death sets player 0 to STANDBY; its warp goes to the nearest human (#213) |
+| `Andross_80188CB8` | 549:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Andross_80189214` | 612:P0, 622:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Andross_AndBossTimer_Update` | 643:P0, 644:P0 | flow | name | boss timer on player 0 |
+| `Andross_AndJamesTrigger_Update` | 672:P0, 674:P0, 675:P0, 676:P0, 683:P0, 684:P0 | flow | site | James appears when player 0 is near |
+| `Andross_AndExplosion_Update` | 726:P0, 727:P0, 748:P0, 749:P0, 750:P0, 751:P0, 753:P0, 754:P0, 756:P0, 760:P0 | flow | read | escape explosions follow and kill player 0: the escape is a cutscene (WP-19, #17), not changed in #136 |
+| `Andross_AndBrain_Update` | 859:P0, 864:P0, 865:P0, 867:P0, 872:P0, 1001:P0, 1026:P0, 1027:P0, 1028:P0, 1030:P0, 1031:P0, 1032:P0, 1034:P0, 1041:P0, 1075:P0, 1097:P0, 1098:P0, 1099:P0, 1100:P0, 1101:P0, 1102:P0, 1103:P0, 1104:P0, 1105:P0, 1106:P0, 1107:P0, 1108:P0, 1109:P0, 1114:P0, 1145:P0, 1146:P0, 1151:P0, 1153:P0, 1154:P0, 1181:P0, 1182:P0, 1202:P0, 1204:P0 | flow | read | chases its kept target, catches the nearest flying human in reach, one at a time (#213, owner's choice A); left: player 0 to START_360, its camera as the brain dies, the escape start, faces player 0's camera (camYaw is draw state) |
+| `Andross_AndBrain_Update` | 905:MC, 1068:MC, 1141:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Andross_AndBrain_Update` | 1115:PA | flow | site | Camera_Update360 for player 0 as the brain dies: level complete is one player's (WP-16) |
+| `Andross_AndBrain_Draw` | 1350:P0 | view | name | drawing by player 0 |
+| `Andross_8018C390` | 1457:MC | input | site | any button on gMainController shortens player 0's spit-out timer, a co-op player's own pad its own (#213); only player 0 writes gPathProgress in the mouth |
+| `Andross_Effect396_Update` | 1629:P0, 1641:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Andross_8018D0D8` | 1710:P0, 1711:P0, 1712:P0, 1713:P0 | ok | read | tests player 0, CoopHits_AndrossReach does the others (#136) |
+| `Andross_8018D2B0` | 1766:P0, 1767:P0 | sim | site | sets player 0 state |
+| `Andross_AndAndross_Update` | 1952:P0, 2675:P0, 2676:P0, 2677:P0, 2962:P0, 2982:P0 | flow | read | eyes, punches and slaps follow its kept target; the inhale pulls every flying human and swallows the first in the mouth, the chew follows that player (#213, owner's choice A); left: z keeps to player 0's path otherwise, camera roll, debris around player 0's camera |
+| `Andross_AndAndross_Update` | 2671:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Andross_AndDoor_Update` | 3699:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Andross_801939A0` | 3828:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 
 ### `src/overlays/ovl_i6/fox_sy.c`
 

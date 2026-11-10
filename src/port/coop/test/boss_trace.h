@@ -6,7 +6,10 @@
 //
 //   frame=<gGameFrameCount> level=<gCurrentLevel> mode=<gLevelMode> load=<gObjectLoadIndex> path=<gPathProgress>
 //   b<i>=<id>,<state>,<x>,<y>,<z>,<rot x>,<rot y>,<kept>,<held>        every boss slot that is not free
-//   p<i>=<state>,<parked>,<x>,<y>,<z>,<eye x>,<eye y>,<eye z>,<draw>   every player; z is trueZpos
+//   p<i>=<state>,<parked>,<x>,<y>,<z>,<eye x>,<eye y>,<eye z>,<draw>,<hitTimer>,<csState>,<hitDirection>
+//                                                                      every player; z is trueZpos; hitTimer is set by
+//                                                                      any hit, hitDirection is 0 for an effect's and
+//                                                                      1 to 4 for a hitbox's (Player_ApplyDamage)
 //   a<i>=<aiType>,<state>,<x>,<y>,<z>,<to x>,<to y>,<to z>,<kept>      every active all-range enemy aimed at Fox
 //                                                                      (aiIndex AI360_FOX), with the point it flies to
 //

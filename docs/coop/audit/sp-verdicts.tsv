@@ -200,7 +200,7 @@ src/overlays/ovl_i6/fox_ve2.c	Venom2_UpdateEvents	flow	site	Venom 2 events on pl
 # Rumble in levels: D_ctx_801779A8 and gControllerRumble* are indexed by gMainController here but by player->num in
 # the engine (src/engine/fox_play.c, Player_Update). Same value only while the controller index equals the player.
 src/overlays/ovl_i*	*@gMainController	view	site	rumble on gMainController (controller index used as player index)
-src/overlays/ovl_i6/fox_andross.c	Andross_8018C390@gMainController	input	site	any button on gMainController shortens a cutscene timer
+src/overlays/ovl_i6/fox_andross.c	Andross_8018C390@gMainController	input	site	any button on gMainController shortens player 0's spit-out timer, a co-op player's own pad its own (#213); only player 0 writes gPathProgress in the mouth
 src/overlays/ovl_i*	*	sim	name	level enemies, bosses and hazards move to, aim at, hit or check distance to player 0
 src/overlays/ovl_i1/fox_co.c	Corneria_CsTeamSetup	flow	name	team cutscene around player 0
 src/overlays/ovl_i1/fox_co.c	Corneria_LevelStart	flow	site	intro on player 0
@@ -268,7 +268,7 @@ src/overlays/ovl_i4/fox_sz.c	SectorZ_EnemyUpdate	sim	site	sets player 0 to STAND
 src/overlays/ovl_i5/fox_ma.c	Macbeth_MaLocomotive_Update	sim	site	train; sets player 0 to LEVEL_COMPLETE
 src/overlays/ovl_i5/fox_ma.c	Macbeth_MaRailwaySignal_Update	sim	site	sets player 0 to LEVEL_COMPLETE
 src/overlays/ovl_i6/fox_andross.c	Andross_80188A4C	flow	read	the brain's death sets player 0 to STANDBY; its warp goes to the nearest human (#213)
-src/overlays/ovl_i6/fox_andross.c	Andross_AndAndross_Update	flow	read	eyes, punches and slaps follow its kept target (#213); left: z keeps to player 0's path, the inhale and the mouth hold player 0, camera roll, debris around player 0's camera
+src/overlays/ovl_i6/fox_andross.c	Andross_AndAndross_Update	flow	read	eyes, punches and slaps follow its kept target; the inhale pulls every flying human and swallows the first in the mouth, the chew follows that player (#213, owner's choice A); left: z keeps to player 0's path otherwise, camera roll, debris around player 0's camera
 src/overlays/ovl_i6/fox_andross.c	Andross_AndBrain_Update	flow	read	chases its kept target, catches the nearest flying human in reach, one at a time (#213, owner's choice A); left: player 0 to START_360, its camera as the brain dies, the escape start, faces player 0's camera (camYaw is draw state)
 src/overlays/ovl_i6/fox_andross.c	Andross_8018D2B0	sim	site	sets player 0 state
 src/overlays/ovl_i4/fox_bo.c	Bolse_8018E05C	sim	read	base's beam: tests player 0, CoopHits_BolseBeam does the others (#136)
