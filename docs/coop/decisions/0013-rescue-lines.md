@@ -59,12 +59,18 @@ Peppy's 2061 (Peppy warns Slippy), and Falco's 2337 as Slippy's 2336 (Slippy tha
 borrowed scene follows 0012 rule 5. The table lives with the scene table in `src/port/coop/game/`; more rows are added
 the same way, each with its script places and the line it replaces.
 
+**Lines of other speakers that name the taken wingman** go in the same table (0012 left them open, "Unknown"). The
+owner's second run on 2026-11-10 (build `b98c3870`) heard one: in Falco's lead to Corneria's waterfall (S14), flown by
+Slippy, Fox's 2185 at `CO S14:19` still asks Falco where he is going. It plays as Peppy's 20267 (Peppy calls Slippy
+back, his line from Slippy's fly-in at `CO S51:3`). Falco's own lines in S14 (2181, 2188) stay dropped: Slippy
+recorded no lead lines (searched in the decoded texts; the "follow me" lines are Falco's and James's).
+
 ## Consequences
 
 - The table is fixed data keyed by the shared choice of substitute (0012 rule 2), so every client plays the same line
   on the same frame; the radio state the hash already holds stays equal.
 - A test checks that, with the client flying Falco on Corneria, the rescue plays 2062, 2061 and 2336 and none of
-  Falco's 2166, 2167, 2337.
+  Falco's 2166, 2167, 2337, and that Fox's 2185 never plays while a human flies Falco.
 - A listening pass on a real run is still owed; if a line sounds wrong, its row changes.
 - Next rows to fill: the other rescues of the #59 table (Area 6, Sector Y, Solar, Zoness, Macbeth, Titania) and
   Peppy as the substitute.
