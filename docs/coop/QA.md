@@ -168,6 +168,17 @@ number of clients, transport.
    on the two reports must name `gPlayer[1]`. `desync_three` does it with a third game that stays in step, and
    `desync_control` with `SF64_COOP_TEST_NO_DESYNC_CHECK`: the hashes differ and nobody says so. The poke in `full`
    is checked the same way, and every scenario that compares two games also checks that neither wrote a report.
+   `python tools/coop/campaign.py` (WP-32, #28, unattended, exit code 0 when every level passed) is the campaign with
+   two real clients: per level a host and a client through the join driver, the level started as the lobby's
+   "Start at" does (#211), a pilot on each client flying its own player (`SF64_COOP_LOCKSTEP_PILOT`) and `gInvincible`
+   on both unless `--mortal`. The levels run in the order of a route (`--route blue|red|owner|all`, the map's paths in
+   `fox_map.c`, or `--levels`), each as a session of its own, so no route state goes from one to the next: lives,
+   score, lasers, team shields and medals start as for a new game. A level passes when the two games are equal on
+   every frame, hash log and input log, from its first frame to the map or whatever follows its level complete, with no
+   desync report, and player 0 reached level complete. One summary at the end: per level the result, the frames
+   compared, the frame of level complete and the downs per player. `--lock <file>` holds an flock for each level's
+   session, so other tests on the PC take turns. This is not the hand-played campaign of 2026-11-09 (issue #2), the
+   only `verified-playthrough`: no level here follows from the one before.
 4. **Network conditions (WP-27).** Lag, loss and reordering between the clients with a chaos relay, as in the hub's
    [network chaos testing](https://github.com/cranebeaker/coop-anything/blob/main/playbook/network-chaos-testing.md).
    The transport on its own already runs through that relay: `python tools/coop/net_test.py` (WP-20), which needs a
