@@ -64,8 +64,10 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   frozen    a client stops dead (SIGSTOP): the session ends on the transport's timeout, and it can be thawed.
   menu      the whole way through the real menu, with real widgets.
   full      all of Corneria: pilots fly it live, one on each client, then plain runs repeat what they flew. Takes a while.
-  scenes    all of Corneria with the client as Falco (#15): no scene shows a second Falco, his rescue goes to Slippy,
-            and gTeamShields[Falco] holds the client's shields while it flies. Rails only, about 3 minutes.
+  scenes    Corneria to Granga with the client as Falco (#15): no scene shows a second Falco, his rescue goes to Slippy,
+            gTeamShields[Falco] holds the client's shields while it flies, and no computer Falco joins the boss fight.
+  allrange  Katina with the client as Falco (#15): Falco's all-range slot is a body on the client's ship, and no
+            computer Falco flies while the client does.
   audio     the plain run with the two clients at different audio sample counts, as a radio line follows the sound thread.
   release   the plain run on a Release build (--release-exe) and on Debug: all four clients have to hash alike.
   vehicles  Titania, Aquas and Macbeth, the Landmaster and Blue Marine levels: same hash, both drive where co-op has opened.
@@ -1664,20 +1666,24 @@ CO_RESCUE_SCENE = 3
 TEAM_FALCO, TEAM_SLIPPY = 1, 2
 
 
-def team_lines(game):
-    """The team trace of a game (src/port/coop/test/team_trace.h), Corneria lines in a level only, as dicts."""
+def team_lines(game, level=0):
+    """The team trace of a game (src/port/coop/test/team_trace.h), lines in `level` (Corneria) while in play, as
+    dicts."""
     rows = []
     for line in (game.run / "team.txt").read_text(encoding="utf-8", errors="replace").splitlines():
         if line.startswith("#"):
             continue
         # p1 and scenes came with #15; a build from before reads as no player 1 and no choice, so it fails on its ships.
-        row = {"p1": "-1", "scenes": ",".join(["0"] * 16), **dict(field.split("=", 1) for field in line.split())}
-        if row["level"] == "0" and row["gs"] == "7":  # LEVEL_CORNERIA, GSTATE_PLAY
+        # ai and body came with the all-range part of #15; before it, a wingman read as nobody flying.
+        row = {"p1": "-1", "scenes": ",".join(["0"] * 16), "ai": "0,0,0", "body": "0,0,0",
+               **dict(field.split("=", 1) for field in line.split())}
+        if row["level"] == str(level) and row["gs"] == "7":  # GSTATE_PLAY
             rows.append({k: [int(v) for v in value.split(",")] if "," in value else value for k, value in row.items()})
     return rows
 
 
-SCENES_FRAMES = 7000  # Corneria's rails to before Granga: the rescue (S59) starts near 5000 in the pilots' flight
+SCENES_FRAMES = 8500  # Corneria's rails and the start of Granga: the rescue (S59) starts near 5000 in the pilots'
+# flight, Granga near 7140 (docs/coop/NOTES.md)
 
 
 def fly_for(args, folder, frames, extra_env):
@@ -1721,9 +1727,45 @@ def sc_scenes(args, folder):
         expect(not wrong, f"{game.name}: gTeamShields[Falco] {wrong[0]['team'][0] if wrong else 0} while player 1 "
                           f"has {wrong[0]['p1'] if wrong else 0}, frame {wrong[0]['frame'] if wrong else 0}")
         shields = sorted({int(l["p1"]) for l in flying})
+        # Boss fight (0006 rule 3): no computer Falco beside the human, the computer wingmen as before.
+        boss = [l for l in lines if l["ai"][0] > 0]
+        expect(not boss, f"{game.name}: a computer Falco flies at the boss from frame {boss[0]['frame'] if boss else 0}")
+        others = [l for l in lines if l["ai"][1] + l["ai"][2] > 0]
+        expect(others, f"{game.name}: no computer wingman flew at the boss in {frames} frames")
         found.append(f"{game.name}: {len(flying)} lines with player 1 flying, shields {shields[0]}..{shields[-1]}, "
-                     f"Falco's rescue to Slippy from frame {rescue[0]['frame']}")
-    return f"{frames} frames of Corneria's rails, {equal} frames equal; " + "; ".join(found)
+                     f"Falco's rescue to Slippy from frame {rescue[0]['frame']}, computer wingmen at the boss from "
+                     f"frame {others[0]['frame']} and no Falco among them")
+    return f"{frames} frames of Corneria to Granga, {equal} frames equal; " + "; ".join(found)
+
+
+ALLRANGE_LEVEL = 16  # LEVEL_KATINA: all-range from the start
+ALLRANGE_FRAMES = 4000
+
+
+def sc_allrange(args, folder):
+    """#15: on Katina the client flies Falco. While it flies, Falco's slot holds a body on the client's ship and no
+    computer Falco flies; Slippy and Peppy fly as before (decision 0006 rule 3, all-range)."""
+    frames = ALLRANGE_FRAMES
+    host, client = run_short(args, folder, frames=frames, host_env={"SF64_COOP_JOIN_LEVEL": str(ALLRANGE_LEVEL)},
+                             both={"SF64_COOP_TEAM_TRACE": "team.txt"})
+    equal = compare(host, client, frames)
+    found = []
+    for game in (host, client):
+        lines = team_lines(game, ALLRANGE_LEVEL)
+        expect(lines, f"{game.name}: no Katina lines in the team trace")
+        play = [l for l in lines if l["p0"] == "3" and int(l["p1"]) >= 0]  # PLAYERSTATE_ACTIVE, player 1 flying
+        expect(play, f"{game.name}: player 1 never flew while player 0 was active")
+        ai = [l for l in play if l["ai"][0] > 0]
+        expect(not ai, f"{game.name}: a computer Falco flies beside player 1 on {len(ai)} of {len(play)} lines, "
+                       f"first at frame {ai[0]['frame'] if ai else 0}")
+        off = [l for l in play if l["body"][0] != 1]
+        expect(not off, f"{game.name}: Falco's body is not on player 1 (body={off[0]['body'][0] if off else 0}) on "
+                        f"{len(off)} of {len(play)} lines, first at frame {off[0]['frame'] if off else 0}")
+        others = [l for l in play if l["ai"][1] + l["ai"][2] > 0]
+        expect(others, f"{game.name}: Slippy and Peppy never flew")
+        found.append(f"{game.name}: {len(play)} lines in play, Falco's body on player 1 in all of them, "
+                     f"computer Slippy or Peppy in {len(others)}")
+    return f"{frames} frames of Katina, {equal} frames equal; " + "; ".join(found)
 
 
 def play_states(game):
@@ -2387,6 +2429,7 @@ SCENARIOS = {
     "menu": sc_menu,
     "full": sc_full,
     "scenes": sc_scenes,
+    "allrange": sc_allrange,
     "audio": sc_audio,
     "release": sc_release,
     "rates": sc_rates,
@@ -2400,7 +2443,7 @@ SCENARIOS = {
     "bosses": sc_bosses,
     "other_bosses": sc_other_bosses,
 }
-LONG = ("full", "scenes", "audio", "release", "rates", "vehicles", "vehicle_end", "bosses", "other_bosses")
+LONG = ("full", "scenes", "allrange", "audio", "release", "rates", "vehicles", "vehicle_end", "bosses", "other_bosses")
 
 
 def main():

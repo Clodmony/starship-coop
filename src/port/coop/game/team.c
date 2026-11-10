@@ -4,6 +4,8 @@
 #include "port/coop/session/session.h"
 
 #include "global.h"
+#include "sfx.h"
+#include "port/hooks/Events.h"
 
 // ---- 0006 rules 1 and 4: the value -------------------------------------------------------------------------------
 
@@ -308,6 +310,144 @@ int32_t CoopTeam_SceneTeam(Actor* actor, int32_t teamId) {
         return teamId;
     }
     return sub;
+}
+
+// ---- 0006 rule 3: the all-range body and the boss fights ---------------------------------------------------------
+
+// ActorAllRangeState is local to src/engine/fox_360.c:13; these are two of its values.
+#define COOP_STATE360_3 3
+#define COOP_STATE360_6 6 // a wingman that went down, on its way out
+
+// The player index that flies `teamId`, or -1.
+static s32 CoopTeam_PlayerOf(s32 teamId) {
+    s32 i;
+
+    for (i = 1; i < CoopPlayers_Count(); i++) {
+        if (CoopTeam_OfPlayer(i) == teamId) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// `actor` is the all-range wingman in the slot of a human-flown character: gActors[1] to [3], spawned by
+// ActorAllRange_SpawnTeam (src/engine/fox_360.c:376) with aiType equal to the slot.
+static s32 CoopTeam_IsBodySlot(const Actor* actor) {
+    s32 slot;
+
+    if ((actor == NULL) || !CoopPlayers_IsCoop() || (gLevelMode != LEVELMODE_ALL_RANGE) ||
+        (actor->obj.id != OBJ_ACTOR_ALLRANGE)) {
+        return 0;
+    }
+    slot = actor - gActors;
+    if ((slot < TEAM_ID_FALCO) || (slot > TEAM_ID_PEPPY) || (actor->aiType != slot)) {
+        return 0;
+    }
+    return CoopTeam_IsHuman(slot);
+}
+
+// The body holds the slot while the level is played. In the intro and the level-clear scenes the game's own wingman
+// flies, as a scene keeps its stand-in on rails (0006 C1): those scenes move gActors[1] to [3] themselves.
+static s32 CoopTeam_BodyInPlay(void) {
+    return (gPlayer[0].state == PLAYERSTATE_ACTIVE) || (gPlayer[0].state == PLAYERSTATE_DOWN);
+}
+
+// The human flies the character of `actor`'s slot: joined, not parked, and up.
+static Player* CoopTeam_BodyFlier(const Actor* actor) {
+    s32 index = CoopTeam_PlayerOf(actor->aiType);
+
+    if ((index < 0) || CoopPlayers_IsParked(index) || (gTeamShields[actor->aiType] <= 0)) {
+        return NULL;
+    }
+    return &gPlayer[index];
+}
+
+// A frame of the body in place of the wingman's AI, collision and draw: on its human, so enemies aimed at the slot
+// (src/engine/fox_360.c:453, :1874-1880) aim at the human with their own code. gNoHitbox, not timer_0C2, keeps shots
+// and ships off it, as enemies read timer_0C2 (:1948). With its human down or not flying it waits in COOP_STATE360_6, the
+// state of a wingman that went down, which enemies leave (:1876), with timer_0C2 as the game sets it there (:1475).
+static void CoopTeam_HoldBody(Actor* actor) {
+    Player* player = CoopTeam_BodyFlier(actor);
+
+    if (actor->info.hitbox != gNoHitbox) { // the first frame as a body: the wingman's engine stops with its AI
+        actor->info.hitbox = gNoHitbox;
+        Audio_KillSfxBySource(actor->sfxSource);
+    }
+    if (player == NULL) {
+        actor->state = COOP_STATE360_6;
+        actor->timer_0C2 = 10000;
+        actor->iwork[1] = 0;
+        return;
+    }
+    actor->obj.pos = player->pos;
+    actor->vel = player->vel;
+    actor->timer_0C2 = 0;
+    if (actor->state == COOP_STATE360_6) {
+        actor->state = COOP_STATE360_3; // back from down: free to be chosen as a target again (:1947-1951)
+    }
+}
+
+// Out of play the game's wingman flies again: its hitbox and engine back as ActorAllRange_SpawnTeam set them.
+static void CoopTeam_ReleaseBody(Actor* actor) {
+    if (actor->info.hitbox == gNoHitbox) {
+        actor->info.hitbox = SEGMENTED_TO_VIRTUAL(gTeamHitbox);
+        AUDIO_PLAY_SFX(NA_SE_ARWING_ENGINE_FG, actor->sfxSource, 4);
+    }
+}
+
+static void CoopTeam_OnObjectUpdate(IEvent* event) {
+    ObjectUpdateEvent* ev = (ObjectUpdateEvent*) event;
+    Actor* actor;
+
+    if (ev->type != OBJECT_TYPE_ACTOR) {
+        return;
+    }
+    actor = (Actor*) ev->object;
+    if (!CoopTeam_IsBodySlot(actor)) {
+        return;
+    }
+    if (!CoopTeam_BodyInPlay()) {
+        CoopTeam_ReleaseBody(actor);
+        return;
+    }
+    CoopTeam_HoldBody(actor);
+    ev->event.cancelled = true;
+}
+
+static void CoopTeam_OnObjectDrawPreSetup(IEvent* event) {
+    ObjectDrawPreSetupEvent* ev = (ObjectDrawPreSetupEvent*) event;
+
+    if ((ev->type == OBJECT_TYPE_ACTOR) && CoopTeam_IsBodySlot((Actor*) ev->object) && CoopTeam_BodyInPlay()) {
+        ev->event.cancelled = true;
+    }
+}
+
+int32_t CoopTeam_Body(const Actor* actor) {
+    Player* player;
+
+    if (!CoopTeam_IsBodySlot(actor) || (actor->obj.status != OBJ_ACTIVE) || (actor->info.hitbox != gNoHitbox)) {
+        return COOP_TEAM_BODY_NONE;
+    }
+    if (actor->state == COOP_STATE360_6) {
+        return COOP_TEAM_BODY_AWAY;
+    }
+    player = CoopTeam_BodyFlier(actor);
+    if ((player != NULL) && (actor->obj.pos.x == player->pos.x) && (actor->obj.pos.y == player->pos.y) &&
+        (actor->obj.pos.z == player->pos.z)) {
+        return COOP_TEAM_BODY_ON;
+    }
+    return COOP_TEAM_BODY_OFF;
+}
+
+int32_t CoopTeam_LeavesBossFight(int32_t teamId) {
+    // Titania's ActorTeamBoss is Slippy's escape from Goras, a story scene, not a fight wingman (src/engine/fox_hud.c,
+    // ActorTeamBoss_Init): it stays as the game has it until the Slippy lines of 0006 D are listed.
+    return CoopTeam_IsHuman(teamId) && (gCurrentLevel != LEVEL_TITANIA);
+}
+
+void CoopTeam_Init(void) {
+    REGISTER_LISTENER(ObjectUpdateEvent, CoopTeam_OnObjectUpdate, EVENT_PRIORITY_NORMAL);
+    REGISTER_LISTENER(ObjectDrawPreSetupEvent, CoopTeam_OnObjectDrawPreSetup, EVENT_PRIORITY_NORMAL);
 }
 
 int32_t CoopTeam_SceneMessage(Actor* actor, int32_t* msgId, int32_t* speaker) {

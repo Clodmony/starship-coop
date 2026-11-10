@@ -283,28 +283,28 @@ Basis per site: read 344, site 891, name 497.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `HUD_TeamDownWrench_Draw` | 199:P0 | view | site | player 0 state |
-| `HUD_TeamShields_Draw` | 519:P0 | view | site | player 0 state |
-| `HUD_PauseScreen_Update` | 1488:P0, 1498:P0, 1610:P0, 1612:P0 | flow | site | pause menu retry and quit set player 0 state only |
-| `HUD_RadarMark_Arwing_Draw` | 1800:CC | setup | site | gCamCount != 1 as versus flag |
-| `HUD_RadarMark_Draw` | 1887:CC | setup | site | gCamCount != 1 as versus flag |
-| `HUD_RadarWindow_Draw` | 1967:CC | setup | site | gCamCount != 1 as versus flag |
-| `HUD_RadarMarks_Setup` | 1994:CC | setup | site | loops players for radar marks |
-| `HUD_PlayerShieldGauge_Update` | 2454:P0 | sim | site | gold ring heal goes to player 0; the gauge shows the local player (#30) |
-| `HUD_RadioDamage_Type` | 2586:P0 | view | site | player 0 radio damage |
-| `HUD_Draw` | 3821:CC | setup | site | gCamCount != 1 draws the versus HUD |
-| `FoBase_ExplodeCs` | 3893:P0 | flow | site | Fortuna base explosion cutscene on player 0 |
-| `ActorTeamBoss_SlippyEscapeFromTiBoss` | 4097:P0, 4099:P0, 4100:P0, 4101:P0, 4109:P0, 4111:P0 | sim | site | wingman AI flies relative to player 0 |
-| `ActorTeamBoss_FlyAlongPlayer` | 4246:P0, 4248:P0, 4249:P0, 4250:P0, 4253:P0 | sim | site | wingmen fly alongside player 0 |
-| `ActorTeamBoss_SetAction` | 4330:P0 | flow | site | player 0 level complete |
-| `ActorTeamBoss_HandleDamage` | 4559:SH, 4573:SH, 4587:SH | flow | read | friendly lines only for player 0's hit, WP-17 (#15); the enemy line is enemies only since #86, so players 1 and up get no line |
-| `ActorTeamBoss_DmgEffect` | 4617:P0 | flow | site | player 0 level complete |
-| `ActorTeamBoss_UTurn` | 4801:P0 | sim | site | player 0 path height |
-| `ActorTeamBoss_Update` | 4913:P0, 4920:P0 | flow | site | player 0 level complete |
-| `Aquas_CsIntroActors_Update` | 4955:P0 | flow | site | Aquas intro on player 0 |
-| `Aquas_Effect363_Update` | 5498:P0 | view | site | bubbles around player 0 |
-| `Aquas_Effect363_Draw` | 5555:P0 | view | site | player 0 intro state |
-| `Venom1_LevelStart2` | 6173:P0 | flow | site | level start sets player 0 speed |
+| `HUD_TeamDownWrench_Draw` | 200:P0 | view | site | player 0 state |
+| `HUD_TeamShields_Draw` | 520:P0 | view | site | player 0 state |
+| `HUD_PauseScreen_Update` | 1489:P0, 1499:P0, 1611:P0, 1613:P0 | flow | site | pause menu retry and quit set player 0 state only |
+| `HUD_RadarMark_Arwing_Draw` | 1801:CC | setup | site | gCamCount != 1 as versus flag |
+| `HUD_RadarMark_Draw` | 1888:CC | setup | site | gCamCount != 1 as versus flag |
+| `HUD_RadarWindow_Draw` | 1968:CC | setup | site | gCamCount != 1 as versus flag |
+| `HUD_RadarMarks_Setup` | 1995:CC | setup | site | loops players for radar marks |
+| `HUD_PlayerShieldGauge_Update` | 2455:P0 | sim | site | gold ring heal goes to player 0; the gauge shows the local player (#30) |
+| `HUD_RadioDamage_Type` | 2587:P0 | view | site | player 0 radio damage |
+| `HUD_Draw` | 3822:CC | setup | site | gCamCount != 1 draws the versus HUD |
+| `FoBase_ExplodeCs` | 3894:P0 | flow | site | Fortuna base explosion cutscene on player 0 |
+| `ActorTeamBoss_SlippyEscapeFromTiBoss` | 4098:P0, 4100:P0, 4101:P0, 4102:P0, 4110:P0, 4112:P0 | sim | site | wingman AI flies relative to player 0 |
+| `ActorTeamBoss_FlyAlongPlayer` | 4247:P0, 4249:P0, 4250:P0, 4251:P0, 4254:P0 | sim | site | wingmen fly alongside player 0 |
+| `ActorTeamBoss_SetAction` | 4331:P0 | flow | site | player 0 level complete |
+| `ActorTeamBoss_HandleDamage` | 4560:SH, 4574:SH, 4588:SH | flow | read | friendly lines only for player 0's hit, WP-17 (#15); the enemy line is enemies only since #86, so players 1 and up get no line |
+| `ActorTeamBoss_DmgEffect` | 4618:P0 | flow | site | player 0 level complete |
+| `ActorTeamBoss_UTurn` | 4802:P0 | sim | site | player 0 path height |
+| `ActorTeamBoss_Update` | 4915:P0, 4922:P0 | flow | site | player 0 level complete |
+| `Aquas_CsIntroActors_Update` | 4957:P0 | flow | site | Aquas intro on player 0 |
+| `Aquas_Effect363_Update` | 5500:P0 | view | site | bubbles around player 0 |
+| `Aquas_Effect363_Draw` | 5557:P0 | view | site | player 0 intro state |
+| `Venom1_LevelStart2` | 6175:P0 | flow | site | level start sets player 0 speed |
 
 ### `src/engine/fox_play.c`
 

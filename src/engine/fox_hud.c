@@ -6,6 +6,7 @@
 #include "port/mods/PortEnhancements.h"
 #include "port/coop/game/players.h" // COOP: the HUD shows the client's own player (#30)
 #include "port/coop/game/score.h"   // COOP: the team's pool of lives (#210)
+#include "port/coop/game/team.h"    // COOP: no boss-fight wingman for a human-flown character (#15)
 
 Vec3f D_801616A0;
 Vec3f D_801616B0;
@@ -4866,7 +4867,8 @@ void ActorTeamBoss_Init(ActorTeamBoss* this) {
         Object_Kill(&this->obj, this->sfxSource);
     }
 
-    if (gTeamShields[this->aiType] <= 0) {
+    // COOP: nor for a character a human flies, who takes the wingman's place in the fight (decision 0006 rule 3, #15)
+    if ((gTeamShields[this->aiType] <= 0) || CoopTeam_LeavesBossFight(this->aiType)) {
         Object_Kill(&this->obj, this->sfxSource);
     }
 }

@@ -1874,6 +1874,53 @@ Unknown:
 - Macbeth's `D_MA_801BE250` and the Blue Marine state (0009, item 6): not touched; both levels stay parked.
 - Two machines: everything above ran on one PC.
 
+### 2026-11-10, #15 (WP-17), the all-range body and the boss fights, first run
+
+Identity: ROM US 1.0, branch `issue/15-wingman-allrange` on `6204f57a` (#212), Windows 11, MSVC v143, Debug, two
+games over loopback (`lockstep_test.py --only allrange,scenes`), no window. "Before" is `6204f57a` with the new trace
+fields and a `CoopTeam_Body` that always says "no body".
+
+Observed in the code:
+
+- All-range wingmen are `gActors[1]` to `[3]`, spawned by `ActorAllRange_SpawnTeam` (`src/engine/fox_360.c:376`) with
+  `aiType` equal to the slot, and only while `gTeamShields[i] > 0` (`:382`). Katina spawns them inside its intro
+  scene (`src/overlays/ovl_i4/fox_ka.c:413`), the other all-range levels at level load (`src/engine/fox_play.c:2966`).
+- A wingman going down sets `STATE360_6` and from then on writes -1 to `gTeamShields` every frame
+  (`src/engine/fox_360.c:1445-1480`). Cancelling the actor's update for a body also stops those writes.
+- An enemy that left a target comes back to it when the slot is active with `timer_0C2 == 0`, without reading the
+  state (`src/engine/fox_360.c:1947-1951`); it leaves on `STATE360_6` (`:1876`). So a body that waits in
+  `STATE360_6` also needs the game's `timer_0C2` of 10000 there (`:1475`), or enemies would turn to it and away again.
+- `ActorAllRange_Update`'s state enum is local to `src/engine/fox_360.c:13`.
+- Boss-fight wingmen (`ActorTeamBoss`) already remove themselves at init when the value is at or below 0
+  (`src/engine/fox_hud.c`, `ActorTeamBoss_Init`). On Titania the same actor is Slippy's escape from Goras, with a
+  write of 255 to his value.
+
+Observed in runs (client flying Falco):
+
+| | before | this branch |
+|---|---|---|
+| `allrange`, Katina, 4000 frames | fails: a computer Falco flies beside player 1 on 28 of 28 trace lines in play | passes: Falco's body on player 1 on all 37 lines in play, a computer Slippy or Peppy on all 37 |
+| `scenes`, Corneria to Granga, 8500 frames | fails: a computer Falco at the boss from frame 7140 | passes: computer wingmen at the boss from frame 7140, no Falco among them |
+| Host and client hash logs | | equal on all frames of both runs, no desync report |
+
+Derived:
+
+- With the update cancelled the body runs none of the wingman's own lines (calls for help, thanks, retreat), as 0006
+  rule 5 asks for all-range. The own-action lines in level code (`src/overlays/ovl_i4/fox_sz.c:309-352`) are not
+  touched.
+
+Unknown:
+
+- The body's away state: player 1 did not go down in the Katina run, so `STATE360_6` for a body and the way back
+  from it were not run.
+- The hand-back to the game's wingman in the intro and level-clear scenes: not checked by these runs (the check looks
+  only at lines with player 0 active, and no level was cleared).
+- The other all-range levels (Fortuna, Bolse, Sector Z, Venom 2) and the other boss fights.
+- Titania's escape scene with a human Slippy: left as the game has it, not run.
+- Whether level code reads fields of `gActors[1]` to `[3]` that a body no longer updates (the speed at
+  `src/engine/fox_360.c:1641` named in 0006).
+- US 1.1.
+
 ### 2026-11-09, #15 (WP-17), a human-flown wingman's value and its scenes, first run
 
 Identity: ROM US 1.0, branch `issue/15-wingman-replacement` on `0e5a5cf6`, Windows 11, MSVC v143, Debug, two games
