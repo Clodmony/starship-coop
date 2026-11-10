@@ -13,6 +13,7 @@
 #include "global.h"
 #include "port/coop/game/input.h"
 #include "port/coop/game/players.h"
+#include "port/coop/game/save.h"
 #include "port/coop/log/coop_log.h"
 #include "port/coop/math/atan.h"
 #include "port/coop/math/sincos.h"
@@ -290,6 +291,9 @@ void CoopSyncGame_Receive(int peer, uint16_t msgId, const uint8_t* data, uint16_
 }
 
 void CoopSyncGame_End(void) {
+    // Every way a session ends comes through here, the host's leaving and a failure included: this game's own save
+    // back from its file (decision 0009 item 8). Nothing if the session never got to its level start.
+    CoopSave_Leave();
     if (sState == SYNC_RUNNING) {
         CoopInput_ClearSources();
         CoopLog_Write(COOP_LOG_LOCKSTEP, false, "lockstep ended at frame %u: %u frames held for %u ms in all",

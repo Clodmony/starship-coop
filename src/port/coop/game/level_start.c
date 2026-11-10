@@ -21,13 +21,6 @@ void Map_LevelStart_AudioSpecSetup(LevelId level);
 // src/audio/audio_general.c: the audio spec the game last asked for
 extern u8 sAudioSpecId;
 
-// src/engine/fox_play.c
-extern u8 sSaveSlotFromLevel[20];
-
-// What the last level start this game entered said about the host's save (#191).
-static s32 sClearedLevel = -1;
-static bool sCleared = false;
-
 // What a level reads and level init does not set, so what a game brings along from before. The order is the wire order
 // (PROTOCOL.md): a change here is a new COOP_PROTOCOL_VERSION.
 #define LEVEL_START_TABLE(X)            \
@@ -73,7 +66,6 @@ _Static_assert((0 LEVEL_START_TABLE(START_COUNT)) == COOP_LEVEL_START_VALUES,
                "COOP_LEVEL_START_VALUES does not match the table");
 _Static_assert(LEVEL_VERSUS == COOP_LEVEL_START_LEVELS, "COOP_LEVEL_START_LEVELS is not the first level left out");
 _Static_assert(sizeof(gLaserStrength[0]) == sizeof(s32), "gLaserStrength is not read as it is stored");
-_Static_assert(ARRAY_COUNT(sSaveSlotFromLevel) == COOP_LEVEL_START_LEVELS, "a level start level has no save slot");
 
 static int32_t Row_Get(const StartRow* row, s32 i) {
     switch (row->size) {
@@ -113,9 +105,7 @@ void CoopLevelStart_FromGame(CoopLevelStart* out, uint8_t level, uint8_t phase) 
             out->values[n++] = Row_Get(&sRows[r], i);
         }
     }
-    if (level < COOP_LEVEL_START_LEVELS) {
-        out->cleared = gSaveFile.save.data.planet[sSaveSlotFromLevel[level]].normalClear ? 1 : 0;
-    }
+    CoopSave_FromGame(out->save);
 }
 
 // What a level sets up on its first frame and the state hash already reads before that frame: Player_Setup
@@ -149,8 +139,6 @@ void CoopLevelStart_Enter(const CoopLevelStart* start) {
             Row_Set(&sRows[r], i, start->values[n++]);
         }
     }
-    sClearedLevel = start->level;
-    sCleared = start->cleared != 0;
     LevelStart_ClearSetupValues();
     CoopPlayers_SetRoster(start->roster);
     gMainController = 0; // team-wide input is player 0's slot on every client, whichever port this PC's title found
@@ -170,8 +158,4 @@ void CoopLevelStart_Enter(const CoopLevelStart* start) {
     // (Game_ChangeScene loads no scene), so it is in step with the others only if they come from that scene too.
     sAudioSpecId = AUDIOSPEC_24;
     Map_LevelStart_AudioSpecSetup((LevelId) start->level);
-}
-
-int32_t CoopLevelStart_Cleared(int32_t level) {
-    return sCleared && (level == sClearedLevel);
 }

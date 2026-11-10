@@ -18,8 +18,6 @@
 //   SF64_COOP_LOCKSTEP_MUTE=<frame>    stop sending input from this frame on, with the connection left up
 //   SF64_COOP_LOCKSTEP_POKE=<frame>    flip a bit of game state on this frame, as SF64_COOP_HASH_POKE does
 //   SF64_COOP_LOCKSTEP_SLOW=<n>:<ms>   every n frames this game takes that much longer
-//   SF64_COOP_LOCKSTEP_CLEARED=1       this game's save says Corneria is cleared, from boot on; saves are each
-//                                      client's own, and a host's level start carries it (#191)
 //   SF64_COOP_LOCKSTEP_ZERO_SEED=<frame>:<n>  sRandSeed<n> is 0 from this frame on, as a stray write leaves it
 //   SF64_COOP_LOCKSTEP_ITEM=<frame>:<player>[:<kind>[:<setup>]]  on this frame (#201) the setup is made (a sum of 1
 //                                      player 0's wings broken, 2 player 1's wings broken, 4 player 0 twin lasers, 8

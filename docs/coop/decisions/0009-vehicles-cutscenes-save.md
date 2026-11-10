@@ -1,7 +1,9 @@
 # 0009: Vehicles, cutscene timing and save
 
-- Status: Proposed; item 6 Accepted (V1 with V2 until each level is proven)
-- Date: 2026-11-06 (proposed), 2026-11-08 (item 6 accepted by the owner, as proposed)
+- Status: Proposed; item 6 Accepted (V1 with V2 until each level is proven); item 8 Accepted (S1, changed: no machine
+  writes a real save in a session, the host's copy is sent once at the start)
+- Date: 2026-11-06 (proposed), 2026-11-08 (item 6 accepted by the owner, as proposed), 2026-11-10 (item 8 accepted by
+  the owner as S1, changed)
 - Issue: #7
 
 This record covers `DESIGN.md` section 4, items 6, 7 and 8. Each item has its own options and one recommendation, so the
@@ -238,7 +240,7 @@ Unknown:
 
 ## Decision
 
-Item 6 is accepted. Items 7 and 8 are proposed, for the owner to accept one by one.
+Items 6 and 8 are accepted. Item 7 is proposed, for the owner to accept.
 
 **Item 6: V1, with V2 until each level is proven.** Accepted by the owner on 2026-11-08. Every player gets the level's vehicle, on player 0's path. WP-18
 opens one level at a time, Landmaster first; a level it has not passed keeps today's behaviour. The character a player
@@ -249,7 +251,25 @@ is sent for cutscenes, radio or intros. Pace follows the slowest client. A clien
 them through player 0's camera. A client cannot pause or skip in v1; T2 for pause alone is the first thing to add if
 players miss it.
 
-**Item 8: S1.** A client's "throwaway save" is a copy of the host's, not a blank one. Only the host's disk is written.
+**Item 8: S1, changed.** Accepted by the owner on 2026-11-10, after the first real session parted on the map because
+the two PCs held two different saves (NOTES.md, 2026-11-10, the map and the host's save). The host's progress is the
+session's save, and every game, the host's too, plays the session on a copy of it in memory. The owner changed S1 in
+two points: **no machine writes a real save during a session, the host's included**, and the host's copy is sent
+**once, at the session start**, not per level. In the owner's words: sync the host's save to the clients, a dedicated
+save per online session, no fiddling with the game code. Chosen over keeping the host's real file as the session's
+save (S1 as proposed) and over a fixed all-cleared copy with nothing sent. What that means:
+
+- At the level start that begins the session the host sends its `Save` (`SESSION_SAVE`, PROTOCOL.md), just ahead of the
+  level start; every game takes the progress (planets, rankings, the ending-seen byte) before it simulates a frame and
+  keeps its own sound settings and language bytes. No re-send per level: every `Save_Write` of a session runs on every
+  game on the same frame (Derived, above), and no write runs on one machine only (NOTES.md, 2026-11-10).
+- `Save_WriteData` writes nothing while the session runs (one `// COOP:` line in `src/sys/sys_joybus.c`); every end of
+  a session, a failure or the host's leaving included, reads each game's own save back from its file. Every
+  `default.sav` is byte for byte as before the session. What a session earns is not kept, on any machine; S3 (a merge)
+  can still come later.
+- The progress is in the state hash (region `globals`), so a copy that drifted is a desync with `gSaveFile` named.
+  That is the save hash at the session start, frame 0's hash being the first one compared.
+- `CoopLevelStart.cleared` (#191) is gone: the intro skip reads `gSaveFile` again, as upstream does.
 
 ## Consequences
 
@@ -267,9 +287,11 @@ To do, once accepted:
   Its "Done when" names Titania and Aquas; Macbeth is the third level.
 - **WP-19 (#17):** pin the three pause-menu reads to slot 0 in co-op.
 - **WP-24 (#22):** send the `Save` and `gExpertMode` before the first simulated frame, with a message id in
-  `PROTOCOL.md`. Compare a save hash in the handshake or at session start.
+  `PROTOCOL.md`. Compare a save hash in the handshake or at session start. Done: `gExpertMode` is a level start value,
+  the `Save` is `SESSION_SAVE` (0x0017), and the save is in the state hash from frame 0 on (2026-11-10).
 - **WP-28 (#30):** player 0's camera while the local player is parked; keep `Radio_Draw` and the status screens running
   once per frame; fix the index of `gLifeCount[gPlayerNum]` with the record for item 2.
 - **Save gate:** `Save_WriteData` in co-op on clients, `Save_Read()` at session end, including when the host leaves.
+  Done, on every game, the host's too (item 8 as accepted, 2026-11-10).
 - **Not decided here:** lives, respawn, routes, score (`DESIGN.md` items 2 to 5), and what a human-flown wingman is
   (#85).

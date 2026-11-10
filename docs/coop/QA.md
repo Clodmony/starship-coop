@@ -238,6 +238,23 @@ Newest first. One block per run that matters (a milestone, a release, a QA level
 
 ```
 date:       2026-11-10
+commit:     issue/map-host-save-impl, code 00a34694 (build 00a3469451fe) and 4bbf2898 (build 4bbf289836e3, the same
+            code and docs), on issue/combined-test-4 b98c3870; base b98c38708b44
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window, 2 clients over loopback through
+            the join driver, lockstep, a pilot on each client, each game with its own save file (tools/coop/make_save.py)
+what ran:   python tools/coop/lockstep_test.py --only map_saves, map_saves_host_full, map_saves_equal, save, save_own,
+            full, handover, menu, leave (one scenario per run); join_test.py; hash_check.py base --base <coop 0e5a5cf6>
+result:     automated. Two different saves (decision 0009 item 8): equal on every frame from Corneria's level start
+            through the map into the next level (Meteo) and 300 frames of it: host blank and client all cleared 11689
+            frames, host all cleared and client blank 11449, both all cleared 11449. After the session every
+            default.sav byte for byte as before, the host's too, and each game's save in memory its own again; in the
+            session both held the host's progress, the client its own sound settings. On b98c38708b44 both orders part
+            at frame 10582, 41 frames into the map. save, save_own, full, handover, menu, leave: ok; join_test 5/5;
+            co-op off equal to coop on all 5800 frames. Not covered: the alternate exit, two PCs, Windows, Release.
+```
+
+```
+date:       2026-11-10
 commit:     issue/181-views-later-parts (pilot_aim.c, views --pilot), on 80ff9be6
 identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window, one game per run (local index 0
             and 1, the second 6 frames ahead since boot, high and low audio sample counts), no transport, 2 players by

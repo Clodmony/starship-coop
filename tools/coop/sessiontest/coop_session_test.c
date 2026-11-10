@@ -2501,7 +2501,7 @@ static void Script_ClientPickRefused(void) {
 
 // ---- Level start on a scripted transport ----
 
-#define LEVEL_BYTES (2 + COOP_SESSION_PLAYERS + 4 * COOP_LEVEL_START_VALUES + 1)
+#define LEVEL_BYTES (2 + COOP_SESSION_PLAYERS + 4 * COOP_LEVEL_START_VALUES)
 #define TEST_LEVEL 5
 #define TEST_PHASE 1
 
@@ -2509,6 +2509,29 @@ static void Script_ClientPickRefused(void) {
 // byte shows. session_test.py computes the same.
 static int32_t Level_Value(int i) {
     return (int32_t) (0x9E3779B1u * (uint32_t) (i + 1));
+}
+
+// One byte for each position of the save, none of them 0, so that a lost, a shifted or a cleared byte shows.
+// session_test.py computes the same.
+static uint8_t Save_Value(int i) {
+    return (uint8_t) (1 + (i * 37 + 11) % 255);
+}
+
+// The host's save as PROTOCOL.md gives it: 256 bytes, sent as they are.
+static void Save_Bytes(uint8_t* out) {
+    int i;
+
+    for (i = 0; i < COOP_SAVE_SIZE; i++) {
+        out[i] = Save_Value(i);
+    }
+}
+
+// The host's save, from the host: what a client needs ahead of any level start.
+static void Script_SaveMsg(Script* t) {
+    uint8_t bytes[COOP_SAVE_SIZE];
+
+    Save_Bytes(bytes);
+    Script_Message(t, 0, COOP_MSG_SESSION_SAVE, bytes, sizeof(bytes));
 }
 
 static void Level_Fill(CoopLevelStart* start, uint8_t level, uint8_t phase) {
@@ -2520,7 +2543,7 @@ static void Level_Fill(CoopLevelStart* start, uint8_t level, uint8_t phase) {
     for (i = 0; i < COOP_LEVEL_START_VALUES; i++) {
         start->values[i] = Level_Value(i);
     }
-    start->cleared = 1;
+    Save_Bytes(start->save);
 }
 
 // The message as PROTOCOL.md gives it, written apart from the session's own code.
@@ -2541,7 +2564,6 @@ static void Level_Bytes(uint8_t* out, uint8_t level, uint8_t phase, uint8_t p0, 
         out[8 + 4 * i] = (uint8_t) (v >> 16);
         out[9 + 4 * i] = (uint8_t) (v >> 24);
     }
-    out[LEVEL_BYTES - 1] = 1; // cleared (#191)
 }
 
 static void Expect_Level(const char* name, const Side* side, uint8_t level, uint8_t phase, uint8_t p0, uint8_t p1,
@@ -2556,24 +2578,39 @@ static void Expect_Level(const char* name, const Side* side, uint8_t level, uint
     for (i = 0; i < COOP_LEVEL_START_VALUES; i++) {
         EXPECT(got->values[i] == Level_Value(i), name, "a value did not arrive as it was");
     }
-    EXPECT(got->cleared == 1, name, "the cleared flag did not arrive as it was");
+    for (i = 0; i < COOP_SAVE_SIZE; i++) {
+        EXPECT(got->save[i] == Save_Value(i), name, "a byte of the save did not arrive as it was");
+    }
 }
 
-// Since from, peer got the level start exactly once, on the reliable lane, with these bytes.
+// Since from, peer got the save and then the level start, each exactly once, on the reliable lane, with these bytes
+// for the level start and the host's save ahead of it.
 static void Expect_LevelTo(const char* name, const Script* t, uint32_t from, int peer, const uint8_t* want) {
+    uint8_t save[COOP_SAVE_SIZE];
     uint32_t n = 0;
+    uint32_t saves = 0;
 
+    Save_Bytes(save);
     for (; from < t->sentCount; from++) {
         const ScriptSent* m = &t->sent[from];
 
+        if (m->peer == peer && m->msgId == COOP_MSG_SESSION_SAVE) {
+            saves++;
+            EXPECT(n == 0, name, "the save came after the level start");
+            EXPECT(m->lane == COOP_NET_RELIABLE, name, "the save on the unreliable lane");
+            EXPECT(m->size == COOP_SAVE_SIZE && memcmp(m->data, save, COOP_SAVE_SIZE) == 0, name,
+                   "the save sent is not the host's");
+        }
         if (m->peer == peer && m->msgId == COOP_MSG_SESSION_LEVEL_START) {
             n++;
+            EXPECT(saves == 1, name, "a level start without the save ahead of it");
             EXPECT(m->lane == COOP_NET_RELIABLE, name, "a level start on the unreliable lane");
             EXPECT(m->size == LEVEL_BYTES && memcmp(m->data, want, LEVEL_BYTES) == 0, name,
                    "the level start sent is not what PROTOCOL.md says");
         }
     }
     EXPECT(n == 1, name, "a peer did not get the level start exactly once");
+    EXPECT(saves == 1, name, "a peer did not get the save exactly once");
 }
 
 // Who may start, and when: everyone who joined has to hold a character.
@@ -2850,14 +2887,19 @@ static void Script_LevelOutOfPlace(void) {
     EXPECT(CoopSession_Ignored(s) == 2, name, "a level start from a client was not dropped and counted");
     EXPECT(sides[0].levelStarts == 0 && sides[1].levelStarts == 0 && t.sentCount == sent, name,
            "a client started a level");
+    Script_SaveMsg(&t); // from player 2, which is no host
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(CoopSession_Ignored(s) == 3 && sides[0].left == 0 && t.sentCount == sent, name,
+           "a save from a client was not dropped and counted");
     CoopSession_Close(s);
 
     // Before the welcome nothing is real.
     s = Script_Client(&t, &side, &a);
+    Script_SaveMsg(&t);
     Script_Message(&t, 0, COOP_MSG_SESSION_LEVEL_START, bytes, sizeof(bytes));
     Drain(s, SCRIPT_T0, &side);
-    EXPECT(CoopSession_Ignored(s) == 1 && side.levelStarts == 0 && side.ended == 0, name,
-           "a level start before the welcome was not dropped and counted");
+    EXPECT(CoopSession_Ignored(s) == 2 && side.levelStarts == 0 && side.ended == 0, name,
+           "a save and a level start before the welcome were not dropped and counted");
     CoopSession_Close(s);
 }
 
@@ -2869,6 +2911,7 @@ static void Expect_BadLevel(const char* name, const uint8_t* data, uint16_t size
 
     Id_Default(&a);
     s = Script_Joined(&t, &side, &a, self);
+    Script_SaveMsg(&t); // so that it is the level start that is bad
     Script_Message(&t, 0, COOP_MSG_SESSION_LEVEL_START, data, size);
     Drain(s, SCRIPT_T0 + 2, &side);
     EXPECT(side.ended == 1 && side.end == COOP_SESSION_END_BAD_MESSAGE, name,
@@ -2886,9 +2929,34 @@ static void Expect_GoodLevel(const char* name, const uint8_t* data, uint8_t self
 
     Id_Default(&a);
     s = Script_Joined(&t, &side, &a, self);
+    Script_SaveMsg(&t);
     Script_Message(&t, 0, COOP_MSG_SESSION_LEVEL_START, data, LEVEL_BYTES);
     Drain(s, SCRIPT_T0 + 2, &side);
     EXPECT(side.levelStarts == 1 && side.ended == 0, name, "a good level start was not taken");
+    CoopSession_Close(s);
+}
+
+// A save the client cannot take, or a level start without one ahead of it, ends the client as a bad level start does.
+static void Expect_BadSave(const char* name, const uint8_t* save, uint16_t size, bool levelStart) {
+    uint8_t bytes[LEVEL_BYTES];
+    CoopIdentity a;
+    Script t;
+    Side side;
+    CoopSession* s;
+
+    Id_Default(&a);
+    Level_Bytes(bytes, TEST_LEVEL, TEST_PHASE, FOX, FALCO, NO_PLAYER, NO_PLAYER);
+    s = Script_Joined(&t, &side, &a, 1);
+    if (save != NULL || size != 0) {
+        Script_Message(&t, 0, COOP_MSG_SESSION_SAVE, save, size);
+    }
+    if (levelStart) {
+        Script_Message(&t, 0, COOP_MSG_SESSION_LEVEL_START, bytes, sizeof(bytes));
+    }
+    Drain(s, SCRIPT_T0 + 2, &side);
+    EXPECT(side.ended == 1 && side.end == COOP_SESSION_END_BAD_MESSAGE, name, "a bad save did not end the client");
+    EXPECT(side.levelStarts == 0, name, "a level started without the host's save");
+    EXPECT(t.disconnects[0] == 1, name, "a bad save left the connection up");
     CoopSession_Close(s);
 }
 
@@ -2901,6 +2969,7 @@ static void Script_ClientStart(void) {
     Side side;
     CoopSession* s;
     uint32_t sent;
+    uint32_t events;
 
     Id_Default(&a);
     Level_Bytes(bytes, TEST_LEVEL, TEST_PHASE, FOX, FALCO, SLIPPY, NO_PLAYER);
@@ -2910,6 +2979,12 @@ static void Script_ClientStart(void) {
     EXPECT(CoopSession_Pick(s, PEPPY), name, "a pick before the level start did not go out");
     sent = t.sentCount;
 
+    // The save alone is no event: the game takes it with the level start.
+    events = side.events;
+    Script_SaveMsg(&t);
+    Drain(s, SCRIPT_T0 + 2, &side);
+    EXPECT(side.levelStarts == 0 && side.ended == 0 && side.events == events && CoopSession_Ignored(s) == 0, name,
+           "the save alone did something");
     Script_Message(&t, 0, COOP_MSG_SESSION_LEVEL_START, bytes, sizeof(bytes));
     Drain(s, SCRIPT_T0 + 2, &side);
     Expect_Level(name, &side, TEST_LEVEL, TEST_PHASE, FOX, FALCO, SLIPPY, NO_PLAYER);
@@ -2918,11 +2993,20 @@ static void Script_ClientStart(void) {
     EXPECT(!CoopSession_Pick(s, PEPPY), name, "a pick went out after the level start");
     EXPECT(t.sentCount == sent, name, "a pick after the level start was sent");
 
-    // One level start per session: another one is out of place, not a new level.
+    // One level start per session: another one is out of place, not a new level, and so is another save.
     Script_Message(&t, 0, COOP_MSG_SESSION_LEVEL_START, bytes, sizeof(bytes));
     Drain(s, SCRIPT_T0 + 2, &side);
     EXPECT(side.levelStarts == 1 && CoopSession_Ignored(s) == 1 && side.ended == 0, name,
            "a second level start was not dropped and counted");
+    {
+        uint8_t other[COOP_SAVE_SIZE];
+
+        memset(other, 0x5A, sizeof(other));
+        Script_Message(&t, 0, COOP_MSG_SESSION_SAVE, other, sizeof(other));
+        Drain(s, SCRIPT_T0 + 2, &side);
+        EXPECT(CoopSession_Ignored(s) == 2 && side.ended == 0, name, "a save after the level start was not dropped");
+        Expect_Level(name, &side, TEST_LEVEL, TEST_PHASE, FOX, FALCO, SLIPPY, NO_PLAYER);
+    }
 
     // The roster lives on; what the level started from does not change with it.
     Script_RosterMsg(&t, FOX, NO_PLAYER, SLIPPY, NO_PLAYER);
@@ -2985,9 +3069,34 @@ static void Script_ClientStart(void) {
     Expect_BadLevel("level_last_holds_nothing", bytes, LEVEL_BYTES, 1);
     Level_Bytes(bytes, TEST_LEVEL, TEST_PHASE, FOX, FALCO, UNPICKED, NO_PLAYER);
     Expect_BadLevel("level_other_holds_nothing", bytes, LEVEL_BYTES, 1);
-    Level_Bytes(bytes, TEST_LEVEL, TEST_PHASE, FOX, FALCO, NO_PLAYER, NO_PLAYER);
-    bytes[LEVEL_BYTES - 1] = 2;
-    Expect_BadLevel("level_cleared_not_a_flag", bytes, LEVEL_BYTES, 1);
+
+    // The save: of another size, or none ahead of the level start.
+    {
+        uint8_t save[COOP_SAVE_SIZE + 1];
+
+        Save_Bytes(save);
+        save[COOP_SAVE_SIZE] = 0;
+        Expect_BadSave("save_none", NULL, 0, true);
+        Expect_BadSave("save_empty", save, 0, false);
+        Expect_BadSave("save_short", save, COOP_SAVE_SIZE - 1, false);
+        Expect_BadSave("save_trailing", save, COOP_SAVE_SIZE + 1, false);
+    }
+
+    // A second save before the level start is out of place: the level starts from the first.
+    {
+        uint8_t other[COOP_SAVE_SIZE];
+
+        memset(other, 0x5A, sizeof(other));
+        Level_Bytes(bytes, TEST_LEVEL, TEST_PHASE, FOX, FALCO, NO_PLAYER, NO_PLAYER);
+        s = Script_Joined(&t, &side, &a, 1);
+        Script_SaveMsg(&t);
+        Script_Message(&t, 0, COOP_MSG_SESSION_SAVE, other, sizeof(other));
+        Script_Message(&t, 0, COOP_MSG_SESSION_LEVEL_START, bytes, sizeof(bytes));
+        Drain(s, SCRIPT_T0 + 2, &side);
+        EXPECT(CoopSession_Ignored(s) == 1, "save_twice", "a second save was not dropped and counted");
+        Expect_Level("save_twice", &side, TEST_LEVEL, TEST_PHASE, FOX, FALCO, NO_PLAYER, NO_PLAYER);
+        CoopSession_Close(s);
+    }
 }
 
 // ---- Characters over the real transport core: three clients, each going down its list on every refusal ----
@@ -3705,6 +3814,10 @@ static int Bot_Main(const BotOptions* o) {
         fprintf(f, "], \"values\": [");
         for (i = 0; i < COOP_LEVEL_START_VALUES; i++) {
             fprintf(f, "%s%d", i ? ", " : "", (int) level.values[i]);
+        }
+        fprintf(f, "], \"save\": [");
+        for (i = 0; i < COOP_SAVE_SIZE; i++) {
+            fprintf(f, "%s%u", i ? ", " : "", (unsigned) level.save[i]);
         }
         fprintf(f, "]}");
     } else {

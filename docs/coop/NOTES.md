@@ -5098,6 +5098,86 @@ player 0 loses 100.
 
 ## Determinism
 
+### 2026-11-10, the map and the host's save: two saves part a session on the map, and every read of the save
+
+Identity: ROM US 1.0. Base `b98c3870` (`issue/combined-test-4`, build `b98c38708b44`); this change at `00a34694`
+(build `00a3469451fe`). Linux, GCC, Debug, OpenGL on a software renderer, no window, two games on one PC over loopback
+through the join driver (`lockstep_test.py`). The real session: Windows host, Linux client, `b98c3870`.
+
+Observed:
+
+- The first real session between a Windows host and a Linux client played Corneria to its end and parted on the map:
+  equal on every frame of the level (9,910 frames checked), apart 41 frames after the game state went from play to the
+  map. Desync report: region `misc`, `gTexturedLines[15]` (a route line, `Map_PathLines_Draw`) empty on the host and
+  started (mode 4, `zScale` about 27) on the client; region `rng`, all three seeds. The client held a save with every
+  level cleared, the host its own progress.
+- `lockstep_test.py --only map_saves` on `b98c3870` (the coordinator's run), host blank, client every level cleared:
+  apart at frame 10582, 41 frames after the map began at 10541, with the same regions. So the saves did it, not the
+  platform. `tools/coop/make_save.py --clear all` gives that client save byte for byte, and with
+  `--clear meteo,corneria,fortuna,solar` a save the game wrote itself, byte for byte.
+- The map's way after a level depends on the save: `D_menu_801CD980 = Map_PlanetSaveSlot_Setup(gCurrentLevel,
+  SAVETYPE_PLAYED)` (`src/overlays/ovl_menu/fox_map.c:1469`) is true only when the save had the planet unplayed
+  (`:1801-1804`). Then the map's step 100 goes to steps 10 and 20 (`:2828-2885`), which fade the cleared marker in
+  (`Map_PlanetCleared_Draw`, `:4868-4900`) before step 1 starts the path (`Map_801A2EB8`); without it step 100 goes to 1
+  after 30 frames.
+- With the host's save handed to the clients (this change), `map_saves`: equal on 11,689 frames, the map at 10541, the
+  next level (Meteo: the pilots take the normal exit) at 11389 and 300 frames into it. Then the client leaves: both
+  `default.sav` byte for byte as before the session, each game's save in memory its file's again (`save_after`), and in
+  the session both held the host's planets while the client kept its own sound mode and volumes (mono, 40, 50, 60).
+  `map_saves_host_full` (host every level cleared, client blank) and `map_saves_equal` (both every level cleared):
+  equal on 11,449 frames each, the map at 10541, Meteo at 11149, 240 frames sooner than with the host's save blank.
+- The same `map_saves` on `b98c3870`: apart at frame 10582, regions `misc` (`gTexturedLines`) and `rng` (all three
+  seeds), as before. With the apply switched off in `CoopSave_Enter` (one throw-away build): apart at frame 0, region
+  `globals`, `gSaveFile.planet differs in 16 of 20 bytes`.
+- `save_own`, the client on its own save one byte apart (Corneria played): apart at frame 0, region `globals`,
+  `desync_report.py diff`: `globals: gSaveFile.planet differs in 1 of 20 bytes, first at +9: 00 vs 20`.
+- Every place the game code reads the save (`git grep gSaveFile -- src`), and what two different saves do there:
+
+| Read | Where | Two different saves | When |
+|---|---|---|---|
+| `normalClear` of the level | `src/engine/fox_play.c`, `Play_Main` (intro skip) | Start skips the intro on one game only | every level, the session's first one too |
+| `played` of the planet just flown | `fox_map.c:1469`, then `:2828`, `:2878`, `:4868`, `:4897` | the map takes 2 more steps on one game: route lines and random draws part (the desync above) | the map after each level |
+| `played` of the next planet | `Map_LevelPlayedStatus_Check`, `fox_map.c:4123`, read at `:3951-3970` | Start and A skip the briefing on one game only | the map, before each level |
+| medals and clears | `Map_CheckPlanetMedal`, `fox_map.c:4475-4495`, from `Map_Planet_Draw` (`:4400`) | which marker a planet shows | the map |
+| rankings' best total of hits | `Map_801A05B4`, `fox_map.c:2011-2014`, into `D_menu_801CD83C` (`:1286`, `:3676`, `:5564`) | the best total the map shows | the map |
+| rankings | `fox_option.c:2192`, `:2304-2481`, `:4005`, `:4099-4107`, `:4356-4402`; `fox_title.c:511-526`; `fox_end2.c:246-253` | the ranking screen, where the name entry goes, the ending's numbers | after a game ends |
+| `normalMedal`, `expertMedal` of all planets | `fox_option.c:395-409` (Expert offered), `fox_title.c:545-546` | the main menu and the title | after a game ends |
+| `padEE[0]`, ending seen | `src/overlays/ovl_ending/fox_end1.c:1051`, `fox_end2.c:1107` | Start skips a seen ending (`gControllerLock`) | the ending |
+| Venom 2 cleared | `src/engine/fox_versus.c:1307-1313` | versus options | versus only |
+| sound mode, volumes | `src/engine/fox_game.c:436-438`, `:461-480` (`GSTATE_INIT`), `fox_option.c:1321-1326` | audio only | local settings |
+
+- Writes: `fox_map.c:1469-1479` (level end), `:1537-1538` (game over), `src/engine/fox_hud.c:1309-1326` (Bolse, Area 6),
+  `fox_option.c:372-377` (`gForceExpertMode`, a CVar in the session's table, `src/port/coop/session/sim_cvars.c:26`),
+  `:442-459` (after Venom), `:1424-1453` (sound menu), `:1885-1888` (data erase), `:4379-4402` (ranking),
+  `fox_end2.c:842` (ending seen), and the ImGui volume sliders (`src/port/ui/ImguiUI.cpp:250-266`, settings bytes, no
+  `Save_Write`). Every `Save_Write` ends in `Save_WriteData` (`src/sys/sys_joybus.c`), also the one from
+  `SerialInterface_ThreadUpdate` (`src/sys/sys_main.c:192`); nothing else writes `default.sav`
+  (`libultraship/src/public/libultra/os_eeprom.cpp:31-46`).
+
+Derived:
+
+- The cause: the host's blank save had Corneria unplayed and the client's had it played, so only the host's map took
+  steps 10 and 20, and the client's started the route lines first. The 240 frames the map takes more with a blank host
+  save (11389 against 11149) are those steps; the map was not traced step by step.
+- Before the first level, only the intro skip reads the save in the simulation. From the first map on, the map does,
+  twice (first time played, briefing skip); after a game ends, the menus, the rankings and the title do.
+- No write runs on one machine only: each sits in simulated code (a level end, the map, a menu driven by player 0's
+  input), or behind a CVar of the session's table. The ImGui sliders write settings bytes on one machine, which the
+  session leaves to each game and the hash leaves out. So copies that start equal stay equal, and the host's save is
+  sent once, at the session's level start (`SESSION_SAVE`, PROTOCOL.md), not again per level.
+- One read of local data in a simulated screen: the sound menu starts its sliders from this game's own volumes
+  (`fox_option.c:1321-1326`, `gVolumeSettings`, not hashed). Guess: nothing the simulation reads follows from them.
+- What a session earns (clears, medals, rankings, the ending seen) is not kept on any machine, the host's included:
+  each game reads its own save back when the session ends. A merge (decision 0009, S3) can come later.
+- `CoopLevelStart.cleared` (#191) is gone: every game holds the host's save, so the intro skip reads `gSaveFile` as
+  upstream does, and an intro the host has cleared can be skipped in every level of a session, not only the first.
+
+Unknown:
+
+- Whether the sound menu's local volumes can part two games (above). Not run.
+- The alternate exit to Sector Y (the real session's way) with the change: the pilots fly the normal exit. Not run.
+- Windows, MSVC and two real PCs with the change: not run.
+
 ### 2026-11-10, #246, Granga's plasma ball ends with its 100 frame timer; Fortuna's burning base is held, not growing
 
 Identity: ROM US 1.0, base `f869efa4` (build `f869efa47d87`) and this change (`3ab9f78f`), Linux, GCC, Debug, OpenGL
