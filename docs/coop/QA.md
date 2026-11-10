@@ -215,6 +215,20 @@ Running tests must never use or modify the owner's own `starship.cfg.json`, save
 Newest first. One block per run that matters (a milestone, a release, a QA level change).
 
 ```
+date:       2026-11-10
+commit:     issue/25-chaos-numbers (chaos_run.py) on 80ff9be6, against the build of issue/181-views-later-parts a36dea0a
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window, 2 clients over loopback through
+            the join driver, the client's datagrams through chaos/relay.py, a pilot on each client, real time
+what ran:   python tools/coop/chaos_run.py --seeds 1,2,3 --frames 6000 --lock <file> (every profile);
+            python tools/coop/chaos_run.py --profiles lan --seeds 1 --outages 5,9,12 --lock <file>
+result:     automated. 18/18 profile runs reached frame 6000 equal on every frame, each equal to the first: lan and
+            good_wifi waited 0 to 44 ms in all, bad_wifi 0.4 to 0.5 s, mobile_tether 3.5 to 6.6 s, transatlantic
+            2.7 to 15.9 s, hell 151 to 154 s (longest single wait 0.8 to 1.4 s, 26 to 28 % of datagrams dropped).
+            Link down 5 s and 9 s: waited out, equal. Link down 12 s: the session ends after 10 s without input
+            (frame 3059). One PC, loopback, no real WAN.
+```
+
+```
 date:       2026-11-08
 commit:     issue/145-windows-release, game code at 4283e076
 identity:   ROM US 1.0, Windows 11, MSVC 19.44 (14.44.35207), Release and Debug from build.py (Visual Studio 2022),

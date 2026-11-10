@@ -4844,6 +4844,78 @@ clients.
 
 ## Networking
 
+### 2026-11-10, #25 (WP-27), lag and loss with real game clients: numbers from the chaos relay
+
+Identity: ROM US 1.0, branch `issue/25-chaos-numbers` on `80ff9be6` (the tool), run against the build of
+`issue/181-views-later-parts` at `a36dea0a` (its pilot), Linux, GCC, Debug, OpenGL on a software renderer, no window.
+Two games on one PC over loopback, host and client through the join driver, the client's datagrams through
+`tools/coop/chaos/relay.py` both ways, a pilot on each client, Corneria from its intro for 6000 lockstep frames (both
+players fly from about frame 1700; the rails and into the all-range), games in real time (`SF64_COOP_TEST_SPEED=1`).
+Input delay 3 frames (`COOP_LOCKSTEP_INPUT_DELAY`), so a frame's input has 100 ms to arrive before a game waits.
+`python tools/coop/chaos_run.py --seeds 1,2,3 --frames 6000 --lock <nettest lock>`, then
+`--profiles lan --seeds 1 --outages 5,9,12`.
+
+**Observed (runs)**
+
+| Profile | Seed | Ended | Equal | Frames | Held frames / ms (host, client) | Longest hold ms | Resent (host, client) | Ping median / max ms | Relay dropped c2s, s2c | Duplicated c2s, s2c | Wall s |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| lan | 1 | done | yes | 6000 | 1 / 33, 0 / 0 | 0 | 0, 0 | 33.0 / 33 | 0/15479, 0/15476 | 0, 0 | 224 |
+| lan | 2 | done | yes | 6000 | 1 / 34, 0 / 0 | 0 | 0, 0 | 32.0 / 33 | 0/15496, 0/15448 | 0, 0 | 224 |
+| lan | 3 | done | yes | 6000 | 1 / 33, 0 / 0 | 0 | 0, 0 | 32.0 / 33 | 0/15468, 0/15465 | 0, 0 | 224 |
+| good_wifi | 1 | done | yes | 6000 | 1 / 33, 0 / 0 | 0 | 6, 7 | 45.0 / 54 | 76/15476, 81/15351 | 0, 0 | 224 |
+| good_wifi | 2 | done | yes | 6000 | 1 / 44, 0 / 0 | 0 | 8, 6 | 62.0 / 66 | 87/15334, 74/15491 | 0, 0 | 224 |
+| good_wifi | 3 | done | yes | 6000 | 1 / 34, 0 / 4 | 0 | 8, 6 | 36.0 / 51 | 68/15465, 94/15411 | 0, 0 | 224 |
+| bad_wifi | 1 | done | yes | 6000 | 13 / 540, 11 / 497 | 0 | 28, 45 | 94.0 / 109 | 723/15400, 631/15339 | 86, 85 | 224 |
+| bad_wifi | 2 | done | yes | 6000 | 11 / 445, 9 / 503 | 0 | 47, 41 | 93.0 / 107 | 630/15377, 689/15377 | 69, 84 | 224 |
+| bad_wifi | 3 | done | yes | 6000 | 10 / 416, 8 / 411 | 0 | 40, 43 | 94.5 / 112 | 637/15372, 670/15406 | 73, 81 | 224 |
+| mobile_tether | 1 | done | yes | 6000 | 108 / 4966, 106 / 6577 | 0 | 43, 28 | 162.5 / 182 | 530/15128, 592/15312 | 0, 0 | 226 |
+| mobile_tether | 2 | done | yes | 6000 | 97 / 6463, 95 / 4738 | 0 | 22, 40 | 163.5 / 182 | 523/15281, 486/15134 | 0, 0 | 226 |
+| mobile_tether | 3 | done | yes | 6000 | 67 / 4091, 63 / 3460 | 0 | 34, 32 | 165.0 / 187 | 484/15340, 508/15262 | 0, 0 | 226 |
+| transatlantic | 1 | done | yes | 6000 | 29 / 7540, 26 / 10587 | 201 | 22, 12 | 201.0 / 215 | 45/14845, 55/15029 | 0, 0 | 224 |
+| transatlantic | 2 | done | yes | 6000 | 24 / 5781, 20 / 2681 | 0 | 4, 14 | 200.0 / 208 | 51/15271, 53/15043 | 0, 0 | 224 |
+| transatlantic | 3 | done | yes | 6000 | 33 / 15914, 31 / 14940 | 0 | 8, 1 | 209.0 / 217 | 41/14530, 51/14638 | 0, 0 | 224 |
+| hell | 1 | done | yes | 6000 | 4346 / 153072, 4311 / 151544 | 1436 | 426, 436 | 368 / 496 | 5790/20986, 5703/20958 | 748, 781 | 370 |
+| hell | 2 | done | yes | 6000 | 4298 / 151198, 4294 / 151447 | 837 | 419, 411 | 372 / 447 | 5568/20893, 5569/20868 | 701, 773 | 368 |
+| hell | 3 | done | yes | 6000 | 4371 / 153553, 4362 / 153354 | 1249 | 411, 454 | 378 / 459 | 5565/20994, 5477/20960 | 768, 766 | 370 |
+| lan, link down 5 s at 3000 | 1 | done | yes | 6000 | 148 / 4960, 147 / 4927 | 4927 | 28, 16 | 28 / 33 | 189/15551, 200/15532 | 0, 0 | 228 |
+| lan, link down 9 s at 3055 | 1 | done | yes | 6000 | 267 / 8937, 265 / 8902 | 8904 | 17, 15 | 26 / 33 | 323/15679, 325/15605 | 0, 0 | 232 |
+| lan, link down 12 s at 3056 | 1 | session ended: host at frame 3058, client0 at frame 3058 | yes | 3250 | None / None, None / None | 0 | 31, 7 | 27.0 / 33 | 385/8272, 393/8310 | 0, 0 | 143 |
+
+- Held frames and ms are the driver's `done` line: how often a game showed a frame again because the other's input
+  had not come within a 16 ms wait slice (`SYNC_WAIT_SLICE_MS`), and all the time it waited for that input
+  (`src/port/coop/sync/lockstep_game.c:126-186`). In the 12 s outage run no `done` came, and the time of the last,
+  unfinished wait is not in the lockstep's own total (`lockstep ended at frame 3059: 298 frames held for 34 ms`). The longest hold is the largest `frame N held X ms` line of a game's own co-op log, which is written
+  from 200 ms on (`SYNC_LOG_HOLD_MS`, `src/port/coop/sync/lockstep_game.c:38`), so 0 means no single wait reached 200 ms.
+  Resent, duplicates and ping are summed or taken from the co-op log's `net` lines, one every 5 s
+  (`src/port/coop/session/session.c:827-850`). Ping counts in the game's own ticks, so it does not go below one frame
+  (33 ms) even on `lan`. Relay counters are its own, per direction, from the start of the session.
+- Every run that reached frame 6000 was also equal to the first run (`lan` seed 1) on every frame: the same flight at
+  any lag.
+
+**Derived**
+
+- Up to `transatlantic` (90 ms one way) the profiles cost little: `lan` and `good_wifi` wait about one frame in 6000,
+  `bad_wifi` (2 % loss in bursts, reordering, duplicates) about half a second, `mobile_tether` (70 +- 40 ms) 3.5 to 6.6
+  s and `transatlantic` 2.7 to 15.9 s of 200 s of play; the longest single wait was 201 ms, in one run, and all others
+  stayed under 200 ms. Guess: the input delay of 100 ms covers a one-way delay up to about that, and beyond it the
+  games wait for the rest.
+- `hell` (200 +- 150 ms, 8 % loss in bursts, 10 % reordering, 5 % duplicates, 512 kbit/s) did not break the session
+  in three seeds: the games waited 151 to 154 s and took about 370 s for 200 s of play, the longest single wait 0.8 to
+  1.4 s, about 410 to 450 resends per side, 26 to 28 % of the datagrams dropped by the relay. Every frame stayed equal.
+- A link down for 5 or 9 s is waited out: one wait of 4.9 and 8.9 s, then the session goes on, equal on every frame.
+  Down for 12 s the session ends at 10 s: the host logged `lockstep stall: no input from player 2 for 10000 ms at frame
+  3059` and both games ended lockstep there (`COOP_LOCKSTEP_STALL_MS`); the transport's own 30 s timeout never came
+  into it.
+- Lag never changed the flight: every run that reached frame 6000 was equal to the first one on every frame, as
+  lockstep stamps each input with its frame.
+
+**Not these numbers**
+
+- One PC, loopback, both games and the relay (in Python) on the same cores, with other tests and a game the owner
+  plays beside them. No second machine, no real WAN, no NAT, no Steam relay. The relay's delay and loss are what
+  `profiles.json` says, drawn from a seed; a real link has its own shape.
+- Corneria only, 6000 frames of it, two players.
+
 ### 2026-11-07, #132, how long a level load stalls the session, and the menu's time-out
 
 Identity: ROM US 1.0, branch `issue/132-menu-timeout` from `coop` `da44a18a`, Windows 11, MSVC v143, Debug, the
