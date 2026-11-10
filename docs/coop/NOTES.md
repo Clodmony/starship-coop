@@ -604,6 +604,47 @@ Unknown:
 - What the N64 itself does there: derived from the extractor, not observed.
 - Where in Venom 1 script 40 runs in a normal flight: in the check it ran within the 3000 frames after the intro.
 
+### 2026-11-10, #153, frame interpolation: a skip region turned recording on in a frame that records nothing
+
+Identity: ROM US 1.0, on `80ff9be6` (the combined test branch 2), Linux, GCC, Debug, OpenGL on a software renderer, no
+window, one game at a time under gdb (`tools/coop/interp_check.py`).
+
+Observed:
+
+- `FrameInterpolation_ShouldInterpolateFrame` (`src/port/interpolation/FrameInterpolation.cpp`) set `is_recording` to
+  its argument. 23 draws call `(false)` and then `(true)`; `src/engine/fox_display.c` does it around the whole scene on a
+  camera jump, which a pause and an unpause force. At `gInterpolationFPS` 20 `FrameInterpolation_StartRecord` leaves
+  recording off for the frame.
+- Several of the 23 skip an `OpenChild` and record its `CloseChild` (`src/engine/fox_bg.c`: the starfield and the
+  backdrops call `(true)` just before `FrameInterpolation_RecordCloseChild`). With recording on at the `(true)`, that
+  `CloseChild` pops a path nobody opened; at the root, #169's guard in `FrameInterpolation_RecordCloseChild` refuses it.
+- Base build (`80ff9be6`, with #169), `interp_check.py --expect-leaks`: Corneria from its level start at
+  `gInterpolationFPS` 20, 800 frames of the intro: recording was on in 795 frames (game frames 1 to 795), each with a
+  pop refused at the root. Corneria flying with two pauses: of 6 camera skips, recording was on at the skip's own
+  `(true)` once, at the level start's camera jump (game frame 1); the pauses' skips there draw no pair inside.
+- With the fix, `interp_check.py` on the same two runs: recording on in 0 frames at 20 FPS (no pop refused at the root),
+  and at none of the 6 camera skips.
+
+Derived:
+
+- Upstream Starship has no #169 guard, so there the pop at the root empties the path and the next recorded call takes
+  `back()` of an empty vector: the abort of #100. At 20 FPS that happens on the first frames of Corneria's intro, and
+  on a camera jump or a pause wherever one of the 23 draws inside it.
+- The fix: a `(false)` ... `(true)` pair counts its depth, and the outermost `(true)` gives back what the outermost
+  `(false)` found; `StartRecord` closes a pair left open. A `(true)` with no pair open still turns recording on.
+  Recording now changes only where a skip was asked for: inside such a region nothing records any more, so what is
+  drawn there is the game frame's own matrices, which is what the skip asks for. The simulation does not read the
+  recording (2026-11-07, #141).
+
+Unknown:
+
+- What stopped #136's run at 20 FPS (Windows, MSVC Debug, `94fb8cfa`, a build before #169, at frame 600). This
+  mechanism shows from game frame 1 of the intro here, and a Debug `back()` on an empty vector would stop at its first
+  frame, not at 600; frames may count differently there (a hash log frame, a start through the menus). Same cause:
+  unknown, likely not alone.
+- Whether a pause over a Zoness column (`Effect_Effect374_Draw`, state 1) leaks: not run; Corneria's pauses have no
+  pair inside their skip.
+
 ### 2026-11-09, #14 (WP-16), players 2-4 come back after going down (decision 0007 rule 4)
 
 Identity: ROM US 1.0, on top of `6becd73a` (the combined test branch of 2026-11-09), Linux, GCC, Debug, OpenGL on a
