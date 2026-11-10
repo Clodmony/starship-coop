@@ -6,6 +6,7 @@
 #include "port/interpolation/FrameInterpolation.h"
 #include "port/coop/game/players.h" // COOP: a shot answers to the pad of its owner (WP-14), who fired (#86)
 #include "port/hooks/Events.h"      // COOP: shot update events (#16)
+#include "port/coop/game/score.h"   // COOP: the Saucerer takes every human's shots (#210)
 
 Vec3f sShotViewPos;
 
@@ -1006,7 +1007,8 @@ void PlayerShot_CollisionCheck(PlayerShot* shot) {
                     if (shot->obj.id == PLAYERSHOT_LOCK_SEARCH) {
                         Object_Kill(&shot->obj, shot->sfxSource);
                     } else {
-                        if ((boss->obj.id == OBJ_BOSS_KA_SAUCERER) && (shot->sourceId != TEAM_ID_FOX)) {
+                        // COOP: was sourceId != TEAM_ID_FOX; every human's shot counts (decision 0008 1a, #210)
+                        if ((boss->obj.id == OBJ_BOSS_KA_SAUCERER) && !CoopScore_HumanShot(shot->sourceId)) {
                             break;
                         }
                         boss->dmgType = DMG_BEAM;

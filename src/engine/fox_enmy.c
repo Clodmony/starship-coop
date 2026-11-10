@@ -3,6 +3,7 @@
 #include "port/coop/game/hits.h"    // COOP: hits on the other players (#136)
 #include "port/coop/game/aim.h"     // COOP: enemies aim at the nearest human (#193)
 #include "port/coop/game/items.h"   // COOP: crate, laser item and wing repair look at every player (#201)
+#include "port/coop/game/score.h"   // COOP: the team scores, the team's pool of lives (#210)
 #include "assets/ast_corneria.h"
 #include "assets/ast_sector_x.h"
 #include "assets/ast_sector_y.h"
@@ -1767,7 +1768,8 @@ void Actor_Despawn(Actor* this) {
             gPlayerScores[this->dmgSource - 1] += this->info.bonus;
         }
     } else if (!((this->obj.id == OBJ_ACTOR_ALLRANGE) && (this->animFrame == 1))) {
-        if ((this->dmgSource == AI360_FOX + 1) && (this->info.bonus != 0)) {
+        // COOP: was dmgSource == AI360_FOX + 1; a kill by any human scores (decision 0008 4b, #210)
+        if (CoopScore_HumanKill(this->dmgSource) && (this->info.bonus != 0)) {
             gHitCount += this->info.bonus;
             D_ctx_80177850 = 15;
 
@@ -2229,7 +2231,7 @@ void Item1up_Update(Item1UP* this) {
         Object_Kill(&this->obj, this->sfxSource);
         Object_PlayerSfx(gPlayer[this->playerNum].sfxSource, NA_SE_ONE_UP, this->playerNum);
         if (gCurrentLevel != LEVEL_TRAINING) {
-            gLifeCount[this->playerNum]++;
+            gLifeCount[CoopScore_LifeSlot(this->playerNum)]++; // COOP: was [playerNum]; the pool (0007 rule 2, #210)
         }
     }
 
@@ -2341,7 +2343,7 @@ void ItemSupplyRing_Update(Item* this) {
                     } else if (gGoldRingCount[0] == 6) {
                         Object_PlayerSfx(gPlayer[this->playerNum].sfxSource, NA_SE_ONE_UP, this->playerNum);
                         if (gCurrentLevel != LEVEL_TRAINING) {
-                            gLifeCount[this->playerNum]++;
+                            gLifeCount[CoopScore_LifeSlot(this->playerNum)]++; // COOP: the pool (0007 rule 2, #210)
                         }
                         gPlayer[this->playerNum].heal += 32;
                         BonusText_Display(gPlayer[this->playerNum].pos.x, gPlayer[this->playerNum].pos.y,

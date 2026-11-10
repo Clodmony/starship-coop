@@ -30,6 +30,10 @@ int32_t CoopItems_LaserEvent(int32_t strength);
 // Player `i` has a broken wing (an Arwing with a wing at WINGSTATE_BROKEN or worse).
 int32_t CoopItems_WingBroken(int32_t i);
 
+// The level event EVC_WING_BROKEN (#210): some active player has a broken wing. Upstream's test of player 0's two wing
+// states, applied to each active player as the owner's rule for the laser events of #201 asks ("any active player").
+int32_t CoopItems_WingBrokenEvent(void);
+
 #ifdef __cplusplus
 }
 #endif

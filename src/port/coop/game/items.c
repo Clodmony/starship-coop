@@ -33,6 +33,17 @@ int32_t CoopItems_AnyWingBroken(void) {
     return 0;
 }
 
+int32_t CoopItems_WingBrokenEvent(void) {
+    s32 i;
+
+    for (i = 0; i < PlayerCount(); i++) {
+        if (CoopItems_Flies(i) && CoopItems_WingBroken(i)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int32_t CoopItems_AnyShieldsBelow(int32_t limit) {
     s32 i;
 
