@@ -67,9 +67,9 @@ for w in GenerateBuilds "Linux Validation" "Windows Validation" "MacOS Validatio
 done
 ```
 
-**Actions minutes while private:** private repositories have a monthly quota of free Actions minutes; Windows
-minutes count twice and macOS minutes ten times. A code PR costs about 40 Linux minutes plus 35 Windows minutes
-(counted as 70). Public repositories have no quota for standard runners.
+**Actions minutes:** the repository is public, and public repositories have no quota for standard runners. If it goes
+private again: private repositories have a monthly quota of free Actions minutes; Windows minutes count twice and macOS
+minutes ten times. A code PR costs about 40 Linux minutes plus 35 Windows minutes (counted as 70).
 
 When more people help maintain: add them as collaborators (Write for contributors, Maintain or Admin for
 maintainers) and give them areas in `.github/CODEOWNERS`.
