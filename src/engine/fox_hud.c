@@ -1044,7 +1044,7 @@ void HUD_TeammateStatus_Draw(void) {
         Lib_TextureRect_IA8(&gMasterDisp, sText[j], sTextWidth[j], sTextHeght[j], x[j][1], y[j][1], 1.0f, 1.0f);
 
         RCP_SetupDL(&gMasterDisp, SETUPDL_76_OPTIONAL);
-        shield = gTeamShields[3 - j];
+        shield = CoopTeam_DisplayShields(3 - j); // COOP: a human's share of its larger gauge, not the held 255
 
         if (shield <= 0) {
             gDPSetPrimColor(gMasterDisp++, 0, 0, 48, 48, 48, 255);

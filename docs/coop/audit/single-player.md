@@ -341,9 +341,9 @@ Basis per site: read 345, site 893, name 497.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Radio_Draw` | 561:CC | setup | site | no radio when gCamCount != 1 |
-| `Radio_Draw` | 799:P0 | view | site | radio shown only while player 0 is active |
-| `func_radio_800BC040` | 847:CC | setup | site | no radio when gCamCount != 1 |
+| `Radio_Draw` | 562:CC | setup | site | no radio when gCamCount != 1 |
+| `Radio_Draw` | 801:P0 | view | site | radio shown only while player 0 is active |
+| `func_radio_800BC040` | 849:CC | setup | site | no radio when gCamCount != 1 |
 
 ### `src/engine/fox_tank.c`
 

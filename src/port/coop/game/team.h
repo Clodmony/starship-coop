@@ -38,6 +38,12 @@ void CoopTeam_OnPlayerDown(int32_t index);
 // Nonzero when `teamId` (TEAM_ID_FALCO to TEAM_ID_PEPPY) is flown by a human in this co-op level.
 int32_t CoopTeam_IsHuman(int32_t teamId);
 
+// What a wingman's bar draws (the pause, level start and level clear status rows, the radio portrait): gTeamShields,
+// but for a joined human with the team's shield upgrade (three gold rings, up to 383 shields, a gauge 1.5 times as
+// wide) its share of that larger gauge on the bar's 0..255 scale. gTeamShields itself stays held to 1..255 (rule 1),
+// so a human at 300 of 383 shows 199, not a full bar. Draw only: nothing in the simulation reads this.
+int32_t CoopTeam_DisplayShields(int32_t teamId);
+
 // The team id `actor`'s current script means by `teamId`: the substitute if the script belongs to a scene of that
 // wingman and a human flies it, otherwise `teamId`.
 int32_t CoopTeam_SceneTeam(struct Actor* actor, int32_t teamId);

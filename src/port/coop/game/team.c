@@ -52,6 +52,27 @@ void CoopTeam_Update(void) {
     }
 }
 
+int32_t CoopTeam_DisplayShields(int32_t teamId) {
+    s32 i;
+    s32 max;
+    s32 shown;
+
+    if ((teamId < TEAM_ID_FALCO) || (teamId > TEAM_ID_PEPPY)) {
+        return ((teamId >= 0) && (teamId < TEAM_ID_MAX)) ? gTeamShields[teamId] : 0; // not a wingman: as read before
+    }
+    max = Play_GetMaxShields();
+    if ((gTeamShields[teamId] <= 0) || (max <= 255)) {
+        return gTeamShields[teamId]; // a down or an OK stays as it is, and so does every value without the upgrade
+    }
+    for (i = 1; i < CoopPlayers_Count(); i++) {
+        if ((CoopTeam_OfPlayer(i) == teamId) && !CoopPlayers_IsParked(i)) {
+            shown = (gPlayer[i].shields * 255) / max;
+            return (shown < 1) ? 1 : (shown > 255) ? 255 : shown;
+        }
+    }
+    return gTeamShields[teamId]; // a computer wingman: its value is 0..255 of its own
+}
+
 void CoopTeam_OnPlayerDown(int32_t index) {
     s32 id = CoopTeam_OfPlayer(index);
 
@@ -355,6 +376,14 @@ static s32 CoopTeam_BodyInPlay(void) {
            (gPlayer[0].state == PLAYERSTATE_U_TURN);
 }
 
+// The body stays a body in play, and out of play while its human is down: the game's wingman would come back for the
+// scene only to read -1 and retreat in view, where a wingman of the game that went down is gone (src/engine/
+// fox_360.c:1445-1480). Seen in Fortuna's mid-level scene and while player 0 goes down (#15). A level restart sets
+// the value above 0 again, and the game's wingman is back for the intro.
+static s32 CoopTeam_BodyHeld(const Actor* actor) {
+    return CoopTeam_BodyInPlay() || (gTeamShields[actor->aiType] <= 0);
+}
+
 // The human flies the character of `actor`'s slot: joined, not parked, and up.
 static Player* CoopTeam_BodyFlier(const Actor* actor) {
     s32 index = CoopTeam_PlayerOf(actor->aiType);
@@ -409,7 +438,7 @@ static void CoopTeam_OnObjectUpdate(IEvent* event) {
     if (!CoopTeam_IsBodySlot(actor)) {
         return;
     }
-    if (!CoopTeam_BodyInPlay()) {
+    if (!CoopTeam_BodyHeld(actor)) {
         CoopTeam_ReleaseBody(actor);
         return;
     }
@@ -420,7 +449,8 @@ static void CoopTeam_OnObjectUpdate(IEvent* event) {
 static void CoopTeam_OnObjectDrawPreSetup(IEvent* event) {
     ObjectDrawPreSetupEvent* ev = (ObjectDrawPreSetupEvent*) event;
 
-    if ((ev->type == OBJECT_TYPE_ACTOR) && CoopTeam_IsBodySlot((Actor*) ev->object) && CoopTeam_BodyInPlay()) {
+    if ((ev->type == OBJECT_TYPE_ACTOR) && CoopTeam_IsBodySlot((Actor*) ev->object) &&
+        CoopTeam_BodyHeld((Actor*) ev->object)) {
         ev->event.cancelled = true;
     }
 }
@@ -453,6 +483,25 @@ void CoopTeam_Init(void) {
     REGISTER_LISTENER(ObjectDrawPreSetupEvent, CoopTeam_OnObjectDrawPreSetup, EVENT_PRIORITY_NORMAL);
 }
 
+// Decision 0013: a line of the taken wingman in a borrowed scene that plays as a named line of the substitute, or of
+// another speaker naming the substitute. Checked before the sets of three; a line in neither is dropped (0012 rule 5).
+typedef struct {
+    u8 level;
+    u8 team; // the scene's own wingman, the one a human flies
+    u8 sub;  // the substitute flying the scene
+    u16 msgId;
+    u16 newMsgId;
+    s16 newSpeaker;
+} CoopRescueLine;
+
+static const CoopRescueLine sRescueLines[] = {
+    // Corneria, Falco's rescue (S59, S60, S61) flown by Slippy: Slippy's own rescue lines (CO S17:8, :33) and Peppy's
+    // warning to Slippy from his fly-in (CO S51:13).
+    { LEVEL_CORNERIA, TEAM_ID_FALCO, TEAM_ID_SLIPPY, 2167, 2062, RCID_SLIPPY }, // CO S60:7, his ship fails: a call for help
+    { LEVEL_CORNERIA, TEAM_ID_FALCO, TEAM_ID_SLIPPY, 2166, 2061, RCID_PEPPY },  // CO S60:25, asks for help: Peppy warns
+    { LEVEL_CORNERIA, TEAM_ID_FALCO, TEAM_ID_SLIPPY, 2337, 2336, RCID_SLIPPY }, // CO S59:44, thanks
+};
+
 int32_t CoopTeam_SceneMessage(Actor* actor, int32_t* msgId, int32_t* speaker) {
     const CoopScene* scene = NULL;
     s32 sub = CoopTeam_SceneSubstitute(actor, &scene);
@@ -460,6 +509,16 @@ int32_t CoopTeam_SceneMessage(Actor* actor, int32_t* msgId, int32_t* speaker) {
 
     if ((sub == 0) || (sub == scene->team) || (*speaker != sSpeaker[scene->team])) {
         return 1; // not a borrowed scene, or not the taken wingman's line
+    }
+    for (i = 0; i < ARRAY_COUNT(sRescueLines); i++) {
+        const CoopRescueLine* line = &sRescueLines[i];
+
+        if ((line->level == scene->level) && (line->team == scene->team) && (line->sub == sub) &&
+            (line->msgId == *msgId)) {
+            *msgId = line->newMsgId;
+            *speaker = line->newSpeaker;
+            return 1;
+        }
     }
     for (i = 0; i < ARRAY_COUNT(sLineSets); i++) {
         if (sLineSets[i][scene->team - TEAM_ID_FALCO] == *msgId) {

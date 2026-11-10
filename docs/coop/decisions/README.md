@@ -22,3 +22,4 @@ One file per architecture decision: `NNNN-short-title.md`, numbered in order. Co
 | [0010](0010-cross-platform-sessions.md) | Cross-platform sessions: a platform difference warns, it does not refuse | Accepted |
 | [0011](0011-deterministic-sine-in-sessions.md) | Sine, cosine and arctangent in a session come from the N64's own code, not the C library | Accepted |
 | [0012](0012-taken-wingman-scenes.md) | A wingman a human flies is not shown twice: the scene goes to a free computer wingman, else Katt or Bill | Accepted (changes 0006 C1 for on-rails scenes) |
+| [0013](0013-rescue-lines.md) | A borrowed rescue keeps its radio: the substitute's own help and thanks lines | Accepted (changes 0012 rule 5 for the scenes in its table) |

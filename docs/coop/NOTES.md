@@ -9,6 +9,47 @@ Private notes (your paths, your PC, your logs) go in `local/`, not here.
 
 ## Build and run
 
+### 2026-11-10, the pause bar of a human-flown wingman with the shield upgrade drew a full bar
+
+Identity: ROM US 1.0, branch from `ed61d6fd` (the test branch of 2026-11-10), Linux, GCC, Debug, two games over
+loopback (`lockstep_test.py --only teambar`), no window. Found in the first hand test on that build: a Windows host
+flying Fox and a Linux client flying Falco, Corneria.
+
+Reported: the client's pause menu showed a full bar for its Falco while its own shield gauge was lower. The same
+player lost its upgraded laser at a crash with a damaged wing: that is upstream (`Player_Shoot` sets the laser back to
+single when either wing is broken, `src/engine/fox_play.c:3469-3472`, for any player), no change.
+
+Observed:
+
+- With three gold rings (`gGoldRingCount[0] >= 3`) `Play_GetMaxShields` is 383 and the player's own gauge is 1.5 times
+  as wide and fills to `shields / 383` (`HUD_PlayerShieldGauge_Update`, `src/engine/fox_hud.c`). The status rows (pause,
+  level start, level clear: the loop over `gTeamShields[3 - j]` in `HUD_TeammateStatus_Draw`) and the radio portrait
+  (`src/engine/fox_radio.c`) draw a wingman's bar at normal width and fill it to `value / 255`.
+- For a human-flown wingman `CoopTeam_Update` holds `gTeamShields[id]` to 1..255 (decision 0006 rule 1;
+  `src/port/coop/game/team.c`). A human at 300 of 383 therefore had a full bar in the rows and 78 % on its own gauge.
+- Before the fix, in a Corneria trace of both games (`scenes`, 191 lines) the held value equalled the human's shields
+  on every line: the value is right in the normal range; only the part above 255 was cut off.
+- The client's session log (`coop-log-*-player2.txt` in its folder) shows no down and no restart, only a drop in shields
+  at the crash (295 to 193) and a U-turn; it records no wing state.
+
+Changed: `CoopTeam_DisplayShields(id)` (`src/port/coop/game/team.c`) is what the three draw calls read. It returns
+`gTeamShields[id]` for a computer wingman, a down (-1) or when the team has no upgrade, and for a joined human with the
+upgrade its share of the larger gauge on the bar's scale, `shields * 255 / 383`, held to 1..255. It is draw only:
+`gTeamShields` and everything that reads it (gates, medals, radio, routes) is unchanged, so the simulation and the
+state hash are too. Co-op off: `gTeamShields` as before.
+
+Test: `lockstep_test.py --only teambar` (new, `SF64_COOP_TEAM_RINGS` in `src/port/coop/test/team_trace.h`): on Katina the
+client flies Falco and gets the rings and 300 shields; the bar draws 199 for 300 while `gTeamShields[Falco]` stays 255,
+on both games, 4000 frames equal. With the helper's early return forced the same scenario fails (`player 1 has 300 of
+383 and Falco's bar draws 255, want 199`). `allrange`, `allrange_down`, `scenes` and `hash_check.py base` pass.
+
+Unknown:
+
+- How the bar looks on screen: the trace holds the number the draw call gets, not the picture.
+- Whether a human's own gauge and its row should agree at the level start and level clear screens too: they call the
+  same helper, but only the number was checked.
+- Whether a wing was broken at the crash: the log does not say. The player reported a damaged wing.
+
 ### 2026-11-10, #158, the lock a test game's crash handler stops on
 
 Identity: ROM US 1.0, base `80ff9be6` and the fix on top, Linux, GCC, Debug, OpenGL in software, no window. Load made
@@ -1920,6 +1961,61 @@ Unknown:
 - The way back from away: on `coop` a downed player 1 to 3 stays out; the return is #205's (`issue/14-return-in-place`),
   not merged. `CoopTeam_HoldBody` sets `STATE360_3` when its human flies again; not run.
 - Whether other player 0 states during play (for example the all-range loop or a warp) need the same treatment.
+
+### 2026-11-10, #15 (WP-17), decision 0013: Corneria's Falco rescue flown by Slippy keeps its radio
+
+Identity: ROM US 1.0, branch `issue/15-rescue-lines` on `42dfa3a8`, Windows 11, MSVC v143, Debug, two games over
+loopback with the lockstep pilots (`lockstep_test.py --exe <build> --only scenes`), no window. The team trace now
+writes `radio=<gRadioMsgId>,<gRadioMsgRadioId>`.
+
+Observed in the code: `Radio_PlayMessage` stores the line's id in `gRadioMsgId` (`src/engine/fox_radio.c:128`) and
+its speaker in `gRadioMsgRadioId` (`:102`). `Message_PtrFromId` looks a line up in one table for the whole game
+(`src/engine/fox_message.c:4-15`), so a line of another scene can be played anywhere.
+
+Observed in the run (host; the client the same, frames offset by its later start):
+
+| frame | line | from |
+|---|---|---|
+| 2647, 2776 | 20267, 2061 (Peppy) | Slippy's fly-in S51, as the game has it |
+| 2910, 3063 | 2062, 2336 (Slippy) | Slippy's own rescue S17, as the game has it |
+| 4985 | 2062 (Slippy) | Falco's rescue, `CO S60:7`, in place of Falco's 2167 |
+| 5114 | 20235 (Peppy) | `CO S60:17`, unchanged |
+| 5253 | 2061 (Peppy) | `CO S60:25`, in place of Falco's 2166 |
+| 5275 | 20222 (Slippy) | Slippy's retreat line: the pilots did not save him, the 255 at `CO S59:34` downed him |
+
+None of Falco's 2166, 2167, 2337 played; hashes equal on all 8500 frames.
+
+Unknown:
+
+- Slippy's thanks (2336 in place of `CO S59:44`): not reached, the pilots never save the rescue. The same table row
+  and code path as the two lines that played.
+- How the three lines sound in place; nobody has listened yet.
+
+### 2026-11-10, #15 (WP-17), the all-range body on the other levels, and while its human is down out of play
+
+Identity: ROM US 1.0, branch `issue/15-wingman-allrange` on `bb806193` plus this change, Windows 11, MSVC v143, Debug,
+two games over loopback (`lockstep_test.py --exe <build> --only allrange,allrange_others,allrange_down,
+allrange_down_others,scenes,steer,three,desync`), no window, 4000 frames per all-range level.
+
+Observed in runs (client flying Falco):
+
+- `allrange_others`: Fortuna, Bolse, Sector Z and Venom 2 pass as Katina did: the body on player 1 on every line in
+  play, computer Slippy and Peppy flying, hashes equal. 4000 frames reach none of their bosses.
+- `allrange_down_others` before this change: with player 1 down, the game's Falco came back for a scene out of play
+  and retreated in view. Fortuna: player 0 in `PLAYERSTATE_STANDBY` from frame 3487 (a mid-level scene); Venom 2 and
+  Bolse: player 0 went down himself and the level restarted. After: the body stays away through both, until the
+  reload, and the test stops at the reload (`gPlayState` 1 or `PLAYERSTATE_INIT`), which brings everyone back.
+- Shields at 0 without a hit leave a player flying (`src/engine/fox_play.c:5736`, see the entry above).
+- A run by mistake on the combined test build `ed61d6fd` (which has #205's return in place) showed the way back on
+  Katina: player 1 back 150 frames after the down with 255, and the body on player 1 again (`body=1`). Only one run,
+  not a planned check.
+
+Tooling: with `--no-build`, `lockstep_test.py` takes the newest `Starship.exe` of the default build folders
+(`tools/coop/replay.py:109`, `find_exe`) and ignores `--build-dir`. A build in a second folder needs `--exe`.
+
+Unknown:
+
+- Bosses of the four levels with a human Falco; the level-clear scene with a down human.
 
 ### 2026-11-10, #15 (WP-17), the all-range body and the boss fights, first run
 
