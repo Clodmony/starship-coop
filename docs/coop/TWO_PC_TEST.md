@@ -47,8 +47,13 @@ and that a desync, if one happens, is caught and reported.
 ## What is known not to work yet
 
 - Only Corneria is tested. In Landmaster and Blue Marine sections the second player is parked.
-- There are no co-op rules for lives yet. If Fox goes down, the level restarts for both players. If the other player
-  goes down, they stay out until the next level.
+- Lives follow [decision 0007](decisions/0007-lives-and-respawn.md) only in part. The team shares one pool, the game's
+  own life count, and a life anyone collects goes into it; how many lives the pool starts with is unknown. If the other
+  player goes down, they leave the level and come back beside Fox 150 game frames (about 5 seconds) later, at full
+  shields, for one life from the pool; at 0 lives they wait for a life or the next level. That return is seen in
+  scripted two-client runs on Corneria only. If Fox goes down, the original rule still holds: one life, and the level
+  restarts at its last save point for both players; at 0 lives, game over. The record's refill of Fox in place is not
+  built.
 - The pause menu belongs to the host: cursor, retry and quit.
 - If one player leaves or stops sending input for 10 seconds, the session ends for both.
 - No Steam yet: this is a direct connection.

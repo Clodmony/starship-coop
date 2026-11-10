@@ -591,6 +591,42 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-10, #232, mixer.c's 2-bit mask: an 8-byte load from a 4-byte table, and no sample it reaches
+
+Identity: ROM US 1.0, on `f3eadf7a` (the combined test branch 4), Linux, GCC, Debug, OpenGL on a software renderer, no
+window. AddressSanitizer builds of this tree with `-fsanitize=address -fsanitize-recover=address
+-fno-omit-frame-pointer`, run with `halt_on_error=0`, as for #145.
+
+Observed:
+
+- `aADPCMdecImpl`, the SSE2 version (`src/audio/mixer.c`), loads `mask_4bit` and `mask_2bit` with `_mm_loadl_epi64`,
+  8 bytes each, on every call. `lower_4bit` holds four `uint16_t`, 8 bytes; `lower_2bit` held two, 4 bytes.
+- AddressSanitizer, one game through the menus and the prologue into Corneria, with the input `hash_check.py base`
+  plays (5800 frames). The base (build `7446509134d8`, `f3eadf7a` plus a docs commit): one report, a
+  `global-buffer-overflow` READ of size 8 at `mixer.c:299`, "0 bytes after global variable 'lower_2bit' ... of size 4",
+  from `AudioSynth_ProcessNote` (`src/audio/audio_synthesis.c:1107`) on the audio thread. With `lower_2bit` at four
+  entries (build `1d1bbbfc837e`): no report, 5800 frames, the same final position and seeds.
+- `mask_2bit` is used only in the `flags & 4` branch (`A_ADPCM_SHORT`, `libultraship/include/libultraship/libultra/abi.h`),
+  and only as `_mm_and_si128(x, mask_2bit)`, where `x` is the input after `_mm_loadu_si16` (2 bytes, the other 14 zero)
+  and `_mm_unpacklo_epi8` with zero, shifted right: its lanes 2 to 7 are 0. The 4 bytes past the table land in lanes 2
+  and 3.
+- The game never passes `A_ADPCM_SHORT`: `flags` at the two `aADPCMdec` calls (`audio_synthesis.c:1107`, `:1124`) is
+  `A_CONTINUE`, `A_INIT` or `A_LOOP` (`:907-910`, `:1041`, `:1051`, `:1096`, `:1165`).
+- A harness (scratch, not in the repo): `mixer.c` compiled alone with GCC `-O2 -msse2` and a driver that decodes 2000
+  random blocks with random books and states, flags 0 to 2 with and without 4, and checksums the output and the state.
+  The checksum is the same with the old table and with `{3, 3, x, x}` for x = `0xffff`, 0 and 3; `{1, 3, 3, 3}`
+  changes it. The same harness under ASan (`-O0`) reported nothing; why it differs from the game build is unknown.
+
+Derived:
+
+- The bytes past `lower_2bit` reach no decoded sample: in the one branch that uses them they meet zeroed lanes, and the
+  game does not take that branch. Four entries, as `lower_4bit` has, end the read and change no sound, in a session or
+  out of one (`// COOP:` in `mixer.c`; upstream code, a candidate for upstream with the owner's go).
+
+Unknown:
+
+- Windows (MSVC) and ARM (`sse2neon.h`): not built. The scalar version (no SSE2) indexes no such table.
+
 ### 2026-11-10, #145, the stray reads and writes of #141: four of upstream's, and the build folders
 
 Identity: ROM US 1.0, on `80ff9be6` (the combined test branch 2), Linux, GCC, Debug, OpenGL on a software renderer, no
@@ -4626,6 +4662,34 @@ Unknown:
 
 - How 80 frames look against single player, where a mark lasts while it is in view; not compared by eye.
 - Windows, and two PCs.
+
+### 2026-11-10, #232, Goras' 8 dying sites run in a two-client campaign run
+
+Identity: ROM US 1.0, the code of `f3eadf7a` for `fox_ti.c` (build `1d1bbbfc837e-dirty`: this branch, whose changes
+are the mixer table, the F1 label and docs), Linux, GCC, Debug, OpenGL on a software renderer, no window, two games on
+one PC over loopback.
+
+Observed:
+
+- `campaign.py --levels titania` (two real clients, a pilot each, `gInvincible`), both games started under gdb by a
+  wrapper given as `--exe` (scratch, not in the repo): a breakpoint on `CoopRand_SignedFloat` logs its caller's
+  function and line, one on `Titania_TiGoras_Dying` counts the frames it runs. Result: `titania: equal on every frame
+  to the end; 45111 frames compared, level complete at level frame 43591`.
+- Calls per client, the same on host and client: `Titania_TiGoras_Dying` ran on 280 frames. Its 8 sites:
+  `fox_ti.c:5529` and `:5532` (the debris of the first frame, `work_044 == 0`) 33 times each; `:5558`, `:5561`
+  (`timer_050` 100), `:5590`, `:5593` (120) and `:5622`, `:5625` (140) once each. Besides: `Titania_80193DF0`
+  (`:3893`) 512 times, `Titania_TiDesertCrawler_Update` 21 times (`:1630-1636` 4 each, `:1641-1680` 1 each). 605
+  `CoopRand_SignedFloat` calls on each client.
+
+Derived:
+
+- All 18 signed draws of #209 run in a session now, the 8 Goras sites among them, and the two clients stayed equal on
+  every frame through them. `#209`'s unknown "whether the 8 sites of `Titania_TiGoras_Dying` run in a session" is
+  answered: they do, in a run that reaches level complete.
+
+Unknown:
+
+- MSVC's order (as in #209); Windows and two PCs.
 
 ### 2026-11-10, #209, Titania's 18 signed draws: the sign first, in a session
 
