@@ -298,6 +298,12 @@ def crashed(proc, ended_itself):
     return ended_itself and proc.returncode != 0
 
 
+def parse_cvar(text):
+    """NAME or NAME=VALUE of --cvar: (name, integer value, 1 without one), as player_trace.py takes them."""
+    name, _, value = text.partition("=")
+    return name, int(value or 1)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("mode", choices=["record", "play"])
@@ -311,6 +317,9 @@ def main():
                                    "drawing; record without --frames always runs in real time)")
     p.add_argument("--start", choices=STARTS, help="where the game starts (default: record menus, play where the file "
                                                    "was made)")
+    p.add_argument("--cvar", action="append", default=[], metavar="NAME[=VALUE]",
+                   help="a CVar in the run folder's config, an integer (default 1); repeatable, so a run on a base "
+                        "build takes the same CVars without a script of its own (#121)")
     args = p.parse_args()
 
     exe = find_exe(args.exe)
@@ -320,8 +329,9 @@ def main():
     replay.parent.mkdir(parents=True, exist_ok=True)
 
     speed = None if args.speed is None else {"SF64_COOP_TEST_SPEED": args.speed, **DRAWN}
+    config = {"CVars": dict(parse_cvar(c) for c in args.cvar)} if args.cvar else None
     values, run, elapsed = run_game(args.mode, replay, exe, args.timeout, hash_log=args.hash_log, frames=args.frames,
-                                    env_extra=speed, start=STARTS.get(args.start))
+                                    env_extra=speed, config=config, start=STARTS.get(args.start))
     if values is None:
         print(f"replay: FAILED ({elapsed:.0f}s)")
         return 1

@@ -570,6 +570,10 @@ BREAKS = [
     ("level_unpicked_skips_last", LEVEL_UNPICKED,
      LEVEL_UNPICKED.replace("i < COOP_SESSION_PLAYERS", "i < COOP_SESSION_PLAYERS - 1"), SIM),
     ("level_cleared_any_value", "return data[LEVEL_START_SIZE - 1] <= 1;", "return true;", SIM),
+    # A message shorter than it must be is read past its end. Under SANITIZER_BREAKS until #121: a plain sim fails on
+    # them too (roster_trailing, level_short), as the session also has to refuse the message.
+    ("roster_read_past_end", ROSTER_HEAD, ROSTER_HEAD.replace("size != COOP_SESSION_PLAYERS", "size < 1"), SIM),
+    ("level_read_past_end", LEVEL_HEAD, LEVEL_HEAD.replace("size != LEVEL_START_SIZE", "size < 1"), SIM),
 ]
 
 # Texts the sanitizer breaks use more than once.
@@ -585,8 +589,6 @@ SANITIZER_BREAKS = [
     ("refuse_read_past_end", REFUSE_READ, REFUSE_READ.replace("net->size < 4", "net->size < 2"), SIM),
     ("identity_peer_unchecked", "if (peer < 0 || peer >= COOP_NET_MAX_PEERS) {\n        return NULL;\n    }\n", "",
      SIM),
-    ("roster_read_past_end", ROSTER_HEAD, ROSTER_HEAD.replace("size != COOP_SESSION_PLAYERS", "size < 1"), SIM),
-    ("level_read_past_end", LEVEL_HEAD, LEVEL_HEAD.replace("size != LEVEL_START_SIZE", "size < 1"), SIM),
     # One side alone, at its very end: its result file is written and looks right, so only its exit code can tell.
     # session_test.py has no log scan like net_test.py --asan because it reads every exit (#92). A scenario that stops
     # reading its host's exit, or that of all its clients, lets one of these two survive.
