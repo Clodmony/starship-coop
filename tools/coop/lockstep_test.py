@@ -78,7 +78,11 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             on and is not hit meanwhile (owner's choice A for #213's option D).
   other_bosses the other bosses go after the nearer human too (#220), read from the boss trace, which the base build
             writes as well: `granga`, Corneria's Granga walks at and turns to player 1 on most frames that player 1 is
-            the nearer. Hashes and boss traces equal on both games.
+            the nearer; `shogun`, Sector Y's Shoguns keep player 1 often and turn toward the player they keep;
+            `crusher`, Meteo's Crusher rings home in on player 1 too (SF64_COOP_BOSS_POKE puts the Crusher into its
+            ring attack, which takes its shields shot away to reach); `sarumarine`, Zoness' Sarumarine balls fly at
+            player 1; `bacoon`, Aquas' Bacoon looks at player 1. On rails player 0 holds the top left and player 1
+            the bottom right, the nearer one. Hashes and boss traces equal on both games.
   log     the co-op log (#172): each game's folder holds its own log and the other player's, streamed during the
             session; the hash stays equal with streaming on; nothing personal is in the files; coop_log.py merges them.
 
@@ -1098,27 +1102,51 @@ def sc_bosses(args, folder):
 # Frames of the plans are level frames (the feed's), as in BOSS_RUNS.
 
 
+GRANGA_CIRCLE = JOIN_FRAME + 476  # level frame: player 1, flying straight, passes the Granga's start about here
+
+
 def granga_script(frame, player):
     """Corneria: player 0 presses L (gDebugJumpToAllRange) at JOIN_FRAME + 100, and once the cut to all-range is over
-    it circles to the left, at the edge of the Granga's ground; player 1 flies straight, through the middle and back
-    (the game turns it at the edge), so on most frames of the fight it is the nearer one."""
+    it circles to the left, about 4500 from the middle of the Granga's ground; player 1 flies straight into the middle
+    and circles there, so on most frames of the fight it is the nearer one."""
     if frame == JOIN_FRAME + 100 and player == 0:
         return BUTTON_L, 0, 0
     if frame < JOIN_FRAME + 380:
         return 0, 0, 0
-    return (0, -70, 0) if player == 0 else (0, 0, 0)
+    if player == 0:
+        return 0, -70, 0
+    return (0, 70, 0) if frame >= GRANGA_CIRCLE else (0, 0, 0)
 
 
-OTHER_BOSS_RUNS = {  # name: level, frames, script, CVars beyond gInvincible
-    "granga": (0, JOIN_FRAME + 100 + 3900, granga_script, {"gDebugJumpToAllRange": 1}),
+def rails_script(frame, player):
+    """A rails level: from JOIN_FRAME + 100 player 0 holds the top left and player 1 the bottom right, so the two are
+    about 2200 apart across the path and player 1, nearer the water or the ground where these bosses are, is the
+    nearer one."""
+    if frame < JOIN_FRAME + 100:
+        return 0, 0, 0
+    return (0, -70, -60) if player == 0 else (0, 70, 60)
+
+
+# Meteo's Crusher fires its rings (states 9 and 10) only once its shields are shot away, and nobody shoots here: as it
+# reaches its fight (state 3) SF64_COOP_BOSS_POKE puts it into state 10, the rings, which it then repeats (Meteo_
+# MeCrusher_Update, states 9 and 10).
+CRUSHER_POKE = "0:3:10:40"
+OTHER_BOSS_RUNS = {  # name: level, frames, script, CVars beyond gInvincible, environment of both games
+    "granga": (0, JOIN_FRAME + 100 + 3900, granga_script, {"gDebugJumpToAllRange": 1}, {}),
+    "shogun": (5, JOIN_FRAME + 100 + 3900, granga_script, {"gDebugJumpToAllRange": 1}, {}),  # Sector Y's all-range
+    "crusher": (1, 19000, rails_script, {}, {"SF64_COOP_BOSS_POKE": CRUSHER_POKE}),  # Meteo: ~14500 after the intro
+    "sarumarine": (8, 19000, rails_script, {}, {}),  # Zoness: the Sarumarine comes about 14000 frames after the intro
+    "bacoon": (13, 9000, rails_script, {}, {}),  # Aquas: the Bacoon is close to where the players join
 }
+OBJ_BOSS_AQ_BACOON = 318  # include/sf64object.h
 GRANGA_WALKS = (1, 2, 3)  # GRANGA_FORWARD_MISSILE, _BACKWARDS_LASER_PLASMA, _FORWARD_LASER_PLASMA: it walks at its target
 FACING, NOT_FACING = 20.0, 40.0  # degrees: the boss faces a player within FACING, and the other one not within NOT_FACING
+TURNING = 0.3  # degrees a frame: less is not a turn
 
 
 def other_boss_run(args, folder, name):
     """One run of OTHER_BOSS_RUNS: both games to the plan's last frame. Returns (the host's boss trace, frames)."""
-    level, frames, script, cvars = OTHER_BOSS_RUNS[name]
+    level, frames, script, cvars, both = OTHER_BOSS_RUNS[name]
     folder.mkdir(parents=True, exist_ok=True)
     feed = folder / "feed.txt"
     write_feed(feed, frames + 16, script)
@@ -1126,7 +1154,7 @@ def other_boss_run(args, folder, name):
     for path in traces.values():
         if path.exists():
             path.unlink()  # the trace appends
-    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(frames)}
+    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(frames), **both}
     host, client = session(args, folder, {"SF64_COOP_JOIN_LEVEL": str(level), "SF64_COOP_BOSS_TRACE": str(traces["host"])},
                            {"SF64_COOP_BOSS_TRACE": str(traces["client"])}, env,
                            config={"CVars": {"gInvincible": 1, **cvars}})
@@ -1136,39 +1164,122 @@ def other_boss_run(args, folder, name):
         host.close()
         client.close()
     compared = compare(host, client, frames)
-    # A game can run a little past `done` before it is stopped, so only the lines both traces hold are compared.
+    # A game runs on a little past `done` before it is stopped, by a number of frames that differs from run to run: the
+    # lines both traces hold are compared, and the checks read only the plan's frames, so they count the same each run.
     ours, theirs = boss_trace(traces["host"]), boss_trace(traces["client"])
     n = min(len(ours), len(theirs))
     expect(n >= frames - 40, f"{name}: only {n} lines of boss trace")
     expect(ours[:n] == theirs[:n], f"{name}: the boss traces differ")
-    return ours[:n], compared
+    return ours[:min(n, frames)], compared
 
 
 def facing_story(trace, slot, states, boss_y=None):
-    """Frames on which the boss in `slot`, in one of `states`, faces player 1 and not player 0 (by its rot y, the way
-    it walks or turns), the other way round, and on which player 1 is the nearer; and its kept slot per value."""
+    """How the boss in `slot`, in one of `states`, turns (its rot y) on the frames that player 0 and player 1 lie to
+    different sides of where it faces: toward player 1 (`turn1`) or toward player 0 (`turn0`). A boss turns at a
+    capped rate, so a player that circles close by is seldom right in front of it; the way it turns shows whom it goes
+    after. Also: the frames it faces one player within FACING and not the other within NOT_FACING, the frames player 1
+    is the nearer, and its kept slot per value."""
     def turn(a):
         return (a + 180.0) % 360.0 - 180.0
 
-    count = {"walk": 0, "near1": 0, "face1": 0, "face0": 0}
+    count = {"walk": 0, "near1": 0, "face1": 0, "face0": 0, "turn1": 0, "turn0": 0}
     kept = {}
+    last = None
     for row in trace:
-        if slot not in row or "p1" not in row:
-            continue
-        b = row[slot].split(",")
-        if int(b[1]) not in states:
+        b = row.get(slot, "").split(",")
+        if "p1" not in row or len(b) < 8 or int(b[1]) not in states:
+            last = None
             continue
         pos = (float(b[2]), float(b[3]) if boss_y is None else boss_y, float(b[4]))
         yaw = float(b[6])
         players = [[float(v) for v in row[f"p{i}"].split(",")[2:5]] for i in (0, 1)]
         dist = [math.dist(pos, p) for p in players]
-        off = [abs(turn(yaw - math.degrees(math.atan2(p[0] - pos[0], p[2] - pos[2])))) for p in players]
+        want = [turn(math.degrees(math.atan2(p[0] - pos[0], p[2] - pos[2])) - yaw) for p in players]
         count["walk"] += 1
         count["near1"] += dist[1] < dist[0]
-        count["face1"] += off[1] < FACING and off[0] > NOT_FACING
-        count["face0"] += off[0] < FACING and off[1] > NOT_FACING
+        count["face1"] += abs(want[1]) < FACING and abs(want[0]) > NOT_FACING
+        count["face0"] += abs(want[0]) < FACING and abs(want[1]) > NOT_FACING
+        if last is not None and abs(turn(yaw - last)) > TURNING and (want[0] > 0) != (want[1] > 0):
+            count["turn0" if (turn(yaw - last) > 0) == (want[0] > 0) else "turn1"] += 1
         kept[b[7]] = kept.get(b[7], 0) + 1
+        last = yaw
     return count, kept
+
+
+def kept_turns(trace, slots):
+    """For the bosses in `slots` (any state): on the frames each keeps player 0 or player 1, how often it turns toward
+    that player and how often toward the other one, as in facing_story. Returns {kept: [toward 0, toward 1]} and the
+    frames a boss was there."""
+    def turn(a):
+        return (a + 180.0) % 360.0 - 180.0
+
+    turns = {"0": [0, 0], "1": [0, 0]}
+    frames = 0
+    for slot in slots:
+        last = None
+        for row in trace:
+            b = row.get(slot, "").split(",")
+            if "p1" not in row or len(b) < 8:
+                last = None
+                continue
+            frames += 1
+            pos, yaw = (float(b[2]), float(b[4])), float(b[6])
+            players = [[float(v) for v in row[f"p{i}"].split(",")[2:5]] for i in (0, 1)]
+            want = [turn(math.degrees(math.atan2(p[0] - pos[0], p[2] - pos[1])) - yaw) for p in players]
+            if (b[7] in turns and last is not None and abs(turn(yaw - last)) > TURNING and
+                    (want[0] > 0) != (want[1] > 0)):
+                turns[b[7]][0 if (turn(yaw - last) > 0) == (want[0] > 0) else 1] += 1
+            last = yaw
+    return turns, frames
+
+
+def shot_story(trace, prefix):
+    """The shots of the boss trace with this prefix (`e` Crusher rings, `o` Sarumarine balls), each followed from the
+    first frame its slot shows it to the last: [shots that came nearer player 0 than player 1, the other way round]."""
+    near = [0, 0]
+    tracks = {}  # slot: [nearest to player 0, nearest to player 1, last row]
+    for n, row in enumerate(trace):
+        if "p1" not in row:
+            continue
+        players = [[float(v) for v in row[f"p{i}"].split(",")[2:5]] for i in (0, 1)]
+        for key, value in row.items():
+            if not (key.startswith(prefix) and key[len(prefix):].isdigit()):
+                continue
+            pos = [float(v) for v in value.split(",")[1:4]]
+            dist = [math.dist(pos, p) for p in players]
+            track = tracks.get(key)
+            if track is None or track[2] != n - 1:  # a new shot in this slot
+                if track is not None:
+                    near[0 if track[0] <= track[1] else 1] += 1
+                track = [dist[0], dist[1], n]
+            track = [min(track[0], dist[0]), min(track[1], dist[1]), n]
+            tracks[key] = track
+    for track in tracks.values():
+        near[0 if track[0] <= track[1] else 1] += 1
+    return near
+
+
+def bacoon_story(trace):
+    """Frames on which Aquas' Bacoon looks (its head's yaw, clamped by the game to 40 either way) within FACING of
+    player 1 and not within NOT_FACING / 2 of player 0, and the other way round."""
+    def turn(a):
+        return (a + 180.0) % 360.0 - 180.0
+
+    face = [0, 0]
+    frames = 0
+    for row in trace:
+        boss = next((row[k].split(",") for k in row if re.fullmatch(r"b\d+", k) and
+                     row[k].startswith(f"{OBJ_BOSS_AQ_BACOON},")), None)
+        if boss is None or "aq" not in row or "p1" not in row or not (4 <= int(boss[1]) < 16):
+            continue
+        frames += 1
+        pos = (float(boss[2]), float(boss[4]))
+        yaw = float(row["aq"].split(",")[0])
+        players = [[float(v) for v in row[f"p{i}"].split(",")[2:5]] for i in (0, 1)]
+        off = [abs(turn(yaw - math.degrees(math.atan2(p[0] - pos[0], p[2] - pos[1])))) for p in players]
+        for i in (0, 1):
+            face[i] += off[i] < FACING / 2 and off[1 - i] > NOT_FACING / 2
+    return face, frames
 
 
 def sc_other_bosses(args, folder):
@@ -1182,12 +1293,47 @@ def sc_other_bosses(args, folder):
         trace, frames = other_boss_run(args, folder / name, name)
         if name == "granga":
             count, kept = facing_story(trace, "b0", GRANGA_WALKS)
-            text = (f"{count['walk']} walking frames, player 1 the nearer on {count['near1']}; it faces player 1 on "
-                    f"{count['face1']}, player 0 on {count['face0']}; kept "
-                    f"{', '.join(f'{k}: {v}' for k, v in sorted(kept.items()))}")
+            text = (f"{count['walk']} walking frames, player 1 the nearer on {count['near1']}; it turns toward player 1 "
+                    f"on {count['turn1']}, toward player 0 on {count['turn0']}; faces player 1 on {count['face1']}, "
+                    f"player 0 on {count['face0']}; kept {', '.join(f'{k}: {v}' for k, v in sorted(kept.items()))}")
+            expect(count["turn1"] > 2 * count["turn0"], f"granga: the Granga goes after player 0: {text}")
             expect(count["near1"] * 2 > count["walk"], f"granga: player 1 was not the nearer one: {text}")
-            expect(count["face1"] > 2 * count["face0"], f"granga: the Granga goes after player 0: {text}")
             lines.append(f"granga: same hash on {frames} frames; {text}")
+        if name == "shogun":
+            # Each Shogun picks its target among its kept human and the wingmen, so it often goes after a wingman: what
+            # counts is that it keeps player 1 often, the nearer one, and turns toward whom it keeps.
+            turns, seen = kept_turns(trace, ("b0", "b1", "b2"))
+            kept1 = sum(1 for row in trace for slot in ("b0", "b1", "b2")
+                        if len(row.get(slot, "").split(",")) >= 8 and row[slot].split(",")[7] == "1")
+            text = (f"{seen} Shogun frames, player 1 kept on {kept1}; keeping player 1 it turns toward player 1 on "
+                    f"{turns['1'][1]}, toward player 0 on {turns['1'][0]}; keeping player 0 toward player 0 on "
+                    f"{turns['0'][0]}, toward player 1 on {turns['0'][1]}")
+            expect(kept1 * 4 > seen, f"shogun: the Shoguns seldom keep player 1: {text}")
+            # Chasing a wingman it turns either way, so the margin is smaller than the Granga's.
+            expect(turns["1"][1] * 2 > turns["1"][0] * 3,
+                   f"shogun: a Shogun that keeps player 1 does not go after it: {text}")
+            lines.append(f"shogun: same hash on {frames} frames; {text}")
+        if name in ("crusher", "sarumarine"):
+            near = shot_story(trace, "e" if name == "crusher" else "o")
+            what = "rings" if name == "crusher" else "balls"
+            kept = {}
+            for row in trace:
+                b = row.get("b0", "").split(",")
+                if len(b) >= 8:
+                    kept[b[7]] = kept.get(b[7], 0) + 1
+            text = (f"{sum(near)} {what}, {near[1]} came nearest player 1, {near[0]} player 0; boss kept "
+                    f"{', '.join(f'{k}: {v}' for k, v in sorted(kept.items()))}")
+            expect(sum(near) >= 4, f"{name}: too few {what} to tell: {text}")
+            # The Crusher's rings start at its two sides and each homes in on the human nearest to it: about half go
+            # to each side. The Sarumarine's balls fly where its kept human is.
+            want = near[1] * 3 >= sum(near) if name == "crusher" else near[1] > 2 * near[0]
+            expect(want, f"{name}: the {what} go after player 0: {text}")
+            lines.append(f"{name}: same hash on {frames} frames; {text}")
+        if name == "bacoon":
+            face, seen = bacoon_story(trace)
+            text = f"{seen} frames it looks about, at player 1 on {face[1]}, at player 0 on {face[0]}"
+            expect(face[1] > 2 * face[0], f"bacoon: the Bacoon looks at player 0: {text}")
+            lines.append(f"bacoon: same hash on {frames} frames; {text}")
     return "; ".join(lines)
 
 
