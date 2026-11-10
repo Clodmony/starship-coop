@@ -1874,6 +1874,36 @@ Unknown:
 - Macbeth's `D_MA_801BE250` and the Blue Marine state (0009, item 6): not touched; both levels stay parked.
 - Two machines: everything above ran on one PC.
 
+### 2026-11-10, #15 (WP-17), the all-range body while player 0 turns, and its away state
+
+Identity: ROM US 1.0, branch `issue/15-wingman-allrange` on `c9666a07`, Windows 11, MSVC v143, Debug, two games over
+loopback (`lockstep_test.py --only allrange,allrange_down,scenes,steer,three,desync`), no window.
+
+Observed in the code:
+
+- `PLAYERSTATE_U_TURN` (5, `include/sf64player.h:74`) is player 0 turning back at the edge of an all-range map. The
+  body counted only `ACTIVE` and `DOWN` as play, so for every turn the game's wingman flew again.
+- Shields at 0 do not take a player down by themselves: `Player_Update` asks for `radioDamageTimer != 0` on the same
+  frame (`src/engine/fox_play.c:5736`), which `Player_ApplyDamage` sets to 4 (`:998`). A player at 0 shields with no
+  new hit flies on. The test switch `SF64_COOP_TEAM_DOWN` sets both.
+- A co-op player 1 to 3 at 0 shields, still flying or falling, holds 1 in its character's `gTeamShields` (0006 rule
+  1 clamps to 1..255); -1 comes with `CoopPlayers_OnPlayerDown`.
+
+Observed in runs (client flying Falco on Katina, 4000 frames):
+
+| | before (`c9666a07`) | this change |
+|---|---|---|
+| `allrange`, with U-turn lines counted as play | fails: a computer Falco beside player 1 on 106 of 143 lines in play, first at frame 1312 | passes |
+| `allrange_down`, client downed after 1500 frames of player 0 active | fails: player 0 turned as player 1 went down; the released wingman read -1, retreated (`STATE360_6`) and its slot was free for the rest of the level | passes: body away from the frame after the down on every line, `gTeamShields[Falco]` -1, no computer Falco |
+| `scenes`, `steer`, `three`, `desync` | | pass |
+| Host and client hash logs | | equal on all frames, no desync report |
+
+Unknown:
+
+- The way back from away: on `coop` a downed player 1 to 3 stays out; the return is #205's (`issue/14-return-in-place`),
+  not merged. `CoopTeam_HoldBody` sets `STATE360_3` when its human flies again; not run.
+- Whether other player 0 states during play (for example the all-range loop or a warp) need the same treatment.
+
 ### 2026-11-10, #15 (WP-17), the all-range body and the boss fights, first run
 
 Identity: ROM US 1.0, branch `issue/15-wingman-allrange` on `6204f57a` (#212), Windows 11, MSVC v143, Debug, two
