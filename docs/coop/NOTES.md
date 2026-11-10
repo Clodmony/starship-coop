@@ -591,6 +591,89 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-10, #210, items and level triggers that looked at player 0: what decision 0007 and 0008 answer
+
+Identity: ROM US 1.0, on top of `f869efa4` (the test branch `issue/combined-test-4` with #231, #232, #243), Linux,
+GCC, Debug, OpenGL on a software renderer, no window, two games over loopback in lockstep, input delay 3.
+
+Every item of #210 against the decisions (line numbers at the tip of `issue/210-player0-sites`):
+
+| # | Site | Answer | Where |
+|---|---|---|---|
+| 1 | `ItemMeteoWarp_Update` (`src/engine/fox_enmy.c:2428`): any collector counts the ring, at 7 player 0 enters the warp (`:2464-2466`) | By design: 0008 "the team earns, the host steers", 1a; "only player 0 changes state in a warp. The others are parked" (0008, Observed: warps). A joined player is parked once player 0 is neither `ACTIVE` nor `U_TURN` (`src/port/coop/game/players.c:273-280`). The ring sound plays on player 0's source (a view matter, #30) | No change |
+| 2a | `gGoldRingCount[0]` (`fox_enmy.c:2340-2343`): one count for any collector | By design: the team earns (0008) | No change |
+| 2b | The sixth gold ring's life went to `gLifeCount[this->playerNum]` | 0007 rules 1 and 2: one pool in `gLifeCount[0]`, anything that adds a life adds it there | `fox_enmy.c:2346`, `CoopScore_LifeSlot` |
+| 2c | The 1-up (`Item1up_Update`) and the beta coin's sixth ring (`src/port/mods/PortEnhancements.c`, CVar `gRestoreBetaCoin`): the same collector's slot | The same rule (0007 rule 2 names both) | `fox_enmy.c:2234`, `PortEnhancements.c:260` |
+| 2d | The life for 100 hits at the level clear (`HUD_LevelClearStatusScreen_Draw`) wrote `gLifeCount[gPlayerNum]` | Already slot 0 in a session: `HUD_Draw` runs after `CoopView_EndDraw` sets `gPlayerNum` 0 (`src/engine/fox_game.c:577`, `src/port/coop/game/view.c:138`); the other caller is versus only (`src/engine/fox_display.c:2102-2103`). Now names the pool, so WP-28 cannot move it | `src/engine/fox_hud.c:1063`, `:1091-1095`, `:1169`, `:1175-1176` |
+| 3 | `Actor_Despawn` and the Sector Z missile scored `dmgSource == AI360_FOX + 1` only | 0008 4b: a kill by any human scores as player 0's, `DMG_SRC_2` and computer wingmen stay unscored. The hit-count drops (`gDropHitCountItem`) and Star Wolf's time bonus are in the same branch | `fox_enmy.c:1772`, `src/engine/fox_360.c:923`, `CoopScore_HumanKill` |
+| 3b | Katina's Saucerer ignored every shot with `sourceId != TEAM_ID_FOX` | 0008 1a: it takes damage from every human | `src/engine/fox_beam.c:1011`, `CoopScore_HumanShot` |
+| 4 | `EVC_WING_BROKEN` read player 0's wings | The owner's rule for the laser events (#201, "any active player") | `src/engine/fox_enmy2.c:2729`, `CoopItems_WingBrokenEvent` |
+| 5 | `gPlayer[0].alternateView` in `ItemSupplyRing_Update` (`fox_enmy.c:2380`) and `ItemCheckpoint_Update` (`:2489`): how far behind the collector a taken ring or checkpoint flies | A view setting (#30); every game reads the same player 0, so it stays in step | No change |
+| 5b | `ItemCheckpoint_Update` saves the level's restart point (`fox_enmy.c:2511-2520`) and `Item_CheckBounds` keeps items on player 0's path and kills them when player 0 is done (`:2035-2052`) | The team shares one path and player 0 owns it (0008 2a, NOTES #10) | No change |
+| 6 | #88: radio lines lost while player 0 is not active | 0007, "`EVOP_PLAY_MSG` while player 0 is down": nobody flies on while player 0 is down, so the case does not exist; the test is still `gPlayer[0].state == PLAYERSTATE_ACTIVE` (`fox_enmy2.c:1346`) | No code; #88 can be closed with that reference |
+
+How a human is told apart (`src/port/coop/game/score.c`): player 0 keeps upstream's `AI360_FOX + 1`; players 1 to 3 get
+`COOP_DMG_SRC_PLAYER + index` (11 to 13) from `CoopPlayers_DmgSource` in a session, so the test takes 1 and 11 up to
+10 + the player count, and nothing else: not `DMG_SRC_2` (2), not a computer wingman's `NPC_SHOT_ID + actor + 1` (101 and
+up), not `CS_SHOT_ID`. A Landmaster's and a Blue Marine's shots carry `player->num` as an Arwing's do
+(`Player_SetupTankShot`, `Player_SetupOnFootShot`, `Player_SetupArwingShot`, `src/engine/fox_play.c:3094`, `:3144`,
+`:3294`; the marine fires through `Player_SetupArwingShot`, `src/overlays/ovl_i3/fox_aq.c:1217`, `:1236`), and every
+`dmgSource` write from a player's shot or ram goes through `CoopPlayers_DmgSource` (`fox_beam.c:699`, `:1962`, `:1969`,
+`:1984`, `fox_play.c:2194`, `src/engine/fox_tank.c:1425`), so the same test covers them. Not run in a vehicle level.
+Co-op off, each helper is upstream's test.
+
+Observed (`lockstep_test.py --only kill`, `lives`, `wing`, `saucerer`, one run each; the pokes come from
+`src/port/coop/test/score_probe.h` on both games on one lockstep frame):
+
+- `kill`, Corneria's all-range section (L at feed frame 1800, pokes from 2350, every 20 frames): an enemy put into its
+  last dying frame with player 1's `dmgSource` (11) and `gDropHitCountItem` 14: `gHitCount` 0 to 1, the counter 14 to
+  0, one laser item more. With `DMG_SRC_2`, and with Falco's shot (102): `gHitCount` unchanged. With player 0's (1): +1.
+  Hashes and lockstep logs equal on 2550 frames.
+- `lives`, Corneria's rails, feed frame 1900: `gGoldRingCount[0]` set to 5 and a gold ring where player 1 is, then a 1-up
+  60 frames later: the pool 2 to 4, player 1's slot stays 2. Equal on 2100 frames.
+- `wing`, Corneria's rails, 1900: player 1's two wings broken, player 0's whole, an event actor of CO S39 (on
+  `EVC_WING_BROKEN` it becomes a wing repair, `EVID_ITEM_WING_REPAIR`; else it despawns): it became the wing repair; a
+  second one 60 frames later with every wing whole stayed `EVID_FFF` and despawned. Equal on 2100 frames. CO S13 (a
+  supply drop that gives lasers on a broken wing), SX S108 and TR S47 also wait on `EVC_WING_BROKEN`
+  (`tools/coop/script_reader.py`); they were not run.
+- `saucerer`, Katina from frame 600: the Saucerer put into its fight (state 6 at 0, 2000, 0, core timer 5760,
+  `gAllRangeEventTimer` 20000, as `Katina_UpdateEvents` does on a restart from the checkpoint,
+  `src/overlays/ovl_i4/fox_ka.c:2285-2294`; reaching it by script takes 10 hits or 3840 frames, `:887`): a single laser
+  of player 1 standing in the first hatch's hitbox took that hatch 100 to 90, one of player 0 in the second hatch 100 to
+  90. Equal on 1200 frames. The two shots are 20 frames apart: on one frame the boss keeps the last shot's `dmgPart`
+  only (`fox_beam.c`, `PlayerShot_CollisionCheck`), so one hatch would show nothing.
+- Each of the four on the same build without the fix (the probe commit alone, the engine files of the base) fails where
+  it should: `kill`: `a kill of source 11: gHitCount 0 -> 0, want +1`; `lives`: `pool 2 -> 2, player 1's slot 2 -> 4`;
+  `wing`: `event 1 went through [4095, 4095]`; `saucerer`: hatches `[100, 100, 100, 100] -> [100, 90, 100, 100]`, the
+  second hatch by player 0's control shot only.
+- Co-op off: `hash_check.py base` against a build of `coop` `0e5a5cf6`, equal on all 5800 frames. `steer`, `return` and
+  `laser` pass on the fixed build.
+
+Derived:
+
+- The life of 2b and 2c was lost before: it went into slot 1, which decides nothing (0007 rule 1), and a join or a
+  return overwrites the slot with the pool (`players.c:190`, `:237`). It was not copied every frame.
+- A kill by player 1 now plays what player 0's plays in the same branch: Katt's line for the Sector Z missile
+  (`fox_360.c:924-926`) and Bill's at Katina's ninth hit (`fox_enmy.c:1778-1780`). The words were not checked.
+- Player 1's HUD shows its own slot (`fox_hud.c:3702`, `CoopPlayers_HudIndex`), which no longer moves with a life it
+  takes; it shows the pool's value again at its next join or return. That is WP-28's "lives read from slot 0" (#14 notes).
+
+Left at player 0, not asked by #210 and with no rule yet (follow-ups):
+
+- Katina's ally kills, `gKaAllyKillCount` and `gKaKilledAlly` (`fox_360.c:995-999`, `:1150-1152`), which change Bill's
+  lines and the ending's checks (`fox_ka.c:1776`, `:2029`, `:2041`): only Fox's shots count.
+- The other `EVC_*` conditions on player 0: `EVC_HEALTH_*`, `EVC_UNK270_*`, `EVC_UNK250_*`, `EVC_CLOSE_Z`
+  (`fox_enmy2.c`, `ActorEvent_ProcessTriggers`).
+- The radio and AI reactions to Fox's shots in `fox_360.c` (`:535`, `:629`, `:1044`, `:1150`, `:1175`): WP-17 (#15)
+  and 0007 rule 11 keep the friendly-fire lines for player 0's shots.
+- Pause retry's life (`fox_hud.c:1542`, `:1555`) and the map's (`src/overlays/ovl_menu/fox_map.c:3515`) spend from
+  `gPlayerNum`, 0 there in a session: 0007 rule 7, the host's.
+
+Unknown:
+
+- How much sooner medals, Sector Y's route, lives and the refill come with the team total: WP-16 measures it (0008).
+- A kill by a human in a Landmaster or Blue Marine level, three or four players, Windows, two PCs: not run.
+
 ### 2026-11-10, #232, mixer.c's 2-bit mask: an 8-byte load from a 4-byte table, and no sample it reaches
 
 Identity: ROM US 1.0, on `f3eadf7a` (the combined test branch 4), Linux, GCC, Debug, OpenGL on a software renderer, no

@@ -2726,8 +2726,7 @@ void ActorEvent_ProcessTriggers(ActorEvent* this) {
             break;
 
         case EVC_WING_BROKEN:
-            if ((gPlayer[0].arwing.rightWingState <= WINGSTATE_BROKEN) ||
-                (gPlayer[0].arwing.leftWingState <= WINGSTATE_BROKEN)) {
+            if (CoopItems_WingBrokenEvent()) { // COOP: was player 0's wings; any active player (#210, as #201)
                 ActorEvent_TriggerBranch(this);
             }
             break;

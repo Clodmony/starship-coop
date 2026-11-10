@@ -5,6 +5,7 @@
 #include "port/hooks/Events.h"
 #include "port/mods/PortEnhancements.h"
 #include "port/coop/game/players.h" // COOP: the HUD shows the client's own player (#30)
+#include "port/coop/game/score.h"   // COOP: the team's pool of lives (#210)
 
 Vec3f D_801616A0;
 Vec3f D_801616B0;
@@ -1059,6 +1060,7 @@ void HUD_TeammateStatus_Draw(void) {
 void HUD_LevelClearStatusScreen_Draw(void) {
     s32 i;
     s32 temp;
+    s32 lives = CoopScore_LifeSlot(gPlayerNum); // COOP: the life for 100 hits goes to the pool (0007 rule 2, #210)
     f32 x0;
     f32 x1;
     f32 x2;
@@ -1086,11 +1088,11 @@ void HUD_LevelClearStatusScreen_Draw(void) {
                 D_801617C0[1] = gHitCount;
                 D_801617C0[2] = gTotalHits;
                 gTotalHits += gHitCount;
-                D_801617C0[3] = gLifeCount[gPlayerNum];
-                gLifeCount[gPlayerNum] += ((D_801617C0[2] % 100) + gHitCount) / 100;
+                D_801617C0[3] = gLifeCount[lives];                              // COOP: was gPlayerNum
+                gLifeCount[lives] += ((D_801617C0[2] % 100) + gHitCount) / 100; // COOP: was gPlayerNum
 
-                if (gLifeCount[gPlayerNum] > 99) {
-                    gLifeCount[gPlayerNum] = 99;
+                if (gLifeCount[lives] > 99) { // COOP: was gPlayerNum
+                    gLifeCount[lives] = 99;   // COOP: was gPlayerNum
                 }
 
                 D_801617E8[0] = 10;
@@ -1164,14 +1166,14 @@ void HUD_LevelClearStatusScreen_Draw(void) {
 
             case 3:
             case 4:
-                if (D_801617C0[3] < gLifeCount[gPlayerNum]) {
+                if (D_801617C0[3] < gLifeCount[lives]) { // COOP: was gPlayerNum
                     D_801617C0[6] = 30;
                 }
                 D_801617C0[0] = 5;
 
             case 5:
-                if (D_801617C0[3] >= gLifeCount[gPlayerNum]) {
-                    gLifeCount[gPlayerNum] = D_801617C0[3];
+                if (D_801617C0[3] >= gLifeCount[lives]) { // COOP: was gPlayerNum
+                    gLifeCount[lives] = D_801617C0[3];    // COOP: was gPlayerNum
                     D_801617E8[0] = 10;
                     D_801617C0[0]++;
                 } else {

@@ -1,6 +1,7 @@
 #include "global.h"
 #include "port/coop/game/players.h" // COOP: the camera drawn (#30)
 #include "port/coop/game/aim.h"     // COOP: dogfighters chase the nearest human (#213)
+#include "port/coop/game/score.h"   // COOP: a kill by any human scores (#210)
 #include "assets/ast_katina.h"
 #include "assets/ast_venom_2.h"
 #include "assets/ast_fortuna.h"
@@ -919,7 +920,7 @@ void ActorAllRange_ApplyDamage(ActorAllRange* this) {
                 this->health = 0;
                 if (this->aiType == AI360_MISSILE) {
                     SectorZ_MissileExplode(this, true);
-                    if (this->dmgSource == AI360_FOX + 1) {
+                    if (CoopScore_HumanKill(this->dmgSource)) { // COOP: was == AI360_FOX + 1 (0008 4b, #210)
                         if (gActors[AI360_KATT].obj.status == OBJ_ACTIVE) {
                             Radio_PlayMessage(gMsg_ID_16140, RCID_KATT);
                         }

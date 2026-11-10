@@ -85,11 +85,11 @@ src/engine/fox_enmy.c	Object_LoadLevelObjects	sim	site	spawning on path splits f
 src/engine/fox_enmy.c	Object_Init	sim	site	init depends on player 0 z
 src/engine/fox_enmy.c	ActorMissileSeek_Update	sim	site	seeks the nearest human (CoopAim_Nearest, #193); player 0's camera and level end remove it
 src/engine/fox_enmy.c	SceneryRotateTowardsCamera	view	site	billboard to player 0 camera
-src/engine/fox_enmy.c	Item_CheckBounds	sim	site	items kept inside player 0 path bounds
+src/engine/fox_enmy.c	Item_CheckBounds	sim	site	items kept inside player 0 path bounds; the team shares the path, by design (decision 0008 2a, #210)
 src/engine/fox_enmy.c	ItemLasers_Update	sim	site	laser item checks player 0 wings
-src/engine/fox_enmy.c	ItemSupplyRing_Update	view	site	player 0 alternate (cockpit) view
-src/engine/fox_enmy.c	ItemMeteoWarp_Update	flow	site	warp ring sends player 0 into the warp zone
-src/engine/fox_enmy.c	ItemCheckpoint_Update	view	site	player 0 alternate (cockpit) view
+src/engine/fox_enmy.c	ItemSupplyRing_Update	view	site	player 0 alternate (cockpit) view (#30); the gold ring count is the team's by design, the sixth ring's life goes to the pool since #210
+src/engine/fox_enmy.c	ItemMeteoWarp_Update	flow	site	warp ring sends player 0 into the warp zone: any human earns it, player 0 alone changes state, the others are parked (decision 0008, #210)
+src/engine/fox_enmy.c	ItemCheckpoint_Update	view	site	player 0 alternate (cockpit) view (#30); the checkpoint is level flow on the team's path (decision 0008, #210)
 src/engine/fox_enmy.c	ItemPathChange_Update	flow	read	path split and level end gate: changes player 0 path, state and flags
 src/engine/fox_enmy.c	Sprite_UpdateDoodad	view	site	billboard to player 0 camera
 src/engine/fox_enmy.c	Actor_Move	sim	read	actors are killed (Object_Kill) when outside player 0 camera and path bounds
@@ -110,7 +110,7 @@ src/engine/fox_enmy2.c	ActorDebris_Update	sim	site	debris placed relative to pla
 src/engine/fox_enmy2.c	func_enmy2_8006D0F4	sim	site	scenery search ahead of player 0
 src/engine/fox_enmy2.c	ActorEvent_ProcessScript	sim	site	event scripts check player 0 state and position; radio only when player 0 active
 src/engine/fox_enmy2.c	ActorEvent_ProcessActions	sim	read	event actors aim at player 0 (temporarily jitters player 0 position to aim off)
-src/engine/fox_enmy2.c	ActorEvent_ProcessTriggers@gPlayer[0]	sim	read	event conditions read player 0 position, shields and speed; the laser levels read every active player since #201
+src/engine/fox_enmy2.c	ActorEvent_ProcessTriggers@gPlayer[0]	sim	read	event conditions read player 0 position, shields and speed; the laser levels read every active player since #201, the broken wing since #210
 src/engine/fox_enmy2.c	ActorEvent_ProcessTriggers@gMainController	input	site	C-right condition read from gMainController
 src/engine/fox_enmy2.c	ActorEvent_80072474	sim	site	angle to player 0
 src/engine/fox_enmy2.c	ActorEvent_Update	sim	site	event actors aim at player 0 and set player 0 damage type; killed on player 0 level complete
@@ -286,14 +286,14 @@ include/sf64object.h	<file scope>@shooter	ok	read	the dmgSource field
 include/sf64player.h	<file scope>@shooter	ok	read	the sourceId field
 src/engine/fox_360.c	ActorAllRange_UpdateStarWolfEvents@shooter	flow	site	rescue: only player 0's hit on the chaser frees the wingman and earns the thanks; who may rescue is WP-17 (#15), NOTES #59
 src/engine/fox_360.c	ActorAllRange_UpdateEnemyEvents@shooter	flow	site	the same rescue when player 0 shoots a chaser down; WP-17 (#15)
-src/engine/fox_360.c	ActorAllRange_ApplyDamage@shooter	flow	site	only player 0 counts: Sector Z missile +11 hits and Katina ally kills are WP-16 (#14), friendly-fire and kill lines WP-17 (#15); players 1 and up get no line
+src/engine/fox_360.c	ActorAllRange_ApplyDamage@shooter	flow	site	the Sector Z missile's +11 hits count for any human since #210 (0008 4b); Katina ally kills (gKaAllyKillCount, gKaKilledAlly) count player 0 only, no rule yet; friendly-fire and kill lines WP-17 (#15); players 1 and up get no line
 src/engine/fox_beam.c	PlayerShot_ExplodeBomb@shooter	ok	site	per shooter: bomb sound slot; colour in versus only
 src/engine/fox_beam.c	PlayerShot_Impact@shooter	ok	site	per shooter: lock-on timers; colour in versus only
 src/engine/fox_beam.c	PlayerShot_CheckObjectHitbox@shooter	ok	site	sourceId < 4 and gLaserStrength[sourceId]: every player, own lasers
 src/engine/fox_beam.c	PlayerShot_CheckEventHitbox@shooter	ok	site	sourceId < 4 and gLaserStrength[sourceId]: every player, own lasers
 src/engine/fox_beam.c	PlayerShot_CheckActorHitbox@shooter	ok	site	sourceId < 4 and gLaserStrength[sourceId]: every player, own lasers
 src/engine/fox_beam.c	PlayerShot_ApplyDamageToActor@shooter	ok	read	damage by the shooter's own lasers; dmgSource through CoopPlayers_DmgSource since #86
-src/engine/fox_beam.c	PlayerShot_CollisionCheck@shooter	flow	site	open rules: Star Wolf dodges only player 0's shots outside Venom 2 and only player 0 hurts the Saucerer (WP-16 #14, NOTES #59 question 8), shots hit player 0 only in all-range (friendly fire, #7), Shogun bonus only for sourceId 0 (fox_sy.c:564, :602, WP-16 #14)
+src/engine/fox_beam.c	PlayerShot_CollisionCheck@shooter	flow	site	open rules: Star Wolf dodges only player 0's shots outside Venom 2 and every human hurts the Saucerer since #210 (0008 1a), shots hit player 0 only in all-range (friendly fire, #7), Shogun bonus only for sourceId 0 (fox_sy.c:564, :602, WP-16 #14)
 src/engine/fox_beam.c	PlayerShot_DrawLaser@shooter	view	site	colour by NPC id; player colours in the versus branch; twin or hyper look from the shooter's own gLaserStrength in co-op (#201)
 src/engine/fox_beam.c	PlayerShot_DrawShot@shooter	view	site	player colours in versus branches
 src/engine/fox_beam.c	PlayerShot_UpdateBeam@shooter	ok	read	ground hit uses the shooter's own lasers and form since #86; :1696 tests NPC ids
@@ -306,7 +306,7 @@ src/engine/fox_beam.c	PlayerShot_UpdateLockOnShot@shooter	ok	site	per shooter: l
 src/engine/fox_beam.c	PlayerShot_UpdateShot@shooter	ok	site	the shooter's own player; gPlayerScores in versus only; the lock-on bonus adds to gHitCount for any shooter (WP-16, #14)
 src/engine/fox_effect.c	func_effect_8007FD84@shooter	ok	site	enemy effect hitting an actor writes CS_SHOT_ID
 src/engine/fox_enmy.c	ActorMissileSeek_Update@shooter	ok	site	enemy missile on a wingman writes DMG_SRC_2, which since #86 only enemies do in co-op
-src/engine/fox_enmy.c	Actor_Despawn@shooter	flow	read	only player 0's kills add to gHitCount, the hit-count drop and Star Wolf hits: WP-16 (#14), DESIGN.md section 4 item 5; the score branch is versus only
+src/engine/fox_enmy.c	Actor_Despawn@shooter	flow	read	a kill by any human (CoopScore_HumanKill) adds to gHitCount, the hit-count drop and Star Wolf hits, DMG_SRC_2 and computer wingmen do not (decision 0008 4b, #210); the score branch is versus only
 src/engine/fox_enmy2.c	<file scope>@shooter	ok	site	NPC shot setup: writes NPC ids
 src/engine/fox_enmy2.c	ActorEvent_ProcessScript@shooter	ok	site	script damage writes DMG_SRC_100
 src/engine/fox_enmy2.c	ActorEvent_800701E0@shooter	flow	site	on-rails wingman line only for player 0's hit; WP-17 (#15)
