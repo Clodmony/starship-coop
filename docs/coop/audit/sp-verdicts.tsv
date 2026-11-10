@@ -59,7 +59,7 @@ src/engine/fox_360.c	ActorAllRange_SpawnSupplies@gPlayer[0]	sim	site	supplies se
 src/engine/fox_360.c	ActorAllRange_UpdateEvents	flow	site	events paused while player 0 is down
 src/engine/fox_360.c	ActorAllRange_CheckObjectNearby	flow	site	checks player 0 intro state
 src/engine/fox_360.c	ActorAllRange_CheckPlayerNearby	sim	site	AI avoids player 0 only
-src/engine/fox_360.c	ActorAllRange_Update	sim	site	wingmen and Star Wolf follow, chase and react to player 0 (position, speed, somersault, shields)
+src/engine/fox_360.c	ActorAllRange_Update	sim	site	enemies that chase Fox chase their kept human (#213, aim.h); wingmen, their radio, the START_360 wait and the Bolse and Katina standby checks stay on player 0
 #
 # --- engine: player shots (fox_beam.c)
 src/engine/fox_beam.c	PlayerShot_CheckActorHitbox	sim	site	hit test uses player 0 camera position
@@ -147,7 +147,7 @@ src/engine/fox_effect.c	Effect_Effect362_Update	view	site	faces player 0 camera
 src/engine/fox_effect.c	Effect_Effect345_Update	setup	site	gCamCount != 1 as versus flag
 src/engine/fox_effect.c	Effect_Effect353_354_Update	sim	read	enemy projectile hits, deflects and knocks back player 0; CoopEffects_ShotHit does the others (#100); wingman and roll reach still read player 0
 src/engine/fox_effect.c	Effect_Effect398_Update	sim	read	aimed at the nearest human (#193); hits and knocks back player 0, CoopEffects_ShotHit does the others (#100)
-src/engine/fox_effect.c	Effect_Effect395_Update	sim	site	tests player 0, CoopEffects_BeamHit does the others (#100); boss faces player 0 camera
+src/engine/fox_effect.c	Effect_Effect395_Update	sim	site	tests player 0, CoopEffects_BeamHit does the others (#100); the Gorgon beam turns to the Gorgon's kept target (#213)
 src/engine/fox_effect.c	Effect_Effect374_Update	sim	site	tests player 0, CoopEffects_ColumnHit does the others (#100)
 src/engine/fox_effect.c	Effect_Effect391_Update	view	site	faces player 0 camera
 src/engine/fox_effect.c	func_effect_80083D2C	sim	site	aims at player 0
@@ -189,7 +189,7 @@ src/overlays/ovl_i1/fox_tr360.c	Training_SpawnEnemies@gPlayer[0]	sim	site	spawns
 src/overlays/ovl_i1/fox_tr360.c	Training_SpawnEnemies@gMainController	input	site	C-right call read from gMainController
 src/overlays/ovl_i1/fox_ve1.c	Venom1_80198414	flow	read	saves player 0 shields and wings before the Venom 1 to Venom 2 switch
 src/overlays/ovl_i1/fox_ve1.c	*	sim	site	Venom 1 enemies and boss move relative to player 0
-src/overlays/ovl_i3/fox_a6.c	Area6_A6Gorgon_Update	sim	read	boss moves to and aims at player 0 camera; its death sets player 0 level complete
+src/overlays/ovl_i3/fox_a6.c	Area6_A6Gorgon_Update	flow	read	faces, follows and warps to its kept target (#213, aim.h); left: its death sets player 0 level complete
 src/overlays/ovl_i3/fox_a6.c	*	flow	name	Area 6 cutscene helpers on player 0
 src/overlays/ovl_i4/fox_fo.c	Fortuna_UpdateEvents	flow	read	Fortuna timer and level end drive player 0 state
 src/overlays/ovl_i4/fox_fo.c	Fortuna_LevelComplete_CsSpawnTeam	flow	site	level complete cutscene around player 0
@@ -267,8 +267,9 @@ src/overlays/ovl_i4/fox_sz.c	SectorZ_Missile_Update	sim	site	missiles; set playe
 src/overlays/ovl_i4/fox_sz.c	SectorZ_EnemyUpdate	sim	site	sets player 0 to STANDBY and moves its camera
 src/overlays/ovl_i5/fox_ma.c	Macbeth_MaLocomotive_Update	sim	site	train; sets player 0 to LEVEL_COMPLETE
 src/overlays/ovl_i5/fox_ma.c	Macbeth_MaRailwaySignal_Update	sim	site	sets player 0 to LEVEL_COMPLETE
-src/overlays/ovl_i6/fox_andross.c	Andross_80188A4C	sim	site	boss part; sets player 0 to STANDBY after the bonus
-src/overlays/ovl_i6/fox_andross.c	Andross_AndBrain_Update	sim	site	boss; sets player 0 to START_360 and moves its camera; catches and drains player 0 only, it can hold one player: needs a choice (#136)
+src/overlays/ovl_i6/fox_andross.c	Andross_80188A4C	flow	read	the brain's death sets player 0 to STANDBY; its warp goes to the nearest human (#213)
+src/overlays/ovl_i6/fox_andross.c	Andross_AndAndross_Update	flow	read	eyes, punches and slaps follow its kept target (#213); left: z keeps to player 0's path, the inhale and the mouth hold player 0, camera roll, debris around player 0's camera
+src/overlays/ovl_i6/fox_andross.c	Andross_AndBrain_Update	flow	read	chases its kept target, catches the nearest flying human in reach, one at a time (#213, owner's choice A); left: player 0 to START_360, its camera as the brain dies, the escape start, faces player 0's camera (camYaw is draw state)
 src/overlays/ovl_i6/fox_andross.c	Andross_8018D2B0	sim	site	sets player 0 state
 src/overlays/ovl_i4/fox_bo.c	Bolse_8018E05C	sim	read	base's beam: tests player 0, CoopHits_BolseBeam does the others (#136)
 src/overlays/ovl_i6/fox_andross.c	Andross_8018D0D8	ok	read	tests player 0, CoopHits_AndrossReach does the others (#136)

@@ -55,6 +55,7 @@
 #include "port/coop/ui/menu_window.h"     // COOP: the co-op menu starts levels (#126)
 #include "port/coop/game/input_game.h"    // COOP: an input source per player (WP-14)
 #include "port/coop/game/vehicles.h"      // COOP: one Landmaster per player (#16)
+#include "port/coop/game/aim.h"           // COOP: whom bosses and dogfighters follow (#213)
 
 #include <Fast3D/interpreter.h>
 #include <filesystem>
@@ -330,6 +331,7 @@ void GameEngine::Create() {
     CoopUi::Listen();      // COOP: does nothing on a frame without a co-op session (#126)
     CoopInput_Init(); // COOP: does nothing until a co-op level starts (WP-14)
     CoopVehicles_Init(); // COOP: does nothing for player 0 or outside co-op (#16)
+    CoopAim_Init();      // COOP: a new boss or actor picks its own target; nothing outside co-op (#213)
 }
 
 void GameEngine::Destroy() {

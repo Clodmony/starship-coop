@@ -7,6 +7,7 @@
 #include "global.h"
 #include "assets/ast_area_6.h"
 #include "fox_record.h"
+#include "port/coop/game/aim.h" // COOP: the Gorgon follows the nearest human (#213)
 
 void Area6_8018A1B0(Boss* this, s32 arg1);
 void Area6_8018A2C4(Boss* this);
@@ -485,15 +486,18 @@ void Area6_A6Gorgon_Update(A6Gorgon* this) {
     Vec3f sp98;
     Vec3f sp8C;
     Effect* effect;
+    // COOP: the player it faces, follows and warps to, was player 0; kept until it warps (#213)
+    Player* aimed = &gPlayer[CoopAim_BossTarget(this->index, this->obj.pos.x, this->obj.pos.y, this->obj.pos.z)];
 
     gBossFrameCount++;
 
     if ((this->state < 6) || ((this->state >= 8) && (this->state < 12))) {
-        this->obj.rot.y = RAD_TO_DEG(Math_Atan2F(gPlayer[0].cam.eye.x - this->obj.pos.x,
-                                                 gPlayer[0].cam.eye.z - (this->obj.pos.z + gPathProgress)));
-        this->obj.rot.x = RAD_TO_DEG(-Math_Atan2F(gPlayer[0].cam.eye.y - this->obj.pos.y,
-                                                  sqrtf(SQ(gPlayer[0].cam.eye.z - (this->obj.pos.z + gPathProgress)) +
-                                                        SQ(gPlayer[0].cam.eye.x - this->obj.pos.x))));
+        // COOP: aimed was gPlayer[0] (#213)
+        this->obj.rot.y = RAD_TO_DEG(
+            Math_Atan2F(aimed->cam.eye.x - this->obj.pos.x, aimed->cam.eye.z - (this->obj.pos.z + gPathProgress)));
+        this->obj.rot.x = RAD_TO_DEG(-Math_Atan2F(
+            aimed->cam.eye.y - this->obj.pos.y,
+            sqrtf(SQ(aimed->cam.eye.z - (this->obj.pos.z + gPathProgress)) + SQ(aimed->cam.eye.x - this->obj.pos.x))));
     }
 
     Matrix_RotateY(gCalcMatrix, this->obj.rot.y * M_DTOR, MTXF_NEW);
@@ -610,18 +614,18 @@ void Area6_A6Gorgon_Update(A6Gorgon* this) {
         Math_SmoothStepToAngle(&this->obj.rot.z, this->fwork[A6_FWK_8], 0.05f, this->fwork[A6_FWK_9], 0.00001f);
         if (this->swork[A6_SWK_25] >= 2) {
             if (!(gGameFrameCount % 64U) && (Rand_ZeroOne() < 0.5f)) {
-                this->fwork[A6_FWK_6] = RAND_FLOAT_CENTERED(500.0f) + gPlayer[0].cam.eye.x;
+                this->fwork[A6_FWK_6] = RAND_FLOAT_CENTERED(500.0f) + aimed->cam.eye.x; // COOP: was gPlayer[0]
             }
             if (!(gGameFrameCount % 64U) && (Rand_ZeroOne() < 0.5f)) {
-                this->fwork[A6_FWK_7] = RAND_FLOAT_CENTERED(500.0f) + gPlayer[0].cam.eye.y;
+                this->fwork[A6_FWK_7] = RAND_FLOAT_CENTERED(500.0f) + aimed->cam.eye.y; // COOP: was gPlayer[0]
             }
         } else {
             if (!(gGameFrameCount % 32U) && (Rand_ZeroOne() < 0.7f)) {
-                this->fwork[A6_FWK_6] = RAND_FLOAT_CENTERED(1000.0f) + gPlayer[0].cam.eye.x;
+                this->fwork[A6_FWK_6] = RAND_FLOAT_CENTERED(1000.0f) + aimed->cam.eye.x; // COOP: was gPlayer[0]
                 this->fwork[A6_FWK_30] = 0.0f;
             }
             if (!(gGameFrameCount % 32U) && (Rand_ZeroOne() < 0.7f)) {
-                this->fwork[A6_FWK_7] = RAND_FLOAT_CENTERED(1000.0f) + gPlayer[0].cam.eye.y;
+                this->fwork[A6_FWK_7] = RAND_FLOAT_CENTERED(1000.0f) + aimed->cam.eye.y; // COOP: was gPlayer[0]
                 this->fwork[A6_FWK_31] = 0.0f;
             }
         }
@@ -629,8 +633,8 @@ void Area6_A6Gorgon_Update(A6Gorgon* this) {
 
     if (this->state != 0) {
         Math_SmoothStepToF(&this->fwork[A6_FWK_4], this->fwork[A6_FWK_5], 0.1f, 2.0f, 0.00001f);
-        Math_SmoothStepToF(&this->obj.pos.z, gPlayer[0].cam.eye.z - gPathProgress + this->fwork[A6_FWK_3], 0.1f,
-                           this->fwork[A6_FWK_4], 0.00001f);
+        Math_SmoothStepToF(&this->obj.pos.z, aimed->cam.eye.z - gPathProgress + this->fwork[A6_FWK_3], 0.1f,
+                           this->fwork[A6_FWK_4], 0.00001f); // COOP: aimed was gPlayer[0] (#213)
         if (this->state < 5) {
             sp120 = 2.0f;
             if (this->swork[A6_SWK_25] == 1) {
@@ -716,16 +720,16 @@ void Area6_A6Gorgon_Update(A6Gorgon* this) {
         case 0:
             this->info.hitbox[0] = 0;
 
-            dx_11C = gPlayer[0].pos.x - this->obj.pos.x;
-            dy_118 = gPlayer[0].pos.y - this->obj.pos.y;
-            dz_114 = gPlayer[0].pos.z - 700.0f - this->obj.pos.z;
+            dx_11C = aimed->pos.x - this->obj.pos.x; // COOP: aimed was gPlayer[0], here and below (#213)
+            dy_118 = aimed->pos.y - this->obj.pos.y;
+            dz_114 = aimed->pos.z - 700.0f - this->obj.pos.z;
 
             sp104 = 10.0f;
 
             if ((this->timer_050 != 0) && (this->timer_050 < 200)) {
-                dx_11C = gPlayer[0].cam.eye.x - this->obj.pos.x;
-                dy_118 = gPlayer[0].cam.eye.y - this->obj.pos.y;
-                dz_114 = gPlayer[0].cam.eye.z - gPathProgress + this->fwork[A6_FWK_3] - this->obj.pos.z;
+                dx_11C = aimed->cam.eye.x - this->obj.pos.x;
+                dy_118 = aimed->cam.eye.y - this->obj.pos.y;
+                dz_114 = aimed->cam.eye.z - gPathProgress + this->fwork[A6_FWK_3] - this->obj.pos.z;
                 sp104 = 100.0f;
             }
 
@@ -766,9 +770,12 @@ void Area6_A6Gorgon_Update(A6Gorgon* this) {
                     AUDIO_PLAY_SFX(NA_SE_EN_SHIELD_ROLL_STOP, this->sfxSource, 4);
 
                     this->timer_050 = 20;
-                    this->obj.pos.z = gPlayer[0].cam.eye.z - gPathProgress + this->fwork[A6_FWK_3];
-                    this->fwork[A6_FWK_6] = this->obj.pos.x = gPlayer[0].cam.eye.x;
-                    this->fwork[A6_FWK_7] = this->obj.pos.y = gPlayer[0].cam.eye.y;
+                    // COOP: it picks again as it warps; aimed was gPlayer[0] (#213)
+                    aimed =
+                        &gPlayer[CoopAim_RepickBoss(this->index, this->obj.pos.x, this->obj.pos.y, this->obj.pos.z)];
+                    this->obj.pos.z = aimed->cam.eye.z - gPathProgress + this->fwork[A6_FWK_3];
+                    this->fwork[A6_FWK_6] = this->obj.pos.x = aimed->cam.eye.x;
+                    this->fwork[A6_FWK_7] = this->obj.pos.y = aimed->cam.eye.y;
                     this->state = 2;
                     this->vel.x = 0.0f;
                     this->vel.y = 0.0f;
@@ -795,8 +802,11 @@ void Area6_A6Gorgon_Update(A6Gorgon* this) {
                 Math_SmoothStepToF(&this->fwork[A6_FWK_35], 1.2f, 0.1f, 0.1f, 0.0f);
 
                 if (D_i3_801C22F0.unk_24 < 1.0f) {
-                    this->fwork[A6_FWK_6] = RAND_FLOAT_CENTERED(1000.0f) + gPlayer[0].cam.eye.x;
-                    this->fwork[A6_FWK_7] = RAND_FLOAT_CENTERED(1000.0f) + gPlayer[0].cam.eye.y;
+                    // COOP: it picks again as it warps; aimed was gPlayer[0], here and below (#213)
+                    aimed =
+                        &gPlayer[CoopAim_RepickBoss(this->index, this->obj.pos.x, this->obj.pos.y, this->obj.pos.z)];
+                    this->fwork[A6_FWK_6] = RAND_FLOAT_CENTERED(1000.0f) + aimed->cam.eye.x;
+                    this->fwork[A6_FWK_7] = RAND_FLOAT_CENTERED(1000.0f) + aimed->cam.eye.y;
                     this->fwork[A6_FWK_3] = -3700.0f + RAND_FLOAT_CENTERED(3000.0f);
                     this->fwork[A6_FWK_34] = 2.0f;
                     this->fwork[A6_FWK_35] = 1.2f;
@@ -814,9 +824,9 @@ void Area6_A6Gorgon_Update(A6Gorgon* this) {
                         if ((this->swork[A6_SWK_25] != 1) && (D_i3_801C2250[A6_BSS_0] != 2)) {
                             this->fwork[A6_FWK_3] = RAND_FLOAT_CENTERED(1000.0f) + -3700.0f;
                         }
-                        this->obj.pos.z = gPlayer[0].cam.eye.z - gPathProgress + this->fwork[A6_FWK_3];
-                        this->fwork[A6_FWK_6] = this->obj.pos.x = gPlayer[0].cam.eye.x;
-                        this->fwork[A6_FWK_7] = this->obj.pos.y = gPlayer[0].cam.eye.y;
+                        this->obj.pos.z = aimed->cam.eye.z - gPathProgress + this->fwork[A6_FWK_3];
+                        this->fwork[A6_FWK_6] = this->obj.pos.x = aimed->cam.eye.x;
+                        this->fwork[A6_FWK_7] = this->obj.pos.y = aimed->cam.eye.y;
                     }
 
                     D_i3_801C22F0.unk_24 = 0.0f;
