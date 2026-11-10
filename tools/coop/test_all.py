@@ -65,13 +65,12 @@ FOLDERS = {"Debug": "build-cmake", "Release": "build-release", "RelWithDebInfo":
 CONFIG_PAIR = {"Debug": "Release", "Release": "Debug"}
 
 # What a build without Debug's symbols cannot do, and that a Debug run covers: step -> (its tool and arguments there,
-# what that leaves out). push_frame is inlined and gdb has no lines to stop on. The mutant is a release too early, which
-# a Debug build shows on lan and a Release build did not, 3 runs of 3.
+# what that leaves out). push_frame is inlined and gdb has no lines to stop on. (steam-mutants left out
+# message_released_too_early here until #158: the fake's poison of a released message was a memset before free, which
+# -O2 drops.)
 OPTIMISED = {
     "exit-test": (["exit_test.py", "--skip", "fault-main,fault-stuck"], "exit-test fault-main, fault-stuck"),
     "wingman": (["wingman_check.py", "run", "chain"], "wingman alive, down, sitout"),
-    "steam-mutants": (["steam_mutants.py", "--skip", "message_released_too_early"],
-                      "steam-mutants message_released_too_early"),
 }
 
 # name, lane, the tool and its arguments, what it takes (see command_of), what goes in front of it, Linux only
