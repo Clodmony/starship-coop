@@ -8,6 +8,7 @@
 #include "assets/ast_blue_marine.h"
 #include "assets/ast_aquas.h"
 #include "port/hooks/Events.h"
+#include "port/coop/game/aim.h" // COOP: the Bacoon aims at the nearest human (#220)
 // #include "prevent_bss_reordering2.h"
 
 const char D_i3_801C1A30[] = "プレイヤーのすべてをクリア \n"; // Clear of all players
@@ -2662,6 +2663,9 @@ void Aquas_AqBacoon_Update(AqBacoon* this) {
     Vec3f spD4;
     f32 temp3;
     f32 var_fs1;
+    // COOP: the player its head and eyes turn to, was player 0; kept until its next state (#220)
+    Player* aimed = &gPlayer[CoopAim_BossTarget(this->index, this->obj.pos.x, this->obj.pos.y, this->obj.pos.z)];
+    s32 coopState = this->state; // COOP: a new state picks the nearest human again (#220)
 
     gBossFrameCount++;
 
@@ -2936,6 +2940,9 @@ void Aquas_AqBacoon_Update(AqBacoon* this) {
                 }
             }
             break;
+    }
+    if (this->state != coopState) {
+        CoopAim_ForgetBoss(this->index); // COOP: (#220)
     }
 
     switch (this->swork[AQ_SWK_0]) {
@@ -3217,9 +3224,9 @@ void Aquas_AqBacoon_Update(AqBacoon* this) {
     }
 
     if ((this->state >= 4) && (this->state < 16)) {
-        sp104 = gPlayer[0].pos.x - this->obj.pos.x;
-        sp100 = gPlayer[0].pos.y - this->obj.pos.y;
-        spFC = gPlayer[0].trueZpos - this->obj.pos.z;
+        sp104 = aimed->pos.x - this->obj.pos.x;   // COOP: aimed was gPlayer[0] here and below (#220)
+        sp100 = aimed->pos.y - this->obj.pos.y;   // COOP: as above
+        spFC = aimed->trueZpos - this->obj.pos.z; // COOP: as above
         spE8 = Math_RadToDeg(Math_Atan2F(sp104, spFC));
         // spEC = sqrtf(SQ(sp104) + SQ(spFC));
         spE4 = Math_RadToDeg(-Math_Atan2F(sp100, sqrtf(SQ(sp104) + SQ(spFC))));
@@ -3255,12 +3262,12 @@ void Aquas_AqBacoon_Update(AqBacoon* this) {
         }
     }
 
-    spF4 = gPlayer[0].pos.y - D_i3_801C4308[77];
-    spF8 = gPlayer[0].pos.x - D_i3_801C4308[76];
-    spF0 = gPlayer[0].trueZpos - D_i3_801C4308[78];
-    sp104 = gPlayer[0].pos.x - D_i3_801C4308[73];
-    sp100 = gPlayer[0].pos.y - D_i3_801C4308[74];
-    spFC = gPlayer[0].trueZpos - D_i3_801C4308[75];
+    spF4 = aimed->pos.y - D_i3_801C4308[77];    // COOP: as above
+    spF8 = aimed->pos.x - D_i3_801C4308[76];    // COOP: as above
+    spF0 = aimed->trueZpos - D_i3_801C4308[78]; // COOP: as above
+    sp104 = aimed->pos.x - D_i3_801C4308[73];   // COOP: as above
+    sp100 = aimed->pos.y - D_i3_801C4308[74];   // COOP: as above
+    spFC = aimed->trueZpos - D_i3_801C4308[75]; // COOP: as above
 
     spE8 = Math_RadToDeg(Math_Atan2F(sp104, spFC));
     spE0 = Math_RadToDeg(Math_Atan2F(spF8, spF0));

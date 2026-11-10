@@ -7,6 +7,7 @@
 #include "global.h"
 #include "assets/ast_bg_planet.h"
 #include "assets/ast_solar.h"
+#include "port/coop/game/aim.h" // COOP: the Vulkain aims at the nearest human (#220)
 
 typedef void (*SoVulkainfunc)(SoVulkain*);
 
@@ -2668,7 +2669,12 @@ void Solar_SoVulkain_Update(SoVulkain* this) {
     Math_SmoothStepToF(&this->fwork[0], 1.0f, 0.01f, 0.01f, 0.0f);
 
     if ((this->health > 0) || (this->swork[SO_SWK_0] == 0)) {
+        s32 move = this->swork[SO_SWK_0]; // COOP: a new move picks the nearest human again (#220)
+
         D_i3_801BF980[this->swork[SO_SWK_0]](this);
+        if (this->swork[SO_SWK_0] != move) {
+            CoopAim_ForgetBoss(this->index); // COOP: (#220)
+        }
     }
 
     if (this->timer_058 != 0) {
@@ -2763,9 +2769,12 @@ void Solar_SoVulkain_Update(SoVulkain* this) {
     Matrix_RotateY(gCalcMatrix, -this->obj.rot.y * M_DTOR, MTXF_APPLY);
 
     if ((this->health > 0) && (this->swork[SO_SWK_0] == 1)) {
-        src.x = gPlayer[0].pos.x - this->obj.pos.x;
-        src.y = gPlayer[0].pos.y - this->obj.pos.y;
-        src.z = gPlayer[0].pos.z - this->obj.pos.z;
+        // COOP: the head, and the fireballs it spits, turn to the human it keeps; was gPlayer[0] (#220)
+        Player* aimed = &gPlayer[CoopAim_BossTarget(this->index, this->obj.pos.x, this->obj.pos.y, this->obj.pos.z)];
+
+        src.x = aimed->pos.x - this->obj.pos.x;
+        src.y = aimed->pos.y - this->obj.pos.y;
+        src.z = aimed->pos.z - this->obj.pos.z;
 
         Matrix_MultVec3fNoTranslate(gCalcMatrix, &src, &dest);
 

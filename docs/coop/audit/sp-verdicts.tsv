@@ -207,6 +207,10 @@ src/overlays/ovl_i1/fox_co.c	Corneria_LevelStart	flow	site	intro on player 0
 src/overlays/ovl_i1/fox_co.c	Corneria_CsLevelComplete1_TeamSetup	flow	name	level complete cutscene
 src/overlays/ovl_i1/fox_co.c	Corneria_SetupClouds	view	name	clouds around player 0 camera
 src/overlays/ovl_i1/fox_co.c	Corneria_SpawnClouds	view	name	clouds around player 0 camera
+src/overlays/ovl_i1/fox_co.c	Corneria_CoGranga_Update	flow	read	walks at, turns its guns to and stops on a somersault of its kept target (#220, aim.h); left: the fight waits for player 0's cut to all-range, the HUD arrow flags on player 0
+src/overlays/ovl_i1/fox_co.c	Corneria_CoGranga_1UpCheck	flow	read	the 1-up for a loop under the Granga: player 0's hit timer, place and loop, the item in front of player 0; a trigger, left on player 0 (#220)
+src/overlays/ovl_i1/fox_co.c	Corneria_CoCarrier_Init	flow	read	starts 2000 ahead of player 0 on the path (#220)
+src/overlays/ovl_i1/fox_co.c	Corneria_CoCarrier_Update	flow	read	its z keeps to the path (player 0's camera on rails), its beams and missiles aim at the nearest human (#193); left: the beam's start by z, player 0's shadow, level complete (#220)
 src/overlays/ovl_i2/fox_me.c	Meteo_LevelStart_SetupTeam	flow	name	intro team around player 0
 src/overlays/ovl_i2/fox_me.c	Meteo_LevelComplete_SetupTeam	flow	name	level complete team around player 0
 src/overlays/ovl_i2/fox_sx.c	SectorX_8018F030	flow	site	Slippy placed at player 0 camera for a cutscene
@@ -217,6 +221,7 @@ src/overlays/ovl_i3/fox_aq.c	Aquas_CsAqFishGroup_Update	flow	name	cutscene fish
 src/overlays/ovl_i3/fox_aq.c	Aquas_801ABA40	sim	site	Blue Marine torpedoes culled by player 0 camera; aimed by the firing marine since #16
 src/overlays/ovl_i3/fox_so.c	Solar_LevelStart	flow	name	intro on player 0
 src/overlays/ovl_i3/fox_so.c	Solar_801A3C4C	flow	site	Vulkain death: rumble and player 0 to level complete
+src/overlays/ovl_i3/fox_so.c	Solar_SoVulkain_Update	flow	read	its head, and the fireballs it spits along it, turn to its kept human, picked again at a new move (#220, aim.h); left: its z keeps to the path (player 0's z on rails)
 src/overlays/ovl_i4/fox_bo.c	Bolse_UpdateEventHandler	flow	read	Bolse events: level complete and standby cutscene on player 0
 src/overlays/ovl_i4/fox_bo.c	Bolse_LevelComplete	flow	name	level complete on player 0
 src/overlays/ovl_i4/fox_ka.c	Katina_KaSaucerer_Update	sim	site	boss; its death puts player 0 in standby and moves player 0 camera (flow mixed in)
@@ -257,11 +262,11 @@ src/engine/fox_enmy.c	Actor_Update@gCamCount	ok	read	versus branch, loops all pl
 # --- boss and enemy functions that also switch the level phase by writing player 0 state or camera (checked by site)
 src/overlays/ovl_i1/fox_co.c	Corneria_Granga_Init	sim	site	boss; sets player 0 to START_360 (switch to all-range)
 src/overlays/ovl_i1/fox_co.c	Corneria_CoGranga_HandleDamage	sim	site	boss; on death sets player 0 state for the level end
-src/overlays/ovl_i2/fox_me.c	Meteo_MeCrusher_Update	sim	site	boss; on death sets player 0 to LEVEL_COMPLETE
+src/overlays/ovl_i2/fox_me.c	Meteo_MeCrusher_Update	flow	read	its moves follow the path and random draws, its missiles seek the nearest human (#193), its rings too (#220); left: level complete and the wait for PLAYERSTATE_NEXT on player 0
 src/overlays/ovl_i2/fox_sx.c	SectorX_SxSlippy_Update	sim	site	Slippy rescue; moves player 0 camera for the cutscene
 src/overlays/ovl_i2/fox_sx.c	SectorX_SxSpyborg_Update	sim	site	boss; on death sets player 0 state
-src/overlays/ovl_i3/fox_aq.c	Aquas_AqBacoon_Update	sim	site	boss; changes player 0 camera distance and state
-src/overlays/ovl_i3/fox_zo.c	Zoness_ZoSarumarine_Update	sim	site	boss; on death sets player 0 to LEVEL_COMPLETE
+src/overlays/ovl_i3/fox_aq.c	Aquas_AqBacoon_Update	flow	read	its head and eyes turn to its kept human, picked again at a new state (#220, aim.h); left: the start by z, player 0's boost lock and camera pull in its roar, level complete
+src/overlays/ovl_i3/fox_zo.c	Zoness_ZoSarumarine_Update	flow	read	its guns and head turn to its kept human, picked again at a new state (#220, aim.h); left: its z on the path (player 0's camera), the taunt when player 0 is hit, level complete
 src/overlays/ovl_i4/fox_sz.c	SectorZ_MissileExplode	sim	site	missile reaching Great Fox sets player 0 to LEVEL_COMPLETE (mission failed path)
 src/overlays/ovl_i4/fox_sz.c	SectorZ_Missile_Update	sim	site	missiles; set player 0 state and camera
 src/overlays/ovl_i4/fox_sz.c	SectorZ_EnemyUpdate	sim	site	sets player 0 to STANDBY and moves its camera
@@ -280,6 +285,8 @@ src/overlays/ovl_i5/fox_ma.c	Macbeth_MaBombDrop_Update	sim	read	blast hits playe
 src/overlays/ovl_i6/fox_sy.c	SectorY_SyShogun_Init	sim	site	boss; sets player 0 to START_360
 src/overlays/ovl_i6/fox_sy.c	SectorY_80198F5C	sim	site	boss; sets player 0 state and camera
 src/overlays/ovl_i6/fox_sy.c	SectorY_80199438	sim	site	boss cutscene; moves player 0 camera
+src/overlays/ovl_i6/fox_sy.c	SectorY_8019BC14	ok	read	shoots at its target's lead by moving player 0 there for Effect_EnemyLaser, the other humans with it (CoopAim_PointShot, #220)
+src/overlays/ovl_i6/fox_sy.c	SectorY_SyShogun_Update	flow	read	a new move picks the nearest human again; its target, dash and dodges follow its kept human (#220, aim.h); left: the fight waits for player 0's cut to all-range, the HUD arrow flags on player 0
 #
 # --- who fired: dmgSource and sourceId (#86, NOTES.md). flow rows name the work package that owns the rule
 include/sf64object.h	<file scope>@shooter	ok	read	the dmgSource field
@@ -339,6 +346,7 @@ src/overlays/ovl_i1/fox_co.c	Corneria_CoCarrier_Update@gPlayer arg	flow	site	Bos
 src/overlays/ovl_i2/fox_me.c	Meteo_Effect369_Update@gPlayer arg	ok	read	func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0
 src/overlays/ovl_i2/fox_me.c	Meteo_Effect370_Update@gPlayer arg	ok	read	func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0
 src/overlays/ovl_i2/fox_me.c	Meteo_Effect371_Update@gPlayer arg	ok	read	func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0
+src/overlays/ovl_i2/fox_me.c	Meteo_Effect371_Update	flow	read	the Crusher's rings home in on the nearest human, as #193's missiles (#220); left: they go at player 0's level complete
 src/overlays/ovl_i4/fox_bo.c	Bolse_8018E05C@gPlayer arg	ok	read	Player_ApplyDamage for player 0; CoopHits_BolseBeam after it does the others (#136)
 src/overlays/ovl_i4/fox_bo.c	Bolse_Effect397_Update@gPlayer arg	ok	read	func_effect_8007A774 tests the others; each player's own roll counts, and player 0's roll no longer covers them (#100)
 src/overlays/ovl_i5/fox_ma.c	Macbeth_Effect380_Update@gPlayer arg	sim	read	right for now: Macbeth is rails in a Landmaster, where co-op players stay parked (CoopPlayers_SectionSupported); WP-18

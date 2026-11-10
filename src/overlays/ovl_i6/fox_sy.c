@@ -7,6 +7,7 @@
 #include "global.h"
 #include "assets/ast_sector_y.h"
 #include "fox_record.h"
+#include "port/coop/game/aim.h" // COOP: the Shoguns go after the nearest human (#220)
 
 #define SHOGUN_SHIP (0)
 
@@ -252,7 +253,10 @@ void SectorY_801983E4(SyShogun* this) {
     SectorY_8019C194(this, zSpeed, xSpeed);
 
     if (this->swork[22] == 1) {
-        yAngle = gPlayer[0].yRot_114 - 180.0f;
+        // COOP: the human it goes after (SectorY_8019B6E8), was player 0 here and below (#220)
+        Player* aimed = &gPlayer[CoopAim_BossTarget(this->index, this->obj.pos.x, this->obj.pos.y, this->obj.pos.z)];
+
+        yAngle = aimed->yRot_114 - 180.0f;
         if (yAngle < 0.0f) {
             yAngle += 360.0f;
         }
@@ -287,7 +291,7 @@ void SectorY_801983E4(SyShogun* this) {
                     } else {
                         SectorY_80199D64(this);
                     }
-                } else if (gPlayer[0].state != PLAYERSTATE_U_TURN) {
+                } else if (aimed->state != PLAYERSTATE_U_TURN) {
                     Math_SmoothStepToAngle(&this->rot_078.x, 181.0f, 0.1f, 6.0f, 0.1f);
                     this->swork[21] = 3;
                     this->fwork[11] = SIN_DEG(this->rot_078.y) * (this->fwork[45] + 10.0f);
@@ -741,7 +745,9 @@ void SectorY_80199DAC(SyShogun* this) {
     } else {
         Math_SmoothStepToF(&this->vel.x, this->fwork[11], 0.1f, 0.5f, 0.1f);
         Math_SmoothStepToF(&this->vel.z, this->fwork[13], 0.1f, 0.5f, 0.1f);
-        yAngle = gPlayer[0].yRot_114 - 180.0f;
+        // COOP: the human it goes after (SectorY_8019B6E8), was player 0 (#220)
+        yAngle = gPlayer[CoopAim_BossTarget(this->index, this->obj.pos.x, this->obj.pos.y, this->obj.pos.z)].yRot_114 -
+                 180.0f;
         if (yAngle < 0.0f) {
             yAngle += 360.0f;
         }
@@ -1154,9 +1160,12 @@ void SectorY_8019B6E8(SyShogun* this) {
     f32 var3;
     f32 var2;
     f32 var;
+    // COOP: of the humans the one it keeps until its next move (SectorY_SyShogun_Update), was player 0 here and below
+    // (#220)
+    Player* aimed = &gPlayer[CoopAim_BossTarget(this->index, this->obj.pos.x, this->obj.pos.y, this->obj.pos.z)];
 
-    var = ABS(ABS(gPlayer[0].pos.x - this->obj.pos.x) + ABS(gPlayer[0].pos.y - this->obj.pos.y) +
-              ABS(gPlayer[0].pos.z - 1000.0f - this->obj.pos.z));
+    var = ABS(ABS(aimed->pos.x - this->obj.pos.x) + ABS(aimed->pos.y - this->obj.pos.y) +
+              ABS(aimed->pos.z - 1000.0f - this->obj.pos.z));
 
     var2 = ABS(gActors[2].obj.pos.x - this->obj.pos.x) + ABS(gActors[2].obj.pos.y - this->obj.pos.y) +
            ABS(gActors[2].obj.pos.z - this->obj.pos.z);
@@ -1168,12 +1177,12 @@ void SectorY_8019B6E8(SyShogun* this) {
            ABS(gActors[4].obj.pos.z - this->obj.pos.z);
 
     this->swork[22] = 1;
-    this->fwork[18] = gPlayer[0].pos.x;
-    this->fwork[19] = gPlayer[0].pos.y;
-    this->fwork[20] = gPlayer[0].pos.z;
-    this->fwork[24] = gPlayer[0].vel.x;
-    this->fwork[25] = gPlayer[0].vel.y;
-    this->fwork[26] = gPlayer[0].vel.z;
+    this->fwork[18] = aimed->pos.x;
+    this->fwork[19] = aimed->pos.y;
+    this->fwork[20] = aimed->pos.z;
+    this->fwork[24] = aimed->vel.x;
+    this->fwork[25] = aimed->vel.y;
+    this->fwork[26] = aimed->vel.z;
 
     if (var2 < var) {
         var = var2;
@@ -1209,12 +1218,15 @@ void SectorY_8019B6E8(SyShogun* this) {
 }
 
 void SectorY_8019BBBC(SyShogun* this) {
-    this->fwork[18] = gPlayer[0].pos.x;
-    this->fwork[19] = gPlayer[0].pos.y;
-    this->fwork[20] = gPlayer[0].pos.z;
-    this->fwork[24] = gPlayer[0].vel.x;
-    this->fwork[25] = gPlayer[0].vel.y;
-    this->fwork[26] = gPlayer[0].vel.z;
+    // COOP: the human it keeps (SectorY_8019B6E8), was player 0 here and below (#220)
+    Player* aimed = &gPlayer[CoopAim_BossTarget(this->index, this->obj.pos.x, this->obj.pos.y, this->obj.pos.z)];
+
+    this->fwork[18] = aimed->pos.x;
+    this->fwork[19] = aimed->pos.y;
+    this->fwork[20] = aimed->pos.z;
+    this->fwork[24] = aimed->vel.x;
+    this->fwork[25] = aimed->vel.y;
+    this->fwork[26] = aimed->vel.z;
 }
 
 void SectorY_8019BC14(SyShogun* this) {
@@ -1275,9 +1287,12 @@ void SectorY_8019BC14(SyShogun* this) {
             gPlayer[0].pos.x = this->fwork[0x12];
             gPlayer[0].pos.y = this->fwork[0x13];
             gPlayer[0].trueZpos = gPlayer[0].pos.z = this->fwork[0x14];
+            // COOP: the shot flies at that point with the other humans there too (#220)
+            CoopAim_PointShot(this->fwork[0x12], this->fwork[0x13], this->fwork[0x14]);
 
             Effect_EnemyLaser(OBJ_EFFECT_354, this->fwork[1], this->fwork[2], this->fwork[3], 100.0f);
 
+            CoopAim_PointShotEnd(); // COOP: (#220)
             gPlayer[0].pos.x = sp4C;
             gPlayer[0].pos.y = sp48;
             gPlayer[0].trueZpos = gPlayer[0].pos.z = sp44;
@@ -1448,7 +1463,12 @@ void SectorY_SyShogun_Update(SyShogun* this) {
         }
 
         if (this->health > 0) {
+            s32 move = this->swork[20]; // COOP: a new move picks the nearest human again (#220)
+
             D_i6_801A6910[this->swork[20]](this);
+            if (this->swork[20] != move) {
+                CoopAim_ForgetBoss(this->index); // COOP: (#220)
+            }
         }
 
         if (this->timer_058 != 0) {

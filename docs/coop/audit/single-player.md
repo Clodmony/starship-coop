@@ -24,19 +24,19 @@ pattern without reading the code, so treat it as a guess.
 
 ## Summary
 
-1809 sites in 424 functions in 46 files.
+1732 sites in 419 functions in 46 files.
 A function whose sites have more than one verdict counts once per verdict in the functions column.
 
 | verdict | sites | functions | `gPlayer[0]` | `gPlayer->` | `gPlayer arg` | `gMainController` | `gCamCount` | `shooter` |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| sim | 919 | 182 | 914 | 1 | 2 | 0 | 0 | 2 |
+| sim | 779 | 166 | 774 | 1 | 2 | 0 | 0 | 2 |
 | view | 217 | 84 | 151 | 0 | 0 | 43 | 3 | 20 |
 | input | 13 | 9 | 0 | 0 | 0 | 8 | 0 | 5 |
-| flow | 422 | 92 | 382 | 0 | 3 | 3 | 0 | 34 |
+| flow | 476 | 102 | 436 | 0 | 3 | 3 | 0 | 34 |
 | setup | 53 | 34 | 1 | 0 | 1 | 0 | 51 | 0 |
-| ok | 185 | 83 | 5 | 2 | 15 | 87 | 8 | 68 |
+| ok | 194 | 84 | 14 | 2 | 15 | 87 | 8 | 68 |
 
-Basis per site: read 281, site 944, name 584.
+Basis per site: read 344, site 891, name 497.
 
 ## Sites
 
@@ -210,15 +210,15 @@ Basis per site: read 281, site 944, name 584.
 | `func_effect_8007FD84` | 2919:SH | ok | site | enemy effect hitting an actor writes CS_SHOT_ID |
 | `Effect_Effect353_354_Update` | 2943:P0, 2947:P0, 2948:P0, 2949:P0, 2950:P0, 2962:P0, 2966:P0, 2968:P0, 2970:P0, 2973:P0, 2975:P0 | sim | read | enemy projectile hits, deflects and knocks back player 0; CoopEffects_ShotHit does the others (#100); wingman and roll reach still read player 0 |
 | `Effect_Effect353_354_Update` | 2967:PA | ok | read | Player_ApplyDamage for player 0; CoopEffects_ShotHit right after it does the others (#100) |
-| `Effect_Effect376_Update` | 3038:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
-| `Effect_Effect398_Update` | 3081:P0, 3085:P0, 3086:P0, 3087:P0, 3088:P0, 3100:P0, 3104:P0, 3106:P0, 3108:P0, 3110:P0, 3112:P0 | sim | read | aimed at the nearest human (#193); hits and knocks back player 0, CoopEffects_ShotHit does the others (#100) |
-| `Effect_Effect398_Update` | 3105:PA, 3143:PA | ok | read | Player_ApplyDamage for player 0, CoopEffects_ShotHit after it does the others; func_effect_8007A774 tests them too (#100) |
-| `Effect_Effect395_Update` | 3670:P0, 3912:P0, 3917:P0, 3918:P0, 3919:P0 | sim | site | tests player 0, CoopEffects_BeamHit does the others (#100); the Gorgon beam turns to the Gorgon's kept target (#213) |
-| `Effect_Effect395_Update` | 3920:PA, 3947:PA | ok | site | beam: Player_ApplyDamage for player 0, CoopEffects_BeamHit just before it does the others; func_effect_8007A774 tests them too (#100) |
-| `Effect_Effect391_Update` | 4158:P0 | view | site | faces player 0 camera |
-| `func_effect_80083D2C` | 4220:P0, 4221:P0, 4222:P0 | sim | site | aims at player 0 |
-| `Effect_Effect399_Update` | 4259:P0, 4260:P0 | view | site | faces player 0 camera |
-| `Effect_Effect399_Update` | 4289:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
+| `Effect_Effect376_Update` | 3046:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
+| `Effect_Effect398_Update` | 3089:P0, 3093:P0, 3094:P0, 3095:P0, 3096:P0, 3108:P0, 3112:P0, 3114:P0, 3116:P0, 3118:P0, 3120:P0 | sim | read | aimed at the nearest human (#193); hits and knocks back player 0, CoopEffects_ShotHit does the others (#100) |
+| `Effect_Effect398_Update` | 3113:PA, 3151:PA | ok | read | Player_ApplyDamage for player 0, CoopEffects_ShotHit after it does the others; func_effect_8007A774 tests them too (#100) |
+| `Effect_Effect395_Update` | 3678:P0, 3920:P0, 3925:P0, 3926:P0, 3927:P0 | sim | site | tests player 0, CoopEffects_BeamHit does the others (#100); the Gorgon beam turns to the Gorgon's kept target (#213) |
+| `Effect_Effect395_Update` | 3928:PA, 3955:PA | ok | site | beam: Player_ApplyDamage for player 0, CoopEffects_BeamHit just before it does the others; func_effect_8007A774 tests them too (#100) |
+| `Effect_Effect391_Update` | 4166:P0 | view | site | faces player 0 camera |
+| `func_effect_80083D2C` | 4228:P0, 4229:P0, 4230:P0 | sim | site | aims at player 0 |
+| `Effect_Effect399_Update` | 4267:P0, 4268:P0 | view | site | faces player 0 camera |
+| `Effect_Effect399_Update` | 4297:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
 
 ### `src/engine/fox_enmy.c`
 
@@ -371,21 +371,20 @@ Basis per site: read 281, site 944, name 584.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Corneria_Granga_Init` | 108:P0, 109:P0, 110:P0 | sim | site | boss; sets player 0 to START_360 (switch to all-range) |
-| `Corneria_CoGranga_HandleDamage` | 193:P0, 194:P0, 195:P0, 196:P0, 198:P0, 199:P0, 201:P0, 202:P0, 204:P0 | sim | site | boss; on death sets player 0 state for the level end |
-| `Corneria_CoGranga_Attack` | 450:P0, 451:P0, 452:P0, 454:P0, 455:P0, 456:P0, 461:P0, 462:P0, 463:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Corneria_CoGranga_1UpCheck` | 547:P0, 553:P0, 554:P0, 555:P0, 582:P0, 596:P0, 597:P0, 598:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Corneria_CoGranga_Update` | 629:P0, 677:P0, 679:P0, 784:P0, 785:P0, 786:P0, 830:P0, 831:P0, 832:P0, 851:P0, 852:P0, 853:P0, 876:P0, 877:P0, 878:P0, 901:P0, 902:P0, 903:P0, 922:P0, 923:P0, 924:P0, 1088:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Corneria_CoGarudaDestroy_Update` | 1542:P0, 1543:P0, 1544:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Corneria_CoCarrier_Init` | 1673:P0, 1675:P0, 1682:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Corneria_CoCarrier_Update` | 1799:P0, 1847:P0, 1919:P0, 1938:P0, 2070:P0, 2099:P0, 2202:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Corneria_CoCarrier_Update` | 2203:PA | flow | site | Boss_CompleteLevel for player 0: level complete is one player's (WP-16) |
-| `Corneria_SpawnTerrainBumps` | 2790:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Corneria_SetupClouds` | 2810:P0, 2811:P0 | view | name | clouds around player 0 camera |
-| `Corneria_SpawnClouds` | 2829:P0 | view | name | clouds around player 0 camera |
-| `Corneria_CsTeamSetup` | 2849:P0, 2850:P0, 2851:P0, 2853:P0, 2854:P0, 2855:P0 | flow | name | team cutscene around player 0 |
-| `Corneria_LevelStart` | 2960:P0, 2993:P0 | flow | site | intro on player 0 |
-| `Corneria_CsLevelComplete1_TeamSetup` | 3405:P0 | flow | name | level complete cutscene |
+| `Corneria_Granga_Init` | 109:P0, 110:P0, 111:P0 | sim | site | boss; sets player 0 to START_360 (switch to all-range) |
+| `Corneria_CoGranga_HandleDamage` | 194:P0, 195:P0, 196:P0, 197:P0, 199:P0, 200:P0, 202:P0, 203:P0, 205:P0 | sim | site | boss; on death sets player 0 state for the level end |
+| `Corneria_CoGranga_1UpCheck` | 554:P0, 560:P0, 561:P0, 562:P0, 589:P0, 603:P0, 604:P0, 605:P0 | flow | read | the 1-up for a loop under the Granga: player 0's hit timer, place and loop, the item in front of player 0; a trigger, left on player 0 (#220) |
+| `Corneria_CoGranga_Update` | 637:P0, 685:P0, 687:P0 | flow | read | walks at, turns its guns to and stops on a somersault of its kept target (#220, aim.h); left: the fight waits for player 0's cut to all-range, the HUD arrow flags on player 0 |
+| `Corneria_CoGarudaDestroy_Update` | 1554:P0, 1555:P0, 1556:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Corneria_CoCarrier_Init` | 1685:P0, 1687:P0, 1694:P0 | flow | read | starts 2000 ahead of player 0 on the path (#220) |
+| `Corneria_CoCarrier_Update` | 1811:P0, 1859:P0, 1931:P0, 1950:P0, 2082:P0, 2111:P0, 2214:P0 | flow | read | its z keeps to the path (player 0's camera on rails), its beams and missiles aim at the nearest human (#193); left: the beam's start by z, player 0's shadow, level complete (#220) |
+| `Corneria_CoCarrier_Update` | 2215:PA | flow | site | Boss_CompleteLevel for player 0: level complete is one player's (WP-16) |
+| `Corneria_SpawnTerrainBumps` | 2802:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Corneria_SetupClouds` | 2822:P0, 2823:P0 | view | name | clouds around player 0 camera |
+| `Corneria_SpawnClouds` | 2841:P0 | view | name | clouds around player 0 camera |
+| `Corneria_CsTeamSetup` | 2861:P0, 2862:P0, 2863:P0, 2865:P0, 2866:P0, 2867:P0 | flow | name | team cutscene around player 0 |
+| `Corneria_LevelStart` | 2972:P0, 3005:P0 | flow | site | intro on player 0 |
+| `Corneria_CsLevelComplete1_TeamSetup` | 3417:P0 | flow | name | level complete cutscene |
 
 ### `src/overlays/ovl_i1/fox_tr.c`
 
@@ -414,15 +413,15 @@ Basis per site: read 281, site 944, name 584.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Meteo_MeLaserCannon2_Update` | 257:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Meteo_Effect369_Update` | 727:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
-| `Meteo_Effect370_Update` | 791:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
-| `Meteo_Effect371_Update` | 795:P0, 805:P0, 812:P0, 819:P0, 826:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Meteo_Effect371_Update` | 833:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
-| `Meteo_MeCrusher_Update` | 1048:P0, 1049:P0, 1050:P0, 1377:P0 | sim | site | boss; on death sets player 0 to LEVEL_COMPLETE |
-| `Meteo_LevelStart_SetupTeam` | 1907:P0, 1908:P0, 1909:P0 | flow | name | intro team around player 0 |
-| `Meteo_LevelComplete_SetupTeam` | 2390:P0, 2391:P0, 2392:P0 | flow | name | level complete team around player 0 |
-| `Meteo_8018ED9C` | 2692:P0, 2693:P0, 2694:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Meteo_MeLaserCannon2_Update` | 258:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Meteo_Effect369_Update` | 728:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
+| `Meteo_Effect370_Update` | 792:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
+| `Meteo_Effect371_Update` | 800:P0 | flow | read | the Crusher's rings home in on the nearest human, as #193's missiles (#220); left: they go at player 0's level complete |
+| `Meteo_Effect371_Update` | 838:PA | ok | read | func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0 |
+| `Meteo_MeCrusher_Update` | 1053:P0, 1054:P0, 1055:P0, 1382:P0 | flow | read | its moves follow the path and random draws, its missiles seek the nearest human (#193), its rings too (#220); left: level complete and the wait for PLAYERSTATE_NEXT on player 0 |
+| `Meteo_LevelStart_SetupTeam` | 1912:P0, 1913:P0, 1914:P0 | flow | name | intro team around player 0 |
+| `Meteo_LevelComplete_SetupTeam` | 2395:P0, 2396:P0, 2397:P0 | flow | name | level complete team around player 0 |
+| `Meteo_8018ED9C` | 2697:P0, 2698:P0, 2699:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 
 ### `src/overlays/ovl_i2/fox_sx.c`
 
@@ -450,72 +449,72 @@ Basis per site: read 281, site 944, name 584.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Aquas_801A95C8` | 401:P0, 402:P0, 403:P0, 405:P0, 406:P0, 407:P0 | flow | site | cutscene moves player 0 camera |
-| `Aquas_801A96DC` | 411:P0, 412:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_801AA20C` | 655:P0, 670:P0, 683:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_801ABA40` | 1101:P0, 1102:P0, 1103:P0, 1140:SH, 1141:SH | sim | site | Blue Marine torpedoes culled by player 0 camera; aimed by the firing marine since #16 |
-| `Aquas_Effect366_Setup` | 1390:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_Effect366_Update` | 1426:P0, 1427:P0, 1452:P0, 1453:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_Actor255_Update` | 1678:P0, 1720:P0, 1721:P0, 1722:P0, 1723:P0, 1759:P0, 1760:P0, 1761:P0, 1763:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_Actor255_Update` | 1802:SH | ok | site | DMG_SRC_2 before Actor_Despawn: no player gets the kill |
-| `Aquas_Actor255_Draw` | 1887:P0, 1888:P0, 1889:P0, 1890:P0, 1891:P0, 1892:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqPearl_Update` | 2520:SH | ok | site | DMG_SRC_2 before Actor_Despawn: no player gets the kill |
-| `Aquas_AqBacoon_Update` | 2687:P0, 3004:P0, 3006:P0, 3009:P0, 3010:P0, 3011:P0, 3012:P0, 3126:P0, 3127:P0, 3128:P0, 3129:P0, 3220:P0, 3221:P0, 3222:P0, 3258:P0, 3259:P0, 3260:P0, 3261:P0, 3262:P0, 3263:P0 | sim | site | boss; changes player 0 camera distance and state |
-| `Aquas_AqSculpin_Update` | 3913:P0, 3914:P0, 3934:P0, 3935:P0, 3952:P0, 3954:P0, 3961:P0, 3962:P0, 3963:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqAnglerFish_Update` | 4294:P0, 4352:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqSpindlyFish_Update` | 4428:P0, 4429:P0, 4430:P0, 4440:P0, 4441:P0, 4442:P0, 4449:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqGaroa_Update` | 4702:P0, 4704:P0, 4724:P0, 4809:P0, 4810:P0, 4811:P0, 4843:P0, 4844:P0, 4845:P0, 4882:P0, 4883:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqSquid_Update` | 5182:P0, 5183:P0, 5184:P0, 5185:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqSeaweed_Update` | 5383:P0, 5384:P0, 5385:P0, 5397:P0, 5398:P0, 5399:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqCoral_Update` | 5560:P0, 5561:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqFishGroup_Update` | 6441:P0, 6456:P0, 6457:P0, 6458:P0, 6464:P0, 6465:P0, 6466:P0, 6482:P0, 6483:P0, 6484:P0, 6515:P0, 6516:P0, 6517:P0, 6523:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_CsAqFishGroup_Update` | 6621:P0 | flow | name | cutscene fish |
-| `Aquas_AqOyster_Update` | 6687:P0, 6708:P0, 6710:P0, 6711:P0, 6712:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_801A95C8` | 402:P0, 403:P0, 404:P0, 406:P0, 407:P0, 408:P0 | flow | site | cutscene moves player 0 camera |
+| `Aquas_801A96DC` | 412:P0, 413:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_801AA20C` | 656:P0, 671:P0, 684:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_801ABA40` | 1102:P0, 1103:P0, 1104:P0, 1141:SH, 1142:SH | sim | site | Blue Marine torpedoes culled by player 0 camera; aimed by the firing marine since #16 |
+| `Aquas_Effect366_Setup` | 1391:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_Effect366_Update` | 1427:P0, 1428:P0, 1453:P0, 1454:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_Actor255_Update` | 1679:P0, 1721:P0, 1722:P0, 1723:P0, 1724:P0, 1760:P0, 1761:P0, 1762:P0, 1764:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_Actor255_Update` | 1803:SH | ok | site | DMG_SRC_2 before Actor_Despawn: no player gets the kill |
+| `Aquas_Actor255_Draw` | 1888:P0, 1889:P0, 1890:P0, 1891:P0, 1892:P0, 1893:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqPearl_Update` | 2521:SH | ok | site | DMG_SRC_2 before Actor_Despawn: no player gets the kill |
+| `Aquas_AqBacoon_Update` | 2691:P0, 3011:P0, 3013:P0, 3016:P0, 3017:P0, 3018:P0, 3019:P0, 3133:P0, 3134:P0, 3135:P0, 3136:P0 | flow | read | its head and eyes turn to its kept human, picked again at a new state (#220, aim.h); left: the start by z, player 0's boost lock and camera pull in its roar, level complete |
+| `Aquas_AqSculpin_Update` | 3920:P0, 3921:P0, 3941:P0, 3942:P0, 3959:P0, 3961:P0, 3968:P0, 3969:P0, 3970:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqAnglerFish_Update` | 4301:P0, 4359:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqSpindlyFish_Update` | 4435:P0, 4436:P0, 4437:P0, 4447:P0, 4448:P0, 4449:P0, 4456:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqGaroa_Update` | 4709:P0, 4711:P0, 4731:P0, 4816:P0, 4817:P0, 4818:P0, 4850:P0, 4851:P0, 4852:P0, 4889:P0, 4890:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqSquid_Update` | 5189:P0, 5190:P0, 5191:P0, 5192:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqSeaweed_Update` | 5390:P0, 5391:P0, 5392:P0, 5404:P0, 5405:P0, 5406:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqCoral_Update` | 5567:P0, 5568:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqFishGroup_Update` | 6448:P0, 6463:P0, 6464:P0, 6465:P0, 6471:P0, 6472:P0, 6473:P0, 6489:P0, 6490:P0, 6491:P0, 6522:P0, 6523:P0, 6524:P0, 6530:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_CsAqFishGroup_Update` | 6628:P0 | flow | name | cutscene fish |
+| `Aquas_AqOyster_Update` | 6694:P0, 6715:P0, 6717:P0, 6718:P0, 6719:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 
 ### `src/overlays/ovl_i3/fox_so.c`
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Solar_SoWave_Update` | 254:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Solar_SoRock_Update` | 498:P0, 499:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Solar_8019FAA4` | 593:P0, 609:P0, 617:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Solar_8019FDE0` | 643:P0, 645:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Solar_Effect392_Update` | 746:P0, 747:P0, 821:P0, 825:P0, 826:P0, 873:P0, 875:P0, 876:P0, 901:P0, 903:P0, 904:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Solar_801A0FD4` | 1026:P0, 1027:P0, 1028:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Solar_LevelStart` | 1218:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Solar_LevelStart` | 1252:P0 | flow | name | intro on player 0 |
-| `Solar_801A1F80` | 1357:MC, 1398:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Solar_801A2C98` | 1652:MC, 1653:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Solar_801A2C98` | 1677:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Solar_801A3128` | 1749:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Solar_801A3128` | 1758:MC, 1759:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Solar_801A3510` | 1876:MC, 1877:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Solar_801A3510` | 1961:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Solar_801A3C4C` | 2036:MC, 2037:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Solar_801A3C4C` | 2046:P0, 2047:P0, 2048:P0, 2049:P0, 2051:P0, 2052:P0, 2053:P0, 2055:P0, 2056:P0, 2058:P0 | flow | site | Vulkain death: rumble and player 0 to level complete |
-| `Solar_801A4214` | 2093:MC, 2192:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Solar_801A48B8` | 2222:MC, 2223:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Solar_801A4EF8` | 2357:MC, 2358:MC, 2391:MC, 2392:MC, 2421:MC, 2422:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Solar_801A4EF8` | 2378:P0, 2412:P0, 2431:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Solar_SoVulkain_Update` | 2601:P0, 2766:P0, 2767:P0, 2768:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Solar_801A7750` | 3129:P0, 3130:P0, 3131:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Solar_SoWave_Update` | 255:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Solar_SoRock_Update` | 499:P0, 500:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Solar_8019FAA4` | 594:P0, 610:P0, 618:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Solar_8019FDE0` | 644:P0, 646:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Solar_Effect392_Update` | 747:P0, 748:P0, 822:P0, 826:P0, 827:P0, 874:P0, 876:P0, 877:P0, 902:P0, 904:P0, 905:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Solar_801A0FD4` | 1027:P0, 1028:P0, 1029:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Solar_LevelStart` | 1219:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Solar_LevelStart` | 1253:P0 | flow | name | intro on player 0 |
+| `Solar_801A1F80` | 1358:MC, 1399:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Solar_801A2C98` | 1653:MC, 1654:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Solar_801A2C98` | 1678:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Solar_801A3128` | 1750:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Solar_801A3128` | 1759:MC, 1760:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Solar_801A3510` | 1877:MC, 1878:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Solar_801A3510` | 1962:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Solar_801A3C4C` | 2037:MC, 2038:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Solar_801A3C4C` | 2047:P0, 2048:P0, 2049:P0, 2050:P0, 2052:P0, 2053:P0, 2054:P0, 2056:P0, 2057:P0, 2059:P0 | flow | site | Vulkain death: rumble and player 0 to level complete |
+| `Solar_801A4214` | 2094:MC, 2193:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Solar_801A48B8` | 2223:MC, 2224:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Solar_801A4EF8` | 2358:MC, 2359:MC, 2392:MC, 2393:MC, 2422:MC, 2423:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Solar_801A4EF8` | 2379:P0, 2413:P0, 2432:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Solar_SoVulkain_Update` | 2602:P0 | flow | read | its head, and the fireballs it spits along it, turn to its kept human, picked again at a new move (#220, aim.h); left: its z keeps to the path (player 0's z on rails) |
+| `Solar_801A7750` | 3138:P0, 3139:P0, 3140:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 
 ### `src/overlays/ovl_i3/fox_zo.c`
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Zoness_8018FF50` | 480:P0, 481:P0, 482:P0, 483:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Zoness_ZGull_Update` | 972:P0, 973:P0, 974:P0, 977:P0, 1031:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Zoness_ZoTroika_Update` | 1144:P0, 1145:P0, 1146:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Zoness_Effect394_Setup3` | 1707:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Zoness_ZoSarumarine_Update` | 2079:P0, 2113:P0, 2337:P0, 2369:P0, 2370:P0, 2371:P0, 2394:P0, 2395:P0, 2396:P0, 2588:P0, 2590:P0, 2591:P0, 2592:P0, 2593:P0, 2594:P0, 2596:P0, 2597:P0, 2599:P0, 2600:P0, 2696:P0, 2697:P0, 2714:P0, 2715:P0, 2731:P0, 2732:P0, 2733:P0, 2743:P0, 2744:P0, 2745:P0 | sim | site | boss; on death sets player 0 to LEVEL_COMPLETE |
-| `Zoness_ZoBall_Update` | 3522:SH | ok | site | DMG_SRC_2 before Actor_Despawn: no player gets the kill |
-| `Zoness_ZoMine_Update` | 3630:SH, 3648:SH | ok | site | DMG_SRC_2 before Actor_Despawn: no player gets the kill |
-| `Zoness_ZoMine_Update` | 3636:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Zoness_ZoSpikeBall_Update` | 3831:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Zoness_ZoTanker_Update` | 4135:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Zoness_ZoSupplyCrane_Update` | 4416:P0, 4448:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Zoness_LevelStart` | 4740:MC, 4741:MC, 4753:MC | flow | read | intro fakes a boost press on gMainController |
+| `Zoness_8018FF50` | 481:P0, 482:P0, 483:P0, 484:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Zoness_ZGull_Update` | 973:P0, 974:P0, 975:P0, 978:P0, 1032:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Zoness_ZoTroika_Update` | 1145:P0, 1146:P0, 1147:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Zoness_Effect394_Setup3` | 1708:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Zoness_ZoSarumarine_Update` | 2083:P0, 2117:P0, 2342:P0, 2593:P0, 2595:P0, 2596:P0, 2597:P0, 2598:P0, 2599:P0, 2601:P0, 2602:P0, 2604:P0, 2605:P0 | flow | read | its guns and head turn to its kept human, picked again at a new state (#220, aim.h); left: its z on the path (player 0's camera), the taunt when player 0 is hit, level complete |
+| `Zoness_ZoBall_Update` | 3530:SH | ok | site | DMG_SRC_2 before Actor_Despawn: no player gets the kill |
+| `Zoness_ZoMine_Update` | 3638:SH, 3656:SH | ok | site | DMG_SRC_2 before Actor_Despawn: no player gets the kill |
+| `Zoness_ZoMine_Update` | 3644:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Zoness_ZoSpikeBall_Update` | 3839:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Zoness_ZoTanker_Update` | 4143:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Zoness_ZoSupplyCrane_Update` | 4424:P0, 4456:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Zoness_LevelStart` | 4748:MC, 4749:MC, 4761:MC | flow | read | intro fakes a boost press on gMainController |
 
 ### `src/overlays/ovl_i4/fox_bo.c`
 
@@ -675,26 +674,22 @@ Basis per site: read 281, site 944, name 584.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `SectorY_80197B30` | 40:P0, 41:P0, 42:P0, 44:P0, 46:P0, 47:P0, 48:P0, 50:P0, 51:P0, 52:P0 | flow | site | actor copies player 0 position, speed and rotation (cutscene double) |
-| `SectorY_SyShogun_Init` | 87:P0, 118:P0, 119:P0, 120:P0 | sim | site | boss; sets player 0 to START_360 |
-| `SectorY_801983E4` | 255:P0, 290:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `SectorY_80198F5C` | 445:P0, 447:P0, 448:P0, 449:P0, 450:P0, 451:P0, 452:P0, 454:P0, 455:P0, 457:P0, 483:P0, 485:P0, 487:P0, 488:P0 | sim | site | boss; sets player 0 state and camera |
-| `SectorY_80199438` | 570:MC, 571:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `SectorY_80199438` | 588:P0, 589:P0, 590:P0, 591:P0, 592:P0, 593:P0, 639:P0, 640:P0, 641:P0 | sim | site | boss cutscene; moves player 0 camera |
-| `SectorY_80199DAC` | 744:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `SectorY_8019AEEC` | 1021:P0, 1022:P0, 1023:P0, 1024:P0, 1025:P0, 1026:P0, 1027:P0, 1042:P0, 1044:P0, 1056:P0, 1058:P0, 1059:P0, 1104:P0, 1105:P0, 1106:P0 | flow | site | cutscene moves player 0 camera |
-| `SectorY_8019B6E8` | 1158:P0, 1159:P0, 1171:P0, 1172:P0, 1173:P0, 1174:P0, 1175:P0, 1176:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `SectorY_8019BBBC` | 1212:P0, 1213:P0, 1214:P0, 1215:P0, 1216:P0, 1217:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `SectorY_8019BC14` | 1271:P0, 1272:P0, 1273:P0, 1275:P0, 1276:P0, 1277:P0, 1281:P0, 1282:P0, 1283:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `SectorY_SyShogun_Update` | 1417:P0, 1729:P0, 1731:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `SectorY_SyShogun_Draw` | 1959:P0, 1960:P0, 1961:P0 | view | name | drawing by player 0 |
-| `SectorY_8019EB80` | 2099:P0, 2100:P0, 2101:P0, 2105:P0, 2106:P0, 2107:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `SectorY_LevelComplete` | 2157:P0 | flow | name | level complete |
-| `SectorY_8019FF00` | 2512:P0, 2513:P0, 2515:P0, 2536:P0, 2537:P0, 2552:P0, 2553:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `SectorY_801A06A4` | 2649:P0, 2650:P0, 2651:P0, 2653:P0, 2654:P0, 2655:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `SectorY_801A0AC0` | 2972:MC, 3372:MC, 3373:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `SectorY_801A0AC0` | 3239:P0, 3243:P0, 3248:P0, 3395:P0 | flow | site | cutscene moves player 0 to the centre |
-| `SectorY_SyRobot_Update` | 3671:P0, 3672:P0, 3674:P0, 3675:P0, 3678:P0, 3679:P0, 3767:P0, 3768:P0, 3769:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `SectorY_80197B30` | 41:P0, 42:P0, 43:P0, 45:P0, 47:P0, 48:P0, 49:P0, 51:P0, 52:P0, 53:P0 | flow | site | actor copies player 0 position, speed and rotation (cutscene double) |
+| `SectorY_SyShogun_Init` | 88:P0, 119:P0, 120:P0, 121:P0 | sim | site | boss; sets player 0 to START_360 |
+| `SectorY_80198F5C` | 449:P0, 451:P0, 452:P0, 453:P0, 454:P0, 455:P0, 456:P0, 458:P0, 459:P0, 461:P0, 487:P0, 489:P0, 491:P0, 492:P0 | sim | site | boss; sets player 0 state and camera |
+| `SectorY_80199438` | 574:MC, 575:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `SectorY_80199438` | 592:P0, 593:P0, 594:P0, 595:P0, 596:P0, 597:P0, 643:P0, 644:P0, 645:P0 | sim | site | boss cutscene; moves player 0 camera |
+| `SectorY_8019AEEC` | 1027:P0, 1028:P0, 1029:P0, 1030:P0, 1031:P0, 1032:P0, 1033:P0, 1048:P0, 1050:P0, 1062:P0, 1064:P0, 1065:P0, 1110:P0, 1111:P0, 1112:P0 | flow | site | cutscene moves player 0 camera |
+| `SectorY_8019BC14` | 1283:P0, 1284:P0, 1285:P0, 1287:P0, 1288:P0, 1289:P0, 1296:P0, 1297:P0, 1298:P0 | ok | read | shoots at its target's lead by moving player 0 there for Effect_EnemyLaser, the other humans with it (CoopAim_PointShot, #220) |
+| `SectorY_SyShogun_Update` | 1432:P0, 1749:P0, 1751:P0 | flow | read | a new move picks the nearest human again; its target, dash and dodges follow its kept human (#220, aim.h); left: the fight waits for player 0's cut to all-range, the HUD arrow flags on player 0 |
+| `SectorY_SyShogun_Draw` | 1979:P0, 1980:P0, 1981:P0 | view | name | drawing by player 0 |
+| `SectorY_8019EB80` | 2119:P0, 2120:P0, 2121:P0, 2125:P0, 2126:P0, 2127:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `SectorY_LevelComplete` | 2177:P0 | flow | name | level complete |
+| `SectorY_8019FF00` | 2532:P0, 2533:P0, 2535:P0, 2556:P0, 2557:P0, 2572:P0, 2573:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `SectorY_801A06A4` | 2669:P0, 2670:P0, 2671:P0, 2673:P0, 2674:P0, 2675:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `SectorY_801A0AC0` | 2992:MC, 3392:MC, 3393:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `SectorY_801A0AC0` | 3259:P0, 3263:P0, 3268:P0, 3415:P0 | flow | site | cutscene moves player 0 to the centre |
+| `SectorY_SyRobot_Update` | 3691:P0, 3692:P0, 3694:P0, 3695:P0, 3698:P0, 3699:P0, 3787:P0, 3788:P0, 3789:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 
 ### `src/overlays/ovl_i6/fox_turret.c`
 

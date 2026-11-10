@@ -8,6 +8,7 @@
 #include "assets/ast_enmy_planet.h"
 #include "assets/ast_zoness.h"
 #include "port/interpolation/FrameInterpolation.h"
+#include "port/coop/game/aim.h" // COOP: the Sarumarine aims at the nearest human (#220)
 
 #define TRAP_ENEMY_LASERS (1000)
 
@@ -2064,6 +2065,9 @@ void Zoness_ZoSarumarine_Update(ZoSarumarine* this) {
     Vec3f sp78;
     Vec3f sp6C;
     Vec3f sp60 = { 0.0f, 0.0f, 40.0f };
+    // COOP: the player its guns and its head turn to, was player 0; kept until its next state (#220)
+    Player* aimed = &gPlayer[CoopAim_BossTarget(this->index, this->obj.pos.x, this->obj.pos.y, this->obj.pos.z)];
+    s32 coopState; // COOP: (#220)
 
     PRINTF(" Enm->hitNO %d\n", this->dmgPart);
 
@@ -2149,6 +2153,7 @@ void Zoness_ZoSarumarine_Update(ZoSarumarine* this) {
         this->swork[ZO_SWK_9]--;
     }
 
+    coopState = this->state; // COOP: a new state picks the nearest human again (#220)
     switch (this->state) {
         case 0:
             if ((((gGameFrameCount % 8) == 0) || (this->timer_050 == 43)) && (this->swork[ZO_SWK_13] == 0) &&
@@ -2366,9 +2371,9 @@ void Zoness_ZoSarumarine_Update(ZoSarumarine* this) {
                 Matrix_RotateX(gCalcMatrix, -this->obj.rot.x * M_DTOR, MTXF_NEW);
                 Matrix_RotateY(gCalcMatrix, -this->obj.rot.y * M_DTOR, MTXF_APPLY);
 
-                spE4.x = gPlayer[0].pos.x - sZoFwork[ZO_BSF_93_X];
-                spE4.y = gPlayer[0].pos.y - sZoFwork[ZO_BSF_93_Y];
-                spE4.z = gPlayer[0].trueZpos - sZoFwork[ZO_BSF_93_Z];
+                spE4.x = aimed->pos.x - sZoFwork[ZO_BSF_93_X];    // COOP: aimed was gPlayer[0] here and below (#220)
+                spE4.y = aimed->pos.y - sZoFwork[ZO_BSF_93_Y];    // COOP: as above
+                spE4.z = aimed->trueZpos - sZoFwork[ZO_BSF_93_Z]; // COOP: as above
 
                 Matrix_MultVec3f(gCalcMatrix, &spE4, &spC0);
 
@@ -2391,9 +2396,9 @@ void Zoness_ZoSarumarine_Update(ZoSarumarine* this) {
                     sp110 = 320.0f;
                 }
 
-                spE4.x = gPlayer[0].pos.x - sZoFwork[ZO_BSF_96_X];
-                spE4.y = gPlayer[0].pos.y - sZoFwork[ZO_BSF_96_Y];
-                spE4.z = gPlayer[0].trueZpos - sZoFwork[ZO_BSF_96_Z];
+                spE4.x = aimed->pos.x - sZoFwork[ZO_BSF_96_X];    // COOP: as above
+                spE4.y = aimed->pos.y - sZoFwork[ZO_BSF_96_Y];    // COOP: as above
+                spE4.z = aimed->trueZpos - sZoFwork[ZO_BSF_96_Z]; // COOP: as above
 
                 Matrix_MultVec3f(gCalcMatrix, &spE4, &spB4);
 
@@ -2691,10 +2696,13 @@ void Zoness_ZoSarumarine_Update(ZoSarumarine* this) {
             }
             break;
     }
+    if (this->state != coopState) {
+        CoopAim_ForgetBoss(this->index); // COOP: (#220)
+    }
     sZoFwork[ZO_BSF_2] += 20.0f;
 
-    spE4.x = gPlayer[0].pos.x - this->obj.pos.x;
-    spE4.z = gPlayer[0].trueZpos - this->obj.pos.z;
+    spE4.x = aimed->pos.x - this->obj.pos.x;    // COOP: aimed was gPlayer[0] here and below (#220)
+    spE4.z = aimed->trueZpos - this->obj.pos.z; // COOP: as above
 
     Math_SmoothStepToAngle(&sZoFwork[ZO_BSF_14], Math_RadToDeg(Math_Atan2F(spE4.x, spE4.z)), 0.5f, 100.0f, 0.001f);
     Math_SmoothStepToAngle(&sZoFwork[ZO_BSF_0], sZoFwork[ZO_BSF_76], 0.2f, 4.0f, 0.0001f);
@@ -2711,8 +2719,8 @@ void Zoness_ZoSarumarine_Update(ZoSarumarine* this) {
             sZoSwork[ZO_BSS_22] = 0;
         }
     }
-    spE4.x = gPlayer[0].pos.x - sZoFwork[ZO_BSF_65_X];
-    spE4.z = gPlayer[0].trueZpos - sZoFwork[ZO_BSF_65_Z];
+    spE4.x = aimed->pos.x - sZoFwork[ZO_BSF_65_X];    // COOP: as above
+    spE4.z = aimed->trueZpos - sZoFwork[ZO_BSF_65_Z]; // COOP: as above
     Math_SmoothStepToAngle(&sZoFwork[ZO_BSF_19], Math_RadToDeg(Math_Atan2F(spE4.x, spE4.z)), 0.1f, 5.0f, 0.0f);
 
     if ((this->state >= 3) && (this->state < 6)) {
@@ -2728,9 +2736,9 @@ void Zoness_ZoSarumarine_Update(ZoSarumarine* this) {
         Matrix_RotateX(gCalcMatrix, -this->obj.rot.x * M_DTOR, MTXF_NEW);
         Matrix_RotateY(gCalcMatrix, -this->obj.rot.y * M_DTOR, MTXF_APPLY);
 
-        spE4.x = gPlayer[0].pos.x - (this->obj.pos.x + spD8.x);
-        spE4.y = gPlayer[0].pos.y - (this->obj.pos.y + spD8.y);
-        spE4.z = gPlayer[0].trueZpos - (this->obj.pos.z + spD8.z);
+        spE4.x = aimed->pos.x - (this->obj.pos.x + spD8.x);    // COOP: as above
+        spE4.y = aimed->pos.y - (this->obj.pos.y + spD8.y);    // COOP: as above
+        spE4.z = aimed->trueZpos - (this->obj.pos.z + spD8.z); // COOP: as above
 
         Matrix_MultVec3f(gCalcMatrix, &spE4, &spD8);
 
@@ -2740,9 +2748,9 @@ void Zoness_ZoSarumarine_Update(ZoSarumarine* this) {
         sp120 = Math_Atan2F(spD8.y, sqrtf(SQ(spD8.x) + SQ(spD8.z)));
         sp120 = Math_RadToDeg(-sp120);
 
-        spE4.x = gPlayer[0].pos.x - (this->obj.pos.x + spCC.x);
-        spE4.y = gPlayer[0].pos.y - (this->obj.pos.y + spCC.y);
-        spE4.z = gPlayer[0].trueZpos - (this->obj.pos.z + spCC.z);
+        spE4.x = aimed->pos.x - (this->obj.pos.x + spCC.x);    // COOP: as above
+        spE4.y = aimed->pos.y - (this->obj.pos.y + spCC.y);    // COOP: as above
+        spE4.z = aimed->trueZpos - (this->obj.pos.z + spCC.z); // COOP: as above
 
         Matrix_MultVec3f(gCalcMatrix, &spE4, &spCC);
 

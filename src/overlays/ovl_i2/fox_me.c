@@ -7,6 +7,7 @@
 #include "global.h"
 #include "assets/ast_meteo.h"
 #include "fox_record.h"
+#include "port/coop/game/aim.h" // COOP: the Crusher's rings home in on the nearest human (#220)
 
 Vec3f D_i2_80195430[] = {
     { 122.0, -5.0, -1200.0 },   { 122.0, -103.0, -727.0 }, { 142.0, -323.0, -848.0 }, { 362.0, -59.0, -435.0 },
@@ -792,6 +793,10 @@ void Meteo_Effect370_Update(Effect370* this) {
 }
 
 void Meteo_Effect371_Update(Effect371* this) {
+    // COOP: it homes in on the nearest human, as the homing missiles do (#193); was gPlayer[0] in the x and y below
+    // (#220)
+    Player* aimed = &gPlayer[CoopAim_Nearest(this->obj.pos.x, this->obj.pos.y, this->obj.pos.z)];
+
     if (gPlayer[0].state == PLAYERSTATE_LEVEL_COMPLETE) {
         Object_Kill(&this->obj, this->sfxSource);
     }
@@ -802,28 +807,28 @@ void Meteo_Effect371_Update(Effect371* this) {
     }
 
     this->obj.rot.z += 35.0f;
-    if (this->obj.pos.x < gPlayer[0].pos.x) {
+    if (this->obj.pos.x < aimed->pos.x) {
         this->obj.pos.x += 1.5f;
         if (this->vel.x < 40.0f) {
             this->vel.x += 2.0f;
         }
     }
 
-    if (gPlayer[0].pos.x < this->obj.pos.x) {
+    if (aimed->pos.x < this->obj.pos.x) {
         this->obj.pos.x -= 1.5f;
         if (this->vel.x > -40.0f) {
             this->vel.x -= 2.0f;
         }
     }
 
-    if (this->obj.pos.y < gPlayer[0].pos.y) {
+    if (this->obj.pos.y < aimed->pos.y) {
         this->obj.pos.y += 1.5f;
         if (this->vel.y < 40.0f) {
             this->vel.y += 2.0f;
         }
     }
 
-    if (gPlayer[0].pos.y < this->obj.pos.y) {
+    if (aimed->pos.y < this->obj.pos.y) {
         this->obj.pos.y -= 1.5f;
         if (this->vel.y > -40.0f) {
             this->vel.y -= 2.0f;

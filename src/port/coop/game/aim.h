@@ -70,6 +70,17 @@ struct Actor;
 // side (Falco, Slippy, Peppy, Katt, Bill), who escort Fox, player 0 as upstream. 0 outside co-op.
 int32_t CoopAim_Chased(const struct Actor* actor);
 
+// ---- Shots at a point (#220) ----
+//
+// Some bosses aim a shot at a point of their own (Sector Y's Shogun: a lead on its target, which can be a wingman) by
+// moving player 0 there for one Effect_EnemyLaser call, which aims at player 0 upstream. Since #193 that call aims at
+// the nearest human, so in co-op CoopAim_PointShot moves every other player that may be aimed at to the same point: the
+// nearest is then player 0 by the tie rule and the shot flies at the point, as upstream. CoopAim_PointShotEnd puts them
+// back where they were. Call the two right around the shot, after the upstream code has moved player 0 and before it
+// moves player 0 back. Nothing outside co-op.
+void CoopAim_PointShot(float x, float y, float z);
+void CoopAim_PointShotEnd(void);
+
 // Registers the ObjectInitEvent listener that empties the slot of a new boss or actor. Call once at startup.
 void CoopAim_Init(void);
 
