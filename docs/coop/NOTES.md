@@ -509,6 +509,25 @@ Unknown:
   not merged. `CoopTeam_HoldBody` sets `STATE360_3` when its human flies again; not run.
 - Whether other player 0 states during play (for example the all-range loop or a warp) need the same treatment.
 
+### 2026-11-10, #15 (WP-17), decision 0013 by kind: a borrowed scene's lines in all ten levels
+
+Identity: ROM US 1.0, branch `issue/15-rescue-lines`, Windows 11, MSVC v143, Debug, `lockstep_test.py --only scenes`.
+
+Observed: the scene scripts of `sScenes` hold 104 lines that a scene's own wingman speaks or that name him (50 Falco,
+31 Slippy, 23 Peppy), read with `tools/coop/script_reader.py` and sorted by the decoded message texts (texts not
+copied). Further sets of three by id, one line each for Falco, Slippy, Peppy: 9151-9153 (hit), 9211-9213 (taunt),
+9220/9230/9240 (got one), 9436-9438 (got the last one), used as kinds in `team.c`.
+
+Derived: 15 kinds (help, trouble, hit, thanks, relief, attack, got one, back off, lead, found, incoming, persist,
+alert, side, praise) cover the lines that are not story; Solar's heat lines, Titania's S2 talk, Macbeth's S9 and the
+tutorial tips stay dropped. Other speakers' lines naming the taken wingman (CO 2185, TI 4022, 4024, CO 20267, 2061)
+are dropped unless a row replaces them.
+
+Observed in the run: `scenes` passes, hashes equal on 8500 frames; the rescue plays 2062 and 2061 as before. The
+pilots do not take Corneria's waterfall lead (S14), so its rows (2181, 2185, 2188) did not run.
+
+Unknown: how any of it sounds; Peppy has no FOUND line (dropped).
+
 ### 2026-11-10, #15 (WP-17), decision 0013: Corneria's Falco rescue flown by Slippy keeps its radio
 
 Identity: ROM US 1.0, branch `issue/15-rescue-lines` on `42dfa3a8`, Windows 11, MSVC v143, Debug, two games over

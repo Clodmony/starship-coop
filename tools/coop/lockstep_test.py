@@ -546,6 +546,7 @@ def fly_for(args, folder, frames, extra_env):
 CO_RESCUE_FALCO_LINES = {2166, 2167, 2337}
 CO_RESCUE_SLIPPY_CALLS = {2062, 2061}
 CO_RESCUE_SLIPPY_THANKS = 2336
+CO_FOX_ASKS_FALCO = 2185  # CO S14:19; with Slippy in Falco's lead, Peppy's 20267 plays instead
 
 
 def sc_scenes(args, folder):
@@ -575,6 +576,10 @@ def sc_scenes(args, folder):
         expect(not boss, f"{game.name}: a computer Falco flies at the boss from frame {boss[0]['frame'] if boss else 0}")
         others = [l for l in lines if l["ai"][1] + l["ai"][2] > 0]
         expect(others, f"{game.name}: no computer wingman flew at the boss in {frames} frames")
+        # Decision 0013: Fox's question to Falco at the waterfall lead (CO S14:19) does not play with Falco human.
+        asked = [l for l in lines if l["radio"][0] == CO_FOX_ASKS_FALCO]
+        expect(not asked, f"{game.name}: Fox asks Falco where he goes ({CO_FOX_ASKS_FALCO}) at frame "
+                          f"{asked[0]['frame'] if asked else 0}")
         # Decision 0013: the borrowed rescue's radio, from the choice to the boss fight.
         window = [l for l in lines if int(rescue[0]["frame"]) <= int(l["frame"]) < int(others[0]["frame"])]
         heard = {l["radio"][0] for l in window}
