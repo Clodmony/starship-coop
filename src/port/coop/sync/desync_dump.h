@@ -52,7 +52,7 @@ typedef struct {
     const uint8_t* stream; // NULL for none
     uint32_t size;
     uint16_t parts;
-    uint16_t next; // the part that goes next; done when it is `parts` and announced
+    uint16_t next;  // the part that goes next; done when it is `parts` and announced
     bool announced; // with no stream: the one message that says so went out
 } CoopDesyncDumpOut;
 

@@ -75,8 +75,9 @@ typedef struct {
     bool rejoining;      // client: the connection was lost in a level, and this is the session that goes back
     bool eyes;           // something about a recovery has to be seen, and has not been shown yet
     uint8_t character;   // client: what we flew at the last level start, to come back as
-    CoopSessionEnd lostEnd; // client, while rejoining: how the connection to the host went, to say if nothing comes of it
-    uint32_t nowMs;      // of the last tick
+    CoopSessionEnd
+        lostEnd;    // client, while rejoining: how the connection to the host went, to say if nothing comes of it
+    uint32_t nowMs; // of the last tick
     char message[COOP_SESSION_TEXT];
 } CoopMenu;
 

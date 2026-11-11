@@ -218,7 +218,7 @@ in `src/port/coop/session/session.c`; what the values are is in `src/port/coop/g
 | 1 | Phase: `gLevelPhase` |
 | 1 | Run: which level start of the session this is. 1 for the first, one more each time the session starts a level again (Recovery); after 255 comes 1, never 0 |
 | 4 | Roster, as in Characters |
-| 4 v | The values, each a little-endian 32-bit integer, in the order of the table in `level_start.c`: `COOP_LEVEL_START_VALUES`, 171 now. The last 84 are what a campaign builds from level to level (the level's hit count, the total, the mission number, the planets flown with their hits, medals and team, the map's paths, the mission status, the clear flags): a level start in the middle of a campaign brings them along |
+| 4 v | The values, each a little-endian 32-bit integer, in the order of the table in `level_start.c`: `COOP_LEVEL_START_VALUES`, 182 now. Values 88 to 171 are what a campaign builds from level to level (the level's hit count, the total, the mission number, the planets flown with their hits, medals and team, the map's paths, the mission status, the clear flags): a level start in the middle of a campaign brings them along. Value 172 is 1 when the level starts at a checkpoint, and values 173 to 182 are that checkpoint (the saved object index, hits, ground surface, all-range checkpoint, searchlight status, path progress as a float's 32 bits, and each player's own hits); all 0 otherwise (Recovery) |
 
 Each game goes to the level by itself, as soon as it hears, and what holds them together from there on is the first
 frame of lockstep, below.
@@ -269,10 +269,25 @@ game enters the level from the host's state. The parted level is lost; the sessi
 stay. The code is `src/port/coop/session/session.c` ("Recovery" in `session.h`), and `lockstep_game.c`, `menu.c` and
 `menu_game.c` on the game's side.
 
-**What starts again.** The level the team last entered, from its start, with lives, shields, lasers, bombs, score and
-the campaign's state as the host had them on entering it: the host keeps that level start (the **restart point**),
-taken on the frame its game goes into a level by itself (the map's next level, a level's next part), and the session's
-own first level start before that. If the games part on the map after a level, that level is flown again.
+**What starts again.** The level the team is in. If the host's game reached a checkpoint in it, the level starts
+again there, as it does after a death but with no life taken: with the host's values of the moment lockstep stopped,
+and its checkpoint (the saved path progress, object index, ground and searchlight on rails; the all-range checkpoint
+of Fortuna, Katina, Bolse and Andross; the hits saved there). Otherwise it starts from its start, with lives, shields,
+lasers, bombs, score and the campaign's state as the host had them on entering it: the host keeps that level start
+(the **restart point**), taken on the frame its game goes into a level by itself (the map's next level, a level's next
+part), and the session's own first level start before that. If the games part on the map after a level, that level is
+flown again, from its last checkpoint if a recovery had already started it there.
+
+The checkpoint travels in the level start and is put in place one frame after a game entered the level, because
+entering clears it (`Play_Setup`, `src/engine/fox_play.c:530`); the level's first setup, a few frames later, reads it
+(`CoopLevelStart_AfterEntry`, `src/port/coop/game/level_start.c`). Not carried: what Venom 2's second part and Andross
+keep of Fox beside the checkpoint (`D_ctx_80177C9C` and the values next to it, `src/engine/fox_play.c:4698`); each
+game restores those from its own, as the game does.
+
+**A recovery that does not help** ends the session as before there was one: when a desync is complete within 300
+frames of a level start for the second time in a row (`SYNC_QUICK_PARTS`, `lockstep_game.c`), every game ends its
+session with the desync's text and "The level started again and the games parted again at once". A client on
+another save, for example, parts at frame 0 of every level start.
 
 **In a level, on the host:**
 

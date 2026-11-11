@@ -2951,7 +2951,8 @@ static void Script_RejoinMsg(Script* t, int peer, uint64_t id, uint8_t character
 }
 
 // A host with an id, `clients` clients holding Falco, Slippy, Peppy in that order, and the level started and sent.
-static CoopSession* Script_HostInLevel(Script* t, Side* sides, const CoopIdentity* id, int clients, uint64_t sessionId) {
+static CoopSession* Script_HostInLevel(Script* t, Side* sides, const CoopIdentity* id, int clients,
+                                       uint64_t sessionId) {
     static const uint8_t picks[3] = { FALCO, SLIPPY, PEPPY };
     CoopLevelStart want;
     CoopSession* s = Script_Host(t, sides, id);
@@ -3034,8 +3035,8 @@ static void Script_HostRecoverLeft(void) {
     Level_Bytes(bytes, TEST_LEVEL, TEST_PHASE, FOX, FALCO, NO_PLAYER, NO_PLAYER);
     Level_Run(bytes, 2);
     Expect_RestartTo(name, &t, sent, 0, true, COOP_RECOVER_LEFT, 2, bytes);
-    EXPECT(sides[0].levelStarts == 2 && sides[0].levelStart.run == 2 && sides[0].levelStart.roster[2] == NO_PLAYER, name,
-           "the host's game did not start the level again without the player who left");
+    EXPECT(sides[0].levelStarts == 2 && sides[0].levelStart.run == 2 && sides[0].levelStart.roster[2] == NO_PLAYER,
+           name, "the host's game did not start the level again without the player who left");
     EXPECT(!CoopSession_Recovering(s), name, "still recovering after the new level start");
     Drain(s, SCRIPT_T0 + 60000, sides);
     EXPECT(sides[0].levelStarts == 2 && Sent_Since(&t, sent, COOP_MSG_SESSION_LEVEL_START) == 1, name,
@@ -3048,8 +3049,8 @@ static void Script_HostRecoverLeft(void) {
     Script_Gone(&t, 0, COOP_NET_END_CLOSED);
     Drain(s, SCRIPT_T0, sides);
     Drain(s, SCRIPT_T0 + 60000, sides);
-    EXPECT(sides[0].left == 1 && sides[0].recovers == 0 && sides[0].levelStarts == 1 && !CoopSession_Recovering(s), name,
-           "a host left alone recovered");
+    EXPECT(sides[0].left == 1 && sides[0].recovers == 0 && sides[0].levelStarts == 1 && !CoopSession_Recovering(s),
+           name, "a host left alone recovered");
     EXPECT(t.sentCount == sent, name, "a host left alone sent something");
     Expect_Roster(name, CoopSession_Roster(s), FOX, NO_PLAYER, NO_PLAYER, NO_PLAYER);
     CoopSession_Close(s);
@@ -3126,7 +3127,8 @@ static void Script_HostAway(void) {
     Level_Run(bytes, 2);
     Expect_RestartTo(name, &t, sent, 0, true, COOP_RECOVER_LOST, 2, bytes);
     Expect_Roster(name, CoopSession_Roster(s), FOX, FALCO, NO_PLAYER, NO_PLAYER);
-    EXPECT(sides[0].levelStarts == 2 && !CoopSession_Recovering(s), name, "the level did not start again after the wait");
+    EXPECT(sides[0].levelStarts == 2 && !CoopSession_Recovering(s), name,
+           "the level did not start again after the wait");
     // Too late now: the player is refused as anyone is once a level has started.
     Script_Connected(&t, 1);
     Script_RejoinMsg(&t, 1, TEST_ID, SLIPPY, &a);
@@ -3170,7 +3172,8 @@ static void Script_HostAway(void) {
     Script_RejoinMsg(&t, 1, TEST_ID, SLIPPY, &a);
     Drain(s, SCRIPT_T0 + COOP_SESSION_REJOIN_MS, sides);
     Drain(s, SCRIPT_T0 + COOP_SESSION_REJOIN_MS, sides);
-    EXPECT(sides[1].rejoined == 1 && sides[0].levelStarts == 2, name, "the player in the handshake did not get back in");
+    EXPECT(sides[1].rejoined == 1 && sides[0].levelStarts == 2, name,
+           "the player in the handshake did not get back in");
     CoopSession_Close(s);
 }
 
@@ -3215,7 +3218,8 @@ static void Script_HostRejoin(void) {
     Expect_Roster(name, CoopSession_Roster(s), FOX, FALCO, SLIPPY, NO_PLAYER);
     Expect_RestartTo(name, &t, sent, 1, false, 0, 0, bytes);
     Expect_RestartTo(name, &t, sent, 0, false, 0, 0, bytes); // its SESSION_RECOVER went before `sent`
-    EXPECT(sides[0].levelStarts == 2 && !CoopSession_Recovering(s), name, "no new level start once the player was back");
+    EXPECT(sides[0].levelStarts == 2 && !CoopSession_Recovering(s), name,
+           "no new level start once the player was back");
     EXPECT(CoopSession_PeerPlayer(s, 1) == 2 && Session_CanSend(s, 1), name, "the player who came back is no peer");
     CoopSession_Close(s);
 
@@ -3339,7 +3343,8 @@ static void Script_HostRejoin(void) {
     i = (int) CoopSession_Ignored(s);
     Script_RejoinMsg(&t, 0, TEST_ID, FALCO, &a);
     Drain(s, SCRIPT_T0, sides);
-    EXPECT((int) CoopSession_Ignored(s) == i + 1 && sides[0].joined == 1, name, "a rejoin from a joined peer was taken");
+    EXPECT((int) CoopSession_Ignored(s) == i + 1 && sides[0].joined == 1, name,
+           "a rejoin from a joined peer was taken");
     CoopSession_Close(s);
 }
 
@@ -3404,7 +3409,8 @@ static void Script_HostRecoverCalls(void) {
         EXPECT(m != NULL && m->data[0] == 7 && m->data[1] == 0 && m->data[2] == 2 && m->data[3] == FOX &&
                    m->data[4] == FALCO && m->data[7] == (uint8_t) v && m->data[10] == (uint8_t) (v >> 24),
                name, "the level start sent is not the restart point");
-        EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_SAVE) == 1 && Sent_Since(&t, sent, COOP_MSG_SESSION_LEVEL_START) == 1,
+        EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_SAVE) == 1 &&
+                   Sent_Since(&t, sent, COOP_MSG_SESSION_LEVEL_START) == 1,
                name, "the recovery did not send one save and one level start");
     }
     // And again: the third level start of the session.
@@ -3501,8 +3507,13 @@ static void Script_ClientRecover(void) {
     static const uint8_t parted[2] = { COOP_RECOVER_DESYNC, 0xFF };
     static const uint8_t lost[2] = { COOP_RECOVER_LOST, 2 };
     static const uint8_t bad[][3] = {
-        { 2, 0, 0xFF }, { 2, COOP_RECOVER_REASONS, 0xFF }, { 2, COOP_RECOVER_LOST, 4 }, { 2, COOP_RECOVER_LOST, 0xFE },
-        { 1, COOP_RECOVER_LOST, 0 }, { 3, COOP_RECOVER_LOST, 1 }, { 0, 0, 0 },
+        { 2, 0, 0xFF },
+        { 2, COOP_RECOVER_REASONS, 0xFF },
+        { 2, COOP_RECOVER_LOST, 4 },
+        { 2, COOP_RECOVER_LOST, 0xFE },
+        { 1, COOP_RECOVER_LOST, 0 },
+        { 3, COOP_RECOVER_LOST, 1 },
+        { 0, 0, 0 },
     };
     uint8_t bytes[LEVEL_BYTES];
     CoopIdentity a;
@@ -3588,7 +3599,8 @@ static void Script_ClientRecover(void) {
         Level_Run(bytes, (uint8_t) ((run <= 255) ? run : run - 255));
         Script_Message(&t, 0, COOP_MSG_SESSION_LEVEL_START, bytes, sizeof(bytes));
         Drain(s, SCRIPT_T0 + 2, &side);
-        EXPECT(side.levelStarts == (uint32_t) run && side.ended == 0, name, "the runs do not count on through 255 to 1");
+        EXPECT(side.levelStarts == (uint32_t) run && side.ended == 0, name,
+               "the runs do not count on through 255 to 1");
     }
     CoopSession_Close(s);
 
@@ -3654,7 +3666,8 @@ static void Script_ClientRecover(void) {
         uint32_t sentBefore = t.sentCount;
 
         Drain(s, SCRIPT_T0 + 50 + COOP_SESSION_RECOVER_MS - 1, &side);
-        EXPECT(side.ended == 0 && t.sentCount == sentBefore, name, "the client's own wait ended early, or sent something");
+        EXPECT(side.ended == 0 && t.sentCount == sentBefore, name,
+               "the client's own wait ended early, or sent something");
     }
     Script_Message(&t, 0, COOP_MSG_SESSION_RECOVER, lost, sizeof(lost));
     Drain(s, SCRIPT_T0 + 50 + COOP_SESSION_RECOVER_MS - 1, &side);

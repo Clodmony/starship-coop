@@ -321,7 +321,6 @@ static bool Session_Rejoin(CoopSessionEnd end) {
     return sSession != NULL;
 }
 
-
 // The control: everything Enter does but the values and the save, so the two games go to one level from what they
 // each brought.
 static void Enter_KeepOwn(const CoopLevelStart* start) {

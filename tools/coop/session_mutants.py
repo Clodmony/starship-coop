@@ -85,8 +85,8 @@ LEVEL_HEAD = ("if (size != LEVEL_START_SIZE || data[0] >= COOP_LEVEL_START_LEVEL
               "        !Roster_Valid(roster, COOP_SESSION_PLAYERS, self)) {")
 LEVEL_UNPICKED = ("for (i = 1; i < COOP_SESSION_PLAYERS; i++) {\n        if (roster[i] == COOP_CHARACTER_UNPICKED) {")
 LEVEL_GATE = "if (s->client == CLIENT_ACTIVE && Client_Open(s) && net.msgId == COOP_MSG_SESSION_LEVEL_START) {"
-SAVE_GATE = ("if (s->client == CLIENT_ACTIVE && Client_Open(s) && !s->saveHeld && "
-             "net.msgId == COOP_MSG_SESSION_SAVE) {")
+SAVE_GATE = ("if (s->client == CLIENT_ACTIVE && Client_Open(s) && !s->saveHeld &&\n"
+             "                    net.msgId == COOP_MSG_SESSION_SAVE) {")
 SAVE_SEND = ("if (p->saveDue && !p->recoverDue &&\n            s->t->ops->send(s->t, i, COOP_MSG_SESSION_SAVE, s->level.save, "
              "COOP_SAVE_SIZE, COOP_NET_RELIABLE)) {")
 WRITE_VALUE = ("*out++ = (uint8_t) value;\n        *out++ = (uint8_t) (value >> 8);\n"
@@ -600,7 +600,7 @@ BREAKS = [
 
     # The session's save: what a client takes.
     ("client_save_off", SAVE_GATE, "if (0) {", SIM),
-    ("client_save_twice", SAVE_GATE, SAVE_GATE.replace("!s->saveHeld && ", ""), SIM),
+    ("client_save_twice", SAVE_GATE, SAVE_GATE.replace(" && !s->saveHeld", ""), SIM),
     ("client_save_any_state", SAVE_GATE, SAVE_GATE.replace("s->client == CLIENT_ACTIVE && ", ""), SIM),
     ("client_save_any_size", "if (net->size != COOP_SAVE_SIZE) {", "if (0) {", SIM),
     ("client_save_lost", "memcpy(s->level.save, net->data, COOP_SAVE_SIZE);\n", "", SIM),
@@ -771,7 +771,7 @@ SANITIZER_BREAKS = [
     ("close_leaks_session", CLOSE, "s->t->ops->close(s->t);", SIM),
     ("refuse_read_past_end", REFUSE_READ, REFUSE_READ.replace("net->size < 4", "net->size < 2"), SIM),
     # A rejoin shorter than its head: the identity is then read from before the payload's end, and refused all the same.
-    ("rejoin_short_read", "if (net->size < REJOIN_HEAD || !Identity_ReadAll(&s->peers[peer].identity,",
+    ("rejoin_short_read", "if (net->size < REJOIN_HEAD ||\n        !Identity_ReadAll(&s->peers[peer].identity,",
      "if (!Identity_ReadAll(&s->peers[peer].identity,", SIM),
     ("identity_peer_unchecked", "if (peer < 0 || peer >= COOP_NET_MAX_PEERS) {\n        return NULL;\n    }\n", "",
      SIM),

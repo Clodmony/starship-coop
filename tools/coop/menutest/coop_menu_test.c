@@ -1182,7 +1182,8 @@ static void Test_LevelLost(void) {
     v = View(A);
     EXPECT(v->phase == COOP_MENU_JOINED, "the client lost its session");
     Expect_Has(v->message, "Player 3 left. Starting the level again together.", "the other client is not told");
-    EXPECT(sEnters[0] == 2 && sEnters[1] == 2 && sEnters[2] == 1, "the level did not start again for the two who stayed");
+    EXPECT(sEnters[0] == 2 && sEnters[1] == 2 && sEnters[2] == 1,
+           "the level did not start again for the two who stayed");
     EXPECT(sEntered[0].run == 2 && sEntered[1].run == 2 && sEntered[0].roster[2] == NO_PLAYER &&
                sEntered[1].roster[1] == FALCO && sEntered[1].values[0] == TEST_VALUE_FIRST,
            "the second level start is not the host's level again, without the player who left");

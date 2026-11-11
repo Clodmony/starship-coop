@@ -49,7 +49,7 @@ static void Dump_Make(CoopStateDump* dump) {
         uint8_t region;
         uint32_t size;
     } chunks[5] = {
-        { "gPlayer", 0, 0, 16 }, { "gPlayer", 1, 0, 16 }, { "gActors", 59, 1, 9 },
+        { "gPlayer", 0, 0, 16 },     { "gPlayer", 1, 0, 16 },    { "gActors", 59, 1, 9 },
         { "sRandSeed1", -1, 10, 4 }, { "gLifeCount", 0, 11, 2 },
     };
     uint32_t offset = 0;
@@ -97,8 +97,8 @@ static void Test_Stream(void) {
     const char* test = "stream";
     // region, name length, name, index, size, bytes: the first chunk by hand, as PROTOCOL.md gives it.
     static const uint8_t head[] = { 0, 7, 'g', 'P', 'l', 'a', 'y', 'e', 'r', 0, 0, 0, 0, 16, 0, 0, 0, 3, 10, 17 };
-    static const uint8_t single[] = { 10, 10, 's', 'R', 'a', 'n', 'd', 'S', 'e', 'e', 'd', '1', 0xFF, 0xFF, 0xFF, 0xFF,
-                                      4, 0, 0, 0 };
+    static const uint8_t single[] = { 10,  10,  's',  'R',  'a',  'n',  'd', 'S', 'e', 'e',
+                                      'd', '1', 0xFF, 0xFF, 0xFF, 0xFF, 4,   0,   0,   0 };
     CoopStateDump dump;
     uint8_t small[8];
     uint8_t* stream;
@@ -120,8 +120,14 @@ static void Test_Stream(void) {
 // One side sends, the other takes: every size around the part boundaries.
 static void Test_Parts(void) {
     const char* test = "parts";
-    static const uint32_t sizes[] = { 1, 2, COOP_DESYNC_DUMP_CHUNK - 1, COOP_DESYNC_DUMP_CHUNK, COOP_DESYNC_DUMP_CHUNK + 1,
-                                      3 * COOP_DESYNC_DUMP_CHUNK, 3 * COOP_DESYNC_DUMP_CHUNK + 7, 117000 };
+    static const uint32_t sizes[] = { 1,
+                                      2,
+                                      COOP_DESYNC_DUMP_CHUNK - 1,
+                                      COOP_DESYNC_DUMP_CHUNK,
+                                      COOP_DESYNC_DUMP_CHUNK + 1,
+                                      3 * COOP_DESYNC_DUMP_CHUNK,
+                                      3 * COOP_DESYNC_DUMP_CHUNK + 7,
+                                      117000 };
     uint8_t message[COOP_DESYNC_DUMP_MESSAGE_MAX];
     size_t s;
     uint32_t messages = 0;
@@ -148,7 +154,8 @@ static void Test_Parts(void) {
             messages++;
         }
         EXPECT(CoopDesyncDump_OutDone(&out), test, "the sender is not done");
-        EXPECT(in.done && !in.none && !in.refused && in.size == size && in.got == size, test, "the stream is not whole");
+        EXPECT(in.done && !in.none && !in.refused && in.size == size && in.got == size, test,
+               "the stream is not whole");
         EXPECT(in.stream != NULL && memcmp(in.stream, stream, size) == 0, test, "the stream did not arrive as it was");
         // Nothing more is taken once it is whole.
         CoopDesyncDump_OutBegin(&out, 3, 2000, 1, stream, size);
@@ -208,14 +215,14 @@ static void Test_Refused(void) {
     CoopDesyncDumpIn in;
     int hostile = 0;
 
-#define CASE(expectRefused, what, size)                                                   \
-    do {                                                                                  \
-        bool taken = CoopDesyncDump_InReceive(&in, 3, 2000, 1, m, (size));                \
-        EXPECT(!taken, test, what);                                                       \
-        EXPECT(in.refused == (expectRefused), test, what " (refused or only dropped)");   \
-        EXPECT(in.stream == NULL || in.begun, test, what " (memory)");                    \
-        CoopDesyncDump_InFree(&in);                                                       \
-        hostile++;                                                                        \
+#define CASE(expectRefused, what, size)                                                 \
+    do {                                                                                \
+        bool taken = CoopDesyncDump_InReceive(&in, 3, 2000, 1, m, (size));              \
+        EXPECT(!taken, test, what);                                                     \
+        EXPECT(in.refused == (expectRefused), test, what " (refused or only dropped)"); \
+        EXPECT(in.stream == NULL || in.begun, test, what " (memory)");                  \
+        CoopDesyncDump_InFree(&in);                                                     \
+        hostile++;                                                                      \
     } while (0)
 
     memset(&in, 0, sizeof(in));
@@ -248,8 +255,10 @@ static void Test_Refused(void) {
             uint16_t part;
             uint16_t parts;
             uint32_t size;
-        } second[] = { { 0, 3, 2 * COOP_DESYNC_DUMP_CHUNK + 5 }, { 2, 3, 2 * COOP_DESYNC_DUMP_CHUNK + 5 },
-                       { 1, 3, 2 * COOP_DESYNC_DUMP_CHUNK + 6 }, { 1, 2, 2 * COOP_DESYNC_DUMP_CHUNK + 5 } };
+        } second[] = { { 0, 3, 2 * COOP_DESYNC_DUMP_CHUNK + 5 },
+                       { 2, 3, 2 * COOP_DESYNC_DUMP_CHUNK + 5 },
+                       { 1, 3, 2 * COOP_DESYNC_DUMP_CHUNK + 6 },
+                       { 1, 2, 2 * COOP_DESYNC_DUMP_CHUNK + 5 } };
         size_t i;
 
         for (i = 0; i < sizeof(second) / sizeof(second[0]); i++) {
@@ -292,8 +301,9 @@ static void Test_Line(void) {
     EXPECT(CoopDesyncDump_FirstDifference(a, aSize, b, bSize, Region_Name, line, sizeof(line)) == 1, test,
            "a flipped bit was not found");
     // sBytes[16 + 6] = 22 * 7 + 3 = 157 = 0x9d; the word at +4 holds bytes 143, 150, 157, 164.
-    EXPECT(strcmp(line, "players: gPlayer[1] differs in 1 of 16 bytes, first at +6: 9d vs 9c; word at +4: 0xa49d968f vs "
-                        "0xa49c968f") == 0,
+    EXPECT(strcmp(line,
+                  "players: gPlayer[1] differs in 1 of 16 bytes, first at +6: 9d vs 9c; word at +4: 0xa49d968f vs "
+                  "0xa49c968f") == 0,
            test, line);
     free(b);
     cases++;
@@ -301,7 +311,8 @@ static void Test_Line(void) {
     // The other way round: a is always the lower player's.
     b = Stream_Make(&bSize, 1, 6, 0x01);
     CoopDesyncDump_FirstDifference(b, bSize, a, aSize, Region_Name, line, sizeof(line));
-    EXPECT(strstr(line, ": 9c vs 9d; word at +4: 0xa49c968f vs 0xa49d968f") != NULL, test, "the sides are not in order");
+    EXPECT(strstr(line, ": 9c vs 9d; word at +4: 0xa49c968f vs 0xa49d968f") != NULL, test,
+           "the sides are not in order");
     free(b);
     cases++;
 
@@ -327,7 +338,8 @@ static void Test_Line(void) {
     cases += 3;
 
     // A region without a name here still gets one.
-    EXPECT(CoopDesyncDump_FirstDifference(a, aSize, a, aSize, NULL, line, sizeof(line)) == 0, test, "no names, no line");
+    EXPECT(CoopDesyncDump_FirstDifference(a, aSize, a, aSize, NULL, line, sizeof(line)) == 0, test,
+           "no names, no line");
     b = Stream_Make(&bSize, 3, 0, 0x01);
     CoopDesyncDump_FirstDifference(a, aSize, b, bSize, NULL, line, sizeof(line));
     EXPECT(strncmp(line, "region 10: sRandSeed1 differs", 29) == 0, test, line);

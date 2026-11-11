@@ -58,10 +58,12 @@ and that a desync, if one happens, is caught and reported.
   built.
 - The pause menu belongs to the host: cursor, retry and quit.
 - If the connection drops, or one player sends no input for 10 seconds, the host waits 15 seconds for that player.
-  Its game comes back by itself, and the level starts again from its start for both. If it does not come back, or a
+  Its game comes back by itself, and the level starts again for both (at the last checkpoint, or from its start). If it does not come back, or a
   player leaves on purpose, the session ends for both (with three or four players the others start the level again).
-- If the games go out of step (a desync), the level starts again from its start for everyone, with the host's lives,
-  shields and score as they were on entering it. One line in the co-op window says so.
+- If the games go out of step (a desync), the level starts again for everyone: at the last checkpoint if one was
+  reached, as after a death but without a life lost, otherwise from its start with the host's lives, shields and score
+  as they were on entering it. One line in the co-op window says so. If the games part again at once after that, twice
+  in a row, the session ends.
 - No Steam yet: this is a direct connection.
 
 ## What to send back

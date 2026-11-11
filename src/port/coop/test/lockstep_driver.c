@@ -59,10 +59,10 @@ static s32 sLastFrame = -1;
 static s32 sOwnFrame = -1;
 static s32 sFramesAfter = 0;
 static bool sOverSaid = false;
-static s32 sRuns = 1; // lockstep runs of this game: one per level start of its session
-static s32 sPokeAfter = -1;       // SF64_COOP_LOCKSTEP_POKE_AFTER=<frames>
-static s32 sPokeAfterFrame = -1;  // the frame that makes
-static s32 sSeenLoad = 0;         // the checkpoint last reported: gSavedObjectLoadIndex, gAllRangeCheckpoint
+static s32 sRuns = 1;            // lockstep runs of this game: one per level start of its session
+static s32 sPokeAfter = -1;      // SF64_COOP_LOCKSTEP_POKE_AFTER=<frames>
+static s32 sPokeAfterFrame = -1; // the frame that makes
+static s32 sSeenLoad = 0;        // the checkpoint last reported: gSavedObjectLoadIndex, gAllRangeCheckpoint
 static s32 sSeenAllRange = 0;
 static s32 sStateRun = 0; // the run whose `run_state` line is out
 static bool sStartSaid = false;

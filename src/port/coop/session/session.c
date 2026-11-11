@@ -785,8 +785,8 @@ static void Host_Rejoin(CoopSession* s, int peer, const CoopNetEvent* net, uint3
     int slot = 0;
     int i;
 
-    if (net->size < REJOIN_HEAD || !Identity_ReadAll(&s->peers[peer].identity, net->data + REJOIN_HEAD,
-                                                     (uint16_t) (net->size - REJOIN_HEAD))) {
+    if (net->size < REJOIN_HEAD ||
+        !Identity_ReadAll(&s->peers[peer].identity, net->data + REJOIN_HEAD, (uint16_t) (net->size - REJOIN_HEAD))) {
         refuse = COOP_SESSION_REFUSE_MALFORMED;
     } else if (!Host_Fits(s, peer, nowMs, ev, &q.diff)) {
         return;
@@ -1278,7 +1278,8 @@ static bool Client_Poll(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) {
                     Client_Recover(s, &net, nowMs, ev);
                     return true;
                 }
-                if (s->client == CLIENT_ACTIVE && Client_Open(s) && !s->saveHeld && net.msgId == COOP_MSG_SESSION_SAVE) {
+                if (s->client == CLIENT_ACTIVE && Client_Open(s) && !s->saveHeld &&
+                    net.msgId == COOP_MSG_SESSION_SAVE) {
                     if (Client_Save(s, &net, ev)) {
                         return true;
                     }

@@ -26,7 +26,8 @@ typedef struct {
     uint8_t level;                    // LevelId
     uint8_t phase;                    // gLevelPhase
     // Which level start of its session this is: 1 for the first, one more each time the session starts a level again
-    // after a lost player or a desync. CoopSession_StartLevel and the session's restart fill it in; 0 outside a session.
+    // after a lost player or a desync. CoopSession_StartLevel and the session's restart fill it in; 0 outside a
+    // session.
     uint8_t run;
     uint8_t roster[COOP_PLAYERS_MAX]; // who flies what, as CoopRoster; CoopSession_StartLevel fills this in
     int32_t values[COOP_LEVEL_START_VALUES];

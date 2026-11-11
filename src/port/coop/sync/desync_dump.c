@@ -243,8 +243,7 @@ static int32_t Chunks_Read(const uint8_t* stream, size_t size, Chunk** out) {
 }
 
 static bool Chunk_SameLabel(const Chunk* a, const Chunk* b) {
-    return (a->nameLength == b->nameLength) && (a->index == b->index) &&
-           (memcmp(a->name, b->name, a->nameLength) == 0);
+    return (a->nameLength == b->nameLength) && (a->index == b->index) && (memcmp(a->name, b->name, a->nameLength) == 0);
 }
 
 // "name[index]" or "name", printable ASCII only: the name came over the wire.
@@ -343,10 +342,10 @@ int CoopDesyncDump_FirstDifference(const uint8_t* a, size_t aSize, const uint8_t
                     }
                 }
                 Chunk_Label(x, label, sizeof(label));
-                used = snprintf(out, cap, "%s: %s differs in %u of %u bytes, first at +%u: %02x vs %02x",
-                                Region_Name(regionName, (uint8_t) region, buffer, sizeof(buffer)), label,
-                                (unsigned) count, (unsigned) x->size, (unsigned) first, x->bytes[first],
-                                y->bytes[first]);
+                used =
+                    snprintf(out, cap, "%s: %s differs in %u of %u bytes, first at +%u: %02x vs %02x",
+                             Region_Name(regionName, (uint8_t) region, buffer, sizeof(buffer)), label, (unsigned) count,
+                             (unsigned) x->size, (unsigned) first, x->bytes[first], y->bytes[first]);
                 if (Word_At(x, first, &start, &wx) && Word_At(y, first, &start, &wy) && (used > 0) &&
                     ((size_t) used < cap)) {
                     snprintf(out + used, cap - (size_t) used, "; word at +%u: 0x%08x vs 0x%08x", (unsigned) start,

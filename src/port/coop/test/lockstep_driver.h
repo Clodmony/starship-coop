@@ -24,10 +24,11 @@
 //                                      player 0's wings broken, 2 player 1's wings broken, 4 player 0 twin lasers, 8
 //                                      player 1's wing health 0), then kind 0 a laser item (the default), 1 a wing
 //                                      repair item, 2 a supply crate about to burst or 3 a checkpoint (the ring a
-//                                      rails level saves its checkpoint at) appears where that player will be. Report lines: `item placed frame=N player=P kind=K`, `lasers frame=N
-//                                      strength=a,b wings=l0,l1 states=s0,s1` (players 0 and 1, states = 10 * left +
-//                                      right wing state) whenever one of them changes, and for a crate `drop frame=N
-//                                      id=<item id> lasers=<0 or 1>`
+//                                      rails level saves its checkpoint at) appears where that player will be. Report
+//                                      lines: `item placed frame=N player=P kind=K`, `lasers frame=N strength=a,b
+//                                      wings=l0,l1 states=s0,s1` (players 0 and 1, states = 10 * left + right wing
+//                                      state) whenever one of them changes, and for a crate `drop frame=N id=<item id>
+//                                      lasers=<0 or 1>`
 // With none set, no listener is registered and the game runs unchanged. Without a feed or a pilot port 0 stays empty,
 // so no pad on this PC reaches a test.
 //

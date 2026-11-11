@@ -30,7 +30,7 @@ extern u8 sAudioSpecId;
 // medals and team, the total, the map's paths, the clear flags). A level reads little of it, the map and the ending
 // read all of it, and games that parted may hold different ones; a level start in the middle of a campaign, which is
 // what the session sends when it starts a level again, has to bring them along.
-#define ROUTE_PATHS 22 // gPlanetPathStatus, src/engine/fox_context.c: the header gives it no size
+#define PATHS_N 22 // gPlanetPathStatus, src/engine/fox_context.c: the header gives it no size
 
 #define LEVEL_START_TABLE(X, XN)        \
     X(sRandSeed1, s32)                  \
@@ -66,7 +66,7 @@ extern u8 sAudioSpecId;
     X(gMissionTeamStatus, s32)          \
     X(gMissionHitCount, s32)            \
     X(gMissionMedal, s32)               \
-    XN(gPlanetPathStatus, s32, ROUTE_PATHS) \
+    XN(gPlanetPathStatus, s32, PATHS_N) \
     X(gMissionStatus, u8)               \
     X(gLeveLClearStatus, u8)
 
@@ -77,13 +77,13 @@ extern u8 sAudioSpecId;
 // also saves, are among the values above. All 0 in a level start that begins at the level's start.
 static s32 sCheckpointHits[COOP_PLAYERS_MAX];
 
-#define CHECKPOINT_TABLE(X)         \
-    X(gSavedObjectLoadIndex, s32)   \
-    X(gSavedHitCount, s32)          \
-    X(gSavedGroundSurface, s32)     \
-    X(gAllRangeCheckpoint, s32)     \
+#define CHECKPOINT_TABLE(X)          \
+    X(gSavedObjectLoadIndex, s32)    \
+    X(gSavedHitCount, s32)           \
+    X(gSavedGroundSurface, s32)      \
+    X(gAllRangeCheckpoint, s32)      \
     X(gSavedZoSearchlightStatus, u8) \
-    X(gSavedPathProgress, f32)      \
+    X(gSavedPathProgress, f32)       \
     X(sCheckpointHits, s32)
 
 typedef struct {
@@ -217,7 +217,8 @@ void CoopLevelStart_AfterEntry(void) {
     D_ctx_8017782C = false;
     CoopLog_Write(COOP_LOG_SESSION, false,
                   "level start at the checkpoint: object index %d, path %d, all-range checkpoint %d, hits %d",
-                  (int) gSavedObjectLoadIndex, (int) gSavedPathProgress, (int) gAllRangeCheckpoint, (int) gSavedHitCount);
+                  (int) gSavedObjectLoadIndex, (int) gSavedPathProgress, (int) gAllRangeCheckpoint,
+                  (int) gSavedHitCount);
 }
 
 // What a level sets up on its first frame and the state hash already reads before that frame: Player_Setup

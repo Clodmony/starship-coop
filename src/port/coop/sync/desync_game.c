@@ -44,8 +44,8 @@ static bool sFoundSaid = false;
 // It outlives the lockstep run it came from: the level starts again while it crosses.
 static struct {
     bool on;
-    bool said;       // the first-difference line is written, or why there is none
-    int peer;        // the other game of the pair
+    bool said;          // the first-difference line is written, or why there is none
+    int peer;           // the other game of the pair
     int32_t players[2]; // the pair, lower index first
     int32_t self;
     int32_t other;
@@ -246,8 +246,8 @@ static void Dump_Say(const char* what) {
     FILE* f;
 
     sDump.said = true;
-    CoopLog_Write(COOP_LOG_DESYNC, false, "first difference at frame %u, players %d and %d: %s",
-                  (unsigned) sDump.frame, (int) sDump.players[0] + 1, (int) sDump.players[1] + 1, what);
+    CoopLog_Write(COOP_LOG_DESYNC, false, "first difference at frame %u, players %d and %d: %s", (unsigned) sDump.frame,
+                  (int) sDump.players[0] + 1, (int) sDump.players[1] + 1, what);
     if (sDump.report[0] == '\0') {
         return;
     }

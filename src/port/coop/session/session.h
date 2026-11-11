@@ -79,14 +79,14 @@ typedef enum {
 
 typedef enum {
     COOP_SESSION_END_NONE,
-    COOP_SESSION_END_REFUSED,      // the host refused our identity
-    COOP_SESSION_END_CLOSED,       // the other side closed
-    COOP_SESSION_END_TIMEOUT,      // the connection went quiet
-    COOP_SESSION_END_HOST_FULL,    // no free slot on the host
-    COOP_SESSION_END_PROTOCOL,     // the other side runs another COOP_PROTOCOL_VERSION
-    COOP_SESSION_END_NO_HANDSHAKE, // connected, but the handshake did not finish in time
-    COOP_SESSION_END_BAD_MESSAGE,  // the other side sent a session message we could not read
-    COOP_SESSION_END_NO_RECOVERY,  // client: the host did not start the level again within COOP_SESSION_RECOVER_MS
+    COOP_SESSION_END_REFUSED,       // the host refused our identity
+    COOP_SESSION_END_CLOSED,        // the other side closed
+    COOP_SESSION_END_TIMEOUT,       // the connection went quiet
+    COOP_SESSION_END_HOST_FULL,     // no free slot on the host
+    COOP_SESSION_END_PROTOCOL,      // the other side runs another COOP_PROTOCOL_VERSION
+    COOP_SESSION_END_NO_HANDSHAKE,  // connected, but the handshake did not finish in time
+    COOP_SESSION_END_BAD_MESSAGE,   // the other side sent a session message we could not read
+    COOP_SESSION_END_NO_RECOVERY,   // client: the host did not start the level again within COOP_SESSION_RECOVER_MS
     COOP_SESSION_END_OTHER_SESSION, // client, coming back: the host runs another session now (its id differs)
 } CoopSessionEnd;
 
