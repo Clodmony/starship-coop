@@ -4,17 +4,22 @@ This project follows [Co-op Anything](https://github.com/cranebeaker/coop-anythi
 and a directory of co-op projects; each game's code lives in its own repository, like this one. Give back to it when
 a phase finishes (hub AGENTS.md, "Sending what you learned back").
 
-## Done and not done yet
+## Where it stands
 
 Both steps go out under the owner's account, so only the owner sends them.
 
 1. Done, 2026-11-11: the "claim a game" issue for Star Fox 64 is open on the hub
    ([cranebeaker/coop-anything#355](https://github.com/cranebeaker/coop-anything/issues/355)). It has no `in-progress`
    label: the issue was made with the command line, not the form that sets it.
-2. Not done: send the directory entry and the write-up in a draft PR from a fork of the hub, branch `game/star-fox-64`.
-   The owner chose to send it after the combined test build 5 of 2026-11-11 was merged into `coop` (PR #265, `coop`
-   `33bd5fe6`), so that the entry matches what is on `coop`. That merge happened; the drafts here are updated to it. The
-   owner reads this pull request (#264) first; nothing goes to the hub before the owner says so.
+2. Done, 2026-11-11, after the owner read the diff: the directory entry and the write-up are in a draft PR from the
+   owner's fork of the hub, branch `game/star-fox-64`
+   ([cranebeaker/coop-anything#358](https://github.com/cranebeaker/coop-anything/pull/358); it closes #355 when
+   merged). It was sent after the combined test build 5 was merged into `coop` (PR #265, `coop` `33bd5fe6`), so the
+   entry matches what is on `coop`; the files in it are the drafts below, with the hub's `DIRECTORY.md` regenerated.
+   Still open: the hub maintainers' review, and taking the PR out of draft.
+
+If the PR or the entry changes later (a review comment, a hand-played run of the merged code, a new QA level), change
+the drafts here and the hub PR together.
 
 ## Drafts
 
@@ -23,7 +28,7 @@ Both steps go out under the owner's account, so only the owner sends them.
 | [hub/star-fox-64.md](hub/star-fox-64.md) | `games/star-fox-64/README.md`, in the form of the hub's `templates/game.md` |
 | [hub/directory-entry.yaml](hub/directory-entry.yaml) | Appended to `data/directory.yaml`, then run `python tools/build_directory.py` |
 
-Before sending:
+Before sending or updating:
 
 - Search the hub again for Star Fox 64: issues, PRs and `data/directory.yaml`.
 - Check the status, the QA level and the results in the write-up against `docs/coop/QA.md`, and update `Last updated`,
