@@ -32,7 +32,7 @@ END_REFUSED = 1  # COOP_SESSION_END_REFUSED
 EAGER = 3  # game messages each side pushes past the session in a refused handshake
 REFUSE_STARTED = 1 << 9  # COOP_SESSION_REFUSE_STARTED
 LEVEL, PHASE = 5, 1  # what the bots start: TEST_PHASE in coop_session_test.c
-LEVEL_VALUES = 171  # COOP_LEVEL_START_VALUES
+LEVEL_VALUES = 182  # COOP_LEVEL_START_VALUES
 WINDOWS, LINUX = "Windows x86-64 MSVC 1944", "Linux x86-64 GCC 13.2"  # two platforms, as CoopIdentity_Platform writes
 
 

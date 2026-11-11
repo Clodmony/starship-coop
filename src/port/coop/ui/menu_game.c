@@ -166,6 +166,15 @@ void CoopMenuGame_Message(int peer, uint16_t msgId, const uint8_t* data, uint16_
 }
 
 void CoopMenuGame_Recover(void) {
+    CoopLevelStart start;
+
+    // Host, as lockstep stops: if this game reached a checkpoint in the level, the level starts again there, and at
+    // its start otherwise (the restart point taken when the level was entered stays). Later calls of one recovery find
+    // lockstep stopped and change nothing: by then this game flies on alone.
+    if ((sMenu->phase == COOP_MENU_HOSTING) && (sMenu->session != NULL) && (CoopSyncGame_Frame() >= 0) &&
+        CoopLevelStart_AtCheckpoint(&start)) {
+        CoopSession_SetRestart(sMenu->session, &start);
+    }
     CoopSyncGame_Pause();
 }
 

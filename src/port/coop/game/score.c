@@ -103,6 +103,16 @@ void CoopScore_DrawStatus(void) {
     }
 }
 
+int32_t CoopScore_SavedHits(int32_t player) {
+    return ((player >= 0) && (player < COOP_PLAYERS_MAX)) ? sSavedScores[player] : 0;
+}
+
+void CoopScore_SetSavedHits(int32_t player, int32_t hits) {
+    if ((player >= 0) && (player < COOP_PLAYERS_MAX)) {
+        sSavedScores[player] = (u16) CLAMP(hits, 0, 9999);
+    }
+}
+
 void CoopScore_LevelInit(void) {
     s32 i;
 

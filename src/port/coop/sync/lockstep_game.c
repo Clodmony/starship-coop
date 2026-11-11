@@ -223,6 +223,7 @@ static bool Sync_FrameIsReady(void) {
 }
 
 int32_t CoopSyncGame_HoldFrame(void) {
+    CoopLevelStart_AfterEntry(); // a level start at a checkpoint: the checkpoint, one frame after the level was entered
     if (sState == SYNC_ARMED) {
         // Play_Init ran on the last frame, and this is the first one in the level.
         if ((gGameState != GSTATE_PLAY) || (gPlayState != PLAY_UPDATE)) {

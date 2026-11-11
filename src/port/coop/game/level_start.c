@@ -6,6 +6,8 @@
 #include <string.h>
 
 #include "global.h"
+#include "port/coop/game/score.h"
+#include "port/coop/log/coop_log.h"
 
 // src/sys/sys_math.c
 extern s32 sRandSeed1;
@@ -68,6 +70,22 @@ extern u8 sAudioSpecId;
     X(gMissionStatus, u8)               \
     X(gLeveLClearStatus, u8)
 
+// Behind those values: one that says whether the level starts at a checkpoint, and the checkpoint. The game saves
+// these when a checkpoint is reached and reads them at the level's setup after a death (Player_Setup,
+// src/engine/fox_play.c:4697-4735); entering a level clears them. sCheckpointHits is each player's own hits as
+// score.c saved them there. gSavedTeamShields, gSavedGoldRingCount and gSavedStarWolfTeamAlive, which a checkpoint
+// also saves, are among the values above. All 0 in a level start that begins at the level's start.
+static s32 sCheckpointHits[COOP_PLAYERS_MAX];
+
+#define CHECKPOINT_TABLE(X)         \
+    X(gSavedObjectLoadIndex, s32)   \
+    X(gSavedHitCount, s32)          \
+    X(gSavedGroundSurface, s32)     \
+    X(gAllRangeCheckpoint, s32)     \
+    X(gSavedZoSearchlightStatus, u8) \
+    X(gSavedPathProgress, f32)      \
+    X(sCheckpointHits, s32)
+
 typedef struct {
     void* data;
     u8 size;  // of one value
@@ -81,8 +99,15 @@ typedef struct {
 
 static const StartRow sRows[] = { LEVEL_START_TABLE(START_ROW, START_ROW_N) };
 
-_Static_assert((0 LEVEL_START_TABLE(START_COUNT, START_COUNT_N)) == COOP_LEVEL_START_VALUES,
-               "COOP_LEVEL_START_VALUES does not match the table");
+static const StartRow sCheckpointRows[] = { CHECKPOINT_TABLE(START_ROW) };
+
+#define CHECKPOINT_VALUES (0 CHECKPOINT_TABLE(START_COUNT))
+// The value that says whether the checkpoint behind it is one.
+#define CHECKPOINT_FLAG (COOP_LEVEL_START_VALUES - CHECKPOINT_VALUES - 1)
+
+_Static_assert((0 LEVEL_START_TABLE(START_COUNT, START_COUNT_N)) + 1 + CHECKPOINT_VALUES == COOP_LEVEL_START_VALUES,
+               "COOP_LEVEL_START_VALUES does not match the tables");
+_Static_assert(sizeof(gSavedPathProgress) == sizeof(s32), "gSavedPathProgress does not travel as its 32 bits");
 _Static_assert(sizeof(gMissionPlanet[0]) == sizeof(s32), "gMissionPlanet is not read as it is stored");
 _Static_assert(LEVEL_VERSUS == COOP_LEVEL_START_LEVELS, "COOP_LEVEL_START_LEVELS is not the first level left out");
 _Static_assert(sizeof(gLaserStrength[0]) == sizeof(s32), "gLaserStrength is not read as it is stored");
@@ -93,8 +118,13 @@ static int32_t Row_Get(const StartRow* row, s32 i) {
             return ((const u8*) row->data)[i];
         case 2:
             return ((const s16*) row->data)[i];
-        default:
-            return ((const s32*) row->data)[i];
+        default: {
+            // 32 bits as they are: an s32, or a float's bit pattern (PROTOCOL.md rule 3).
+            int32_t value;
+
+            memcpy(&value, (const u8*) row->data + 4 * i, sizeof(value));
+            return value;
+        }
     }
 }
 
@@ -107,13 +137,14 @@ static void Row_Set(const StartRow* row, s32 i, int32_t value) {
             ((s16*) row->data)[i] = (s16) value;
             break;
         default:
-            ((s32*) row->data)[i] = value;
+            memcpy((u8*) row->data + 4 * i, &value, sizeof(value));
             break;
     }
 }
 
-// newLevel: the hit count of the level is 0, as Map_PlayLevel leaves it for a level the map starts.
-static void LevelStart_Fill(CoopLevelStart* out, uint8_t level, uint8_t phase, bool newLevel) {
+// newLevel: the hit count of the level is 0, as Map_PlayLevel leaves it for a level the map starts. checkpoint: the
+// level starts where this game's checkpoint is.
+static void LevelStart_Fill(CoopLevelStart* out, uint8_t level, uint8_t phase, bool newLevel, bool checkpoint) {
     size_t r;
     s32 i;
     s32 n = 0;
@@ -126,15 +157,67 @@ static void LevelStart_Fill(CoopLevelStart* out, uint8_t level, uint8_t phase, b
             out->values[n++] = (newLevel && (sRows[r].data == (void*) &gHitCount)) ? 0 : Row_Get(&sRows[r], i);
         }
     }
+    out->values[n++] = checkpoint;
+    if (checkpoint) {
+        for (i = 0; i < COOP_PLAYERS_MAX; i++) {
+            sCheckpointHits[i] = CoopScore_SavedHits(i);
+        }
+        for (r = 0; r < ARRAY_COUNT(sCheckpointRows); r++) {
+            for (i = 0; i < sCheckpointRows[r].count; i++) {
+                out->values[n++] = Row_Get(&sCheckpointRows[r], i);
+            }
+        }
+    }
     CoopSave_FromGame(out->save);
 }
 
 void CoopLevelStart_FromGame(CoopLevelStart* out, uint8_t level, uint8_t phase) {
-    LevelStart_Fill(out, level, phase, true);
+    LevelStart_Fill(out, level, phase, true, false);
 }
 
 void CoopLevelStart_Entering(CoopLevelStart* out) {
-    LevelStart_Fill(out, (uint8_t) gNextLevel, (uint8_t) gNextLevelPhase, false);
+    LevelStart_Fill(out, (uint8_t) gNextLevel, (uint8_t) gNextLevelPhase, false, false);
+}
+
+bool CoopLevelStart_AtCheckpoint(CoopLevelStart* out) {
+    if ((gGameState != GSTATE_PLAY) || (gNextGameState != GSTATE_NONE) ||
+        ((gSavedObjectLoadIndex == 0) && (gAllRangeCheckpoint == 0))) {
+        return false;
+    }
+    LevelStart_Fill(out, (uint8_t) gCurrentLevel, (uint8_t) gLevelPhase, false, true);
+    return true;
+}
+
+// A level start that begins at a checkpoint: its checkpoint values wait here from CoopLevelStart_Enter to the next
+// frame, as entering the level clears the checkpoint.
+static int32_t sCheckpointPending[CHECKPOINT_VALUES];
+static bool sCheckpointIsPending = false;
+
+void CoopLevelStart_AfterEntry(void) {
+    size_t r;
+    s32 i;
+    s32 n = 0;
+
+    // Game_SetGameState has taken the level by now: it runs on the frame of CoopLevelStart_Enter, right after the event
+    // that called it.
+    if (!sCheckpointIsPending || (gNextGameState != GSTATE_NONE)) {
+        return;
+    }
+    sCheckpointIsPending = false;
+    for (r = 0; r < ARRAY_COUNT(sCheckpointRows); r++) {
+        for (i = 0; i < sCheckpointRows[r].count; i++) {
+            Row_Set(&sCheckpointRows[r], i, sCheckpointPending[n++]);
+        }
+    }
+    for (i = 0; i < COOP_PLAYERS_MAX; i++) {
+        CoopScore_SetSavedHits(i, sCheckpointHits[i]);
+    }
+    // As after the level's first setup, which a game that restarts from a checkpoint is past: with it set, the setup
+    // would play the level's intro and clear the all-range checkpoint (src/engine/fox_play.c:4820-4828).
+    D_ctx_8017782C = false;
+    CoopLog_Write(COOP_LOG_SESSION, false,
+                  "level start at the checkpoint: object index %d, path %d, all-range checkpoint %d, hits %d",
+                  (int) gSavedObjectLoadIndex, (int) gSavedPathProgress, (int) gAllRangeCheckpoint, (int) gSavedHitCount);
 }
 
 // What a level sets up on its first frame and the state hash already reads before that frame: Player_Setup
@@ -168,6 +251,9 @@ void CoopLevelStart_Enter(const CoopLevelStart* start) {
             Row_Set(&sRows[r], i, start->values[n++]);
         }
     }
+    // The checkpoint, if the level starts at one, goes in place on the next frame (CoopLevelStart_AfterEntry).
+    sCheckpointIsPending = start->values[CHECKPOINT_FLAG] != 0;
+    memcpy(sCheckpointPending, &start->values[CHECKPOINT_FLAG + 1], sizeof(sCheckpointPending));
     LevelStart_ClearSetupValues();
     CoopPlayers_SetRoster(start->roster);
     gMainController = 0; // team-wide input is player 0's slot on every client, whichever port this PC's title found

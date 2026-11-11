@@ -17,13 +17,14 @@
 //   SF64_COOP_LOCKSTEP_END=<frame>     report `done` on this frame
 //   SF64_COOP_LOCKSTEP_MUTE=<frame>    stop sending input from this frame on, with the connection left up
 //   SF64_COOP_LOCKSTEP_POKE=<frame>    flip a bit of game state on this frame, as SF64_COOP_HASH_POKE does
+//   SF64_COOP_LOCKSTEP_POKE_AFTER=<n>  flip the bit n frames after the first checkpoint of the first run
 //   SF64_COOP_LOCKSTEP_SLOW=<n>:<ms>   every n frames this game takes that much longer
 //   SF64_COOP_LOCKSTEP_ZERO_SEED=<frame>:<n>  sRandSeed<n> is 0 from this frame on, as a stray write leaves it
 //   SF64_COOP_LOCKSTEP_ITEM=<frame>:<player>[:<kind>[:<setup>]]  on this frame (#201) the setup is made (a sum of 1
 //                                      player 0's wings broken, 2 player 1's wings broken, 4 player 0 twin lasers, 8
 //                                      player 1's wing health 0), then kind 0 a laser item (the default), 1 a wing
-//                                      repair item or 2 a supply crate about to burst appears where that player will
-//                                      be. Report lines: `item placed frame=N player=P kind=K`, `lasers frame=N
+//                                      repair item, 2 a supply crate about to burst or 3 a checkpoint (the ring a
+//                                      rails level saves its checkpoint at) appears where that player will be. Report lines: `item placed frame=N player=P kind=K`, `lasers frame=N
 //                                      strength=a,b wings=l0,l1 states=s0,s1` (players 0 and 1, states = 10 * left +
 //                                      right wing state) whenever one of them changes, and for a crate `drop frame=N
 //                                      id=<item id> lasers=<0 or 1>`
@@ -31,7 +32,10 @@
 // so no pad on this PC reaches a test.
 //
 // Report lines: `start`, `done frame=N held=N held_ms=N`, then, once a session has gone away, `over frame=N` and
-// `alive frames=N` every 120 frames: the game goes on, which is what a test of a lost player looks for.
+// `alive frames=N` every 120 frames: the game goes on, which is what a test of a lost player looks for. `over` comes
+// each time lockstep stops, and `again run=N` when the session starts a level again (the lockstep log gets `# run N`
+// there). `checkpoint frame=N run=N load=N allrange=N path=N hits=N` whenever the game's checkpoint changes in a level,
+// and `run_state run=N frame=5 ... load=N path=N hits=N ...` once per run: where that run's level began.
 
 #ifdef __cplusplus
 extern "C" {

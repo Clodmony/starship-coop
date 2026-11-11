@@ -374,6 +374,15 @@ static void Session_Event(const CoopSessionEvent* ev) {
         case COOP_SESSION_EV_RECOVER:
             Report("recover frame=%u reason=%d player=%d text=%s", (unsigned) sFrame, (int) ev->reason,
                    (int) ev->playerIndex, ev->text);
+            // As the menu has it (CoopMenuGame_Recover): the host's checkpoint, if it reached one in the level.
+            if ((sPortFile != NULL) && (CoopSyncGame_Frame() >= 0)) {
+                CoopLevelStart checkpoint;
+
+                if (CoopLevelStart_AtCheckpoint(&checkpoint)) {
+                    Report("restart_at_checkpoint frame=%u level=%u", (unsigned) sFrame, checkpoint.level);
+                    CoopSession_SetRestart(sSession, &checkpoint);
+                }
+            }
             CoopSyncGame_Pause();
             break;
         case COOP_SESSION_EV_ENDED:
