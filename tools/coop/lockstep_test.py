@@ -110,8 +110,8 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             `crusher`, Meteo's Crusher rings home in on player 1 too (SF64_COOP_BOSS_POKE puts the Crusher into its
             ring attack, which takes its shields shot away to reach); `sarumarine`, Zoness' Sarumarine balls fly at
             player 1; `bacoon`, Aquas' Bacoon looks at player 1; `spyborg`, Sector X's Spyborg goes after player 1
-            across the path, `goras`, Titania's Goras too, and `vulkain`, Solar's Vulkain turns its head to player 1
-            (campaign run). On
+            across the path, `goras`, Titania's Goras goes after the player it keeps (pilots on both), and `vulkain`,
+            Solar's Vulkain turns its head to player 1 (campaign run). On
             rails player 0 holds the top left and player 1 the bottom right, the nearer one. Hashes and boss traces
             equal on both games.
   eels    Aquas' boss fight with both marines firing, so the eels of the Bacoon's pods (actor 255) are shot and
@@ -1337,7 +1337,9 @@ OTHER_BOSS_RUNS = {  # name: level, frames, script, CVars beyond gInvincible, en
     # Campaign run, 2026-11-11 (#220's leftovers): Sector X's Spyborg and Solar's Vulkain.
     "spyborg": (2, 13000, rails_script, {}, {}),
     "vulkain": (7, 12000, rails_script, {}, {}),
-    "goras": (12, 16000, rails_script, {}, {}),  # Titania: the Landmasters meet Goras about 7700 frames in (#209)
+    # Titania: Goras waits in state 3 until it is shot, so pilots on both clients drive the Landmasters (the feed is
+    # not played then) and bring it into its fight, states 7 to 12, from about 7800 frames in.
+    "goras": (12, 13000, rails_script, {}, {"SF64_COOP_LOCKSTEP_PILOT": "1"}),
 }
 OBJ_BOSS_SX_SPYBORG, OBJ_BOSS_TI_GORAS, OBJ_BOSS_SO_VULKAIN = 303, 306, 315  # include/sf64object.h
 SPYBORG_CHASES = (1, 2, 3, 4, 8, 9, 85)  # SectorX_SxSpyborg_Update's states that move it to its target's x and y
@@ -1504,6 +1506,27 @@ def other_boss_chase_story(trace, boss_id, states, axes):
     return near, kept
 
 
+def other_boss_kept_story(trace, boss_id, states, apart=300.0):
+    """A boss in a state that moves it to its target's x (`states`), on frames the two players are more than `apart`
+    from each other across the path: per kept slot, the frames it is nearer the player it keeps and the frames it is
+    nearer the other one ({kept: [nearer kept, nearer other]}; an empty slot, -1, counts against player 0, upstream's
+    target)."""
+    follow = {}
+    for row in trace:
+        boss = next((row[k].split(",") for k in row if re.fullmatch(r"b\d+", k) and
+                     row[k].startswith(f"{boss_id},")), None)
+        if boss is None or "p1" not in row or int(boss[1]) not in states:
+            continue
+        xs = [float(row[f"p{i}"].split(",")[2]) for i in (0, 1)]
+        if abs(xs[0] - xs[1]) <= apart:
+            continue
+        kept = int(boss[7])
+        target = kept if kept in (0, 1) else 0
+        mine, other = abs(float(boss[2]) - xs[target]), abs(float(boss[2]) - xs[1 - target])
+        follow.setdefault(kept, [0, 0])[0 if mine < other else 1] += 1
+    return follow
+
+
 def other_boss_vulkain_story(trace):
     """Frames on which Solar's Vulkain turns its head (yaw from its body, clamped by the game to 40 either way) within
     FACING / 2 of player 1 and not within NOT_FACING / 2 of player 0, and the other way round, while the head moves."""
@@ -1586,16 +1609,24 @@ def sc_other_bosses(args, folder):
             text = f"{seen} frames it looks about, at player 1 on {face[1]}, at player 0 on {face[0]}"
             expect(face[1] > 2 * face[0], f"bacoon: the Bacoon looks at player 0: {text}")
             lines.append(f"bacoon: same hash on {frames} frames; {text}")
-        if name in ("spyborg", "goras"):
-            if name == "spyborg":
-                near, kept = other_boss_chase_story(trace, OBJ_BOSS_SX_SPYBORG, SPYBORG_CHASES, 2)
-            else:
-                near, kept = other_boss_chase_story(trace, OBJ_BOSS_TI_GORAS, GORAS_CHASES, 1)
+        if name == "spyborg":
+            near, kept = other_boss_chase_story(trace, OBJ_BOSS_SX_SPYBORG, SPYBORG_CHASES, 2)
             text = (f"{sum(near)} frames it goes after its target, nearer player 1 on {near[1]}, player 0 on {near[0]}; "
                     f"kept {', '.join(f'{k}: {v}' for k, v in sorted(kept.items()))}")
             expect(sum(near) >= 300, f"{name}: too few frames of the chase to tell: {text}")
             expect(near[1] > 2 * near[0], f"{name}: the boss goes after player 0: {text}")
             lines.append(f"{name}: same hash on {frames} frames; {text}")
+        if name == "goras":
+            # Two pilots: either player can be the nearer one, so the check reads whom Goras keeps.
+            follow = other_boss_kept_story(trace, OBJ_BOSS_TI_GORAS, GORAS_CHASES)
+            text = (f"chase frames with the players apart, per kept slot (nearer the kept player, nearer the other): "
+                    f"{', '.join(f'{k}: {v[0]}, {v[1]}' for k, v in sorted(follow.items())) or 'none'}")
+            mine = sum(v[0] for v in follow.values())
+            other = sum(v[1] for v in follow.values())
+            expect(mine + other >= 300, f"goras: too few frames of the chase to tell: {text}")
+            expect(sum(follow.get(1, [0, 0])) >= 100, f"goras: Goras seldom keeps player 1: {text}")
+            expect(mine > 2 * other, f"goras: Goras does not go after the player it keeps: {text}")
+            lines.append(f"goras: same hash on {frames} frames; {text}")
         if name == "vulkain":
             face, seen = other_boss_vulkain_story(trace)
             text = f"{seen} frames its head moves, at player 1 on {face[1]}, at player 0 on {face[0]}"
