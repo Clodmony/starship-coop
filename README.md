@@ -66,8 +66,9 @@ desync check below decides ([decision 0010](docs/coop/decisions/0010-cross-platf
    started this way carries none of the route a campaign builds on the way. Then **Start the level**, once every player
    has chosen. Both games go to the level together.
 6. Fly. **Either player's Start pauses both games**; the pause menu's cursor, retry and quit belong to the host.
-   **Leave** ends a session; if a player leaves or sends no input for 10 seconds, the
-   session ends for both.
+   **Leave** ends a session for the one who leaves, and for both in a session of two. If the connection drops or a
+   player sends no input for 10 seconds, the host waits 15 seconds for that player to come back, which its game does
+   by itself; then, as after a desync, the level starts again from its start for everyone who is there.
 
 ### What the game does in a session
 

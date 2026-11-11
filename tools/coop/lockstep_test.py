@@ -3100,32 +3100,44 @@ def sc_survive_desync(args, folder):
             f"frames; no session ended; both logs say `{line}`, as desync_report.py diff does")
 
 
-def sc_survive_control(args, folder):
-    """Can survive_desync fail? A host whose session has no id and a client that keeps its own values at the second
-    level start (SF64_COOP_JOIN_KEEP_OWN from run 2 on is what a restart without the host's state would be): here the
-    flipped bit is simply left in the client, by flipping it again right after the restart."""
+def sc_survive_three(args, folder):
+    """Three games, and one client leaves the level on purpose (SF64_COOP_JOIN_LEAVE_FILE, the menu's Leave with its
+    handover). The session does not end for the other two: the host answers the one who goes, tells the one who stays,
+    and starts the level again for the two of them, without the player who left; the level is equal on both from its
+    frame 0. The one who left plays on alone."""
     folder.mkdir(parents=True, exist_ok=True)
-    poke = JOIN_FRAME + 300
     feed = folder / "feed.txt"
-    write_feed(feed, poke + 16, sway)
-    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(SURVIVE_FRAMES),
-           "SF64_COOP_TEST_NO_DESYNC_CHECK": "1"}
-    games = session(args, folder, both=env,
-                    client_envs=[{"SF64_COOP_LOCKSTEP_POKE": str(poke), "SF64_COOP_HASH_POKE_PLAYER": "1"}])
+    write_feed(feed, 3 * SHORT_FRAMES, sway)
+    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(SURVIVE_FRAMES)}
+    games = session(args, folder, both=env, clients=2, client_envs=[{}, {"SF64_COOP_JOIN_LEAVE_FILE": "leave"}])
+    host, stays, goes = games
     try:
-        wait_for(list(games), "done", 900, "with the check off")
-        time.sleep(5)
+        wait_for(list(games), "done", 900, "before the player left")
+        (goes.run / "leave").write_text("", encoding="utf-8")
+        survive_wait([host, stays], "again", 1, 120, "after the player left: the level did not start again")
+        survive_wait([host, stays], "done", 2, 600, "in the level that started again")
+        survive_no_end([host, stays])
+        wait_for([goes], "alive", 120, "after leaving: the game hangs")
     finally:
         for game in games:
             game.close()
-    for game in games:
-        expect(not join_test.said(game.sync(), "again"), f"{game.name}: the level started again with the check off")
-        expect(len(survive_starts(game)) == 1, f"{game.name}: level starts {survive_starts(game)}")
-    _, _, ours = games[0].rows()
-    _, _, theirs = games[1].rows()
-    difference = next((i for i in range(min(len(ours), len(theirs))) if ours[i] != theirs[i]), None)
-    expect(difference == poke, f"poke at {poke}, first difference at {difference}")
-    return f"with the desync check off nothing starts again: the games differ from frame {poke} on and stay parted"
+    gone = player_of(goes)
+    roster = ["Fox", "Falco", "Slippy", "-"]
+    kept = list(roster)
+    kept[gone - 1] = "-"
+    for game in (host, stays):
+        expect(survive_starts(game) == [(1, ",".join(roster)), (2, ",".join(kept))],
+               f"{game.name}: level starts {survive_starts(game)}, want the second without player {gone}")
+        recover = [line for _, _, line in game.report() if line.startswith("recover")]
+        expect(recover and f"Player {gone} left. Starting the level again together." in recover[0],
+               f"{game.name}: {recover}")
+    expect(len(survive_starts(goes)) == 1, f"{goes.name} took {len(survive_starts(goes))} level starts")
+    expect(not join_test.said(goes.sync(), "again"), f"{goes.name}: the level started again for the one who left")
+    frames = survive_compare([host, stays], 2, SURVIVE_FRAMES)
+    no_desync(games)
+    return (f"player {gone} left a level of three: the host and player {player_of(stays)} took level start 2 without "
+            f"it and hash alike on its first {frames} frames; the one who left plays on alone")
+
 
 
 SCENARIOS = {
@@ -3183,7 +3195,7 @@ SCENARIOS = {
     "handover": sc_handover,
     "log": sc_log,
     "survive_desync": sc_survive_desync,
-    "survive_control": sc_survive_control,
+    "survive_three": sc_survive_three,
     "vehicles": sc_vehicles,
     "vehicle_end": sc_vehicle_end,
     "bosses": sc_bosses,

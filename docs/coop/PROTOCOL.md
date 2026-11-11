@@ -1,8 +1,9 @@
 # Wire protocol
 
 Status: the transport (WP-20), the session handshake (WP-21), the characters (WP-34), the level start (WP-24), the
-session's save (decision 0009 item 8), lockstep (WP-22), the desync check (WP-23), the co-op log (#172) and the handover
-(#189) exist; `COOP_PROTOCOL_VERSION` is 8. Other sync and game messages come
+session's save (decision 0009 item 8), lockstep (WP-22), the desync check (WP-23), the co-op log (#172), the handover
+(#189), the recovery (a session that survives a lost player or a desync) and the dump of a desync frame (#189) exist;
+`COOP_PROTOCOL_VERSION` is 9. Other sync and game messages come
 with their work packages. This page sets the rules so parallel work does not collide.
 
 ## Rules
@@ -54,6 +55,11 @@ each other apart. A datagram with a bad checksum, a bad magic or a size that doe
   the connection id, because a host with several addresses may answer from another one.
 - **Staying connected:** both sides ping every 250 ms, which also measures the round trip. A connection that hears
   nothing valid for 5000 ms ends with a timeout. A goodbye is sent three times and not acknowledged.
+- **A connection the host no longer holds:** a host answers a datagram of a connection it does not hold (any message
+  but a connect request or a goodbye) with one `DISCONNECT` for that connection id, and counts it in
+  `strayDatagrams`. So a client the host dropped while the client could not hear, for example one that sent no input
+  for too long, ends as closed with its next datagram and not by its own time-out, and can come back (Recovery). A
+  stray goodbye gets no answer.
 - **Not provided:** encryption, peer authentication, IPv6.
 
 ## Transport over Steam
@@ -103,16 +109,21 @@ The lanes promise what they promise on UDP. What differs, and why:
   happens after everything that had arrived has been read, so the end still comes after the last message.
 - **Goodbye:** sent once, on the reliable lane, and the session stays open: closing it would throw the goodbye away.
   Steam ends unused sessions by itself.
+- **A connection the host no longer holds** gets no answer here, unlike on UDP: a dropped client ends by its time-out.
 - **Not provided:** lobbies and invites. The client needs the host's SteamID.
 
 ## Session handshake
 
-The code is in `src/port/coop/session/`. All three messages go on the reliable lane.
+The code is in `src/port/coop/session/`. All its messages go on the reliable lane.
 
-1. When the transport reports the connection, the client sends `SESSION_HELLO` with its identity.
+1. When the transport reports the connection, the client sends `SESSION_HELLO` with its identity. A client that comes
+   back to a session it was in sends `SESSION_REJOIN` in its place (Recovery).
 2. The host compares it with its own. On a match it answers `SESSION_WELCOME`, otherwise `SESSION_REFUSE`. Both
    carry the host's identity, so the client builds the same text the host shows: what differs, host value against
-   joining player value.
+   joining player value. The welcome also carries the **session id**: a random 64-bit number the host makes for each
+   session it opens, outside the simulation (`src/port/coop/session/session_id.cpp`: the system's random source and
+   two clocks, never the game's seeds), never 0. It tells this session from any other on the same host and build. It
+   is no authentication; the protocol has none.
 3. A refused client closes. The host drops it when the refusal is acknowledged, when the client goes, or after 3000 ms.
 4. Nothing but the hello passes before the welcome. Other messages from a client that has not joined are dropped and
    counted. The host refuses a client that sends no hello within 10000 ms; the client gives up when the host does not
@@ -157,8 +168,9 @@ Values 2 to 5 follow the order of `TeamId` (`include/sf64player.h`).
 3. A character someone else holds, Fox included, gets `SESSION_PICK_REFUSE` to that client only. The roster stays as it
    was, the client stays connected and may pick again. A free character goes to the client, its old one is free, and
    the roster goes out. A client that picks what it already holds gets no answer, because nothing changed.
-4. A client that leaves, for whatever reason, frees its slot and its character at once. Nothing is kept for it: if it
-   comes back it is a new client, which may find the character taken.
+4. Before the level a client that leaves, for whatever reason, frees its slot and its character at once. Nothing is
+   kept for it: if it comes back it is a new client, which may find the character taken. In a level a client whose
+   connection was lost keeps both for a while (Recovery).
 5. The host orders picks by arrival, so of two picks of one character the first one wins.
 6. If the transport refuses a send because its window is full, the host tries again on the next poll, with the roster
    of that moment and the last refusal. A client can miss a roster or a refusal that way, never the last one.
@@ -188,9 +200,9 @@ in `src/port/coop/session/session.c`; what the values are is in `src/port/coop/g
    again. So a client never flies with nothing: nobody starts until it has picked or left.
 2. When the host takes it, the level, the phase, the values, the roster and the host's save are fixed. A client that leaves afterwards does not change what the others start from, so every game comes
    to the same player count.
-3. From then on nobody picks and nobody joins, and nothing opens that again yet. A `SESSION_PICK` on its way is dropped
-   and counted; the client learns what it holds from the level start. A hello gets `SESSION_REFUSE` with bit 9, whatever
-   its identity.
+3. From then on nobody picks and nobody new joins. A `SESSION_PICK` on its way is dropped and counted; the client learns
+   what it holds from the level start. A hello gets `SESSION_REFUSE` with bit 9, whatever its identity. A player of the
+   session whose connection was lost can come back (Recovery).
 4. The host sends `SESSION_SAVE`, then `SESSION_LEVEL_START`, to every client that joined, on the next poll, and tries
    again on the next one while the window is full; the level start never goes ahead of the save. Its own game hears
    of it on that poll too. Each game then enters the level from the message, the host's as well, so no game goes by
@@ -204,23 +216,28 @@ in `src/port/coop/session/session.c`; what the values are is in `src/port/coop/g
 |---|---|
 | 1 | Level: a `LevelId` below 20, so not versus |
 | 1 | Phase: `gLevelPhase` |
+| 1 | Run: which level start of the session this is. 1 for the first, one more each time the session starts a level again (Recovery); after 255 comes 1, never 0 |
 | 4 | Roster, as in Characters |
-| 4 v | The values, each a little-endian 32-bit integer, in the order of the table in `level_start.c`: `COOP_LEVEL_START_VALUES`, 87 now |
+| 4 v | The values, each a little-endian 32-bit integer, in the order of the table in `level_start.c`: `COOP_LEVEL_START_VALUES`, 171 now. The last 84 are what a campaign builds from level to level (the level's hit count, the total, the mission number, the planets flown with their hits, medals and team, the map's paths, the mission status, the clear flags): a level start in the middle of a campaign brings them along |
 
 Each game goes to the level by itself, as soon as it hears, and what holds them together from there on is the first
 frame of lockstep, below.
 
 What does not fit, as before:
 
-- A second level start, one before the welcome, and one from a client are dropped and counted (`CoopSession_Ignored`).
-- A client ends with `BAD_MESSAGE` on a level start of another size, with a level of 20 or more, with a roster that
-  `SESSION_ROSTER` could not hold, with value 1 anywhere in the roster, or with no `SESSION_SAVE` ahead of it.
+- A second level start that `SESSION_RECOVER` did not announce, one before the welcome, and one from a client are
+  dropped and counted (`CoopSession_Ignored`).
+- A client ends with `BAD_MESSAGE` on a level start of another size, with a level of 20 or more, with run 0, with a
+  roster that `SESSION_ROSTER` could not hold, with value 1 anywhere in the roster, with no `SESSION_SAVE` ahead of
+  it, or, after its first one, with a run that is not the next (a client that came back takes any run as its first).
 
 ## Session's save
 
 [Decision 0009](decisions/0009-vehicles-cutscenes-save.md) item 8: the host's progress is the save of the session, and
 no machine writes a real save while the session runs. `SESSION_SAVE` goes on the reliable lane, from the host to each
-client, once, just ahead of `SESSION_LEVEL_START` (above, rule 4). The session code passes it on as bytes; the game
+client, just ahead of every `SESSION_LEVEL_START` (above, rule 4): once for the first level, and again each time the
+session starts a level again (Recovery), with the host's progress as it stood when the host entered that level. The
+session code passes it on as bytes; the game
 takes it in `src/port/coop/game/save.c`.
 
 | Size | Field |
@@ -239,8 +256,88 @@ takes it in `src/port/coop/game/save.c`.
 
 What does not fit:
 
-- A save of another size ends the client with `BAD_MESSAGE`. A second save before the level start, a save after it,
-  one before the welcome and one from a client are dropped and counted (`CoopSession_Ignored`).
+- A save of another size ends the client with `BAD_MESSAGE`. A second save before the level start, a save after it that
+  `SESSION_RECOVER` did not announce, one before the welcome and one from a client are dropped and counted
+  (`CoopSession_Ignored`).
+
+## Recovery
+
+The session survives a lost player or a desync (the owner's rules of 2026-11-11). One message cannot repair games that
+have parted: their worlds differ in actors, random numbers and the audio clock, and lockstep sends only inputs. So the
+recovery point is a level start: the level ends for everyone, the host sends its save and a level start again, and every
+game enters the level from the host's state. The parted level is lost; the session, its players and their characters
+stay. The code is `src/port/coop/session/session.c` ("Recovery" in `session.h`), and `lockstep_game.c`, `menu.c` and
+`menu_game.c` on the game's side.
+
+**What starts again.** The level the team last entered, from its start, with lives, shields, lasers, bombs, score and
+the campaign's state as the host had them on entering it: the host keeps that level start (the **restart point**),
+taken on the frame its game goes into a level by itself (the map's next level, a level's next part), and the session's
+own first level start before that. If the games part on the map after a level, that level is flown again.
+
+**In a level, on the host:**
+
+1. A client whose connection timed out, or that sent no input for `COOP_LOCKSTEP_STALL_MS` (the host then drops it,
+   `CoopSession_Kick`), keeps its slot and its character for `COOP_SESSION_REJOIN_MS`, 15000 ms. A client that says
+   goodbye is gone at once: it left on purpose.
+2. Whenever a client goes, and when a desync is complete (Desync check), the host sends `SESSION_RECOVER` to every
+   client that is there, and its own game stops lockstep. Each game shows one line in the co-op window, which comes up
+   by itself: "Player 2 lost the connection. Waiting for it to come back (15 s), then the level starts again.",
+   "Player 2 left. Starting the level again together." or "The games parted. Starting the level again together."
+3. Once nobody is waited for (the lost player is back, or its 15 s are over and its slot is free), the host sends
+   `SESSION_SAVE` and `SESSION_LEVEL_START` with the restart point, the next run number and the roster of that moment,
+   to everyone who is there, and enters the level itself. A connection in its handshake is waited for, as it may be the
+   player coming back; that ends within 10000 ms.
+4. With no client left and nobody waited for there is nothing to start again: the session ends as it always did, and
+   the level goes on in the host's game alone.
+
+**A client:**
+
+5. `SESSION_RECOVER` (and a desync the client completed itself) stops lockstep; the level goes on in that game alone
+   until the level start comes. From here on a save and a level start are taken again, once. If none comes within
+   `COOP_SESSION_RECOVER_MS`, 40000 ms, the client ends its session ("The host did not start the level again in time").
+6. A client that waits for another player's input leaves that to the host for 40000 ms (`SYNC_CLIENT_STALL_MS`),
+   where it used to end the session after 10000 ms: the host drops the silent player, or the connection to the host
+   times out.
+7. A client whose connection to the host ends in a level without the host saying that the session is over (a
+   time-out, or a goodbye that no handover announced) opens a new connection to the same address and sends
+   `SESSION_REJOIN`. If it reaches nobody within the transport's connect time, or is refused, its session ends as
+   before, with the text of how it lost the host.
+
+`SESSION_RECOVER`, host to client, in a level:
+
+| Size | Field |
+|---|---|
+| 1 | Reason: 1 a player's connection was lost and is waited for, 2 a player left or was dropped, 3 the games parted |
+| 1 | The player it is about (index 1 to 3), 0xFF for nobody |
+
+`SESSION_REJOIN`, client to host, in place of the hello:
+
+| Size | Field |
+|---|---|
+| 8 | The session id of the welcome the client got, little-endian |
+| 1 | The character it flew at its last level start (3 to 5) |
+| n | Its identity, as in the hello |
+
+8. The host compares the identity as for a hello, then the id: another id, or a session without one or before its
+   level, gets `SESSION_REFUSE` with bit 10 ("The host is not running the session this game was in"). A character
+   nobody is waited for gets bit 9, as any late client.
+9. A player who is waited for gets `SESSION_WELCOME`. It is the player of the transport peer it came on, so its index
+   can be another one than before; its character moves with it, and if that slot was kept for another player who is
+   away, the two change places. The roster goes out, and the level starts again as in 3.
+10. If the character is held by a client the host still counts as connected, the host drops that connection (the
+    player says it is dead) and goes on as in 9. So a client that noticed the loss before the host did gets back in.
+11. A client that comes back takes the welcome only if it carries the id it sent: a host that restarted has another.
+
+What does not fit:
+
+- `SESSION_RECOVER` before a level is dropped and counted; one of another size, with a reason other than 1 to 3 or a
+  player other than 0 to 3 or 0xFF ends the client with `BAD_MESSAGE`.
+- `SESSION_REJOIN` shorter than its head or with an identity that cannot be read is refused with bit 8; one from a
+  client that has joined is dropped and counted.
+
+Not built: coming back inside a level without a restart (the inputs a client missed are gone after 64 frames), a
+state snapshot from the host (decision 0002, option C), a new player joining a level that runs, and a client coming
+back after its game was restarted (the session id lives in memory).
 
 ## Lockstep
 
@@ -248,7 +345,12 @@ What does not fit:
 `src/port/coop/sync/lockstep.c`, and `lockstep_game.c` connects it to the game. A session of one player has no lockstep.
 
 **Frames.** Frame 0 is the first frame in `PLAY_UPDATE` after a level start, on every client. From then on every game
-frame is a lockstep frame, on the map too, until the session ends. Frame F runs on a client once it holds every
+frame is a lockstep frame, on the map too, until the session ends or starts a level again (Recovery), where the count
+starts at 0 again.
+
+**Run.** Every sync message (`SYNC_INPUT`, `SYNC_HASH`, `SYNC_DESYNC`) carries one byte in front of the fields given
+below: the run number of the level start it belongs to. A message of another run is dropped and counted, never the
+end of anything: what was sent in the level before a restart is not for the level after it. Frame F runs on a client once it holds every
 player's input for F. Without them nothing of the frame runs, no game frame and no audio frame, and the last frame is
 drawn again so the window stays alive. Each client counts by itself; no message says what frame anyone is on.
 
@@ -280,14 +382,18 @@ frame (`CoopPlayers_PausePressed`), so all of them pause on the same frame, and 
 message apart from the input would need its own way of agreeing on a frame. What the pause menu does next stays on player
 0: its cursor reads player 0's pad, as do retry and quit. The other team-wide inputs stay on player 0 too.
 
-**End.** Every frame needs every player, so a session ends for everyone when one player goes. The level goes on in each
-game, with the local player on its controller and the others idle: that is the choice `Leave` already had (#126).
+**End.** Every frame needs every player, so a level cannot go on when one player goes. The session starts it again
+for those who stay (Recovery), and ends for everyone where nobody is left to start it with. Then the level goes on
+in each game, with the local player on its controller and the others idle: that is the choice `Leave` already had
+(#126).
 
-- A client that leaves or times out: the host ends the session, and says who left.
-- The host that leaves or times out: the client sees the session end.
-- `COOP_LOCKSTEP_STALL_MS`, 10000 ms, with no frame and no input from a player, on a connection that stays up: whoever
-  notices ends the session and names that player. Before frame 0 it is `COOP_LOCKSTEP_START_MS`, 60000 ms, as a slow PC
-  may still be loading.
+- A client that leaves or times out: the host starts the level again with the other clients, or waits for the lost
+  one. With no other client the host ends the session, and says who left.
+- The host that leaves: the client sees the session end. The host whose connection times out: the client tries to
+  come back, and its session ends when it reaches nobody.
+- `COOP_LOCKSTEP_STALL_MS`, 10000 ms, with no frame and no input from a player, on a connection that stays up: the
+  host drops that player as a lost one and names it; a client leaves that to the host for 40000 ms. Before frame 0 it
+  is `COOP_LOCKSTEP_START_MS`, 60000 ms, as a slow PC may still be loading.
 - The player reads why in the co-op window, which comes up by itself. So it does while a frame has waited for more than
   a second.
 
@@ -330,11 +436,10 @@ deep per peer; a frame it no longer holds counts as unchecked, never as a desync
 **The desync.** The first frame whose totals differ is the desync, found by both sides of it: the host from the client's
 batch and the client from the host's, and whichever games find it, or hear of it, send `SYNC_DESYNC` with their own
 hash of that frame, region by region, on the reliable lane. A game that receives one before it found the desync itself
-takes the frame and the pair from it, as a third player does. A game in the pair ends the session once the other side's
-hash has come, or `COOP_DESYNC_GRACE_MS`, 1000 ms, after its own went out; a game outside the pair waits the grace out,
-or the host would see it leave before the pair had exchanged. Ending runs through the same path as a lost player: the
-level goes on in each game with the local player on its controller and the others idle, and the co-op window comes up
-with the text. The text names the frame, the level and its mode, the two players, the regions, and the report's path.
+takes the frame and the pair from it, as a third player does. For a game in the pair the desync is complete once the
+other side's hash has come, or `COOP_DESYNC_GRACE_MS`, 1000 ms, after its own went out; a game outside the pair waits
+the grace out. Then the game writes its report and its co-op log names the frame, the level and its mode, the two
+players, the regions and the report's path, and the session starts the level again (Recovery).
 
 | Size | Field |
 |---|---|
@@ -352,9 +457,37 @@ that differ, both sides' hashes, and a dump of this game's state at that frame a
 chunks (`gActors[59]`, `gPlayer[1]`, `gLifeCount[0]`). `python tools/coop/desync_report.py diff <a> <b>` reads two and
 names the first value that differs. Nothing personal goes in. The layout is `src/port/coop/sync/desync_report.c`.
 
-**What the session does after a desync: it ends.** That is the smallest behaviour that is honest: until host correction
-(option C of decision 0002) exists there is no repair, and playing on would have each player in a different game that
-looks like one. It is a choice for the owner to reverse; the alternatives are to play on with a warning, or C.
+**The first field that differs (#189).** Once the desync is complete, each game of the pair sends the other its dump of
+the frame, the bytes its hash ran over, as `SYNC_DUMP` on the reliable lane, at most 16 parts per frame. The game that
+holds both finds the first difference as `desync_report.py diff` does (regions in order, in each the chunks in order,
+the first chunk whose bytes differ) and writes one line, category `desync`, into its co-op log and behind its report
+as a comment:
+
+`first difference at frame 2000, players 1 and 2: players: gPlayer[1] differs in 1 of 1264 bytes, first at +116: b3 vs
+b2; word at +116: 0x444844b3 vs 0x444844b2`
+
+The lower player's value comes first, so both games write the same line, and the log's stream puts each into both
+folders. A game that held no dump of the frame says so in one message, and the line then names it; if the other dump
+does not come within `COOP_DESYNC_DUMP_MS`, 8000 ms, or the session goes first, the line says that. A third game sends
+and compares nothing. The exchange names its own run and frame, so it goes on while the level starts again. The code is
+`src/port/coop/sync/desync_dump.c`, connected in `desync_game.c`.
+
+| Size | Field |
+|---|---|
+| 1 | Run of the level start the desync was in (not a prefix as on the other sync messages: this is the message's own) |
+| 4 | Frame |
+| 1 | Sender's player index |
+| 2 | Part, from 0 |
+| 2 | Parts; 0 means the sender holds no dump of that frame |
+| 4 | Size of the whole stream, at most 2 MiB |
+| up to 1150 | This part's bytes: every part but the last is full |
+
+The stream is, for each chunk of the dump in the order hashed: u8 region (`CoopHashRegion`), u8 name length n (at
+most 96), the name, s32 index (-1 for a single value), u32 size, the bytes.
+
+**What the session does after a desync: it starts the level again** (Recovery), since 2026-11-11. Until then it ended:
+playing on would have each player in a different game that looks like one, and there is no repair inside a level until
+host correction (option C of decision 0002) exists. The check is as strict as it was: every frame, every region.
 
 What does not fit:
 
@@ -362,6 +495,10 @@ What does not fit:
   from a client for anyone but itself, with a pair of one player or of a player who is not in the level: the receiver
   ends the session.
 - Before this game has reached frame 0, both are dropped.
+- `SYNC_DUMP` of another run, frame or player than the receiver's own desync names, shorter than its head or longer
+  than 1164 bytes, is dropped. A stream above 2 MiB, a part count that does not fit the size, a part out of order or
+  of the wrong size is refused: nothing more is taken, and the line says that the dump could not be read. Neither ends
+  anything.
 
 ## Co-op log
 
@@ -406,8 +543,9 @@ own connection, and its first byte is the kind:
    `BEGIN`, its desync report of this session in parts and `DONE`, without waiting for anything. The co-op log is sent
    as fast as the window takes it from here on, ahead of the files.
 2. A game that receives `BEGIN` while its session runs ends it too, with a text that names the sender, and does the same.
-   In a level every player is needed; a client's only peer is its host. A host before the level answers a client's
-   `BEGIN` with `DONE` and `BYE` and goes on with the others. A second `BEGIN` changes nothing.
+   A client's only peer is its host. A host before the level answers a client's `BEGIN` with `DONE` and `BYE` and goes
+   on with the others, and so does a host in a level while another client is there: the level then starts again for
+   those who stay (Recovery). A second `BEGIN` changes nothing.
 3. Once `DONE` came from every peer, a game writes `session closed`, lets the log drain and sends `BYE`. It closes the
    connection once `BYE` came from every peer and all it sent is acknowledged, a peer that went is waited for no more,
    and after `COOP_HANDOVER_MS`, 8000 ms, it closes whatever stands. It pumps SDL's events while it waits. So both sides
@@ -445,16 +583,19 @@ Nothing is passed on: with three players a client gets the host's report, the ho
 | 0x0005 | `PING` | both | u32 sender's clock in ms | WP-20 |
 | 0x0006 | `PONG` | both | u32 the clock value from the ping | WP-20 |
 | 0x0010 | `SESSION_HELLO` | client to host | identity | WP-21 |
-| 0x0011 | `SESSION_WELCOME` | host to client | u8 player index (1 to 3), then the host's identity | WP-21 |
-| 0x0012 | `SESSION_REFUSE` | host to client | u32 reasons: bit 0 build, 1 ROM, 2 CVars, 3 platform, 8 the hello could not be read, 9 a level has started (WP-24); 0 means no hello in time. Then the host's identity. | WP-21 |
+| 0x0011 | `SESSION_WELCOME` | host to client | u8 player index (1 to 3), u64 session id, then the host's identity | WP-21, Recovery |
+| 0x0012 | `SESSION_REFUSE` | host to client | u32 reasons: bit 0 build, 1 ROM, 2 CVars, 3 platform, 8 the hello could not be read, 9 a level has started (WP-24), 10 not the session the client was in (Recovery); 0 means no hello in time. Then the host's identity. | WP-21 |
 | 0x0013 | `SESSION_PICK` | client to host | u8 character asked for (3 to 5; 2 is refused as taken) | WP-34 |
 | 0x0014 | `SESSION_PICK_REFUSE` | host to client | u8 character asked for (2 to 5). The only reason is that someone else holds it. | WP-34 |
 | 0x0015 | `SESSION_ROSTER` | host to client | u8 for each of the 4 players, see Characters | WP-34 |
-| 0x0016 | `SESSION_LEVEL_START` | host to client | level, phase, roster and values, see Level start (the cleared flag of version 7 is gone) | WP-24, #191 |
-| 0x0017 | `SESSION_SAVE` | host to client | the host's `Save`, 256 bytes, just ahead of the level start, see Session's save | decision 0009 item 8 |
-| 0x0040 | `SYNC_INPUT` | both | frames of each player, see Lockstep | WP-22 |
-| 0x0041 | `SYNC_HASH` | both | the total state hash of the last 10 frames, see Desync check | WP-23 |
-| 0x0042 | `SYNC_DESYNC` | both | the sender's hash of the first differing frame, region by region, see Desync check | WP-23 |
+| 0x0016 | `SESSION_LEVEL_START` | host to client | level, phase, run, roster and values, see Level start (the cleared flag of version 7 is gone) | WP-24, #191, Recovery |
+| 0x0017 | `SESSION_SAVE` | host to client | the host's `Save`, 256 bytes, just ahead of every level start, see Session's save | decision 0009 item 8 |
+| 0x0019 | `SESSION_REJOIN` | client to host | u64 session id, u8 character, identity: a player of the session comes back, see Recovery | Recovery |
+| 0x001A | `SESSION_RECOVER` | host to client | u8 reason (1 to 3), u8 player or 0xFF: the level is going to start again, see Recovery | Recovery |
+| 0x0040 | `SYNC_INPUT` | both | u8 run, then frames of each player, see Lockstep | WP-22 |
+| 0x0041 | `SYNC_HASH` | both | u8 run, then the total state hash of the last 10 frames, see Desync check | WP-23 |
+| 0x0042 | `SYNC_DESYNC` | both | u8 run, then the sender's hash of the first differing frame, region by region, see Desync check | WP-23 |
+| 0x0043 | `SYNC_DUMP` | both | a part of the sender's dump of the desync frame, see Desync check | #189 |
 | 0x0080 | `HANDOVER` | both | u8 kind (1 `BEGIN`, 2 `FILE_START`, 3 `FILE_DATA`, 4 `DONE`, 5 `BYE`), then its fields, see Handover | #189 |
 | 0x00C0 | `TEST_RELIABLE` | both | test pattern, only sent by `coop_net_test` | WP-20 |
 | 0x00C1 | `TEST_UNRELIABLE` | both | test pattern, only sent by `coop_net_test` | WP-20 |
