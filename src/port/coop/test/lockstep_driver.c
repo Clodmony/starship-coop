@@ -15,10 +15,12 @@
 #include "pilot.h"
 #include "port/coop/game/input.h"
 #include "port/coop/game/players.h"
+#include "port/coop/game/save.h"
 #include "port/coop/game/score.h"
 #include "port/coop/sync/lockstep_game.h"
 #include "port/coop/sync/state_hash.h"
 #include "port/hooks/Events.h"
+#include "public/bridge/consolevariablebridge.h"
 
 // src/sys/sys_math.c
 extern s32 sRandSeed1;
@@ -353,6 +355,171 @@ static void Driver_Checkpoints(s32 frame) {
     }
 }
 
+// #267, the session survives beyond its first level: places (lockstep_driver.h), their `route` lines, and a bit
+// flipped or the input stopped at one of them. Only on lockstep frames, so every game of a session counts alike.
+#define GAPS_AT_MAX 4
+#define GAPS_PATHS 22 // gPlanetPathStatus, src/engine/fox_context.c: the header gives it no size
+
+typedef struct {
+    s32 run;
+    char kind; // 'L' a level, 'M' the map
+    s32 index;
+    s32 frames;
+} GapsAt;
+
+static GapsAt sGapsPoke[GAPS_AT_MAX];
+static s32 sGapsPokeCount = 0;
+static GapsAt sGapsMute[GAPS_AT_MAX];
+static s32 sGapsMuteCount = 0;
+static bool sGapsRoute = false;
+static bool sGapsCheats = false;
+static s32 sGapsRun = 0;    // the run the counts below belong to
+static s32 sGapsLevels = 0; // levels this game entered in that run
+static s32 sGapsMaps = 0;   // maps
+static char sGapsKind = 0;  // where it is now: 'L', 'M', or 0 on its way between them
+static s32 sGapsFrames = 0; // frames there
+
+static s32 Gaps_Parse(const char* text, GapsAt* out) {
+    const char* at = text;
+    s32 n = 0;
+
+    while ((at != NULL) && (*at != '\0') && (n < GAPS_AT_MAX)) {
+        int run = 0;
+        int index = 0;
+        int frames = 0;
+        char kind = 0;
+
+        if ((sscanf(at, "%d:%c%d:%d", &run, &kind, &index, &frames) == 4) && ((kind == 'L') || (kind == 'M'))) {
+            out[n].run = run;
+            out[n].kind = kind;
+            out[n].index = index;
+            out[n].frames = frames;
+            n++;
+        }
+        at = strchr(at, ',');
+        if (at != NULL) {
+            at++;
+        }
+    }
+    return n;
+}
+
+static void Gaps_Words(char* out, size_t size, const s32* values, s32 count) {
+    size_t used = 0;
+    s32 i;
+
+    out[0] = '\0';
+    for (i = 0; (i < count) && (used < size); i++) {
+        used += (size_t) snprintf(out + used, size - used, "%s%d", (i != 0) ? "," : "", (int) values[i]);
+    }
+}
+
+// What a campaign carries from level to level and the map reads (level_start.c lists them), and the save's progress,
+// the part every game of a session holds alike (save.h).
+static void Gaps_Route(s32 frame) {
+    char planets[96];
+    char missionHits[96];
+    char medals[96];
+    char team[96];
+    char paths[GAPS_PATHS * 12];
+    char clear[ARRAY_COUNT(gLeveLClearStatus) * 4];
+    char save[2 * COOP_SAVE_SIZE + 1];
+    s32 clearValues[ARRAY_COUNT(gLeveLClearStatus)];
+    const CoopSaveRange* ranges;
+    s32 count = CoopSave_ProgressRanges(&ranges);
+    size_t used = 0;
+    s32 i;
+    s32 k;
+
+    Gaps_Words(planets, sizeof(planets), (const s32*) gMissionPlanet, ARRAY_COUNT(gMissionPlanet));
+    Gaps_Words(missionHits, sizeof(missionHits), gMissionHitCount, ARRAY_COUNT(gMissionHitCount));
+    Gaps_Words(medals, sizeof(medals), gMissionMedal, ARRAY_COUNT(gMissionMedal));
+    Gaps_Words(team, sizeof(team), gMissionTeamStatus, ARRAY_COUNT(gMissionTeamStatus));
+    Gaps_Words(paths, sizeof(paths), gPlanetPathStatus, GAPS_PATHS);
+    for (i = 0; i < ARRAY_COUNT(gLeveLClearStatus); i++) {
+        clearValues[i] = gLeveLClearStatus[i];
+    }
+    Gaps_Words(clear, sizeof(clear), clearValues, ARRAY_COUNT(clearValues));
+    save[0] = '\0';
+    for (i = 0; i < count; i++) {
+        for (k = 0; (k < ranges[i].size) && (used + 2 < sizeof(save)); k++) {
+            used +=
+                (size_t) snprintf(save + used, sizeof(save) - used, "%02x", gSaveFile.save.raw[ranges[i].offset + k]);
+        }
+    }
+    Report("route frame=%d run=%d place=%c%d state=%d level=%d phase=%d mission=%d planets=%s mission_hits=%s "
+           "medals=%s team=%s paths=%s total=%d clear=%s status=%d lives=%d save=%s",
+           (int) frame, (int) sRuns, sGapsKind, (int) ((sGapsKind == 'L') ? sGapsLevels : sGapsMaps), (int) gGameState,
+           (int) gCurrentLevel, (int) gLevelPhase, (int) gMissionNumber, planets, missionHits, medals, team, paths,
+           (int) gTotalHits, clear, (int) gMissionStatus, (int) gLifeCount[0], save);
+}
+
+static bool Gaps_Here(const GapsAt* at) {
+    return (at->run == sRuns) && (at->kind == sGapsKind) &&
+           (at->index == ((sGapsKind == 'L') ? sGapsLevels : sGapsMaps)) && (at->frames == sGapsFrames);
+}
+
+// The cheats tools/coop/campaign.py gives a level of its own, here for a session that goes from level to level. A
+// simulation CVar, which every game of the session sets on the same lockstep frame.
+static void Gaps_Cheat(const char* name, s32 on) {
+    if (CVarGetInteger(name, 0) != on) {
+        CVarSetInteger(name, on);
+    }
+}
+
+static void Gaps_Frame(s32 frame) {
+    s32 i;
+
+    if (!sGapsRoute) {
+        return;
+    }
+    if (sGapsRun != sRuns) {
+        sGapsRun = sRuns;
+        sGapsLevels = sGapsMaps = 0;
+        sGapsKind = 0;
+    }
+    if (sGapsCheats && (gGameState == GSTATE_PLAY)) {
+        Gaps_Cheat("gInvincible", gCurrentLevel != LEVEL_CORNERIA);
+        Gaps_Cheat("gInfiniteBombs", (gCurrentLevel == LEVEL_ZONESS) || (gCurrentLevel == LEVEL_VENOM_ANDROSS));
+    }
+    if (gGameState == GSTATE_MAP) {
+        if (sGapsKind != 'M') {
+            sGapsKind = 'M';
+            sGapsMaps++;
+            sGapsFrames = 0;
+        }
+    } else if ((gGameState == GSTATE_PLAY) && (gPlayState == PLAY_UPDATE)) {
+        if (sGapsKind != 'L') {
+            sGapsKind = 'L';
+            sGapsLevels++;
+            sGapsFrames = 0;
+        }
+    } else if (!((gGameState == GSTATE_PLAY) && (gPlayState == PLAY_PAUSE) && (sGapsKind == 'L'))) {
+        sGapsKind = 0; // on the way: a level's setup, or a state that is neither
+        return;
+    } else {
+        return; // the pause menu: the same level, and its frames do not count
+    }
+    sGapsFrames++;
+    if (sGapsFrames == 1) {
+        Gaps_Route(frame);
+    }
+    for (i = 0; i < sGapsPokeCount; i++) {
+        if (Gaps_Here(&sGapsPoke[i])) {
+            Report("poke_at frame=%d run=%d place=%c%d state=%d level=%d", (int) frame, (int) sRuns, sGapsKind,
+                   (int) sGapsPoke[i].index, (int) gGameState, (int) gCurrentLevel);
+            CoopStateHash_PokeNow();
+        }
+    }
+    for (i = 0; i < sGapsMuteCount; i++) {
+        if (Gaps_Here(&sGapsMute[i])) {
+            Report("mute_at frame=%d run=%d place=%c%d state=%d level=%d", (int) frame, (int) sRuns, sGapsKind,
+                   (int) sGapsMute[i].index, (int) gGameState, (int) gCurrentLevel);
+            CoopSyncGame_Mute();
+        }
+    }
+}
+
 // With no lockstep to count frames, the control run of the test counts them from the same place.
 static s32 Driver_Frame(void) {
     s32 frame = CoopSyncGame_Frame();
@@ -413,6 +580,7 @@ static void CoopLockstepDriver_OnGamePreUpdate(IEvent* event) {
     Driver_Item(frame);
     if (CoopSyncGame_Frame() >= 0) {
         Driver_Checkpoints(frame);
+        Gaps_Frame(frame);
     }
     // Once each, in the first run: a level the session starts again plays on without them.
     if ((frame == sMuteFrame) && (sRuns == 1)) {
@@ -477,6 +645,15 @@ void CoopLockstepDriver_Init(void) {
         sPokeLevel = atoi(spec);
         sPokeLevelAfter = (strchr(spec, ':') != NULL) ? atoi(strchr(spec, ':') + 1) : 1;
     }
+    if (Env_Text("SF64_COOP_LOCKSTEP_POKE_AT") != NULL) {
+        sGapsPokeCount = Gaps_Parse(Env_Text("SF64_COOP_LOCKSTEP_POKE_AT"), sGapsPoke);
+    }
+    if (Env_Text("SF64_COOP_LOCKSTEP_MUTE_AT") != NULL) {
+        sGapsMuteCount = Gaps_Parse(Env_Text("SF64_COOP_LOCKSTEP_MUTE_AT"), sGapsMute);
+    }
+    sGapsCheats = Env_Text("SF64_COOP_LOCKSTEP_CAMPAIGN_CHEATS") != NULL;
+    sGapsRoute =
+        (Env_Text("SF64_COOP_LOCKSTEP_ROUTE") != NULL) || (sGapsPokeCount > 0) || (sGapsMuteCount > 0) || sGapsCheats;
     if (slow != NULL) {
         sSlowEvery = atoi(slow);
         sSlowMs = (strchr(slow, ':') != NULL) ? atoi(strchr(slow, ':') + 1) : 0;

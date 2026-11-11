@@ -53,6 +53,7 @@ static s32 sNextPick = 0;
 static s32 sClients = 1;
 static s32 sJoined = 0;
 static s32 sLevel = 0;
+static s32 sPhase = 0;
 static u32 sStartFrame = 0;
 static bool sPokeTeam = false;
 static bool sKeepOwn = false;
@@ -503,7 +504,7 @@ static void Host_TryStart(void) {
     if (sPokeTeam) {
         Team_Poke();
     }
-    CoopLevelStart_FromGame(&start, (u8) sLevel, 0);
+    CoopLevelStart_FromGame(&start, (u8) sLevel, (u8) sPhase);
     CoopTestSwitches_StartSeeds(start.values);
     sStartTaken = CoopSession_StartLevel(sSession, &start);
     if (!sStartTaken && !sStartRefusedSaid) {
@@ -607,6 +608,7 @@ void CoopJoinDriver_Init(void) {
     }
     sClients = (clients != NULL) ? atoi(clients) : 1;
     sLevel = (level != NULL) ? atoi(level) : LEVEL_CORNERIA;
+    sPhase = (Env_Text("SF64_COOP_JOIN_PHASE") != NULL) ? atoi(Env_Text("SF64_COOP_JOIN_PHASE")) : 0;
     sStartFrame = (startFrame != NULL) ? (u32) atoi(startFrame) : 0;
     sPokeTeam = Env_Text("SF64_COOP_JOIN_POKE_TEAM") != NULL;
     sKeepOwn = Env_Text("SF64_COOP_JOIN_KEEP_OWN") != NULL;

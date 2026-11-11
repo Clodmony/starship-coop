@@ -138,6 +138,18 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             host) and never its own, and the hashes are equal on every frame.
   log     the co-op log (#172): each game's folder holds its own log and the other player's, streamed during the
             session; the hash stays equal with streaming on; nothing personal is in the files; coop_log.py merges them.
+  survive_gaps_route #267: Corneria parts and starts again, pilots fly it to the map and into the next level, which
+            parts 200 frames in and starts again with the route it carries; flown to its end, the map and the level
+            after. Every frame of both restarted runs equal, and every game holds the same route and save at every
+            level and map (the driver's `route` lines). About 5 minutes.
+  survive_gaps_map #267: the games part on the map after Corneria: Corneria starts again from the session's own level
+            start, the map's changes to the route and the save dropped, equal from its frame 0.
+  survive_gaps_map_lost the same with a client that stops sending input on the map: it comes back with the session id.
+  survive_gaps_checkpoints #267: a restart from the game's own checkpoint in each level that has one (--levels):
+            the rails rings and the all-range checkpoints of Katina, Bolse and Andross; flown on to the level's end.
+  survive_gaps_venom_jump #267: a restart in Venom 2's second part, which Venom 1 jumps into: the restart point a
+            jump leaves, flown on into the level after.
+  survive_gaps_four #267: four games; one lost, the level starts again for three; a second lost, again for two.
 
 Every scenario that compares two games also checks that neither wrote a desync report (WP-23).
 
@@ -3952,6 +3964,494 @@ def sc_survive_next_level(args, folder):
             f"hash alike on its first {frames} frames; `{line}`")
 
 
+# ---- #267: the session survives beyond its first level and its first three players (survive_gaps_*) ----
+#
+# Decision 0014 on more than Corneria and three games: a level that started again and is then flown to its end, the
+# map and the level after it; a restart while the map is up; the game's own checkpoints in the other levels; Venom's
+# jump; four players. The lockstep driver's places (lockstep_driver.h: L<n> the n-th level a game entered in a run, M<n>
+# the n-th map) say where a bit is flipped or the input stops, and its `route` lines what each game holds there.
+
+SURVIVE_GAPS_TAIL = 300  # frames of the level after the map, or after a jump, that have to hash alike
+SURVIVE_GAPS_ON_MAP = 120  # frames into the map at which it goes wrong: well inside the map's 600 or so
+SURVIVE_GAPS_REPLAY = 150000  # frames of the empty replay: longer than any run here, as a game leaves lockstep at its end
+SURVIVE_GAPS_ROUTE_FIELDS = ("state", "level", "phase", "mission", "planets", "mission_hits", "medals", "team", "paths",
+                             "total", "clear", "status", "lives", "save")
+GSTATE_ENDING = 8
+
+
+def survive_gaps_routes(game, run=None):
+    """The `route` lines of a game's lockstep report (lockstep_driver.h), of run `run` or of all runs."""
+    return [r for r in join_test.said(game.sync(), "route") if run is None or r["run"] == str(run)]
+
+
+def survive_gaps_route_state(route):
+    """What a route line says of the campaign and the save, without where and when it was taken."""
+    return {key: route[key] for key in SURVIVE_GAPS_ROUTE_FIELDS}
+
+
+def survive_gaps_route_change(before, after):
+    """The fields of two route lines that differ, as a short text."""
+    return ", ".join(key for key in SURVIVE_GAPS_ROUTE_FIELDS if before[key] != after[key]) or "nothing"
+
+
+def survive_gaps_run_frames(game, run):
+    """How many lockstep frames of run `run` a game's lockstep log holds; 0 before that run began."""
+    lines = game.sync_log.read_text(encoding="utf-8").splitlines() if game.sync_log.exists() else []
+    marks = [i for i, line in enumerate(lines) if line.startswith("# run ")]
+    starts = [0] + [i + 1 for i in marks]
+    ends = marks + [len(lines)]
+    return ends[run - 1] - starts[run - 1] if len(starts) >= run else 0
+
+
+def survive_gaps_watch(games, done, seconds, what, again_max=None):
+    """Until done() is true. Fails as soon as a game is gone, a session ended, or a level started again more often than
+    again_max: then nothing that is waited for can come."""
+    deadline = time.monotonic() + seconds
+    while not done():
+        for game in games:
+            expect(game.proc.poll() is None, f"{game.name} ended with code {game.proc.returncode} {what}")
+            ended = [line for _, _, line in game.report() if line.startswith("ended")]
+            expect(not ended, f"{game.name}'s session ended {what}: {ended[0][:300] if ended else ''}")
+            again = len(join_test.said(game.sync(), "again"))
+            expect(again_max is None or again <= again_max,
+                   f"{game.name}: the level started again {again} times {what}, want at most {again_max}")
+        expect(time.monotonic() < deadline, f"nothing after {seconds:.0f} s {what}")
+        time.sleep(1)
+
+
+def survive_gaps_compare(games, run, frames=None):
+    """The hash logs and lockstep logs of run `run` are equal on every game from that run's frame 0: on `frames` frames,
+    or on all that the shortest log holds of the run. Returns the frames compared."""
+    names, ours = survive_run_rows(games[0], run)
+    logs = survive_run_log(games[0], run)
+    counted = None
+    for other in games[1:]:
+        _, theirs = survive_run_rows(other, run)
+        theirs_log = survive_run_log(other, run)
+        n = frames if frames is not None else min(len(ours), len(theirs), len(logs), len(theirs_log))
+        expect(min(len(ours), len(theirs), len(logs), len(theirs_log)) >= n,
+               f"run {run}: only {min(len(ours), len(theirs))} hash rows and {min(len(logs), len(theirs_log))} lockstep "
+               f"frames of {games[0].name} and {other.name}, want {n}")
+        difference = join_test.first_difference(names, ours[:n], theirs[:n])
+        expect(difference is None, f"run {run}: the hash logs of {games[0].name} and {other.name} differ at {difference}")
+        for i in range(n):
+            expect(logs[i] == theirs_log[i], f"run {run}: the lockstep logs of {games[0].name} and {other.name} differ at "
+                                             f"frame {i}: {logs[i]} against {theirs_log[i]}")
+        counted = n if counted is None else min(counted, n)
+    return counted
+
+
+def survive_gaps_same_routes(games, run, places):
+    """Every game wrote the same `route` lines in run `run`, at `places` in that order. Returns the host's."""
+    ours = survive_gaps_routes(games[0], run)
+    expect([r["place"] for r in ours] == places, f"run {run}: {games[0].name} was at {[r['place'] for r in ours]}, want "
+                                                  f"{places}")
+    for other in games[1:]:
+        theirs = survive_gaps_routes(other, run)
+        for a, b in zip(ours, theirs):
+            expect(a == b, f"run {run}, {a['place']}: {games[0].name} and {other.name} hold different routes: "
+                           f"{survive_gaps_route_change(a, b)}")
+        expect(len(theirs) == len(ours), f"run {run}: {other.name} was at {[r['place'] for r in theirs]}")
+    return ours
+
+
+def survive_gaps_first_differences(games, pokes):
+    """#189's line for each flipped bit (frames `pokes`, players 1 and 2): once in each game's own co-op log, the same
+    in all games. Returns the lines."""
+    found = []
+    for poke in pokes:
+        needle = f"first difference at frame {poke}, players 1 and 2: "
+        texts = set()
+        for game in games:
+            own = coop_logs(game)[player_of(game)]
+            lines = [line.format() for line in coop_log.read_lines(own, player_of(game)) if needle in line.format()]
+            expect(len(lines) == 1, f"{game.name}'s co-op log says `{needle}` {len(lines)} times")
+            texts.add(lines[0].split(needle, 1)[1])
+        expect(len(texts) == 1, f"the games wrote different lines for frame {poke}: {sorted(texts)}")
+        found.append(texts.pop())
+    return found
+
+
+def sc_survive_gaps_route(args, folder):
+    """#267 item 1: a level that started again is flown to its end, then the map and the next level, twice: once in
+    the session's first level and once in the level after the map, which the session starts again with the route it
+    carries. Pilots fly (lockstep_driver.h), with gInvincible on but in Corneria as tools/coop/campaign.py has it, set on
+    the same frame of every game. A bit of player 2 is flipped on the client in Corneria (run 1), so Corneria starts
+    again (run 2) and is flown to the map and into the next level, where a second bit is flipped 200 frames in; that
+    level starts again (run 3) and is flown to its end, the map and SURVIVE_GAPS_TAIL frames of the level after.
+    Every frame of runs 2 and 3 up to the flipped bit is equal, the `route` lines (what the map and the next level read:
+    mission number, planets, medals, paths, total hits, clear flags, lives and the save's progress) are equal on both
+    games at every level and map, and each level that started again began with the route and the save it was first
+    entered with."""
+    folder.mkdir(parents=True, exist_ok=True)
+    env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt", "SF64_COOP_LOCKSTEP_END": "900000",
+           "SF64_COOP_LOCKSTEP_ROUTE": "1", "SF64_COOP_LOCKSTEP_CAMPAIGN_CHEATS": "1"}
+    pokes = f"1:L1:{JOIN_FRAME + 300},2:L2:200"
+    games = session(args, folder, both=env, replay_frames=SURVIVE_GAPS_REPLAY,
+                    client_envs=[{"SF64_COOP_LOCKSTEP_POKE_AT": pokes, "SF64_COOP_HASH_POKE_PLAYER": "1"}])
+    host, client = games
+
+    def next_level_flown():
+        after = [r for r in survive_gaps_routes(host, 3) if r["place"] == "L2"]
+        return bool(after) and survive_gaps_run_frames(host, 3) >= int(after[0]["frame"]) + SURVIVE_GAPS_TAIL
+
+    try:
+        survive_gaps_watch(games, next_level_flown, 2 * args.level_seconds,
+                           "on the way through two restarts, two levels and two maps", again_max=2)
+        time.sleep(2)
+    finally:
+        for game in games:
+            game.close()
+    poked = join_test.said(client.sync(), "poke_at")
+    expect([(p["run"], p["place"]) for p in poked] == [("1", "L1"), ("2", "L2")] and poked[0]["level"] == "0" and
+           poked[1]["level"] != "0", f"the bits were not flipped in Corneria and in the level after the map: {poked}")
+    poke1, poke2, level2 = int(poked[0]["frame"]), int(poked[1]["frame"]), int(poked[1]["level"])
+    for game in games:
+        starts = join_test.said(game.report(), "level_start")
+        expect([(v["run"], v["level"]) for v in starts] == [("1", "0"), ("2", "0"), ("3", str(level2))],
+               f"{game.name}: level starts {[(v['run'], v['level']) for v in starts]}, want Corneria twice, then "
+               f"level {level2}")
+        recover = join_test.said(game.report(), "recover")
+        expect(len(recover) == 2 and all(int(v["reason"]) == SURVIVE_REASONS["desync"] for v in recover),
+               f"{game.name}: recover {recover}")
+        overs = [int(v["frame"]) for v in join_test.said(game.sync(), "over")]
+        expect(len(overs) == 2 and poke1 <= overs[0] <= poke1 + DESYNC_SEEN_WITHIN and
+               poke2 <= overs[1] <= poke2 + DESYNC_SEEN_WITHIN, f"{game.name}: lockstep stopped at {overs}, the bits "
+                                                                f"were flipped at {poke1} and {poke2}")
+        expect(len(own_reports(game)) == 2, f"{game.name} wrote {len(own_reports(game))} desync reports, want 2")
+        first, second, third = (survive_level_values(game, run) for run in (1, 2, 3))
+        expect(second == first, f"{game.name}: Corneria did not start again from the session's own level start")
+        expect(third[SURVIVE_MISSION_NUMBER] == 1 and third[SURVIVE_TOTAL_HITS] > 0 and
+               not any(third[SURVIVE_CHECKPOINT_FLAG:]),
+               f"{game.name}: level start 3 holds mission number {third[SURVIVE_MISSION_NUMBER]}, total hits "
+               f"{third[SURVIVE_TOTAL_HITS]}, checkpoint {third[SURVIVE_CHECKPOINT_FLAG:]}")
+        for run, level in ((2, 0), (3, level2)):
+            began = survive_run_state(game, run)
+            expect(began["level"] == level and began["load"] == 0 and began["path"] == 0 and began["hits"] == 0,
+                   f"{game.name}: run {run} did not begin at the start of level {level}: {began}")
+    expect(survive_level_values(host, 3) == survive_level_values(client, 3), "the games took different level starts")
+    survive_gaps_same_routes(games, 1, ["L1"])
+    run2 = survive_gaps_same_routes(games, 2, ["L1", "M1", "L2"])
+    run3 = survive_gaps_same_routes(games, 3, ["L1", "M1", "L2"])
+    run1 = survive_gaps_routes(host, 1)
+    expect(survive_gaps_route_state(run2[0]) == survive_gaps_route_state(run1[0]),
+           f"Corneria started again with another route: {survive_gaps_route_change(run1[0], run2[0])}")
+    expect(survive_gaps_route_state(run3[0]) == survive_gaps_route_state(run2[2]),
+           f"level {level2} started again with another route than it was entered with: "
+           f"{survive_gaps_route_change(run2[2], run3[0])}")
+    expect(run3[1]["mission"] != run2[1]["mission"] or run3[1]["save"] != run2[1]["save"],
+           "the map after the second level holds what the map after Corneria held")
+    frames2 = survive_gaps_compare(games, 2, poke2)
+    frames3 = survive_gaps_compare(games, 3)
+    expect(frames3 >= int(run3[2]["frame"]) + SURVIVE_GAPS_TAIL, f"run 3: {frames3} frames compared")
+    lines = survive_gaps_first_differences(games, [poke1, poke2])
+    no_more = [r for r in survive_gaps_routes(host) if int(r["run"]) > 3]
+    expect(not no_more, f"a fourth run: {no_more[:1]}")
+    return (f"Corneria parted at {poke1} and started again from the session's level start (run 2); pilots flew it to "
+            f"the map (frame {run2[1]['frame']}) and into level {level2} ({run2[2]['frame']}), which parted at "
+            f"{poke2} and started again (run 3) with mission number {run3[0]['mission']} and {run3[0]['total']} total "
+            f"hits; flown to the map ({run3[1]['frame']}) and into level {run3[2]['level']} ({run3[2]['frame']}). Equal "
+            f"on {frames2} frames of run 2 and {frames3} of run 3; the route lines equal on both games at all 7 places; "
+            f"each level that started again began with the route and save of its first entry; the map after Corneria "
+            f"changed {survive_gaps_route_change(run2[0], run2[1])}; `{lines[1]}`")
+
+
+def survive_gaps_map_session(args, folder, client_env):
+    """Pilots fly Corneria to the map, where client_env makes the client go wrong, and the level starts again. Returns
+    the two games, stopped once both flew SURVIVE_FRAMES frames of the level that started again."""
+    folder.mkdir(parents=True, exist_ok=True)
+    env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt",
+           "SF64_COOP_LOCKSTEP_END": str(SURVIVE_FRAMES), "SF64_COOP_LOCKSTEP_ROUTE": "1"}
+    games = session(args, folder, both=env, client_envs=[client_env])
+    try:
+        survive_gaps_watch(games, lambda: all(join_test.said(g.sync(), "again") for g in games), args.level_seconds,
+                           "before the level started again from the map", again_max=1)
+        survive_wait(games, "done", 2, 600, "in the level that started again")
+        survive_no_end(games)
+        time.sleep(2)
+    finally:
+        for game in games:
+            game.close()
+    return games
+
+
+def survive_gaps_map_check(games):
+    """What a restart from the map has to show on both games: Corneria again from the session's own level start, with
+    the route and the save it began with, equal on its first SURVIVE_FRAMES frames. Returns (frames, the change the map
+    had made to the route)."""
+    host, client = games
+    for game in games:
+        starts = join_test.said(game.report(), "level_start")
+        expect([(v["run"], v["level"]) for v in starts] == [("1", "0"), ("2", "0")],
+               f"{game.name}: level starts {[(v['run'], v['level']) for v in starts]}, want Corneria twice")
+        expect(survive_level_values(game, 2) == survive_level_values(game, 1),
+               f"{game.name}: Corneria did not start again from the session's own level start")
+        began = survive_run_state(game, 2)
+        expect(began["level"] == 0 and began["load"] == 0 and began["path"] == 0 and began["hits"] == 0,
+               f"{game.name}: run 2 did not begin at Corneria's start: {began}")
+    expect(not join_test.said(host.report(), "restart_at_checkpoint"), "the host took a checkpoint on the map")
+    run1 = survive_gaps_same_routes(games, 1, ["L1", "M1"])
+    run2 = survive_gaps_same_routes(games, 2, ["L1"])
+    expect(survive_gaps_route_state(run2[0]) == survive_gaps_route_state(run1[0]),
+           f"Corneria started again with another route than it began with: {survive_gaps_route_change(run1[0], run2[0])}")
+    return survive_compare(games, 2, SURVIVE_FRAMES), survive_gaps_route_change(run1[0], run1[1])
+
+
+def sc_survive_gaps_map(args, folder):
+    """#267 item 2: the games part while the map is up. Pilots fly Corneria to the map; SURVIVE_GAPS_ON_MAP frames into
+    it a bit is flipped on the client (the hash's own target, the last actor slot, which the map hashes too). Decision
+    0014 item 2 says the level the team last entered: both games take a level start for Corneria, the session's own,
+    so the map's changes to the route and the save are dropped, and the level is equal from its frame 0 on."""
+    games = survive_gaps_map_session(args, folder, {"SF64_COOP_LOCKSTEP_POKE_AT": f"1:M1:{SURVIVE_GAPS_ON_MAP}"})
+    host, client = games
+    poked = join_test.said(client.sync(), "poke_at")
+    expect(len(poked) == 1 and poked[0]["place"] == "M1" and int(poked[0]["state"]) == MAP,
+           f"the bit was not flipped on the map: {poked}")
+    poke = int(poked[0]["frame"])
+    for game in games:
+        over = int(join_test.said(game.sync(), "over")[0]["frame"])
+        expect(poke <= over <= poke + DESYNC_SEEN_WITHIN, f"{game.name}: lockstep stopped at {over}, poke at {poke}")
+        recover = join_test.said(game.report(), "recover")
+        expect(len(recover) == 1 and int(recover[0]["reason"]) == SURVIVE_REASONS["desync"],
+               f"{game.name}: recover {recover}")
+    parted = next(line for _, _, line in host.report() if line.startswith("parted"))
+    frames, changed = survive_gaps_map_check(games)
+    line = survive_first_difference(games, poke)  # one report each: none in the level that started again
+    said = parted.split("text=", 1)[1].split(" A report", 1)[0][:160]
+    return (f"bit flipped {SURVIVE_GAPS_ON_MAP} frames into the map (frame {poke}): `{said}`; both games took level "
+            f"start 2 for Corneria, the session's own, began it with the route it began with (the map had changed "
+            f"{changed}) and hash alike on its first {frames} frames; `{line}`")
+
+
+def sc_survive_gaps_map_lost(args, folder):
+    """#267 item 2, a lost player: the client stops sending input SURVIVE_GAPS_ON_MAP frames into the map after
+    Corneria, with its connection up (as `stall`). The host drops it as a lost player with its slot kept, the client
+    sees the host close and comes back with the session id, and Corneria starts again for both from the session's own
+    level start, as after a desync on the map."""
+    games = survive_gaps_map_session(args, folder, {"SF64_COOP_LOCKSTEP_MUTE_AT": f"1:M1:{SURVIVE_GAPS_ON_MAP}"})
+    host, client = games
+    muted = join_test.said(client.sync(), "mute_at")
+    expect(len(muted) == 1 and int(muted[0]["state"]) == MAP, f"the input did not stop on the map: {muted}")
+    mute = int(muted[0]["frame"])
+    over = int(join_test.said(host.sync(), "over")[0]["frame"])
+    expect(mute <= over <= mute + 2 * INPUT_DELAY, f"the host ran to frame {over}, input stopped at {mute}")
+    parted = [line for _, _, line in host.report() if line.startswith("parted")]
+    expect(parted and "reason=2" in parted[0] and "stopped sending input" in parted[0], f"host: {parted}")
+    left = join_test.said(host.report(), "left")
+    expect(left and left[0]["away"] == "1", f"host: the slot of the player it dropped was not kept: {left}")
+    recover = [line for _, _, line in host.report() if line.startswith("recover")]
+    expect(recover and "Player 2 lost the connection" in recover[0], f"host: {recover}")
+    back = [v for v in join_test.said(client.report(), "joined") if v.get("rejoined") == "1"]
+    expect(len(back) == 1 and back[0]["player"] == "1", f"the client did not come back as player 2: {back}")
+    for game in games:
+        expect(survive_starts(game) == [(1, "Fox,Falco,-,-"), (2, "Fox,Falco,-,-")],
+               f"{game.name}: level starts {survive_starts(game)}")
+    frames, changed = survive_gaps_map_check(games)
+    no_desync(games)
+    return (f"input stopped {SURVIVE_GAPS_ON_MAP} frames into the map (frame {mute}); the host stopped at {over}, kept "
+            f"player 2's slot, the client came back with the session id, both took Corneria's own level start again, "
+            f"began it with the route it began with (the map had changed {changed}) and hash alike on its first "
+            f"{frames} frames")
+
+
+def sc_survive_gaps_four(args, folder):
+    """#267 item 4, decision 0014 items 1 and 3 with four players: a lost connection starts the level again for those
+    who are there once the host has waited 15 s. Four games in a level; one is killed (its connection is gone for good),
+    and the level starts again for the three who stay, without it; then a second is killed, and it starts again for the
+    two who are left. Each run is equal on every game that took it, on its first JOIN_FRAME + 300 frames."""
+    folder.mkdir(parents=True, exist_ok=True)
+    feed = folder / "feed.txt"
+    end = JOIN_FRAME + 300
+    write_feed(feed, 3 * SHORT_FRAMES, sway)
+    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(end)}
+    games = session(args, folder, both=env, clients=3)
+    host, a, b, c = games
+    try:
+        wait_for(list(games), "done", 900, "with four players")
+        c.stop(kill=True)
+        survive_wait([host, a, b], "again", 1, SURVIVE_AGAIN_SECONDS, "after the first player was lost")
+        survive_wait([host, a, b], "done", 2, 900, "in the level that started again for three")
+        b.stop(kill=True)
+        survive_wait([host, a], "again", 2, SURVIVE_AGAIN_SECONDS, "after the second player was lost")
+        survive_wait([host, a], "done", 3, 900, "in the level that started again for two")
+        survive_no_end([host, a])
+    finally:
+        for game in games:
+            game.close()
+    roster = survive_starts(host)[0][1].split(",")
+    expect(sorted(roster) == ["Falco", "Fox", "Peppy", "Slippy"], f"the first level start's roster is {roster}")
+    three, two = list(roster), list(roster)
+    three[player_of(c) - 1] = "-"
+    two[player_of(c) - 1] = two[player_of(b) - 1] = "-"
+    want = [(1, ",".join(roster)), (2, ",".join(three)), (3, ",".join(two))]
+    for game in (host, a):
+        expect(survive_starts(game) == want, f"{game.name}: level starts {survive_starts(game)}, want {want}")
+    expect(survive_starts(b) == want[:2], f"{b.name}: level starts {survive_starts(b)}, want {want[:2]}")
+    recover = [line for _, _, line in host.report() if line.startswith("recover")]
+    for i, lost in enumerate((c, b)):
+        expect(len(recover) > i and "reason=1" in recover[i] and
+               f"Player {player_of(lost)} lost the connection. Waiting for it to come back (15 s)" in recover[i],
+               f"host: {recover}")
+    gone = [v for v in join_test.said(host.report(), "left") if v["away"] == "0"]
+    expect(len(gone) == 2, f"host: {len(gone)} players gone for good after the wait, want 2: "
+                           f"{join_test.said(host.report(), 'left')}")
+    frames1 = survive_compare(list(games), 1, end)
+    frames2 = survive_compare([host, a, b], 2, end)
+    frames3 = survive_compare([host, a], 3, end)
+    no_desync([host, a])
+    return (f"four games ({','.join(roster)}): player {player_of(c)} lost, the level started again for three "
+            f"({want[1][1]}), then player {player_of(b)} lost and it started again for two ({want[2][1]}); equal on "
+            f"{frames1} frames with four, {frames2} with three and {frames3} with two")
+
+
+# Levels with a checkpoint of their own, found in the code and the level object tables of the US 1.0 ROM (#267,
+# NOTES.md): (LevelId, phase, frame cap of the level, what the checkpoint is). A rails ring is OBJ_ITEM_CHECKPOINT at
+# that index of the level's table (ItemCheckpoint_Update, src/engine/fox_enmy.c:2508); all-range: gAllRangeCheckpoint.
+SURVIVE_GAPS_LEVELS = {
+    "corneria": (0, 0, 26000, "ring, object 369"),
+    "meteo": (1, 0, 26000, "ring, object 479"),
+    "sector_x": (2, 0, 26000, "ring, object 275"),
+    "area_6": (3, 0, 40000, "ring, object 250"),
+    "sector_y": (5, 0, 36000, "ring, object 215"),
+    "venom_1": (6, 0, 26000, "ring, object 1164"),
+    "solar": (7, 0, 26000, "ring, object 92"),
+    "zoness": (8, 0, 26000, "ring, object 271"),
+    "macbeth": (11, 0, 26000, "ring, object 313"),
+    "titania": (12, 0, 60000, "ring, object 350"),
+    "aquas": (13, 0, 26000, "ring, object 189"),
+    "katina": (16, 0, 26000, "the Saucerer's arrival, src/overlays/ovl_i4/fox_ka.c:943"),
+    "bolse": (17, 0, 40000, "the core's shield down, src/overlays/ovl_i4/fox_bo.c:385 and :309"),
+    "andross": (9, 1, 26000, "the brain's arrival, src/overlays/ovl_i6/fox_andross.c:1084"),
+}
+
+
+def survive_gaps_checkpoint_in(args, folder, name):
+    """One level of survive_gaps_checkpoints. Returns its line."""
+    level, phase, cap, what = SURVIVE_GAPS_LEVELS[name]
+    cvars = {} if name == "corneria" else {"gInvincible": 1}  # as tools/coop/campaign.py flies a level
+    if name in ("zoness", "andross"):
+        cvars["gInfiniteBombs"] = 1
+    folder.mkdir(parents=True, exist_ok=True)
+    env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt", "SF64_COOP_LOCKSTEP_END": str(cap),
+           "SF64_COOP_LOCKSTEP_ROUTE": "1"}
+    games = session(args, folder, both=env, config={"CVars": cvars} if cvars else None, replay_frames=SURVIVE_GAPS_REPLAY,
+                    host_env={"SF64_COOP_JOIN_LEVEL": str(level), "SF64_COOP_JOIN_PHASE": str(phase)},
+                    client_envs=[{"SF64_COOP_LOCKSTEP_POKE_AFTER": "300", "SF64_COOP_HASH_POKE_PLAYER": "1"}])
+    host, client = games
+
+    def run1_over():
+        left = [r for r in survive_gaps_routes(host, 1) if r["place"] != "L1"]
+        expect(not left, f"{name}: the level ended at frame {left[0]['frame'] if left else 0} without a checkpoint")
+        expect(not join_test.said(host.sync(), "done"), f"{name}: no checkpoint in {cap} frames")
+        return all(join_test.said(g.sync(), "again") for g in games)
+
+    def run2_left():
+        # The map, the level a jump goes to, or what follows Andross: a frame neither in the level nor its pause.
+        expect(len(join_test.said(host.sync(), "done")) < 2, f"{name}: the level did not end in {cap} frames of run 2")
+        left = [r for r in survive_gaps_routes(host, 2) if r["place"] != "L1"]
+        if left:
+            return survive_gaps_run_frames(host, 2) >= int(left[0]["frame"]) + 60
+        rows = survive_run_log(host, 2) if survive_gaps_run_frames(host, 2) else []
+        ending = [i for i, row in enumerate(rows) if row.split()[1] == str(GSTATE_ENDING)]
+        return bool(ending) and len(rows) >= ending[0] + 60
+
+    try:
+        survive_gaps_watch(games, run1_over, args.level_seconds, f"in {name} before the checkpoint", again_max=1)
+        survive_gaps_watch(games, run2_left, args.level_seconds, f"in {name} after the checkpoint", again_max=1)
+        time.sleep(2)
+    finally:
+        for game in games:
+            game.close()
+    reached = [v for v in join_test.said(host.sync(), "checkpoint") if v["run"] == "1"]
+    expect(reached, f"{name}: no checkpoint")
+    poke = int(reached[0]["frame"]) + 300  # SF64_COOP_LOCKSTEP_POKE_AFTER: after the first checkpoint
+    # The level start carries the checkpoint the host held when the games parted: the last one before the bit.
+    before = [v for v in reached if int(v["frame"]) <= poke]
+    theirs = [v for v in join_test.said(client.sync(), "checkpoint") if v["run"] == "1"][:len(before)]
+    expect(theirs == before, f"{name}: the games reached different checkpoints: {before}, {theirs}")
+    checkpoint = before[-1]
+    mode = 0 if int(checkpoint["load"]) != 0 else 1
+    line = survive_check_checkpoint(games, checkpoint, poke, level, mode)
+    frames = survive_gaps_compare(games, 2)
+    left = [r for r in survive_gaps_routes(host, 2) if r["place"] != "L1"]
+    end = (f"the map at frame {left[0]['frame']}" if left and left[0]["place"].startswith("M") else
+           f"level {left[0]['level']} (a jump) at frame {left[0]['frame']}" if left else "the ending")
+    return f"{name} ({what}): {line}; run 2 flew on to {end}, equal on all {frames} frames"
+
+
+def sc_survive_gaps_checkpoints(args, folder):
+    """#267 item 3: a restart from the game's own checkpoint in the levels beyond Corneria's rails (--levels, default all
+    of SURVIVE_GAPS_LEVELS). Pilots fly the level from its start (gInvincible on but in Corneria, gInfiniteBombs in
+    Zoness and Andross, as tools/coop/campaign.py); 300 frames after the first checkpoint a bit of player 2 is flipped on
+    the client. Both games take a level start at the host's checkpoint, begin there as after a death with no life taken
+    (survive_check_checkpoint), and fly on to the level's end: equal on every frame of that run. One session per level;
+    the failures are named together."""
+    names = args.levels or list(SURVIVE_GAPS_LEVELS)
+    unknown = [name for name in names if name not in SURVIVE_GAPS_LEVELS]
+    expect(not unknown, f"no level {', '.join(unknown)}; the choices are {', '.join(SURVIVE_GAPS_LEVELS)}")
+    lines, failed = [], []
+    for name in names:
+        try:
+            lines.append(survive_gaps_checkpoint_in(args, folder / name, name))
+            print(f"        {lines[-1]}", flush=True)
+        except (Fail, join_test.Fail) as failure:
+            failed.append(f"{name}: {failure}")
+            print(f"        FAILED {name}: {failure}", flush=True)
+    expect(not failed, "; ".join(failed))
+    return f"{len(lines)} levels: " + " | ".join(lines)
+
+
+def sc_survive_gaps_venom_jump(args, folder):
+    """#267 item 3, Venom 2's second part: Venom 1 ends with a jump into it (gNextGameState with Venom 2, phase 2,
+    src/overlays/ovl_i1/fox_ve1.c:2521), and the host takes its restart point there (CoopLevelStart_Entering), which no
+    scenario had run. Pilots fly Venom 1 (gInvincible on both); 60 frames into the second part a bit is flipped on the
+    client (the last actor slot: the player poke shows only for a player in flight). Both games take a level start for
+    Venom 2, phase 2, begin it as the jump did, with the route it was entered with, and fly on into the level it jumps
+    to: equal on every frame of that run."""
+    folder.mkdir(parents=True, exist_ok=True)
+    env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt", "SF64_COOP_LOCKSTEP_END": "60000",
+           "SF64_COOP_LOCKSTEP_ROUTE": "1"}
+    games = session(args, folder, both=env, config={"CVars": {"gInvincible": 1}}, replay_frames=SURVIVE_GAPS_REPLAY,
+                    host_env={"SF64_COOP_JOIN_LEVEL": "6"}, client_envs=[{"SF64_COOP_LOCKSTEP_POKE_AT": "1:L2:60"}])
+    host, client = games
+
+    def next_level_flown():
+        after = [r for r in survive_gaps_routes(host, 2) if r["place"] == "L2"]
+        return bool(after) and survive_gaps_run_frames(host, 2) >= int(after[0]["frame"]) + SURVIVE_GAPS_TAIL
+
+    try:
+        survive_gaps_watch(games, next_level_flown, 2 * args.level_seconds, "through Venom 1, its jump and a restart",
+                           again_max=1)
+        time.sleep(2)
+    finally:
+        for game in games:
+            game.close()
+    poked = join_test.said(client.sync(), "poke_at")
+    expect(len(poked) == 1 and poked[0]["place"] == "L2" and poked[0]["level"] == "19",
+           f"the bit was not flipped in Venom 2's second part: {poked}")
+    poke = int(poked[0]["frame"])
+    entering = join_test.said(host.report(), "entering")
+    expect([(v["level"], v["phase"]) for v in entering][:1] == [("19", "2")],
+           f"the host took no restart point at the jump: {entering}")
+    for game in games:
+        starts = join_test.said(game.report(), "level_start")
+        expect([(v["run"], v["level"], v["phase"]) for v in starts] == [("1", "6", "0"), ("2", "19", "2")],
+               f"{game.name}: level starts {[(v['run'], v['level'], v['phase']) for v in starts]}")
+        over = int(join_test.said(game.sync(), "over")[0]["frame"])
+        expect(poke <= over <= poke + DESYNC_SEEN_WITHIN, f"{game.name}: lockstep stopped at {over}, poke at {poke}")
+    expect(survive_level_values(host, 2) == survive_level_values(client, 2), "the games took different level starts")
+    run1 = survive_gaps_same_routes(games, 1, ["L1", "L2"])
+    run2 = survive_gaps_same_routes(games, 2, ["L1", "L2"])
+    expect(survive_gaps_route_state(run2[0]) == survive_gaps_route_state(run1[1]),
+           f"Venom 2's second part started again with another route: {survive_gaps_route_change(run1[1], run2[0])}")
+    frames = survive_gaps_compare(games, 2)
+    line = survive_first_difference(games, poke)
+    return (f"Venom 1 jumped into Venom 2's second part at frame {run1[1]['frame']} (the host's restart point: level 19, "
+            f"phase 2); bit flipped at {poke}; both games took level start 2 there, began it with the route it was "
+            f"entered with, and flew on into level {run2[1]['level']} (phase {run2[1]['phase']}, frame "
+            f"{run2[1]['frame']}): equal on all {frames} frames; `{line}`")
+
+
 SCENARIOS = {
     "sim": sc_sim,
     "desync_sim": sc_desync_sim,
@@ -4017,6 +4517,12 @@ SCENARIOS = {
     "survive_checkpoint": sc_survive_checkpoint,
     "survive_checkpoint_allrange": sc_survive_checkpoint_allrange,
     "survive_next_level": sc_survive_next_level,
+    "survive_gaps_route": sc_survive_gaps_route,
+    "survive_gaps_map": sc_survive_gaps_map,
+    "survive_gaps_map_lost": sc_survive_gaps_map_lost,
+    "survive_gaps_checkpoints": sc_survive_gaps_checkpoints,
+    "survive_gaps_venom_jump": sc_survive_gaps_venom_jump,
+    "survive_gaps_four": sc_survive_gaps_four,
     "vehicles": sc_vehicles,
     "vehicle_end": sc_vehicle_end,
     "bosses": sc_bosses,
@@ -4024,7 +4530,8 @@ SCENARIOS = {
     "eels": sc_eels,
     "player_names": sc_player_names,
 }
-LONG = ("survive_next_level", "fox_refill_levels", "fox_refill_long", "fox_lead_swap", "fox_lead_swap_all_range", "full", "scenes", "allrange", "allrange_down", "allrange_others", "allrange_down_others", "teambar",
+LONG = ("survive_next_level", "survive_gaps_route", "survive_gaps_map", "survive_gaps_map_lost",
+        "survive_gaps_checkpoints", "survive_gaps_venom_jump", "fox_refill_levels", "fox_refill_long", "fox_lead_swap", "fox_lead_swap_all_range", "full", "scenes", "allrange", "allrange_down", "allrange_others", "allrange_down_others", "teambar",
         "map_saves", "map_saves_host_full", "map_saves_equal", "audio", "release", "rates", "vehicles", "vehicle_end", "bosses", "other_bosses",
         "eels")
 
@@ -4048,7 +4555,8 @@ def main():
                          + ",".join(FOX_REFILL_LEVELS) + " (and corneria for fox_refill_long); "
                          "for `vehicles` and `vehicle_end`: some of titania,aquas,macbeth (default all); for "
                          "`bosses`: some of gorgon,andross,dogfight,inhale; for `other_bosses`: some of "
-                         + ",".join(OTHER_BOSS_RUNS))
+                         + ",".join(OTHER_BOSS_RUNS) + "; for `survive_gaps_checkpoints`: some of "
+                         + ",".join(SURVIVE_GAPS_LEVELS))
     args = ap.parse_args()
     if args.list:
         print("\n".join(SCENARIOS))
