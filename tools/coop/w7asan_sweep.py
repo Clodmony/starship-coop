@@ -23,11 +23,14 @@ Zoness and at Andross, as campaign.py), to level complete and what follows it, o
 levels are campaign.py's route `all`; they run shortest first and the tables list them in the route's order.
 
 A game does not stop at a report (halt_on_error=0), but AddressSanitizer ends it once 25 different places have
-reported; that shows as "the game ended by itself". Reports are read from the sanitizers' own log files and
+reported; that shows as "the game ended by itself". Reports are read from the game's stderr (a wrapper beside the game keeps it) and
 deduplicated by kind and the first stack frame that lies in this repo (function, file:line); UBSan's by file:line and
 the message without its numbers. Each line of the report table says in which levels it was seen. Everything is in
 summary.json in the sweep's folder (local/test-w7asan-*), written after every level, so a stopped sweep keeps what it
 has. A file named `stop` in that folder, or the one --stop-file names, ends the sweep before the next level.
+
+--gdb <script> runs each game under gdb with a script of breakpoints that print (tools/coop/w7asan_slots.gdb: what
+the Garoa's and the Gorgon's remembered effect slots hold each time they use them), far slower than without.
 
 Exit code 0 when no report of AddressSanitizer's was found and every level reached level complete; 1 otherwise. UBSan
 reports alone do not fail it: `--strict` makes them.
@@ -63,16 +66,25 @@ W7ASAN_LENGTH = {"fortuna": 7, "sector-z": 7, "aquas": 9, "venom-2": 9, "sector-
                  "bolse": 17, "meteo": 21, "area-6": 22, "titania": 45}
 W7ASAN_ASAN_HEAD = re.compile(r"==\d+==ERROR: (AddressSanitizer|LeakSanitizer): (\S+)")
 W7ASAN_ASAN_ACCESS = re.compile(r"^(READ|WRITE) of size (\d+)")
-W7ASAN_FRAME = re.compile(r"^\s+#(\d+) 0x[0-9a-f]+ (?:in (\S+) )?\(?([^()\s]*?)(?::(\d+))?(?::\d+)?\)?(?: \(.*\))?$")
+W7ASAN_FRAME = re.compile(r"^\s+#\d+ 0x[0-9a-f]+ (?:in (\S+) )?\(?([^()\s:]*)(?::(\d+))?")
 W7ASAN_UBSAN = re.compile(r"^(\S+?):(\d+):(\d+): runtime error: (.*)$")
-W7ASAN_WHERE = re.compile(r"is located (.*)$|^(0x[0-9a-f]+ is located .*)$")
 
 
 def w7asan_exe(given):
+    """The sanitizer build's game, behind a wrapper that sends its stderr to the file W7ASAN_STDERR names: the tools
+    that start a game here throw its output away, and UBSan writes its reports nowhere else."""
     exe = Path(given).resolve() if given else ROOT / W7ASAN_BUILD_DIR / "Starship"
     if not exe.exists():
         sys.exit(f"w7asan: no {exe}; run python tools/coop/w7asan_sweep.py build first")
-    return exe
+    wrapper = exe.with_name("w7asan-run.sh")  # beside the game, where the tools look for the game's archives
+    wrapper.write_text(f'#!/bin/sh\n'
+                       f'if [ -n "$W7ASAN_GDB" ]; then\n'
+                       f'    exec gdb -q -batch -x "$W7ASAN_GDB" "{exe}" >>"${{W7ASAN_TRACE:-/dev/null}}" '
+                       f'2>>"${{W7ASAN_STDERR:-/dev/null}}"\n'
+                       f'fi\n'
+                       f'exec "{exe}" 2>>"${{W7ASAN_STDERR:-/dev/null}}"\n', encoding="utf-8")
+    wrapper.chmod(0o755)
+    return wrapper
 
 
 def w7asan_inside(path):
@@ -87,52 +99,34 @@ def w7asan_inside(path):
 
 
 def w7asan_parse(text):
-    """The reports in one sanitizer log: a list of dicts with tool, kind, function, place (file:line), detail."""
-    reports = []
+    """The reports in a game's stderr: a list of dicts with tool, kind, function, place (file:line), detail. The
+    place is the first frame of the access's stack that lies in this repo: a report inside memcpy names its caller."""
     lines = text.splitlines()
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        head = W7ASAN_ASAN_HEAD.search(line)
-        ub = W7ASAN_UBSAN.match(line) if not head else None
-        if not head and not ub:
-            i += 1
-            continue
-        i += 1
+    starts = [i for i, line in enumerate(lines) if W7ASAN_ASAN_HEAD.search(line) or W7ASAN_UBSAN.match(line)]
+    reports = []
+    for at, end in zip(starts, starts[1:] + [len(lines)]):
+        head, ub = W7ASAN_ASAN_HEAD.search(lines[at]), W7ASAN_UBSAN.match(lines[at])
         frames, access, where = [], "", ""
-        seen_stack = False
-        while i < len(lines):
-            nxt = lines[i]
-            if W7ASAN_ASAN_HEAD.search(nxt) or W7ASAN_UBSAN.match(nxt):
-                break
-            frame = W7ASAN_FRAME.match(nxt)
-            if frame:
-                if not seen_stack or frames is not None:
-                    frames.append((frame.group(2) or "?", frame.group(3), frame.group(4)))
-                seen_stack = True
-            elif seen_stack and frames and not nxt.strip() and head:
-                # The first stack of an ASan report is the access; the next ones are where the object was made.
-                rest = "\n".join(lines[i:i + 12])
-                found = re.search(r"(0x[0-9a-f]+ is located [^\n]*)", rest)
-                where = found.group(1) if found else ""
-                i += 1
-                while i < len(lines) and not W7ASAN_ASAN_HEAD.search(lines[i]) and not W7ASAN_UBSAN.match(lines[i]):
-                    i += 1
-                break
-            elif W7ASAN_ASAN_ACCESS.match(nxt):
-                access = " ".join(W7ASAN_ASAN_ACCESS.match(nxt).groups())
-            i += 1
+        stack_over = False
+        for line in lines[at + 1:end]:
+            frame = W7ASAN_FRAME.match(line)
+            if frame and not stack_over:  # the first stack is the access; later ones say where the object was made
+                frames.append((frame.group(1) or "?", frame.group(2), frame.group(3)))
+            elif frames:
+                stack_over = True
+            if W7ASAN_ASAN_ACCESS.match(line) and not access:
+                access = " ".join(W7ASAN_ASAN_ACCESS.match(line).groups())
+            if " is located " in line and not where:
+                where = re.sub(r"0x[0-9a-f]+", "", line).replace("()", "").strip()
         own = next(((fn, w7asan_inside(path), no) for fn, path, no in frames if w7asan_inside(path)), None)
+        fn, path, no = own or (frames[0] if frames else ("?", "?", None))
         if head:
-            fn, path, no = own or (frames[0] if frames else ("?", "?", None))
-            where = re.sub(r"0x[0-9a-f]+", "ADDR", where)
             reports.append({"tool": "asan", "kind": head.group(2), "function": fn, "place": f"{path}:{no}",
-                            "detail": f"{access}; {where}".strip("; ")})
+                            "detail": "; ".join(part for part in (access, where) if part)})
         else:
-            path = w7asan_inside(ub.group(1)) or ub.group(1)
-            fn = own[0] if own else (frames[0][0] if frames else "?")
+            place = w7asan_inside(ub.group(1)) or ub.group(1)
             reports.append({"tool": "ubsan", "kind": w7asan_ubsan_kind(ub.group(4)), "function": fn,
-                            "place": f"{path}:{ub.group(2)}", "detail": ub.group(4)})
+                            "place": f"{place}:{ub.group(2)}", "detail": ub.group(4)})
     return reports
 
 
@@ -154,20 +148,40 @@ def w7asan_key(report):
     return f"{report['tool']}|{report['kind']}|{report['function']}|{report['place']}"
 
 
-def w7asan_collect(logs):
-    """{key: report with count} of the sanitizer logs with this path prefix."""
+def w7asan_collect(log):
+    """{key: report with count} of a game's stderr file."""
     found = {}
-    for path in sorted(logs.parent.glob(logs.name + "*")):
-        for report in w7asan_parse(path.read_text(encoding="utf-8", errors="replace")):
-            entry = found.setdefault(w7asan_key(report), {**report, "count": 0})
-            entry["count"] += 1
+    text = log.read_text(encoding="utf-8", errors="replace") if log.exists() else ""
+    for report in w7asan_parse(text):
+        entry = found.setdefault(w7asan_key(report), {**report, "count": 0})
+        entry["count"] += 1
     return found
 
 
-def w7asan_set_env(logs):
-    """The sanitizers' options for the games this process starts: game_env copies this environment."""
-    os.environ["ASAN_OPTIONS"] = f"{W7ASAN_ASAN_OPTIONS}:log_path={logs}"
-    os.environ["UBSAN_OPTIONS"] = f"{W7ASAN_UBSAN_OPTIONS}:log_path={logs}"
+def w7asan_set_env(log):
+    """The sanitizers' options for the games this process starts, and where the wrapper puts their stderr: game_env
+    copies this environment."""
+    os.environ["ASAN_OPTIONS"] = W7ASAN_ASAN_OPTIONS
+    os.environ["UBSAN_OPTIONS"] = W7ASAN_UBSAN_OPTIONS
+    os.environ["W7ASAN_STDERR"] = str(log)
+    os.environ["W7ASAN_TRACE"] = str(log.with_name("trace.txt"))
+
+
+def w7asan_trace(path):
+    """{name: [lines, lines with ok=0, the first of those]} of the `w7trace <name> ok=<0|1> ...` lines a gdb script
+    printed (--gdb)."""
+    counts = {}
+    text = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) < 3 or parts[0] != "w7trace":
+            continue
+        entry = counts.setdefault(parts[1], [0, 0, None])
+        entry[0] += 1
+        if parts[2] == "ok=0":
+            entry[1] += 1
+            entry[2] = entry[2] or line
+    return counts
 
 
 def w7asan_table(summary):
@@ -233,7 +247,7 @@ def w7asan_cmd_build(args):
 def w7asan_cmd_baseline(args):
     exe = w7asan_exe(args.exe)
     folder = make_run_folder(ROOT / "local", "test-w7asan-baseline-")
-    logs = folder / "sanitizer"
+    logs = folder / "sanitizer.txt"
     w7asan_set_env(logs)
     start = replay_tool.MENUS
     replay = folder / "input.sfcr"
@@ -258,7 +272,7 @@ def w7asan_fly(name, exe, args, folder):
     """One level under the sanitizers. Returns its row of the summary."""
     work = folder / name
     work.mkdir()
-    logs = work / "sanitizer"
+    logs = work / "sanitizer.txt"
     w7asan_set_env(logs)
     level = hash_check.PILOT_LEVELS[name]
     start = replay_tool.Start(f"flying-{name}", level, True, replay_tool.FLYING.level, replay_tool.FLYING.active,
@@ -274,6 +288,11 @@ def w7asan_fly(name, exe, args, folder):
     reports = w7asan_collect(logs)
     row = {"frames": frames, "complete": complete, "why": why, "seconds": round(time.monotonic() - began),
            "cvars": cvars, "reports": reports}
+    if args.gdb:
+        row["trace"] = w7asan_trace(logs.with_name("trace.txt"))
+        for label, (total, strange, first) in sorted(row["trace"].items()):
+            print(f"w7asan: {name}: trace {label}: {total} lines, {strange} with ok=0"
+                  + (f", the first: {first}" if first else ""), flush=True)
     print(f"w7asan: {name}: {frames} frames, level complete at {complete}, {why}; {len(reports)} distinct reports, "
           f"{row['seconds']} s", flush=True)
     return row
@@ -281,6 +300,9 @@ def w7asan_fly(name, exe, args, folder):
 
 def w7asan_cmd_sweep(args):
     exe = w7asan_exe(args.exe)
+    os.environ.pop("W7ASAN_GDB", None)
+    if args.gdb:
+        os.environ["W7ASAN_GDB"] = str(Path(args.gdb).resolve())
     names = args.levels.split(",") if args.levels else sorted(campaign.ROUTES["all"],
                                                               key=lambda n: W7ASAN_LENGTH.get(n, 99))
     unknown = [name for name in names if name not in hash_check.PILOT_LEVELS]
@@ -329,6 +351,8 @@ def main():
     s.add_argument("--out", help="folder for the logs (default: a new one under local/; an old one is continued)")
     s.add_argument("--stop-file", help="end the sweep before the next level once this file exists")
     s.add_argument("--strict", action="store_true", help="fail on UBSan reports too")
+    s.add_argument("--gdb", metavar="SCRIPT", help="run each game under gdb in batch mode with this script, which "
+                   "ends in `run`; its `w7trace <name> ok=<0|1> ...` lines are counted (tools/coop/w7asan_slots.gdb)")
     t = sub.add_parser("table", help="print the tables of a sweep's folder again")
     t.add_argument("folder")
     t.add_argument("--strict", action="store_true", help="fail on UBSan reports too")
