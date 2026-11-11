@@ -263,6 +263,14 @@ The owner went through the record item by item. What each answer changed, and wh
 
 The two starting values, pool size and delay, are constants to tune by play.
 
+**Update 2026-11-11 (rules 3, 12 and 13, built and run; `docs/coop/NOTES.md`, 2026-11-11, "Fox goes down").** Rule 3
+is built (`CoopPlayers_RefillFox`, `src/port/coop/game/players.c`), with the `mercyTimer` of a return, 30 frames. Open
+under rule 12, each after two two-client runs with equal hashes: Corneria, Meteo, Sector X, Area 6, Sector Y, Venom 1,
+Solar, Zoness, Fortuna, Katina, Bolse, Sector Z, Venom 2, Titania, Macbeth and Aquas. Not open: Andross' lair (its
+escape kills Fox past `Player_Down`), the warp zones and training; there, and at pool 0 anywhere, rule 3's second
+paragraph holds. The spike of rule 13 ran as an experiment behind a test switch: a survivor's ship can take slot 0 on
+the levels it was run on, hash-equal; it is not a rule, and rule 6 keeps its interim form until the owner decides.
+
 ### Every client decides alike
 
 - The rule reads simulated state only: `gLifeCount[0]`, the player slots, the return counter, `gPlayer[0].state`, and

@@ -747,7 +747,7 @@ FOX_REFILL_TAIL = 40
 FOX_REFILL_POOL = 2
 FOX_REFILL_MERCY = 30  # COOP_RETURN_MERCY_FRAMES
 FOX_REFILL_DOWN_LINES = (20090, 20091, 20092, 20318)  # what Cutscene_KillPlayer has the team say
-NA_SE_ARWING_DOWN = 0x0900C010  # include/sfx.h: what Player_Down plays
+FOX_REFILL_SFX_DOWN = 0x0900C010  # NA_SE_ARWING_DOWN, include/sfx.h: what Player_Down plays
 FOX_REFILL_PLANS = {
     "rails": {"pool": JOIN_FRAME + 50, "downs": (JOIN_FRAME + 100, JOIN_FRAME + 400), "last": JOIN_FRAME + 900,
               "jump": None, "shields": 255},
@@ -859,7 +859,7 @@ def fox_refill_check(game, view_path, plan, section):
     vspan = [v for v in trace.rows if first <= v.frame < last]
     faded = [v.frame for v in vspan if v.fill[3] != 0 and v.fill[:3] == (0, 0, 0)]
     expect(not faded, f"{game.name}: the screen faded to black at frame {faded[:1]}")
-    theme = [v.frame for v in vspan if any(sfx == NA_SE_ARWING_DOWN for sfx, _ in v.sfx)]
+    theme = [v.frame for v in vspan if any(sfx == FOX_REFILL_SFX_DOWN for sfx, _ in v.sfx)]
     expect(not theme, f"{game.name}: the down sound played at frame {theme[:1]}")
 
     # At pool 0 the original rule: player 0 goes down, player 1 parks on the same frame, the life is not spent yet.
@@ -990,17 +990,27 @@ FOX_LEAD_PLANS = {
 }
 
 
+def fox_lead_level_plan(name):
+    """The swap on another level: only where player 0 flies the rails, where a poke is seen on the next frame."""
+    level, section, join = FOX_REFILL_LEVELS[name]
+    expect(section == "rails", f"{name}: the lead swap plan is for the rails")
+    return {"level": level, "pool": join + 20, "swap": join + 60, "life": join + 260, "back": join + 460,
+            "last": join + 660, "jump": None}
+
+
 def fox_lead_pokes(plan):
     pool = plan["pool"]
     return ",".join([f"{pool}:0:lives:0", f"{pool}:0:bombs:{FOX_BOMBS}", f"{pool}:1:bombs:{FOX_LEAD_BOMBS}",
                      f"{plan['swap'] - 1}:1:shields:{FOX_LEAD_SHIELDS}", f"{plan['swap'] - 1}:0:shields:200",
-                     f"{plan['swap']}:0:down:4", f"{plan['life']}:0:lives:1", f"{plan['back']}:0:down:4",
+                     f"{plan['swap']}:0:down:4", f"{plan['life']}:0:lives:1", f"{plan['back'] - 1}:0:shields:200",
+                     f"{plan['back'] - 1}:1:shields:200", f"{plan['back']}:0:down:4",
                      f"{plan['last']}:0:down:{FOX_LEAD_LAST_TIMER}"])
 
 
 def fox_lead_check(game, view_path, plan, section):
     """What one game shows of a fox_lead plan. Returns a line for the summary (the same on both games)."""
-    rows = [r for r in player_trace.parse(game.run / "trace.txt") if r.level == 0 and len(r.players) > 1]
+    rows = [r for r in player_trace.parse(game.run / "trace.txt")
+            if r.level == plan.get("level", 0) and len(r.players) > 1]
     by_frame = {r.frame: r for r in rows}
     view = view_check.read_trace(1, view_path).by_frame
     seat = 0 if game.name == "host" else 1
@@ -1094,8 +1104,22 @@ def fox_lead_in(args, folder, section):
 
 
 def sc_fox_lead_swap(args, folder):
-    """Spike #183: the lead role passes to a survivor at pool 0, on Corneria's rails. An experiment, not a rule."""
-    return fox_lead_in(args, folder, "rails")
+    """Spike #183: the lead role passes to a survivor at pool 0, on Corneria's rails. An experiment, not a rule. With
+    --levels, the same on the rails of those levels instead (FOX_REFILL_LEVELS)."""
+    if not args.levels:
+        return fox_lead_in(args, folder, "rails")
+    done = []
+    for name in args.levels:
+        expect(name in FOX_REFILL_LEVELS, f"no level {name}: {', '.join(FOX_REFILL_LEVELS)}")
+        plan = fox_lead_level_plan(name)
+        plan["frames"] = plan["last"] + FOX_REFILL_TAIL
+        host, client, traces = run_return(args, folder / name, plan, fox_lead_pokes(plan),
+                                          both={"SF64_COOP_TEST_LEAD_SWAP": "1"}, level=plan["level"])
+        frames = compare(host, client, plan["frames"])
+        lines = [fox_lead_check(game, traces[game.name], plan, "rails") for game in (host, client)]
+        expect(lines[0] == lines[1], f"{name}: the games saw different swaps: host {lines[0]}, client {lines[1]}")
+        done.append(f"{name}: same hash on {frames} frames; {lines[0]}")
+    return " | ".join(done)
 
 
 def sc_fox_lead_swap_all_range(args, folder):
@@ -3350,7 +3374,9 @@ def main():
     ap.add_argument("--profiles", default="good_wifi", help="for `lag`: chaos relay profiles, comma-separated")
     ap.add_argument("--rates", default="60,120", help="for `rates`: the two clients' gInterpolationFPS")
     ap.add_argument("--levels", type=lambda t: t.lower().split(","),
-                    help="for `vehicles` and `vehicle_end`: some of titania,aquas,macbeth (default all); for "
+                    help="for `fox_refill_levels`, `fox_refill_long` and `fox_lead_swap`: some of "
+                         + ",".join(FOX_REFILL_LEVELS) + " (and corneria for fox_refill_long); "
+                         "for `vehicles` and `vehicle_end`: some of titania,aquas,macbeth (default all); for "
                          "`bosses`: some of gorgon,andross,dogfight,inhale; for `other_bosses`: some of "
                          + ",".join(OTHER_BOSS_RUNS))
     args = ap.parse_args()
