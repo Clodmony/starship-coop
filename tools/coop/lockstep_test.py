@@ -2510,6 +2510,56 @@ def sc_results(args, folder):
     return "; ".join(texts)
 
 
+# #252: a seat with no human holds nobody. Three games, the first client (player 2) leaves on purpose, and the level
+# starts again for the other two with roster Fox,-,Slippy: seat 1 is empty (CoopPlayers_IsOut). The probe turns the
+# level clear screen on in that second level; Fox and the player in seat 2 press, and the hold must end after the later
+# press, not after the 900-frame limit.
+def sc_results_hole(args, folder):
+    folder.mkdir(parents=True, exist_ok=True)
+    feed = folder / "feed.txt"
+    pad = press(idle, {(RESULTS_HOST, 0), (RESULTS_CLIENT, 2)}, BUTTON_A)
+    write_feed(feed, RESULTS_CLIENT + 200, pad)
+    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(SURVIVE_FRAMES),
+           "SF64_COOP_SCORE_PROBE": f"results:{RESULTS_AT}"}
+    reports = {n: folder / f"{n}-score.txt" for n in ("host", "client0", "client1")}
+    for path in reports.values():
+        if path.exists():
+            path.unlink()
+    games = session(args, folder, both=env, clients=2,
+                    client_envs=[{"SF64_COOP_JOIN_LEAVE_FILE": "leave", "SF64_COOP_SCORE_REPORT": str(reports["client0"])},
+                                 {"SF64_COOP_SCORE_REPORT": str(reports["client1"])}],
+                    host_env={"SF64_COOP_SCORE_REPORT": str(reports["host"])})
+    host, goes, stays = games
+    try:
+        wait_for(list(games), "done", 900, "before the player left")
+        (goes.run / "leave").write_text("", encoding="utf-8")
+        survive_wait([host, stays], "again", 1, SURVIVE_AGAIN_SECONDS, "after the player left")
+        deadline = time.monotonic() + 600
+        while not any(k == "results" and r.get("on") == "0" for k, r in score_rows(reports["client1"])):
+            expect(time.monotonic() < deadline, "the results screen never went off in the second level")
+            expect(stays.proc.poll() is None and host.proc.poll() is None, "a game ended before the screen went off")
+            time.sleep(0.5)
+        survive_no_end([host, stays])
+    finally:
+        for game in games:
+            game.close()
+    expect(player_of(goes) == 2 and player_of(stays) == 3, f"seats: the one who left is player {player_of(goes)}, the "
+                                                        f"other {player_of(stays)}; the test needs the hole at seat 1")
+    roster = [r for _, r in survive_starts(host)]
+    expect(len(roster) == 2 and roster[1].split(",")[1] == "-" and roster[1].split(",")[2] != "-",
+           f"the second level start's roster is {roster}, want a hole at player 2")
+    rows = [score_rows(reports[n]) for n in ("host", "client1")]
+    expect(rows[0] == rows[1], "the two games that stayed saw different things")
+    held, on, off = results_runs(rows[0])
+    start = next((f for f, h, _ in held if h), None)
+    end = next((f for f, h, _ in held if start is not None and f > start and not h), None)
+    expect(start is not None and end is not None, f"no hold, or it never ended: {held}")
+    expect(end == RESULTS_CLIENT + 1, f"the hold ended at {end}, want the frame after the press of the player in seat "
+                                      f"3 at {RESULTS_CLIENT} (the empty seat must not hold it, nor the 900-frame limit)")
+    expect(not any(r[1] for _, _, r in held), "the empty seat counted ready")
+    return f"seat 2 empty after a leave: held {start} to {end}, the screen did not wait for the empty seat"
+
+
 def run_results(args, folder, script, frames):
     """run_score with the `results` probe and a feed of its own: nothing but the presses in `script`."""
     folder.mkdir(parents=True, exist_ok=True)
@@ -4088,6 +4138,7 @@ SCENARIOS = {
     "scenes": sc_scenes,
     "player_hits": sc_player_hits,
     "results": sc_results,
+    "results_hole": sc_results_hole,
     "guests": sc_guests,
     "allrange": sc_allrange,
     "allrange_down": sc_allrange_down,

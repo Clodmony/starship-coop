@@ -162,8 +162,8 @@ static void Results_Update(s32 frame) {
         seen |= (CoopScore_ResultsReady(i) ? 2 : 0) << i;
     }
     if (seen != sResultsSeen) {
-        Report("results frame=%d holding=%d ready=%d,%d", (int) frame, (int) (seen & 1), (int) ((seen >> 1) & 1),
-               (int) ((seen >> 2) & 1));
+        Report("results frame=%d holding=%d ready=%d,%d,%d", (int) frame, (int) (seen & 1), (int) ((seen >> 1) & 1),
+               (int) ((seen >> 2) & 1), (int) ((seen >> 3) & 1));
         if ((sResultsSeen & 1) && !(seen & 1)) {
             sResultsOffAt = frame + PROBE_RESULTS_AFTER;
         }
