@@ -663,7 +663,7 @@ PILOT_NO_END = {"training": "no level complete: its path change starts the all-r
 PILOT_FRAMES = 24000  # most frames of a pilot's flight; Corneria took 11200 to the map, Sector X 11529 to level complete
 # Goras took to 29169 in #16's run with a pilot on each of two clients, and was at half its health after 40000 frames
 # of one pilot flying both; Sector Y's last Shogun had 20 health left at 24000, the Gorgon 660 of 780.
-PILOT_LEVEL_FRAMES = {"titania": 70000, "sector-y": 36000, "area-6": 60000}
+PILOT_LEVEL_FRAMES = {"titania": 70000, "sector-y": 36000, "area-6": 60000, "bolse": 40000}
 # Levels the pilot flies with gInfiniteBombs, as campaign.py's BOMBS (owner's choice of 2026-11-11): their bosses need
 # bombs, and the port's cheat keeps player 0 at 9 (src/port/mods/PortEnhancements.c).
 PILOT_BOMBS = {"zoness", "venom-andross"}

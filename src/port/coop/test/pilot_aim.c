@@ -3,9 +3,11 @@
 #include "pilot_aim.h"
 
 #include <math.h>
+#include <stdlib.h>
 
 #include "port/coop/game/aim.h"
 #include "port/coop/game/players.h"
+#include "port/coop/sync/lockstep.h"
 
 #define AIM_FIRE_PERIOD 4          // as pilot.c: A down one frame in four, a shot each, never a charge
 #define AIM_SHOT_SPEED 133.0f      // Player_ArwingLaser
@@ -281,6 +283,22 @@ static bool CoopPilotAim_BombsAt(const Boss* b) {
     }
 }
 
+// Frames from a pilot's press to the game: 0 for a pilot that flies a game alone, the session's input delay for one
+// that flies its client's player in a lockstep session (src/port/coop/test/lockstep_driver.h).
+static s32 CoopPilotAim_Delay(void) {
+    static s32 sDelay = -1;
+
+    if (sDelay < 0) {
+        const char* pilot = getenv("SF64_COOP_LOCKSTEP_PILOT");
+        const char* delay = getenv("SF64_COOP_TEST_INPUT_DELAY");
+
+        sDelay = ((pilot == NULL) || (pilot[0] == '\0'))   ? 0
+                 : ((delay != NULL) && (delay[0] != '\0')) ? atoi(delay)
+                                                           : COOP_LOCKSTEP_INPUT_DELAY;
+    }
+    return sDelay;
+}
+
 bool CoopPilot_RailBomb(const Player* p, s32 i) {
     const AimTarget* t = &sAim[i];
     const PlayerShot* bomb = &gPlayerShots[ARRAY_COUNT(gPlayerShots) - 1];
@@ -296,7 +314,9 @@ bool CoopPilot_RailBomb(const Player* p, s32 i) {
         }
         if ((bomb->obj.status == SHOT_ACTIVE) && (bomb->obj.id == PLAYERSHOT_BOMB) && (bomb->unk_5C == 0) &&
             (bomb->sourceId == i)) {
-            return (bomb->timer < 25) && (bomb->obj.pos.z < (b->obj.pos.z + 100.0f));
+            // Where the bomb will be when the press reaches the game: 3 frames are some 540 units at its speed.
+            return (bomb->timer < 25) &&
+                   ((bomb->obj.pos.z + bomb->vel.z * CoopPilotAim_Delay()) < (b->obj.pos.z + 100.0f));
         }
         if ((bomb->obj.status == SHOT_FREE) && (gBombCount[i] > 0) && (i == 0) &&
             ((p->trueZpos - b->obj.pos.z) > 1200.0f)) {

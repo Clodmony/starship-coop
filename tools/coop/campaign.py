@@ -55,9 +55,11 @@ ROUTES = {
             "aquas", "zoness", "sector-z", "area-6", "venom-2", "katina", "solar", "macbeth"),
 }
 FRAMES = 26000  # lockstep frames a level may take at most: Corneria took about 11200 to the map, Sector X 11529 to
-FRAMES_BY_LEVEL = {"titania": 60000, "sector-y": 36000, "area-6": 40000}  # level complete; Titania's Goras 29169
+FRAMES_BY_LEVEL = {"titania": 60000, "sector-y": 36000, "area-6": 40000,  # level complete; Titania's Goras 29169
+                   "bolse": 40000}
 # in #16's run and past 40000 in #28's first, Sector Y's last Shogun and Area 6's Gorgon longer than 24000 in #181's
-# views --pilot
+# views --pilot. Bolse: the core had 2 of its 8 parts up at 26000 frames with two clients (campaign run, 2026-11-11;
+# 16301 with one pilot flying both)
 # Levels flown without gInvincible: Corneria, as lockstep_test.py's `full` flies it. With gInvincible on both games,
 # Granga lay still with a leg shot off and its backpack at 110 for 20000 frames in #28's first run, out of the pilot's
 # reach (src/port/coop/test/pilot.h); without it the same pilot takes Corneria to the map.
