@@ -85,6 +85,12 @@ def main():
     if reader.returncode != 0:
         failures.append("tools/coop/script_reader_test.py failed:\n  "
                         + "\n  ".join(reader.stdout.strip().splitlines()))
+    # With an sf64.o2r in a build folder: no branch past a script's end beyond the two docs/coop/NOTES.md explains (#112).
+    if any((ROOT / folder / "sf64.o2r").is_file() for folder in ("build-cmake", "build/x64", ".")):
+        past = run_tool("script_reader.py", "--past-end", "--check")
+        if past.returncode != 0:
+            failures.append("tools/coop/script_reader.py --past-end --check failed:\n  "
+                            + "\n  ".join((past.stdout + past.stderr).strip().splitlines()))
 
     # 7. Run folders: each test tool gets a folder of its own, however close together runs start.
     folders = subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "coop" / "run_folder_test.py")],
@@ -126,6 +132,13 @@ def main():
     if crash.returncode != 0:
         failures.append("tools/coop/crash_test.py failed:\n  "
                         + "\n  ".join((crash.stdout + crash.stderr).strip().splitlines()))
+
+    # 12. Random draws whose order the compiler picks (#199): no new ones, and the scanner still passes its own tests.
+    for args in (("rand_order.py", "--check"), ("rand_order_test.py", "--no-compiler")):
+        order = run_tool(*args)
+        if order.returncode != 0:
+            failures.append(f"tools/coop/{' '.join(args)} failed:\n  "
+                            + "\n  ".join((order.stdout + order.stderr).strip().splitlines()))
 
     # Info: where the fork diverges from upstream game code.
     grep = git("grep", "-n", "COOP:", "--", "src", "include", ":!src/port/coop")

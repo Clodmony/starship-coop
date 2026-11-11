@@ -23,7 +23,8 @@
 #include "assets/ast_zoness.h"
 #include "port/hooks/Events.h"
 #include "port/coop/game/players.h" // COOP: player count apart from camera count (WP-10)
-#include "port/coop/sync/lockstep_game.h" // COOP: whether a session runs the frames (#20)
+#include "port/coop/game/score.h"   // COOP: each player's own hit count (#252)
+#include "port/coop/game/team.h"    // COOP: a human-flown wingman's gTeamShields (WP-17)
 
 extern float gCurrentScreenWidth;
 extern float gCurrentScreenHeight;
@@ -2957,6 +2958,7 @@ void Play_Init(void) {
         gControllerRumbleTimers[i] = 0;
         gPlayerScores[i] = 0;
     }
+    CoopScore_LevelInit(); // COOP: a checkpoint restart gives back each player's own count (#252)
 
     if (gLevelMode == LEVELMODE_ALL_RANGE) {
         MEM_ARRAY_ALLOCATE(gScenery360, 200);
@@ -3474,6 +3476,7 @@ void Player_Shoot(Player* player) {
                 } else {
                     Math_SmoothStepToF(&player->arwing.laserGunsYpos, 0.0f, 1.0f, 0.5f, 0.0f);
                 }
+                CoopPlayers_SetLaserGunsX(player); // COOP: not left to the draw, which can skip it (#192)
                 if (rapidFire && (gShootButton[player->num] & gInputHold->button)) {
                     if (player->shotTimer <= 0) {
                         player->shotTimer = 3;
@@ -4113,7 +4116,7 @@ void Player_MoveArwingOnRails(Player* player) {
 
     sp68.x = 0.0f;
     sp68.y = 0.0f;
-    sp68.z = -player->boostSpeed;
+    sp68.z = -CoopPlayers_PathBoostSpeed(player); // COOP: the team's boost and brake (#194)
 
     Matrix_MultVec3fNoTranslate(gCalcMatrix, &sp68, &sp50);
 
@@ -4592,6 +4595,7 @@ void Player_Setup(Player* playerx) {
                 break;
         }
     }
+    CoopTeam_LevelShields(player); // COOP: shields carried from the last cleared level, plus a heal (0006 rule 2, #15)
 
     player->arwing.rightWingState = WINGSTATE_INTACT;
     player->arwing.leftWingState = WINGSTATE_INTACT;
@@ -4976,6 +4980,7 @@ void Player_Setup(Player* playerx) {
     if (gLaserStrength[gPlayerNum] > LASERS_SINGLE) {
         player->arwing.laserGunsYpos = -10.0f;
     }
+    CoopPlayers_SetLaserGunsX(player); // COOP: as in Player_Shoot (#192)
     gPauseEnabled = false;
 }
 
@@ -6975,7 +6980,7 @@ void Play_UpdateLevel(void) {
                 if (gPlayer[0].shields <= 0) {
                     gPlayer[0].shields = 0;
                 }
-                if (gPlayer[0].heal == 0) {
+                if ((gPlayer[0].heal == 0) && CoopPlayers_IsViewed(0)) { // COOP: heard by the player viewed (#200)
                     if (gPlayer[0].shields == 50) {
                         AUDIO_PLAY_SFX(NA_SE_SHIELD_WARNING1, gDefaultSfxSource, 4);
                     } else if (gPlayer[0].shields == 100) {
@@ -6983,6 +6988,7 @@ void Play_UpdateLevel(void) {
                     }
                 }
             }
+            CoopPlayers_SolarHeat(); // COOP: the heat drains every player who flies, not Fox alone (#200)
 
             shields = MIN(gPlayer[0].shields, 255);
 
@@ -7061,6 +7067,7 @@ void Play_Update(void) {
     if (CoopPlayers_IsCoop()) { // COOP: the loop leaves gPlayerNum at the last player. Player 0 on every client (#96)
         gPlayerNum = 0;
         CoopPlayers_SelectInput(gPlayerNum); // COOP: the same for the controller (WP-12)
+        CoopTeam_Update();                   // COOP: a human's shields in its character's gTeamShields (WP-17)
     }
 
     Object_Update();
@@ -7206,9 +7213,8 @@ void Play_Main(void) {
                 Play_Update();
             }
 
-            // COOP: not in a session, as the save is each client's own and would part them (#20)
-            if (!CoopSyncGame_IsOn() && (gControllerPress[gMainController].button & START_BUTTON) &&
-                (gPlayer[0].state == PLAYERSTATE_LEVEL_INTRO) &&
+            // COOP: any player's Start (#191). In a session every game holds the host's save (decision 0009 item 8)
+            if (CoopPlayers_PausePressed() && (gPlayer[0].state == PLAYERSTATE_LEVEL_INTRO) &&
                 gSaveFile.save.data.planet[sSaveSlotFromLevel[gCurrentLevel]].normalClear) {
                 Audio_ClearVoice();
                 Audio_SetEnvSfxReverb(0);

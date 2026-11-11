@@ -1100,9 +1100,16 @@ void Scenery_Draw(Scenery* this, s32 cullDirection) {
 void Sprite_Draw(Sprite* this, s32 arg1) {
     CALL_CANCELLABLE_RETURN_EVENT(ObjectDrawPreSetupEvent, OBJECT_TYPE_SPRITE, this);
     if (arg1 >= 0) {
+        f32 coopY = this->obj.pos.y; // COOP: see below
+
         this->obj.pos.y += gCameraShakeY;
         Object_SetMatrix(&this->obj, 0);
         this->obj.pos.y -= gCameraShakeY;
+        // COOP: adding and taking away the shake can round pos.y, and in all-range only a client that has the sprite in
+        // view gets here (func_enmy_80060FE4 in Object_DrawAll), so the clients would part (#192). Exactly back.
+        if (CoopPlayers_IsCoop()) {
+            this->obj.pos.y = coopY;
+        }
 
         CALL_CANCELLABLE_EVENT(ObjectDrawPostSetupEvent, OBJECT_TYPE_SPRITE, this) {
             if (this->info.drawType == 0) {

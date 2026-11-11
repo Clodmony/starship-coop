@@ -7,6 +7,7 @@
 
 #define INIT_EVENT_IDS
 #include "port/hooks/Events.h"
+#include "port/coop/game/score.h" // COOP: the team's pool of lives (#210)
 
 bool gBackToMap = false;
 
@@ -256,7 +257,7 @@ void OnItemGoldRingUpdate(ObjectUpdateEvent* event) {
                 } else if (gGoldRingCount[0] == 6) {
                     Object_PlayerSfx(gPlayer[item->playerNum].sfxSource, NA_SE_ONE_UP, item->playerNum);
                     if (gCurrentLevel != LEVEL_TRAINING) {
-                        gLifeCount[item->playerNum]++;
+                        gLifeCount[CoopScore_LifeSlot(item->playerNum)]++; // COOP: the pool (0007 rule 2, #210)
                     }
                     gPlayer[item->playerNum].heal += 32;
                     BonusText_Display(gPlayer[item->playerNum].pos.x, gPlayer[item->playerNum].pos.y,
@@ -444,6 +445,8 @@ void PortEnhancements_Register() {
 
     REGISTER_EVENT(PlayerPreUpdateEvent);
     REGISTER_EVENT(PlayerPostUpdateEvent);
+    REGISTER_EVENT(PlayerShotPreUpdateEvent);  // COOP: (#16)
+    REGISTER_EVENT(PlayerShotPostUpdateEvent); // COOP: (#16)
 
     REGISTER_EVENT(DrawRadarHUDEvent);
     REGISTER_EVENT(DrawRadarMarkArwingEvent);

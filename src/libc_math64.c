@@ -1,4 +1,6 @@
 #include "sys.h"
+#include "port/coop/math/atan.h"   // COOP: the game's own arctangent in a session (#186)
+#include "port/coop/math/sincos.h" // COOP: CoopMath_InSession
 
 f32 Math_TanF(f32 x) {
     return tanf(x);
@@ -33,6 +35,9 @@ f32 Math_RoundF(f32 x) {
 }
 
 f32 Math_FAtanF(f32 x) {
+    if (CoopMath_InSession()) { // COOP: the same bits on every platform (#186, decision 0011)
+        return CoopMath_FAtanF(x);
+    }
     return atanf(x);
     /*
         s32 sector;
@@ -95,5 +100,8 @@ f32 Math_FAsinF(f32 x) {
 }
 
 f32 Math_FAcosF(f32 x) {
+    if (CoopMath_InSession()) { // COOP: as Math_FAtanF (#186)
+        return CoopMath_FAcosF(x);
+    }
     return acosf(x);
 }

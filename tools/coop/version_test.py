@@ -5,12 +5,19 @@
     python tools/coop/version_test.py --exe <file>   # that build; its id comes from coop/coop_build_id.h next to it
     python tools/coop/version_test.py --list
     python tools/coop/version_test.py --only label   # just that one
+    python tools/coop/version_test.py --only text    # the label's text alone: no game, about a second
 
-Each scenario starts one game with the menu bar open, in its own folder, without a window and off the GPU, and captures
-one shown frame with versiontest/frame_shot.c. The check reads the pixels of that frame, so it sees what a player sees:
+  text    The label's text (src/port/coop/ui/version_text.c, compiled alone with a driver): "Co-op <8>" for a clean
+          id, "Co-op <8>-dirty" for one that ends in -dirty, and its short form "<8>-dirty" for a bar with no room;
+          a clean id has no short form (#232). No game.
 
-  label   The game drew, as a player sees it (#147). The right end of the menu bar shows "Co-op <id>", with <id> the
-          first 8 characters of the id the handshake compares. The menu font has
+The other scenarios start one game with the menu bar open, in its own folder, without a window and off the GPU, and
+capture one shown frame with versiontest/frame_shot.c. The check reads the pixels of that frame, so it sees what a
+player sees:
+
+  label   The game drew, as a player sees it (#147). The right end of the menu bar shows the text of scenario text for
+          the id the handshake compares: "Co-op <8>", with <8> its first 8 characters, and for a dirty build
+          "Co-op <8>-dirty" or, where that does not fit (the default window of 640), "<8>-dirty". The menu font has
           fixed-width cells, and a character looks the same in every cell, so the cells of the label must repeat exactly
           as the characters of the text do. The same frame must not pass for an id with another pattern. This is not
           OCR: it tells a right id from a wrong one, it does not spell one out.
@@ -20,9 +27,9 @@ one shown frame with versiontest/frame_shot.c. The check reads the pixels of tha
           fresh config folder. It must read the starship.o2r next to it and show the label. The same package without
           that file must stop at its first shader, which shows the file is what lets it start.
 
-Needs a build with assets (python tools/coop/build.py --assets) or --exe, and a C compiler. Exit code 0 when every
-scenario holds, 1 otherwise. Everything lands under local/test-version-*, one folder a run: deleted when all hold, kept
-for reading when one fails.
+Needs a build with assets (python tools/coop/build.py --assets) or --exe, and a C compiler; text needs only the
+compiler. Exit code 0 when every scenario holds, 1 otherwise. Everything lands under local/test-version-*, one folder a
+run: deleted when all hold, kept for reading when one fails.
 """
 import argparse
 import json
@@ -45,12 +52,76 @@ RECORD_FRAMES = 300  # the game stops after the capture: recorded frames start l
 TIMEOUT = 180
 BAR_ROWS = 24       # the menu bar is opaque for these rows at the default font
 BAR_EDGE = 2        # rows under it that can still be its border
-LABEL_ID = 8        # characters of the id the label shows (src/port/coop/ui/version_label.cpp)
+LABEL_ID = 8        # characters of the id the label shows (src/port/coop/ui/version_text.c)
 CELL = 7            # width of a character of the menu font
-LABEL_PREFIX = "Co-op "  # src/port/coop/ui/version_label.cpp
+LABEL_PREFIX = "Co-op "  # src/port/coop/ui/version_text.c
+DIRTY = "-dirty"    # the ending of an id built from uncommitted changes (tools/coop/cmake/coop_build_id.cmake)
 WIDE = 640
 NARROW = 500        # the menus end before this and the label does not fit after them
 NO_SHADER = "Failed to load default fragment shader"  # libultraship, gfx_opengl.cpp
+
+
+def label_texts(build_id):
+    """The texts the label may show for build_id, the full one first: the short one only for a dirty id (#232)."""
+    ending = DIRTY if build_id.endswith(DIRTY) else ""
+    full = LABEL_PREFIX + build_id[:LABEL_ID] + ending
+    return [full, build_id[:LABEL_ID] + ending] if ending else [full]
+
+
+# What scenario text asks of version_text.c: id -> (full form, short form or None).
+TEXT_CASES = {
+    "f3eadf7a96fa": ("Co-op f3eadf7a", None),
+    "f3eadf7a96fa-dirty": ("Co-op f3eadf7a-dirty", "f3eadf7a-dirty"),
+    "unknown": ("Co-op unknown", None),
+    "0123456789ab-dirty": ("Co-op 01234567-dirty", "01234567-dirty"),
+}
+
+TEXT_DRIVER = r"""
+#include <stdio.h>
+#include "port/coop/ui/version_text.h"
+
+int main(int argc, char** argv) {
+    char text[64];
+    int i;
+
+    for (i = 1; i < argc; i++) {
+        bool full = CoopUi_VersionLabelText(argv[i], false, text, sizeof(text));
+        printf("%s\t%d\t%s", argv[i], full, text);
+        bool brief = CoopUi_VersionLabelText(argv[i], true, text, sizeof(text));
+        printf("\t%d\t%s\n", brief, text);
+    }
+    return 0;
+}
+"""
+
+
+def scenario_text():
+    """Compiles version_text.c with a driver and checks the label text of a clean and a dirty id."""
+    driver = WORK / "text_driver.c"
+    driver.write_text(TEXT_DRIVER, encoding="utf-8")
+    program = WORK / "text_driver"
+    made = subprocess.run([os.environ.get("CC", "cc"), "-std=c11", "-Wall", "-Werror", "-I", str(ROOT / "src"),
+                           "-o", str(program), str(driver), str(ROOT / "src" / "port" / "coop" / "ui" / "version_text.c")],
+                          capture_output=True, text=True, encoding="utf-8")
+    if made.returncode != 0:
+        return False, f"version_text.c does not compile alone: {(made.stdout + made.stderr).strip()}"
+    ran = subprocess.run([str(program), *TEXT_CASES], capture_output=True, text=True, encoding="utf-8")
+    wrong = []
+    for line in ran.stdout.splitlines():
+        build_id, full_ok, full, short_ok, short = line.split("\t")
+        want_full, want_short = TEXT_CASES[build_id]
+        if (full_ok, full) != ("1", want_full):
+            wrong.append(f"{build_id}: full \"{full}\", wants \"{want_full}\"")
+        if (short_ok, short) != (("1", want_short) if want_short else ("0", "")):
+            wrong.append(f"{build_id}: short \"{short}\" ({short_ok}), wants " +
+                         (f"\"{want_short}\"" if want_short else "none"))
+        if [want_full] + ([want_short] if want_short else []) != label_texts(build_id):
+            wrong.append(f"{build_id}: label_texts of this tool disagrees with the cases")
+    if len(ran.stdout.splitlines()) != len(TEXT_CASES):
+        wrong.append(f"the driver printed {len(ran.stdout.splitlines())} lines for {len(TEXT_CASES)} ids")
+    if wrong:
+        return False, "; ".join(wrong)
+    return True, f"{len(TEXT_CASES)} ids: \"Co-op <8>\" when clean, \"Co-op <8>-dirty\" or \"<8>-dirty\" when dirty"
 
 
 def shot_env(shot):
@@ -154,13 +225,16 @@ def scenario_label(exe, build_id):
     if not game_drawn(frame):
         return False, "the game did not draw: the frame is one colour under the menu bar", None, None
     rows = bar_rows(frame)
-    text = LABEL_PREFIX + build_id[:LABEL_ID]
+    texts = label_texts(build_id)
     columns = text_columns(rows, WIDE)
-    start = label_start(rows, WIDE, text)
-    if start is None:
+    found = [(text, label_start(rows, WIDE, text)) for text in texts]
+    found = [(text, start) for text, start in found if start is not None]
+    if not found:
         last = columns[-1] if columns else "none"
-        return False, f"no \"{text}\" in the menu bar (last text column {last} of {WIDE})", frame, WIDE
-    wrong = LABEL_PREFIX + other_pattern(build_id[:LABEL_ID])
+        wanted = " or ".join(f"\"{text}\"" for text in texts)
+        return False, f"no {wanted} in the menu bar (last text column {last} of {WIDE})", frame, WIDE
+    text, start = found[0]
+    wrong = text.replace(build_id[:LABEL_ID], other_pattern(build_id[:LABEL_ID]), 1)
     if label_start(rows, WIDE, wrong) is not None:
         return False, f"the check cannot tell \"{text}\" from \"{wrong}\"", None, None
     detail = f"\"{text}\" at x={start}, ends {WIDE - start - len(text) * CELL} px from the edge; not \"{wrong}\""
@@ -236,9 +310,10 @@ def scenario_packaged(exe, build_id):
     archive = folder / package_tool.PORT_ARCHIVE
     if f"Reading archive: {archive}" not in log:
         return False, f"the game did not read {archive.name} from the package"
-    text = LABEL_PREFIX + build_id[:LABEL_ID]
-    if label_start(bar_rows(frame), frame[0], text) is None:
-        return False, f"the package started, but shows no \"{text}\""
+    shown = [text for text in label_texts(build_id) if label_start(bar_rows(frame), frame[0], text) is not None]
+    if not shown:
+        return False, f"the package started, but shows no \"{label_texts(build_id)[0]}\""
+    text = shown[0]
 
     files = sum(1 for path in folder.rglob("*") if path.is_file())
     archive.unlink()
@@ -256,26 +331,28 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--exe", help="Starship executable (default: newest build found)")
     p.add_argument("--list", action="store_true", help="print the scenarios and stop")
-    p.add_argument("--only", choices=["label"], help="just this scenario (narrow needs the frame of label)")
+    p.add_argument("--only", choices=["label", "text"], help="just this scenario (narrow needs the frame of label)")
     args = p.parse_args()
     if args.list:
-        print("label\nnarrow\npackaged")
+        print("text\nlabel\nnarrow\npackaged")
         return 0
     if sys.platform != "linux":
         sys.exit("version: Linux only")
 
     global WORK
-    exe = replay_tool.find_exe(args.exe)
-    build_id = package_tool.read_build_id(exe.parent)
     WORK = make_run_folder(ROOT / "local", "test-version-")
-    source = Path(__file__).resolve().parent / "versiontest" / "frame_shot.c"
-    subprocess.run([os.environ.get("CC", "cc"), "-shared", "-fPIC", "-O1", "-o", str(WORK / "frame_shot.so"), str(source),
-                    "-ldl"], check=True)
-    print(f"version: build id {build_id}, exe {exe}")
-
     results = []
-    passed, detail, wide, label_x = scenario_label(exe, build_id)
-    results.append(("label", passed, detail))
+    if args.only in (None, "text"):
+        results.append(("text", *scenario_text()))
+    if args.only in (None, "label"):
+        exe = replay_tool.find_exe(args.exe)
+        build_id = package_tool.read_build_id(exe.parent)
+        source = Path(__file__).resolve().parent / "versiontest" / "frame_shot.c"
+        subprocess.run([os.environ.get("CC", "cc"), "-shared", "-fPIC", "-O1", "-o", str(WORK / "frame_shot.so"),
+                        str(source), "-ldl"], check=True)
+        print(f"version: build id {build_id}, exe {exe}")
+        passed, detail, wide, label_x = scenario_label(exe, build_id)
+        results.append(("label", passed, detail))
     if args.only is None:
         if wide is None:
             results.append(("narrow", False, "needs the frame of label"))

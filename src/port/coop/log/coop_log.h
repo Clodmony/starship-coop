@@ -105,6 +105,11 @@ void CoopLog_PeerOpen(int peer);
 void CoopLog_PeerClose(int peer);
 // Sends what is due, within the rate limit. Call it once per poll.
 void CoopLog_Pump(uint32_t nowMs, CoopLogSendFn send, CoopLogPendingFn pending, void* user);
+// The end of a session (the handover, #189): sends every line still queued, as many batches as send takes now, with
+// no rate limit and no look at the window. What send does not take stays queued for the next call.
+void CoopLog_Flush(uint32_t nowMs, CoopLogSendFn send, void* user);
+// True while lines wait for some open peer.
+bool CoopLog_Queued(void);
 // A DIAG_LOG from `peer`. A host takes it as player peer + 1's and passes it on to its other peers; a client takes the
 // origin from the message. The lines go to that player's file next to our own. False if it could not be read; the
 // caller drops it, the session goes on, as a log must never end a session.

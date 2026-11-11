@@ -27,7 +27,7 @@ src/engine/fox_play.c	Camera_SetStarfieldPos	view	site	starfield from player 0 c
 src/engine/fox_play.c	Camera_SetupLights	view	site	lights depend on player 0 state
 src/engine/fox_play.c	Play_UpdateLevel	flow	site	per-level triggers on player 0: level complete, warp zone, Solar heat damage to player 0 only, Venom 2 / Aquas checks
 src/engine/fox_play.c	Play_Main@gPlayer[0]	flow	site	all-range z setup for player 0 only
-src/engine/fox_play.c	Play_Main@gMainController	input	site	Start (intro skip, pause, unpause) and R while paused (toggles gShowReticles[0], no radio here) are read from gMainController only; versus reads R per controller
+src/engine/fox_play.c	Play_Main@gMainController	input	site	R while paused (toggles gShowReticles[0], no radio here) is read from gMainController only; Start (intro skip, pause, unpause) goes through CoopPlayers_PausePressed, any player in co-op (#20, #191); versus reads R per controller
 src/engine/fox_play.c	Play_Main@gCamCount	setup	site	intro skip resets gCamCount to 1; its sound cleanup loop is on CoopPlayers_Count() since WP-10
 src/engine/fox_game.c	Game_Update	setup	site	viewports from gCamCount (1, 2, 4); GSTATE_INIT resets to 1; player loop for draw
 src/engine/fox_display.c	Display_Update@gCamCount	setup	site	gCamCount != 1 draws the versus HUD; the five player draw loops are on CoopPlayers_Count() since WP-10
@@ -59,7 +59,7 @@ src/engine/fox_360.c	ActorAllRange_SpawnSupplies@gPlayer[0]	sim	site	supplies se
 src/engine/fox_360.c	ActorAllRange_UpdateEvents	flow	site	events paused while player 0 is down
 src/engine/fox_360.c	ActorAllRange_CheckObjectNearby	flow	site	checks player 0 intro state
 src/engine/fox_360.c	ActorAllRange_CheckPlayerNearby	sim	site	AI avoids player 0 only
-src/engine/fox_360.c	ActorAllRange_Update	sim	site	wingmen and Star Wolf follow, chase and react to player 0 (position, speed, somersault, shields)
+src/engine/fox_360.c	ActorAllRange_Update	sim	site	enemies that chase Fox chase their kept human (#213, aim.h); wingmen, their radio, the START_360 wait and the Bolse and Katina standby checks stay on player 0
 #
 # --- engine: player shots (fox_beam.c)
 src/engine/fox_beam.c	PlayerShot_CheckActorHitbox	sim	site	hit test uses player 0 camera position
@@ -83,15 +83,13 @@ src/engine/fox_enmy.c	func_enmy_80061B68	sim	site	target point around player 0
 src/engine/fox_enmy.c	Object_Load	sim	site	level objects spawn relative to player 0 path position
 src/engine/fox_enmy.c	Object_LoadLevelObjects	sim	site	spawning on path splits follows player 0 path change
 src/engine/fox_enmy.c	Object_Init	sim	site	init depends on player 0 z
-src/engine/fox_enmy.c	ActorMissileSeek_Update	sim	site	homing missile seeks player 0
+src/engine/fox_enmy.c	ActorMissileSeek_Update	sim	site	seeks the nearest human (CoopAim_Nearest, #193); player 0's camera and level end remove it
 src/engine/fox_enmy.c	SceneryRotateTowardsCamera	view	site	billboard to player 0 camera
-src/engine/fox_enmy.c	Item_CheckBounds	sim	site	items kept inside player 0 path bounds
-src/engine/fox_enmy.c	ActorSupplies_Update	sim	site	supply drop for player 0
-src/engine/fox_enmy.c	func_enmy_80067A40	sim	site	wing repair applied to player 0
+src/engine/fox_enmy.c	Item_CheckBounds	sim	site	items kept inside player 0 path bounds; the team shares the path, by design (decision 0008 2a, #210)
 src/engine/fox_enmy.c	ItemLasers_Update	sim	site	laser item checks player 0 wings
-src/engine/fox_enmy.c	ItemSupplyRing_Update	view	site	player 0 alternate (cockpit) view
-src/engine/fox_enmy.c	ItemMeteoWarp_Update	flow	site	warp ring sends player 0 into the warp zone
-src/engine/fox_enmy.c	ItemCheckpoint_Update	view	site	player 0 alternate (cockpit) view
+src/engine/fox_enmy.c	ItemSupplyRing_Update	view	site	player 0 alternate (cockpit) view (#30); the gold ring count is the team's by design, the sixth ring's life goes to the pool since #210
+src/engine/fox_enmy.c	ItemMeteoWarp_Update	flow	site	warp ring sends player 0 into the warp zone: any human earns it, player 0 alone changes state, the others are parked (decision 0008, #210)
+src/engine/fox_enmy.c	ItemCheckpoint_Update	view	site	player 0 alternate (cockpit) view (#30); the checkpoint is level flow on the team's path (decision 0008, #210)
 src/engine/fox_enmy.c	ItemPathChange_Update	flow	read	path split and level end gate: changes player 0 path, state and flags
 src/engine/fox_enmy.c	Sprite_UpdateDoodad	view	site	billboard to player 0 camera
 src/engine/fox_enmy.c	Actor_Move	sim	read	actors are killed (Object_Kill) when outside player 0 camera and path bounds
@@ -112,8 +110,7 @@ src/engine/fox_enmy2.c	ActorDebris_Update	sim	site	debris placed relative to pla
 src/engine/fox_enmy2.c	func_enmy2_8006D0F4	sim	site	scenery search ahead of player 0
 src/engine/fox_enmy2.c	ActorEvent_ProcessScript	sim	site	event scripts check player 0 state and position; radio only when player 0 active
 src/engine/fox_enmy2.c	ActorEvent_ProcessActions	sim	read	event actors aim at player 0 (temporarily jitters player 0 position to aim off)
-src/engine/fox_enmy2.c	ActorEvent_8006FE28	sim	site	contact with player 0
-src/engine/fox_enmy2.c	ActorEvent_ProcessTriggers@gPlayer[0]	sim	read	event conditions read player 0 position, shields, speed and laser level
+src/engine/fox_enmy2.c	ActorEvent_ProcessTriggers@gPlayer[0]	sim	read	event conditions read player 0 position, shields and speed; the laser levels read every active player since #201, the broken wing since #210
 src/engine/fox_enmy2.c	ActorEvent_ProcessTriggers@gMainController	input	site	C-right condition read from gMainController
 src/engine/fox_enmy2.c	ActorEvent_80072474	sim	site	angle to player 0
 src/engine/fox_enmy2.c	ActorEvent_Update	sim	site	event actors aim at player 0 and set player 0 damage type; killed on player 0 level complete
@@ -148,13 +145,9 @@ src/engine/fox_effect.c	Effect_Effect384_Draw	view	site	player 0 state
 src/engine/fox_effect.c	Effect_Effect357_Draw	view	site	player 0 state
 src/engine/fox_effect.c	Effect_Effect362_Update	view	site	faces player 0 camera
 src/engine/fox_effect.c	Effect_Effect345_Update	setup	site	gCamCount != 1 as versus flag
-src/engine/fox_effect.c	func_effect_8007E6B8	sim	site	enemy shot aimed at player 0
-src/engine/fox_effect.c	func_effect_8007E93C	sim	site	enemy shot aimed at player 0 camera
-src/engine/fox_effect.c	Effect_EnemyLaser	sim	site	enemy laser only spawned near player 0
-src/engine/fox_effect.c	func_effect_8007F20C	sim	site	only spawned near player 0 camera
 src/engine/fox_effect.c	Effect_Effect353_354_Update	sim	read	enemy projectile hits, deflects and knocks back player 0; CoopEffects_ShotHit does the others (#100); wingman and roll reach still read player 0
-src/engine/fox_effect.c	Effect_Effect398_Update	sim	read	aims at player 0; hits and knocks back player 0, CoopEffects_ShotHit does the others (#100)
-src/engine/fox_effect.c	Effect_Effect395_Update	sim	site	tests player 0, CoopEffects_BeamHit does the others (#100); boss faces player 0 camera
+src/engine/fox_effect.c	Effect_Effect398_Update	sim	read	aimed at the nearest human (#193); hits and knocks back player 0, CoopEffects_ShotHit does the others (#100)
+src/engine/fox_effect.c	Effect_Effect395_Update	sim	site	tests player 0, CoopEffects_BeamHit does the others (#100); the Gorgon beam turns to the Gorgon's kept target (#213)
 src/engine/fox_effect.c	Effect_Effect374_Update	sim	site	tests player 0, CoopEffects_ColumnHit does the others (#100)
 src/engine/fox_effect.c	Effect_Effect391_Update	view	site	faces player 0 camera
 src/engine/fox_effect.c	func_effect_80083D2C	sim	site	aims at player 0
@@ -196,7 +189,7 @@ src/overlays/ovl_i1/fox_tr360.c	Training_SpawnEnemies@gPlayer[0]	sim	site	spawns
 src/overlays/ovl_i1/fox_tr360.c	Training_SpawnEnemies@gMainController	input	site	C-right call read from gMainController
 src/overlays/ovl_i1/fox_ve1.c	Venom1_80198414	flow	read	saves player 0 shields and wings before the Venom 1 to Venom 2 switch
 src/overlays/ovl_i1/fox_ve1.c	*	sim	site	Venom 1 enemies and boss move relative to player 0
-src/overlays/ovl_i3/fox_a6.c	Area6_A6Gorgon_Update	sim	read	boss moves to and aims at player 0 camera; its death sets player 0 level complete
+src/overlays/ovl_i3/fox_a6.c	Area6_A6Gorgon_Update	flow	read	faces, follows and warps to its kept target (#213, aim.h); left: its death sets player 0 level complete
 src/overlays/ovl_i3/fox_a6.c	*	flow	name	Area 6 cutscene helpers on player 0
 src/overlays/ovl_i4/fox_fo.c	Fortuna_UpdateEvents	flow	read	Fortuna timer and level end drive player 0 state
 src/overlays/ovl_i4/fox_fo.c	Fortuna_LevelComplete_CsSpawnTeam	flow	site	level complete cutscene around player 0
@@ -207,13 +200,17 @@ src/overlays/ovl_i6/fox_ve2.c	Venom2_UpdateEvents	flow	site	Venom 2 events on pl
 # Rumble in levels: D_ctx_801779A8 and gControllerRumble* are indexed by gMainController here but by player->num in
 # the engine (src/engine/fox_play.c, Player_Update). Same value only while the controller index equals the player.
 src/overlays/ovl_i*	*@gMainController	view	site	rumble on gMainController (controller index used as player index)
-src/overlays/ovl_i6/fox_andross.c	Andross_8018C390@gMainController	input	site	any button on gMainController shortens a cutscene timer
+src/overlays/ovl_i6/fox_andross.c	Andross_8018C390@gMainController	input	site	any button on gMainController shortens player 0's spit-out timer, a co-op player's own pad its own (#213); only player 0 writes gPathProgress in the mouth
 src/overlays/ovl_i*	*	sim	name	level enemies, bosses and hazards move to, aim at, hit or check distance to player 0
 src/overlays/ovl_i1/fox_co.c	Corneria_CsTeamSetup	flow	name	team cutscene around player 0
 src/overlays/ovl_i1/fox_co.c	Corneria_LevelStart	flow	site	intro on player 0
 src/overlays/ovl_i1/fox_co.c	Corneria_CsLevelComplete1_TeamSetup	flow	name	level complete cutscene
 src/overlays/ovl_i1/fox_co.c	Corneria_SetupClouds	view	name	clouds around player 0 camera
 src/overlays/ovl_i1/fox_co.c	Corneria_SpawnClouds	view	name	clouds around player 0 camera
+src/overlays/ovl_i1/fox_co.c	Corneria_CoGranga_Update	flow	read	walks at, turns its guns to and stops on a somersault of its kept target (#220, aim.h); left: the fight waits for player 0's cut to all-range, the HUD arrow flags on player 0
+src/overlays/ovl_i1/fox_co.c	Corneria_CoGranga_1UpCheck	flow	read	the 1-up for a loop under the Granga: player 0's hit timer, place and loop, the item in front of player 0; a trigger, left on player 0 (#220)
+src/overlays/ovl_i1/fox_co.c	Corneria_CoCarrier_Init	flow	read	starts 2000 ahead of player 0 on the path (#220)
+src/overlays/ovl_i1/fox_co.c	Corneria_CoCarrier_Update	flow	read	its z keeps to the path (player 0's camera on rails), its beams and missiles aim at the nearest human (#193); left: the beam's start by z, player 0's shadow, level complete (#220)
 src/overlays/ovl_i2/fox_me.c	Meteo_LevelStart_SetupTeam	flow	name	intro team around player 0
 src/overlays/ovl_i2/fox_me.c	Meteo_LevelComplete_SetupTeam	flow	name	level complete team around player 0
 src/overlays/ovl_i2/fox_sx.c	SectorX_8018F030	flow	site	Slippy placed at player 0 camera for a cutscene
@@ -221,9 +218,10 @@ src/overlays/ovl_i2/fox_sx.c	SectorX_LevelStart_SetupTeam	flow	name	intro team a
 src/overlays/ovl_i2/fox_sx.c	SectorX_LevelComplete_SetupTeam	flow	name	level complete team
 src/overlays/ovl_i3/fox_aq.c	Aquas_801A95C8	flow	site	cutscene moves player 0 camera
 src/overlays/ovl_i3/fox_aq.c	Aquas_CsAqFishGroup_Update	flow	name	cutscene fish
-src/overlays/ovl_i3/fox_aq.c	Aquas_801ABA40	sim	site	Blue Marine torpedoes culled by player 0 camera, aimed with player 0 rotation
+src/overlays/ovl_i3/fox_aq.c	Aquas_801ABA40	sim	site	Blue Marine torpedoes culled by player 0 camera; aimed by the firing marine since #16
 src/overlays/ovl_i3/fox_so.c	Solar_LevelStart	flow	name	intro on player 0
 src/overlays/ovl_i3/fox_so.c	Solar_801A3C4C	flow	site	Vulkain death: rumble and player 0 to level complete
+src/overlays/ovl_i3/fox_so.c	Solar_SoVulkain_Update	flow	read	its head, and the fireballs it spits along it, turn to its kept human, picked again at a new move (#220, aim.h); left: its z keeps to the path (player 0's z on rails)
 src/overlays/ovl_i4/fox_bo.c	Bolse_UpdateEventHandler	flow	read	Bolse events: level complete and standby cutscene on player 0
 src/overlays/ovl_i4/fox_bo.c	Bolse_LevelComplete	flow	name	level complete on player 0
 src/overlays/ovl_i4/fox_ka.c	Katina_KaSaucerer_Update	sim	site	boss; its death puts player 0 in standby and moves player 0 camera (flow mixed in)
@@ -264,18 +262,19 @@ src/engine/fox_enmy.c	Actor_Update@gCamCount	ok	read	versus branch, loops all pl
 # --- boss and enemy functions that also switch the level phase by writing player 0 state or camera (checked by site)
 src/overlays/ovl_i1/fox_co.c	Corneria_Granga_Init	sim	site	boss; sets player 0 to START_360 (switch to all-range)
 src/overlays/ovl_i1/fox_co.c	Corneria_CoGranga_HandleDamage	sim	site	boss; on death sets player 0 state for the level end
-src/overlays/ovl_i2/fox_me.c	Meteo_MeCrusher_Update	sim	site	boss; on death sets player 0 to LEVEL_COMPLETE
+src/overlays/ovl_i2/fox_me.c	Meteo_MeCrusher_Update	flow	read	its moves follow the path and random draws, its missiles seek the nearest human (#193), its rings too (#220); left: level complete and the wait for PLAYERSTATE_NEXT on player 0
 src/overlays/ovl_i2/fox_sx.c	SectorX_SxSlippy_Update	sim	site	Slippy rescue; moves player 0 camera for the cutscene
 src/overlays/ovl_i2/fox_sx.c	SectorX_SxSpyborg_Update	sim	site	boss; on death sets player 0 state
-src/overlays/ovl_i3/fox_aq.c	Aquas_AqBacoon_Update	sim	site	boss; changes player 0 camera distance and state
-src/overlays/ovl_i3/fox_zo.c	Zoness_ZoSarumarine_Update	sim	site	boss; on death sets player 0 to LEVEL_COMPLETE
+src/overlays/ovl_i3/fox_aq.c	Aquas_AqBacoon_Update	flow	read	its head and eyes turn to its kept human, picked again at a new state (#220, aim.h); left: the start by z, player 0's boost lock and camera pull in its roar, level complete
+src/overlays/ovl_i3/fox_zo.c	Zoness_ZoSarumarine_Update	flow	read	its guns and head turn to its kept human, picked again at a new state (#220, aim.h); left: its z on the path (player 0's camera), the taunt when player 0 is hit, level complete
 src/overlays/ovl_i4/fox_sz.c	SectorZ_MissileExplode	sim	site	missile reaching Great Fox sets player 0 to LEVEL_COMPLETE (mission failed path)
 src/overlays/ovl_i4/fox_sz.c	SectorZ_Missile_Update	sim	site	missiles; set player 0 state and camera
 src/overlays/ovl_i4/fox_sz.c	SectorZ_EnemyUpdate	sim	site	sets player 0 to STANDBY and moves its camera
 src/overlays/ovl_i5/fox_ma.c	Macbeth_MaLocomotive_Update	sim	site	train; sets player 0 to LEVEL_COMPLETE
 src/overlays/ovl_i5/fox_ma.c	Macbeth_MaRailwaySignal_Update	sim	site	sets player 0 to LEVEL_COMPLETE
-src/overlays/ovl_i6/fox_andross.c	Andross_80188A4C	sim	site	boss part; sets player 0 to STANDBY after the bonus
-src/overlays/ovl_i6/fox_andross.c	Andross_AndBrain_Update	sim	site	boss; sets player 0 to START_360 and moves its camera; catches and drains player 0 only, it can hold one player: needs a choice (#136)
+src/overlays/ovl_i6/fox_andross.c	Andross_80188A4C	flow	read	the brain's death sets player 0 to STANDBY; its warp goes to the nearest human (#213)
+src/overlays/ovl_i6/fox_andross.c	Andross_AndAndross_Update	flow	read	eyes, punches and slaps follow its kept target; the inhale pulls every flying human and swallows the first in the mouth, the chew follows that player (#213, owner's choice A); left: z keeps to player 0's path otherwise, camera roll, debris around player 0's camera
+src/overlays/ovl_i6/fox_andross.c	Andross_AndBrain_Update	flow	read	chases its kept target, catches the nearest flying human in reach, one at a time (#213, owner's choice A); left: player 0 to START_360, its camera as the brain dies, the escape start, faces player 0's camera (camYaw is draw state)
 src/overlays/ovl_i6/fox_andross.c	Andross_8018D2B0	sim	site	sets player 0 state
 src/overlays/ovl_i4/fox_bo.c	Bolse_8018E05C	sim	read	base's beam: tests player 0, CoopHits_BolseBeam does the others (#136)
 src/overlays/ovl_i6/fox_andross.c	Andross_8018D0D8	ok	read	tests player 0, CoopHits_AndrossReach does the others (#136)
@@ -286,21 +285,23 @@ src/overlays/ovl_i5/fox_ma.c	Macbeth_MaBombDrop_Update	sim	read	blast hits playe
 src/overlays/ovl_i6/fox_sy.c	SectorY_SyShogun_Init	sim	site	boss; sets player 0 to START_360
 src/overlays/ovl_i6/fox_sy.c	SectorY_80198F5C	sim	site	boss; sets player 0 state and camera
 src/overlays/ovl_i6/fox_sy.c	SectorY_80199438	sim	site	boss cutscene; moves player 0 camera
+src/overlays/ovl_i6/fox_sy.c	SectorY_8019BC14	ok	read	shoots at its target's lead by moving player 0 there for Effect_EnemyLaser, the other humans with it (CoopAim_PointShot, #220)
+src/overlays/ovl_i6/fox_sy.c	SectorY_SyShogun_Update	flow	read	a new move picks the nearest human again; its target, dash and dodges follow its kept human (#220, aim.h); left: the fight waits for player 0's cut to all-range, the HUD arrow flags on player 0
 #
 # --- who fired: dmgSource and sourceId (#86, NOTES.md). flow rows name the work package that owns the rule
 include/sf64object.h	<file scope>@shooter	ok	read	the dmgSource field
 include/sf64player.h	<file scope>@shooter	ok	read	the sourceId field
 src/engine/fox_360.c	ActorAllRange_UpdateStarWolfEvents@shooter	flow	site	rescue: only player 0's hit on the chaser frees the wingman and earns the thanks; who may rescue is WP-17 (#15), NOTES #59
 src/engine/fox_360.c	ActorAllRange_UpdateEnemyEvents@shooter	flow	site	the same rescue when player 0 shoots a chaser down; WP-17 (#15)
-src/engine/fox_360.c	ActorAllRange_ApplyDamage@shooter	flow	site	only player 0 counts: Sector Z missile +11 hits and Katina ally kills are WP-16 (#14), friendly-fire and kill lines WP-17 (#15); players 1 and up get no line
+src/engine/fox_360.c	ActorAllRange_ApplyDamage@shooter	flow	site	the Sector Z missile's +11 hits count for any human since #210 (0008 4b); Katina ally kills (gKaAllyKillCount, gKaKilledAlly) count player 0 only, no rule yet; friendly-fire and kill lines WP-17 (#15); players 1 and up get no line
 src/engine/fox_beam.c	PlayerShot_ExplodeBomb@shooter	ok	site	per shooter: bomb sound slot; colour in versus only
 src/engine/fox_beam.c	PlayerShot_Impact@shooter	ok	site	per shooter: lock-on timers; colour in versus only
 src/engine/fox_beam.c	PlayerShot_CheckObjectHitbox@shooter	ok	site	sourceId < 4 and gLaserStrength[sourceId]: every player, own lasers
 src/engine/fox_beam.c	PlayerShot_CheckEventHitbox@shooter	ok	site	sourceId < 4 and gLaserStrength[sourceId]: every player, own lasers
 src/engine/fox_beam.c	PlayerShot_CheckActorHitbox@shooter	ok	site	sourceId < 4 and gLaserStrength[sourceId]: every player, own lasers
 src/engine/fox_beam.c	PlayerShot_ApplyDamageToActor@shooter	ok	read	damage by the shooter's own lasers; dmgSource through CoopPlayers_DmgSource since #86
-src/engine/fox_beam.c	PlayerShot_CollisionCheck@shooter	flow	site	open rules: Star Wolf dodges only player 0's shots outside Venom 2 and only player 0 hurts the Saucerer (WP-16 #14, NOTES #59 question 8), shots hit player 0 only in all-range (friendly fire, #7), Shogun bonus only for sourceId 0 (fox_sy.c:564, :602, WP-16 #14)
-src/engine/fox_beam.c	PlayerShot_DrawLaser@shooter	view	site	colour by NPC id; player colours in the versus branch
+src/engine/fox_beam.c	PlayerShot_CollisionCheck@shooter	flow	site	open rules: Star Wolf dodges only player 0's shots outside Venom 2 and every human hurts the Saucerer since #210 (0008 1a), shots hit player 0 only in all-range (friendly fire, #7), Shogun bonus only for sourceId 0 (fox_sy.c:564, :602, WP-16 #14)
+src/engine/fox_beam.c	PlayerShot_DrawLaser@shooter	view	site	colour by NPC id; player colours in the versus branch; twin or hyper look from the shooter's own gLaserStrength in co-op (#201)
 src/engine/fox_beam.c	PlayerShot_DrawShot@shooter	view	site	player colours in versus branches
 src/engine/fox_beam.c	PlayerShot_UpdateBeam@shooter	ok	read	ground hit uses the shooter's own lasers and form since #86; :1696 tests NPC ids
 src/engine/fox_beam.c	PlayerShot_FindLockTarget@shooter	ok	site	per shooter: lock-on timers, sound, reticle; gVsLockOnTimers in versus only
@@ -312,7 +313,7 @@ src/engine/fox_beam.c	PlayerShot_UpdateLockOnShot@shooter	ok	site	per shooter: l
 src/engine/fox_beam.c	PlayerShot_UpdateShot@shooter	ok	site	the shooter's own player; gPlayerScores in versus only; the lock-on bonus adds to gHitCount for any shooter (WP-16, #14)
 src/engine/fox_effect.c	func_effect_8007FD84@shooter	ok	site	enemy effect hitting an actor writes CS_SHOT_ID
 src/engine/fox_enmy.c	ActorMissileSeek_Update@shooter	ok	site	enemy missile on a wingman writes DMG_SRC_2, which since #86 only enemies do in co-op
-src/engine/fox_enmy.c	Actor_Despawn@shooter	flow	read	only player 0's kills add to gHitCount, the hit-count drop and Star Wolf hits: WP-16 (#14), DESIGN.md section 4 item 5; the score branch is versus only
+src/engine/fox_enmy.c	Actor_Despawn@shooter	flow	read	a kill by any human (CoopScore_HumanKill) adds to gHitCount, the hit-count drop and Star Wolf hits, DMG_SRC_2 and computer wingmen do not (decision 0008 4b, #210); the score branch is versus only
 src/engine/fox_enmy2.c	<file scope>@shooter	ok	site	NPC shot setup: writes NPC ids
 src/engine/fox_enmy2.c	ActorEvent_ProcessScript@shooter	ok	site	script damage writes DMG_SRC_100
 src/engine/fox_enmy2.c	ActorEvent_800701E0@shooter	flow	site	on-rails wingman line only for player 0's hit; WP-17 (#15)
@@ -345,6 +346,7 @@ src/overlays/ovl_i1/fox_co.c	Corneria_CoCarrier_Update@gPlayer arg	flow	site	Bos
 src/overlays/ovl_i2/fox_me.c	Meteo_Effect369_Update@gPlayer arg	ok	read	func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0
 src/overlays/ovl_i2/fox_me.c	Meteo_Effect370_Update@gPlayer arg	ok	read	func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0
 src/overlays/ovl_i2/fox_me.c	Meteo_Effect371_Update@gPlayer arg	ok	read	func_effect_8007A774 tests the other co-op players too (#100); the argument only names player 0
+src/overlays/ovl_i2/fox_me.c	Meteo_Effect371_Update	flow	read	the Crusher's rings home in on the nearest human, as #193's missiles (#220); left: they go at player 0's level complete
 src/overlays/ovl_i4/fox_bo.c	Bolse_8018E05C@gPlayer arg	ok	read	Player_ApplyDamage for player 0; CoopHits_BolseBeam after it does the others (#136)
 src/overlays/ovl_i4/fox_bo.c	Bolse_Effect397_Update@gPlayer arg	ok	read	func_effect_8007A774 tests the others; each player's own roll counts, and player 0's roll no longer covers them (#100)
 src/overlays/ovl_i5/fox_ma.c	Macbeth_Effect380_Update@gPlayer arg	sim	read	right for now: Macbeth is rails in a Landmaster, where co-op players stay parked (CoopPlayers_SectionSupported); WP-18

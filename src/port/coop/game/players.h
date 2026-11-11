@@ -75,8 +75,11 @@ struct Player;
 // Call at the start of Player_UpdatePath. Nonzero means `player` is a co-op player other than player 0: it took player
 // 0's place on the path and Player_UpdatePath must return, because the rest would write the path globals and move the
 // path by this player's speed. The player keeps its own x and y inside the flight box and its own camDist, so boost
-// and brake move it ahead of and behind player 0 without changing the speed along the path.
+// and brake move it ahead of and behind player 0; the speed along the path is the team's (CoopPlayers_PathBoostSpeed).
 int32_t CoopPlayers_FollowPath(struct Player* player);
+
+// The boostSpeed Player_MoveArwingOnRails flies with: the team's in a session (#194), the player's own otherwise.
+float CoopPlayers_PathBoostSpeed(const struct Player* player);
 
 // Points gInputHold, gInputPress and gControllerRumble at player `index`, in co-op only: its pad slot, which holds that
 // player's input for this frame whoever steers it (input.h), and its rumble flag.
@@ -94,7 +97,9 @@ int32_t CoopPlayers_ReleaseLockOns(struct Actor* actor);
 
 // Call at the start of Player_Down. Nonzero means a co-op player other than player 0 went down: it is taken out of
 // the level and Player_Down must return, because it also stops the music, plays the "player down" theme and starts
-// the fade to a level restart for everyone. Respawn rules are WP-16.
+// the fade to a level restart for everyone. The player comes back beside player 0 after 150 game frames, for one life
+// from the pool gLifeCount[0], with full shields (decision 0007 rule 4); CoopPlayers_SkipUpdate brings it back. Player
+// 0 going down is not handled here: it keeps the original restart until a level opens for 0007 rule 3.
 int32_t CoopPlayers_OnPlayerDown(struct Player* player);
 
 // What Actor.dmgSource holds after a hit by `sourceId`: a player index, or an NPC's shot id. Upstream writes
@@ -113,10 +118,23 @@ int32_t CoopPlayers_DmgSource(int32_t sourceId);
 // #87); a later record can change it here.
 int32_t CoopPlayers_SkipLowHealthMsg(struct Player* player);
 
-// Nonzero when Start went down on this frame for whoever may pause or resume: any player in co-op, by the owner's
-// decision on #12, gMainController otherwise. The pad slots hold every player's input on every client (input.h), so all
-// of them pause on the same frame. What the pause menu does next stays on player 0, as gInputPress does.
+// Call after every change of player->arwing.laserGunsYpos (Player_Shoot, Player_Setup). In co-op it sets
+// laserGunsXpos from it, as Display_ArwingWings does when it draws the wings, so the field ends every frame the same on
+// every client: a client that looks through the player in cockpit view, or has it out of view, does not draw the wings
+// (#192). Nothing outside co-op, where the draw alone writes it, as upstream.
+void CoopPlayers_SetLaserGunsX(struct Player* player);
+
+// Nonzero when Start went down on this frame for whoever may pause or resume, or skip a level intro (#191): any player
+// in co-op, by the owner's decision on #12, gMainController otherwise. The pad slots hold every player's input on every
+// client (input.h), so all of them pause on the same frame. What the pause menu does next stays on player 0, as
+// gInputPress does.
 int32_t CoopPlayers_PausePressed(void);
+
+// Call in Play_UpdateLevel's LEVEL_SOLAR case, after the heat drain of player 0 (#200). In co-op it drains the shields of
+// every other player who flies (not parked, PLAYERSTATE_ACTIVE) by that player's own height, at the rate player 0's
+// drain has, and plays the shield warnings only for the player this client views. gInvincible stops it, as upstream.
+// Nothing outside co-op. Reads simulation state only.
+void CoopPlayers_SolarHeat(void);
 
 #define COOP_PLAYERS_DEBUG_CVAR "gCoopDebugPlayerCount"
 
@@ -126,6 +144,16 @@ int32_t CoopPlayers_SlotState(int32_t index);
 
 // Test only: sets what CoopPlayers_SlotState returns. The state hash probe changes a slot, hashes and puts it back.
 void CoopPlayers_SetSlotState(int32_t index, int32_t state);
+
+// Nonzero while player `index` is out after going down and has not come back (decision 0007 rule 4). It is parked then.
+int32_t CoopPlayers_IsDown(int32_t index);
+
+// Game frames until player `index`, down, may come back (decision 0007 rule 4); 0 when none are left or it is not down.
+// Simulation state, for the state hash.
+int32_t CoopPlayers_ReturnTimer(int32_t index);
+
+// Test only: sets what CoopPlayers_ReturnTimer returns, for the state hash probe, as CoopPlayers_SetSlotState.
+void CoopPlayers_SetReturnTimer(int32_t index, int32_t frames);
 
 #ifdef __cplusplus
 }

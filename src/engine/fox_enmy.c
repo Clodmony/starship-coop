@@ -1,6 +1,9 @@
 #include "global.h"
 #include "port/coop/game/players.h" // COOP: whose sound it is (#30)
 #include "port/coop/game/hits.h"    // COOP: hits on the other players (#136)
+#include "port/coop/game/aim.h"     // COOP: enemies aim at the nearest human (#193)
+#include "port/coop/game/items.h"   // COOP: crate, laser item and wing repair look at every player (#201)
+#include "port/coop/game/score.h"   // COOP: the team scores, the team's pool of lives (#210)
 #include "assets/ast_corneria.h"
 #include "assets/ast_sector_x.h"
 #include "assets/ast_sector_y.h"
@@ -1539,6 +1542,7 @@ void ActorMissileSeek_Update(Actor* this) {
     f32 sp80;
     f32 sp7C;
     f32 sp78;
+    s32 aimed = 0; // COOP: the player it seeks, was player 0 (#193)
 
     var_ra = (gLevelMode == LEVELMODE_ALL_RANGE) ? 2 : 0;
 
@@ -1610,9 +1614,10 @@ void ActorMissileSeek_Update(Actor* this) {
             }
         }
     } else {
-        this->fwork[29] = gPlayer[0].trueZpos;
-        this->fwork[28] = gPlayer[0].pos.y;
-        this->fwork[27] = gPlayer[0].pos.x;
+        aimed = CoopAim_Nearest(this->obj.pos.x, this->obj.pos.y, this->obj.pos.z); // COOP: the nearest human (#193)
+        this->fwork[29] = gPlayer[aimed].trueZpos;                                  // COOP: was gPlayer[0]
+        this->fwork[28] = gPlayer[aimed].pos.y;                                     // COOP: was gPlayer[0]
+        this->fwork[27] = gPlayer[aimed].pos.x;                                     // COOP: was gPlayer[0]
     }
 
     if (this->timer_0BC != 0) {
@@ -1709,7 +1714,7 @@ void ActorMissileSeek_Update(Actor* this) {
     }
 
     if (gLevelMode == LEVELMODE_ON_RAILS) {
-        if (fabsf(this->obj.pos.z - gPlayer[0].trueZpos) < 100.0f) {
+        if (fabsf(this->obj.pos.z - gPlayer[aimed].trueZpos) < 100.0f) { // COOP: was gPlayer[0] (#193)
             this->iwork[10] = 1;
         }
         if (gPlayer[0].cam.eye.z < (this->obj.pos.z + gPathProgress)) {
@@ -1763,8 +1768,10 @@ void Actor_Despawn(Actor* this) {
             gPlayerScores[this->dmgSource - 1] += this->info.bonus;
         }
     } else if (!((this->obj.id == OBJ_ACTOR_ALLRANGE) && (this->animFrame == 1))) {
-        if ((this->dmgSource == AI360_FOX + 1) && (this->info.bonus != 0)) {
+        // COOP: was dmgSource == AI360_FOX + 1; a kill by any human scores (decision 0008 4b, #210)
+        if (CoopScore_HumanKill(this->dmgSource) && (this->info.bonus != 0)) {
             gHitCount += this->info.bonus;
+            CoopScore_CreditKill(this->dmgSource, this->info.bonus); // COOP: the shooter's own count, display (#252)
             D_ctx_80177850 = 15;
 
             if ((gLevelMode == LEVELMODE_ALL_RANGE) && (gDropHitCountItem != 0)) {
@@ -2129,7 +2136,6 @@ void Actor_SpawnDebris70(f32 xPos, f32 yPos, f32 zPos, f32 xRot, f32 yRot, f32 a
 }
 
 void ActorSupplies_Update(ActorSupplies* this) {
-    Player* player = &gPlayer[0];
     s32 i;
 
     this->obj.rot.y += 1.0f;
@@ -2150,13 +2156,12 @@ void ActorSupplies_Update(ActorSupplies* this) {
             Effect_SpawnTimedSfxAtPos(&this->obj.pos, NA_SE_EN_EXPLOSION_S);
             func_effect_8007D2C8(this->obj.pos.x, this->obj.pos.y, this->obj.pos.z, 5.0f);
 
-            if (((player[0].arwing.rightWingState <= WINGSTATE_BROKEN) ||
-                 (player[0].arwing.leftWingState <= WINGSTATE_BROKEN)) &&
-                (player[0].form != FORM_LANDMASTER)) {
+            // COOP: what ANY active player needs, one drop (#201); co-op off the tests are upstream's on player 0
+            if (CoopItems_AnyWingBroken()) {
                 this->itemDrop = DROP_WING_REPAIR;
-            } else if (gPlayer[0].shields < 128) {
+            } else if (CoopItems_AnyShieldsBelow(128)) {
                 this->itemDrop = DROP_SILVER_STAR;
-            } else if ((gLaserStrength[0] == LASERS_SINGLE) && (player[0].form != FORM_LANDMASTER)) {
+            } else if (CoopItems_AnySingleLasers()) {
                 this->itemDrop = DROP_LASERS;
             } else {
                 this->itemDrop = DROP_BOMB;
@@ -2201,22 +2206,22 @@ void ActorSupplies_Draw(ActorEvent* this) {
                        gAmbientB);
 }
 
-void func_enmy_80067A40(void) {
-    AUDIO_PLAY_SFX(NA_SE_WING_REPAIR, gPlayer[0].sfxSource, 0);
+void func_enmy_80067A40(s32 playerNum) { // COOP: was (void), player 0 only (#201)
+    AUDIO_PLAY_SFX(NA_SE_WING_REPAIR, gPlayer[playerNum].sfxSource, 0);
 
-    if (gPlayer[0].arwing.rightWingState <= WINGSTATE_BROKEN) {
-        gRightWingFlashTimer[0] = 1050;
-        gPlayer[0].arwing.rightWingState = WINGSTATE_INTACT;
+    if (gPlayer[playerNum].arwing.rightWingState <= WINGSTATE_BROKEN) {
+        gRightWingFlashTimer[playerNum] = 1050;
+        gPlayer[playerNum].arwing.rightWingState = WINGSTATE_INTACT;
     }
-    if (gPlayer[0].arwing.leftWingState <= WINGSTATE_BROKEN) {
-        gLeftWingFlashTimer[0] = 1050;
-        gPlayer[0].arwing.leftWingState = WINGSTATE_INTACT;
+    if (gPlayer[playerNum].arwing.leftWingState <= WINGSTATE_BROKEN) {
+        gLeftWingFlashTimer[playerNum] = 1050;
+        gPlayer[playerNum].arwing.leftWingState = WINGSTATE_INTACT;
     }
 
     if (gExpertMode) {
-        gRightWingHealth[0] = gLeftWingHealth[0] = 10;
+        gRightWingHealth[playerNum] = gLeftWingHealth[playerNum] = 10;
     } else {
-        gRightWingHealth[0] = gLeftWingHealth[0] = 60;
+        gRightWingHealth[playerNum] = gLeftWingHealth[playerNum] = 60;
     }
 }
 
@@ -2227,7 +2232,7 @@ void Item1up_Update(Item1UP* this) {
         Object_Kill(&this->obj, this->sfxSource);
         Object_PlayerSfx(gPlayer[this->playerNum].sfxSource, NA_SE_ONE_UP, this->playerNum);
         if (gCurrentLevel != LEVEL_TRAINING) {
-            gLifeCount[this->playerNum]++;
+            gLifeCount[CoopScore_LifeSlot(this->playerNum)]++; // COOP: was [playerNum]; the pool (0007 rule 2, #210)
         }
     }
 
@@ -2261,6 +2266,12 @@ void ItemPickup_Update(Item* this) {
                     this->state = 1;
                     this->timer_48 = 20;
                     this->unk_50 = 60.0f;
+
+                    // COOP: the collector with a broken wing gets it repaired instead of lasers (#201)
+                    if (CoopPlayers_IsCoop() && CoopItems_WingBroken(this->playerNum)) {
+                        func_enmy_80067A40(this->playerNum);
+                        break;
+                    }
 
                     gLaserStrength[this->playerNum]++;
                     if (gLaserStrength[this->playerNum] > LASERS_HYPER) {
@@ -2298,8 +2309,10 @@ void ItemPickup_Update(Item* this) {
 }
 
 void ItemLasers_Update(ItemLasers* this) {
-    if (!gVersusMode && ((gPlayer[0].arwing.leftWingState <= WINGSTATE_BROKEN) ||
-                         (gPlayer[0].arwing.rightWingState <= WINGSTATE_BROKEN))) {
+    // COOP: in a session the item stays lasers until someone collects it; the collector decides (ItemPickup_Update)
+    if (!gVersusMode && !CoopPlayers_IsCoop() &&
+        ((gPlayer[0].arwing.leftWingState <= WINGSTATE_BROKEN) ||
+         (gPlayer[0].arwing.rightWingState <= WINGSTATE_BROKEN))) {
         this->obj.id = OBJ_ITEM_WING_REPAIR;
         Object_SetInfo(&this->info, this->obj.id);
         this->timer_48 = 2000;
@@ -2331,7 +2344,7 @@ void ItemSupplyRing_Update(Item* this) {
                     } else if (gGoldRingCount[0] == 6) {
                         Object_PlayerSfx(gPlayer[this->playerNum].sfxSource, NA_SE_ONE_UP, this->playerNum);
                         if (gCurrentLevel != LEVEL_TRAINING) {
-                            gLifeCount[this->playerNum]++;
+                            gLifeCount[CoopScore_LifeSlot(this->playerNum)]++; // COOP: the pool (0007 rule 2, #210)
                         }
                         gPlayer[this->playerNum].heal += 32;
                         BonusText_Display(gPlayer[this->playerNum].pos.x, gPlayer[this->playerNum].pos.y,
@@ -2404,7 +2417,7 @@ void ItemWingRepair_Update(ItemWingRepair* this) {
     Item_CheckBounds(this);
     Item_SpinPickup(this);
     if (this->collected) {
-        func_enmy_80067A40();
+        func_enmy_80067A40(this->playerNum); // COOP: was player 0's (#201)
         Object_Kill(&this->obj, this->sfxSource);
     }
 
@@ -2502,6 +2515,7 @@ void ItemCheckpoint_Update(ItemCheckpoint* this) {
             gSavedObjectLoadIndex = gObjectLoadIndex;
             gSavedZoSearchlightStatus = gMissedZoSearchlight;
             gSavedHitCount = gHitCount;
+            CoopScore_Checkpoint(); // COOP: each player's own count is saved with the team's (#252)
             for (i = TEAM_ID_FALCO; i <= TEAM_ID_PEPPY; i++) {
                 gSavedTeamShields[i] = gTeamShields[i];
             }

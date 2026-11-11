@@ -77,6 +77,10 @@ uint32_t FakeNet_Random(void) {
     return (uint32_t) ((z ^ (z >> 31)) >> 32);
 }
 
+// memset through a pointer the compiler cannot see through: a plain memset just before free is a dead store, which
+// an optimised build leaves out (GCC -O2 did), and then a message read after its release still holds its bytes (#158).
+static void* (*volatile sPoison)(void*, int, size_t) = memset;
+
 static bool Fake_Chance(double chance) {
     return (FakeNet_Random() >> 8) / (double) (1u << 24) < chance;
 }
@@ -499,7 +503,7 @@ static void Fake_Release(CoopSteamBackend* b, CoopSteamMessage* message) {
     FakePacket* p = message->handle;
 
     (void) b;
-    memset(p->data, 0xDD, p->size); // whoever keeps reading this after release gets garbage, in any build
+    sPoison(p->data, 0xDD, p->size); // whoever keeps reading this after release gets garbage, in any build
     free(p);
     message->handle = NULL;
     message->data = NULL;

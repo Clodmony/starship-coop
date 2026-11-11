@@ -1,5 +1,7 @@
 #include "global.h"
 #include "port/coop/game/players.h" // COOP: the camera drawn (#30)
+#include "port/coop/game/aim.h"     // COOP: dogfighters chase the nearest human (#213)
+#include "port/coop/game/score.h"   // COOP: a kill by any human scores (#210)
 #include "assets/ast_katina.h"
 #include "assets/ast_venom_2.h"
 #include "assets/ast_fortuna.h"
@@ -918,12 +920,13 @@ void ActorAllRange_ApplyDamage(ActorAllRange* this) {
                 this->health = 0;
                 if (this->aiType == AI360_MISSILE) {
                     SectorZ_MissileExplode(this, true);
-                    if (this->dmgSource == AI360_FOX + 1) {
+                    if (CoopScore_HumanKill(this->dmgSource)) { // COOP: was == AI360_FOX + 1 (0008 4b, #210)
                         if (gActors[AI360_KATT].obj.status == OBJ_ACTIVE) {
                             Radio_PlayMessage(gMsg_ID_16140, RCID_KATT);
                         }
                         BonusText_Display(this->obj.pos.x, this->obj.pos.y, this->obj.pos.z, 10);
                         gHitCount += 11;
+                        CoopScore_CreditKill(this->dmgSource, 11); // COOP: the shooter's own count, display (#252)
                         D_ctx_80177850 = 15;
                     } else {
                         switch (this->dmgSource) {
@@ -1295,6 +1298,7 @@ void ActorAllRange_Update(ActorAllRange* this) {
     Vec3f sp84 = { 60.0f, 0.0f, -170.0f };
     Vec3f sp78 = { -60.0f, 0.0f, -170.0f };
     s32 pad[3];
+    Player* chased; // COOP: the human an enemy that chases Fox goes after, was player 0 (#213)
 
     if (this->aiType == AI360_EVENT_HANDLER) {
         this->timer_0C2 = 10;
@@ -1573,8 +1577,9 @@ void ActorAllRange_Update(ActorAllRange* this) {
                 }
 
                 if (this->aiIndex == AI360_FOX) {
+                    chased = &gPlayer[CoopAim_Chased(this)]; // COOP: was gPlayer[0] in this block (#213)
                     if (gCurrentLevel != LEVEL_VENOM_2) {
-                        if ((gPlayer[0].somersault && (this->iwork[4] > 10)) ||
+                        if ((chased->somersault && (this->iwork[4] > 10)) ||
                             ((gCurrentLevel == LEVEL_BOLSE) && (gPlayer[0].state == PLAYERSTATE_STANDBY))) {
                             this->state = STATE360_3;
                             this->counter_04E = 300;
@@ -1583,7 +1588,7 @@ void ActorAllRange_Update(ActorAllRange* this) {
                                 ActorAllRange_PlayMessage(gMsg_ID_9369, RCID_WOLF);
                             }
                             break;
-                        } else if ((this->iwork[4] > 200) && (gPlayer[0].dmgEffectTimer != 0)) {
+                        } else if ((this->iwork[4] > 200) && (chased->dmgEffectTimer != 0)) {
                             this->iwork[4] = 100;
                             break;
                         }
@@ -1595,11 +1600,11 @@ void ActorAllRange_Update(ActorAllRange* this) {
                         spC8 = COS_DEG((this->index * 45) + (gGameFrameCount * 2)) * 100.0f;
                         spC4 = SIN_DEG((this->index * 45) + gGameFrameCount) * 100.0f;
                     }
-                    if (!gPlayer[0].somersault) {
-                        this->fwork[4] = gPlayer[0].pos.x + spCC;
-                        this->fwork[5] = gPlayer[0].pos.y + spC8;
-                        this->fwork[6] = gPlayer[0].trueZpos + spC4;
-                        this->fwork[1] = gPlayer[0].baseSpeed + 10.0f;
+                    if (!chased->somersault) {
+                        this->fwork[4] = chased->pos.x + spCC;
+                        this->fwork[5] = chased->pos.y + spC8;
+                        this->fwork[6] = chased->trueZpos + spC4;
+                        this->fwork[1] = chased->baseSpeed + 10.0f;
                     }
                     if ((gActors[0].state == STATE360_6) && (this->aiType <= AI360_PEPPY)) {
                         this->fwork[3] = 3.0f;
@@ -1657,9 +1662,10 @@ void ActorAllRange_Update(ActorAllRange* this) {
                             if (this->aiIndex != AI360_FOX) {
                                 this->fwork[1] = gActors[this->aiIndex].fwork[0] - 5.0f;
                             } else {
-                                this->fwork[1] = gPlayer[0].baseSpeed - 5.0f;
-                                if ((gCurrentLevel == LEVEL_VENOM_2) && (gPlayer[0].state == PLAYERSTATE_U_TURN) &&
-                                    (gPlayer[0].aerobaticPitch > 100.0f)) {
+                                chased = &gPlayer[CoopAim_Chased(this)]; // COOP: was gPlayer[0] here (#213)
+                                this->fwork[1] = chased->baseSpeed - 5.0f;
+                                if ((gCurrentLevel == LEVEL_VENOM_2) && (chased->state == PLAYERSTATE_U_TURN) &&
+                                    (chased->aerobaticPitch > 100.0f)) {
                                     this->iwork[16] = STATE360_8;
                                 }
                             }
@@ -1958,6 +1964,7 @@ void ActorAllRange_Update(ActorAllRange* this) {
                 if (this->counter_04E == 0) {
                     this->state = STATE360_2;
                     this->iwork[2] = AI360_FOX;
+                    CoopAim_ForgetActor(this->index); // COOP: a new chase picks the nearest human (#213)
                 }
             }
             break;

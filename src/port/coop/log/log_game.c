@@ -176,12 +176,17 @@ static void Player_Changes(void) {
         int32_t parked = CoopPlayers_IsParked(i) ? 1 : 0;
         int32_t state = gPlayer[i].state;
 
-        if (parked != sParked[i]) {
-            if (sParked[i] >= 0) {
-                CoopLog_Write(COOP_LOG_PLAYER, false, "player %d %s", (int) i + 1, parked ? "parked" : "flies");
+        // Down (#14) or parked for another reason; the pool shows what a return cost.
+        if ((parked != sParked[i]) && (sParked[i] >= 0)) {
+            if (parked && CoopPlayers_IsDown(i)) {
+                CoopLog_Write(COOP_LOG_PLAYER, false, "player %d down, pool %d", (int) i + 1, (int) gLifeCount[0]);
+            } else if (parked) {
+                CoopLog_Write(COOP_LOG_PLAYER, false, "player %d parked", (int) i + 1);
+            } else {
+                CoopLog_Write(COOP_LOG_PLAYER, false, "player %d flies, pool %d", (int) i + 1, (int) gLifeCount[0]);
             }
-            sParked[i] = parked;
         }
+        sParked[i] = parked;
         if (state != sPlayerState[i]) {
             if (sPlayerState[i] >= 0) {
                 CoopLog_Write(COOP_LOG_PLAYER,

@@ -36,16 +36,26 @@ and that a desync, if one happens, is caught and reported.
 3. **Joining player:** type the host's address and the port, then click **Join a game**. The status line shows the
    join and a ping.
 4. **Both:** pick a character. The host flies Fox; the other player picks a wingman.
-5. **Host:** click **Start the level**. Both games go to Corneria together.
-6. **Fly the level together.** Either player's Start pauses both games. Intro skip is off in a session.
-7. **Stop at the map** after the level is complete, and quit. The map is not tested yet: each player has their own
-   save, and the map reads it.
+5. **Host:** optionally pick another level in the **Start at** dropdown (Corneria unless you do), then click **Start
+   the level**. Both games go to that level together (#211). A level started this way carries none of the route a
+   campaign builds on the way, and the map after it is untested.
+6. **Fly the level together.** Either player's Start pauses both games. If the host's save has the level cleared,
+   either player's Start in the intro skips it on both games; otherwise Start does nothing there (#191).
+7. **Go on through the map into the next level.** The map reads the save, and every game plays on the host's progress
+   (decision 0009, item 8): the host sends it once before the level starts, and no PC's save file is written during a
+   session. A session with a Windows host and a Linux joining player went through two maps on the evening of 2026-11-10. What the
+   session earns is not kept. Quit when you are done.
 
 ## What is known not to work yet
 
 - Only Corneria is tested. In Landmaster and Blue Marine sections the second player is parked.
-- There are no co-op rules for lives yet. If Fox goes down, the level restarts for both players. If the other player
-  goes down, they stay out until the next level.
+- Lives follow [decision 0007](decisions/0007-lives-and-respawn.md) only in part. The team shares one pool, the game's
+  own life count, and a life anyone collects goes into it; how many lives the pool starts with is unknown. If the other
+  player goes down, they leave the level and come back beside Fox 150 game frames (about 5 seconds) later, at full
+  shields, for one life from the pool; at 0 lives they wait for a life or the next level. That return is seen in
+  scripted two-client runs on Corneria only. If Fox goes down, the original rule still holds: one life, and the level
+  restarts at its last save point for both players; at 0 lives, game over. The record's refill of Fox in place is not
+  built.
 - The pause menu belongs to the host: cursor, retry and quit.
 - If one player leaves or stops sending input for 10 seconds, the session ends for both.
 - No Steam yet: this is a direct connection.
@@ -53,13 +63,16 @@ and that a desync, if one happens, is caught and reported.
 ## What to send back
 
 - **If the game reports a desync:** it says so on screen, names the frame and what differs, and tells you where its
-  report file is: `coop-desync-<frame>-player<n>.txt`. Keep the file from **both** PCs.
-  `python tools/coop/desync_report.py diff <a> <b>` compares the two. Say what each PC ran: Windows or Linux, and the
+  report file is: `coop-desync-<frame>-player<n>.txt`. Before the connection closes, each game hands its report to the
+  other (#189, a few hundred ms, 8 seconds at most), so one PC's folder normally holds both players' reports;
+  `python tools/coop/desync_report.py diff <a> <b>` compares the two. Keep the files from **both** PCs anyway, in
+  case the connection was already gone. Say what each PC ran: Windows or Linux, and the
   platform line the menu's warning showed, if the two differed. A desync between two platforms is the result decision
   0010 waits for, not a surprise.
 - **The co-op logs:** `coop-log-<session start>-player1.txt` and `-player2.txt` from the game folder, where its config
   and saves are. Each game writes its own and gets the other player's during the session, so one PC's folder normally
-  holds both; send both folders' files anyway, as the last lines may not have crossed before the session closed. They
+  holds both, up to the other's `session closed` line when the session ended with the connection still up; send both
+  folders' files anyway, as the last lines cannot cross when a PC or its connection is gone. They
   hold the session, the ping and resends every 5 seconds, every frame held and for how long, the desync check, pauses,
   players going down, a state line per player each second, and the game's own warnings. The home folder and the user
   name are taken out before a line is written or sent. `python tools/coop/coop_log.py merge <folder a> <folder b>`

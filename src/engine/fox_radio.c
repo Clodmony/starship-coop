@@ -20,6 +20,7 @@
 #include "assets/ast_zoness.h"
 #include "port/hooks/Events.h"
 #include "port/mods/PortEnhancements.h"
+#include "port/coop/game/team.h" // COOP: the wingman's bar of a human shows its share of a larger gauge
 
 u16** gRadioMsgList;
 s32 gRadioMsgListIndex;
@@ -753,9 +754,10 @@ void Radio_Draw(void) {
             if (((gCurrentRadioPortrait != RCID_STATIC) && (gCurrentRadioPortrait != RCID_STATIC + 1)) &&
                 (gCurrentRadioPortrait != RCID_1000)) {
                 if (CVarGetInteger("gRadioCommBox.expand", 0) == 1) {
-                    HUD_TeamShields_Draw(OTRGetRectDimensionFromLeftEdgeOverride(22.0f), 165.0f, gTeamShields[idx]);
+                    HUD_TeamShields_Draw(OTRGetRectDimensionFromLeftEdgeOverride(22.0f), 165.0f,
+                                         CoopTeam_DisplayShields(idx)); // COOP: as the status rows
                 } else {
-                    HUD_TeamShields_Draw(22.0f, 165.0f, gTeamShields[idx]);
+                    HUD_TeamShields_Draw(22.0f, 165.0f, CoopTeam_DisplayShields(idx)); // COOP
                 }
             }
         }

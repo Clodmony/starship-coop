@@ -17,8 +17,11 @@
 #include "global.h"
 #include "port/coop/game/level_start.h"
 #include "port/coop/game/players.h"
+#include "port/coop/game/save.h"
 #include "port/coop/session/identity_game.h"
+#include "port/coop/net/protocol.h"
 #include "port/coop/session/session.h"
+#include "port/coop/sync/handover_game.h"
 #include "port/coop/sync/lockstep_game.h"
 #include "port/coop/test/switches.h"
 #include "port/hooks/Events.h"
@@ -51,6 +54,8 @@ static s32 sLevel = 0;
 static u32 sStartFrame = 0;
 static bool sPokeTeam = false;
 static bool sKeepOwn = false;
+static bool sKeepOwnSave = false;
+static const char* sLeaveFile = NULL;
 static bool sWatch = false;
 static bool sStartTaken = false;
 static bool sStartRefusedSaid = false;
@@ -177,12 +182,50 @@ static bool Link_Send(int peer, uint16_t msgId, const void* data, uint16_t size,
     return (sSession != NULL) && CoopSession_Send(sSession, peer, msgId, data, size, lane);
 }
 
+// This game's save in memory, all 256 bytes as the file holds them, for `save_session` and `save_after`.
+static void Report_Save(const char* word) {
+    char hex[2 * COOP_SAVE_SIZE + 1];
+    const u8* raw = (const u8*) &gSaveFile.save;
+    s32 i;
+
+    for (i = 0; i < COOP_SAVE_SIZE; i++) {
+        snprintf(hex + 2 * i, 3, "%02x", raw[i]);
+    }
+    Report("%s frame=%u save=%s", word, (unsigned) sFrame, hex);
+}
+
 static void Session_Pump(void);
 
-static void Session_End(void) {
+// As the menu ends one (menu_game.c): lockstep first, then the handover while the others can still be reached (#189).
+// leaving: this player chose to go, as Leave in the menu.
+static void Session_EndAs(bool leaving) {
     CoopSyncGame_End();
+    if (sEntered) {
+        Report_Save("save_after"); // this game's own again (CoopSave_Leave)
+    }
+    CoopHandoverGame_Run(sSession, leaving);
     CoopSession_Close(sSession);
     sSession = NULL;
+}
+
+static void Session_End(void) {
+    Session_EndAs(false);
+}
+
+// SF64_COOP_JOIN_LEAVE_FILE: once that file is there, this game leaves its session and plays on.
+static void Leave_Check(void) {
+    FILE* f;
+
+    if ((sLeaveFile == NULL) || !sEntered || (sSession == NULL)) {
+        return;
+    }
+    f = fopen(sLeaveFile, "r");
+    if (f == NULL) {
+        return;
+    }
+    fclose(f);
+    Report("leaving frame=%u", (unsigned) sFrame);
+    Session_EndAs(true);
 }
 
 static void Link_Fail(const char* text) {
@@ -209,13 +252,28 @@ static void Link_Identity(int peer, char* out, size_t cap) {
 
 static const CoopSyncLink sLink = { Link_Send, Session_Pump, Link_Fail, Link_Identity };
 
-// The control: everything Enter does but the values, so the two games go to one level from what they each brought.
+// The control: everything Enter does but the values and the save, so the two games go to one level from what they
+// each brought.
 static void Enter_KeepOwn(const CoopLevelStart* start) {
     CoopLevelStart own;
 
     CoopLevelStart_FromGame(&own, start->level, start->phase);
     memcpy(own.roster, start->roster, sizeof(own.roster));
+    CoopSave_Enter(own.save);
     CoopLevelStart_Enter(&own);
+}
+
+// The session's save as the host sent it, or with SF64_COOP_JOIN_KEEP_OWN_SAVE this game's own: the apply switched
+// off, the control for the save (decision 0009 item 8).
+static void Enter_Save(const CoopLevelStart* start) {
+    uint8_t own[COOP_SAVE_SIZE];
+
+    if (sKeepOwnSave) {
+        CoopSave_FromGame(own);
+        CoopSave_Enter(own);
+    } else {
+        CoopSave_Enter(start->save);
+    }
 }
 
 static void Session_Event(const CoopSessionEvent* ev) {
@@ -246,6 +304,14 @@ static void Session_Event(const CoopSessionEvent* ev) {
             }
             break;
         case COOP_SESSION_EV_MESSAGE:
+            if (ev->msgId == COOP_MSG_HANDOVER) {
+                char text[COOP_SESSION_TEXT];
+
+                if (CoopHandoverGame_Heard(sSession, ev->peer, ev->data, ev->size, text, sizeof(text))) {
+                    Link_Fail(text);
+                }
+                break;
+            }
             CoopSyncGame_Receive(ev->peer, ev->msgId, ev->data, ev->size);
             break;
         case COOP_SESSION_EV_ROSTER: {
@@ -270,8 +336,10 @@ static void Session_Event(const CoopSessionEvent* ev) {
             if (sKeepOwn) {
                 Enter_KeepOwn(ev->levelStart);
             } else {
+                Enter_Save(ev->levelStart);
                 CoopLevelStart_Enter(ev->levelStart);
             }
+            Report_Save("save_session");
             sEntered = true;
             CoopSyncGame_Begin(&sLink, ev->levelStart->roster, sSelf, sPortFile != NULL);
             break;
@@ -373,6 +441,7 @@ static void CoopJoinDriver_OnGamePreUpdate(IEvent* event) {
     if (sSession != NULL) {
         Host_TryStart();
     }
+    Leave_Check();
     Report_Running();
 }
 
@@ -400,6 +469,8 @@ void CoopJoinDriver_Init(void) {
     sStartFrame = (startFrame != NULL) ? (u32) atoi(startFrame) : 0;
     sPokeTeam = Env_Text("SF64_COOP_JOIN_POKE_TEAM") != NULL;
     sKeepOwn = Env_Text("SF64_COOP_JOIN_KEEP_OWN") != NULL;
+    sKeepOwnSave = Env_Text("SF64_COOP_JOIN_KEEP_OWN_SAVE") != NULL;
+    sLeaveFile = Env_Text("SF64_COOP_JOIN_LEAVE_FILE");
     // After the state hash (EVENT_PRIORITY_NORMAL): a frame's hash shows what came before this frame's session.
     REGISTER_LISTENER(GamePreUpdateEvent, CoopJoinDriver_OnGamePreUpdate, EVENT_PRIORITY_HIGH);
 }

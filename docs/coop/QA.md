@@ -12,7 +12,7 @@ Every PR states the QA level it reached and how. Levels follow Co-op Anything:
 `automated` needs at least two game clients sharing state. A run of one game is `none`, even when a script drove it and
 checked its state: the PR says what ran.
 
-Current project level: `automated`. Two real game clients in one session, on one PC, stay equal on every frame through all of Corneria (`python tools/coop/lockstep_test.py`). Nobody has played it, and it has not run on two PCs.
+Current project level: `automated`. Two real game clients in one session, on one PC, stay equal on every frame through all of Corneria (`python tools/coop/lockstep_test.py`), and, a level per session, from the start to the end of 12 of the 17 campaign levels (`python tools/coop/campaign.py`, #28): Corneria, Meteo, Fortuna, Sector X, Titania, Venom 1, Aquas, Sector Z, Venom 2, Katina, Solar, Macbeth. Not covered with real clients: the ends of Bolse, Venom (Andross), Sector Y, Zoness, Area 6 (the pilot does not beat their bosses; every frame it flew was equal), a level that follows from the one before (each starts as a new game, no route state), a player who goes down (all but Corneria with `gInvincible`), two PCs, Windows, a real network, a Release build and more than two players. A full campaign was played by hand on two PCs on 2026-11-09 (issue #2); that record is not this one, and its level stays the owner's to enter.
 
 ## Test identity
 
@@ -65,9 +65,20 @@ number of clients, transport.
    (or a list, or `all`) flies another Arwing level for 2400 frames instead, and `--cvar NAME=VALUE` sets a CVar on both.
    The two clients also render different sample counts per audio update (`SF64_COOP_TEST_AUDIO_SAMPLES` high and low,
    `--audio`), as a radio line follows the voice sequence of the sound thread; the log counts the radio state changes, so
-   a run shows that a line was played. `python tools/coop/hash_check.py slots --level katina,fortuna,corneria` plays a level
+   a run shows that a line was played. In co-op the hash also holds that sequence's clock in a level (#230,
+   `src/port/coop/sync/voice_clock.h`), so two games whose radio lines would end on different frames differ from the
+   frames after the voice player starts, not only at a radio step. `python tools/coop/hash_check.py slots --level katina,fortuna,corneria` plays a level
    with 1 player and with 2 and fails when co-op holds more than 15 more effect slots (median): the draw code frees nothing
    for leaving the view in co-op (#96), so an effect that only that freed would stay for the whole level (#129).
+   `python tools/coop/hash_check.py views --pilot` (#181, unattended, exit code 0 on `PASS`) takes the same two clients
+   through the rest of each level: the boss and the end. Per level, one game with 2 players and `gInvincible` starts past
+   the intro, and a pilot that reads game state (`src/port/coop/test/pilot.h`, `pilot_aim.h`) flies every player to level
+   complete and on to the map or whatever comes next, and writes a replay; the two clients then play it and must `PASS`
+   every checkpoint, hash alike on every frame and equal the pilot's game. Every campaign level, the vehicle levels and
+   level 4 by default, or `--level`; `--mortal` leaves `gInvincible` off. The summary gives per level the result, the
+   frames, the frame of level complete and the downs per player; a level the pilot does not finish says so, with the
+   frames that were compared. Like `views` this is one game per run, so it says nothing about two clients over a
+   network: that is `lockstep_test.py`.
    `python tools/coop/hash_check.py builds --debug <exe> --release <exe>` (unattended, exit code 0 on `PASS`) plays the
    same two sections on two Release runs and a Debug run of one commit, and all three must hash alike on every frame.
    `python tools/coop/hash_check.py rates --exe <exe>` (unattended, exit code 0 on `PASS`) does the same across
@@ -84,6 +95,8 @@ number of clients, transport.
    (`src/port/coop/test/view_trace.h`): camera, shield gauge, bomb counter, cockpit, hit flash, shield bar, sound, pause.
    The trace holds what a client means to show. What reached the screen needs a picture: a game with no window can be
    read back from OpenGL, and such pictures are game art, so they stay local and are deleted after reading.
+   `python tools/coop/solar_check.py` (unattended, exit code 0 on `PASS`) plays Solar with the same two clients and
+   gInvincible off: both players' shields must fall to the heat, and the hashes stay equal (#200).
    `python tools/coop/hash_check.py diff <a> <b>` compares every column of the two logs, names the first differing
    frame and the regions that differ there. It compares the common frames: read its first line for the two lengths.
    `python tools/coop/desync_report.py diff <a> <b>` (WP-23) does the same for two desync reports, the files a game
@@ -154,7 +167,8 @@ number of clients, transport.
    differ. `sim` is `lockstep.c` alone in a virtual network, and `python tools/coop/lockstep_mutants.py` shows that can
    fail. The rest are in the tool: steering, three games, pause, what a save or a zero seed could do, a slow client, lag
    through the chaos relay, another input delay, and every way of losing a player, through the join driver and through
-   the real menu. `--only full` flies all of Corneria with a pilot on each client, repeats the flight with plain games,
+   the real menu. `--only vehicles` (#16) plays Titania, Aquas and Macbeth side by side with two clients each: same
+   hash, both players driving in Titania and Aquas, the client's player parked in Macbeth (`--levels` picks some). `--only full` flies all of Corneria with a pilot on each client, repeats the flight with plain games,
    and flips a bit on one client, which must show at exactly its frame. Its log feeds `--only menu,release,rates,audio
    --feed <log>`: the same flight through the real menu, on a Release build, and with the clients at different
    `gInterpolationFPS` or audio sample counts.
@@ -165,10 +179,28 @@ number of clients, transport.
    on the two reports must name `gPlayer[1]`. `desync_three` does it with a third game that stays in step, and
    `desync_control` with `SF64_COOP_TEST_NO_DESYNC_CHECK`: the hashes differ and nobody says so. The poke in `full`
    is checked the same way, and every scenario that compares two games also checks that neither wrote a report.
+   `python tools/coop/campaign.py` (WP-32, #28, unattended, exit code 0 when every level passed) is the campaign with
+   two real clients: per level a host and a client through the join driver, the level started as the lobby's
+   "Start at" does (#211), a pilot on each client flying its own player (`SF64_COOP_LOCKSTEP_PILOT`) and `gInvincible`
+   on both unless `--mortal`. The levels run in the order of a route (`--route blue|red|owner|all`, the map's paths in
+   `fox_map.c`, or `--levels`), each as a session of its own, so no route state goes from one to the next: lives,
+   score, lasers, team shields and medals start as for a new game. A level passes when the two games are equal on
+   every frame, hash log and input log, from its first frame to the map or whatever follows its level complete, with no
+   desync report, and player 0 reached level complete. One summary at the end: per level the result, the frames
+   compared, the frame of level complete and the downs per player. `--lock <file>` holds an flock for each level's
+   session, so other tests on the PC take turns. This is not the hand-played campaign of 2026-11-09 (issue #2), the
+   only `verified-playthrough`: no level here follows from the one before.
 4. **Network conditions (WP-27).** Lag, loss and reordering between the clients with a chaos relay, as in the hub's
    [network chaos testing](https://github.com/cranebeaker/coop-anything/blob/main/playbook/network-chaos-testing.md).
    The transport on its own already runs through that relay: `python tools/coop/net_test.py` (WP-20), which needs a
-   configured build directory but no ROM. WP-27 does the same with real game clients.
+   configured build directory but no ROM. `python tools/coop/chaos_run.py` (WP-27, #25, unattended, exit code 0 when
+   every run passed) does the same with real game clients: per profile of `chaos/profiles.json` and per seed (default
+   1, 2 and 3), one session over loopback with the client's datagrams through the relay, a pilot on each client flying
+   Corneria from its intro (6000 lockstep frames by default, `--frames`). Lockstep stamps every input with its frame,
+   so the flight is the same at any lag: a run passes when both games reach the last frame equal on every frame, hash
+   and input logs, with no desync report, and equal to the first passing run. Per run it reports the frames and the
+   time held, the longest single hold, resends, ping, what the relay dropped and duplicated, and where a session that
+   broke ended, with the profile and seed that repeat it. `--profiles`, `--seeds`, `--lock <file>`.
    Whether those scenarios can fail at all is checked by `python tools/coop/net_mutants.py`: it breaks one behaviour
    of `net_core.c` at a time and requires the named scenario to fail (#44). Run it after changing `net_core.c`.
    `python tools/coop/session_mutants.py` does the same for `session.c` and `session_test.py` (#55; `test_all.py` runs
@@ -203,6 +235,67 @@ Running tests must never use or modify the owner's own `starship.cfg.json`, save
 ## Results
 
 Newest first. One block per run that matters (a milestone, a release, a QA level change).
+
+```
+date:       2026-11-10
+commit:     issue/map-host-save-impl, code 00a34694 (build 00a3469451fe) and 4bbf2898 (build 4bbf289836e3, the same
+            code and docs), on issue/combined-test-4 b98c3870; base b98c38708b44
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window, 2 clients over loopback through
+            the join driver, lockstep, a pilot on each client, each game with its own save file (tools/coop/make_save.py)
+what ran:   python tools/coop/lockstep_test.py --only map_saves, map_saves_host_full, map_saves_equal, save, save_own,
+            full, handover, menu, leave (one scenario per run); join_test.py; hash_check.py base --base <coop 0e5a5cf6>
+result:     automated. Two different saves (decision 0009 item 8): equal on every frame from Corneria's level start
+            through the map into the next level (Meteo) and 300 frames of it: host blank and client all cleared 11689
+            frames, host all cleared and client blank 11449, both all cleared 11449. After the session every
+            default.sav byte for byte as before, the host's too, and each game's save in memory its own again; in the
+            session both held the host's progress, the client its own sound settings. On b98c38708b44 both orders part
+            at frame 10582, 41 frames into the map. save, save_own, full, handover, menu, leave: ok; join_test 5/5;
+            co-op off equal to coop on all 5800 frames. Not covered: the alternate exit, two PCs, Windows, Release.
+```
+
+```
+date:       2026-11-10
+commit:     issue/181-views-later-parts (pilot_aim.c, views --pilot), on 80ff9be6
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window, one game per run (local index 0
+            and 1, the second 6 frames ahead since boot, high and low audio sample counts), no transport, 2 players by
+            gCoopDebugPlayerCount, gInvincible, each level started past its intro
+what ran:   python tools/coop/hash_check.py views --pilot --level <name>, one level per run, all 17 campaign levels and
+            level 4; hash_check.py slots --level meteo,katina,zoness,area-6 --frames 9000
+result:     QA level none (one game per run). Equal on every frame to the map or what follows level complete:
+            Corneria 10215, Meteo 14828, Sector X 12517, Solar 10212, Fortuna 8811, Katina 15823, Sector Z 5572,
+            Venom 2 17911, Venom 1 10147, Aquas 7973, Titania 53552, Macbeth 11524 (there the pilot's own game
+            differed from both clients on 6 single frames, gRadioState). Equal on every frame flown, level not
+            finished by the pilot: Area 6 60014, Sector Y 36014, Zoness 24014, Bolse 24014, Andross 24014, level 4
+            24014 (no end). Not covered: Training (no level complete), level 15 (crashes with co-op off too).
+            slots: PASS, co-op minus single player median effects 0 to +12; the explosion mark piles up in Katina.
+```
+
+```
+date:       2026-11-10
+commit:     issue/28-campaign-run (campaign.py) on 80ff9be6, against the build of issue/181-views-later-parts a36dea0a
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window, 2 clients per level over loopback
+            through the join driver, lockstep, a pilot on each client, gInvincible on both but in Corneria
+what ran:   python tools/coop/campaign.py --route all --lock <file>; then --levels corneria and --levels titania
+result:     automated. Equal on every frame, hash and input logs, from the level start to the map or what follows level
+            complete, no desync report: Corneria 10291, Meteo 21410, Fortuna 9426, Sector X 12155, Titania 45111, Venom
+            1 11172, Aquas 8599, Sector Z 6505, Venom 2 17968, Katina 16751, Solar 12711, Macbeth 11315. Equal on every
+            frame flown, the pilot did not reach the end: Bolse 26312, Venom (Andross) 26059, Sector Y 36131, Zoness
+            26041, Area 6 40270. Downs: 0 on every level.
+```
+
+```
+date:       2026-11-10
+commit:     issue/25-chaos-numbers (chaos_run.py) on 80ff9be6, against the build of issue/181-views-later-parts a36dea0a
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window, 2 clients over loopback through
+            the join driver, the client's datagrams through chaos/relay.py, a pilot on each client, real time
+what ran:   python tools/coop/chaos_run.py --seeds 1,2,3 --frames 6000 --lock <file> (every profile);
+            python tools/coop/chaos_run.py --profiles lan --seeds 1 --outages 5,9,12 --lock <file>
+result:     automated. 18/18 profile runs reached frame 6000 equal on every frame, each equal to the first: lan and
+            good_wifi waited 0 to 44 ms in all, bad_wifi 0.4 to 0.5 s, mobile_tether 3.5 to 6.6 s, transatlantic
+            2.7 to 15.9 s, hell 151 to 154 s (longest single wait 0.8 to 1.4 s, 26 to 28 % of datagrams dropped).
+            Link down 5 s and 9 s: waited out, equal. Link down 12 s: the session ends after 10 s without input
+            (frame 3059). One PC, loopback, no real WAN.
+```
 
 ```
 date:       2026-11-08

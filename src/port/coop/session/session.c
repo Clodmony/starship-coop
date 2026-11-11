@@ -1,5 +1,5 @@
-// Co-op session: handshake (WP-21), characters (WP-34) and level start (WP-24). Messages and their layout:
-// docs/coop/PROTOCOL.md, ids 0x0010-0x0016.
+// Co-op session: handshake (WP-21), characters (WP-34), level start (WP-24) and the session's save (decision 0009 item
+// 8). Messages and their layout: docs/coop/PROTOCOL.md, ids 0x0010-0x0017.
 //
 // Host, per peer: WAIT_HELLO from the transport's CONNECTED, then JOINED or REFUSED. A refused peer stays until the
 // refusal is acknowledged, the client goes, or COOP_SESSION_REFUSE_LINGER_MS pass; the transport's disconnect drops
@@ -8,8 +8,9 @@
 // The host holds the roster. Whatever a joined peer is owed goes out at the start of a poll, and stays owed while the
 // transport's window is full: a client may miss a roster that way, but not the last one.
 //
-// A level start is taken once: the host's values and the roster of that moment, so that a client leaving afterwards
-// cannot make two games come to different player counts. Picks and joins stop there.
+// A level start is taken once: the host's values, its save and the roster of that moment, so that a client leaving
+// afterwards cannot make two games come to different player counts. Picks and joins stop there. The save goes to each
+// client just ahead of the level start, on the same reliable lane, so a client holds it when the level start comes.
 
 #ifdef USE_NETWORKING
 
@@ -42,6 +43,7 @@ typedef struct {
     CoopIdentity identity;
     bool rosterDue;      // owed the current roster
     uint8_t refusedPick; // owed a refusal for this character, 0 if none
+    bool saveDue;        // owed the session's save, which goes ahead of the level start
     bool levelDue;       // owed the level start
 } Peer;
 
@@ -55,12 +57,14 @@ struct CoopSession {
     CoopLevelStart level;
     bool started;    // a level started: level holds it, and picks and joins are closed
     bool levelEvent; // host: a LEVEL_START event is owed
+    bool saveHeld;   // client: the host's save came, into level.save
     ClientState client;
     uint32_t clientSince;
     uint8_t player;  // client: our slot, from the welcome
     bool endPending; // client: an ENDED event is owed after the REFUSED one
     CoopSessionEnd pendingEnd;
     uint32_t ignored;
+    bool closedSaid; // `session closed` is in the log (CoopSession_SayClosed)
     // The co-op log (#172): when the transport's counters were last written, and what they were then.
     uint32_t nowMs;
     uint32_t statsMs;
@@ -120,11 +124,18 @@ CoopSession* CoopSession_Join(CoopTransport* transport, const CoopIdentity* iden
 
 static bool Log_Send(void* user, int peer, const uint8_t* data, uint16_t size);
 
+void CoopSession_SayClosed(CoopSession* s) {
+    if (!s->closedSaid) {
+        s->closedSaid = true;
+        CoopLog_Write(COOP_LOG_SESSION, false, "session closed");
+    }
+}
+
 void CoopSession_Close(CoopSession* s) {
     if (s == NULL) {
         return;
     }
-    CoopLog_Write(COOP_LOG_SESSION, false, "session closed");
+    CoopSession_SayClosed(s);
     CoopLog_End(s->nowMs, Log_Send, s);
     s->t->ops->close(s->t);
     free(s);
@@ -132,6 +143,24 @@ void CoopSession_Close(CoopSession* s) {
 
 uint32_t CoopSession_Ignored(const CoopSession* s) {
     return s->ignored;
+}
+
+int CoopSession_Self(const CoopSession* s) {
+    if (s->isHost) {
+        return 0;
+    }
+    return (s->player != 0) ? s->player : -1;
+}
+
+int CoopSession_PeerPlayer(const CoopSession* s, int peer) {
+    if (CoopSession_PeerIdentity(s, peer) == NULL) {
+        return -1;
+    }
+    return s->isHost ? peer + 1 : 0;
+}
+
+bool CoopSession_LevelStarted(const CoopSession* s) {
+    return s->started;
 }
 
 const CoopIdentity* CoopSession_PeerIdentity(const CoopSession* s, int peer) {
@@ -195,6 +224,7 @@ bool CoopSession_StartLevel(CoopSession* s, const CoopLevelStart* start) {
     s->started = true;
     s->levelEvent = true;
     for (i = 0; i < COOP_NET_MAX_PEERS; i++) {
+        s->peers[i].saveDue = true;
         s->peers[i].levelDue = true;
     }
     return true;
@@ -266,7 +296,7 @@ static bool Identity_ReadAll(CoopIdentity* id, const uint8_t* data, uint16_t siz
     return read != 0 && read == size;
 }
 
-// Level start on the wire: level, phase, roster, then the values little-endian.
+// Level start on the wire: level, phase, roster, the values little-endian. The save goes in a message of its own.
 #define LEVEL_START_SIZE (2 + COOP_SESSION_PLAYERS + 4 * COOP_LEVEL_START_VALUES)
 
 static void LevelStart_Write(const CoopLevelStart* start, uint8_t* out) {
@@ -374,7 +404,11 @@ static void Host_SendOwed(CoopSession* s) {
                                             sizeof(s->roster.character), COOP_NET_RELIABLE)) {
             p->rosterDue = false;
         }
-        if (p->levelDue) {
+        if (p->saveDue &&
+            s->t->ops->send(s->t, i, COOP_MSG_SESSION_SAVE, s->level.save, COOP_SAVE_SIZE, COOP_NET_RELIABLE)) {
+            p->saveDue = false;
+        }
+        if (p->levelDue && !p->saveDue) {
             LevelStart_Write(&s->level, s->buffer);
             if (s->t->ops->send(s->t, i, COOP_MSG_SESSION_LEVEL_START, s->buffer, LEVEL_START_SIZE,
                                 COOP_NET_RELIABLE)) {
@@ -610,8 +644,8 @@ static bool Roster_Valid(const uint8_t* data, uint16_t size, uint8_t self) {
     return true;
 }
 
-// True if data is a level start this client can enter: a level there is, and a roster as above in which everyone holds
-// a character, as the host starts no other way.
+// True if data is a level start this client can enter: a level there is, and a roster as above in which everyone
+// holds a character, as the host starts no other way.
 static bool LevelStart_Valid(const uint8_t* data, uint16_t size, uint8_t self) {
     const uint8_t* roster = data + 2;
     int i;
@@ -628,8 +662,21 @@ static bool LevelStart_Valid(const uint8_t* data, uint16_t size, uint8_t self) {
     return true;
 }
 
+// The host's save, ahead of the level start. To the session it is bytes; the game takes it at the level start
+// (src/port/coop/game/save.h). True if ev was filled in: a save of another size ends the session.
+static bool Client_Save(CoopSession* s, const CoopNetEvent* net, CoopSessionEvent* ev) {
+    if (net->size != COOP_SAVE_SIZE) {
+        Client_Broken(s, ev);
+        return true;
+    }
+    memcpy(s->level.save, net->data, COOP_SAVE_SIZE);
+    s->saveHeld = true;
+    return false;
+}
+
+// A level start the host sent without its save first is from a broken host: the level would start on this game's own.
 static void Client_LevelStart(CoopSession* s, const CoopNetEvent* net, CoopSessionEvent* ev) {
-    if (!LevelStart_Valid(net->data, net->size, s->player)) {
+    if (!s->saveHeld || !LevelStart_Valid(net->data, net->size, s->player)) {
         Client_Broken(s, ev);
         return;
     }
@@ -746,6 +793,12 @@ static bool Client_Poll(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) {
                 if (s->client == CLIENT_ACTIVE && net.msgId == COOP_MSG_SESSION_ROSTER) {
                     Client_Roster(s, &net, ev);
                     return true;
+                }
+                if (s->client == CLIENT_ACTIVE && !s->started && !s->saveHeld && net.msgId == COOP_MSG_SESSION_SAVE) {
+                    if (Client_Save(s, &net, ev)) {
+                        return true;
+                    }
+                    break;
                 }
                 if (s->client == CLIENT_ACTIVE && !s->started && net.msgId == COOP_MSG_SESSION_LEVEL_START) {
                     Client_LevelStart(s, &net, ev);

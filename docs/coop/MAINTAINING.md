@@ -38,7 +38,8 @@ Do not rename a branch that is the head of an open PR: GitHub closes the PR (tha
 
 **Off since 2026-11-07, by the owner's choice:** waiting for GitHub CI only slowed development. Both co-op workflows are
 disabled in the repository settings, not deleted, and the `coop` ruleset no longer requires `Co-op checks`. Local runs
-are the check: `python tools/coop/build.py` before a push, `python tools/coop/test_all.py` before a merge. To turn CI on
+are the check: `python tools/coop/build.py` and the area's `test_all.py --only` steps before a push, the full
+`python tools/coop/test_all.py` once per batch of PRs before the merge (CONTRIBUTING.md, #195). To turn CI on
 again: `gh workflow enable "Co-op checks"`, `gh workflow enable "Co-op build"`, and add `Co-op checks` back as a required
 status check of the `coop` ruleset (`.github/rulesets/coop.json`). What the workflows do when on:
 
@@ -66,9 +67,9 @@ for w in GenerateBuilds "Linux Validation" "Windows Validation" "MacOS Validatio
 done
 ```
 
-**Actions minutes while private:** private repositories have a monthly quota of free Actions minutes; Windows
-minutes count twice and macOS minutes ten times. A code PR costs about 40 Linux minutes plus 35 Windows minutes
-(counted as 70). Public repositories have no quota for standard runners.
+**Actions minutes:** the repository is public, and public repositories have no quota for standard runners. If it goes
+private again: private repositories have a monthly quota of free Actions minutes; Windows minutes count twice and macOS
+minutes ten times. A code PR costs about 40 Linux minutes plus 35 Windows minutes (counted as 70).
 
 When more people help maintain: add them as collaborators (Write for contributors, Maintain or Admin for
 maintainers) and give them areas in `.github/CODEOWNERS`.

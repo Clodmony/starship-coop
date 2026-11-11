@@ -115,6 +115,15 @@ const CoopRoster* CoopSession_Roster(const CoopSession* s);
 bool CoopSession_Stats(const CoopSession* s, int peer, CoopNetStats* out);
 // Messages dropped because their sender had not joined, or because they were out of place in the handshake.
 uint32_t CoopSession_Ignored(const CoopSession* s);
+// Our own player index: 0 on the host, the welcome's on a client, -1 on a client before it.
+int CoopSession_Self(const CoopSession* s);
+// The player index of a peer that has joined (host: peer + 1, client: 0, the host); -1 for anyone else.
+int CoopSession_PeerPlayer(const CoopSession* s, int peer);
+// True once a level has started: from then on every player is needed, and one who goes ends the session for all.
+bool CoopSession_LevelStarted(const CoopSession* s);
+// The session's last line in the co-op log, `session closed`, written now so that it can still reach the other
+// players before the connection goes (the handover, #189). Once per session: Close writes it if nobody did.
+void CoopSession_SayClosed(CoopSession* s);
 void CoopSession_Close(CoopSession* s);
 
 const char* CoopSession_EndText(CoopSessionEnd end);

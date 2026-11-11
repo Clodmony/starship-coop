@@ -13,7 +13,10 @@
 #include "global.h"
 #include "port/coop/game/input.h"
 #include "port/coop/game/players.h"
+#include "port/coop/game/save.h"
 #include "port/coop/log/coop_log.h"
+#include "port/coop/math/atan.h"
+#include "port/coop/math/sincos.h"
 #include "port/coop/net/protocol.h"
 #include "port/hooks/Events.h"
 #include "desync.h"
@@ -219,6 +222,28 @@ void CoopSyncGame_Init(void) {
     REGISTER_LISTENER(GamePreUpdateEvent, CoopSyncGame_OnGamePreUpdate, EVENT_PRIORITY_HIGH);
 }
 
+// The N64's sine, cosine and arctangent from here until CoopSyncGame_End (decision 0011, #186). Begin is where the menu
+// and the test join driver both arm the lockstep, before the level is set up. The line is the same on every platform,
+// so two logs side by side show that both games use them.
+static void Sync_MathOn(void) {
+    uint32_t sinIn = 0x406A927Fu;  // 210 degrees as SIN_DEG hands it to __sinf: the input of the first desync (#186)
+    uint32_t atanIn = 0x3F000000u; // 0.5
+    uint32_t sinOut, atanOut;
+    float x, s, a;
+
+    CoopMath_SetSession(1);
+    memcpy(&x, &sinIn, sizeof(x));
+    s = CoopMath_Sinf(x);
+    memcpy(&sinOut, &s, sizeof(sinOut));
+    memcpy(&x, &atanIn, sizeof(x));
+    a = CoopMath_FAtanF(x);
+    memcpy(&atanOut, &a, sizeof(atanOut));
+    CoopLog_Write(COOP_LOG_SESSION, false,
+                  "math the N64's sine, cosine and arctangent are on for this session (sin of 0x%08x = 0x%08x, atan of "
+                  "0x%08x = 0x%08x)",
+                  (unsigned) sinIn, (unsigned) sinOut, (unsigned) atanIn, (unsigned) atanOut);
+}
+
 void CoopSyncGame_Begin(const CoopSyncLink* link, const uint8_t* roster, int32_t self, bool host) {
     uint32_t present = 0;
     int32_t players = 0;
@@ -242,6 +267,7 @@ void CoopSyncGame_Begin(const CoopSyncLink* link, const uint8_t* roster, int32_t
     sWaiting = false;
     sMuted = false;
     sState = SYNC_ARMED;
+    Sync_MathOn();
 }
 
 void CoopSyncGame_Receive(int peer, uint16_t msgId, const uint8_t* data, uint16_t size) {
@@ -265,12 +291,16 @@ void CoopSyncGame_Receive(int peer, uint16_t msgId, const uint8_t* data, uint16_
 }
 
 void CoopSyncGame_End(void) {
+    // Every way a session ends comes through here, the host's leaving and a failure included: this game's own save
+    // back from its file (decision 0009 item 8). Nothing if the session never got to its level start.
+    CoopSave_Leave();
     if (sState == SYNC_RUNNING) {
         CoopInput_ClearSources();
         CoopLog_Write(COOP_LOG_LOCKSTEP, false, "lockstep ended at frame %u: %u frames held for %u ms in all",
                       (unsigned) sLockstep.frame, (unsigned) sHeldFrames, (unsigned) sHeldMs);
     }
     CoopDesyncGame_End();
+    CoopMath_SetSession(0); // the C library again, as upstream (decision 0011)
     sState = SYNC_OFF;
     sWaiting = false;
 }

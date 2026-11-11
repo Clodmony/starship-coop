@@ -94,9 +94,21 @@ python tools/coop/build.py --assets   # first time: also builds sf64.o2r from yo
   yet.
 - Push only when the build is green. Say in the PR which OS you built on.
 
-Before a PR is merged, `python tools/coop/test_all.py --base-exe <a build of coop>` runs every test in lanes,
-unattended, and must end in `RESULT: PASS`; `--config Release` does the same on a Release build. Say in the PR what ran
-and what did not. The game shows its build id at the right end of the menu bar (F1).
+Tests run in two tiers, so that the long run happens once per batch of PRs and not once per change (#195):
+
+- **On your branch, before a push:** `python tools/coop/build.py`, the checks your issue adds, and the `test_all.py`
+  steps for the area you touched: `python tools/coop/test_all.py --only <steps>`, with the steps from the table
+  "Which steps for which change" in [tools/coop/README.md](tools/coop/README.md). Nothing more is expected on a
+  branch; a full run there is your choice, not a rule.
+- **Before a merge, once per batch:** `python tools/coop/test_all.py --base-exe <a build of coop>` runs every test in
+  lanes, unattended, and must end in `RESULT: PASS`; `--config Release` does the same on a Release build. It runs on
+  a **batch branch**: `coop` with every PR about to merge merged in (the first was `issue/combined-test`, six issues,
+  2026-11-09). One passing run covers all of them, as long as `coop` after the merges has the same tree
+  (`git diff coop <batch branch>` prints nothing) and no covered PR was pushed to after the run. A PR pushed to later
+  needs a new batch run or a full run of its own. A failed batch is bisected: drop a PR, run again.
+
+Say in the PR what ran and what did not, and name the commit it ran on. The game shows its build id at the right end
+of the menu bar (F1).
 
 ## Commits
 
@@ -109,10 +121,11 @@ and what did not. The game shows its build id at the right end of the menu bar (
 ## Pull requests
 
 1. Open the PR as a **draft** early, with the template filled in and `Closes #<issue>`.
-2. Mark it ready when the checklist is done. It needs a passing `test_all.py` run on the branch with `coop` merged in,
-   named in the PR, and one approving review from a code owner (`.github/CODEOWNERS`). Maintainers can merge their own PRs without a
-   second review while the project has a single maintainer; direct pushes to `coop` are blocked for everyone (see
-   docs/coop/MAINTAINING.md).
+2. Mark it ready when the checklist is done. It needs a passing full `test_all.py` run that holds this PR, on a batch
+   branch or on this branch with `coop` merged in (see "Build locally before you push"), named in the PR with the
+   commit it ran on, and one approving review from a code owner (`.github/CODEOWNERS`). Maintainers can merge their
+   own PRs without a second review while the project has a single maintainer; direct pushes to `coop` are blocked for
+   everyone (see docs/coop/MAINTAINING.md).
 3. Say which QA level the change reached and how it was tested ([docs/coop/QA.md](docs/coop/QA.md)). "Compiles" is
    a valid answer; claiming more than you ran is not.
 4. If an AI agent wrote the change, say so, and have the human who runs the agent review the diff before marking the

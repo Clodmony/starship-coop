@@ -18,8 +18,10 @@ Run it unattended and read only the summary line (`build: OK ...` or `build: FAI
 The full log is `<build dir>/coop-build.log`. Build dirs: `build-cmake` (Ninja) on Linux/macOS, `build/x64` (Visual
 Studio 2022) on Windows. Upstream's manual steps are in `docs/BUILDING.md`.
 
-- Build locally before every push, and run `python tools/coop/test_all.py` before a merge. GitHub CI is off
-  (docs/coop/MAINTAINING.md), so nothing repeats the build for you.
+- Build locally before every push, with the `test_all.py --only` steps for the area you touched (table "Which steps
+  for which change" in `tools/coop/README.md`). The full `python tools/coop/test_all.py` runs once per batch of PRs
+  before the merge, not on every branch (CONTRIBUTING.md, #195). GitHub CI is off (docs/coop/MAINTAINING.md), so
+  nothing repeats the build for you.
 - Ask the owner before installing build dependencies. Linux packages are listed in `.github/workflows/coop-build.yml`.
 - The ROM (`baserom.z64`) and the generated `sf64.o2r` / `starship.o2r` never go into git (`.gitignore` covers them;
   `python tools/coop/check.py` fails if one is tracked).

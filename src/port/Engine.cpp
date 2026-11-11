@@ -47,12 +47,16 @@
 #include "port/coop/test/view_trace.h"   // COOP: what a client shows and hears, for tests (#30)
 #include "port/coop/test/stop_signal.h"  // COOP: clean exit on SIGTERM in test runs (#71)
 #include "port/coop/test/join_driver.h" // COOP: scripted join flow for tests (WP-24)
+#include "port/coop/math/sincos.h"          // COOP: the N64's sine and cosine in a session (#186)
 #include "port/coop/test/lockstep_driver.h" // COOP: scripted input in a session, for tests (#20)
 #include "port/coop/sync/lockstep_game.h"   // COOP: frames in lockstep (#20)
 #include "port/coop/log/log_game.h"   // COOP: the co-op log of a session (#172)
 #include "port/coop/log/log_spdlog.h" // COOP: the game's warnings and errors in the co-op log (#172)
 #include "port/coop/ui/menu_window.h"     // COOP: the co-op menu starts levels (#126)
 #include "port/coop/game/input_game.h"    // COOP: an input source per player (WP-14)
+#include "port/coop/game/vehicles.h"      // COOP: one Landmaster per player (#16)
+#include "port/coop/game/aim.h"           // COOP: whom bosses and dogfighters follow (#213)
+#include "port/coop/game/team.h"          // COOP: a human-flown wingman's all-range body (#15)
 
 #include <Fast3D/interpreter.h>
 #include <filesystem>
@@ -327,6 +331,9 @@ void GameEngine::Create() {
     CoopLockstepDriver_Init(); // COOP: no-op unless SF64_COOP_LOCKSTEP_* is set (#20)
     CoopUi::Listen();      // COOP: does nothing on a frame without a co-op session (#126)
     CoopInput_Init(); // COOP: does nothing until a co-op level starts (WP-14)
+    CoopVehicles_Init(); // COOP: does nothing for player 0 or outside co-op (#16)
+    CoopAim_Init();      // COOP: a new boss or actor picks its own target; nothing outside co-op (#213)
+    CoopTeam_Init();     // COOP: does nothing outside a co-op all-range level (#15)
 }
 
 void GameEngine::Destroy() {
@@ -689,10 +696,16 @@ extern "C" void GameEngine_GetTextureInfo(const char* path, int32_t* width, int3
 }
 
 extern "C" float __cosf(float angle) throw() {
+    if (CoopMath_InSession()) { // COOP: the same bits on every platform (#186, decision 0011)
+        return CoopMath_Cosf(angle);
+    }
     return cosf(angle);
 }
 
 extern "C" float __sinf(float angle) throw() {
+    if (CoopMath_InSession()) { // COOP: as __cosf (#186)
+        return CoopMath_Sinf(angle);
+    }
     return sinf(angle);
 }
 

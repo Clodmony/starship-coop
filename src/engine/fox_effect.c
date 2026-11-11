@@ -26,6 +26,8 @@
 #include "port/interpolation/FrameInterpolation.h"
 #include "port/mods/PortEnhancements.h"
 #include "port/coop/game/effects.h" // COOP: enemy effects against the other players (#100)
+#include "port/coop/game/aim.h"     // COOP: enemies aim at the nearest human (#193)
+#include "port/coop/test/smoke_trace.h" // COOP: test-only trace of the smoke spawns, off unless asked for
 #include "sf64_tagging.h"
 
 // rodata
@@ -1862,6 +1864,7 @@ void EffectFireSmoke_Setup(EffectFireSmoke* this, f32 xPos, f32 yPos, f32 zPos, 
     } else {
         this->unk_44 = 255;
     }
+    CoopSmokeTrace_Note(this); // COOP: test-only, does nothing unless SF64_COOP_SMOKE_TRACE is set
 }
 
 void Effect_Effect340_Setup(Effect340* this, f32 xPos, f32 yPos, f32 zPos, f32 scale2) {
@@ -2317,6 +2320,14 @@ void Effect_Effect344_Update(Effect344* this) {
     f32 z;
     f32 y;
 
+    // COOP: in all-range the view cull frees a mark that is out of view (Effect_DrawAllRange); in a session nothing is
+    // freed for leaving the view (#96), so the mark ends 80 frames after its spawn, as a laser mark does (#129). The
+    // spawn sets unk_46 to 80 (PlayerShot_SetupEffect344) and nothing else reads it here (#231).
+    if (CoopPlayers_IsCoop() && (gLevelMode == LEVELMODE_ALL_RANGE) && (--this->unk_46 <= 0)) {
+        Object_Kill(&this->obj, this->sfxSource);
+        return;
+    }
+
     if (gGroundType == 4) {
         Ground_801B6E20(this->obj.pos.x, this->obj.pos.z + gPathProgress, &x, &y, &z);
         this->obj.pos.y = y + 3.0f;
@@ -2438,6 +2449,7 @@ void func_effect_8007E6B8(Effect* this, u32 objId, f32 xPos, f32 yPos, f32 zPos,
     f32 temp_ft4;
     Vec3f sp40;
     Vec3f sp34;
+    Player* aimed = &gPlayer[CoopAim_Nearest(xPos, yPos, zPos)]; // COOP: the nearest human, was player 0 (#193)
 
     Effect_Initialize(this);
     this->obj.status = OBJ_INIT;
@@ -2449,9 +2461,9 @@ void func_effect_8007E6B8(Effect* this, u32 objId, f32 xPos, f32 yPos, f32 zPos,
     this->obj.pos.z = zPos;
 
     Object_SetInfo(&this->info, this->obj.id);
-    sp50 = Math_Atan2F(gPlayer[0].pos.x - xPos, gPlayer[0].trueZpos - zPos);
-    temp_ft4 = sqrtf(SQ(gPlayer[0].pos.x - xPos) + SQ(gPlayer[0].trueZpos - zPos));
-    sp54 = -Math_Atan2F(gPlayer[0].pos.y - yPos, temp_ft4);
+    sp50 = Math_Atan2F(aimed->pos.x - xPos, aimed->trueZpos - zPos);        // COOP: was gPlayer[0]
+    temp_ft4 = sqrtf(SQ(aimed->pos.x - xPos) + SQ(aimed->trueZpos - zPos)); // COOP: was gPlayer[0]
+    sp54 = -Math_Atan2F(aimed->pos.y - yPos, temp_ft4);                     // COOP: was gPlayer[0]
 
     Matrix_RotateY(gCalcMatrix, sp50, MTXF_NEW);
     Matrix_RotateX(gCalcMatrix, sp54, MTXF_APPLY);
@@ -2492,6 +2504,7 @@ void func_effect_8007E93C(Effect* this, u32 objId, f32 xPos, f32 yPos, f32 zPos,
     f32 temp_ft4;
     Vec3f sp40;
     Vec3f sp34;
+    Player* aimed = &gPlayer[CoopAim_Nearest(xPos, yPos, zPos)]; // COOP: the nearest human, was player 0 (#193)
 
     Effect_Initialize(this);
     this->obj.status = OBJ_INIT;
@@ -2503,9 +2516,9 @@ void func_effect_8007E93C(Effect* this, u32 objId, f32 xPos, f32 yPos, f32 zPos,
     this->obj.pos.z = zPos;
 
     Object_SetInfo(&this->info, this->obj.id);
-    sp50 = Math_Atan2F(gPlayer[0].cam.eye.x - xPos, gPlayer[0].cam.eye.z - zPos);
-    temp_ft4 = sqrtf(SQ(gPlayer[0].cam.eye.x - xPos) + SQ(gPlayer[0].cam.eye.z - zPos));
-    sp54 = -Math_Atan2F(gPlayer[0].cam.eye.y - yPos, temp_ft4);
+    sp50 = Math_Atan2F(aimed->cam.eye.x - xPos, aimed->cam.eye.z - zPos);        // COOP: was gPlayer[0]
+    temp_ft4 = sqrtf(SQ(aimed->cam.eye.x - xPos) + SQ(aimed->cam.eye.z - zPos)); // COOP: was gPlayer[0]
+    sp54 = -Math_Atan2F(aimed->cam.eye.y - yPos, temp_ft4);                      // COOP: was gPlayer[0]
 
     Matrix_RotateY(gCalcMatrix, sp50, MTXF_NEW);
     Matrix_RotateX(gCalcMatrix, sp54, MTXF_APPLY);
@@ -2649,8 +2662,10 @@ void func_effect_8007F04C(ObjectId objId, f32 xPos, f32 yPos, f32 zPos, f32 xRot
 
 void Effect_EnemyLaser(ObjectId objId, f32 xPos, f32 yPos, f32 zPos, f32 speed) {
     s32 i;
+    // COOP: no shot from close by at the one func_effect_8007E6B8 aims at, the nearest human; was gPlayer[0] (#193)
+    Player* aimed = &gPlayer[CoopAim_Nearest(xPos, yPos, zPos)];
 
-    if ((fabsf(zPos - gPlayer[0].trueZpos) > 300.0f) || (fabsf(xPos - gPlayer[0].pos.x) > 300.0f)) {
+    if ((fabsf(zPos - aimed->trueZpos) > 300.0f) || (fabsf(xPos - aimed->pos.x) > 300.0f)) {
         for (i = ARRAY_COUNT(gEffects) - 1; i >= 0; i--) {
             if (gEffects[i].obj.status == OBJ_FREE) {
                 Matrix_Push(&gCalcMatrix);
@@ -2664,8 +2679,10 @@ void Effect_EnemyLaser(ObjectId objId, f32 xPos, f32 yPos, f32 zPos, f32 speed) 
 
 void func_effect_8007F20C(ObjectId objId, f32 xPos, f32 yPos, f32 zPos, f32 speed) {
     s32 i;
+    // COOP: no shot from close by at the one func_effect_8007E93C aims at, the nearest human; was gPlayer[0] (#193)
+    Player* aimed = &gPlayer[CoopAim_Nearest(xPos, yPos, zPos)];
 
-    if ((fabsf(zPos - gPlayer[0].cam.eye.z) > 300.0f) || (fabsf(xPos - gPlayer[0].cam.eye.x) > 300.0f)) {
+    if ((fabsf(zPos - aimed->cam.eye.z) > 300.0f) || (fabsf(xPos - aimed->cam.eye.x) > 300.0f)) {
         for (i = ARRAY_COUNT(gEffects) - 1; i >= 0; i--) {
             if (gEffects[i].obj.status == OBJ_FREE) {
                 Matrix_Push(&gCalcMatrix);
@@ -3013,6 +3030,14 @@ void Effect_Effect356_Update(Effect356* this) {
 }
 
 void Effect_Effect376_Update(Effect376* this) {
+    // COOP: in all-range the view cull frees a plasma ball that is out of view (Effect_DrawAllRange); in a session
+    // nothing is freed for leaving the view (#96), so the ball ends when the timer_50 of its setup runs out, 100 frames
+    // (func_effect_8007E6B8), as the enemy lasers of that setup do. By then it has faded to 50 for 67 frames (#246).
+    if (CoopPlayers_IsCoop() && (gLevelMode == LEVELMODE_ALL_RANGE) && (this->timer_50 == 0)) {
+        Object_Kill(&this->obj, this->sfxSource);
+        return;
+    }
+
     this->obj.rot.z += 8.0f;
     this->scale2 += 0.1f;
     // It seems they forgot that unk_4A is s16 and not a float...
@@ -3031,12 +3056,14 @@ void Effect_Effect398_Update(Effect398* this) {
     Vec3f srcVelocity;
     Vec3f destVelocity;
     Vec3f sp3C;
+    Player* aimed; // COOP: who it is shot at (#193)
 
     switch (this->state) {
         case 0:
-            yRot = Math_Atan2F(gPlayer[0].pos.x - this->obj.pos.x, gPlayer[0].trueZpos - this->obj.pos.z);
-            temp = sqrtf(SQ(gPlayer[0].pos.x - this->obj.pos.x) + SQ(gPlayer[0].trueZpos - this->obj.pos.z));
-            xRot = -Math_Atan2F(gPlayer[0].pos.y - this->obj.pos.y, temp);
+            aimed = &gPlayer[CoopAim_Nearest(this->obj.pos.x, this->obj.pos.y, this->obj.pos.z)];  // COOP: was player 0
+            yRot = Math_Atan2F(aimed->pos.x - this->obj.pos.x, aimed->trueZpos - this->obj.pos.z); // COOP: as above
+            temp = sqrtf(SQ(aimed->pos.x - this->obj.pos.x) + SQ(aimed->trueZpos - this->obj.pos.z)); // COOP: as above
+            xRot = -Math_Atan2F(aimed->pos.y - this->obj.pos.y, temp);                                // COOP: as above
             Matrix_RotateY(gCalcMatrix, yRot, MTXF_NEW);
             Matrix_RotateX(gCalcMatrix, xRot, MTXF_APPLY);
             srcVelocity.y = 0.0f;
@@ -3839,14 +3866,17 @@ void Effect_Effect395_Update(Effect395* this) {
                         this->unk_46--;
                     }
                     if (((gGameFrameCount % 16) == 0) && (this->timer_50 == 0)) {
-                        D_800D18EC =
-                            RAD_TO_DEG(Math_Atan2F(gPlayer[0].cam.eye.x - gBosses[0].obj.pos.x,
-                                                   gPlayer[0].cam.eye.z - (gBosses[0].obj.pos.z + gPathProgress)));
+                        // COOP: the beam turns to the Gorgon's own target, was player 0 (#213)
+                        Player* aimed = &gPlayer[CoopAim_BossTarget(0, gBosses[0].obj.pos.x, gBosses[0].obj.pos.y,
+                                                                    gBosses[0].obj.pos.z)];
+
+                        D_800D18EC = RAD_TO_DEG(Math_Atan2F(aimed->cam.eye.x - gBosses[0].obj.pos.x,
+                                                            aimed->cam.eye.z - (gBosses[0].obj.pos.z + gPathProgress)));
 
                         D_800D18E8 = RAD_TO_DEG(
-                            -Math_Atan2F(gPlayer[0].cam.eye.y - gBosses[0].obj.pos.y,
-                                         sqrtf(SQ(gPlayer[0].cam.eye.z - (gBosses[0].obj.pos.z + gPathProgress)) +
-                                               SQ(gPlayer[0].cam.eye.x - gBosses[0].obj.pos.x))));
+                            -Math_Atan2F(aimed->cam.eye.y - gBosses[0].obj.pos.y,
+                                         sqrtf(SQ(aimed->cam.eye.z - (gBosses[0].obj.pos.z + gPathProgress)) +
+                                               SQ(aimed->cam.eye.x - gBosses[0].obj.pos.x))));
                     }
                     if (gBosses[0].timer_050 == 0) {
                         gBosses[0].swork[39] = this->index;

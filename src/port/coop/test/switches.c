@@ -3,6 +3,10 @@
 #include "switches.h"
 #include "start_level.h"
 #include "team_trace.h"
+#include "aim_trace.h"
+#include "boss_trace.h"
+#include "score_probe.h"
+#include "smoke_trace.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -146,5 +150,9 @@ void CoopTestSwitches_Init(void) {
     }
 
     CoopTeamTrace_Init(); // no-op unless SF64_COOP_TEAM_* is set (#89)
+    CoopAimTrace_Init();  // no-op unless SF64_COOP_AIM_TRACE is set (#193)
+    CoopBossTrace_Init(); // no-op unless SF64_COOP_BOSS_TRACE is set (#213)
+    CoopScoreProbe_Init(); // no-op unless SF64_COOP_SCORE_PROBE is set (#210)
+    CoopSmokeTrace_Init(); // no-op unless SF64_COOP_SMOKE_TRACE is set
     CoopTestStart_Init(); // no-op unless SF64_COOP_TEST_START_LEVEL is set (#148)
 }

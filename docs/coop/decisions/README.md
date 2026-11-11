@@ -18,5 +18,8 @@ One file per architecture decision: `NNNN-short-title.md`, numbered in order. Co
 | [0006](0006-human-flown-wingman.md) | What a human-flown wingman is: the character's shields follow the player | Accepted |
 | [0007](0007-lives-and-respawn.md) | Lives and respawn: a shared pool, players 2-4 return while Fox is refilled in place | Accepted |
 | [0008](0008-routes-and-score.md) | Routes, warps, hit count and medals: the team earns, the host steers, the team scores | Accepted |
-| [0009](0009-vehicles-cutscenes-save.md) | Vehicles, cutscene timing and save | Proposed; item 6 Accepted (a vehicle per player) |
+| [0009](0009-vehicles-cutscenes-save.md) | Vehicles, cutscene timing and save | Proposed; item 6 Accepted (a vehicle per player); item 8 Accepted (the host's save for the session, no real save written in one) |
 | [0010](0010-cross-platform-sessions.md) | Cross-platform sessions: a platform difference warns, it does not refuse | Accepted |
+| [0011](0011-deterministic-sine-in-sessions.md) | Sine, cosine and arctangent in a session come from the N64's own code, not the C library | Accepted |
+| [0012](0012-taken-wingman-scenes.md) | A wingman a human flies is not shown twice: the scene goes to a free computer wingman, else Katt or Bill | Accepted (changes 0006 C1 for on-rails scenes) |
+| [0013](0013-rescue-lines.md) | A borrowed rescue keeps its radio: the substitute's own help and thanks lines | Accepted (changes 0012 rule 5 for the scenes in its table) |

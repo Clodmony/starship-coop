@@ -18,6 +18,9 @@ extern s32 sSeededRandSeed3;
 // src/overlays/ovl_menu/fox_map.c
 void Map_LevelStart_AudioSpecSetup(LevelId level);
 
+// src/audio/audio_general.c: the audio spec the game last asked for
+extern u8 sAudioSpecId;
+
 // What a level reads and level init does not set, so what a game brings along from before. The order is the wire order
 // (PROTOCOL.md): a change here is a new COOP_PROTOCOL_VERSION.
 #define LEVEL_START_TABLE(X)            \
@@ -102,6 +105,28 @@ void CoopLevelStart_FromGame(CoopLevelStart* out, uint8_t level, uint8_t phase) 
             out->values[n++] = Row_Get(&sRows[r], i);
         }
     }
+    CoopSave_FromGame(out->save);
+}
+
+// What a level sets up on its first frame and the state hash already reads before that frame: Player_Setup
+// (src/engine/fox_play.c:4574) sets the per-player values and gObjectLoadIndex, the path update gPathVelZ. Until then
+// they hold whatever the last level this process played left, so two games whose histories differ hash apart at frame
+// 0, though nothing reads them before they are set (#187). Every game clears them as a fresh process holds them.
+static void LevelStart_ClearSetupValues(void) {
+    memset(gLeftWingHealth, 0, sizeof(gLeftWingHealth));
+    memset(gRightWingHealth, 0, sizeof(gRightWingHealth));
+    memset(gChargeTimers, 0, sizeof(gChargeTimers));
+    memset(gUturnDownTimers, 0, sizeof(gUturnDownTimers));
+    memset(gUturnBrakeTimers, 0, sizeof(gUturnBrakeTimers));
+    memset(gLoopDownTimers, 0, sizeof(gLoopDownTimers));
+    memset(gLoopBoostTimers, 0, sizeof(gLoopBoostTimers));
+    memset(gLeftWingDebrisTimer, 0, sizeof(gLeftWingDebrisTimer));
+    memset(gRightWingDebrisTimer, 0, sizeof(gRightWingDebrisTimer));
+    memset(gHasShield, 0, sizeof(gHasShield));
+    memset(gShieldTimer, 0, sizeof(gShieldTimer));
+    memset(gShieldAlpha, 0, sizeof(gShieldAlpha));
+    gObjectLoadIndex = 0;
+    gPathVelZ = 0.0f;
 }
 
 void CoopLevelStart_Enter(const CoopLevelStart* start) {
@@ -114,6 +139,7 @@ void CoopLevelStart_Enter(const CoopLevelStart* start) {
             Row_Set(&sRows[r], i, start->values[n++]);
         }
     }
+    LevelStart_ClearSetupValues();
     CoopPlayers_SetRoster(start->roster);
     gMainController = 0; // team-wide input is player 0's slot on every client, whichever port this PC's title found
 
@@ -124,5 +150,12 @@ void CoopLevelStart_Enter(const CoopLevelStart* start) {
     gNextLevel = start->level;
     gNextLevelPhase = start->phase;
     gNextGameState = GSTATE_PLAY;
+    // As from the map, whose spec no level uses, so the level's spec always resets the audio heap. A spec that is the
+    // one already loaded resets nothing, and then the voice sequence runs on with the tempo where this game's own
+    // history left it, so a radio line ends one frame apart on two games (#230). Going into Macbeth from the boot logo
+    // or from Macbeth, for example: both use AUDIOSPEC_MA. After the reset the voice player starts over a fixed number
+    // of frames after this call. A game that is in the level's scene already gets to Play_Init 2 frames sooner
+    // (Game_ChangeScene loads no scene), so it is in step with the others only if they come from that scene too.
+    sAudioSpecId = AUDIOSPEC_24;
     Map_LevelStart_AudioSpecSetup((LevelId) start->level);
 }

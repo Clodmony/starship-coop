@@ -171,6 +171,9 @@ list(FILTER ALL_FILES EXCLUDE REGEX "src/overlays/ovl_ending/fox_end2_data.c")
 list(FILTER ALL_FILES EXCLUDE REGEX "src/sys/sys_timer.c")
 list(FILTER ALL_FILES EXCLUDE REGEX "src/sys/sys_fault.c")
 list(FILTER ALL_FILES EXCLUDE REGEX "src/mods/object_ram.c")
+# COOP: the recursive glob finds "Resource.rc" in any subfolder, so a second checkout in the private local/ folder
+# (a worktree for a friend's build) gave the link a second VERSION resource (CVT1100). Skip local/.
+list(FILTER ALL_FILES EXCLUDE REGEX "^local/")
 
 if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(IOS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/libultraship/ios)
@@ -414,6 +417,16 @@ if(USE_NETWORKING)
         set_source_files_properties(src/port/coop/net/transport_steam.c src/port/coop/net/steam_backend_flat.c
             PROPERTIES COMPILE_DEFINITIONS USE_STEAM_RELAY)
     endif()
+endif()
+
+# COOP: the session's sine and cosine (decision 0011, #186) must give the same bits on every target, so no fused
+# multiply-add: GCC and clang may contract by default on targets that have one. MSVC does not contract without /fp:fast.
+if(NOT MSVC)
+    # aim.c (#193) chooses the nearest player by comparing squared distances: the same rule, so a near tie must not depend
+    # on a fused multiply-add either.
+    # rand_order.c (#199) gives a draw times a scale minus another: the bits of the game's own expression on x86-64.
+    set_source_files_properties(src/port/coop/math/sincos.c src/port/coop/math/atan.c src/port/coop/game/aim.c
+        src/port/coop/math/rand_order.c PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
 endif()
 
 option(USE_STANDALONE "Build as a standalone executable" OFF)

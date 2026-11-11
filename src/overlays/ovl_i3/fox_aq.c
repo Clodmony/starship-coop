@@ -8,6 +8,7 @@
 #include "assets/ast_blue_marine.h"
 #include "assets/ast_aquas.h"
 #include "port/hooks/Events.h"
+#include "port/coop/game/aim.h" // COOP: the Bacoon aims at the nearest human (#220)
 // #include "prevent_bss_reordering2.h"
 
 const char D_i3_801C1A30[] = "プレイヤーのすべてをクリア \n"; // Clear of all players
@@ -1137,8 +1138,8 @@ void Aquas_801ABA40(PlayerShot* shot) {
         switch (shot->unk_5C) {
             case 0:
                 shot->timer = 50;
-                shot->obj.rot.y = gPlayer[0].rot.y;
-                shot->obj.rot.x = gPlayer[0].rot.x;
+                shot->obj.rot.y = gPlayer[shot->sourceId].rot.y; // COOP: was gPlayer[0]; the marine that fired (#16)
+                shot->obj.rot.x = gPlayer[shot->sourceId].rot.x; // COOP: was gPlayer[0] (#16)
                 shot->unk_5C++;
                 break;
 
@@ -1788,7 +1789,11 @@ void Aquas_Actor255_Update(Actor255* this) {
             }
             if (this->timer_0BC == 0) {
                 var_v0 = this->iwork[0] * 50 + this->counter_04E - D_i3_801BFB64[this->iwork[1]];
-                if (var_v0 < this->iwork[0] * 50) {
+                // COOP: was "var_v0 < this->iwork[0] * 50". iwork is unsigned and 64 bits wide in the port (s32 on the
+                // N64), so a negative var_v0 compared as a huge number: for the eel of pod 0 the index was not wrapped
+                // and the smoke's position was read up to 30 entries before D_i3_801C27C8, from whatever the compiler
+                // put there. A Windows and a Linux game spawned the puff in two places (docs/coop/NOTES.md, 2026-11-11)
+                if (var_v0 < (s32) (this->iwork[0] * 50)) {
                     if (var_v0 > 0) {
                         var_v0 -= this->iwork[0] * 50;
                     }
@@ -1871,7 +1876,8 @@ void Aquas_Actor255_Draw(Actor255* this) {
 
         index = ((this->iwork[0] * 50) + this->counter_04E) - D_i3_801BFB64[i];
 
-        if (index < (this->iwork[0] * 50)) {
+        // COOP: was "index < (this->iwork[0] * 50)", an unsigned comparison in the port: see Aquas_Actor255_Update
+        if (index < (s32) (this->iwork[0] * 50)) {
             if (index > 0) {
                 index -= this->iwork[0] * 50;
             }
@@ -2662,6 +2668,9 @@ void Aquas_AqBacoon_Update(AqBacoon* this) {
     Vec3f spD4;
     f32 temp3;
     f32 var_fs1;
+    // COOP: the player its head and eyes turn to, was player 0; kept until its next state (#220)
+    Player* aimed = &gPlayer[CoopAim_BossTarget(this->index, this->obj.pos.x, this->obj.pos.y, this->obj.pos.z)];
+    s32 coopState = this->state; // COOP: a new state picks the nearest human again (#220)
 
     gBossFrameCount++;
 
@@ -2936,6 +2945,9 @@ void Aquas_AqBacoon_Update(AqBacoon* this) {
                 }
             }
             break;
+    }
+    if (this->state != coopState) {
+        CoopAim_ForgetBoss(this->index); // COOP: (#220)
     }
 
     switch (this->swork[AQ_SWK_0]) {
@@ -3217,9 +3229,9 @@ void Aquas_AqBacoon_Update(AqBacoon* this) {
     }
 
     if ((this->state >= 4) && (this->state < 16)) {
-        sp104 = gPlayer[0].pos.x - this->obj.pos.x;
-        sp100 = gPlayer[0].pos.y - this->obj.pos.y;
-        spFC = gPlayer[0].trueZpos - this->obj.pos.z;
+        sp104 = aimed->pos.x - this->obj.pos.x;   // COOP: aimed was gPlayer[0] here and below (#220)
+        sp100 = aimed->pos.y - this->obj.pos.y;   // COOP: as above
+        spFC = aimed->trueZpos - this->obj.pos.z; // COOP: as above
         spE8 = Math_RadToDeg(Math_Atan2F(sp104, spFC));
         // spEC = sqrtf(SQ(sp104) + SQ(spFC));
         spE4 = Math_RadToDeg(-Math_Atan2F(sp100, sqrtf(SQ(sp104) + SQ(spFC))));
@@ -3255,12 +3267,12 @@ void Aquas_AqBacoon_Update(AqBacoon* this) {
         }
     }
 
-    spF4 = gPlayer[0].pos.y - D_i3_801C4308[77];
-    spF8 = gPlayer[0].pos.x - D_i3_801C4308[76];
-    spF0 = gPlayer[0].trueZpos - D_i3_801C4308[78];
-    sp104 = gPlayer[0].pos.x - D_i3_801C4308[73];
-    sp100 = gPlayer[0].pos.y - D_i3_801C4308[74];
-    spFC = gPlayer[0].trueZpos - D_i3_801C4308[75];
+    spF4 = aimed->pos.y - D_i3_801C4308[77];    // COOP: as above
+    spF8 = aimed->pos.x - D_i3_801C4308[76];    // COOP: as above
+    spF0 = aimed->trueZpos - D_i3_801C4308[78]; // COOP: as above
+    sp104 = aimed->pos.x - D_i3_801C4308[73];   // COOP: as above
+    sp100 = aimed->pos.y - D_i3_801C4308[74];   // COOP: as above
+    spFC = aimed->trueZpos - D_i3_801C4308[75]; // COOP: as above
 
     spE8 = Math_RadToDeg(Math_Atan2F(sp104, spFC));
     spE0 = Math_RadToDeg(Math_Atan2F(spF8, spF0));

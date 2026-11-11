@@ -46,9 +46,11 @@ stay in English.
    session, message ids reserved in `docs/coop/PROTOCOL.md`. An architecture choice no accepted record covers stops
    the work: write a decision record instead. A claim in a comment, commit or doc states only what a run showed.
 
-8. **Verify by script.** Run `python tools/coop/build.py --quiet` (docs-only: `python tools/coop/check.py`) and the
-   issue's checks unattended in the background; wait for the notification and read only the summary. It must end
-   in `build: OK`. A failure in code you did not touch: rerun that check alone before calling it flaky. A failure
+8. **Verify by script.** Run `python tools/coop/build.py --quiet` (docs-only: `python tools/coop/check.py`), the
+   issue's checks, and the `test_all.py --only` steps for the area touched (table "Which steps for which change" in
+   `tools/coop/README.md`) unattended in the background; wait for the notification and read only the summary. It
+   must end in `build: OK`. The full `test_all.py` is not a step here: it runs once per batch of PRs before the
+   merge (CONTRIBUTING.md). A failure in code you did not touch: rerun that check alone before calling it flaky. A failure
    from your change: fix, commit, rerun. Record the QA level and the test identity (commit, ROM version, OS,
    compiler, graphics backend). Never use the owner's own config, saves, `mods/` or running game.
 

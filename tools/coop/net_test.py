@@ -171,7 +171,9 @@ def sc_lan(run, args):
     expect(dropped(stats) == 0, "the lan profile dropped packets")
     for name, peer in (("host", h), ("client", c)):
         expect(peer["unreliable_received"] == 600, f"{name}: lost unreliable messages on a clean link")
-        expect(peer["resent"] <= 6, f"{name}: {peer['resent']} resends on a clean link")
+        # A timing limit: a resend on a clean link means an ack came later than the resend timeout. It failed once, at a
+        # load above 90, and not since (#121); the rtt in the message tells a slow machine from a transport that resends.
+        expect(peer["resent"] <= 6, f"{name}: {peer['resent']} resends on a clean link (rtt {peer['rtt_ms']} ms)")
     return summary(h, c, stats)
 
 

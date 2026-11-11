@@ -5,6 +5,8 @@
 #include "port/hooks/Events.h"
 #include "port/mods/PortEnhancements.h"
 #include "port/coop/game/players.h" // COOP: the HUD shows the client's own player (#30)
+#include "port/coop/game/score.h"   // COOP: the team's pool of lives (#210)
+#include "port/coop/game/team.h"    // COOP: no boss-fight wingman for a human-flown character (#15)
 
 Vec3f D_801616A0;
 Vec3f D_801616B0;
@@ -1042,7 +1044,7 @@ void HUD_TeammateStatus_Draw(void) {
         Lib_TextureRect_IA8(&gMasterDisp, sText[j], sTextWidth[j], sTextHeght[j], x[j][1], y[j][1], 1.0f, 1.0f);
 
         RCP_SetupDL(&gMasterDisp, SETUPDL_76_OPTIONAL);
-        shield = gTeamShields[3 - j];
+        shield = CoopTeam_DisplayShields(3 - j); // COOP: a human's share of its larger gauge, not the held 255
 
         if (shield <= 0) {
             gDPSetPrimColor(gMasterDisp++, 0, 0, 48, 48, 48, 255);
@@ -1059,6 +1061,7 @@ void HUD_TeammateStatus_Draw(void) {
 void HUD_LevelClearStatusScreen_Draw(void) {
     s32 i;
     s32 temp;
+    s32 lives = CoopScore_LifeSlot(gPlayerNum); // COOP: the life for 100 hits goes to the pool (0007 rule 2, #210)
     f32 x0;
     f32 x1;
     f32 x2;
@@ -1086,11 +1089,11 @@ void HUD_LevelClearStatusScreen_Draw(void) {
                 D_801617C0[1] = gHitCount;
                 D_801617C0[2] = gTotalHits;
                 gTotalHits += gHitCount;
-                D_801617C0[3] = gLifeCount[gPlayerNum];
-                gLifeCount[gPlayerNum] += ((D_801617C0[2] % 100) + gHitCount) / 100;
+                D_801617C0[3] = gLifeCount[lives];                              // COOP: was gPlayerNum
+                gLifeCount[lives] += ((D_801617C0[2] % 100) + gHitCount) / 100; // COOP: was gPlayerNum
 
-                if (gLifeCount[gPlayerNum] > 99) {
-                    gLifeCount[gPlayerNum] = 99;
+                if (gLifeCount[lives] > 99) { // COOP: was gPlayerNum
+                    gLifeCount[lives] = 99;   // COOP: was gPlayerNum
                 }
 
                 D_801617E8[0] = 10;
@@ -1164,14 +1167,14 @@ void HUD_LevelClearStatusScreen_Draw(void) {
 
             case 3:
             case 4:
-                if (D_801617C0[3] < gLifeCount[gPlayerNum]) {
+                if (D_801617C0[3] < gLifeCount[lives]) { // COOP: was gPlayerNum
                     D_801617C0[6] = 30;
                 }
                 D_801617C0[0] = 5;
 
             case 5:
-                if (D_801617C0[3] >= gLifeCount[gPlayerNum]) {
-                    gLifeCount[gPlayerNum] = D_801617C0[3];
+                if (D_801617C0[3] >= gLifeCount[lives]) { // COOP: was gPlayerNum
+                    gLifeCount[lives] = D_801617C0[3];    // COOP: was gPlayerNum
                     D_801617E8[0] = 10;
                     D_801617C0[0]++;
                 } else {
@@ -1274,6 +1277,7 @@ void HUD_LevelClearStatusScreen_Draw(void) {
         HUD_TeammateStatus_Draw();
         HUD_TeamDownWrench_Draw(0);
         HUD_PlayerShieldGauge_Draw(20.0f, 18.0f);
+        CoopScore_DrawStatus(); // COOP: each human's own hits beside the team's, display only (#252)
     }
 }
 void HUD_SetMissionTeamStatus(void) {
@@ -4864,7 +4868,8 @@ void ActorTeamBoss_Init(ActorTeamBoss* this) {
         Object_Kill(&this->obj, this->sfxSource);
     }
 
-    if (gTeamShields[this->aiType] <= 0) {
+    // COOP: nor for a character a human flies, who takes the wingman's place in the fight (decision 0006 rule 3, #15)
+    if ((gTeamShields[this->aiType] <= 0) || CoopTeam_LeavesBossFight(this->aiType)) {
         Object_Kill(&this->obj, this->sfxSource);
     }
 }

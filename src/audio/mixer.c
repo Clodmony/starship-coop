@@ -277,7 +277,11 @@ static uint16_t lower_4bit[] = {
     0xf,
 };
 
+// COOP: four entries, as lower_4bit has: aADPCMdecImpl loads 8 bytes from here (_mm_loadl_epi64), and read 4 past the
+// table. The two lanes it adds only ever meet zeroed lanes of the input, so no decoded sample changes (#232).
 static uint16_t lower_2bit[] = {
+    0x3,
+    0x3,
     0x3,
     0x3,
 };

@@ -251,6 +251,15 @@ void CoopDesyncGame_End(void) {
     Dumps_Free();
 }
 
+bool CoopDesyncGame_TakeReport(char* out, size_t cap) {
+    if (sOn) {
+        Report_Write();
+    }
+    snprintf(out, cap, "%s", sReportPath);
+    sReportPath[0] = '\0';
+    return out[0] != '\0';
+}
+
 #else
 
 void CoopDesyncGame_Init(void) {
@@ -287,6 +296,13 @@ bool CoopDesyncGame_Check(uint32_t nowMs, char* text, size_t cap) {
 }
 
 void CoopDesyncGame_End(void) {
+}
+
+bool CoopDesyncGame_TakeReport(char* out, size_t cap) {
+    if (cap != 0) {
+        out[0] = '\0';
+    }
+    return false;
 }
 
 #endif

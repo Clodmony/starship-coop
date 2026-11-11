@@ -17,7 +17,8 @@ player from the per-frame trace (src/port/coop/test/player_trace.h).
   live   a live local player beside a replayed one: SF64_COOP_REPLAY_LIVE_LOCAL. Player 0 follows the gamepad and not
          pad 0 of the replay, player 1 follows pad 1 of the replay exactly and not port 1.
   alone  co-op with no replay at all: player 0 follows the gamepad, player 1 has no stream and stays idle whatever
-         port 1 does.
+         port 1 does. Enemies aim at the nearest human (#193), so the idle player gets shot and knocked about: it may
+         move only by the knock-back of a hit, and only as far as one can push it (#243).
   whole  a replay without SF64_COOP_REPLAY_LIVE_LOCAL still flies every player, gamepad or not.
   shots  what a player's shot does after it left the ship answers to that player: a lock-search shot lives on its owner's
          A, a bomb goes off on its owner's B, a lock-on runs down when its owner lets go of A. Pad 0 says the opposite.
@@ -60,12 +61,17 @@ PRESS_FRAMES = 5  # a press has to outlast the two frames a gamepad takes to rea
 MAX_LAG = 6  # frames from a gamepad step to gControllerHold[0]; two on the runs in NOTES.md (#68)
 STICK_MIN = 40  # a gamepad at STICK must show at least this much after libultraship's dead zone
 MIN_SWEEP = 600.0  # as `rails` in player_trace.py: a player who flies by a stick covers this much of x
-MAX_DRIFT = 100.0  # and one with no input moves at most this far from its place in the flight box
+MAX_DRIFT = 100.0  # and one with no input moves at most this far in the flight box, besides what hits pushed it
+# x that one hit may push it. An enemy shot sets a knock-back of 20 (src/port/coop/game/effects.c, CoopEffects_ShotHit),
+# which Player_Update adds to pos.x and runs down to 0 (src/engine/fox_play.c, Math_SmoothStepToF in fox_std_lib.c): 212
+# the one way and 233 the other, as it runs down by 0.5 a frame at the end of a negative one.
+MAX_PUSH = 250.0
 SETTLE = 10  # frames after a change of direction left out of the flight check
 
 Pad = namedtuple("Pad", "button x y press_button press_x press_y")
 Shot = namedtuple("Shot", "id owner timer exploded")
-Frame = namedtuple("Frame", "tframe row pads shots locks")
+Knock = namedtuple("Knock", "x y z hit_timer")
+Frame = namedtuple("Frame", "tframe row pads shots locks knocks")
 
 
 def pad_rule(flight):
@@ -142,7 +148,10 @@ def parse_trace(path):
             shots = [] if fields["shots"] == "-" else [Shot(*(int(v) for v in shot.split(":")))
                                                        for shot in fields["shots"].split(";")]
             locks = [int(v) for v in fields["locks"].split(",")]
-            frames.append(Frame(int(fields["tframe"]), parse_row(line), pads, shots, locks))
+            # A build before #243 writes no knock-back: no player has one then, and the idle check fails.
+            knocks = [Knock(*(float(v) for v in k.split(","))) for k in fields["knock"].split(";")] \
+                if "knock" in fields else []
+            frames.append(Frame(int(fields["tframe"]), parse_row(line), pads, shots, locks, knocks))
         except (KeyError, ValueError, IndexError, TypeError):
             if n != len(lines) - 1:  # stopping the game can cut the last line
                 raise
@@ -328,6 +337,45 @@ def sweep(rows, player):
     return max(places) - min(places) if places else 0.0
 
 
+def idle_moves(rows, player):
+    """How player `player` moved in its flight box: (x no hit explains, hits, x the hits pushed it).
+
+    A hit sets hitTimer (Player_ApplyDamage: 20, then one less a frame) and most hits a knock-back, which moves the ship
+    by itself until it has run down to 0 (src/engine/fox_play.c, Player_Update). Movement from the frame hitTimer goes up
+    until the knock-back is 0 on two frames in a row is that hit's. Any other movement is not, nor is a knock-back that
+    no hit started. knockback.z runs down in all-range only, so on the rails it can stay and is left out."""
+    free = pushed = 0.0
+    hits = 0
+    pushing = False
+    for a, b in zip(rows, rows[1:]):
+        if b.tframe != a.tframe + 1:
+            pushing = False
+            continue
+        ka, kb = a.knocks[player], b.knocks[player]
+        if kb.hit_timer > ka.hit_timer:
+            hits += 1
+            pushing = True
+        elif (ka.x, ka.y, kb.x, kb.y) == (0, 0, 0, 0):
+            pushing = False
+        moved = abs(offset(b, player) - offset(a, player))
+        if pushing:
+            pushed += moved
+        else:
+            free += moved
+    return free, hits, pushed
+
+
+def check_idle_place(s, rows, player):
+    """An idle player stays where it is, unless a hit pushes it, and a hit pushes it at most MAX_PUSH (#243)."""
+    if not (rows and all(len(f.knocks) > player for f in rows)):
+        s.check(f"player {player}'s knock-back is in the trace (a build before #243 has none)", False)
+        return
+    free, hits, pushed = idle_moves(rows, player)
+    s.check(f"player {player} with no stream moved {free:.0f} in its flight box besides hits (max {MAX_DRIFT:.0f}); "
+            f"{hits} hits pushed it {pushed:.0f} (max {MAX_PUSH:.0f} a hit)",
+            free <= MAX_DRIFT and pushed <= hits * MAX_PUSH)
+
+
 def replay_rule(pad):
     def rule(flight):
         return decoy_rule(flight) if pad == 0 else rail_pad(flight, pad)
@@ -376,8 +424,7 @@ def scenario_alone(s):
     check_press_edges(s, rows, 0)
     check_flies_right_way(s, rows, 0, lag)
     check_idle(s, rows, 1)
-    s.check(f"player 1 with no stream moved {sweep(rows, 1):.0f} in its flight box (max {MAX_DRIFT:.0f})",
-            bool(rows) and sweep(rows, 1) <= MAX_DRIFT)
+    check_idle_place(s, rows, 1)
 
 
 def scenario_whole(s):

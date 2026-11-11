@@ -10,6 +10,7 @@
 #include <stdint.h>
 
 #include "players.h"
+#include "save.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,14 +26,18 @@ typedef struct {
     uint8_t phase;                    // gLevelPhase
     uint8_t roster[COOP_PLAYERS_MAX]; // who flies what, as CoopRoster; CoopSession_StartLevel fills this in
     int32_t values[COOP_LEVEL_START_VALUES];
+    // The host's save as its game held it (CoopSave_FromGame). It travels in SESSION_SAVE, ahead of the level start,
+    // and a game in a session takes it with CoopSave_Enter; CoopLevelStart_Enter does not read it.
+    uint8_t save[COOP_SAVE_SIZE];
 } CoopLevelStart;
 
-// Host: level and phase as given, values from this game as they are now.
+// Host: level and phase as given, values and the save from this game as they are now.
 void CoopLevelStart_FromGame(CoopLevelStart* out, uint8_t level, uint8_t phase);
 
 // Puts the values in place and sends the game to the level on this frame, from whatever it is doing. Call it from a
 // GamePreUpdateEvent listener or anywhere else outside Game_Update, so that nothing runs between the values and the
-// level. The players of the roster stay in the level until CoopPlayers_SetRoster(NULL).
+// level. The players of the roster stay in the level until CoopPlayers_SetRoster(NULL). The audio heap is reset on the
+// way in, also when the level's audio spec is the one loaded, so every game's sound thread starts over there (#230).
 void CoopLevelStart_Enter(const CoopLevelStart* start);
 
 #ifdef __cplusplus

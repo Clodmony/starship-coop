@@ -79,6 +79,9 @@ LEVEL_HEAD = ("if (size != LEVEL_START_SIZE || data[0] >= COOP_LEVEL_START_LEVEL
               "        !Roster_Valid(roster, COOP_SESSION_PLAYERS, self)) {")
 LEVEL_UNPICKED = ("for (i = 1; i < COOP_SESSION_PLAYERS; i++) {\n        if (roster[i] == COOP_CHARACTER_UNPICKED) {")
 LEVEL_GATE = "if (s->client == CLIENT_ACTIVE && !s->started && net.msgId == COOP_MSG_SESSION_LEVEL_START) {"
+SAVE_GATE = "if (s->client == CLIENT_ACTIVE && !s->started && !s->saveHeld && net.msgId == COOP_MSG_SESSION_SAVE) {"
+SAVE_SEND = ("if (p->saveDue &&\n            s->t->ops->send(s->t, i, COOP_MSG_SESSION_SAVE, s->level.save, "
+             "COOP_SAVE_SIZE, COOP_NET_RELIABLE)) {")
 WRITE_VALUE = ("*out++ = (uint8_t) value;\n        *out++ = (uint8_t) (value >> 8);\n"
                "        *out++ = (uint8_t) (value >> 16);\n        *out++ = (uint8_t) (value >> 24);")
 READ_VALUE = ("uint32_t value =\n            (uint32_t) data[0] | ((uint32_t) data[1] << 8) | "
@@ -115,10 +118,9 @@ SIM = ["sim"]
 BREAKS = [
     # Creating, closing, asking.
     ("no_null_transport_check", "if (transport == NULL) {\n        return NULL;\n    }\n", "", SIM),
-    ("close_null_session", "if (s == NULL) {\n        return;\n    }\n    CoopLog_Write(COOP_LOG_SESSION, false, "
-     "\"session closed\");\n    CoopLog_End(s->nowMs, Log_Send, s);\n    s->t->ops->close(s->t);",
-     "CoopLog_Write(COOP_LOG_SESSION, false, \"session closed\");\n    CoopLog_End(s->nowMs, Log_Send, s);\n"
-     "    s->t->ops->close(s->t);", SIM),
+    ("close_null_session", "if (s == NULL) {\n        return;\n    }\n    CoopSession_SayClosed(s);\n    "
+     "CoopLog_End(s->nowMs, Log_Send, s);\n    s->t->ops->close(s->t);",
+     "CoopSession_SayClosed(s);\n    CoopLog_End(s->nowMs, Log_Send, s);\n    s->t->ops->close(s->t);", SIM),
     ("close_keeps_transport", "s->t->ops->close(s->t);\n    free(s);", "free(s);", SIM),
     ("identity_host_any_state", "return s->peers[peer].state == PEER_JOINED ? &s->peers[peer].identity : NULL;",
      "return &s->peers[peer].identity;", SIM),
@@ -523,6 +525,16 @@ BREAKS = [
     ("level_size_short", "#define LEVEL_START_SIZE (2 + COOP_SESSION_PLAYERS + 4 * COOP_LEVEL_START_VALUES)",
      "#define LEVEL_START_SIZE (2 + COOP_SESSION_PLAYERS + 4 * COOP_LEVEL_START_VALUES - 1)", SIM),
 
+    # The session's save (decision 0009 item 8): what the host owes ahead of the level start.
+    ("save_nobody_told", "s->peers[i].saveDue = true;\n", "", SIM),
+    ("save_not_sent", SAVE_SEND, "if (p->saveDue && false) {", SIM),
+    ("save_unreliable", SAVE_SEND, SAVE_SEND.replace("COOP_NET_RELIABLE", "COOP_NET_UNRELIABLE"), SIM),
+    ("save_wrong_id", SAVE_SEND, SAVE_SEND.replace("COOP_MSG_SESSION_SAVE", "COOP_MSG_SESSION_ROSTER"), SIM),
+    ("save_wrong_bytes", SAVE_SEND, SAVE_SEND.replace("s->level.save", "s->buffer"), SIM),
+    ("save_short", SAVE_SEND, SAVE_SEND.replace("COOP_SAVE_SIZE,", "COOP_SAVE_SIZE - 1,"), SIM),
+    ("save_sent_forever", "            p->saveDue = false;\n", "", SIM),
+    ("level_ahead_of_save", "if (p->levelDue && !p->saveDue) {", "if (p->levelDue) {", SIM),
+
     # Level start: what the host owes.
     ("level_stale_buffer", "LevelStart_Write(&s->level, s->buffer);\n", "", SIM),
     ("level_unreliable", LEVEL_SEND, LEVEL_SEND.replace("COOP_NET_RELIABLE", "COOP_NET_UNRELIABLE"), SIM),
@@ -552,7 +564,10 @@ BREAKS = [
     ("client_level_off", LEVEL_GATE, "if (0) {", ["sim", "level_start"]),
     ("client_level_lost", "Client_LevelStart(s, &net, ev);\n                    return true;",
      "Client_LevelStart(s, &net, ev);\n                    break;", SIM),
-    ("client_level_not_read", "if (!LevelStart_Valid(net->data, net->size, s->player)) {", "if (0) {", SIM),
+    ("client_level_not_read", "if (!s->saveHeld || !LevelStart_Valid(net->data, net->size, s->player)) {",
+     "if (!s->saveHeld) {", SIM),
+    ("client_level_without_save", "if (!s->saveHeld || !LevelStart_Valid(net->data, net->size, s->player)) {",
+     "if (!LevelStart_Valid(net->data, net->size, s->player)) {", SIM),
     ("client_level_stays_open", "LevelStart_Read(&s->level, net->data);\n    s->started = true;",
      "LevelStart_Read(&s->level, net->data);", SIM),
     ("client_level_no_values", "LevelStart_Read(&s->level, net->data);\n", "", SIM),
@@ -568,6 +583,21 @@ BREAKS = [
     ("level_unpicked_skips_first", LEVEL_UNPICKED, LEVEL_UNPICKED.replace("i = 1", "i = 2"), SIM),
     ("level_unpicked_skips_last", LEVEL_UNPICKED,
      LEVEL_UNPICKED.replace("i < COOP_SESSION_PLAYERS", "i < COOP_SESSION_PLAYERS - 1"), SIM),
+
+    # The session's save: what a client takes.
+    ("client_save_off", SAVE_GATE, "if (0) {", SIM),
+    ("client_save_twice", SAVE_GATE, SAVE_GATE.replace("!s->saveHeld && ", ""), SIM),
+    ("client_save_any_state", SAVE_GATE, SAVE_GATE.replace("s->client == CLIENT_ACTIVE && ", ""), SIM),
+    ("client_save_any_size", "if (net->size != COOP_SAVE_SIZE) {", "if (0) {", SIM),
+    ("client_save_lost", "memcpy(s->level.save, net->data, COOP_SAVE_SIZE);\n", "", SIM),
+    ("client_save_not_held", "    s->saveHeld = true;\n", "", SIM),
+    ("client_save_ends_poll", "if (Client_Save(s, &net, ev)) {\n                        return true;\n"
+     "                    }\n                    break;", "Client_Save(s, &net, ev);\n                    return true;",
+     SIM),
+    # A message shorter than it must be is read past its end. Under SANITIZER_BREAKS until #121: a plain sim fails on
+    # them too (roster_trailing, level_short), as the session also has to refuse the message.
+    ("roster_read_past_end", ROSTER_HEAD, ROSTER_HEAD.replace("size != COOP_SESSION_PLAYERS", "size < 1"), SIM),
+    ("level_read_past_end", LEVEL_HEAD, LEVEL_HEAD.replace("size != LEVEL_START_SIZE", "size < 1"), SIM),
 ]
 
 # Texts the sanitizer breaks use more than once.
@@ -583,8 +613,6 @@ SANITIZER_BREAKS = [
     ("refuse_read_past_end", REFUSE_READ, REFUSE_READ.replace("net->size < 4", "net->size < 2"), SIM),
     ("identity_peer_unchecked", "if (peer < 0 || peer >= COOP_NET_MAX_PEERS) {\n        return NULL;\n    }\n", "",
      SIM),
-    ("roster_read_past_end", ROSTER_HEAD, ROSTER_HEAD.replace("size != COOP_SESSION_PLAYERS", "size < 1"), SIM),
-    ("level_read_past_end", LEVEL_HEAD, LEVEL_HEAD.replace("size != LEVEL_START_SIZE", "size < 1"), SIM),
     # One side alone, at its very end: its result file is written and looks right, so only its exit code can tell.
     # session_test.py has no log scan like net_test.py --asan because it reads every exit (#92). A scenario that stops
     # reading its host's exit, or that of all its clients, lets one of these two survive.

@@ -7,7 +7,8 @@ in this repo at that commit; line numbers drift with upstream syncs, so search f
 
 Two players (later up to four) play the Star Fox 64 campaign together **online**: each player runs Starship on their
 own PC and sees the level from their own Arwing. Every player sees the same level: the same enemies, bosses, items,
-wingmen and route. The host's save file holds the progress.
+wingmen and route. The host's save holds the progress: a session plays on a copy of it on every PC, and no PC writes
+its save during a session ([0009](decisions/0009-vehicles-cutscenes-save.md), item 8).
 
 Local split screen (two players on one PC, the way versus mode renders) is deferred until after the first release.
 Nothing in the online design may rule it out.
@@ -117,7 +118,9 @@ Each needs a decision record before code depends on it. Proposals in brackets.
 
 1. Who player 2 is: decided in [0005](decisions/0005-players-and-characters.md). Player 1 is always Fox; players 2-4
    each pick Falco, Peppy or Slippy; unpicked wingmen stay computer wingmen. What a human-flown wingman is, with its
-   shields, radio, rail scenes and story events: [0006](decisions/0006-human-flown-wingman.md).
+   shields, radio, rail scenes and story events: [0006](decisions/0006-human-flown-wingman.md); who flies a scene that
+   would show a human-flown wingman: [0012](decisions/0012-taken-wingman-scenes.md) (the next free computer wingman,
+   else Katt, else Bill).
 2. Lives: decided in [0007](decisions/0007-lives-and-respawn.md). One shared pool, 2 plus 1 per extra player; the run
    ends when the pool is 0 and the last player goes down.
 3. A player goes down: decided in [0007](decisions/0007-lives-and-respawn.md). Players 2-4 return after 5 s for a
@@ -133,7 +136,10 @@ Each needs a decision record before code depends on it. Proposals in brackets.
 6. Landmaster and Blue Marine levels: decided in [0009](decisions/0009-vehicles-cutscenes-save.md), item 6. Every
    player gets the level's vehicle, on player 0's path; extra players stay parked in a level until it is proven (#16).
 7. Cutscenes, radio and level intros: [host's timing; clients follow].
-8. Save: [only the host saves; clients run with a throwaway save].
+8. Save: decided in [0009](decisions/0009-vehicles-cutscenes-save.md), item 8. The host's progress is the session's
+   save: the host sends it once at the session's level start, every game plays on a copy of it in memory with its own
+   sound settings, no machine writes a real save during a session, and each reads its own back when the session
+   ends. What a session earns is not kept.
 
 ## 5. Sync model
 

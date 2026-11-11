@@ -27,7 +27,11 @@ Rules, on the frames they talk about:
   sound-engine    a player who joins starts its engine, each join after leaving starts it again, and it is off while
                   the player is parked
   sound-source    all-range: a client's own player sounds from in front of its camera
-  player-down     all-range: when player 1 goes down its client looks through player 0, and its engine is off
+  player-down     all-range: when player 1 goes down its client looks through player 0, and its engine is off, until
+                  it comes back (lockstep_test.py return checks the return)
+  guns            the pokes of player 1's laser guns did what they are there for: its guns moved on both clients,
+                  first while it was in cockpit view on its own client, then while client 0 had it out of view; the
+                  hash rule then shows that the clients stayed one game through it (#192)
   pause           pause is part of the shared game, and any player can: player 1's Start pauses both clients on the
                   same frames and player 0's resumes, then player 0's Start pauses, player 1's B does nothing, as the
                   pause menu stays player 0's, and its B resumes
@@ -65,6 +69,16 @@ ACTIVE = 1680  # level frame by which player 0 flies Corneria's rails
 POKE_NUMBERS = ACTIVE + 60
 PRESS_P1_VIEW = (ACTIVE + 200, ACTIVE + 320)
 PRESS_P0_VIEW = (ACTIVE + 420, ACTIVE + 540)
+# Player 0's laser guns slide out while he is in cockpit view: the game that looks through him does not draw his wings,
+# the other does, and what the draw writes into the player must not part their hashes (#192).
+GUNS_OUT = ACTIVE + 450
+# Player 1's laser guns slide out a step a frame, one poke each, and Player_Shoot moves them back by 0.5 a frame after
+# that (#192). First while player 1 is in cockpit view: its own client draws the cockpit, not the wings. Then while
+# player 0 is, with player 1 far to its left: client 0 does not see player 1 at all, and Display_Player_Update skips
+# drawing it (Display_CheckPlayerVisible), as in the Corneria desync of the second Windows and Linux session. What the
+# draw writes into a player must not part the hashes either way.
+GUNS_P1 = (ACTIVE + 250, ACTIVE + 440)
+GUNS_P1_STEPS = (-8.0, -8.5, -9.0, -9.5, -10.0)
 HIT_P1 = ACTIVE + 640
 HIT_P0 = ACTIVE + 700
 LOW_SHIELDS = ACTIVE + 760
@@ -81,6 +95,7 @@ PAUSE_SPANS = 2
 PAUSE_MIN_ROWS = 15
 ALL_RANGE_NUMBERS = 2300  # both players fly all-range by then
 ALL_RANGE_DOWN = 3060  # player 1 is ACTIVE here; a U-turn has no down check
+RETURN_FRAMES = 150  # a downed player 2-4 is out this long (src/port/coop/game/players.c, COOP_RETURN_FRAMES)
 
 SHIELDS_P0, SHIELDS_P1 = 200, 120
 BOMBS_P0, BOMBS_P1 = 5, 7
@@ -92,7 +107,8 @@ TIMEOUT = 1500
 
 Client = namedtuple("Client", "index rows by_frame")
 Slot = namedtuple("Slot", "state parked shields bombs lives alternate sfx pos")
-Row = namedtuple("Row", "frame mode local view eye at shield bombs cockpit fill flash bars players noise paused sfx")
+Row = namedtuple("Row", "frame mode local view eye at shield bombs cockpit fill flash bars players noise paused sfx "
+                       "seen guns")
 
 
 def floats(text):
@@ -110,9 +126,11 @@ def parse_row(line):
         i += 1
     bars = {} if f["bars"] == "-" else {int(b.split(":")[0]): float(b.split(":")[1]) for b in f["bars"].split(",")}
     sfx = [] if f["sfx"] == "-" else [(int(s.split("@")[0], 16), s.split("@")[1]) for s in f["sfx"].split(",")]
+    guns = tuple(tuple(float(v) for v in g.split("/")) for g in f["guns"].split(","))
     return Row(int(f["frame"]), int(f["mode"]), int(f["local"]), int(f["view"]), floats(f["eye"]), floats(f["at"]), float(f["shield"]),
                int(f["bombs"]), int(f["cockpit"]) != 0, tuple(int(v) for v in f["fill"].split(",")), int(f["flash"]),
-               bars, players, tuple(int(v) for v in f["noise"].split(",")), int(f["pause"]) != 0, sfx)
+               bars, players, tuple(int(v) for v in f["noise"].split(",")), int(f["pause"]) != 0, sfx,
+               tuple(int(v) != 0 for v in f["seen"].split(",")), guns)
 
 
 def read_trace(index, path):
@@ -322,7 +340,8 @@ def rule_sound_source(clients):
 
 def rule_player_down(clients):
     client = clients[1]
-    after = [row for row in client.rows if row.frame > ALL_RANGE_DOWN + 5]
+    # Down on the frame after the poke, back RETURN_FRAMES later (decision 0007 rule 4, #14): out until then.
+    after = [row for row in client.rows if ALL_RANGE_DOWN + 5 < row.frame <= ALL_RANGE_DOWN + RETURN_FRAMES]
     wrong = [row.frame for row in after if joined(row) or row.view != 0 or row.noise[1] != FORM_NONE]
     good = len(after) >= 20 and not wrong
     return good, f"{len(after) - len(wrong)} of {len(after)} frames after the poke: out, looks through player 0, engine off"
@@ -348,6 +367,26 @@ def rule_pause(clients):
     return good, f"paused rows per pause on client 0 and 1: {spans[0]}, {spans[1]}; before the first press: {early[0]}, {early[1]}"
 
 
+def rule_guns(clients):
+    # A trace line is written before the pokes of its frame land, so a window shows from the frame after its first poke.
+    windows = ((GUNS_P1[0], "in cockpit view on client 1", lambda f: clients[1].by_frame[f].players[1].alternate),
+               (GUNS_P1[1], "out of view of client 0", lambda f: not clients[0].by_frame[f].seen[1]))
+    results = []
+    good = True
+    for at, what, holds in windows:
+        frames = range(at + 1, at + len(GUNS_P1_STEPS) + 1)
+        if not all(f in client.by_frame for client in clients for f in frames):
+            results.append(f"frames {frames[0]} to {frames[-1]} not in both traces")
+            good = False
+            continue
+        out = [min(client.by_frame[f].guns[1][0] for f in frames) for client in clients]
+        met = sum(1 for f in frames if holds(f))
+        results.append(f"frames {frames[0]} to {frames[-1]}: player 1's guns out to {out[0]:g} and {out[1]:g}, "
+                       f"{what} on {met} of {len(frames)}")
+        good = good and max(out) <= GUNS_P1_STEPS[-1] + 0.5 and met == len(frames)
+    return good, "; ".join(results)
+
+
 RULES = {
     "rails": {
         "camera-parked": rule_camera_parked,
@@ -360,6 +399,7 @@ RULES = {
         "shield-bar": rule_shield_bar,
         "sound-own": rule_sound_own,
         "sound-engine": rule_sound_engine,
+        "guns": rule_guns,
         "pause": rule_pause,
     },
     "all-range": {
@@ -394,7 +434,8 @@ def pokes(section):
         return ",".join([f"{ALL_RANGE_NUMBERS}:{p.split(':', 1)[1]}" for p in numbers]
                          + [f"{ALL_RANGE_DOWN}:1:down:4"])
     return ",".join(numbers + [f"{HIT_P1 - 1}:1:hit:20", f"{HIT_P0 - 1}:0:hit:20", f"{LOW_SHIELDS}:1:shields:80",
-                               f"{HIT_LOW - 1}:1:hit:20"])
+                               f"{HIT_LOW - 1}:1:hit:20", f"{GUNS_OUT}:0:guns:-10"]
+                    + [f"{at + k}:1:guns:{y}" for at in GUNS_P1 for k, y in enumerate(GUNS_P1_STEPS)])
 
 
 def play_section(section, exe, args):

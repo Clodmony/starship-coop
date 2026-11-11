@@ -65,13 +65,12 @@ FOLDERS = {"Debug": "build-cmake", "Release": "build-release", "RelWithDebInfo":
 CONFIG_PAIR = {"Debug": "Release", "Release": "Debug"}
 
 # What a build without Debug's symbols cannot do, and that a Debug run covers: step -> (its tool and arguments there,
-# what that leaves out). push_frame is inlined and gdb has no lines to stop on. The mutant is a release too early, which
-# a Debug build shows on lan and a Release build did not, 3 runs of 3.
+# what that leaves out). push_frame is inlined and gdb has no lines to stop on. (steam-mutants left out
+# message_released_too_early here until #158: the fake's poison of a released message was a memset before free, which
+# -O2 drops.)
 OPTIMISED = {
     "exit-test": (["exit_test.py", "--skip", "fault-main,fault-stuck"], "exit-test fault-main, fault-stuck"),
     "wingman": (["wingman_check.py", "run", "chain"], "wingman alive, down, sitout"),
-    "steam-mutants": (["steam_mutants.py", "--skip", "message_released_too_early"],
-                      "steam-mutants message_released_too_early"),
 }
 
 # name, lane, the tool and its arguments, what it takes (see command_of), what goes in front of it, Linux only
@@ -84,6 +83,9 @@ def all_steps():
     steps = [
         Step("checks", SERIAL, ["check.py"]),
         Step("package", SERIAL, ["package_test.py"]),
+        Step("math", SERIAL, ["math_test.py"]),
+        Step("rand_order", SERIAL, ["rand_order_test.py"]),
+        Step("handover", SERIAL, ["handover_test.py"]),
         Step("net", SERIAL, ["net_test.py"], "build", "net"),
         Step("session", SERIAL, ["session_test.py"], "build", "net"),
         Step("steam", SERIAL, ["steam_test.py"], "build", "net"),
@@ -113,6 +115,7 @@ def all_steps():
         ("builds", ["hash_check.py", "builds"], "other", False),
         ("determinism", ["determinism.py"], "exe", False),
         ("view-check", ["view_check.py"], "exe", False),
+        ("solar-heat", ["solar_check.py"], "exe", False),
         ("wingman", ["wingman_check.py", "all"], "exe", True),
         ("full-level", ["full_level.py"], "exe", False),
         ("lowhealth-allrange", ["player_trace.py", "lowhealth", "--players", "2", "--section", "all-range"], "exe",

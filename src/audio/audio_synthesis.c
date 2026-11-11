@@ -1069,13 +1069,6 @@ Acmd* AudioSynth_ProcessNote(s32 noteIndex, NoteSubEu* noteSub, NoteSynthesisSta
                 aligned = ALIGN16((nFramesToDecode * frameSize) + 0x10);
                 addr = DMEM_COMPRESSED_ADPCM_DATA - aligned;
 
-#if __SANITIZE_ADDRESS__
-                uintptr_t actualAddrLoaded = samplesToLoadAddr - sampleDataChunkAlignPad;
-                uintptr_t offset = actualAddrLoaded - (uintptr_t) sampleAddr;
-                if (offset + aligned > bookSample->size) {
-                    aligned -= (offset + aligned - bookSample->size);
-                }
-#endif
                 if (nFramesToDecode != 0) {
                     if (1) {}
                     frameIndex = (synthState->samplePosInt + skipInitialSamples - nFirstFrameSamplesToIgnore) / 16;
@@ -1083,6 +1076,15 @@ Acmd* AudioSynth_ProcessNote(s32 noteIndex, NoteSubEu* noteSub, NoteSynthesisSta
                     samplesToLoadAddr = (u8*) (sampleDmaStart + sampleDataOffset + sampleAddr);
                     sampleDataChunkAlignPad = ((uintptr_t) samplesToLoadAddr) % SAMPLES_PER_FRAME;
 
+#if __SANITIZE_ADDRESS__
+                    // COOP: moved here from before this branch, where it read the address of the last load, or one
+                    // never set, and crashed aLoadBufferImpl (#145). Builds without AddressSanitizer do not have it.
+                    uintptr_t actualAddrLoaded = samplesToLoadAddr - sampleDataChunkAlignPad;
+                    uintptr_t offset = actualAddrLoaded - (uintptr_t) sampleAddr;
+                    if (offset + aligned > bookSample->size) {
+                        aligned -= (offset + aligned - bookSample->size);
+                    }
+#endif
                     aLoadBuffer(aList++, OS_K0_TO_PHYSICAL(samplesToLoadAddr - sampleDataChunkAlignPad), addr, aligned);
                 } else {
                     numSamplesToDecode = 0;

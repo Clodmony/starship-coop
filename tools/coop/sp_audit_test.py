@@ -17,8 +17,10 @@ import os
 import shutil
 import subprocess
 import sys
-import time
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from run_folder import make_run_folder  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 TOOL = ROOT / "tools" / "coop" / "sp_audit.py"
@@ -471,7 +473,7 @@ def main():
     if unknown:
         sys.exit(f"sp_audit_test: unknown scenario(s) {', '.join(unknown)}; known: {', '.join(SCENARIOS)}")
 
-    bench = ROOT / "local" / f"test-spaudit-{time.strftime('%Y%m%d-%H%M%S')}"
+    bench = make_run_folder(ROOT / "local", "test-spaudit-")  # two runs in one second get two folders (#104, #121)
     failed = []
     for name in chosen:
         repo = Repo(bench / name)

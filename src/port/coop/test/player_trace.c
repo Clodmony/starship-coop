@@ -8,6 +8,7 @@
 #include "global.h"
 #include "port/hooks/Events.h"
 #include "port/coop/game/players.h"
+#include "port/coop/game/vehicles.h"
 #include "port/coop/test/test_pad.h"
 
 static FILE* sTraceFile = NULL;
@@ -54,6 +55,21 @@ static void CoopTrace_WriteLocks(void) {
         }
     }
     fprintf(sTraceFile, " locks=%d,%d,%d,%d", locks[0], locks[1], locks[2], locks[3]);
+}
+
+// The Blue Marine's torpedo, on Aquas only (#16): Aquas_BlueMarineTorpedo fires into the last gPlayerShots slot alone,
+// so there is at most one for all marines. Its owner, the owner's lock-on target and whether it homes, its position.
+static void CoopTrace_WriteTorpedo(void) {
+    const PlayerShot* shot = &gPlayerShots[ARRAY_COUNT(gPlayerShots) - 1];
+    s32 target;
+    s32 homing;
+
+    if ((gCurrentLevel != LEVEL_AQUAS) || (shot->obj.status != SHOT_ACTIVE) || (shot->obj.id != PLAYERSHOT_LOCK_ON)) {
+        return;
+    }
+    CoopVehicles_MarineLock(shot->sourceId, &target, &homing);
+    fprintf(sTraceFile, " torpedo=%d:%d:%d:%.1f,%.1f,%.1f", shot->sourceId, homing, target, shot->obj.pos.x,
+            shot->obj.pos.y, shot->obj.pos.z);
 }
 
 static s32 sSteerPeriod = 0; // SF64_COOP_TRACE_STEER, see player_trace.h
@@ -151,6 +167,11 @@ static void CoopTrace_OnGamePostUpdate(IEvent* event) {
                 p->csState, p->pos.x, p->pos.y, p->trueZpos, CoopPlayers_IsParked(i), p->draw, p->zPath, p->camDist,
                 p->xPath, p->yPath, p->pathWidth, p->shields, p->somersault, p->form);
     }
+    // Each player's boostSpeed: on the rails the team's sets the speed along the path (#194, #214).
+    fprintf(sTraceFile, " boost=%.3f", gPlayer[0].boostSpeed);
+    for (i = 1; i < CoopPlayers_Count(); i++) {
+        fprintf(sTraceFile, ",%.3f", gPlayer[i].boostSpeed);
+    }
     fprintf(sTraceFile, " tframe=%d", sPadFrame);
     for (i = 0; i < COOP_PLAYERS_MAX; i++) {
         fprintf(sTraceFile, " pad%d=%d,%d,%d,%d,%d,%d", i, sHold[i].button, sHold[i].stick_x, sHold[i].stick_y,
@@ -162,7 +183,20 @@ static void CoopTrace_OnGamePostUpdate(IEvent* event) {
     for (i = 1; i < CoopPlayers_Count(); i++) {
         fprintf(sTraceFile, ",%d", gLaserStrength[i]);
     }
+    // What moves a ship by itself after a hit, and the hit's timer (#243): an idle player is pushed only by a hit.
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        const Player* p = &gPlayer[i];
+
+        fprintf(sTraceFile, "%s%.2f,%.2f,%.2f,%d", (i == 0) ? " knock=" : ";", p->knockback.x, p->knockback.y,
+                p->knockback.z, p->hitTimer);
+    }
     CoopTrace_WriteHits();
+    CoopTrace_WriteTorpedo();
+    // The team's hit count and each player's own (#252): score=<gHitCount>:<gPlayerScores 0>,<1>,...
+    fprintf(sTraceFile, " score=%d:%d", gHitCount, gPlayerScores[0]);
+    for (i = 1; i < CoopPlayers_Count(); i++) {
+        fprintf(sTraceFile, ",%d", gPlayerScores[i]);
+    }
     fputc('\n', sTraceFile);
     if ((gGameFrameCount % 60) == 0) {
         fflush(sTraceFile); // tests may kill the game on a timeout

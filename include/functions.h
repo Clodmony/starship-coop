@@ -180,7 +180,7 @@ void Item_SpinPickup(Item*);
 void Actor_SpawnDebris70(f32, f32, f32, f32, f32, f32, f32, f32);
 void ActorSupplies_Update(Actor*);
 void ActorSupplies_Draw(Actor*);
-void func_enmy_80067A40(void);
+void func_enmy_80067A40(s32 playerNum); // COOP: was (void), player 0 only (#201)
 void Item1up_Update(Item*);
 void ItemPickup_Update(Item*);
 void ItemLasers_Update(Item*);

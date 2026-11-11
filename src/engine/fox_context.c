@@ -7,7 +7,9 @@
 s32 gSceneId;
 s32 gSceneSetup;
 s32 gClearPlayerInfo; // some sort of flag
-bool D_ctx_8017782C;  // some sort of flag. all range related?
+// COOP: s32, as include/sf64context.h declares it and as the N64's bool was: here a bool is 1 byte, and the header's
+// users write and read 4 (#145)
+s32 D_ctx_8017782C; // some sort of flag. all range related?
 GameState gGameState;
 s32 gNextGameStateTimer;
 s32 gVsItemSpawnTimer;

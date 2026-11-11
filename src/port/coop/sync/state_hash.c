@@ -18,11 +18,11 @@
 // the game wrote it.
 //
 // Co-op hashes differently from single player: negative numbers in Actor.iwork[] (NormalizeWord), free gScenery360
-// slots (HashScenery360), the per-player arrays and the co-op slots (HashPlayerArrays), the team member arrays
-// (HashTeamArrays), and it leaves out the per-player values of players who are not in the level (HashPerPlayer) and
-// what follows the camera a client draws and only sound or draw code reads (ClearViewState, ClearPlayerViewState). With
-// co-op off the hash stays as it was, so a single-player log still lines up with one from an older build
-// (docs/coop/QA.md, test plan item 1).
+// slots (HashScenery360), the per-player arrays, the co-op slots and return counters (HashPlayerArrays), the team
+// member arrays (HashTeamArrays), the progress in the save (HashSave), and it leaves out the per-player values of
+// players who are not in the level (HashPerPlayer) and what follows the camera a client draws and only sound or draw
+// code reads (ClearViewState, ClearPlayerViewState). With co-op off the hash stays as it was, so a single-player log
+// still lines up with one from an older build (docs/coop/QA.md, test plan item 1).
 //
 // The listener runs on GamePreUpdateEvent, before any game logic of the frame, so the hash of frame N is the state
 // after frame N-1. It runs after the input replay listener (EVENT_PRIORITY_LOW runs first, see
@@ -37,6 +37,19 @@
 #include "global.h"
 #include "port/hooks/Events.h"
 #include "port/coop/game/players.h"
+#include "port/coop/game/save.h"
+#include "port/coop/game/vehicles.h"
+#include "port/coop/test/stop_signal.h"
+
+#if defined(__linux__) && !defined(__ANDROID__)
+#include <signal.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#define HASH_CRASH_END 1 // CoopStateHash_EndCrash, see CoopStopSignal_AddCrashEnd (stop_signal.h)
+#endif
+#include "port/coop/game/team.h"
+#include "port/coop/game/aim.h"
+#include "port/coop/sync/voice_clock.h"
 #include "port/coop/test/switches.h"
 
 // src/sys/sys_math.c
@@ -93,10 +106,15 @@ static const PlayerArray sPlayerArrays[] = {
     PLAYER_ARRAY(gChargeTimers),         PLAYER_ARRAY(gUturnDownTimers), PLAYER_ARRAY(gUturnBrakeTimers),
     PLAYER_ARRAY(gLoopDownTimers),       PLAYER_ARRAY(gLoopBoostTimers), PLAYER_ARRAY(gLeftWingDebrisTimer),
     PLAYER_ARRAY(gRightWingDebrisTimer), PLAYER_ARRAY(gHasShield),       PLAYER_ARRAY(gShieldTimer),
-    PLAYER_ARRAY(gShieldAlpha),
+    PLAYER_ARRAY(gShieldAlpha),          PLAYER_ARRAY(gCoopTankState),
+    PLAYER_ARRAY(gCoopMarineState),
 };
 
 static FILE* sLog = NULL;
+#ifdef HASH_CRASH_END
+static int sLogFd = -1;                  // sLog's file, for CoopStateHash_EndCrash, which may not use stdio
+static volatile sig_atomic_t sEnded = 0; // the closing line is in the file
+#endif
 static CoopStateDump* sDump = NULL;         // while ComputeDump runs
 static const uint64_t* sDumpRegions = NULL; // its out->region, to name the region of a chunk from its hash pointer
 static bool sStarted = false;
@@ -251,11 +269,22 @@ static void ClearPlayerViewState(Player* player) {
 }
 
 // A per-player array, slot by slot. With co-op off that is the same bytes in the same order as hashing the array whole.
+// The zeros a slot that does not count hashes as. As long as every value was an s32 or smaller, four bytes were enough;
+// the vehicle arrays (#16) have 96 and 172 bytes a player, and hashing `size` bytes from a four-byte buffer read the
+// data next to it: asset names on Linux, pointers on Windows, so two games of one platform agreed and a Windows and a
+// Linux game parted at frame 0 in `players` (the 2026-11-09 two-PC test).
+#define EMPTY_VALUE_BYTES 512
+
 static void HashPerPlayer(uint64_t* h, const char* name, const void* array, size_t size) {
-    static const u8 sEmpty[sizeof(s32)] = { 0 };
+    static const u8 sEmpty[EMPTY_VALUE_BYTES] = { 0 };
     const u8* value = (const u8*) array;
     s32 i;
 
+    if (size > sizeof(sEmpty)) { // a new, larger per-player value: make EMPTY_VALUE_BYTES bigger
+        fprintf(stderr, "state hash: %s has %zu bytes a player, more than the %d of an empty slot\n", name, size,
+                EMPTY_VALUE_BYTES);
+        abort();
+    }
     for (i = 0; i < COOP_PLAYERS_MAX; i++, value += size) {
         HashNamed(h, name, i, PlayerValuesCount(i) ? value : sEmpty, size);
     }
@@ -290,16 +319,34 @@ static void HashPlayerArrays(uint64_t* h) {
         slot = CoopPlayers_SlotState(i);
         HashNamed(h, "slot", i, &slot, sizeof(slot));
     }
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        slot = CoopPlayers_ReturnTimer(i); // how long a downed player still waits (decision 0007 rule 4, #14)
+        HashNamed(h, "returnTimer", i, &slot, sizeof(slot));
+    }
+}
+
+// Whom each boss and all-range enemy follows, and whom a boss holds (#213, aim.h). Co-op only: outside co-op the slots
+// are never read.
+static void HashKeptTargets(uint64_t* h) {
+    int32_t count;
+    const int8_t* kept = CoopAim_KeptSlots(&count);
+
+    HashNamed(h, "keptTarget", 0, kept, (size_t) count);
 }
 
 static void HashTeamArrays(uint64_t* h) {
     const TeamArray* team;
     s32 i;
+    const uint8_t* choices;
+    int32_t count;
 
     for (i = 0; i < ARRAY_COUNT(sTeamArrays); i++) {
         team = &sTeamArrays[i];
         HashNamed(h, team->name, team->first, &team->array[team->first], (team->end - team->first) * sizeof(s32));
     }
+    // Who flies each scene of a human-flown wingman in this level (decision 0012, src/port/coop/game/team.h).
+    choices = CoopTeam_Choices(&count);
+    HashNamed(h, "sceneChoice", 0, choices, count);
 }
 
 static void HashActors(uint64_t* h) {
@@ -404,6 +451,38 @@ static void HashShots(uint64_t* h) {
     }
 }
 
+// The voice line's clock in the sound thread (#230, voice_clock.h): where it stands says on which frame the radio
+// leaves a line. In a level only: the way in from the map and the session's level start (level_start.c) reset the
+// audio heap and start the voice player over, so games that came the same way hold the same clock from there on.
+// Before the first such reset the player runs on from boot, and the boot logo runs on wall-clock time. Nothing while
+// the player is stopped, as its fields are left from before the reset.
+static void HashVoiceClock(uint64_t* h) {
+    CoopVoiceClock clock;
+    u8 running;
+
+    if (gGameState != GSTATE_PLAY) {
+        return;
+    }
+    running = CoopVoiceClock_Read(&clock);
+    HashNamed(h, "voicePlayerRunning", -1, &running, sizeof(running));
+    if (running) {
+        HashNamed(h, "voiceClock", -1, &clock, sizeof(clock));
+    }
+}
+
+// The save (decision 0009 item 8): a session plays on the host's progress on every game, and the map, the intro skip
+// and the briefing read it, so a copy that drifted shows here, named, rather than as a map that parts later. The
+// settings each game keeps of its own are left out (CoopSave_ProgressRanges).
+static void HashSave(uint64_t* h) {
+    const CoopSaveRange* ranges;
+    int32_t count = CoopSave_ProgressRanges(&ranges);
+    int32_t i;
+
+    for (i = 0; i < count; i++) {
+        HashNamed(h, ranges[i].name, -1, gSaveFile.save.raw + ranges[i].offset, ranges[i].size);
+    }
+}
+
 static void HashGlobals(uint64_t* h) {
     HASH_VAR(h, gGameState);
     HASH_VAR(h, gNextGameStateTimer);
@@ -435,6 +514,9 @@ static void HashGlobals(uint64_t* h) {
         // The low-health radio timer (#87). A drifted one shows only at the next limit that draws a number, so it is
         // hashed on its own. Co-op only, so a single-player log lines up with one from an older build.
         HASH_VAR(h, gTeamLowHealthMsgTimer);
+        HashKeptTargets(h);
+        HashVoiceClock(h);
+        HashSave(h);
     }
 }
 
@@ -497,7 +579,7 @@ size_t CoopStateHash_DumpBytes(void) {
     for (i = 0; i < ARRAY_COUNT(sTeamArrays); i++) {
         bytes += sTeamArrays[i].count * sizeof(s32);
     }
-    return bytes + 1024; // the slots, the seeds and HashGlobals take far less
+    return bytes + sizeof(SaveData) + 1024; // the save, then the slots, the seeds and HashGlobals take far less
 }
 
 void CoopStateHash_ComputeDump(CoopStateHash* out, CoopStateDump* dump) {
@@ -616,6 +698,21 @@ static void ProbeSlot(s32 i) {
     ProbeReport(target, !PlayerValuesCount(i), &before, &after);
 }
 
+// The same for the return counter of player i (#14).
+static void ProbeReturnTimer(s32 i) {
+    char target[40];
+    s32 saved = CoopPlayers_ReturnTimer(i);
+    CoopStateHash before;
+    CoopStateHash after;
+
+    CoopStateHash_Compute(&before);
+    CoopPlayers_SetReturnTimer(i, saved ^ 1);
+    CoopStateHash_Compute(&after);
+    CoopPlayers_SetReturnTimer(i, saved);
+    snprintf(target, sizeof(target), "returnTimer[%d]", i);
+    ProbeReport(target, !PlayerValuesCount(i), &before, &after);
+}
+
 // Test only: what tools/coop/hash_check.py probe reads. Which of these must change the hash is written there.
 static void Probe(void) {
     char target[16];
@@ -643,8 +740,19 @@ static void Probe(void) {
         ProbePlayerValue("gBombCount", i, &gBombCount[i]);
         ProbePlayerValue("gPlayerScores", i, &gPlayerScores[i]);
         ProbeSlot(i);
+        ProbeReturnTimer(i);
     }
     ProbeBit("gTeamLowHealthMsgTimer", 0, &gTeamLowHealthMsgTimer);
+    if (CoopVoiceClock_ProbeByte() != NULL) {
+        ProbeBit("voiceClock", 0, CoopVoiceClock_ProbeByte()); // not while an audio reset stops the player (#230)
+    }
+    {
+        int32_t count;
+        int8_t* kept = CoopAim_KeptSlots(&count);
+
+        ProbeBit("keptTarget[0]", 0, &kept[0]);            // the first boss
+        ProbeBit("keptTarget[last]", 0, &kept[count - 1]); // the last boss's held player
+    }
     for (k = 0; k < ARRAY_COUNT(sTeamArrays); k++) {
         for (i = 0; i < sTeamArrays[k].count; i++) {
             char target[40];
@@ -770,10 +878,56 @@ void CoopStateHash_PokeNow(void) {
 static void CoopStateHash_OnExit(void) {
     if (sLog != NULL) {
         fprintf(sLog, "# end frames=%u\n", sFrame);
+        fflush(sLog);
+#ifdef HASH_CRASH_END
+        sEnded = 1;
+#endif
         fclose(sLog);
         sLog = NULL;
     }
 }
+
+#ifdef HASH_CRASH_END
+// The closing line, from a signal handler, when a crash handler did not get to exit() (stop_signal.h, #158). Straight
+// to the file, without stdio: what stdio still holds of the frame that was running is lost, and a line the file ends
+// inside is cut off, so the log holds sFrame whole frames and then this line, as after a clean exit.
+static void CoopStateHash_EndCrash(void) {
+    CoopCrashText line;
+    char tail[512];
+    struct stat st;
+    off_t end;
+
+    if ((sLogFd < 0) || sEnded || (fstat(sLogFd, &st) != 0)) {
+        return;
+    }
+    sEnded = 1;
+    end = st.st_size;
+    while (end > 0) {
+        const off_t from = (end > (off_t) sizeof(tail)) ? end - (off_t) sizeof(tail) : 0;
+        const ssize_t got = pread(sLogFd, tail, (size_t) (end - from), from);
+        ssize_t i = got;
+
+        if (got <= 0) {
+            break;
+        }
+        while ((i > 0) && (tail[i - 1] != '\n')) {
+            i--;
+        }
+        end = from + i;
+        if (i > 0) {
+            break;
+        }
+    }
+    if ((end != st.st_size) && (ftruncate(sLogFd, end) != 0)) {
+        return;
+    }
+    line.used = 0;
+    CoopCrashText_Add(&line, "# end frames=");
+    CoopCrashText_AddNumber(&line, sFrame);
+    CoopCrashText_Add(&line, "\n");
+    (void) pwrite(sLogFd, line.text, line.used, end);
+}
+#endif
 
 void CoopStateHash_Init(void) {
     const char* logPath = getenv("SF64_COOP_HASH_LOG");
@@ -808,4 +962,8 @@ void CoopStateHash_Init(void) {
 
     REGISTER_LISTENER(GamePreUpdateEvent, CoopStateHash_OnGamePreUpdate, EVENT_PRIORITY_NORMAL);
     atexit(CoopStateHash_OnExit);
+#ifdef HASH_CRASH_END
+    sLogFd = fileno(sLog);
+    CoopStopSignal_AddCrashEnd(CoopStateHash_EndCrash);
+#endif
 }
