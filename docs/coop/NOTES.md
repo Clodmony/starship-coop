@@ -6676,11 +6676,15 @@ wire form is in PROTOCOL.md, "Recovery" and "Desync check".
   which clears the checkpoint (`gSavedObjectLoadIndex`, `gSavedPathProgress`, `gAllRangeCheckpoint`,
   `gSavedHitCount`, `gSavedZoSearchlightStatus`), so `CoopLevelStart_Enter` of the level a game is in starts that
   level from its start, as the pause menu's retry does (`src/engine/fox_hud.c:1590-1609`) but with no life taken.
-- The host's game enters a level by itself with `gNextGameState = GSTATE_PLAY`, which `GamePreUpdateEvent` sees one
-  frame before `Game_SetGameState` takes it (`src/engine/fox_game.c:352-354`). That frame is where the restart point
-  is taken (`CoopLevelStart_Entering`, from `CoopSyncGame_OnGamePreUpdate`).
+- The host's game enters a level by itself in two ways. A level jumps to the next with `gNextGameState =
+  GSTATE_PLAY` (Venom 1, Venom 2, Area 6, Bolse: `src/overlays/ovl_i1/fox_ve1.c:2521`, `ovl_i6/fox_ve2.c:442`,
+  `ovl_i3/fox_a6.c:2937`, `ovl_i4/fox_bo.c:1658`), which `GamePreUpdateEvent` sees one frame before
+  `Game_SetGameState` takes it (`src/engine/fox_game.c:352-354`). The map sets `gGameState` itself (`Map_PlayLevel`,
+  `src/overlays/ovl_menu/fox_map.c:4290`: `GSTATE_PLAY`, `PLAY_STANDBY`, the hit count 0, `Play_Setup`), so the first
+  frame after it is the one that shows it. Both are where the restart point is taken (`CoopLevelStart_Entering`,
+  `CoopLevelStart_Entered`, from `CoopSyncGame_OnGamePreUpdate`). Only the map's way ran (`survive_next_level`).
 
-**Observed (runs, this branch at `896cdaa7`)**
+**Observed (runs, this branch at `921d6411`; the first block of rows ran at `896cdaa7`, which differs by the restart point at the map's entry, a test driver switch and one test)**
 
 | Run | Result |
 |---|---|
@@ -6688,7 +6692,8 @@ wire form is in PROTOCOL.md, "Recovery" and "Desync check".
 | the same, this branch | `ok`: poke at 2000, both games stopped lockstep, took level start 2 from the level's start and hash alike on its first 600 frames; no session ended; both logs say `players: gPlayer[1] differs in 1 of 1264 bytes, first at +116: b3 vs b2; word at +116: 0x444844b3 vs 0x444844b2`, as `desync_report.py diff` does |
 | `--only survive_checkpoint` | `ok`: checkpoint at frame 2581 (object index 41, path 32448, 1 hit), poke at 2881; both games took level start 2 at the checkpoint, began there (object index 41, path 32608) and hash alike on its first 600 frames |
 | `--only survive_checkpoint_allrange` | `ok`: Fortuna's own checkpoint at frame 2883 (all-range 1, 1 hit), poke at 3183; both games began level start 2 with the all-range checkpoint set and hash alike on its first 600 frames |
-| `--only survive_three` | __THREE__ |
+| `--only survive_three` | `ok`: player 3 left a level of three; the host and player 2 took level start 2 without it and hash alike on its first 600 frames; the one who left plays on alone |
+| `--only survive_next_level` | `ok`: Corneria to the map and into level 1 (Meteo); poke at frame 11593, 200 frames into it; both games took level start 2 for level 1 with mission number 1 and 34 total hits, began at its start and hash alike on its first 600 frames. Before the restart point was taken at the map's entry: `FAILED: the host kept no restart point for level 1` |
 | `--only save_own` | `ok`: a save one byte apart parts the games at frame 0 in `globals` (`gSaveFile.planet`); the level started again once, parted at frame 0 again, and the session ended there |
 | `--only desync` | `ok`: rails (poke at 2000) and all-range (poke at 2400), both reports verified, the level started again |
 | `--only handover` | `ok`: after the client left the level that started again, both folders hold both reports byte for byte, and each copy of the other's log runs to `session closed` |
@@ -6698,9 +6703,9 @@ wire form is in PROTOCOL.md, "Recovery" and "Desync check".
 | `--only host_left` | `ok`: the client stopped lockstep after 30 s (the join driver's time-out), tried to come back (`rejoin ended`) and ended the session after 60 s |
 | `--only three`, `log`, `leave`, `menu` | `ok` each: 2700 frames equal with three games; the log scenario; Leave in the real window ends a session of two; a level through the real menu |
 | `hash_check.py base --base <build of a4867d99>` | `hash: co-op off: the base build and this one equal on all 5800 frames`, `hash: PASS` |
-| `join_test.py` | __JOIN__ |
-| `menu_test.py --game` | __MENUGAME__ |
-| `--only map_saves_equal` | __MAP__ |
+| `join_test.py` | `RESULT: 5/5 scenarios passed` |
+| `menu_test.py --game` | `RESULT: 8/8 scenarios passed`; `game_leave`: 3 games, player 2 left in the level and the level started again for the two who stayed, player 3 left and the session ended, then a second session and level held past the time-out |
+| `--only map_saves_equal` | `ok`: both all cleared, equal on 11449 frames, Corneria to the map at 10541, the next level at 11149 and 300 frames of it |
 | `session_test.py`, `--asan` | `RESULT: 17/17 scenarios passed`, both |
 | `session_mutants.py`, `net_mutants.py`, `lockstep_mutants.py`, `desync_mutants.py` | all 417, 20, 22 and 25 breaks caught; 110 of the session's and 4 of the transport's are new |
 | `menu_test.py`, `--asan` | `sim: PASS: 25 scenarios`, `udp` ok; both |
@@ -6755,7 +6760,8 @@ wire form is in PROTOCOL.md, "Recovery" and "Desync check".
 **Unknown**
 
 - Two PCs, Windows, MSVC, a real connection that drops and comes back, a Release build, four players: not run.
-- The map after a level that started again, and the levels after it: the campaign's values travel now, but the map's
+- The map after a level that started again, and the levels after it: not run. The campaign's values travel now (a
+  level start for Meteo carried mission number 1 and Corneria's 34 hits), but the map's
   own statics (`sCurrentPlanetId`, `sPaths`, `D_menu_*` in `fox_map.c`) are each game's own and are not sent. Games
   that never parted hold the same ones; a game that parted on the map itself may not.
 - A restart from the map (the games part there): the level before the map is flown again. Not run.
