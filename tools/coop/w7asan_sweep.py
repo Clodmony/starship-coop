@@ -51,7 +51,10 @@ from run_folder import make_run_folder  # noqa: E402
 ROOT = replay_tool.ROOT
 W7ASAN_BUILD_DIR = "build-asan"
 # recover: a game goes on after a report, so one run lists every place. Frame pointers: whole stacks in the reports.
-W7ASAN_FLAGS = "-fsanitize=address,undefined -fsanitize-recover=address,undefined -fno-omit-frame-pointer"
+# float-cast-overflow is not part of `undefined`: a float too large for the integer it is cast to gives what the
+# processor's instruction gives, which is not the same on every processor.
+W7ASAN_FLAGS = ("-fsanitize=address,undefined,float-cast-overflow "
+                "-fsanitize-recover=address,undefined,float-cast-overflow -fno-omit-frame-pointer")
 W7ASAN_ASAN_OPTIONS = "halt_on_error=0:detect_leaks=0:abort_on_error=0"
 W7ASAN_UBSAN_OPTIONS = "halt_on_error=0:print_stacktrace=1"
 # Lockstep frames to level complete in the campaign run of 2026-11-11 (docs/coop/NOTES.md), for the order only.
