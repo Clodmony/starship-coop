@@ -86,6 +86,7 @@ static bool Menu_Rejoin(CoopMenu* m, CoopSessionEnd end) {
     }
     m->phase = COOP_MENU_CONNECTING;
     m->rejoining = true;
+    m->lostEnd = end;
     m->recovering = true;
     m->eyes = true;
     if (m->backend->recover != NULL) {
@@ -290,8 +291,11 @@ static void Menu_OnEvent(CoopMenu* m, const CoopSessionEvent* ev) {
             if (Menu_Rejoin(m, ev->end)) {
                 break;
             }
-            // After a refusal the REFUSED event has already said more than this one can.
-            if (ev->end != COOP_SESSION_END_REFUSED) {
+            // After a refusal the REFUSED event has already said more than this one can. A game that tried to come
+            // back and reached nobody says how it lost its host, as it would have without trying.
+            if (m->rejoining && (ev->end == COOP_SESSION_END_TIMEOUT || ev->end == COOP_SESSION_END_CLOSED)) {
+                Menu_Say(m, "%s", CoopSession_EndText(m->lostEnd));
+            } else if (ev->end != COOP_SESSION_END_REFUSED) {
                 Menu_Say(m, "%s", ev->text);
             }
             m->lost = m->levelStarted;
