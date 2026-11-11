@@ -71,6 +71,17 @@ static void CoopBossTrace_OnGamePostUpdate(IEvent* event) {
             break;
         }
     }
+    // Macbeth's train end (#220): an actor, not a boss slot, so its kept slot is the actor's.
+    for (i = 0; i < ARRAY_COUNT(gActors); i++) {
+        const Actor* actor = &gActors[i];
+
+        if ((actor->obj.status == OBJ_ACTIVE) && (actor->obj.id == OBJ_ACTOR_207)) {
+            fprintf(sFile, " ma=%d,%d,%.1f,%.1f,%.1f,%.2f,%.2f,%d", (int) i, (int) actor->state, actor->obj.pos.x,
+                    actor->obj.pos.y, actor->obj.pos.z, actor->obj.rot.x, actor->obj.rot.y,
+                    (int) kept[ARRAY_COUNT(gBosses) + i]);
+            break;
+        }
+    }
     // Bosses' shots that home in or fly where the boss aims (#220): Meteo's Crusher rings and Zoness' Sarumarine balls.
     for (i = 0; i < ARRAY_COUNT(gEffects); i++) {
         const Effect* effect = &gEffects[i];

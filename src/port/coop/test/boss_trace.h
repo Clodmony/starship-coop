@@ -18,6 +18,8 @@
 //   aq=<head yaw>,<head pitch>,<eye yaw>,<eye yaw>                     Aquas' Bacoon, where it looks (#220)
 //   so=<head yaw>,<head pitch>                                         Solar's Vulkain, where its head and fireballs
 //                                                                      point, from its body (campaign run, #220)
+//   ma=<slot>,<state>,<x>,<y>,<z>,<rot x>,<rot y>,<kept>               Macbeth's train end (actor 207), an actor
+//                                                                      with a kept slot of its own (#220)
 //
 // kept and held are the slots of src/port/coop/game/aim.h, -1 for an empty one. The trace only reads; it does not ask
 // the aim code to pick, so it changes nothing.
