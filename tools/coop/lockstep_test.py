@@ -3109,8 +3109,8 @@ def sc_survive_desync(args, folder):
     # No checkpoint was reached, so the level starts again from its start (a checkpoint: survive_checkpoint).
     for game in games:
         second = survive_level_values(game, 2)
-        expect(not any(second[CHECKPOINT_FLAG:]), f"{game.name}: level start 2 carries a checkpoint: "
-                                                  f"{second[CHECKPOINT_FLAG:]}")
+        expect(not any(second[SURVIVE_CHECKPOINT_FLAG:]), f"{game.name}: level start 2 carries a checkpoint: "
+                                                  f"{second[SURVIVE_CHECKPOINT_FLAG:]}")
         again = survive_run_state(game, 2)
         expect(again["load"] == 0 and again["saved_load"] == 0 and again["path"] == 0 and again["allrange"] == 0,
                f"{game.name}: run 2 did not begin at the level's start: {again}")
@@ -3161,9 +3161,9 @@ def sc_survive_three(args, folder):
 
 
 
-CHECKPOINT_FLAG = 171  # the level start value that says the level starts at a checkpoint (level_start.c)
-ITEM_CHECKPOINT = 3  # SF64_COOP_LOCKSTEP_ITEM kind: the ring a rails level saves its checkpoint at
-FORTUNA = 14  # LEVEL_FORTUNA: its checkpoint is Star Wolf's arrival (src/overlays/ovl_i4/fox_fo.c:300)
+SURVIVE_CHECKPOINT_FLAG = 171  # the level start value that says the level starts at a checkpoint (level_start.c)
+SURVIVE_ITEM_CHECKPOINT = 3  # SF64_COOP_LOCKSTEP_ITEM kind: the ring a rails level saves its checkpoint at
+SURVIVE_FORTUNA = 14  # LEVEL_FORTUNA: its checkpoint is Star Wolf's arrival (src/overlays/ovl_i4/fox_fo.c:300)
 
 
 def survive_level_values(game, run):
@@ -3214,14 +3214,14 @@ def survive_check_checkpoint(games, checkpoint, poke, level, mode):
         expect(poke <= over <= poke + DESYNC_SEEN_WITHIN, f"{game.name}: lockstep stopped at {over}, poke at {poke}")
         expect([run for run, _ in survive_starts(game)] == [1, 2], f"{game.name}: level starts {survive_starts(game)}")
         first, second = survive_level_values(game, 1), survive_level_values(game, 2)
-        expect(first[CHECKPOINT_FLAG] == 0 and not any(first[CHECKPOINT_FLAG:]),
-               f"{game.name}: the first level start carries a checkpoint: {first[CHECKPOINT_FLAG:]}")
-        expect(second[CHECKPOINT_FLAG] == 1, f"{game.name}: the second level start does not begin at the checkpoint: "
-                                             f"{second[CHECKPOINT_FLAG:]}")
-        expect(second[CHECKPOINT_FLAG + 1] == int(checkpoint["load"]) and
-               second[CHECKPOINT_FLAG + 4] == int(checkpoint["allrange"]) and
-               second[CHECKPOINT_FLAG + 2] == int(checkpoint["hits"]),
-               f"{game.name}: the level start's checkpoint {second[CHECKPOINT_FLAG:]} is not the one reached, "
+        expect(first[SURVIVE_CHECKPOINT_FLAG] == 0 and not any(first[SURVIVE_CHECKPOINT_FLAG:]),
+               f"{game.name}: the first level start carries a checkpoint: {first[SURVIVE_CHECKPOINT_FLAG:]}")
+        expect(second[SURVIVE_CHECKPOINT_FLAG] == 1, f"{game.name}: the second level start does not begin at the checkpoint: "
+                                             f"{second[SURVIVE_CHECKPOINT_FLAG:]}")
+        expect(second[SURVIVE_CHECKPOINT_FLAG + 1] == int(checkpoint["load"]) and
+               second[SURVIVE_CHECKPOINT_FLAG + 4] == int(checkpoint["allrange"]) and
+               second[SURVIVE_CHECKPOINT_FLAG + 2] == int(checkpoint["hits"]),
+               f"{game.name}: the level start's checkpoint {second[SURVIVE_CHECKPOINT_FLAG:]} is not the one reached, "
                f"{checkpoint}")
         began, again = survive_run_state(game, 1), survive_run_state(game, 2)
         expect(began["load"] == 0 and began["path"] == 0 and began["allrange"] == 0,
@@ -3258,7 +3258,7 @@ def sc_survive_checkpoint(args, folder):
     does after a death, without a life taken, and are equal from that run's frame 0 on."""
     ring = JOIN_FRAME + 200
     games, checkpoint, poke = survive_checkpoint_run(
-        args, folder, {"SF64_COOP_LOCKSTEP_ITEM": f"{ring}:1:{ITEM_CHECKPOINT}"})
+        args, folder, {"SF64_COOP_LOCKSTEP_ITEM": f"{ring}:1:{SURVIVE_ITEM_CHECKPOINT}"})
     # The driver holds the ring back until the level has loaded 40 objects: the game's own restart reads that many back.
     expect(ring <= int(checkpoint["frame"]) and int(checkpoint["load"]) > 40,
            f"the ring from frame {ring} on gave no rails checkpoint: {checkpoint}")
@@ -3269,10 +3269,10 @@ def sc_survive_checkpoint_allrange(args, folder):
     """The same in an all-range level, with the game's own checkpoint: on Fortuna it is Star Wolf's arrival
     (gAllRangeCheckpoint, src/overlays/ovl_i4/fox_fo.c:300). 300 frames later a bit is flipped on the client; the
     level starts again with Star Wolf there, on both games alike."""
-    games, checkpoint, poke = survive_checkpoint_run(args, folder, {}, host_env={"SF64_COOP_JOIN_LEVEL": str(FORTUNA)})
+    games, checkpoint, poke = survive_checkpoint_run(args, folder, {}, host_env={"SF64_COOP_JOIN_LEVEL": str(SURVIVE_FORTUNA)})
     expect(int(checkpoint["allrange"]) == 1 and int(checkpoint["load"]) == 0,
            f"Fortuna's checkpoint is not the all-range one: {checkpoint}")
-    return survive_check_checkpoint(games, checkpoint, poke, FORTUNA, 1)
+    return survive_check_checkpoint(games, checkpoint, poke, SURVIVE_FORTUNA, 1)
 
 
 SCENARIOS = {

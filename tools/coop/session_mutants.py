@@ -32,7 +32,7 @@ Left out, because no test can tell them from the original (a test for one would 
   The break `rejoin_nobody_refused` drops the whole test.
 - CoopSession_SetRestart: dropping `s->isHost` or `s->started`. A client never starts a level again, and
   CoopSession_StartLevel writes the restart point over whatever was set before it.
-- The event queue's bound (Host_Queue): no path of the tests owes more than QUEUE_SIZE events in one poll.
+- The event queue's bound (Host_OweEvent): no path of the tests owes more than QUEUE_SIZE events in one poll.
 """
 import sys
 from pathlib import Path
@@ -84,8 +84,8 @@ LEVEL_SEND = ("if (s->t->ops->send(s->t, i, COOP_MSG_SESSION_LEVEL_START, s->buf
 LEVEL_HEAD = ("if (size != LEVEL_START_SIZE || data[0] >= COOP_LEVEL_START_LEVELS || data[2] == 0 ||\n"
               "        !Roster_Valid(roster, COOP_SESSION_PLAYERS, self)) {")
 LEVEL_UNPICKED = ("for (i = 1; i < COOP_SESSION_PLAYERS; i++) {\n        if (roster[i] == COOP_CHARACTER_UNPICKED) {")
-LEVEL_GATE = "if (s->client == CLIENT_ACTIVE && Client_Open(s) && net.msgId == COOP_MSG_SESSION_LEVEL_START) {"
-SAVE_GATE = ("if (s->client == CLIENT_ACTIVE && Client_Open(s) && !s->saveHeld &&\n"
+LEVEL_GATE = "if (s->client == CLIENT_ACTIVE && Client_LevelOpen(s) && net.msgId == COOP_MSG_SESSION_LEVEL_START) {"
+SAVE_GATE = ("if (s->client == CLIENT_ACTIVE && Client_LevelOpen(s) && !s->saveHeld &&\n"
              "                    net.msgId == COOP_MSG_SESSION_SAVE) {")
 SAVE_SEND = ("if (p->saveDue && !p->recoverDue &&\n            s->t->ops->send(s->t, i, COOP_MSG_SESSION_SAVE, s->level.save, "
              "COOP_SAVE_SIZE, COOP_NET_RELIABLE)) {")
@@ -118,7 +118,7 @@ PICK_REFUSE_GATE = "if (s->client == CLIENT_ACTIVE && net.msgId == COOP_MSG_SESS
 HOST_MESSAGE_ID = "                    ev->msgId = net.msgId;\n"
 MESSAGE_SIZE = "                    ev->size = net.size;\n"
 MESSAGE_DATA = "                    ev->data = net.data;"
-REJOIN_ID = "} else if (!s->started || s->id == 0 || Id_Read(net->data) != s->id) {"
+REJOIN_ID = "} else if (!s->started || s->id == 0 || SessionId_Read(net->data) != s->id) {"
 AWAY = "bool away = s->started && end == COOP_SESSION_END_TIMEOUT && s->id != 0;"
 AWAY_OVER = "if (s->away[i].on && nowMs - s->away[i].since >= COOP_SESSION_REJOIN_MS) {"
 RESTART_RUN = "s->level.run = (run != 0) ? run : 1;"
@@ -573,7 +573,7 @@ BREAKS = [
 
     # Level start: what a client takes.
     ("client_level_any_state", LEVEL_GATE, LEVEL_GATE.replace("s->client == CLIENT_ACTIVE && ", ""), SIM),
-    ("client_level_twice", LEVEL_GATE, LEVEL_GATE.replace("Client_Open(s) && ", ""), SIM),
+    ("client_level_twice", LEVEL_GATE, LEVEL_GATE.replace("Client_LevelOpen(s) && ", ""), SIM),
     ("client_level_off", LEVEL_GATE, "if (0) {", ["sim", "level_start"]),
     ("client_level_lost", "Client_LevelStart(s, &net, ev);\n                    return true;",
      "Client_LevelStart(s, &net, ev);\n                    break;", SIM),
@@ -614,26 +614,26 @@ BREAKS = [
     ("level_read_past_end", LEVEL_HEAD, LEVEL_HEAD.replace("size != LEVEL_START_SIZE", "size < 1"), SIM),
     # ---- The session survives: the session id, a player who comes back, the recovery (session.h, "Recovery") ----
     ("welcome_no_id", "s->buffer[1 + i] = (uint8_t) (s->id >> (8 * i));", "s->buffer[1 + i] = 0;", SIM),
-    ("client_id_not_kept", "s->id = Id_Read(net->data + 1);\n        s->client = CLIENT_ACTIVE;",
+    ("client_id_not_kept", "s->id = SessionId_Read(net->data + 1);\n        s->client = CLIENT_ACTIVE;",
      "s->client = CLIENT_ACTIVE;", SIM),
     ("client_sets_id", "void CoopSession_SetId(CoopSession* s, uint64_t id) {\n    if (s->isHost) {",
      "void CoopSession_SetId(CoopSession* s, uint64_t id) {\n    if (1) {", SIM),
-    ("rejoin_other_session_taken", "if (s->rejoin && Id_Read(net->data + 1) != s->id) {", "if (0) {", SIM),
+    ("rejoin_other_session_taken", "if (s->rejoin && SessionId_Read(net->data + 1) != s->id) {", "if (0) {", SIM),
     ("rejoin_sends_hello", "s->rejoin ? COOP_MSG_SESSION_REJOIN : COOP_MSG_SESSION_HELLO", "COOP_MSG_SESSION_HELLO",
      SIM),
     ("rejoin_no_character", "s->buffer[8] = s->rejoinCharacter;", "s->buffer[8] = 0;", SIM),
     ("rejoin_id_low_byte_only", "s->buffer[i] = (uint8_t) (s->id >> (8 * i));", "s->buffer[i] = (uint8_t) s->id;", SIM),
     ("rejoin_not_flagged", "ev->rejoined = s->rejoin;\n", "", SIM),
     ("rejoin_id_unchecked", REJOIN_ID, "} else if (!s->started || s->id == 0) {", SIM),
-    ("rejoin_before_level", REJOIN_ID, "} else if (s->id == 0 || Id_Read(net->data) != s->id) {", SIM),
-    ("rejoin_without_id", REJOIN_ID, "} else if (!s->started || Id_Read(net->data) != s->id) {", SIM),
-    ("rejoin_identity_unchecked", "} else if (!Host_Fits(s, peer, nowMs, ev, &q.diff)) {", "} else if (0) {", SIM),
+    ("rejoin_before_level", REJOIN_ID, "} else if (s->id == 0 || SessionId_Read(net->data) != s->id) {", SIM),
+    ("rejoin_without_id", REJOIN_ID, "} else if (!s->started || SessionId_Read(net->data) != s->id) {", SIM),
+    ("rejoin_identity_unchecked", "} else if (!Host_IdentityFits(s, peer, nowMs, ev, &q.diff)) {", "} else if (0) {", SIM),
     ("rejoin_nobody_refused", "if (slot == 0 || !s->away[slot].on) {", "if (0) {", SIM),
     ("rejoin_stale_kept", "s->t->ops->disconnect(s->t, slot - 1);\n            s->peers[slot - 1].state = PEER_FREE;",
      "s->peers[slot - 1].state = PEER_FREE;", SIM),
     ("rejoin_stale_still_peer", "s->t->ops->disconnect(s->t, slot - 1);\n            s->peers[slot - 1].state = PEER_FREE;",
      "s->t->ops->disconnect(s->t, slot - 1);", SIM),
-    ("rejoin_stale_unsaid", "Host_Queue(s, &left);\n            Host_RecoverBegin(s, COOP_RECOVER_LOST, (uint8_t) slot);",
+    ("rejoin_stale_unsaid", "Host_OweEvent(s, &left);\n            Host_RecoverBegin(s, COOP_RECOVER_LOST, (uint8_t) slot);",
      "Host_RecoverBegin(s, COOP_RECOVER_LOST, (uint8_t) slot);", SIM),
     ("rejoin_slot_not_moved", "s->roster.character[target] = character;\n        s->roster.character[slot] = other;",
      "s->roster.character[target] = character;", SIM),
@@ -657,20 +657,20 @@ BREAKS = [
     ("away_wait_forever", AWAY_OVER, "if (0) {", SIM),
     ("away_over_keeps_character", "s->away[i].on = false;\n            s->roster.character[i] = COOP_CHARACTER_NO_PLAYER;",
      "s->away[i].on = false;", SIM),
-    ("away_over_still_recovering", "s->recovering = Host_Joined(s) > 0 || Host_AnyAway(s);", "s->recovering = true;", SIM),
+    ("away_over_still_recovering", "s->recovering = Host_JoinedCount(s) > 0 || Host_AnyAway(s);", "s->recovering = true;", SIM),
     ("away_over_wrong_peer", "Event_Init(ev, COOP_SESSION_EV_LEFT, i - 1);", "Event_Init(ev, COOP_SESSION_EV_LEFT, i);",
      SIM),
     ("away_handshake_not_waited", "if (s->peers[i].state == PEER_WAIT_HELLO) {\n            return false;",
      "if (0) {\n            return false;", SIM),
-    ("recover_alone", "        if (Host_Joined(s) > 0 || Host_AnyAway(s)) {", "        if (1) {", SIM),
-    ("recover_never_on_left", "        if (Host_Joined(s) > 0 || Host_AnyAway(s)) {", "        if (0) {", SIM),
+    ("recover_alone", "        if (Host_JoinedCount(s) > 0 || Host_AnyAway(s)) {", "        if (1) {", SIM),
+    ("recover_never_on_left", "        if (Host_JoinedCount(s) > 0 || Host_AnyAway(s)) {", "        if (0) {", SIM),
     ("recover_reason_always_left", "Host_RecoverBegin(s, away ? COOP_RECOVER_LOST : COOP_RECOVER_LEFT, (uint8_t) (peer + 1));",
      "Host_RecoverBegin(s, COOP_RECOVER_LEFT, (uint8_t) (peer + 1));", SIM),
     ("recover_wrong_player", "Host_RecoverBegin(s, away ? COOP_RECOVER_LOST : COOP_RECOVER_LEFT, (uint8_t) (peer + 1));",
      "Host_RecoverBegin(s, away ? COOP_RECOVER_LOST : COOP_RECOVER_LEFT, (uint8_t) peer);", SIM),
     ("recover_nobody_told", "s->peers[i].recoverDue = s->peers[i].state == PEER_JOINED;",
      "s->peers[i].recoverDue = false;", SIM),
-    ("recover_owner_not_told", "    Host_Queue(s, &q);\n}\n\n// A client that joined is gone.", "}\n\n// A client that joined is gone.",
+    ("recover_owner_not_told", "    Host_OweEvent(s, &q);\n}\n\n// A client that joined is gone.", "}\n\n// A client that joined is gone.",
      SIM),
     ("recover_flag_unset", "    s->recovering = true;\n    s->recoverReason = reason;", "    s->recoverReason = reason;", SIM),
     ("recover_sent_twice", "COOP_NET_RELIABLE)) {\n                p->recoverDue = false;", "COOP_NET_RELIABLE)) {", SIM),
@@ -687,13 +687,13 @@ BREAKS = [
     ("restart_no_save", "p->saveDue = true;\n        p->levelDue = true;", "p->levelDue = true;", SIM),
     ("restart_no_event", "s->levelEvent = true;\n    s->recovering = false;", "s->recovering = false;", SIM),
     ("restart_stays_recovering", "s->levelEvent = true;\n    s->recovering = false;", "s->levelEvent = true;", SIM),
-    ("restart_under_away", "    if (Host_AnyAway(s)) {\n        return false;\n    }\n    if (Host_Joined(s) == 0) {",
-     "    if (Host_Joined(s) == 0) {", SIM),
+    ("restart_under_away", "    if (Host_AnyAway(s)) {\n        return false;\n    }\n    if (Host_JoinedCount(s) == 0) {",
+     "    if (Host_JoinedCount(s) == 0) {", SIM),
     ("start_no_restart_point", "s->restart = s->level;\n    s->started = true;", "s->started = true;", SIM),
     ("start_run_0", "s->level.run = 1;\n    memcpy(", "s->level.run = 0;\n    memcpy(", SIM),
     ("set_restart_dropped", "    if (s->isHost && s->started) {\n        s->restart = *start;", "    if (0) {\n        s->restart = *start;",
      SIM),
-    ("kick_alone_without_id", "(s->id == 0 && Host_Joined(s) < 2 && !Host_AnyAway(s))) {", "(0)) {", SIM),
+    ("kick_alone_without_id", "(s->id == 0 && Host_JoinedCount(s) < 2 && !Host_AnyAway(s))) {", "(0)) {", SIM),
     ("kick_before_level", "if (!s->isHost || !s->started || peer < 0 ||", "if (!s->isHost || peer < 0 ||", SIM),
     ("kick_no_goodbye", "slot = peer + 1;\n    s->t->ops->disconnect(s->t, peer);", "slot = peer + 1;", SIM),
     ("kick_still_peer", "s->t->ops->disconnect(s->t, peer);\n    s->peers[peer].state = PEER_FREE;\n    if (away) {",
@@ -702,12 +702,12 @@ BREAKS = [
     ("kick_since_unset", "    if (away) {\n        s->away[slot].on = true;\n        s->away[slot].since = nowMs;",
      "    if (away) {\n        s->away[slot].on = true;", SIM),
     ("kick_keeps_character", "s->roster.character[slot] = COOP_CHARACTER_NO_PLAYER;\n", "", SIM),
-    ("kick_unsaid", "left.away = away;\n    Host_Queue(s, &left);", "left.away = away;", SIM),
+    ("kick_unsaid", "left.away = away;\n    Host_OweEvent(s, &left);", "left.away = away;", SIM),
     ("kick_no_recovery", "Host_RecoverBegin(s, away ? COOP_RECOVER_LOST : COOP_RECOVER_LEFT, (uint8_t) slot);\n", "", SIM),
     ("recover_call_before_level", RECOVER_CALL, RECOVER_CALL.replace("!s->started || ", ""), SIM),
     ("recover_call_reason_0", RECOVER_CALL, RECOVER_CALL.replace("reason < COOP_RECOVER_LOST || ", ""), SIM),
     ("recover_call_reason_high", RECOVER_CALL, RECOVER_CALL.replace(" || reason >= COOP_RECOVER_REASONS", ""), SIM),
-    ("recover_call_host_alone", "        if (Host_Joined(s) == 0 && !Host_AnyAway(s)) {\n            return false;",
+    ("recover_call_host_alone", "        if (Host_JoinedCount(s) == 0 && !Host_AnyAway(s)) {\n            return false;",
      "        if (0) {\n            return false;", SIM),
     ("recover_call_names_someone", "Host_RecoverBegin(s, reason, 0xFF);", "Host_RecoverBegin(s, reason, 0);", SIM),
     ("recover_call_client_no_wait", "    if (!s->awaiting) {\n        s->awaiting = true;\n        s->awaitSince = nowMs;",
