@@ -2933,6 +2933,8 @@ static void Script_HostStartOwed(void) {
 
 // ---- The session survives: recovery, the session id, a player who comes back ----
 
+static void Expect_BadLevel(const char* name, const uint8_t* data, uint16_t size, uint8_t self);
+
 #define TEST_ID 0x0123456789ABCDEFull
 
 static void Script_RejoinMsg(Script* t, int peer, uint64_t id, uint8_t character, const CoopIdentity* identity) {
@@ -3050,6 +3052,28 @@ static void Script_HostRecoverLeft(void) {
            "a host left alone recovered");
     EXPECT(t.sentCount == sent, name, "a host left alone sent something");
     Expect_Roster(name, CoopSession_Roster(s), FOX, NO_PLAYER, NO_PLAYER, NO_PLAYER);
+    CoopSession_Close(s);
+
+    // A client that says goodbye is not waited for, with a session id either.
+    s = Script_HostInLevel(&t, sides, &a, 2, TEST_ID);
+    Script_Gone(&t, 1, COOP_NET_END_CLOSED);
+    Drain(s, SCRIPT_T0, sides);
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(sides[1].leftAway == 0 && sides[0].recoverReason == COOP_RECOVER_LEFT && sides[0].levelStarts == 2, name,
+           "a client that said goodbye was waited for");
+    Expect_Roster(name, CoopSession_Roster(s), FOX, FALCO, NO_PLAYER, NO_PLAYER);
+    CoopSession_Close(s);
+
+    // Before the level nothing is kept for anyone, lost or not, and nothing recovers.
+    s = Script_HostWith(&t, sides, &a, 2);
+    CoopSession_SetId(s, TEST_ID);
+    Script_Pick(&t, 0, FALCO);
+    Script_Pick(&t, 1, SLIPPY);
+    Script_Gone(&t, 1, COOP_NET_END_TIMEOUT);
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(sides[1].left == 1 && sides[1].leftAway == 0 && sides[0].recovers == 0 && !CoopSession_Recovering(s), name,
+           "a slot was kept before the level");
+    Expect_Roster(name, CoopSession_Roster(s), FOX, FALCO, NO_PLAYER, NO_PLAYER);
     CoopSession_Close(s);
 
     // A connection that timed out without a session id is a client that left: nobody could come back.
@@ -3278,6 +3302,20 @@ static void Script_HostRejoin(void) {
         }
     }
 
+    // A session without an id has no id to come back with: 0 is no id, also when the client says 0.
+    s = Script_HostInLevel(&t, sides, &a, 2, 0);
+    Script_Gone(&t, 1, COOP_NET_END_TIMEOUT);
+    Drain(s, SCRIPT_T0, sides);
+    Drain(s, SCRIPT_T0, sides);
+    Script_Connected(&t, 1);
+    Script_RejoinMsg(&t, 1, 0, FALCO, &a);
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(sides[1].refused == 1 && sides[1].diff == COOP_SESSION_REFUSE_UNKNOWN, name,
+           "a rejoin with id 0 was taken by a session without an id");
+    EXPECT(t.disconnects[0] == 0 && CoopSession_PeerPlayer(s, 0) == 1, name,
+           "a rejoin with id 0 dropped the player whose character it named");
+    CoopSession_Close(s);
+
     // A rejoin that cannot be read, one before any level, and one in a session without an id.
     s = Script_HostInLevel(&t, sides, &a, 2, TEST_ID);
     Script_Gone(&t, 1, COOP_NET_END_TIMEOUT);
@@ -3320,9 +3358,10 @@ static void Script_HostRecoverCalls(void) {
     Id_Default(&a);
 
     // Not before a level, not with a reason there is none of, not alone.
-    s = Script_HostWith(&t, sides, &a, 1);
+    s = Script_HostWith(&t, sides, &a, 2);
+    CoopSession_SetId(s, TEST_ID);
     EXPECT(!CoopSession_Recover(s, COOP_RECOVER_DESYNC, SCRIPT_T0), name, "a recovery before any level");
-    EXPECT(!CoopSession_Kick(s, 0, SCRIPT_T0), name, "a client dropped before any level");
+    EXPECT(!CoopSession_Kick(s, 0, SCRIPT_T0) && t.disconnects[0] == 0, name, "a client dropped before any level");
     CoopSession_Close(s);
     s = Script_HostInLevel(&t, sides, &a, 0, TEST_ID);
     EXPECT(!CoopSession_Recover(s, COOP_RECOVER_DESYNC, SCRIPT_T0), name, "a host alone recovered");
@@ -3373,6 +3412,19 @@ static void Script_HostRecoverCalls(void) {
     Drain(s, SCRIPT_T0, sides);
     Drain(s, SCRIPT_T0, sides);
     EXPECT(sides[0].levelStarts == 3 && sides[0].levelStart.run == 3, name, "the third level start is not run 3");
+    CoopSession_Close(s);
+
+    // The run number is one byte: after 255 comes 1, never 0, which is no level start.
+    s = Script_HostInLevel(&t, sides, &a, 1, TEST_ID);
+    for (i = 2; i <= 257; i++) {
+        t.sentCount = 0;
+        EXPECT(CoopSession_Recover(s, COOP_RECOVER_DESYNC, SCRIPT_T0), name, "no recovery");
+        Drain(s, SCRIPT_T0, sides);
+        Drain(s, SCRIPT_T0, sides);
+        EXPECT(sides[0].levelStart.run == ((i <= 255) ? i : i - 255), name, "the run did not count on, or went to 0");
+        EXPECT(Last_Sent(&t, COOP_MSG_SESSION_LEVEL_START)->data[2] == sides[0].levelStart.run, name,
+               "the run sent is not the run started");
+    }
     CoopSession_Close(s);
 
     // A client is not the one to set the restart point, and a host only in a level.
@@ -3525,6 +3577,25 @@ static void Script_ClientRecover(void) {
         }
         CoopSession_Close(s);
     }
+
+    // After run 255 comes run 1.
+    s = Script_Joined(&t, &side, &a, 1);
+    for (run = 1; run <= 257; run++) {
+        if (run > 1) {
+            Script_Message(&t, 0, COOP_MSG_SESSION_RECOVER, parted, sizeof(parted));
+        }
+        Script_SaveMsg(&t);
+        Level_Run(bytes, (uint8_t) ((run <= 255) ? run : run - 255));
+        Script_Message(&t, 0, COOP_MSG_SESSION_LEVEL_START, bytes, sizeof(bytes));
+        Drain(s, SCRIPT_T0 + 2, &side);
+        EXPECT(side.levelStarts == (uint32_t) run && side.ended == 0, name, "the runs do not count on through 255 to 1");
+    }
+    CoopSession_Close(s);
+
+    // Run 0 is no level start, as the first one either.
+    Level_Run(bytes, 0);
+    Expect_BadLevel("level_run_0", bytes, LEVEL_BYTES, 1);
+    Level_Run(bytes, 1);
 
     // A second save after SESSION_RECOVER and before the level start is dropped, as before the first level.
     s = Script_Joined(&t, &side, &a, 1);

@@ -612,12 +612,14 @@ static void Host_Restart(CoopSession* s) {
 
     s->level = s->restart;
     s->level.run = (run != 0) ? run : 1;
-    memcpy(s->level.roster, s->roster.character, sizeof(s->level.roster));
+    memcpy(s->level.roster, s->roster.character, COOP_SESSION_PLAYERS);
     s->levelEvent = true;
     s->recovering = false;
     for (i = 0; i < COOP_NET_MAX_PEERS; i++) {
-        s->peers[i].saveDue = true;
-        s->peers[i].levelDue = true;
+        Peer* p = &s->peers[i];
+
+        p->saveDue = true;
+        p->levelDue = true;
     }
 }
 
@@ -643,7 +645,7 @@ static bool Host_Recovery(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) 
             s->recovering = Host_Joined(s) > 0 || Host_AnyAway(s);
             Event_Init(ev, COOP_SESSION_EV_LEFT, i - 1);
             ev->end = COOP_SESSION_END_TIMEOUT;
-            ev->text = CoopSession_EndText(ev->end);
+            ev->text = CoopSession_EndText(COOP_SESSION_END_TIMEOUT);
             return true;
         }
     }
@@ -684,7 +686,7 @@ static bool Host_Queued(CoopSession* s, CoopSessionEvent* ev) {
             Event_Init(ev, COOP_SESSION_EV_LEFT, q->peer);
             ev->end = (CoopSessionEnd) q->end;
             ev->away = q->away;
-            ev->text = CoopSession_EndText(ev->end);
+            ev->text = CoopSession_EndText((CoopSessionEnd) q->end);
             break;
     }
     return true;
@@ -729,6 +731,20 @@ static void Host_Refuse(CoopSession* s, int peer, uint32_t reasons, uint32_t now
     ev->text = s->text;
 }
 
+// True if the identity the peer at `peer` sent goes with ours, with what only warns in *out. Otherwise the peer is
+// refused, and ev says so.
+static bool Host_Fits(CoopSession* s, int peer, uint32_t nowMs, CoopSessionEvent* ev, uint32_t* out) {
+    uint32_t diff = CoopIdentity_Compare(&s->local, &s->peers[peer].identity);
+
+    *out = diff;
+    if (diff & COOP_ID_DIFF_REFUSE) {
+        // Every bit goes along, the platform too, so both players see everything that differs.
+        Host_Refuse(s, peer, diff, nowMs, ev);
+        return false;
+    }
+    return true;
+}
+
 // The welcome: the player index, the session id, this game's identity. False if it could not go.
 #define WELCOME_HEAD 9
 
@@ -762,50 +778,44 @@ static uint64_t Id_Read(const uint8_t* data) {
 #define REJOIN_HEAD 9
 
 static void Host_Rejoin(CoopSession* s, int peer, const CoopNetEvent* net, uint32_t nowMs, CoopSessionEvent* ev) {
-    Peer* p = &s->peers[peer];
     Queued q = { COOP_SESSION_EV_JOINED, (int8_t) peer, 0, 0, (uint8_t) (peer + 1), false, 0 };
-    uint32_t diff;
-    uint8_t character;
+    uint32_t refuse = 0;
+    uint8_t character = 0;
     int target = peer + 1;
     int slot = 0;
     int i;
 
-    if (net->size < REJOIN_HEAD ||
-        !Identity_ReadAll(&p->identity, net->data + REJOIN_HEAD, (uint16_t) (net->size - REJOIN_HEAD))) {
-        Host_Refuse(s, peer, COOP_SESSION_REFUSE_MALFORMED, nowMs, ev);
+    if (net->size < REJOIN_HEAD || !Identity_ReadAll(&s->peers[peer].identity, net->data + REJOIN_HEAD,
+                                                     (uint16_t) (net->size - REJOIN_HEAD))) {
+        refuse = COOP_SESSION_REFUSE_MALFORMED;
+    } else if (!Host_Fits(s, peer, nowMs, ev, &q.diff)) {
         return;
-    }
-    diff = CoopIdentity_Compare(&s->local, &p->identity);
-    if (diff & COOP_ID_DIFF_REFUSE) {
-        Host_Refuse(s, peer, diff, nowMs, ev);
-        return;
-    }
-    if (!s->started || s->id == 0 || Id_Read(net->data) != s->id) {
-        Host_Refuse(s, peer, COOP_SESSION_REFUSE_UNKNOWN, nowMs, ev);
-        return;
-    }
-    character = net->data[8];
-    for (i = 1; i < COOP_SESSION_PLAYERS; i++) {
-        if (character > COOP_CHARACTER_FOX && character < COOP_CHARACTER_COUNT && s->roster.character[i] == character) {
-            slot = i;
+    } else if (!s->started || s->id == 0 || Id_Read(net->data) != s->id) {
+        refuse = COOP_SESSION_REFUSE_UNKNOWN;
+    } else {
+        character = net->data[8];
+        for (i = 1; i < COOP_SESSION_PLAYERS; i++) {
+            // A byte that is no wingman finds nobody: a free slot, which holds 0, is no player's and is refused below.
+            if (s->roster.character[i] == character) {
+                slot = i;
+            }
+        }
+        if (slot != 0 && !s->away[slot].on && s->peers[slot - 1].state == PEER_JOINED) {
+            Queued left = { COOP_SESSION_EV_LEFT, (int8_t) (slot - 1), COOP_SESSION_END_TIMEOUT, 0, 0, true, 0 };
+
+            s->t->ops->disconnect(s->t, slot - 1);
+            s->peers[slot - 1].state = PEER_FREE;
+            s->away[slot].on = true;
+            s->away[slot].since = nowMs;
+            Host_Queue(s, &left);
+            Host_RecoverBegin(s, COOP_RECOVER_LOST, (uint8_t) slot);
+        }
+        if (slot == 0 || !s->away[slot].on) {
+            refuse = COOP_SESSION_REFUSE_STARTED;
         }
     }
-    if (slot != 0 && !s->away[slot].on && slot != target && s->peers[slot - 1].state == PEER_JOINED) {
-        Queued left = { COOP_SESSION_EV_LEFT, (int8_t) (slot - 1), COOP_SESSION_END_TIMEOUT, 0, 0, true, 0 };
-
-        s->t->ops->disconnect(s->t, slot - 1);
-        s->peers[slot - 1].state = PEER_FREE;
-        s->away[slot].on = true;
-        s->away[slot].since = nowMs;
-        Host_Queue(s, &left);
-        Host_RecoverBegin(s, COOP_RECOVER_LOST, (uint8_t) slot);
-    }
-    if (slot == 0 || !s->away[slot].on) {
-        Host_Refuse(s, peer, COOP_SESSION_REFUSE_STARTED, nowMs, ev);
-        return;
-    }
-    if (!Host_Welcome(s, peer)) {
-        Host_Refuse(s, peer, 0, nowMs, ev);
+    if (refuse != 0 || !Host_Welcome(s, peer)) {
+        Host_Refuse(s, peer, refuse, nowMs, ev);
         return;
     }
     if (slot != target) {
@@ -817,9 +827,8 @@ static void Host_Rejoin(CoopSession* s, int peer, const CoopNetEvent* net, uint3
         s->away[slot] = kept;
     }
     s->away[target].on = false;
-    p->state = PEER_JOINED;
+    s->peers[peer].state = PEER_JOINED;
     Host_RosterChanged(s);
-    q.diff = diff;
     Host_Queue(s, &q);
     Host_Queued(s, ev);
 }
@@ -836,10 +845,7 @@ static void Host_Hello(CoopSession* s, int peer, const CoopNetEvent* net, uint32
         Host_Refuse(s, peer, COOP_SESSION_REFUSE_STARTED, nowMs, ev);
         return;
     }
-    diff = CoopIdentity_Compare(&s->local, &p->identity);
-    if (diff & COOP_ID_DIFF_REFUSE) {
-        // Every bit goes along, the platform too, so both players see everything that differs.
-        Host_Refuse(s, peer, diff, nowMs, ev);
+    if (!Host_Fits(s, peer, nowMs, ev, &diff)) {
         return;
     }
 
@@ -908,6 +914,57 @@ static bool Host_Pick(CoopSession* s, int peer, const CoopNetEvent* net, CoopSes
     return Host_RosterEvent(s, ev);
 }
 
+// As a connection that timed out: the slot is kept if the session has an id, because a client whose connection broke
+// one way stops sending input before either side's time-out says so, and it comes back the same way.
+bool CoopSession_Kick(CoopSession* s, int peer, uint32_t nowMs) {
+    Queued left = { COOP_SESSION_EV_LEFT, (int8_t) peer, COOP_SESSION_END_TIMEOUT, 0, 0, false, 0 };
+    bool away;
+    int slot;
+
+    if (!s->isHost || !s->started || peer < 0 || peer >= COOP_NET_MAX_PEERS || s->peers[peer].state != PEER_JOINED ||
+        (s->id == 0 && Host_Joined(s) < 2 && !Host_AnyAway(s))) {
+        return false;
+    }
+    away = s->id != 0;
+    slot = peer + 1;
+    s->t->ops->disconnect(s->t, peer);
+    s->peers[peer].state = PEER_FREE;
+    if (away) {
+        s->away[slot].on = true;
+        s->away[slot].since = nowMs;
+    } else {
+        s->roster.character[slot] = COOP_CHARACTER_NO_PLAYER;
+        Host_RosterChanged(s);
+    }
+    left.away = away;
+    Host_Queue(s, &left);
+    Host_RecoverBegin(s, away ? COOP_RECOVER_LOST : COOP_RECOVER_LEFT, (uint8_t) slot);
+    return true;
+}
+
+bool CoopSession_Recover(CoopSession* s, uint8_t reason, uint32_t nowMs) {
+    if (!s->started || reason < COOP_RECOVER_LOST || reason >= COOP_RECOVER_REASONS) {
+        return false;
+    }
+    if (s->isHost) {
+        if (Host_Joined(s) == 0 && !Host_AnyAway(s)) {
+            return false;
+        }
+        Host_RecoverBegin(s, reason, 0xFF);
+        return true;
+    }
+    if (s->client != CLIENT_ACTIVE) {
+        return false;
+    }
+    if (!s->awaiting) {
+        s->awaiting = true;
+        s->awaitSince = nowMs;
+    }
+    s->recoverReason = reason;
+    s->recoverEvent = true;
+    return true;
+}
+
 static bool Host_Poll(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) {
     CoopNetEvent net;
 
@@ -968,55 +1025,6 @@ static bool Host_Poll(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) {
         }
     }
     return false;
-}
-
-// As a connection that timed out: the slot is kept if the session has an id, because a client whose connection broke
-// one way stops sending input before either side's time-out says so, and it comes back the same way.
-bool CoopSession_Kick(CoopSession* s, int peer, uint32_t nowMs) {
-    Queued left = { COOP_SESSION_EV_LEFT, (int8_t) peer, COOP_SESSION_END_TIMEOUT, 0, 0, false, 0 };
-    bool away;
-
-    if (!s->isHost || !s->started || peer < 0 || peer >= COOP_NET_MAX_PEERS || s->peers[peer].state != PEER_JOINED ||
-        (s->id == 0 && Host_Joined(s) < 2 && !Host_AnyAway(s))) {
-        return false;
-    }
-    away = s->id != 0;
-    s->t->ops->disconnect(s->t, peer);
-    s->peers[peer].state = PEER_FREE;
-    if (away) {
-        s->away[peer + 1].on = true;
-        s->away[peer + 1].since = nowMs;
-    } else {
-        s->roster.character[peer + 1] = COOP_CHARACTER_NO_PLAYER;
-        Host_RosterChanged(s);
-    }
-    left.away = away;
-    Host_Queue(s, &left);
-    Host_RecoverBegin(s, away ? COOP_RECOVER_LOST : COOP_RECOVER_LEFT, (uint8_t) (peer + 1));
-    return true;
-}
-
-bool CoopSession_Recover(CoopSession* s, uint8_t reason, uint32_t nowMs) {
-    if (!s->started || reason < COOP_RECOVER_LOST || reason >= COOP_RECOVER_REASONS) {
-        return false;
-    }
-    if (s->isHost) {
-        if (Host_Joined(s) == 0 && !Host_AnyAway(s)) {
-            return false;
-        }
-        Host_RecoverBegin(s, reason, 0xFF);
-        return true;
-    }
-    if (s->client != CLIENT_ACTIVE) {
-        return false;
-    }
-    if (!s->awaiting) {
-        s->awaiting = true;
-        s->awaitSince = nowMs;
-    }
-    s->recoverReason = reason;
-    s->recoverEvent = true;
-    return true;
 }
 
 // ---- Client ----
@@ -1137,6 +1145,21 @@ static void Client_PickRefused(CoopSession* s, const CoopNetEvent* net, CoopSess
     Event_PickRefused(s, 0, net->data[0], ev);
 }
 
+// What goes ahead of the identity: nothing in a hello, the session id and the character in a SESSION_REJOIN. Returns
+// its size, written to the session's buffer.
+static uint16_t Client_HelloHead(CoopSession* s) {
+    int i;
+
+    if (!s->rejoin) {
+        return 0;
+    }
+    for (i = 0; i < 8; i++) {
+        s->buffer[i] = (uint8_t) (s->id >> (8 * i));
+    }
+    s->buffer[8] = s->rejoinCharacter;
+    return REJOIN_HEAD;
+}
+
 static void Client_Answer(CoopSession* s, const CoopNetEvent* net, CoopSessionEvent* ev) {
     CoopIdentity* host = &s->peers[0].identity;
 
@@ -1192,21 +1215,6 @@ static void Client_Answer(CoopSession* s, const CoopNetEvent* net, CoopSessionEv
         CoopIdentity_Describe(ev->diff, host, &s->local, s->text, sizeof(s->text));
     }
     ev->text = s->text;
-}
-
-// What goes ahead of the identity: nothing in a hello, the session id and the character in a SESSION_REJOIN. Returns
-// its size, written to the session's buffer.
-static uint16_t Client_HelloHead(CoopSession* s) {
-    int i;
-
-    if (!s->rejoin) {
-        return 0;
-    }
-    for (i = 0; i < 8; i++) {
-        s->buffer[i] = (uint8_t) (s->id >> (8 * i));
-    }
-    s->buffer[8] = s->rejoinCharacter;
-    return REJOIN_HEAD;
 }
 
 static bool Client_Poll(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) {
