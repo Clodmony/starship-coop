@@ -3143,7 +3143,9 @@ def sc_survive_three(args, folder):
         for game in games:
             game.close()
     gone = player_of(goes)
-    roster = ["Fox", "Falco", "Slippy", "-"]
+    # The two clients join in either order, so who is player 2 and who player 3 comes from the first level start.
+    roster = survive_starts(host)[0][1].split(",")
+    expect(sorted(roster) == ["-", "Falco", "Fox", "Slippy"], f"the first level start's roster is {roster}")
     kept = list(roster)
     kept[gone - 1] = "-"
     for game in (host, stays):
