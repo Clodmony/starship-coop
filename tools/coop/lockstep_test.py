@@ -597,7 +597,7 @@ def return_pokes(plan):
     return ",".join(pokes)
 
 
-def run_return(args, folder, plan, pokes=None, both=None):
+def run_return(args, folder, plan, pokes=None, both=None, level=None):
     """Both games through one plan, with sway (and L at plan['jump']). Returns the two, stopped."""
     folder.mkdir(parents=True, exist_ok=True)
     frames = plan["frames"]
@@ -612,7 +612,10 @@ def run_return(args, folder, plan, pokes=None, both=None):
     for path in traces.values():
         if path.exists():
             path.unlink()
-    host, client = session(args, folder, host_env={"SF64_COOP_VIEW_TRACE": str(traces["host"])},
+    host_env = {"SF64_COOP_VIEW_TRACE": str(traces["host"])}
+    if level is not None:
+        host_env["SF64_COOP_JOIN_LEVEL"] = str(level)
+    host, client = session(args, folder, host_env=host_env,
                            client_env={"SF64_COOP_VIEW_TRACE": str(traces["client0"])}, both=env, config=config)
     try:
         wait_for([host, client], "done", 900)
@@ -753,17 +756,41 @@ FOX_REFILL_PLANS = {
 }
 
 
+# The other levels: name -> (LevelId of include/sf64level.h, section, the first frame both players fly with this
+# file's seeds and feed; read from a run's player trace). One plan shape for all: the pool is set 20 frames after that,
+# with both at full shields, player 0 is poked down after 60 and 260 frames and, at pool 0, after 460.
+FOX_REFILL_LEVELS = {
+    "meteo": (1, "rails", 853), "sector_x": (2, "rails", 343), "area_6": (3, "rails", 542),
+    "sector_y": (5, "rails", 611), "venom_1": (6, "rails", 302), "solar": (7, "rails", 631),
+    "zoness": (8, "rails", 272), "fortuna": (14, "all-range", 266), "katina": (16, "all-range", 262),
+    "bolse": (17, "all-range", 272), "sector_z": (18, "all-range", 802), "venom_2": (19, "all-range", 622),
+    # The Landmaster and the Blue Marine: their own down sites (Tank_UpdateOnRails, Player_UpdateOnRails).
+    "macbeth": (11, "rails", 264), "titania": (12, "rails", 602), "aquas": (13, "rails", 546),
+}
+# radioDamageTimer of a poke. It counts down in every state and the down is only tested while player 0 is ACTIVE, so in
+# all-range it has to outlast a U-turn (about 110 frames) that a poke can fall into.
+FOX_REFILL_TIMER = {"rails": 4, "all-range": 150}
+
+
+def fox_refill_level_plan(name):
+    level, section, join = FOX_REFILL_LEVELS[name]
+    return {"level": level, "section": section, "pool": join + 20, "downs": (join + 60, join + 260),
+            "last": join + 460, "jump": None, "timer": FOX_REFILL_TIMER[section]}
+
+
 def fox_refill_pokes(plan):
     pool = plan["pool"]
     pokes = [f"{pool}:0:lives:{FOX_REFILL_POOL}", f"{pool}:0:bombs:{FOX_BOMBS}", f"{pool}:1:bombs:{FOX_BOMBS}",
              f"{pool}:1:shields:255"]
-    pokes += [f"{down}:0:down:4" for down in plan["downs"] + (plan["last"],)]
+    pokes.append(f"{pool}:0:shields:{RETURN_SHIELDS}")
+    pokes += [f"{down}:0:down:{plan.get('timer', 4)}" for down in plan["downs"] + (plan["last"],)]
     return ",".join(pokes)
 
 
 def fox_refill_check(game, view_path, plan, section):
     """What one game shows of a fox_refill plan. Returns a line for the summary."""
-    rows = [r for r in player_trace.parse(game.run / "trace.txt") if r.level == 0 and len(r.players) > 1]
+    rows = [r for r in player_trace.parse(game.run / "trace.txt")
+            if r.level == plan.get("level", 0) and len(r.players) > 1]
     by_frame = {r.frame: r for r in rows}
     trace = view_check.read_trace(1, view_path)
     view = trace.by_frame
@@ -771,22 +798,30 @@ def fox_refill_check(game, view_path, plan, section):
     frames = [r.frame for r in rows]
     expect(frames == sorted(set(frames)), f"{game.name}: the level restarted (the trace's frames go back)")
     found = []
+    timer = plan.get("timer", 4)
 
-    def active_from(frame):
-        """The poke is seen on the first frame from `frame` on that player 0 is ACTIVE: a U-turn does not test it."""
-        later = [r.frame for r in rows if r.frame >= frame and r.players[0].state == player_trace.ACTIVE]
-        return later[0] if later else None
+    def refill_from(frame):
+        """The first frame after `frame` on which the pool is one lower than on the frame before."""
+        return next((f for f in sorted(view) if f > frame and f - 1 in view
+                     and view[f].players[0].lives == view[f - 1].players[0].lives - 1), None)
 
     for n, poke in enumerate(plan["downs"]):
-        at = active_from(poke + 1)
-        expect(at is not None and at in view and at - 1 in view and by_frame[at].mode == mode,
-               f"{game.name}: player 0 does not fly {section} after the poke at frame {poke}")
-        before, after = view[at - 1].players, view[at].players
+        # The poke is seen on the first frame player 0's ACTIVE update runs: the next one on the rails, after a U-turn
+        # in all-range, where the down is not tested.
+        at = refill_from(poke)
         pool = FOX_REFILL_POOL - n
+        expect(at is not None and at <= poke + timer,
+               f"{game.name}: no refill within {timer} frames of the poke at {poke} (pool then "
+               f"{view[poke].players[0].lives if poke in view else None}, next change at {at})")
+        expect(section != "rails" or at == poke + 1, f"{game.name}: refilled at {at}, want {poke + 1}")
+        expect(by_frame[at].mode == mode, f"{game.name}: frame {at} is not {section}")
+        before, after = view[at - 1].players, view[at].players
         expect((before[0].lives, after[0].lives) == (pool, pool - 1),
                f"{game.name}: pool {before[0].lives} -> {after[0].lives} at frame {at}, want {pool} -> {pool - 1}: "
                f"player 0 was not refilled (state {after[0].state}, shields {after[0].shields})")
-        expect(after[0].shields == RETURN_SHIELDS and after[0].bombs == RETURN_BOMBS and after[0].state == 3,
+        # Solar's heat takes a point on the same frame (Play_UpdateLevel, after the players).
+        expect(RETURN_SHIELDS - 1 <= after[0].shields <= RETURN_SHIELDS and after[0].bombs == RETURN_BOMBS
+               and after[0].state == 3,
                f"{game.name}: player 0 refilled with shields {after[0].shields}, bombs {after[0].bombs}, state "
                f"{after[0].state} at frame {at}")
         expect(by_frame[at].lasers[0] == 0, f"{game.name}: player 0's lasers {by_frame[at].lasers} after the refill")
@@ -833,6 +868,8 @@ def fox_refill_check(game, view_path, plan, section):
     expect(v.players[0].lives == 0 and row.players[0].state == PLAYERSTATE_DOWN and row.players[1].parked,
            f"{game.name}: at pool {v.players[0].lives}, frame {last}: player 0 state {row.players[0].state}, player 1 "
            f"parked {row.players[1].parked}; want pool 0, DOWN and parked")
+    expect("frames" not in plan or last < plan["frames"],
+           f"{game.name}: the last down at {last} is past the {plan.get('frames')} frames compared")
     found.append(f"down at {last} at pool 0, player 1 parked with it")
     return "; ".join(found)
 
@@ -854,6 +891,86 @@ def sc_fox_refill(args, folder):
 
 def sc_fox_refill_all_range(args, folder):
     return fox_refill_in(args, folder, "all-range")
+
+
+# A long flight with a deep pool: the feed does not dodge, so player 0 loses its shields to what the level throws at it
+# (enemy fire, collisions, the boss) and is refilled each time. Frames from the level's start. Nothing here pokes
+# player 0 down: every refill follows a hit of the level's own.
+FOX_REFILL_LONG_POOL = 90
+FOX_REFILL_LONG_WEAK = 24  # times player 0's shields are set to 1 (the view trace takes 32 pokes)
+FOX_REFILL_LONG_FRAMES = {"rails": 9000, "all-range": 4000}
+FOX_REFILL_LONG_MORE = {"sector_z": 4300}  # the first hit on player 0 in Sector Z comes at 4145; the level ends at 4380
+FOX_REFILL_LONG_LEVELS = {"corneria": (0, "rails", JOIN_FRAME), **FOX_REFILL_LEVELS}
+
+
+def fox_refill_long_story(game, view_path, level, end):
+    """From one game, up to frame `end`: (refills of player 0, returns of player 1, frames by level mode, last frame)."""
+    rows = [r for r in player_trace.parse(game.run / "trace.txt")
+            if r.level == level and len(r.players) > 1 and r.frame < end]
+    frames = [r.frame for r in rows]
+    expect(frames == sorted(set(frames)), f"{game.name}: the level restarted (the trace's frames go back)")
+    down = [(r.frame, r.players[0].state) for r in rows if r.players[0].state == PLAYERSTATE_DOWN]
+    expect(not down, f"{game.name}: player 0 went down at frame {down[:1]} with lives in the pool")
+    view = view_check.read_trace(1, view_path).by_frame
+    by_frame = {r.frame: r for r in rows}
+    refills, returns = [], []
+    for f in sorted(view):
+        if f - 1 not in view or f not in by_frame or f - 1 not in by_frame:
+            continue
+        if view[f].players[0].lives == view[f - 1].players[0].lives - 1:
+            came_back = by_frame[f - 1].players[1].parked and not by_frame[f].players[1].parked
+            (returns if came_back else refills).append(f)
+            if not came_back:
+                p = view[f].players[0]
+                expect(p.state == 3 and p.shields >= RETURN_SHIELDS - 1 and p.bombs == RETURN_BOMBS,
+                       f"{game.name}: a life went at frame {f} with player 0 in state {p.state}, shields {p.shields}")
+    modes = {}
+    for r in rows:
+        modes[r.mode] = modes.get(r.mode, 0) + 1
+    return refills, returns, modes, rows[-1].frame
+
+
+def sc_fox_refill_long(args, folder):
+    """Decision 0007 rule 12: a long flight per level (--levels, default all open ones) in which player 0 is refilled
+    whenever the level itself takes its last shields, the two games equal on every frame."""
+    names = args.levels or list(FOX_REFILL_LONG_LEVELS)
+    done = []
+    for name in names:
+        expect(name in FOX_REFILL_LONG_LEVELS, f"no level {name}: {', '.join(FOX_REFILL_LONG_LEVELS)}")
+        level, section, join = FOX_REFILL_LONG_LEVELS[name]
+        plan = {"frames": FOX_REFILL_LONG_MORE.get(name, FOX_REFILL_LONG_FRAMES[section]), "jump": None}
+        # And its shields are set to 1 now and then, so the next thing that hits it takes the last of them: the
+        # level's own hit, with the timers a real hit leaves, on whatever frame it comes.
+        step = (plan["frames"] - join - 100) // FOX_REFILL_LONG_WEAK
+        pokes = ",".join([f"{join + 20}:0:lives:{FOX_REFILL_LONG_POOL}"] +
+                         [f"{join + 100 + n * step}:0:shields:1" for n in range(FOX_REFILL_LONG_WEAK)])
+        host, client, traces = run_return(args, folder / name, plan, pokes, level=level)
+        frames = compare(host, client, plan["frames"])
+        stories = [fox_refill_long_story(game, traces[game.name], level, plan["frames"]) for game in (host, client)]
+        expect(stories[0][:3] == stories[1][:3], f"{name}: the games differ: host {stories[0]}, client {stories[1]}")
+        refills, returns, modes, _ = stories[0]
+        expect(refills, f"{name}: player 0 never lost its shields in {plan['frames']} frames, so nothing was shown")
+        where = ", ".join(f"{count} frames {'all-range' if mode == player_trace.ALL_RANGE else 'on rails'}"
+                          for mode, count in sorted(modes.items()))
+        done.append(f"{name}: same hash on {frames} frames ({where}); player 0 refilled {len(refills)} times (first "
+                    f"{refills[0]}, last {refills[-1]}), never down, no restart; player 1 returned {len(returns)} times")
+    return " | ".join(done)
+
+
+def sc_fox_refill_levels(args, folder):
+    """Decision 0007 rule 12: the same on the other levels that are open for the refill, or on --levels."""
+    names = args.levels or list(FOX_REFILL_LEVELS)
+    done = []
+    for name in names:
+        expect(name in FOX_REFILL_LEVELS, f"no level {name}: {', '.join(FOX_REFILL_LEVELS)}")
+        plan = fox_refill_level_plan(name)
+        plan["frames"] = plan["last"] + (plan["timer"] if plan["section"] == "all-range" else FOX_REFILL_TAIL)
+        host, client, traces = run_return(args, folder / name, plan, fox_refill_pokes(plan), level=plan["level"])
+        frames = compare(host, client, plan["frames"])
+        lines = [fox_refill_check(game, traces[game.name], plan, plan["section"]) for game in (host, client)]
+        expect(lines[0] == lines[1], f"{name}: the games saw different refills: host {lines[0]}, client {lines[1]}")
+        done.append(f"{name}: same hash on {frames} frames; {lines[0]}")
+    return " | ".join(done)
 
 
 # Spike #183 (decision 0007 rule 13), with SF64_COOP_TEST_LEAD_SWAP on both games: at pool 0 player 0 is poked down
@@ -3158,6 +3275,8 @@ SCENARIOS = {
     "return_fox_down": sc_return_fox_down,
     "fox_refill": sc_fox_refill,
     "fox_refill_all_range": sc_fox_refill_all_range,
+    "fox_refill_levels": sc_fox_refill_levels,
+    "fox_refill_long": sc_fox_refill_long,
     "fox_lead_swap": sc_fox_lead_swap,
     "fox_lead_swap_all_range": sc_fox_lead_swap_all_range,
     "laser": sc_laser,
@@ -3211,7 +3330,7 @@ SCENARIOS = {
     "other_bosses": sc_other_bosses,
     "eels": sc_eels,
 }
-LONG = ("fox_lead_swap", "fox_lead_swap_all_range", "full", "scenes", "allrange", "allrange_down", "allrange_others", "allrange_down_others", "teambar",
+LONG = ("fox_refill_levels", "fox_refill_long", "fox_lead_swap", "fox_lead_swap_all_range", "full", "scenes", "allrange", "allrange_down", "allrange_others", "allrange_down_others", "teambar",
         "map_saves", "map_saves_host_full", "map_saves_equal", "audio", "release", "rates", "vehicles", "vehicle_end", "bosses", "other_bosses",
         "eels")
 

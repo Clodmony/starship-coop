@@ -5766,7 +5766,8 @@ void Player_UpdateOnRails(Player* player) {
             Player_CollisionCheck(player);
             Player_FloorCheck(player);
             Player_LowHealthAlarm(player);
-            if ((player->shields <= 0) && (player->radioDamageTimer != 0)) {
+            // COOP: in a level open for it, a life refills player 0 in place instead (decision 0007 rule 3)
+            if ((player->shields <= 0) && (player->radioDamageTimer != 0) && !CoopPlayers_RefillFox(player)) {
                 Player_Down(player);
             }
             break;

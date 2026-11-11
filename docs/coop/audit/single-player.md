@@ -326,16 +326,16 @@ Basis per site: read 345, site 893, name 497.
 | `Player_Setup` | 4942:CC | setup | site | gCamCount == gPlayerNum + 1: HUD and hit counters reset only when the last player is set up |
 | `Player_UpdateTankJets` | 5483:CC, 5487:CC | setup | site | gCamCount == 1 as "not versus" for jet effects |
 | `Player_UpdateEffects` | 5529:CC | setup | site | loops gCamCount players |
-| `Player_Update` | 5909:MC, 5910:MC, 5911:MC | ok | read | with co-op off; in co-op CoopPlayers_SelectInput points at the player's own slot right after (WP-14) |
-| `Player_Update` | 6147:CC | setup | site | gCamCount == 4: down in versus goes to VS_STANDBY, else fade out and restart level |
-| `Player_Update` | 6157:P0, 6226:P0 | flow | site | death restart resets gPlayer[0].zPath and path progress; boost check reads player 0 state for every player |
-| `Camera_SetStarfieldPos` | 6655:P0, 6667:P0 | view | site | starfield from player 0 camera |
-| `Camera_SetupLights` | 6750:P0 | view | site | lights depend on player 0 state |
-| `Play_UpdateLevel` | 6880:P0, 6881:P0, 6882:P0, 6883:P0, 6884:P0, 6897:P0, 6898:P0, 6913:P0, 6922:P0, 6923:P0, 6948:P0, 6953:P0, 6956:P0, 6959:P0, 6962:P0, 6965:P0, 6968:P0, 6978:P0, 6980:P0, 6982:P0, 6983:P0, 6985:P0, 6986:P0, 6988:P0, 6995:P0, 6999:P0, 7001:P0, 7007:P0, 7017:P0, 7023:P0, 7024:P0 | flow | site | per-level triggers on player 0: level complete, warp zone, Solar heat damage to player 0 only, Venom 2 / Aquas checks |
-| `Play_UpdateLevel` | 6885:PA | flow | site | Camera_Update360 for player 0 as Venom 2 ends: level complete is one player's (WP-16) |
-| `Play_Main` | 7178:P0, 7179:P0, 7181:P0, 7182:P0, 7183:P0, 7219:P0, 7251:P0, 7252:P0 | flow | site | all-range z setup for player 0 only |
-| `Play_Main` | 7231:CC | setup | site | intro skip resets gCamCount to 1; its sound cleanup loop is on CoopPlayers_Count() since WP-10 |
-| `Play_Main` | 7251:MC | input | site | R while paused (toggles gShowReticles[0], no radio here) is read from gMainController only; Start (intro skip, pause, unpause) goes through CoopPlayers_PausePressed, any player in co-op (#20, #191); versus reads R per controller |
+| `Player_Update` | 5910:MC, 5911:MC, 5912:MC | ok | read | with co-op off; in co-op CoopPlayers_SelectInput points at the player's own slot right after (WP-14) |
+| `Player_Update` | 6148:CC | setup | site | gCamCount == 4: down in versus goes to VS_STANDBY, else fade out and restart level |
+| `Player_Update` | 6158:P0, 6227:P0 | flow | site | death restart resets gPlayer[0].zPath and path progress; boost check reads player 0 state for every player |
+| `Camera_SetStarfieldPos` | 6656:P0, 6668:P0 | view | site | starfield from player 0 camera |
+| `Camera_SetupLights` | 6751:P0 | view | site | lights depend on player 0 state |
+| `Play_UpdateLevel` | 6881:P0, 6882:P0, 6883:P0, 6884:P0, 6885:P0, 6898:P0, 6899:P0, 6914:P0, 6923:P0, 6924:P0, 6949:P0, 6954:P0, 6957:P0, 6960:P0, 6963:P0, 6966:P0, 6969:P0, 6979:P0, 6981:P0, 6983:P0, 6984:P0, 6986:P0, 6987:P0, 6989:P0, 6996:P0, 7000:P0, 7002:P0, 7008:P0, 7018:P0, 7024:P0, 7025:P0 | flow | site | per-level triggers on player 0: level complete, warp zone, Solar heat damage to player 0 only, Venom 2 / Aquas checks |
+| `Play_UpdateLevel` | 6886:PA | flow | site | Camera_Update360 for player 0 as Venom 2 ends: level complete is one player's (WP-16) |
+| `Play_Main` | 7179:P0, 7180:P0, 7182:P0, 7183:P0, 7184:P0, 7220:P0, 7252:P0, 7253:P0 | flow | site | all-range z setup for player 0 only |
+| `Play_Main` | 7232:CC | setup | site | intro skip resets gCamCount to 1; its sound cleanup loop is on CoopPlayers_Count() since WP-10 |
+| `Play_Main` | 7252:MC | input | site | R while paused (toggles gShowReticles[0], no radio here) is read from gMainController only; Start (intro skip, pause, unpause) goes through CoopPlayers_PausePressed, any player in co-op (#20, #191); versus reads R per controller |
 
 ### `src/engine/fox_radio.c`
 
@@ -351,8 +351,8 @@ Basis per site: read 345, site 893, name 497.
 |---|---|---|---|---|
 | `func_tank_800438E0` | 132:P0, 133:P0 | view | site | tank dust effect velocity from player 0 |
 | `func_tank_80045678` | 689:CC, 695:CC | setup | site | gCamCount == 1 as "not versus" for tank effects |
-| `func_tank_80047FBC` | 1319:P0 | flow | site | skips while player 0 is in level complete |
-| `func_tank_800481F4` | 1425:SH | ok | site | dmgSource through CoopPlayers_DmgSource since #86 |
+| `func_tank_80047FBC` | 1320:P0 | flow | site | skips while player 0 is in level complete |
+| `func_tank_800481F4` | 1426:SH | ok | site | dmgSource through CoopPlayers_DmgSource since #86 |
 
 ### `src/engine/fox_versus.c`
 

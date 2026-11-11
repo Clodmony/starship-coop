@@ -287,6 +287,21 @@ static void CoopPlayers_ReturnFromDown(s32 i) {
 static s32 CoopPlayers_FoxRefillOpen(void) {
     switch (gCurrentLevel) {
         case LEVEL_CORNERIA:
+        case LEVEL_METEO:
+        case LEVEL_SECTOR_X:
+        case LEVEL_AREA_6:
+        case LEVEL_SECTOR_Y:
+        case LEVEL_VENOM_1:
+        case LEVEL_SOLAR:
+        case LEVEL_ZONESS:
+        case LEVEL_FORTUNA:
+        case LEVEL_KATINA:
+        case LEVEL_BOLSE:
+        case LEVEL_SECTOR_Z:
+        case LEVEL_VENOM_2:
+        case LEVEL_TITANIA:
+        case LEVEL_MACBETH:
+        case LEVEL_AQUAS:
             return 1;
         default:
             return 0;
