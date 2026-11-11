@@ -1,6 +1,6 @@
 # Draft for the hub's data/directory.yaml: append the entry below, without this comment.
 # Schema: data/SCHEMA.md in the hub. Sources for the fields: docs/coop/HUB.md, "Why the entry says what it says".
-# State of 2026-11-11, after the merge of PR #263 (coop a4867d99). The QA level follows docs/coop/QA.md ("automated"):
+# State of 2026-11-11, after the merge of PR #265 (coop 33bd5fe6). The QA level follows docs/coop/QA.md ("automated"):
 # the hand-played campaign is named in the notes, and claiming `verified-playthrough` is the owner's call.
 - game: Star Fox 64
   year: 1997
@@ -27,12 +27,13 @@
     and 2026-11-10 two people, a Windows host and a Linux joining player on a direct connection over a VPN, played
     one route from Corneria to the ending in 66 minutes with no desync; later sessions found two more faults, both
     fixed, the second not yet replayed on two PCs, and the code merged on 2026-11-11 has not been played by hand.
-    In scripted runs on one Linux PC a 52-step test gate passes on the merged code, and on the build before it 12 of
-    the 17 levels stayed equal from start to end with two clients (the test pilot cannot beat the other five bosses).
+    In scripted runs on one Linux PC a 53-step test gate passes on the merged code, and all 17 levels stayed equal
+    from start to end with two clients (the test pilot is invincible and has unlimited bombs in two levels).
     Players share the level, enemies, bosses and path; items go to the player who takes them, the team shares lives
     and gold rings, and the host steers the route, cutscenes and radio. No release or download, you build from source
-    with your own US ROM. When the host's ship goes down the level restarts for both, a desync or a lost player ends
-    the session, and what a session earns is not saved. The project calls itself pre-alpha. License CC0 1.0.
+    with your own US ROM. When the host's ship goes down it is refilled in place for a life; a desync or a lost player
+    starts the level again for everyone from the host's state (tested by scripts only, a real connection drop not
+    tried), and what a session earns is not saved. The project calls itself pre-alpha. License CC0 1.0.
   sources:
   - https://github.com/Clodmony/starship-coop
   - https://github.com/Clodmony/starship-coop#what-a-real-run-showed-observed
@@ -40,6 +41,7 @@
   - https://github.com/Clodmony/starship-coop/blob/coop/docs/coop/QA.md
   - https://github.com/Clodmony/starship-coop/blob/coop/docs/coop/decisions/0002-sync-model.md
   - https://github.com/Clodmony/starship-coop/blob/coop/docs/coop/decisions/0009-vehicles-cutscenes-save.md
-  - https://github.com/Clodmony/starship-coop/pull/263
+  - https://github.com/Clodmony/starship-coop/blob/coop/docs/coop/decisions/0014-the-session-survives.md
+  - https://github.com/Clodmony/starship-coop/pull/265
   checked: '2026-11-11'
   made_with_coop_anything: true

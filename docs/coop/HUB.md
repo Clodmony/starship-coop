@@ -12,8 +12,9 @@ Both steps go out under the owner's account, so only the owner sends them.
    ([cranebeaker/coop-anything#355](https://github.com/cranebeaker/coop-anything/issues/355)). It has no `in-progress`
    label: the issue was made with the command line, not the form that sets it.
 2. Not done: send the directory entry and the write-up in a draft PR from a fork of the hub, branch `game/star-fox-64`.
-   The owner chose to send it after the combined test build of 2026-11-11 is merged into `coop`, so that the entry
-   matches what is on `coop`.
+   The owner chose to send it after the combined test build 5 of 2026-11-11 was merged into `coop` (PR #265, `coop`
+   `33bd5fe6`), so that the entry matches what is on `coop`. That merge happened; the drafts here are updated to it. The
+   owner reads this pull request (#264) first; nothing goes to the hub before the owner says so.
 
 ## Drafts
 
@@ -43,8 +44,8 @@ Before sending:
 | `open_source` | `yes`, CC0 1.0 | `LICENSE.md` |
 | `made_with_coop_anything` | `true` | `AGENTS.md` |
 
-Checked on 2026-11-11, after the merge of the combined test build (PR #263, `coop` `a4867d99`). The hub was searched again
+Checked on 2026-11-11, after the merge of the combined test build 5 (PR #265, `coop` `33bd5fe6`). The hub was searched again
 that day: no `games/star-fox-64`, no directory entry (not even a "gap" row), and no issue or pull request that mentions
 Star Fox, Starship or SF64. Every figure in the write-up comes from `README.md`, `docs/coop/QA.md`, `docs/coop/NOTES.md`,
-the decision records, the issues it links, or the merge gate of 2026-11-11 (`test_all.py`, 52 of 52 steps, plus the
-`lockstep_test.py` scenarios `eels` and `map_saves`). The entry passed the hub's validator (`validate_entry`, `valid: true`).
+the decision records, the issues it links, or the merge gate of 2026-11-11 (`test_all.py`, 53 of 53 steps on `095ddc3d`, whose tree is `coop`'s, plus the
+`lockstep_test.py` scenarios `eels`, `map_saves` and `survive_next_level`, and `campaign.py` on Sector X, Titania and Sector Y). The entry passed the hub's validator (`validate_entry`, `valid: true`).

@@ -15,8 +15,10 @@ there is no release and no download. On 2026-11-09 and 2026-11-10 two people, a 
 on a direct connection over a VPN, played one route from Corneria to the ending (Corneria, Meteo, Fortuna, Solar,
 Macbeth, Area 6, Venom and Andross) in 66 minutes with no desync. Sessions on the evening of 2026-11-10, on newer builds,
 took the other way through Sector Y into Aquas and found two more faults; both are fixed, and the Aquas fix has not been
-played on two PCs yet. The code merged on 2026-11-11 has not been played by hand. When the host's ship goes down the
-level restarts for both players, and a desync or a lost player ends the session.
+played on two PCs yet. The code merged on 2026-11-11 (PR #265, `coop` `33bd5fe6`) has not been played by hand. On that
+code, when the host's ship goes down it is refilled in place for a life from the shared pool (game over at 0 lives); a
+desync or a lost player starts the level again for everyone from the host's state instead of ending the session, so far
+tested only by scripts on one PC; and each human's name is drawn over their ship.
 
 ## Existing work
 
@@ -108,7 +110,10 @@ one-PC tests had missed every one of them; the first four are differences betwee
 Unknown (2026-11-11):
 
 - Levels not played by hand with two real players: Sector X, Sector Z, Katina, Bolse, Zoness, Titania, Venom 1. Scripted
-  two-client runs reach the end of five of them; in Bolse and Zoness the test pilot cannot beat the boss yet.
+  two-client runs now reach the end of all 17 campaign levels (the test pilot is invincible, and has unlimited bombs in
+  Zoness and Venom/Andross), so those runs say the games stay equal, not that the bosses are fair to a human.
+- A real connection that drops between two PCs. The recovery after a lost player is tested only by scripts that stop and
+  freeze or remove a client on one PC, with two and three clients. Windows has not run it.
 - More than two players in a real session. Three clients run in scripted tests; four are in the code.
 - A Release build in a campaign between two PCs, other compilers (clang, macOS), and any network but one direct
   connection over a VPN.
@@ -149,7 +154,25 @@ latest results are in the QA table below.
   keeps its own sound settings, and no game writes its save file during a session, the host's included
   ([decision 0009](https://github.com/Clodmony/starship-coop/blob/coop/docs/coop/decisions/0009-vehicles-cutscenes-save.md),
   item 8). Test: `map_saves`, which also checks that both save files are unchanged byte for byte afterwards.
-- **Game rules for more than one human:** one shared pool of lives, with players 2 to 4 coming back after 150 frames
+- **The session no longer ends when a player is lost or the games part.** Until 2026-11-11 a lost player, a player
+  silent for 10 seconds or a desync ended the session for everyone; one lost run at Aquas' boss. Fix: the level starts
+  again for everyone from the host's state (the level the team last entered, from its last checkpoint if the host had
+  reached one, with no life taken). The host announces it, sends its save again and a new level start with a run number
+  that every lockstep and desync message carries, so a late message of the old run is dropped. A player whose connection
+  was lost has 15 seconds to come back by itself with the session id (a random 64-bit number the host makes outside the
+  simulation); then the level starts with whoever is there. The check is not loosened: a desync still writes its report,
+  and each game's log now names the first differing field, the same one `desync_report.py diff` names. Two desyncs within
+  300 frames of a level start, no one left, or a different build still end the session
+  ([decision 0014](https://github.com/Clodmony/starship-coop/blob/coop/docs/coop/decisions/0014-the-session-survives.md)).
+  Test: the `survive_*` scenarios of `lockstep_test.py` part two real games on purpose, freeze one client until it
+  comes back with the session id, or take one of three away, and require equal hashes on the first 600 frames of the
+  level that starts again. Not tried: a real connection drop, Windows, four players.
+- **Names.** A "Your name" field in the co-op window (up to 8 characters of the game's own small font), sent to the host
+  with `SESSION_NAME`, shared with everyone and drawn over each other human's Arwing on every client, or the character's
+  name when none was typed. Display only, not in the state hash. Test: `lockstep_test.py --only player_names` (equal on
+  2700 frames with names on one client and none on the other) and `view_check.py`.
+- **Game rules for more than one human:** one shared pool of lives, with players 2 to 4 coming back after 150 frames and,
+  since 2026-11-11, Fox refilled in place for a life instead of restarting the level, on 16 levels
   ([decision 0007](https://github.com/Clodmony/starship-coop/blob/coop/docs/coop/decisions/0007-lives-and-respawn.md)),
   the team earning and scoring ([0008](https://github.com/Clodmony/starship-coop/blob/coop/docs/coop/decisions/0008-routes-and-score.md)),
   a Landmaster or Blue Marine per player (0009, item 6), a human-flown wingman and the story scenes it would be in
@@ -172,13 +195,14 @@ two-client ones connect over loopback.
 
 | Command (in `tools/coop/`) | What it asserts | Last result |
 |---|---|---|
-| `test_all.py` | 52 steps: replays and state hashes, determinism variants, Debug against Release, co-op off against the build before, the transport, session and menu tests (also under AddressSanitizer), 40 lockstep scenarios (most with two real game clients) and the mutation suites | PASS 52/52 in 36 minutes, 2026-11-11, Linux, on the merged code |
+| `test_all.py` | 53 steps: replays and state hashes, determinism variants, Debug against Release, co-op off against the build before, the transport, session and menu tests (also under AddressSanitizer), 48 lockstep scenarios (most with two real game clients) and the mutation suites | PASS 53/53 in 40 minutes, 2026-11-11, Linux, on `095ddc3d`, whose tree is the merged code (`coop` `33bd5fe6`) |
 | `lockstep_test.py --only full` | Two clients with a pilot each fly Corneria to the map: equal on every frame; a one-bit change on one client shows at exactly its frame | 10601 frames equal, the change at frame 8601 seen at 8601; 2026-11-11, Linux (a step of `test_all.py`) |
 | `lockstep_test.py --only map_saves` | Host with a blank save, client with every level cleared: one game through Corneria, the map and 300 frames of the next level, and both save files unchanged afterwards | 11689 frames equal, both files byte for byte as before; 2026-11-11, Linux |
 | `lockstep_test.py --only eels` | Aquas' boss fight with both Blue Marines firing: equal, and every eel's smoke where the fight is | 9000 frames equal, 171 eel puffs, all in the fight; 2026-11-11, Linux |
 | `hash_check.py base` | With co-op off, input by rule from boot through the menus into Corneria hashes the same as on the build before the change | Equal on all 5800 frames against `coop` before the merge; 2026-11-11, Linux (a step of `test_all.py`) |
-| `session_test.py`, `session_mutants.py` | Handshake (a different build, ROM or setting refused, a different platform warned), character picks, level start, also on a lossy link; each of 309 deliberate breaks of the session code must fail a scenario | 17/17 scenarios, all 309 breaks caught; 2026-11-11, Linux (steps of `test_all.py`) |
-| `campaign.py` | Every campaign level as its own two-client session, a pilot on each client, from the level start to the map | 12 of the 17 levels equal on every frame to their end; Sector Y, Zoness, Bolse, Area 6 and Andross equal on every frame flown, but the pilot cannot beat their boss. 2026-11-10, Linux, on the test build before the merge, pilots invincible but in Corneria |
+| `session_test.py`, `session_mutants.py` | Handshake (a different build, ROM or setting refused, a different platform warned), character picks, level start, also on a lossy link; each of 434 deliberate breaks of the session code must fail a scenario | 17/17 scenarios, all 434 breaks caught; 2026-11-11, Linux (steps of `test_all.py`) |
+| `lockstep_test.py --only survive_desync,survive_three,survive_checkpoint,survive_checkpoint_allrange,survive_next_level` | A pair of games parted on purpose, a frozen client and a client taken away: the level starts again from the host's state (from its checkpoint where it had one) | Equal hashes on the first 600 frames of the new level in each; 2026-11-11, Linux, one PC, two or three clients, on `095ddc3d` (the merged code's tree); the first four are steps of `test_all.py` |
+| `campaign.py --route all` | Every campaign level as its own two-client session, a pilot on each client, from the level start to the map | All 17 levels reach level complete and stay equal on every frame, no desync report; the pilot is invincible except in Corneria and has unlimited bombs in Zoness and Venom/Andross. 2026-11-11, Linux, on the campaign-runs branch (code `303890d2`). Sector X, Titania and Sector Y rerun on the merged code: all three equal on every frame to the end. Before it, 12 of the 17 on 2026-11-10 |
 | `chaos_run.py` | A pilot-flown Corneria session with the client's traffic through a relay that adds lag, loss and reordering: six profiles, three seeds each | 18/18 runs equal to frame 6000; a 12-second outage ends the session after 10 seconds without input, as designed. 2026-11-10, Linux |
 | `determinism.py`; `hash_check.py builds` and `rates` | One build hashes the same whatever the graphics backend, pacing, audio timing or FMA3; Debug equals Release; 30 to 360 fps equal | PASS on Windows (MSVC) on 2026-11-05 and 2026-11-08, at older commits; on Linux in every `test_all.py` |
 | Played by hand | Two people, two PCs (Windows host, Linux client), direct connection over a VPN | Corneria to the ending in 66 minutes, no desync, median ping 33 ms, 2026-11-09 and 2026-11-10 (build `89efaa8a`). Sessions on the evening of 2026-11-10 (builds `b98c3870`, `5b0e2204`) parted on the map and in Aquas' boss fight; both faults are fixed since |
@@ -189,7 +213,7 @@ There is no release and no download. Each player needs their own Star Fox 64 ROM
 both) and the same build of this project, built from a clean checkout of the same commit:
 `python tools/coop/build.py --config Release --assets`
 ([BUILDING.md](https://github.com/Clodmony/starship-coop/blob/coop/docs/BUILDING.md); only US 1.0 has been tested). In the
-game press F1 and open **Co-op**: the host clicks **Host a game** (UDP port 46464 by default, which must be reachable: the
+game press F1 and open **Co-op**; type a name in **Your name** if you want one shown over your ship; the host clicks **Host a game** (UDP port 46464 by default, which must be reachable: the
 same network, a forwarded port, or both on a VPN); the other player types the host's address, clicks **Join a game**
 and picks a wingman (the host flies Fox); then the host clicks **Start the level**. Both players must see the same
 `Co-op <build id>` text in the menu bar. The host steers: route splits, the map and the pause menu's choices are the
@@ -200,14 +224,18 @@ host's. The README has the full steps and what each rule does:
 
 What a player will notice, as of 2026-11-11:
 
-- When the host's ship goes down, the level restarts from its checkpoint for both players. The accepted rule is to refill
-  Fox on the spot for a life; it is not built yet.
-- A desync, or a player who leaves or sends no input for 10 seconds, ends the session, and each game carries on alone.
+- When the host's ship goes down it is refilled in place for a life from the shared pool, on 16 levels. Andross' lair,
+  the warp zones and training are not covered, and with the pool at 0 the game's original rule runs (Fox goes down, the
+  others park, game over). Nobody has played this by hand.
+- A desync, a lost connection, a player silent for 10 seconds or a player who leaves a session of three or four starts the
+  level again for everyone from the host's state (from the host's last checkpoint, if it had one). The level that parted
+  is lost. A lost player has 15 seconds to come back by itself. With nobody else left, after two such restarts within 300
+  frames of the level start, or with a different build, the session still ends. Tested by scripts only.
 - What a session earns (clears, medals, rankings) is not kept on either PC.
-- Sector X's, Titania's and Macbeth's bosses still go after the host only. The other bosses that aim or chase now go
-  after the nearest human; scripts have tested that for all of them but Solar's, and nobody has played it by hand yet.
-- While your own ship is out, you watch the host's view. The heat alarm, the pause menu's reticle and billboards
-  follow the host on every PC.
+- Macbeth's train end still goes after the host only (it is an actor; the sites are listed, not changed). The other
+  bosses that aim or chase now go after the nearest human, Sector X's Spyborg and Titania's Goras included; scripts have
+  tested each of those changes, Solar's Vulkain too, and nobody has played it by hand yet.
+- While your own ship is out, you watch the host's view.
 - A story scene of a wingman whom a human flies is flown by a free computer wingman, or by Katt or Bill when none is
   free, with that character's lines in place of the taken wingman's or none (decisions 0012 and 0013). Nobody has
   listened through those lines on a real run.
@@ -224,11 +252,9 @@ main steps now:
 
 1. Play the merged code through on two PCs again
    ([TWO_PC_TEST.md](https://github.com/Clodmony/starship-coop/blob/coop/docs/coop/TWO_PC_TEST.md)), with Aquas' boss on the
-   route.
-2. Refill Fox in place when his ship goes down ([decision 0007](https://github.com/Clodmony/starship-coop/blob/coop/docs/coop/decisions/0007-lives-and-respawn.md)),
-   and a session that survives a lost player or a desync (options in
-   [#262](https://github.com/Clodmony/starship-coop/issues/262)).
-3. Show each human's name over their ship, and make the heat alarm, the reticle and the billboards follow each PC's own player.
-4. A pilot that beats the remaining bosses, so `campaign.py` runs the whole route unattended.
-5. On Windows, on the current code: `hash_check.py builds` and `rates` again, and `rand_order_test.py` with MSVC.
-6. A downloadable build, the Steam relay on real Steam, and more than two players in a real session.
+   route, the refill of Fox's ship and a real connection drop
+   ([#267](https://github.com/Clodmony/starship-coop/issues/267)).
+2. Two scripted scenarios outside `test_all.py` that fail on `coop`, a boss-aim check and a frame limit
+   ([#266](https://github.com/Clodmony/starship-coop/issues/266)).
+3. On Windows, on the current code: `hash_check.py builds` and `rates` again, and `rand_order_test.py` with MSVC.
+4. A downloadable build, the Steam relay on real Steam, and more than two players in a real session.
