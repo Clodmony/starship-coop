@@ -1493,6 +1493,8 @@ Observed, per level, two runs each:
 - On the base build `a2032968ad36` (same tree as `a4867d99`): `fox_refill` and `fox_refill_all_range` fail with `the
   level restarted (the trace's frames go back)`.
 - Co-op off: `hash_check.py base` against that build, equal on all 5800 frames.
+- Also run on this build, all ok: `return`, `return_all_range`, `return_fox_down` (with the level closed), `lives`,
+  `steer`, `three`, `pause`, `control`, `aim`, `boost`, `kill`, `vehicles`, `full` (10601 frames of Corneria).
 - With the same feed and the levels closed (the probes for the frames above), Fox went down by himself in Sector X
   (frame 1632), Area 6 (1558), Sector Y (2267), Venom 1 (2034), Solar (1702), Zoness (2636) and Bolse (1675), and the
   level restarted for both players each time: the case the owner's session hit.
@@ -1514,8 +1516,9 @@ Unknown:
 
 #### The spike: can the lead pass to a survivor (#183, rule 13)
 
-Answer: yes on the rails and in all-range of Corneria, and on the rails of the levels in the table below, as an
-experiment behind `SF64_COOP_TEST_LEAD_SWAP=1`. It is off without the switch and decides nothing.
+Answer: yes, as an experiment behind `SF64_COOP_TEST_LEAD_SWAP=1`: on the rails and in all-range of Corneria and on
+the rails of ten more levels (table below), two clients stay hash-equal through the swap and what follows it. It is
+off without the switch and decides nothing. Not run: all-range outside Corneria, three or four players.
 
 What the experiment does (`CoopPlayers_LeadSwap`, `players.c:325`, called from `CoopPlayers_RefillFox` when the pool is
 0, the switch is on and a player 2-4 flies): the survivor's `Player` struct and Fox's change places, with `num` and the
@@ -1538,7 +1541,22 @@ Observed (`fox_lead_swap`, `fox_lead_swap_all_range`, pool 0 throughout but for 
   frames.
 - Corneria, all-range: swap on 2401, return on 2701, swap back on 2901, down for good on 3176 (after a U-turn). Hash
   equal on 3250 frames.
-- Other levels: see the table under "Lead swap on other levels" below.
+- Other levels, `fox_lead_swap --levels <name>`, the same plan from the frame both fly, with a feed that steers
+  from there. On each: the swap, slot 0 following the client's stick, the path going on, the return, the swap back
+  and the last down as on Corneria, and equal hashes on every frame:
+
+  | Level | Frames equal | Swap | Host's ship back in slot 1 | Swap back | Down for good |
+  |---|---|---|---|---|---|
+  | Meteo | 1653 | 1014 | 1214 | 1414 | 1614 |
+  | Sector X | 1143 | 504 | 704 | 904 | 1104 |
+  | Area 6 | 1342 | 703 | 903 | 1103 | 1303 |
+  | Sector Y | 1411 | 772 | 972 | 1172 | 1372 |
+  | Venom 1 | 1102 | 463 | 663 | 863 | 1063 |
+  | Solar | 1431 | 792 | 992 | 1192 | 1392 |
+  | Zoness | 1072 | 433 | 633 | 833 | 1033 |
+  | Macbeth (Landmaster) | 1064 | 425 | 625 | 825 | 1025 |
+  | Titania (Landmaster) | 1402 | 763 | 963 | 1163 | 1363 |
+  | Aquas (Blue Marine) | 1346 | 707 | 907 | 1107 | 1307 |
 
 What breaks or is missing, from reading (not run unless it says so):
 
@@ -1551,7 +1569,9 @@ What breaks or is missing, from reading (not run unless it says so):
   `src/port/coop/game/team.c`) now belongs to the host's person, and `CoopTeam_OnPlayerDown` marks that wingman down.
   Names, letters and anything else drawn per person have to go by seat, not by slot.
 - Per-slot stores the experiment does not swap: the vehicle states (`gCoopTankState`, `gCoopMarineState`,
-  `src/port/coop/game/vehicles.c:28-29`), the saved scores per player (`src/port/coop/game/score.c:27`), the carried
+  `src/port/coop/game/vehicles.c:28-29`; the vehicle levels above are hash-equal all the same, since both games
+  leave them alike, but whether a tank then drives with the other tank's state was not looked at), the saved scores
+  per player (`src/port/coop/game/score.c:27`), the carried
   shields (`team.c:45`), the camera smoothing and shield bars of `view.c` (not simulated). An item in flight toward a
   player, an actor's `dmgSource` and anything else that holds a player index for more than a frame keeps the old
   index: a kill by a shot in the air at the swap can score for the other person.
@@ -1561,8 +1581,8 @@ What breaks or is missing, from reading (not run unless it says so):
 
 If the owner wants it built: a decision record first (who is "Fox" to the radio and the story after a swap; whether the
 host gets the lead back when it returns, or only at the level load as here), then the seat map in the hash, the
-per-slot stores above, and a scenario per level as for the refill. The ghost build is not needed for the levels the
-table covers.
+per-slot stores above, and a scenario per level as for the refill, all-range levels included. Nothing seen here asks
+for the ghost build.
 
 #### #88, scripted radio lines while player 0 is not active
 

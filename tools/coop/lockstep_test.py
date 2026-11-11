@@ -597,13 +597,14 @@ def return_pokes(plan):
     return ",".join(pokes)
 
 
-def run_return(args, folder, plan, pokes=None, both=None, level=None):
+def run_return(args, folder, plan, pokes=None, both=None, level=None, script=None):
     """Both games through one plan, with sway (and L at plan['jump']). Returns the two, stopped."""
     folder.mkdir(parents=True, exist_ok=True)
     frames = plan["frames"]
     feed = folder / "feed.txt"
     jump = plan["jump"]
-    write_feed(feed, frames + 16, press(sway, {(jump, 0)}, BUTTON_L) if jump is not None else sway)
+    script = script or sway
+    write_feed(feed, frames + 16, press(script, {(jump, 0)}, BUTTON_L) if jump is not None else script)
     config = {"CVars": {"gDebugJumpToAllRange": 1}} if jump is not None else None
     pokes = pokes or return_pokes(plan)
     env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(frames), "SF64_COOP_VIEW_POKE": pokes,
@@ -994,8 +995,9 @@ def fox_lead_level_plan(name):
     """The swap on another level: only where player 0 flies the rails, where a poke is seen on the next frame."""
     level, section, join = FOX_REFILL_LEVELS[name]
     expect(section == "rails", f"{name}: the lead swap plan is for the rails")
-    return {"level": level, "pool": join + 20, "swap": join + 60, "life": join + 260, "back": join + 460,
-            "last": join + 660, "jump": None}
+    # sway is silent before JOIN_FRAME, Corneria's; here it starts when both fly in this level.
+    return {"level": level, "pool": join + 20, "swap": join + 160, "life": join + 360, "back": join + 560,
+            "last": join + 760, "jump": None, "script": lambda frame, player: sway(frame + JOIN_FRAME - join, player)}
 
 
 def fox_lead_pokes(plan):
@@ -1031,7 +1033,9 @@ def fox_lead_check(game, view_path, plan, section):
     expect(local(at - 1) == seat, f"{game.name}: local index {local(at - 1)} before the swap, want {seat}")
     expect(after[0].state == 3 and not after[0].parked and after[1].parked,
            f"{game.name}: at frame {at} slot 0 state {after[0].state}, slot 1 parked {after[1].parked}: no lead swap")
-    expect(after[0].shields == before[1].shields and after[0].bombs == FOX_LEAD_BOMBS and after[1].bombs == FOX_BOMBS,
+    # Solar's heat takes a point from slot 0 on the frame of the swap (Play_UpdateLevel, after the players).
+    expect(0 <= before[1].shields - after[0].shields <= 1 and after[0].bombs == FOX_LEAD_BOMBS
+           and after[1].bombs == FOX_BOMBS,
            f"{game.name}: after the swap slot 0 has shields {after[0].shields} (player 1 had {before[1].shields}), "
            f"bombs {after[0].bombs}/{after[1].bombs}")
     expect(after[0].lives == 0, f"{game.name}: pool {after[0].lives} after the swap, want 0")
@@ -1048,11 +1052,13 @@ def fox_lead_check(game, view_path, plan, section):
         # Who steers slot 0: the two feeds steer against each other (sway), so slot 0's sideways movement goes with
         # player 0's stick before the swap and against it after.
 
+        steer_of = plan.get("script", sway)
+
         def follows(first, last):
             total = 0.0
             for f in range(first, last):
                 if f in by_frame and f + 1 in by_frame:
-                    total += (by_frame[f + 1].players[0].x - by_frame[f].players[0].x) * sway(f, 0)[1]
+                    total += (by_frame[f + 1].players[0].x - by_frame[f].players[0].x) * steer_of(f, 0)[1]
             return total
 
         own, other = follows(at - 90, at - 1), follows(at + 2, at + 92)
@@ -1064,7 +1070,7 @@ def fox_lead_check(game, view_path, plan, section):
     back = next((r.frame for r in rows if r.frame > at and not r.players[1].parked), None)
     due = active_from(max(plan["life"] + 1, at + RETURN_FRAMES))
     expect(back is not None and back == due, f"{game.name}: slot 1 back at {back}, want {due}")
-    expect(view[back].players[1].shields == RETURN_SHIELDS and view[back].players[0].lives == 0,
+    expect(view[back].players[1].shields >= RETURN_SHIELDS - 1 and view[back].players[0].lives == 0,  # Solar: heat
            f"{game.name}: slot 1 back with {view[back].players[1].shields} shields, pool {view[back].players[0].lives}")
     expect(local(back) == 1 - seat, f"{game.name}: local index {local(back)} after the return")
     found.append(f"the host's ship returned in slot 1 at {back} for the life")
@@ -1114,7 +1120,8 @@ def sc_fox_lead_swap(args, folder):
         plan = fox_lead_level_plan(name)
         plan["frames"] = plan["last"] + FOX_REFILL_TAIL
         host, client, traces = run_return(args, folder / name, plan, fox_lead_pokes(plan),
-                                          both={"SF64_COOP_TEST_LEAD_SWAP": "1"}, level=plan["level"])
+                                          both={"SF64_COOP_TEST_LEAD_SWAP": "1"}, level=plan["level"],
+                                          script=plan["script"])
         frames = compare(host, client, plan["frames"])
         lines = [fox_lead_check(game, traces[game.name], plan, "rails") for game in (host, client)]
         expect(lines[0] == lines[1], f"{name}: the games saw different swaps: host {lines[0]}, client {lines[1]}")
