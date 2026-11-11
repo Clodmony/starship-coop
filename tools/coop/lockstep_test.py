@@ -1834,7 +1834,7 @@ def fly_for(args, folder, frames, extra_env):
 HITS_FRAMES = 3500  # Corneria's rails to past the first enemy groups, before the rescue
 
 
-def score_rows(game):
+def trace_hit_rows(game):
     """(frame-ordered) [(gHitCount, [gPlayerScores...])] from the player trace's score= field (#252)."""
     rows = []
     for line in (game.run / "trace.txt").read_text(encoding="utf-8", errors="replace").splitlines():
@@ -1853,7 +1853,7 @@ def sc_player_hits(args, folder):
     equal = compare(host, client, frames)
     found = []
     for game in (host, client):
-        rows = score_rows(game)
+        rows = trace_hit_rows(game)
         expect(rows, f"{game.name}: no score= field in the player trace")
         team, own = rows[-1]
         expect(len(own) >= 2, f"{game.name}: one player only in the trace")
@@ -1861,7 +1861,7 @@ def sc_player_hits(args, folder):
         over = [r for r in rows if sum(r[1]) > r[0]]
         expect(not over, f"{game.name}: players {over[0][1] if over else 0} add up past the team's {over[0][0] if over else 0}")
         found.append(f"{game.name}: team {team}, players {own}")
-    expect(score_rows(host)[-1] == score_rows(client)[-1], "host and client end on different counts")
+    expect(trace_hit_rows(host)[-1] == trace_hit_rows(client)[-1], "host and client end on different counts")
     return f"{frames} frames of Corneria, {equal} frames equal; " + "; ".join(found)
 
 
@@ -2032,27 +2032,33 @@ def allrange_down_run(args, folder, level, name):
         restart = [i for i, l in enumerate(after) if l["ps"] == "1" or l["p0"] == "1"]
         after = after[:restart[0]] if restart else after
         expect(after, f"{game.name}: no lines in play after frame {at}")
-        ai = [l for l in after if l["ai"][0] > 0]
-        expect(not ai, f"{game.name}: a computer Falco flies after player 1 went down, first at frame "
-                       f"{ai[0]['frame'] if ai else 0}")
-        bad = [l for l in after if l["body"][0] == 3]
-        expect(not bad, f"{game.name}: Falco's body is somewhere player 1 is not, first at frame "
-                        f"{bad[0]['frame'] if bad else 0}")
         away = [l for l in after if l["body"][0] == 2]
         expect(away, f"{game.name}: Falco's body never went away after frame {at}")
-        # The body stays away while player 1 stays out. Where the return in place is in (#205, decision 0007: a downed
-        # player comes back after 150 frames) the first line with player 1 flying again ends the away window, and from
-        # there on the body is on player 1 again with its shields in the team (not away, not a computer Falco).
-        later = [l for l in after if int(l["frame"]) >= int(away[0]["frame"])]
-        back = next((i for i, l in enumerate(later) if int(l["p1"]) >= 0), len(later))
-        settled, returned = later[:back], later[back:]
+        # The window while player 1 is out: from the down to the first line (after the body went away) with its team
+        # value above 0 again. Where the return in place is in (#205, decision 0007: a downed player comes back after 150
+        # frames) the window ends there; where it is not, the window is the rest of the level. In the window no computer
+        # Falco flies, scenes out of play included, and the body stays away.
+        up = next((i for i, l in enumerate(after)
+                   if int(l["frame"]) > int(away[0]["frame"]) and l["team"][0] > 0), len(after))
+        window, rest = after[:up], after[up:]
+        ai = [l for l in window if l["ai"][0] > 0]
+        expect(not ai, f"{game.name}: a computer Falco flies after player 1 went down, first at frame "
+                       f"{ai[0]['frame'] if ai else 0}")
+        bad = [l for l in window if l["body"][0] == 3]
+        expect(not bad, f"{game.name}: Falco's body is somewhere player 1 is not, first at frame "
+                        f"{bad[0]['frame'] if bad else 0}")
+        settled = [l for l in window if int(l["frame"]) >= int(away[0]["frame"])]
         wrong = [l for l in settled if l["body"][0] != 2 or l["team"][0] != -1]
         expect(not wrong, f"{game.name}: after going away at frame {away[0]['frame']}, line at frame "
                           f"{wrong[0]['frame'] if wrong else 0} has body={wrong[0]['body'][0] if wrong else 0} "
                           f"team={wrong[0]['team'][0] if wrong else 0} p1={wrong[0]['p1'] if wrong else 0}")
-        wrong = [l for l in returned if l["body"][0] != 1 or l["team"][0] < 0]
-        expect(not wrong, f"{game.name}: player 1 flies again from frame {returned[0]['frame'] if returned else 0}, "
-                          f"line at frame {wrong[0]['frame'] if wrong else 0} has body={wrong[0]['body'][0] if wrong else 0} "
+        # After the return: while player 1 flies in play its body is on it again and no computer Falco flies beside it.
+        # Out of play (a scene while player 0 is in a standby state and player 1 is parked) the game's own Falco may fly the
+        # scene (decision 0006 B3, the intro and level-clear scenes keep the game's wingman): that is not checked.
+        returned = [l for l in rest if l["p0"] in ("3", "4", "5") and int(l["p1"]) >= 1]
+        wrong = [l for l in returned if l["body"][0] != 1 or l["team"][0] < 0 or l["ai"][0] > 0]
+        expect(not wrong, f"{game.name}: player 1 flies again, line at frame {wrong[0]['frame'] if wrong else 0} has "
+                          f"body={wrong[0]['body'][0] if wrong else 0} ai={wrong[0]['ai'][0] if wrong else 0} "
                           f"team={wrong[0]['team'][0] if wrong else 0} p1={wrong[0]['p1'] if wrong else 0}")
         found.append(f"{game.name}: down at frame {at}, body away from frame {away[0]['frame']} on "
                      f"{len(settled)} lines, gTeamShields[Falco] -1 there, no computer Falco"

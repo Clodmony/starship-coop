@@ -935,7 +935,8 @@ typedef struct {
     uint32_t eventCount;
     uint32_t eventNext;
     uint8_t* given;     // payload of the last event, gone at the next poll as transport.h allows
-    uint32_t failSends; // this many sends fail, starting with the next one
+    uint32_t skipSends; // this many sends go through first, then failSends counts
+    uint32_t failSends; // this many sends fail, starting with the next one (after skipSends)
     ScriptSent sent[SCRIPT_SENDS];
     uint32_t sentCount;
     uint32_t disconnects[COOP_NET_MAX_PEERS];
@@ -948,7 +949,9 @@ static bool Script_Send(CoopTransport* transport, int peer, uint16_t msgId, cons
     Script* t = (Script*) transport;
     ScriptSent* m;
 
-    if (t->failSends > 0) {
+    if (t->skipSends > 0) {
+        t->skipSends--;
+    } else if (t->failSends > 0) {
         t->failSends--;
         return false;
     }
@@ -2792,6 +2795,7 @@ static void Script_HostStart(void) {
 static void Script_HostStartOwed(void) {
     const char* name = "host_start_owed";
     uint8_t bytes[LEVEL_BYTES];
+    uint8_t bytes1[LEVEL_BYTES];
     CoopIdentity a;
     CoopLevelStart want;
     CoopSessionEvent ev;
@@ -2803,6 +2807,7 @@ static void Script_HostStartOwed(void) {
     Id_Default(&a);
     Level_Fill(&want, TEST_LEVEL, TEST_PHASE);
     Level_Bytes(bytes, TEST_LEVEL, TEST_PHASE, FOX, FALCO, SLIPPY, NO_PLAYER);
+    Level_Bytes(bytes1, TEST_LEVEL, TEST_PHASE, FOX, FALCO, NO_PLAYER, NO_PLAYER);
 
     // One peer's send fails: that one goes on the next poll, the other one does not go twice.
     s = Script_HostWith(&t, sides, &a, 2);
@@ -2822,6 +2827,27 @@ static void Script_HostStartOwed(void) {
     Drain(s, SCRIPT_T0, sides);
     EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_LEVEL_START) == 2, name, "a level start was sent again");
     EXPECT(sides[0].levelStarts == 1, name, "the host's game heard of the level twice");
+    CoopSession_Close(s);
+
+    // The level start itself fails, behind a save that went out: the save does not go twice, the level start goes on the
+    // next poll, once. (A single failing send, as above, hits the save, which goes first.)
+    s = Script_HostWith(&t, sides, &a, 1);
+    Script_Pick(&t, 0, FALCO);
+    Drain(s, SCRIPT_T0, sides);
+    sent = t.sentCount;
+    EXPECT(CoopSession_StartLevel(s, &want), name, "no start");
+    t.skipSends = 1; // the save
+    t.failSends = 1; // the level start
+    EXPECT(CoopSession_Poll(s, SCRIPT_T0, &ev) && ev.type == COOP_SESSION_EV_LEVEL_START, name,
+           "the host waited for the window");
+    Side_Record(&sides[0], &ev);
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_SAVE) == 1, name, "the save did not go out ahead of the level start");
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_LEVEL_START) == 0, name, "the level start did not fail");
+    Drain(s, SCRIPT_T0, sides);
+    Expect_LevelTo(name, &t, sent, 0, bytes1);
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_SAVE) == 1 && Sent_Since(&t, sent, COOP_MSG_SESSION_LEVEL_START) == 1,
+           name, "the save or the level start went out again");
     CoopSession_Close(s);
 
     // Behind a full window a roster and the level start both stay owed.
