@@ -3277,6 +3277,62 @@ def sc_survive_checkpoint_allrange(args, folder):
     return survive_check_checkpoint(games, checkpoint, poke, SURVIVE_FORTUNA, 1)
 
 
+SURVIVE_MISSION_NUMBER = 89  # the level start value that holds gMissionNumber (level_start.c: 87 values, then the
+SURVIVE_TOTAL_HITS = 88      # level's hits, gTotalHits, gMissionNumber)
+
+
+def sc_survive_next_level(args, folder):
+    """A desync in the level after the map: the restart point is the level the host's game entered by itself. Pilots
+    fly Corneria to its end and through the map into the next level, and 200 frames into it a bit is flipped on the
+    client. The host had kept that level's start when its game went into it (`entering` in its join report), so both
+    games take a level start for that level, with the mission number and the total hits the campaign had built, and
+    are equal from its frame 0 on. Corneria is not flown again."""
+    folder.mkdir(parents=True, exist_ok=True)
+    env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt",
+           "SF64_COOP_LOCKSTEP_END": str(SURVIVE_FRAMES)}
+    games = session(args, folder, both=env, client_envs=[{"SF64_COOP_LOCKSTEP_POKE_IN_LEVEL": "2:200",
+                                                          "SF64_COOP_HASH_POKE_PLAYER": "1"}])
+    host, client = games
+    try:
+        survive_wait(games, "over", 1, args.level_seconds, "after the flipped bit in the level after the map")
+        survive_wait(games, "again", 1, SURVIVE_AGAIN_SECONDS, "after the desync: the level did not start again")
+        survive_wait(games, "done", 2, 600, "in the level that started again")
+        survive_no_end(games)
+        time.sleep(2)
+    finally:
+        for game in games:
+            game.close()
+    poked = join_test.said(client.sync(), "poke_in_level")
+    expect(len(poked) == 1 and poked[0]["level"] != "0", f"the bit was not flipped in the level after the map: {poked}")
+    poke, level = int(poked[0]["frame"]), int(poked[0]["level"])
+    entering = join_test.said(host.report(), "entering")
+    expect(entering and int(entering[-1]["level"]) == level, f"the host kept no restart point for level {level}: "
+                                                              f"{entering}")
+    for game in games:
+        over = int(join_test.said(game.sync(), "over")[0]["frame"])
+        expect(poke <= over <= poke + DESYNC_SEEN_WITHIN, f"{game.name}: lockstep stopped at {over}, poke at {poke}")
+        starts = join_test.said(game.report(), "level_start")
+        expect([(v["run"], v["level"]) for v in starts] == [("1", "0"), ("2", str(level))],
+               f"{game.name}: level starts {[(v['run'], v['level']) for v in starts]}, want Corneria and then level "
+               f"{level}")
+        first, second = survive_level_values(game, 1), survive_level_values(game, 2)
+        expect(first[SURVIVE_MISSION_NUMBER] == 0 and second[SURVIVE_MISSION_NUMBER] == 1,
+               f"{game.name}: the mission number is {first[SURVIVE_MISSION_NUMBER]} in level start 1 and "
+               f"{second[SURVIVE_MISSION_NUMBER]} in level start 2, want 0 and 1")
+        expect(second[SURVIVE_TOTAL_HITS] > 0, f"{game.name}: level start 2 carries no hits of Corneria")
+        expect(not any(second[SURVIVE_CHECKPOINT_FLAG:]), f"{game.name}: level start 2 carries a checkpoint")
+        again = survive_run_state(game, 2)
+        expect(again["level"] == level and again["load"] == 0 and again["path"] == 0 and again["hits"] == 0,
+               f"{game.name}: run 2 did not begin at the start of level {level}: {again}")
+    expect(survive_level_values(host, 2) == survive_level_values(client, 2), "the games took different level starts")
+    frames = survive_compare(games, 2, SURVIVE_FRAMES)
+    line = survive_first_difference(games, poke)
+    total = survive_level_values(host, 2)[SURVIVE_TOTAL_HITS]
+    return (f"Corneria to the map and into level {level}; poke at frame {poke}, 200 frames into it: both games took "
+            f"level start 2 for level {level} with mission number 1 and {total} total hits, began at its start and "
+            f"hash alike on its first {frames} frames; `{line}`")
+
+
 SCENARIOS = {
     "sim": sc_sim,
     "desync_sim": sc_desync_sim,
@@ -3335,13 +3391,14 @@ SCENARIOS = {
     "survive_three": sc_survive_three,
     "survive_checkpoint": sc_survive_checkpoint,
     "survive_checkpoint_allrange": sc_survive_checkpoint_allrange,
+    "survive_next_level": sc_survive_next_level,
     "vehicles": sc_vehicles,
     "vehicle_end": sc_vehicle_end,
     "bosses": sc_bosses,
     "other_bosses": sc_other_bosses,
     "eels": sc_eels,
 }
-LONG = ("full", "scenes", "allrange", "allrange_down", "allrange_others", "allrange_down_others", "teambar",
+LONG = ("survive_next_level", "full", "scenes", "allrange", "allrange_down", "allrange_others", "allrange_down_others", "teambar",
         "map_saves", "map_saves_host_full", "map_saves_equal", "audio", "release", "rates", "vehicles", "vehicle_end", "bosses", "other_bosses",
         "eels")
 

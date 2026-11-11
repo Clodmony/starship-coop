@@ -64,7 +64,12 @@ static s32 sPokeAfter = -1;      // SF64_COOP_LOCKSTEP_POKE_AFTER=<frames>
 static s32 sPokeAfterFrame = -1; // the frame that makes
 static s32 sSeenLoad = 0;        // the checkpoint last reported: gSavedObjectLoadIndex, gAllRangeCheckpoint
 static s32 sSeenAllRange = 0;
-static s32 sStateRun = 0; // the run whose `run_state` line is out
+static s32 sStateRun = 0;       // the run whose `run_state` line is out
+static s32 sPokeLevel = -1;     // SF64_COOP_LOCKSTEP_POKE_IN_LEVEL=<n>:<frames>: the n-th level this game entered
+static s32 sPokeLevelAfter = 0; // and how many frames into it
+static s32 sLevelsEntered = 0;
+static s32 sLevelFrames = 0;
+static bool sInLevel = false;
 static bool sStartSaid = false;
 static s32 sItemFrame = -1; // SF64_COOP_LOCKSTEP_ITEM=<frame>:<player>
 static s32 sItemPlayer = 0;
@@ -301,6 +306,26 @@ static void Driver_Log(s32 frame) {
     fflush(sLog);
 }
 
+// SF64_COOP_LOCKSTEP_POKE_IN_LEVEL: the levels this game has entered in its first run, the session's own first and
+// then each one the map starts, and the frames since. True on the frame the bit has to be flipped.
+static bool Driver_PokeInLevel(void) {
+    bool inLevel = gGameState == GSTATE_PLAY;
+
+    if (sRuns != 1) {
+        return false;
+    }
+    if (inLevel && !sInLevel) {
+        sLevelsEntered++;
+        sLevelFrames = 0;
+    }
+    sInLevel = inLevel;
+    if (!inLevel || (gPlayState != PLAY_UPDATE)) {
+        return false;
+    }
+    sLevelFrames++;
+    return (sLevelsEntered == sPokeLevel) && (sLevelFrames == sPokeLevelAfter);
+}
+
 // `checkpoint` whenever the game's checkpoint changes in a level, and `run_state` once
 // per lockstep run, a few frames in, when the level's setup has read the checkpoint: where the level started.
 static void Driver_Checkpoints(s32 frame) {
@@ -396,6 +421,10 @@ static void CoopLockstepDriver_OnGamePreUpdate(IEvent* event) {
     if (((frame == sPokeFrame) || (frame == sPokeAfterFrame)) && (sRuns == 1)) {
         CoopStateHash_PokeNow();
     }
+    if ((CoopSyncGame_Frame() >= 0) && Driver_PokeInLevel()) {
+        Report("poke_in_level frame=%d level=%d", (int) frame, (int) gCurrentLevel);
+        CoopStateHash_PokeNow();
+    }
     if (frame == sZeroFrame) {
         *((sZeroSeed == 1) ? &sRandSeed1 : (sZeroSeed == 2) ? &sRandSeed2 : &sRandSeed3) = 0;
     }
@@ -442,6 +471,12 @@ void CoopLockstepDriver_Init(void) {
     sMuteFrame = Env_Number("SF64_COOP_LOCKSTEP_MUTE");
     sPokeFrame = Env_Number("SF64_COOP_LOCKSTEP_POKE");
     sPokeAfter = Env_Number("SF64_COOP_LOCKSTEP_POKE_AFTER");
+    if (Env_Text("SF64_COOP_LOCKSTEP_POKE_IN_LEVEL") != NULL) {
+        const char* spec = Env_Text("SF64_COOP_LOCKSTEP_POKE_IN_LEVEL");
+
+        sPokeLevel = atoi(spec);
+        sPokeLevelAfter = (strchr(spec, ':') != NULL) ? atoi(strchr(spec, ':') + 1) : 1;
+    }
     if (slow != NULL) {
         sSlowEvery = atoi(slow);
         sSlowMs = (strchr(slow, ':') != NULL) ? atoi(strchr(slow, ':') + 1) : 0;

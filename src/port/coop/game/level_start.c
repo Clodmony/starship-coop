@@ -179,6 +179,10 @@ void CoopLevelStart_Entering(CoopLevelStart* out) {
     LevelStart_Fill(out, (uint8_t) gNextLevel, (uint8_t) gNextLevelPhase, false, false);
 }
 
+void CoopLevelStart_Entered(CoopLevelStart* out) {
+    LevelStart_Fill(out, (uint8_t) gCurrentLevel, (uint8_t) gLevelPhase, false, false);
+}
+
 bool CoopLevelStart_AtCheckpoint(CoopLevelStart* out) {
     if ((gGameState != GSTATE_PLAY) || (gNextGameState != GSTATE_NONE) ||
         ((gSavedObjectLoadIndex == 0) && (gAllRangeCheckpoint == 0))) {

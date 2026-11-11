@@ -18,6 +18,9 @@
 //   SF64_COOP_LOCKSTEP_MUTE=<frame>    stop sending input from this frame on, with the connection left up
 //   SF64_COOP_LOCKSTEP_POKE=<frame>    flip a bit of game state on this frame, as SF64_COOP_HASH_POKE does
 //   SF64_COOP_LOCKSTEP_POKE_AFTER=<n>  flip the bit n frames after the first checkpoint of the first run
+//   SF64_COOP_LOCKSTEP_POKE_IN_LEVEL=<n>:<frames>  flip the bit that many frames into the n-th level this game entered
+//                                      in its first run (1 the session's own, 2 the one the map starts next); the
+//                                      report says `poke_in_level frame=N level=L`
 //   SF64_COOP_LOCKSTEP_SLOW=<n>:<ms>   every n frames this game takes that much longer
 //   SF64_COOP_LOCKSTEP_ZERO_SEED=<frame>:<n>  sRandSeed<n> is 0 from this frame on, as a stray write leaves it
 //   SF64_COOP_LOCKSTEP_ITEM=<frame>:<player>[:<kind>[:<setup>]]  on this frame (#201) the setup is made (a sum of 1

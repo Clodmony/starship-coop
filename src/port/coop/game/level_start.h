@@ -45,6 +45,10 @@ void CoopLevelStart_FromGame(CoopLevelStart* out, uint8_t level, uint8_t phase);
 // everyone: what the session keeps as its restart point (session.h, "Recovery").
 void CoopLevelStart_Entering(CoopLevelStart* out);
 
+// The same for a level this game has just entered and not set up yet (GSTATE_PLAY, PLAY_STANDBY): the map enters a
+// level that way, without gNextGameState (Map_PlayLevel, src/overlays/ovl_menu/fox_map.c:4290).
+void CoopLevelStart_Entered(CoopLevelStart* out);
+
 // Host: the level this game is in, from the checkpoint it reached there, with everything as it is now: what the
 // session starts again when the games part, or a player is lost, after a checkpoint (the owner's rule of 2026-11-11).
 // False, and nothing is written, when this game is not in a level or no checkpoint was reached in it: then the level

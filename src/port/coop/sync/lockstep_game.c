@@ -71,6 +71,7 @@ static uint8_t sRun = 0;         // the level start's number in its session: the
 static uint32_t sOtherRuns = 0;  // messages of another run, dropped
 static bool sStallAsked = false; // host: the session was asked to drop the player this frame waits for
 static uint32_t sQuickParts = 0; // desyncs in a row that came within SYNC_QUICK_FRAMES of their level start
+static int32_t sLastGameState = GSTATE_PLAY; // gGameState on the lockstep frame before this one
 
 // Lockstep cannot go on: the log hears why, then the session's owner.
 static void Sync_Fail(const char* text) {
@@ -131,6 +132,7 @@ static void Sync_Start(void) {
     CoopInput_SetLocalSource(&sSource);
     CoopDesyncGame_Begin(&desync, sConfig.self, sConfig.host, sConfig.present, sConfig.delay);
     sState = SYNC_RUNNING;
+    sLastGameState = gGameState;
     sSummaryMs = SDL_GetTicks();
     CoopLog_Write(COOP_LOG_LOCKSTEP, false, "lockstep started at frame 0: input delay %u frames, players 0x%x, %s",
                   (unsigned) sConfig.delay, (unsigned) sConfig.present, sConfig.host ? "host" : "client");
@@ -264,14 +266,21 @@ static void CoopSyncGame_OnGamePreUpdate(IEvent* event) {
         CoopDesyncGame_Frame(sLockstep.frame, now);
         CoopLockstep_Advance(&sLockstep, CoopInput_Controller(), now);
         Sync_CheckDesync();
-        // The host's game goes into a level by itself on this frame (Game_SetGameState runs right after this event):
-        // what it enters from is what a recovery starts again.
-        if (sConfig.host && (gNextGameState == GSTATE_PLAY) && (sLink.entering != NULL)) {
+        // The host's game goes into a level by itself: what it enters from is what a recovery starts again. A level
+        // jumps to the next with gNextGameState, which Game_SetGameState takes right after this event; the map sets
+        // the game state itself (Map_PlayLevel), and this is the first frame after it, before the level is set up.
+        if (sConfig.host && (sLink.entering != NULL)) {
             CoopLevelStart start;
 
-            CoopLevelStart_Entering(&start);
-            sLink.entering(&start);
+            if (gNextGameState == GSTATE_PLAY) {
+                CoopLevelStart_Entering(&start);
+                sLink.entering(&start);
+            } else if ((gGameState == GSTATE_PLAY) && (gPlayState == PLAY_STANDBY) && (sLastGameState != GSTATE_PLAY)) {
+                CoopLevelStart_Entered(&start);
+                sLink.entering(&start);
+            }
         }
+        sLastGameState = gGameState;
         if (now - sSummaryMs >= SYNC_LOG_SUMMARY_MS) {
             sSummaryMs = now;
             CoopLog_Write(COOP_LOG_LOCKSTEP, false, "frame %u: %u frames held for %u ms so far",
