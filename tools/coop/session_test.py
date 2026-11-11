@@ -32,7 +32,7 @@ END_REFUSED = 1  # COOP_SESSION_END_REFUSED
 EAGER = 3  # game messages each side pushes past the session in a refused handshake
 REFUSE_STARTED = 1 << 9  # COOP_SESSION_REFUSE_STARTED
 LEVEL, PHASE = 5, 1  # what the bots start: TEST_PHASE in coop_session_test.c
-LEVEL_VALUES = 87  # COOP_LEVEL_START_VALUES
+LEVEL_VALUES = 171  # COOP_LEVEL_START_VALUES
 WINDOWS, LINUX = "Windows x86-64 MSVC 1944", "Linux x86-64 GCC 13.2"  # two platforms, as CoopIdentity_Platform writes
 
 
@@ -187,7 +187,9 @@ def check_level(h, clients):
     expect(start["values"] == level_values(), "the host's values are not the ones the bot gave it")
     expect(start["save"] == level_save(), "the host's save is not the one the bot gave it")
     expect(start["roster"][:len(clients) + 1] == h["roster"][:len(clients) + 1], f"host started from {start['roster']}")
-    for side in [h, *clients]:
+    # The host starts the level again for whoever stays when a client goes (the session survives), so it may see more.
+    expect(len(events(h, "level_start")) >= 1, f"{h['role']}: {h['events']}")
+    for side in clients:
         expect(len(events(side, "level_start")) == 1, f"{side['role']}: {side['events']}")
     for n, c in enumerate(clients):
         expect(c["level_start"] == start, f"client {n} started from {c['level_start']}, host from {start}")

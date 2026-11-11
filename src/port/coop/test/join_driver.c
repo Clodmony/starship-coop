@@ -21,6 +21,7 @@
 #include "port/coop/session/identity_game.h"
 #include "port/coop/net/protocol.h"
 #include "port/coop/session/session.h"
+#include "port/coop/session/session_id.h"
 #include "port/coop/sync/handover_game.h"
 #include "port/coop/sync/lockstep_game.h"
 #include "port/coop/test/switches.h"
@@ -61,7 +62,12 @@ static bool sStartTaken = false;
 static bool sStartRefusedSaid = false;
 static bool sEntered = false;
 static bool sRunningSaid = false;
+static bool sLeaving = false; // a level start was taken, and the game has not left where it was yet
 static s32 sSelf = 0;
+static u8 sCharacter = 0;       // what this client flew at the last level start, to come back as
+static bool sRejoining = false; // this session is the one that goes back to the host
+static char sHost[256];         // a client's host and port, to come back to
+static u16 sHostPort = 0;
 
 static void Report(const char* format, ...) {
     va_list args;
@@ -138,6 +144,10 @@ static void Session_Open(void) {
             fclose(f);
         }
         sSession = CoopSession_Host(t, &id);
+        // SF64_COOP_JOIN_NO_ID: a session nobody can come back to, as before the session id.
+        if ((sSession != NULL) && (Env_Text("SF64_COOP_JOIN_NO_ID") == NULL)) {
+            CoopSession_SetId(sSession, CoopSessionId_New());
+        }
     } else {
         char host[256];
         const char* colon = strrchr(sConnect, ':');
@@ -149,6 +159,8 @@ static void Session_Open(void) {
         }
         memcpy(host, sConnect, n);
         host[n] = '\0';
+        snprintf(sHost, sizeof(sHost), "%s", host);
+        sHostPort = (uint16_t) atoi(colon + 1);
         t = CoopNetSdl_Connect(host, (uint16_t) atoi(colon + 1), &config);
         if (t == NULL) {
             Report("ended text=could not connect");
@@ -173,8 +185,8 @@ static void Report_LevelStart(const CoopLevelStart* start) {
     static char values[COOP_LEVEL_START_VALUES * 12];
 
     Values_Word(values, sizeof(values), start->values, COOP_LEVEL_START_VALUES);
-    Report("level_start frame=%u level=%u phase=%u roster=%s,%s,%s,%s values=%s", (unsigned) sFrame, start->level,
-           start->phase, Character_Word(start->roster[0]), Character_Word(start->roster[1]),
+    Report("level_start frame=%u level=%u phase=%u run=%u roster=%s,%s,%s,%s values=%s", (unsigned) sFrame,
+           start->level, start->phase, start->run, Character_Word(start->roster[0]), Character_Word(start->roster[1]),
            Character_Word(start->roster[2]), Character_Word(start->roster[3]), values);
 }
 
@@ -250,7 +262,65 @@ static void Link_Identity(int peer, char* out, size_t cap) {
     }
 }
 
-static const CoopSyncLink sLink = { Link_Send, Session_Pump, Link_Fail, Link_Identity };
+// As the menu has it (menu_game.c): a desync, or on the host a player who sends no input, starts the level again where
+// the session can do that. `parted` keeps what a failure would have said.
+static bool Link_Recover(int32_t reason, int32_t player, const char* text) {
+    uint32_t now = SDL_GetTicks();
+    bool taken;
+
+    if (sSession == NULL) {
+        return false;
+    }
+    if (reason == COOP_SYNC_RECOVER_STALL) {
+        taken = (sPortFile != NULL) && CoopSession_Kick(sSession, player - 1, now);
+    } else {
+        taken = CoopSession_Recover(sSession, COOP_RECOVER_DESYNC, now);
+    }
+    if (taken) {
+        Report("parted frame=%u reason=%d text=%s", (unsigned) sFrame, (int) reason, text);
+    }
+    return taken;
+}
+
+static void Link_Entering(const CoopLevelStart* start) {
+    if (sSession != NULL) {
+        Report("entering frame=%u level=%u phase=%u", (unsigned) sFrame, start->level, start->phase);
+        CoopSession_SetRestart(sSession, start);
+    }
+}
+
+static const CoopSyncLink sLink = { Link_Send, Session_Pump, Link_Fail, Link_Identity, Link_Recover, Link_Entering };
+
+// As the menu has it (menu.c, Menu_Rejoin): the connection to the host went in a level, without the host saying that
+// the session is over, so this game goes back on a new connection as the player it was. True if that is under way.
+static bool Session_Rejoin(CoopSessionEnd end) {
+    CoopNetConfig config = { 0 };
+    CoopIdentity id;
+    CoopTransport* t;
+    uint64_t sessionId;
+
+    if ((sPortFile != NULL) || !sEntered || sRejoining || (sCharacter == 0) ||
+        ((end != COOP_SESSION_END_TIMEOUT) && (end != COOP_SESSION_END_CLOSED))) {
+        return false;
+    }
+    sessionId = CoopSession_Id(sSession);
+    if (sessionId == 0) {
+        return false;
+    }
+    config.timeoutMs = JOIN_TIMEOUT_MS;
+    t = CoopNetSdl_Connect(sHost, sHostPort, &config);
+    if (t == NULL) {
+        return false;
+    }
+    CoopSession_Close(sSession);
+    CoopIdentity_FromGame(&id);
+    sSession = CoopSession_Rejoin(t, &id, SDL_GetTicks(), sessionId, sCharacter);
+    sRejoining = true;
+    CoopSyncGame_Pause();
+    Report("rejoin frame=%u character=%s", (unsigned) sFrame, Character_Word(sCharacter));
+    return sSession != NULL;
+}
+
 
 // The control: everything Enter does but the values and the save, so the two games go to one level from what they
 // each brought.
@@ -282,9 +352,11 @@ static void Session_Event(const CoopSessionEvent* ev) {
             if (sPortFile != NULL) {
                 sJoined++;
             } else {
-                Report("joined player=%u", ev->playerIndex);
+                Report("joined player=%u rejoined=%d", ev->playerIndex, (int) ev->rejoined);
                 sSelf = ev->playerIndex;
-                Pick_Next();
+                if (!ev->rejoined) {
+                    Pick_Next();
+                }
             }
             break;
         case COOP_SESSION_EV_REFUSED:
@@ -292,12 +364,22 @@ static void Session_Event(const CoopSessionEvent* ev) {
             break;
         case COOP_SESSION_EV_LEFT:
             sJoined--;
-            Report("left text=%s", ev->text);
-            if (sEntered) {
-                Link_Fail(ev->text); // a level needs every player, as the menu has it
+            Report("left away=%d text=%s", (int) ev->away, ev->text);
+            // A level needs every player, as the menu has it: the session starts it again for those who stay, and
+            // with nobody left it is over.
+            if (sEntered && !CoopSession_Recovering(sSession)) {
+                Link_Fail(ev->text);
             }
             break;
+        case COOP_SESSION_EV_RECOVER:
+            Report("recover frame=%u reason=%d player=%d text=%s", (unsigned) sFrame, (int) ev->reason,
+                   (int) ev->playerIndex, ev->text);
+            CoopSyncGame_Pause();
+            break;
         case COOP_SESSION_EV_ENDED:
+            if (Session_Rejoin(ev->end)) {
+                break;
+            }
             Report("ended text=%s", ev->text);
             if (sEntered) {
                 Session_End();
@@ -341,7 +423,11 @@ static void Session_Event(const CoopSessionEvent* ev) {
             }
             Report_Save("save_session");
             sEntered = true;
-            CoopSyncGame_Begin(&sLink, ev->levelStart->roster, sSelf, sPortFile != NULL);
+            sRunningSaid = false; // `level_running` once per level start: a test finds each run's first frame by it
+            sLeaving = true;
+            sRejoining = false;
+            sCharacter = ev->levelStart->roster[sSelf];
+            CoopSyncGame_Begin(&sLink, ev->levelStart->roster, sSelf, sPortFile != NULL, ev->levelStart->run);
             break;
         default:
             break;
@@ -385,7 +471,12 @@ static void Report_Running(void) {
     char damage[96];
     char event[64];
 
-    if (!sEntered || sRunningSaid || (gGameState != GSTATE_PLAY) || (gPlayState != PLAY_UPDATE)) {
+    // A level start that came in a level (the session started it again): the game is still in the old one on the frame
+    // of the event, and leaves PLAY_UPDATE on its way into the new one.
+    if (sLeaving && ((gGameState != GSTATE_PLAY) || (gPlayState != PLAY_UPDATE))) {
+        sLeaving = false;
+    }
+    if (!sEntered || sRunningSaid || sLeaving || (gGameState != GSTATE_PLAY) || (gPlayState != PLAY_UPDATE)) {
         return;
     }
     sRunningSaid = true;

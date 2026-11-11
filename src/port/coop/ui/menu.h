@@ -53,6 +53,12 @@ typedef struct {
     // Optional, NULL for none: right before the session closes, while the players still connected can be reached (the
     // handover, #189). leaving: the player chose to leave. It may take a few seconds; the session stays the menu's.
     void (*handover)(CoopSession* s, bool leaving);
+    // The session survives (session.h, "Recovery"). Both optional, NULL for none.
+    // A new session id for a session this game hosts (session_id.h). Without one nobody can come back to it.
+    uint64_t (*sessionId)(void);
+    // The level cannot go on as it is and the session will start it again, or this game lost its host and is trying to
+    // come back: stop lockstep and keep the session's state until enterLevel or sessionEnded.
+    void (*recover)(void);
 } CoopMenuBackend;
 
 typedef struct {
@@ -65,6 +71,11 @@ typedef struct {
     uint8_t pendingPick; // the CoopCharacter we asked for and got no answer on, 0 if none
     bool levelStarted;   // the session said so: nothing left to pick or start
     bool lost;           // a session ended in a level, and the player has not been shown why yet
+    bool recovering;     // the level is going to start again (a RECOVER event), and has not yet
+    bool rejoining;      // client: the connection was lost in a level, and this is the session that goes back
+    bool eyes;           // something about a recovery has to be seen, and has not been shown yet
+    uint8_t character;   // client: what we flew at the last level start, to come back as
+    uint32_t nowMs;      // of the last tick
     char message[COOP_SESSION_TEXT];
 } CoopMenu;
 

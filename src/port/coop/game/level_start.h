@@ -17,13 +17,16 @@ extern "C" {
 #endif
 
 // How many values the table in level_start.c holds.
-#define COOP_LEVEL_START_VALUES 87
+#define COOP_LEVEL_START_VALUES 171
 // Levels below this can be started: LEVEL_VERSUS and up (include/sf64level.h) are not co-op levels.
 #define COOP_LEVEL_START_LEVELS 20
 
 typedef struct {
     uint8_t level;                    // LevelId
     uint8_t phase;                    // gLevelPhase
+    // Which level start of its session this is: 1 for the first, one more each time the session starts a level again
+    // after a lost player or a desync. CoopSession_StartLevel and the session's restart fill it in; 0 outside a session.
+    uint8_t run;
     uint8_t roster[COOP_PLAYERS_MAX]; // who flies what, as CoopRoster; CoopSession_StartLevel fills this in
     int32_t values[COOP_LEVEL_START_VALUES];
     // The host's save as its game held it (CoopSave_FromGame). It travels in SESSION_SAVE, ahead of the level start,
@@ -31,8 +34,14 @@ typedef struct {
     uint8_t save[COOP_SAVE_SIZE];
 } CoopLevelStart;
 
-// Host: level and phase as given, values and the save from this game as they are now.
+// Host: level and phase as given, values and the save from this game as they are now, for a level started from
+// outside one (the lobby, a test): its hit count is 0.
 void CoopLevelStart_FromGame(CoopLevelStart* out, uint8_t level, uint8_t phase);
+
+// Host: the level this game is about to enter by itself (gNextLevel and gNextLevelPhase, with gNextGameState at
+// GSTATE_PLAY), with everything as it is now. Sent again later, it starts that level again from its start for
+// everyone: what the session keeps as its restart point (session.h, "Recovery").
+void CoopLevelStart_Entering(CoopLevelStart* out);
 
 // Puts the values in place and sends the game to the level on this frame, from whatever it is doing. Call it from a
 // GamePreUpdateEvent listener or anywhere else outside Game_Update, so that nothing runs between the values and the

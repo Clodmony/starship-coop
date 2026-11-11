@@ -49,7 +49,50 @@ static void Menu_EndSession(CoopMenu* m, bool leaving) {
     m->phase = COOP_MENU_IDLE;
     m->pendingPick = 0;
     m->levelStarted = false;
+    m->recovering = false;
+    m->rejoining = false;
     m->backend->sessionEnded();
+}
+
+// The connection to the host went in a level, without the host saying that the session is over: go back to it on a new
+// connection, as the player this game was (the session survives). True if that is under way; the session's events
+// say how it ends. Once per loss: a session that came back and is lost again before its level start ends.
+static bool Menu_Rejoin(CoopMenu* m, CoopSessionEnd end) {
+    CoopIdentity identity;
+    CoopTransport* t;
+    uint64_t id;
+
+    if (m->phase != COOP_MENU_JOINED || !m->levelStarted || m->rejoining || m->character == 0 ||
+        (end != COOP_SESSION_END_TIMEOUT && end != COOP_SESSION_END_CLOSED)) {
+        return false;
+    }
+    id = CoopSession_Id(m->session);
+    if (id == 0) {
+        return false;
+    }
+    t = m->backend->connect(m->address, m->port, &kNetConfig);
+    if (t == NULL) {
+        return false;
+    }
+    // The old connection is gone, so there is nobody to hand anything over to.
+    CoopSession_Close(m->session);
+    m->backend->identity(&identity);
+    m->session = CoopSession_Rejoin(t, &identity, m->nowMs, id, m->character);
+    if (m->session == NULL) {
+        m->phase = COOP_MENU_IDLE;
+        m->levelStarted = false;
+        m->backend->sessionEnded();
+        return true;
+    }
+    m->phase = COOP_MENU_CONNECTING;
+    m->rejoining = true;
+    m->recovering = true;
+    m->eyes = true;
+    if (m->backend->recover != NULL) {
+        m->backend->recover();
+    }
+    Menu_Say(m, "The connection to the host was lost. Trying to come back to the session.");
+    return true;
 }
 
 void CoopMenu_Init(CoopMenu* m, const CoopMenuBackend* backend) {
@@ -81,6 +124,9 @@ bool CoopMenu_Host(CoopMenu* m, const char* portText) {
     if (m->session == NULL) {
         Menu_Say(m, "Could not start the session.");
         return false;
+    }
+    if (m->backend->sessionId != NULL) {
+        CoopSession_SetId(m->session, m->backend->sessionId());
     }
     m->phase = COOP_MENU_HOSTING;
     m->self = 0;
@@ -200,9 +246,10 @@ void CoopMenu_Fail(CoopMenu* m, const char* text) {
 
 bool CoopMenu_WantsEyes(CoopMenu* m) {
     int32_t player;
-    bool lost = m->lost;
+    bool lost = m->lost || m->eyes;
 
     m->lost = false;
+    m->eyes = false;
     return lost || (m->session != NULL && m->backend->waiting(&player) != 0);
 }
 
@@ -227,7 +274,9 @@ static void Menu_OnEvent(CoopMenu* m, const CoopSessionEvent* ev) {
             }
             break;
         case COOP_SESSION_EV_LEFT:
-            if (m->levelStarted) {
+            if (m->levelStarted && CoopSession_Recovering(m->session)) {
+                // The level starts again for whoever is there: the RECOVER event says so, and what the player reads.
+            } else if (m->levelStarted) {
                 char text[COOP_SESSION_TEXT];
 
                 // Every frame needs every player's input, so nobody can carry on without this one.
@@ -238,6 +287,9 @@ static void Menu_OnEvent(CoopMenu* m, const CoopSessionEvent* ev) {
             }
             break;
         case COOP_SESSION_EV_ENDED:
+            if (Menu_Rejoin(m, ev->end)) {
+                break;
+            }
             // After a refusal the REFUSED event has already said more than this one can.
             if (ev->end != COOP_SESSION_END_REFUSED) {
                 Menu_Say(m, "%s", ev->text);
@@ -263,7 +315,19 @@ static void Menu_OnEvent(CoopMenu* m, const CoopSessionEvent* ev) {
             // A pick still on its way is dropped, and no answer comes. What this player holds is in the level start.
             m->pendingPick = 0;
             m->levelStarted = true;
+            m->recovering = false;
+            m->rejoining = false;
+            m->character = ev->levelStart->roster[m->self];
             m->backend->enterLevel(ev->levelStart);
+            break;
+        case COOP_SESSION_EV_RECOVER:
+            // One line, and the window comes up by itself to show it (CoopMenu_WantsEyes).
+            Menu_Say(m, "%s", ev->text);
+            m->recovering = true;
+            m->eyes = true;
+            if (m->backend->recover != NULL) {
+                m->backend->recover();
+            }
             break;
         case COOP_SESSION_EV_MESSAGE:
             // Nothing above the session range is for the menu. This switch has no default, so the compiler names a new
@@ -276,6 +340,7 @@ static void Menu_OnEvent(CoopMenu* m, const CoopSessionEvent* ev) {
 void CoopMenu_Tick(CoopMenu* m, uint32_t nowMs) {
     CoopSessionEvent ev;
 
+    m->nowMs = nowMs;
     while (m->session != NULL && CoopSession_Poll(m->session, nowMs, &ev)) {
         Menu_OnEvent(m, &ev);
     }
@@ -361,7 +426,9 @@ void CoopMenu_View(const CoopMenu* m, CoopMenuView* out) {
         int32_t player = 0;
         uint32_t waited = m->backend->waiting(&player);
 
-        if (waited != 0) {
+        if (m->recovering) {
+            snprintf(out->level, sizeof(out->level), "Waiting for the level to start again.");
+        } else if (waited != 0) {
             snprintf(out->level, sizeof(out->level), "Waiting for player %d (%u s).", (int) player + 1,
                      (unsigned) (waited / 1000));
         } else {
@@ -380,7 +447,8 @@ void CoopMenu_View(const CoopMenu* m, CoopMenuView* out) {
                      players, COOP_SESSION_PLAYERS);
             break;
         case COOP_MENU_CONNECTING:
-            snprintf(out->status, sizeof(out->status), "Connecting to %s:%u...", m->address, (unsigned) m->port);
+            snprintf(out->status, sizeof(out->status), "%s %s:%u...", m->rejoining ? "Coming back to" : "Connecting to",
+                     m->address, (unsigned) m->port);
             break;
         case COOP_MENU_JOINED:
             snprintf(out->status, sizeof(out->status), "In the session at %s:%u as player %d.", m->address,

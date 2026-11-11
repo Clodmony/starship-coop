@@ -58,6 +58,7 @@ static s32 sLastFrame = -1;
 static s32 sOwnFrame = -1;
 static s32 sFramesAfter = 0;
 static bool sOverSaid = false;
+static s32 sRuns = 1; // lockstep runs of this game: one per level start of its session
 static bool sStartSaid = false;
 static s32 sItemFrame = -1; // SF64_COOP_LOCKSTEP_ITEM=<frame>:<player>
 static s32 sItemPlayer = 0;
@@ -330,15 +331,27 @@ static void CoopLockstepDriver_OnGamePreUpdate(IEvent* event) {
         Report("start");
     }
     if (CoopSyncGame_Frame() >= 0) {
+        // The session started the level again (the session survives): a new run, counted from frame 0, and `over`
+        // is said again when it ends. The log keeps the runs apart with a line.
+        if (sOverSaid) {
+            sOverSaid = false;
+            sFramesAfter = 0;
+            sRuns++;
+            Report("again run=%d", (int) sRuns);
+            if (sLog != NULL) {
+                fprintf(sLog, "# run %d\n", (int) sRuns);
+            }
+        }
         sLastFrame = frame;
         Driver_Log(frame);
     }
     Driver_Pad(frame);
     Driver_Item(frame);
-    if (frame == sMuteFrame) {
+    // Once each, in the first run: a level the session starts again plays on without them.
+    if ((frame == sMuteFrame) && (sRuns == 1)) {
         CoopSyncGame_Mute();
     }
-    if (frame == sPokeFrame) {
+    if ((frame == sPokeFrame) && (sRuns == 1)) {
         CoopStateHash_PokeNow();
     }
     if (frame == sZeroFrame) {

@@ -39,10 +39,15 @@ extern void Graphics_PushFrame(Gfx* data);
 #define SYNC_LOG_HOLD_MS 200
 #define SYNC_LOG_SUMMARY_MS 10000
 
+// A client that waits for another player's input leaves that to the host for this long: the host drops a player who
+// sends nothing, or the connection to the host times out. Only then does the client end the session by itself.
+#define SYNC_CLIENT_STALL_MS 40000
+
 typedef enum {
     SYNC_OFF,
     SYNC_ARMED,   // the session started a level, and this game is on its way there
     SYNC_RUNNING, // every frame belongs to lockstep
+    SYNC_PAUSED,  // the session is going to start the level again: no lockstep until then (CoopSyncGame_Pause)
 } SyncState;
 
 static SyncState sState = SYNC_OFF;
@@ -57,6 +62,9 @@ static uint32_t sHeldFrames = 0;
 static uint32_t sHeldMs = 0;
 static int32_t sWaitPlayer = -1;
 static uint32_t sSummaryMs = 0;
+static uint8_t sRun = 0;         // the level start's number in its session: the first byte of every sync message
+static uint32_t sOtherRuns = 0;  // messages of another run, dropped
+static bool sStallAsked = false; // host: the session was asked to drop the player this frame waits for
 
 // Lockstep cannot go on: the log hears why, then the session's owner.
 static void Sync_Fail(const char* text) {
@@ -72,13 +80,30 @@ static int32_t Source_Read(void* user, int32_t player, CoopInputFrame* out) {
 
 static const CoopInputSource sSource = { Source_Read, NULL };
 
+// Every sync message goes out with the run in front (lockstep_game.h, CoopSyncGame_Begin).
+static bool Run_Send(int peer, uint16_t msgId, const void* data, uint16_t size, CoopNetLane lane) {
+    uint8_t message[COOP_NET_MAX_MESSAGE];
+
+    if ((size_t) size + 1 > sizeof(message)) {
+        return false;
+    }
+    message[0] = sRun;
+    memcpy(message + 1, data, size);
+    return sLink.send(peer, msgId, message, (uint16_t) (size + 1), lane);
+}
+
 static bool Send(void* user, int peer, const void* data, uint16_t size) {
     (void) user;
-    return sMuted || sLink.send(peer, COOP_MSG_SYNC_INPUT, data, size, COOP_NET_UNRELIABLE);
+    return sMuted || Run_Send(peer, COOP_MSG_SYNC_INPUT, data, size, COOP_NET_UNRELIABLE);
 }
 
 // The desync check's messages take the session link as they are: a mute is about input.
 static bool Desync_Send(int peer, uint16_t msgId, const void* data, uint16_t size, CoopNetLane lane) {
+    return Run_Send(peer, msgId, data, size, lane);
+}
+
+// The dump of a desync frame names its own run, and goes on while the next run starts (#189).
+static bool Dump_Send(int peer, uint16_t msgId, const void* data, uint16_t size, CoopNetLane lane) {
     return sLink.send(peer, msgId, data, size, lane);
 }
 
@@ -90,7 +115,7 @@ static void Desync_Identity(int peer, char* out, size_t cap) {
 }
 
 static void Sync_Start(void) {
-    CoopDesyncGameLink desync = { Desync_Send, Desync_Identity };
+    CoopDesyncGameLink desync = { Desync_Send, Desync_Identity, Dump_Send, sRun };
     int32_t i;
 
     CoopLockstep_Start(&sLockstep, &sConfig, SDL_GetTicks());
@@ -105,21 +130,41 @@ static void Sync_Start(void) {
                   (unsigned) sConfig.delay, (unsigned) sConfig.present, sConfig.host ? "host" : "client");
 }
 
-// A desync that is complete ends the session with its text, as a lost player does (WP-23).
+// A desync that is complete: the session starts the level again for everyone, and where it cannot (WP-23, as it was)
+// the session ends with the text, as with a lost player.
 static void Sync_CheckDesync(void) {
     char text[SYNC_DESYNC_TEXT_SIZE];
 
     if ((sState == SYNC_RUNNING) && CoopDesyncGame_Check(SDL_GetTicks(), text, sizeof(text))) {
-        Sync_Fail(text);
+        if ((sLink.recover == NULL) || !sLink.recover(COOP_SYNC_RECOVER_DESYNC, -1, text)) {
+            char over[SYNC_DESYNC_TEXT_SIZE + 64];
+
+            snprintf(over, sizeof(over), "%s The session is over, and the level goes on here alone.", text);
+            Sync_Fail(over);
+        }
     }
 }
 
+// A player sent no input for COOP_LOCKSTEP_STALL_MS. The host has the session drop that player and start the level
+// again with the others, and ends the session where that cannot be. A client leaves it to the host, and ends the
+// session only after SYNC_CLIENT_STALL_MS.
 static void Sync_Stalled(int32_t player) {
     char text[SYNC_TEXT_SIZE];
+    uint32_t waited = SDL_GetTicks() - sLockstep.progressMs;
 
+    if (!sConfig.host && (waited < SYNC_CLIENT_STALL_MS)) {
+        return;
+    }
+    if (sStallAsked) {
+        return; // the session's answer is on its way: CoopSyncGame_Pause
+    }
     snprintf(text, sizeof(text), "Player %d stopped sending input, so the session is over.", (int) player + 1);
     CoopLog_Write(COOP_LOG_LOCKSTEP, false, "stall: no input from player %d for %u ms at frame %u", (int) player + 1,
-                  (unsigned) (SDL_GetTicks() - sLockstep.progressMs), (unsigned) sLockstep.frame);
+                  (unsigned) waited, (unsigned) sLockstep.frame);
+    if (sConfig.host && (sLink.recover != NULL) && sLink.recover(COOP_SYNC_RECOVER_STALL, player, text)) {
+        sStallAsked = true;
+        return;
+    }
     Sync_Fail(text);
 }
 
@@ -132,6 +177,7 @@ static bool Sync_FrameIsReady(void) {
         int32_t stalled;
 
         sLink.pump();
+        CoopDesyncGame_Pump(SDL_GetTicks());
         Sync_CheckDesync();
         if (sState != SYNC_RUNNING) {
             return true; // the session ended: this game goes on alone
@@ -151,7 +197,9 @@ static bool Sync_FrameIsReady(void) {
         stalled = CoopLockstep_StalledOn(&sLockstep, now);
         if (stalled >= 0) {
             Sync_Stalled(stalled);
-            return true;
+            if (sState != SYNC_RUNNING) {
+                return true;
+            }
         }
         if ((now - start) >= SYNC_WAIT_SLICE_MS) {
             return false;
@@ -191,6 +239,9 @@ int32_t CoopSyncGame_HoldFrame(void) {
 // After the input layer (EVENT_PRIORITY_NORMAL), which read the local controller and this frame's inputs.
 static void CoopSyncGame_OnGamePreUpdate(IEvent* event) {
     (void) event;
+    if (sState != SYNC_OFF) {
+        CoopDesyncGame_Pump(SDL_GetTicks()); // #189: the dump of a desync frame, also while the level starts again
+    }
     if (sState == SYNC_RUNNING) {
         uint32_t now = SDL_GetTicks();
 
@@ -198,6 +249,14 @@ static void CoopSyncGame_OnGamePreUpdate(IEvent* event) {
         CoopDesyncGame_Frame(sLockstep.frame, now);
         CoopLockstep_Advance(&sLockstep, CoopInput_Controller(), now);
         Sync_CheckDesync();
+        // The host's game goes into a level by itself on this frame (Game_SetGameState runs right after this event):
+        // what it enters from is what a recovery starts again.
+        if (sConfig.host && (gNextGameState == GSTATE_PLAY) && (sLink.entering != NULL)) {
+            CoopLevelStart start;
+
+            CoopLevelStart_Entering(&start);
+            sLink.entering(&start);
+        }
         if (now - sSummaryMs >= SYNC_LOG_SUMMARY_MS) {
             sSummaryMs = now;
             CoopLog_Write(COOP_LOG_LOCKSTEP, false, "frame %u: %u frames held for %u ms so far",
@@ -244,7 +303,7 @@ static void Sync_MathOn(void) {
                   (unsigned) sinIn, (unsigned) sinOut, (unsigned) atanIn, (unsigned) atanOut);
 }
 
-void CoopSyncGame_Begin(const CoopSyncLink* link, const uint8_t* roster, int32_t self, bool host) {
+void CoopSyncGame_Begin(const CoopSyncLink* link, const uint8_t* roster, int32_t self, bool host, uint8_t run) {
     uint32_t present = 0;
     int32_t players = 0;
     int32_t i;
@@ -256,10 +315,16 @@ void CoopSyncGame_Begin(const CoopSyncLink* link, const uint8_t* roster, int32_t
         }
     }
     CoopPlayers_SetLocalIndex(self);
+    if (sState == SYNC_RUNNING) {
+        CoopSyncGame_Pause(); // a level start in a level that runs: the old run ends here
+    }
     if ((players < 2) || sNoExchange) {
+        sState = SYNC_OFF; // a restart that left this game alone, or the control run
         return;
     }
     sLink = *link;
+    sRun = run;
+    sStallAsked = false;
     sConfig.send = Send;
     sConfig.self = self;
     sConfig.host = host;
@@ -271,10 +336,28 @@ void CoopSyncGame_Begin(const CoopSyncLink* link, const uint8_t* roster, int32_t
 }
 
 void CoopSyncGame_Receive(int peer, uint16_t msgId, const uint8_t* data, uint16_t size) {
+    // The dump of a desync (#189) crosses while the level starts again, so it does not wait for lockstep; it names its
+    // own run and frame.
+    if (msgId == COOP_MSG_SYNC_DUMP) {
+        CoopDesyncGame_ReceiveDump(peer, data, size, SDL_GetTicks());
+        return;
+    }
     // Another game can get to the level first. What it sends before this one is there is dropped, as it repeats it.
     if (sState != SYNC_RUNNING) {
         return;
     }
+    if ((msgId != COOP_MSG_SYNC_INPUT) && !CoopDesync_IsMessage(msgId)) {
+        return;
+    }
+    // The run in front: what was sent in the level before a restart is not for this one.
+    if ((size < 1) || (data[0] != sRun)) {
+        sOtherRuns++;
+        CoopLog_Write(COOP_LOG_LOCKSTEP, true, "dropped a sync message 0x%x of run %d in run %d", (unsigned) msgId,
+                      (size >= 1) ? (int) data[0] : -1, (int) sRun);
+        return;
+    }
+    data++;
+    size--;
     if (CoopDesync_IsMessage(msgId)) {
         if (!CoopDesyncGame_Receive(peer, msgId, data, size, SDL_GetTicks())) {
             Sync_Fail("Another player sent a state hash that could not be read, so the session is over.");
@@ -290,6 +373,21 @@ void CoopSyncGame_Receive(int peer, uint16_t msgId, const uint8_t* data, uint16_
     }
 }
 
+void CoopSyncGame_Pause(void) {
+    if (sState == SYNC_OFF) {
+        return;
+    }
+    if (sState == SYNC_RUNNING) {
+        CoopInput_ClearSources();
+        CoopLog_Write(COOP_LOG_LOCKSTEP, false,
+                      "lockstep stopped at frame %u for a new level start: %u frames held for %u ms in all",
+                      (unsigned) sLockstep.frame, (unsigned) sHeldFrames, (unsigned) sHeldMs);
+    }
+    CoopDesyncGame_End();
+    sState = SYNC_PAUSED;
+    sWaiting = false;
+}
+
 void CoopSyncGame_End(void) {
     // Every way a session ends comes through here, the host's leaving and a failure included: this game's own save
     // back from its file (decision 0009 item 8). Nothing if the session never got to its level start.
@@ -300,6 +398,7 @@ void CoopSyncGame_End(void) {
                       (unsigned) sLockstep.frame, (unsigned) sHeldFrames, (unsigned) sHeldMs);
     }
     CoopDesyncGame_End();
+    CoopDesyncGame_DropDump(); // #189: nobody is left to send it, so the log says what is missing
     CoopMath_SetSession(0); // the C library again, as upstream (decision 0011)
     sState = SYNC_OFF;
     sWaiting = false;
@@ -356,11 +455,15 @@ void CoopSyncGame_SetOff(bool off) {
 void CoopSyncGame_Init(void) {
 }
 
-void CoopSyncGame_Begin(const CoopSyncLink* link, const uint8_t* roster, int32_t self, bool host) {
+void CoopSyncGame_Begin(const CoopSyncLink* link, const uint8_t* roster, int32_t self, bool host, uint8_t run) {
     (void) link;
     (void) roster;
     (void) self;
     (void) host;
+    (void) run;
+}
+
+void CoopSyncGame_Pause(void) {
 }
 
 void CoopSyncGame_Receive(int peer, uint16_t msgId, const uint8_t* data, uint16_t size) {

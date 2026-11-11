@@ -23,7 +23,14 @@ extern u8 sAudioSpecId;
 
 // What a level reads and level init does not set, so what a game brings along from before. The order is the wire order
 // (PROTOCOL.md): a change here is a new COOP_PROTOCOL_VERSION.
-#define LEVEL_START_TABLE(X)            \
+//
+// From gHitCount on: what a campaign builds from level to level (the mission number, the planets flown, their hits,
+// medals and team, the total, the map's paths, the clear flags). A level reads little of it, the map and the ending
+// read all of it, and games that parted may hold different ones; a level start in the middle of a campaign, which is
+// what the session sends when it starts a level again, has to bring them along.
+#define ROUTE_PATHS 22 // gPlanetPathStatus, src/engine/fox_context.c: the header gives it no size
+
+#define LEVEL_START_TABLE(X, XN)        \
     X(sRandSeed1, s32)                  \
     X(sRandSeed2, s32)                  \
     X(sRandSeed3, s32)                  \
@@ -49,7 +56,17 @@ extern u8 sAudioSpecId;
     X(gBombCount, s32)                  \
     X(gLaserStrength, s32)              \
     X(gGoldRingCount, u8)               \
-    X(gSavedGoldRingCount, u8)
+    X(gSavedGoldRingCount, u8)          \
+    X(gHitCount, s32)                   \
+    X(gTotalHits, s32)                  \
+    X(gMissionNumber, s32)              \
+    X(gMissionPlanet, s32)              \
+    X(gMissionTeamStatus, s32)          \
+    X(gMissionHitCount, s32)            \
+    X(gMissionMedal, s32)               \
+    XN(gPlanetPathStatus, s32, ROUTE_PATHS) \
+    X(gMissionStatus, u8)               \
+    X(gLeveLClearStatus, u8)
 
 typedef struct {
     void* data;
@@ -58,12 +75,15 @@ typedef struct {
 } StartRow;
 
 #define START_ROW(var, type) { &(var), sizeof(type), sizeof(var) / sizeof(type) },
+#define START_ROW_N(var, type, n) { (var), sizeof(type), (n) },
 #define START_COUNT(var, type) +(sizeof(var) / sizeof(type))
+#define START_COUNT_N(var, type, n) +(n)
 
-static const StartRow sRows[] = { LEVEL_START_TABLE(START_ROW) };
+static const StartRow sRows[] = { LEVEL_START_TABLE(START_ROW, START_ROW_N) };
 
-_Static_assert((0 LEVEL_START_TABLE(START_COUNT)) == COOP_LEVEL_START_VALUES,
+_Static_assert((0 LEVEL_START_TABLE(START_COUNT, START_COUNT_N)) == COOP_LEVEL_START_VALUES,
                "COOP_LEVEL_START_VALUES does not match the table");
+_Static_assert(sizeof(gMissionPlanet[0]) == sizeof(s32), "gMissionPlanet is not read as it is stored");
 _Static_assert(LEVEL_VERSUS == COOP_LEVEL_START_LEVELS, "COOP_LEVEL_START_LEVELS is not the first level left out");
 _Static_assert(sizeof(gLaserStrength[0]) == sizeof(s32), "gLaserStrength is not read as it is stored");
 
@@ -92,7 +112,8 @@ static void Row_Set(const StartRow* row, s32 i, int32_t value) {
     }
 }
 
-void CoopLevelStart_FromGame(CoopLevelStart* out, uint8_t level, uint8_t phase) {
+// newLevel: the hit count of the level is 0, as Map_PlayLevel leaves it for a level the map starts.
+static void LevelStart_Fill(CoopLevelStart* out, uint8_t level, uint8_t phase, bool newLevel) {
     size_t r;
     s32 i;
     s32 n = 0;
@@ -102,10 +123,18 @@ void CoopLevelStart_FromGame(CoopLevelStart* out, uint8_t level, uint8_t phase) 
     out->phase = phase;
     for (r = 0; r < ARRAY_COUNT(sRows); r++) {
         for (i = 0; i < sRows[r].count; i++) {
-            out->values[n++] = Row_Get(&sRows[r], i);
+            out->values[n++] = (newLevel && (sRows[r].data == (void*) &gHitCount)) ? 0 : Row_Get(&sRows[r], i);
         }
     }
     CoopSave_FromGame(out->save);
+}
+
+void CoopLevelStart_FromGame(CoopLevelStart* out, uint8_t level, uint8_t phase) {
+    LevelStart_Fill(out, level, phase, true);
+}
+
+void CoopLevelStart_Entering(CoopLevelStart* out) {
+    LevelStart_Fill(out, (uint8_t) gNextLevel, (uint8_t) gNextLevelPhase, false);
 }
 
 // What a level sets up on its first frame and the state hash already reads before that frame: Player_Setup
@@ -145,8 +174,8 @@ void CoopLevelStart_Enter(const CoopLevelStart* start) {
 
     // The way the game itself changes level from anywhere (src/overlays/ovl_i3/fox_a6.c:2927): Game_SetGameState clears
     // the objects, sets up the level and lands in PLAY_STANDBY on this frame, so both ends of a session go the same way
-    // whether they came from the map or the title screen. What Map_PlayLevel does on top of that is the hit count.
-    gHitCount = 0;
+    // whether they came from the map or the title screen. What Map_PlayLevel does on top of that is the hit count,
+    // which is one of the values: 0 from CoopLevelStart_FromGame.
     gNextLevel = start->level;
     gNextLevelPhase = start->phase;
     gNextGameState = GSTATE_PLAY;

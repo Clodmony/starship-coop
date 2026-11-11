@@ -276,6 +276,17 @@ void CoopHandoverGame_Run(CoopSession* s, bool leaving) {
     sRunning = false;
 }
 
+// The clients that have joined a host's session.
+static int Handover_Clients(CoopSession* s) {
+    int count = 0;
+    int i;
+
+    for (i = 0; i < COOP_HANDOVER_PEERS; i++) {
+        count += CoopSession_PeerPlayer(s, i) >= 0;
+    }
+    return count;
+}
+
 bool CoopHandoverGame_Heard(CoopSession* s, int peer, const uint8_t* data, uint16_t size, char* text, size_t cap) {
     static const uint8_t answer[3] = { COOP_HANDOVER_DONE, 0, COOP_HANDOVER_BYE };
     int player = CoopSession_PeerPlayer(s, peer);
@@ -283,10 +294,11 @@ bool CoopHandoverGame_Heard(CoopSession* s, int peer, const uint8_t* data, uint1
     if (sRunning || (player < 0) || (peer >= COOP_HANDOVER_PEERS) || (size != 2) || (data[0] != COOP_HANDOVER_BEGIN)) {
         return false;
     }
-    if ((CoopSession_Self(s) == 0) && !CoopSession_LevelStarted(s)) {
-        // Before the level a client that goes ends nothing for the others. It waits for an answer, and here is all
-        // there is: no report, as no lockstep ran.
-        CoopLog_Write(COOP_LOG_SESSION, false, "handover: player %d hands over before the level; the session goes on",
+    if ((CoopSession_Self(s) == 0) && (!CoopSession_LevelStarted(s) || (Handover_Clients(s) > 1))) {
+        // Before the level a client that goes ends nothing for the others; in a level it ends nothing while another
+        // client is there, as the session starts the level again for those who stay (session.h, "Recovery"). It waits
+        // for an answer, and here is all there is: no report from this game, which plays on.
+        CoopLog_Write(COOP_LOG_SESSION, false, "handover: player %d hands over and goes; the session goes on",
                       player + 1);
         CoopSession_Send(s, peer, COOP_MSG_HANDOVER, &answer[0], 2, COOP_NET_RELIABLE);
         CoopSession_Send(s, peer, COOP_MSG_HANDOVER, &answer[2], 1, COOP_NET_RELIABLE);
