@@ -706,6 +706,68 @@ Unknown:
 - Whether a name in the small font is large enough at a glance on a real screen: the owner chose it for the next
   two-PC run.
 
+### 2026-11-11, the campaign run, #220's leftovers: Sector X's Spyborg and Titania's Goras go after the nearest human
+
+Read at `wave6-base` (`a4867d99`, `coop` after the merge of the combined test build). Rule as #220's entry below: aim and
+chase the kept human (`CoopAim_BossTarget`), picked again at the boss's own new state (`CoopAim_ForgetBoss`); level
+flow, the path (a z every player shares on rails), cutscenes and "player 0 down restarts the level" stay player 0's.
+Line numbers are this branch's.
+
+Observed (code), every `gPlayer[0]` site of the three bosses #220 listed and did not change:
+
+| boss: function | sites | what they do | verdict |
+|---|---|---|---|
+| Spyborg: `SectorX_SxSpyborg_Update` (`src/overlays/ovl_i2/fox_sx.c`) | 37 | `:383-389` its head turns to the player (yaw, pitch); `:597-598`, `:621-622`, `:655-656`, `:702-703`, `:875-876`, `:899-900`, `:931-932` the x and y it moves to in its attack states (1, 2, 3, 4, 8, 85, 9: `fwork[3]`, `fwork[2]`); `:741-793` its two launched fists home in on the player's x and y (state 5) | aim and chase: changed (29 sites), a new state picks again |
+| (same) | | `:400` its z to player 0's z (the path); `:524` its start at player 0's `xPath`; `:511` it waits (state 8) while player 0 is not active; `:911` the same for standby; `:1096-1099` level complete | path, flow: left (8 sites) |
+| Goras: `Titania_80193DF0` (`src/overlays/ovl_i5/fox_ti.c`) | 11 | `:4366-4371` the x it follows in states 7 to 12; `:4544-4545` the angle of its attack (`D_i5_801BBEF4[12]`, whose cosine also sets how far it keeps in z, `:4993`) | aim and chase: changed (4 sites), a new state picks again |
+| (same) | | `:4383-4384` its entrance in front of player 0; `:4420`, `:4993` its z on the path; `:4426-4427`, `:4454` player 0's `unk_19C` and `unk_000` (the tank's stop in the fight) | path, flow: left |
+| Goras: `Titania_80192118`, `Titania_TiGoras_Update`, `Titania_TiGoras_Dying` | 9, 1, 10 | its parts' z and speed from player 0 (the path), player 0's stop field; `:5016` it jumps when player 0 is on the ground (`grounded`); the death cutscene | path, trigger, flow: left |
+| train's end: `Macbeth_Actor207_Update`, `Macbeth_Actor207_FacePlayer` (`src/overlays/ovl_i5/fox_ma.c`) | 32 + 2 MC, 3 | `:4186-4192` it faces player 0; `:4417`, `:5024` its x and `:4490`, `:4492`, `:5068` its y to player 0's; `:4438`, `:4484`, `:5065` an x from player 0 (`D_i5_801BE368[9]`) for its drops; 15 sites its z and speed on the path; `:5119`, `:5149` its damage only while player 0 is 200 behind it; `:5058` it kills player 0 at the end of the track; `:4338`, `:5199`, `:5253` flow; `:5102-5103` rumble | not changed: an actor (the kept slot would be `CoopAim_ActorTarget`) in the Landmaster fight at Macbeth's end, and the kill at the track's end is level flow under decision 0007; listed for a follow-up with a vehicle scenario |
+
+Built: the Spyborg and Goras get the Sarumarine's edit: a pointer to the kept human at the top of the function, in
+player 0's place on the sites marked "changed", and `CoopAim_ForgetBoss` when the state changed around the state switch.
+Deterministic: the pick reads positions and states only, no random draw is added or moved (a boss that goes after
+another player takes other branches of its own code and their draws, the same on every game). Co-op off:
+`CoopAim_BossTarget` is player 0. `sp_audit.py`: verdicts updated, OK.
+
+Test: `lockstep_test.py --only other_bosses` gets `spyborg` (Sector X), `goras` (Titania) and `vulkain` (Solar; #220
+changed its head and ran nothing). The boss trace writes the Vulkain's head yaw and pitch (`so=`). On rails player 0
+holds the top left and player 1 the bottom right (`rails_script`), so player 1 is the nearer one to these bosses.
+
+Observed (runs), two real games in lockstep over loopback, one PC, `gInvincible` on both, US 1.0, Linux, GCC, Debug,
+OpenGL on a software renderer, no window; this branch at `303890d2`. The base is `wave6-base`'s C code (the seven C files
+this branch changes, checked out at `a4867d99` and built in this folder); for `vulkain`, whose edit #220 merged, it is this
+branch with that one line back on player 0 (a throwaway build):
+
+- `spyborg`: `same hash on 13000 frames; 2297 frames it goes after its target, nearer player 1 on 2297, player 0 on 0;
+  kept -1: 22, 1: 2275`. Base: `FAILED ... the boss goes after player 0: 2297 frames ..., nearer player 1 on 4, player 0
+  on 2293; kept -1: 2297`.
+- `goras` (pilots on both clients, as Goras waits in state 3 until it is shot): `same hash on 13000 frames; chase frames
+  with the players apart, per kept slot (nearer the kept player, nearer the other): 1: 693, 55`. Base: `FAILED ...
+  Goras seldom keeps player 1: ... -1: 651, 69` (it keeps nobody and is nearer player 0 on 651).
+- `vulkain`: `same hash on 12000 frames; 1344 frames its head moves, at player 1 on 1260, at player 0 on 0`. Base:
+  `FAILED ... the Vulkain turns its head to player 0: 1444 frames its head moves, at player 1 on 0, at player 0 on
+  1377`.
+- The two levels with two pilots to their end (`campaign.py --levels sector-x,titania`): Sector X `equal on every frame
+  to the end; 12174 frames compared, level complete at level frame 10899`, Titania `37743 frames compared, level
+  complete at level frame 36223` (43591 on the build before this change; see the guess below).
+- Unchanged runs of #220 on this branch: `granga` `kept 0: 80, 1: 946`, `shogun` `player 1 kept on 4149`, `crusher`
+  `800 rings, 400 came nearest player 1`, `sarumarine` `75 balls, 72 came nearest player 1`, `bacoon` `at player 1 on
+  862, at player 0 on 84`; all `ok`, hashes equal.
+
+Derived:
+
+- On rails the Spyborg and Goras now stay with the player they keep, as the Sarumarine and the Bacoon do; the base
+  build's Spyborg was nearer player 0 on all but 4 of its chase frames with player 1 the nearer human.
+- The Vulkain's edit of #220 does what it says: its head points at player 1, the nearer, on 1260 of 1344 frames.
+
+Guess: Titania's shorter fight comes from Goras following the tank that is lined up with it.
+
+Unknown:
+
+- How a Spyborg or Goras that changes players at a new state reads to two humans by hand.
+- Macbeth's train end with two Landmasters: not changed, not run with a scenario.
+
 ### 2026-11-10, #252, each human's own hits on the status screen
 
 Identity: ROM US 1.0, branch `issue/252-player-hits` on `ed61d6fd` (`issue/combined-test-4`), Windows 11, MSVC v143,
@@ -5419,6 +5481,145 @@ shields fall by at least 60, hashes equal on all frames. On the build before the
 player 0 loses 100.
 
 ## Determinism
+
+### 2026-11-11, the campaign run: a pilot that finishes every campaign level, and the route with two real clients
+
+Identity: ROM US 1.0, branch `issue/campaign-runs` on `wave6-base` (`a4867d99`), Linux, GCC, Debug, OpenGL on a
+software renderer, no window, one PC. The route ran on the build of `2de6770c` (the pilot, before the Spyborg and Goras
+edits); four levels again on `303890d2` (the branch's end). Pilot flights alone: `hash_check.py`'s `pilot_flight` (one
+game, 2 players, `gInvincible`), on the reference build of `wave6-base` (`a2032968ad36`) and on the builds made along the
+way to `2de6770c` (each level's column below is the first build that finished it; the route has the final code).
+
+**Observed: why the pilot did not finish, and what changed** (from its log, `SF64_COOP_PILOT_LOG`, which now writes a
+line per boss with what its fight counts; one game, 2 players)
+
+| Level | Base (`wave6-base`), one game | Cause | Change (`src/port/coop/test/pilot*.c`) | This branch, one game |
+|---|---|---|---|---|
+| Sector Y | 36014 frames, no end: one Shogun at 10 of 100, the leader (150) never came in | The pilot's floor was `y < 220` (`pilot.c`, `CoopPilot_SteerAt`), made for Corneria's ground at 0. In space `gGroundHeight` is -25000 (`Play_SetupStarfield`, `src/engine/fox_play.c`), and the Shoguns walk at y 0 and below: the nose stayed up, the shots went over them | the floor is `gGroundHeight + 220` | level complete at replay frame 7757 |
+| Bolse | 26014 frames, no end: the core in state 0 the whole run | The core opens (state 2) only after the six shield reactors are down (`Bolse_8018D584`: a hit on box 0 or 1 in state 0 adds to the reactor's health, down at 100; `Bolse_BoBaseCore_Update`); the pilot shot the nearest foe, and fighters keep coming while the shield stands | a reactor in state 0 is an objective, ranked after missiles and before Star Wolf, aimed at its box 0 or 1; the core's table holds only the parts still up (the last one had a turn in eight and sat at 20 for 8000 frames) | level complete at 16301 |
+| Area 6 | 40014 frames, no end: the Gorgon at 780, no round done | A round ends when its three bars (`swork[15..17]`, hitbox entries 4 to 6) are all shot to 0 while the cover is open (`fwork[0]` over 5, `Area6_8018B9BC`); the next arm phase sets them to 40 again (state 4, `timer_050` 1400). The generic cycle spread its shots over 15 boxes. (#181's "aiming at entries 1 to 3 did nothing": those are the arms, which only shorten the arm phase, `Area6_8018A2C4`) | the Gorgon's table: the bars still up while the cover is open, the arms in the arm phase, the core (entry 0) after the rounds; one bomb on a fresh round with the cover wide open (a hit on any bar while a bomb burns takes its damage off all three) | level complete at 21178 |
+| Zoness | (#181: 24014 frames, the Sarumarine untouched at 300) | Its parts take only bombs (`DMG_BOMB`, 20) until they are down: parts 3 to 5 and 8 to 11 in state 3, 7 and 12 in state 5, each with a 50 frame pause after a hit (`Zoness_ZoSarumarine_Update`); about 7 bombs; 2 players start with 3 each | with `gInfiniteBombs` (owner's choice of 2026-11-11, below): player 0 bombs it in states 3 and 5 and sets the bomb off at its depth with a second press (allowed once the bomb's timer is under 25, `PlayerShot_UpdateBomb`) | level complete at 10400 |
+| Venom (Andross) | 24014 frames, no end: health 100; one hand at 0 (not down: a hand is down below 0), the other untouched | His hands take hits only between punches (`swork[7]` 0, `Andross_8018D2B0`) and rest wide of the path (x 900 to 1500, the ships reach 700) or under its floor (y -200 to -800; the ships are held at 40 and cannot pitch down within 50 of the ground, `Player_MoveArwingOnRails`). Since #213 his face follows the x of the player it keeps, so that player lining up with a hand drags the hand away. Two pilots on two hands also swapped them every 45 frames | the rail aim keeps each player on one box of a table and leads a moving box, and skips a box under a ground-level floor; the player Andross keeps flies high to the side away from the hand still up, the other one lines up; with `gInfiniteBombs` player 0 bombs him in states 2 to 10 and sets the bomb off at his face's depth: the burst (scale to 30, 900 across) reaches the hands, and after them the eyes | level complete at 13131 |
+
+The rail changes (a table's boxes kept per player, the lead, the floor test) act at every boss on rails; the floor of
+the all-range pilot at every level in space. Both are in the route below.
+
+**Observed: the route** (`python tools/coop/campaign.py --route all --lock <nettest lock>`, two real games per level over
+loopback, a pilot on each client flying its own player, `gInvincible` on both but in Corneria; frames compared are
+lockstep frames from the first in the level to the map or what follows level complete, plus 60; level complete is the
+host trace's frame)
+
+| Level | What the pilot did | Frames compared | Level complete (level frame) | Complete | Desync | Downs | Cheats |
+|---|---|---|---|---|---|---|---|
+| Corneria | flew to the map or what follows level complete | 10601 | 9206 | yes | no | 0, 0 | gInvincible off |
+| Meteo | flew to the map or what follows level complete | 20790 | 19109 | yes | no | 0, 0 | gInvincible |
+| Fortuna | flew to the map or what follows level complete | 7164 | 5483 | yes | no | 0, 0 | gInvincible |
+| Sector X | flew to the map or what follows level complete | 12155 | 10880 | yes | no | 0, 0 | gInvincible |
+| Sector X, again on `303890d2` | flew to the map or what follows level complete | 12174 | 10899 | yes | no | 0, 0 | gInvincible |
+| Titania | flew to the map or what follows level complete | 45111 | 43591 | yes | no | 0, 0 | gInvincible |
+| Titania, again on `303890d2` | flew to the map or what follows level complete | 37743 | 36223 | yes | no | 0, 0 | gInvincible |
+| Bolse | stopped at the frame cap (26000) | 26134 | - | no | no | 0, 0 | gInvincible |
+| Bolse, again on `303890d2` | flew to the map or what follows level complete | 28304 | 27147 | yes | no | 0, 0 | gInvincible |
+| Venom 1 | flew to the map or what follows level complete | 12323 | 1 | yes | no | 0, 0 | gInvincible |
+| Venom (Andross) | stopped at the frame cap (26000) | 26653 | - | no | no | 0, 0 | gInvincible, gInfiniteBombs |
+| Venom (Andross), again on `303890d2` | flew to the map or what follows level complete | 7581 | 7069 | yes | no | 0, 0 | gInvincible, gInfiniteBombs |
+| Sector Y | flew to the map or what follows level complete | 9683 | 8057 | yes | no | 0, 0 | gInvincible |
+| Aquas | flew to the map or what follows level complete | 8808 | 7369 | yes | no | 0, 0 | gInvincible |
+| Zoness | flew to the map or what follows level complete | 11026 | 9660 | yes | no | 0, 0 | gInvincible, gInfiniteBombs |
+| Sector Z | flew to the map or what follows level complete | 6769 | 4642 | yes | no | 0, 0 | gInvincible |
+| Area 6 | flew to the map or what follows level complete | 15940 | 14756 | yes | no | 0, 0 | gInvincible |
+| Venom 2 | flew to the map or what follows level complete | 9529 | 9143 | yes | no | 0, 0 | gInvincible |
+| Katina | flew to the map or what follows level complete | 16751 | 14881 | yes | no | 0, 0 | gInvincible |
+| Solar | flew to the map or what follows level complete | 10010 | 8384 | yes | no | 0, 0 | gInvincible |
+| Macbeth | flew to the map or what follows level complete | 11315 | 9956 | yes | no | 0, 0 | gInvincible |
+
+- No game wrote a desync report; hash logs and input logs were equal on every frame compared, in every level.
+- The host looked through player 0 and the client through player 1 in every level.
+- Bolse and Venom (Andross) did not finish on the route's build; they were fixed after it (Bolse's cap, the bomb's
+  input delay) and ran again on the branch's end with Sector X and Titania (whose bosses changed): `python tools/coop/campaign.py --levels venom-andross,bolse,sector-x,titania --lock <nettest lock>` on `303890d2`: `4/4 levels equal on every frame to the end` (the rows marked "again").
+
+**Observed: `views --pilot`** (`python tools/coop/hash_check.py views --pilot --level
+sector-y,bolse,area-6,zoness,venom-andross` on `303890d2`: one game with the pilot, then two games play its replay with
+local index 0 and 1): `hash: PASS`; Sector Y 9383 replay frames (level complete at 7757), Bolse 17458 (16301), Area 6
+22362 (21178), Zoness 11766 (10400), Venom (Andross) 13643 (13131), each equal on every frame to the end, downs 0, 0. These are the
+single-game numbers of the table above, frame for frame: the five levels' later parts (boss and end) are now in
+`views --pilot` too, with two views.
+
+**Observed: what else**
+
+- Venom 1's level complete comes in Venom 2's id and the session goes on into Andross (as #181 found), so its row says
+  level frame 1.
+- In the two-client Bolse run of the route the core was down to 2 of 8 parts at the cap of 26000 frames; the parts
+  fell more slowly as fewer stood (8 to 4 in 4400 frames, 4 to 2 in 6800). A part that is down keeps its box, which
+  takes shots meant for the parts behind it (derived from `Bolse_BoBaseCore_Update`, which only counts a part's health
+  down; not measured).
+- A pilot in a lockstep session acts 3 frames late (`COOP_LOCKSTEP_INPUT_DELAY`): its second bomb press, set for the
+  face's depth, burst about 540 units past it, and the second hand drained from 130 to 70 in 20000 frames. The press
+  now counts the bomb's travel in those frames.
+
+**Derived**
+
+- Every campaign level is now flown from its start through its boss to the map or what follows level complete by two
+  real clients, equal on every frame: the five that only people had played to their end (Sector Y, Bolse, Area 6,
+  Zoness, Andross) included. Zoness and Andross with `gInfiniteBombs` on both games.
+- `gInfiniteBombs` keeps player 0 at 9 bombs (`src/port/mods/PortEnhancements.c`); it is a simulation CVar that both
+  games of a session agree on (`src/port/coop/session/sim_cvars.c`). In those two levels the bomb count of player 0 is
+  not what a player has; the boss, the level and its end are.
+
+**What a pilot without `gInfiniteBombs` would need there** (guesses, not built)
+
+- Zoness: 6 bombs between two players and about 7 to place, each on a part in its state and after its part's pause; a
+  bomb set off where it reaches the most parts at once (parts 3 to 5 and 8 to 11 lie close), and the bomb items of the
+  level picked up.
+- Andross: shots at the hands while they are in reach and not punching, which means the player he keeps luring them
+  into the other player's reach at the right time; with the bombs two players had (7, one picked up) the hands fell to
+  100 and 140 of 200 in 7000 frames in one try here.
+
+**Unknown**
+
+- Training (no level complete), level 4 (the pilot's pads did not show in its trace, #181) and level 15 (crashes on
+  entry with co-op off too) are not in the route.
+- A route with state carried from level to level (each level starts as a new game), Windows, MSVC, two PCs, a Release
+  build, `--mortal`.
+
+### 2026-11-11, the campaign run's small boxes: Fortuna's slots, the TiBoulder arguments, the ADPCM over-read, GLEW
+
+Identity: ROM US 1.0, branch `issue/campaign-runs` at `303890d2`, Linux, GCC, Debug, OpenGL on a software renderer, no
+window. The rest of #232's and #246's boxes, each read or run once; nothing in the game was changed for them.
+
+Observed:
+
+- Fortuna's effect slots (#246): `python tools/coop/hash_check.py slots --level fortuna --frames 12000` (input by
+  rule, `gInvincible`, 1 player against 2): `median effects in use 0 with 1 player, 15.0 with 2`, `PASS` (the check
+  fails above 15 more). Effects peak 89 of 100 with one player and 95 with two; in the last sample one player holds 26
+  and two hold 0. #246's run of 15000 frames gave 0 against 10. The two-player set is the base's burn
+  (`FoBase_BurnEffects`, #246) and is gone before the end; at 9000 frames a run ends inside it.
+- `Titania_TiBoulder_Spawn2` (`src/overlays/ovl_i5/fox_ti.c:484-485`, #209's `args` site: three draws in three
+  arguments of `Titania_TiBoulder_Spawn`): in this build (GCC, Debug) the first `Rand_ZeroOne` call goes, through
+  `RAND_FLOAT(-20.0f)`, to the sixth argument (`zVel`, `xmm5`), the second to the fifth (`yVel`, `xmm4`) and the third
+  to the fourth (`xVel`, `xmm3`): right to left, the order #199 measured for GCC and MSVC at other call sites (NOTES,
+  2026-11-09, #199). The boulders run in Titania (`Titania_TiBoulder_Update`, `:516`); the Titania runs of this branch
+  were equal between two GCC clients.
+- The ADPCM loader's over-read (#145 (c), `src/audio/audio_synthesis.c:1088`, #145's `:1086`): read again, nothing new; #145's entry
+  holds (the N64's 16-byte load reads past a sample's end and decodes nothing from those bytes; bounding it means an
+  exact-size load in `mixer.c` or padded sample buffers).
+- GLEW on Linux (#1, #232): `libultraship/src/graphic/Fast3D/backends/gfx_opengl.h` and `gfx_sdl2.cpp` include
+  `GL/glew.h` only under `_MSC_VER`, `FOR_WINDOWS` or `__APPLE__`; Linux takes `SDL2/SDL_opengl.h`.
+  `libultraship/cmake/dependencies/linux.cmake` has no `find_package(GLEW)`, unlike `windows.cmake` and `mac.cmake`. In
+  this folder's build `ninja -t deps` lists no header with `glew` in its name for any object, `build.ninja` names no
+  GLEW, and `ldd` of the game shows no GLEW library. `docs/BUILDING.md` item 11 says so now.
+
+Derived:
+
+- No game change is proven for these four: Fortuna's set ends by itself (a run of `slots` that stops inside the burn,
+  as 9000 frames does, can fail on it; 12000 passes on the limit); the boulder arguments take the order the
+  other measured call sites take on both compilers; the over-read decodes nothing; GLEW is not used on Linux.
+
+Unknown:
+
+- MSVC's order at the TiBoulder site itself (a Windows run of `python tools/coop/rand_order_test.py` with this form, or
+  a Compiler Explorer measurement, would tell; not done here).
+- A Linux build on a system without GLEW installed: not tried (this PC has it).
 
 ### 2026-11-11, the Aquas boss desync: a dying eel read its smoke's place from before its array
 

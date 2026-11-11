@@ -24,19 +24,19 @@ pattern without reading the code, so treat it as a guess.
 
 ## Summary
 
-1735 sites in 419 functions in 46 files.
+1702 sites in 419 functions in 46 files.
 A function whose sites have more than one verdict counts once per verdict in the functions column.
 
 | verdict | sites | functions | `gPlayer[0]` | `gPlayer->` | `gPlayer arg` | `gMainController` | `gCamCount` | `shooter` |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| sim | 779 | 166 | 774 | 1 | 2 | 0 | 0 | 2 |
+| sim | 738 | 165 | 733 | 1 | 2 | 0 | 0 | 2 |
 | view | 217 | 84 | 151 | 0 | 0 | 43 | 3 | 20 |
 | input | 13 | 9 | 0 | 0 | 0 | 8 | 0 | 5 |
-| flow | 478 | 102 | 436 | 0 | 3 | 3 | 0 | 36 |
+| flow | 486 | 103 | 444 | 0 | 3 | 3 | 0 | 36 |
 | setup | 53 | 34 | 1 | 0 | 1 | 0 | 51 | 0 |
 | ok | 195 | 84 | 14 | 2 | 15 | 87 | 8 | 69 |
 
-Basis per site: read 345, site 893, name 497.
+Basis per site: read 353, site 852, name 497.
 
 ## Sites
 
@@ -427,13 +427,13 @@ Basis per site: read 345, site 893, name 497.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `SectorX_8018F030` | 29:P0, 30:P0, 31:P0 | flow | site | Slippy placed at player 0 camera for a cutscene |
-| `SectorX_SxSlippy_Setup` | 49:P0, 50:P0, 51:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `SectorX_SxSlippy_Update` | 114:P0, 142:P0, 143:P0, 144:P0, 145:P0, 146:P0, 149:P0, 150:P0, 151:P0 | sim | site | Slippy rescue; moves player 0 camera for the cutscene |
-| `SectorX_8018FA04` | 214:P0, 215:P0, 216:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `SectorX_SxSpyborg_Update` | 379:P0, 380:P0, 384:P0, 395:P0, 506:P0, 518:P0, 591:P0, 592:P0, 615:P0, 616:P0, 649:P0, 650:P0, 696:P0, 697:P0, 735:P0, 741:P0, 745:P0, 749:P0, 755:P0, 759:P0, 763:P0, 769:P0, 773:P0, 777:P0, 783:P0, 787:P0, 869:P0, 870:P0, 893:P0, 894:P0, 905:P0, 925:P0, 926:P0, 1090:P0, 1091:P0, 1092:P0, 1093:P0 | sim | site | boss; on death sets player 0 state |
-| `SectorX_LevelStart_SetupTeam` | 1461:P0, 1462:P0, 1463:P0 | flow | name | intro team around player 0 |
-| `SectorX_LevelComplete_SetupTeam` | 1671:P0 | flow | name | level complete team |
+| `SectorX_8018F030` | 30:P0, 31:P0, 32:P0 | flow | site | Slippy placed at player 0 camera for a cutscene |
+| `SectorX_SxSlippy_Setup` | 50:P0, 51:P0, 52:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `SectorX_SxSlippy_Update` | 115:P0, 143:P0, 144:P0, 145:P0, 146:P0, 147:P0, 150:P0, 151:P0, 152:P0 | sim | site | Slippy rescue; moves player 0 camera for the cutscene |
+| `SectorX_8018FA04` | 215:P0, 216:P0, 217:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `SectorX_SxSpyborg_Update` | 400:P0, 511:P0, 524:P0, 911:P0, 1096:P0, 1097:P0, 1098:P0, 1099:P0 | flow | read | its head, arms and fists turn and fly to its kept human, picked again at a new state (#220, aim.h); left: its z on the path, its start on player 0's path, the wait on player 0's state, level complete |
+| `SectorX_LevelStart_SetupTeam` | 1470:P0, 1471:P0, 1472:P0 | flow | name | intro team around player 0 |
+| `SectorX_LevelComplete_SetupTeam` | 1680:P0 | flow | name | level complete team |
 
 ### `src/overlays/ovl_i3/fox_a6.c`
 
@@ -620,23 +620,23 @@ Basis per site: read 345, site 893, name 497.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Titania_801891F4` | 146:P0, 147:P0, 159:P0, 160:P0, 161:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_80189380` | 180:P0, 181:P0, 182:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiDesertRover_Update` | 239:P0, 248:P0, 257:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiFekuda_Update` | 375:P0, 376:P0, 377:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiLandmine_Update` | 645:P0, 646:P0, 647:P0, 648:P0, 649:P0, 650:P0, 651:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiRasco_Update` | 794:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiBomb_Update` | 953:P0, 954:P0, 955:P0, 983:P0, 984:P0, 985:P0, 986:P0, 987:P0, 989:P0, 990:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiBomb_Update` | 981:PA | sim | read | right for now: an actor on Titania, rails in a Landmaster, where co-op players stay parked (CoopPlayers_SectionSupported); WP-18 |
-| `Titania_TiDesertCrawler_Update` | 1292:P0, 1296:P0, 1356:P->, 1364:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiDelphorHead_Update` | 1809:P0, 1810:P0, 1811:P0, 1890:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_Cactus_Update` | 2048:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiPillar_Update` | 2133:P0, 2135:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_80190A08` | 2856:P0, 2857:P0, 2858:P0, 2865:P0, 2866:P0, 2867:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_80192118` | 3243:P0, 3244:P0, 3245:P0, 3301:P0, 3310:P0, 3383:P0, 3384:P0, 3385:P0, 3527:P0 | sim | site | enemy follows player 0 and changes player 0 state fields |
-| `Titania_80193DF0` | 4361:P0, 4363:P0, 4366:P0, 4377:P0, 4378:P0, 4414:P0, 4420:P0, 4421:P0, 4448:P0, 4539:P0, 4984:P0 | sim | site | enemy follows player 0 and changes player 0 state fields |
-| `Titania_TiGoras_Update` | 5007:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiGoras_Dying` | 5549:P0, 5573:P0, 5575:P0, 5607:P0, 5609:P0, 5639:P0, 5641:P0, 5650:P0, 5652:P0, 5653:P0 | flow | name | boss death cutscene |
+| `Titania_801891F4` | 147:P0, 148:P0, 160:P0, 161:P0, 162:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_80189380` | 181:P0, 182:P0, 183:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiDesertRover_Update` | 240:P0, 249:P0, 258:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiFekuda_Update` | 376:P0, 377:P0, 378:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiLandmine_Update` | 646:P0, 647:P0, 648:P0, 649:P0, 650:P0, 651:P0, 652:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiRasco_Update` | 795:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiBomb_Update` | 954:P0, 955:P0, 956:P0, 984:P0, 985:P0, 986:P0, 987:P0, 988:P0, 990:P0, 991:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiBomb_Update` | 982:PA | sim | read | right for now: an actor on Titania, rails in a Landmaster, where co-op players stay parked (CoopPlayers_SectionSupported); WP-18 |
+| `Titania_TiDesertCrawler_Update` | 1293:P0, 1297:P0, 1357:P->, 1365:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiDelphorHead_Update` | 1810:P0, 1811:P0, 1812:P0, 1891:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_Cactus_Update` | 2049:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiPillar_Update` | 2134:P0, 2136:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_80190A08` | 2857:P0, 2858:P0, 2859:P0, 2866:P0, 2867:P0, 2868:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_80192118` | 3244:P0, 3245:P0, 3246:P0, 3302:P0, 3311:P0, 3384:P0, 3385:P0, 3386:P0, 3528:P0 | sim | site | enemy follows player 0 and changes player 0 state fields |
+| `Titania_80193DF0` | 4383:P0, 4384:P0, 4420:P0, 4426:P0, 4427:P0, 4454:P0, 4993:P0 | sim | site | Goras follows its kept human across the path and turns its attack to it, picked again at a new state (#220, aim.h); left: its z on the path, its entrance on player 0, player 0's camera and stop fields |
+| `Titania_TiGoras_Update` | 5016:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiGoras_Dying` | 5558:P0, 5582:P0, 5584:P0, 5616:P0, 5618:P0, 5648:P0, 5650:P0, 5659:P0, 5661:P0, 5662:P0 | flow | name | boss death cutscene |
 
 ### `src/overlays/ovl_i5/fox_ti_cs.c`
 

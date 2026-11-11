@@ -14,7 +14,8 @@ so each client's pilot (src/port/coop/test/pilot.h) flies its own player and its
 stamped, delayed, sent, read back from lockstep. So a level started this way carries no route state: lives, score,
 lasers, team shields and the map's medals start as for a new game, and a route here is only the order of the runs.
 gInvincible is on in both games unless --mortal, and but for Corneria (MORTAL): what is tested is the level, its boss
-and its end with two players, not the pilot. A player can go down where it is off, and the summary counts it.
+and its end with two players, not the pilot. A player can go down where it is off, and the summary counts it. Zoness and
+Venom/Andross also run with gInfiniteBombs (BOMBS), as their bosses need bombs, and their summary lines say so.
 
 A level passes when both games stay equal on every frame, hash log and input log (lockstep_test.compare: every region,
 no desync report), from the first frame in the level to the map or ending after it, and player 0 reached level
@@ -54,13 +55,23 @@ ROUTES = {
             "aquas", "zoness", "sector-z", "area-6", "venom-2", "katina", "solar", "macbeth"),
 }
 FRAMES = 26000  # lockstep frames a level may take at most: Corneria took about 11200 to the map, Sector X 11529 to
-FRAMES_BY_LEVEL = {"titania": 60000, "sector-y": 36000, "area-6": 40000}  # level complete; Titania's Goras 29169
+FRAMES_BY_LEVEL = {"titania": 60000, "sector-y": 36000, "area-6": 40000,  # level complete; Titania's Goras 29169
+                   "bolse": 40000}
 # in #16's run and past 40000 in #28's first, Sector Y's last Shogun and Area 6's Gorgon longer than 24000 in #181's
-# views --pilot
+# views --pilot. Bolse: the core had 2 of its 8 parts up at 26000 frames with two clients (campaign run, 2026-11-11;
+# 16301 with one pilot flying both)
 # Levels flown without gInvincible: Corneria, as lockstep_test.py's `full` flies it. With gInvincible on both games,
 # Granga lay still with a leg shot off and its backpack at 110 for 20000 frames in #28's first run, out of the pilot's
 # reach (src/port/coop/test/pilot.h); without it the same pilot takes Corneria to the map.
 MORTAL = {"corneria"}
+# Levels flown with gInfiniteBombs as well (owner's choice of 2026-11-11, campaign run): their bosses take bombs where
+# the pilot's shots do not reach or do not count. Zoness' Sarumarine takes only bombs on its parts until they are down
+# (src/overlays/ovl_i3/fox_zo.c), and Andross' hands rest wide of the path or under its floor, within a bomb's burst but
+# out of a shot's reach (src/overlays/ovl_i6/fox_andross.c). The port's cheat keeps player 0 at 9 bombs
+# (src/port/mods/PortEnhancements.c), a simulation CVar the two games agree on (src/port/coop/session/sim_cvars.c); the
+# pilot bombs with player 0 there (src/port/coop/test/pilot_aim.c). What is tested is still the level, its boss and its
+# end with two players.
+BOMBS = {"zoness", "venom-andross"}
 TAIL = 60  # frames kept after the game leaves the level
 END_TAIL = 1800  # or after level complete, whichever comes first
 LEVEL_COMPLETE, DOWN, GS_PLAY = 7, 4, 7
@@ -121,8 +132,12 @@ def fly_level(args, folder, name):
     cap = FRAMES_BY_LEVEL.get(name, FRAMES) if args.frames is None else args.frames
     env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt",
            "SF64_COOP_LOCKSTEP_END": str(cap)}
-    config = None if (args.mortal or name in MORTAL) else {"CVars": {"gInvincible": 1}}
-    row = {"level": name, "id": level, "cap": cap, "folder": str(folder), "invincible": config is not None}
+    cvars = {} if (args.mortal or name in MORTAL) else {"gInvincible": 1}
+    if name in BOMBS:
+        cvars["gInfiniteBombs"] = 1
+    config = {"CVars": cvars} if cvars else None
+    row = {"level": name, "id": level, "cap": cap, "folder": str(folder), "invincible": "gInvincible" in cvars,
+           "bombs": name in BOMBS}
     began = time.monotonic()
     held = lock(args.lock)
     try:
@@ -209,6 +224,8 @@ def fly_level(args, folder, name):
         row["result"] = "equal on every frame to the end"
     if not row["invincible"]:
         row["result"] += " (gInvincible off)"
+    if row["bombs"]:
+        row["result"] += " (gInfiniteBombs on)"
     if views.get("host") == views.get("client0"):
         row["result"] += "; both games looked through the same player"
     return row
