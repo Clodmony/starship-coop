@@ -569,19 +569,33 @@ def scenario_game_leave(args, exe, out):
         for game in games:
             game.wait(lambda g=game: in_level(g), "frame in the level", LEVEL_SECONDS)
 
-        # Player 2 leaves in the level. Every frame needs every player, so the session ends for everyone (#160,
-        # docs/coop/PROTOCOL.md, End): the host says who left, player 3 reads that the host closed, and every game
-        # goes on alone in its level.
+        # Player 2 leaves in the level. Every frame needs every player, so the level cannot go on as it is; with
+        # another player still there the session survives: the host starts the level again for the two who stay, and
+        # both read one line about it (docs/coop/PROTOCOL.md, Recovery). The one who left goes on alone in its level.
         frames = {game.name: frames_logged(game) for game in games}
         a.click("leave")
         a.wait_text("status", r"Not in a session\.")
-        host.wait_text("message", r"Player 2 left, so the session is over")
-        host.wait_text("status", r"Not in a session\.")
-        b.wait_text("status", r"Not in a session\.")
-        b.wait_text("message", r"closed the connection")
+        host.wait_text("message", r"Player 2 left\. Starting the level again together\.")
+        b.wait_text("message", r"Player 2 left\. Starting the level again together\.")
+        host.wait_text("status", r", 2 of 4 players\.")
+        b.wait_text("status", r" as player 3\.")
+        for game in (host, b):
+            game.wait_text("level", r"The level has started", LEVEL_SECONDS)
         for game in games:
             game.wait(lambda g=game: frames_logged(g) > frames[g.name] + 60, "frames after the leave", STEP_SECONDS,
                       every=1)
+        a.wait(lambda: "level" not in a.texts, "the level line gone after the session")
+
+        # Player 3 leaves too. Nobody is left to start the level again with, so the session ends as it always did
+        # (#160): the host says who left, and every game goes on alone in its level.
+        frames = {game.name: frames_logged(game) for game in games}
+        b.click("leave")
+        b.wait_text("status", r"Not in a session\.")
+        host.wait_text("message", r"Player 3 left, so the session is over")
+        host.wait_text("status", r"Not in a session\.")
+        for game in games:
+            game.wait(lambda g=game: frames_logged(g) > frames[g.name] + 60, "frames after the second leave",
+                      STEP_SECONDS, every=1)
         for game in games:
             game.wait(lambda g=game: "level" not in g.texts, "the level line gone after the session")
 
@@ -598,8 +612,9 @@ def scenario_game_leave(args, exe, out):
         a.wait_text("status", r" as player 2\.")
         b.wait_text("status", r" as player 3\.")
         stall = max(longest_stall(game) for game in games)
-        return f"3 games: player 2 left in the level and the session ended for all, then a second session and level " \
-               f"held past the time-out; longest stall {stall} ms"
+        return f"3 games: player 2 left in the level and the level started again for the two who stayed, player 3 " \
+               f"left and the session ended, then a second session and level held past the time-out; longest stall " \
+               f"{stall} ms"
 
     return level_run(args, games, body)
 

@@ -8,6 +8,7 @@
 // Nothing here blocks or reads a clock: call Poll once per frame with the time in ms, until it returns false.
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "port/coop/game/level_start.h"
@@ -23,6 +24,13 @@ extern "C" {
 #define COOP_SESSION_HANDSHAKE_MS 10000
 // After a refusal the host keeps the client this long at most, so the refusal can arrive.
 #define COOP_SESSION_REFUSE_LINGER_MS 3000
+// The session survives a lost player or a desync by starting the level again (see "Recovery" below). The host waits
+// this long for a player whose connection was lost to come back with the session id, then starts the level with whoever
+// is there.
+#define COOP_SESSION_REJOIN_MS 15000
+// A client that has been told, or has seen, that the level cannot go on waits this long for the host's new level
+// start, then ends its session as before. More than the transport's time-out plus the host's wait for another player.
+#define COOP_SESSION_RECOVER_MS 40000
 // Size of the text in an event.
 #define COOP_SESSION_TEXT 1024
 // The host and its clients. Player 0 is the host, player n is the client at transport peer n - 1.
@@ -59,25 +67,41 @@ typedef enum {
     COOP_SESSION_EV_ROSTER,  // the roster changed, see CoopSession_Roster
     // Host: client `peer` asked for a taken character. Client: we did. Nothing changes.
     COOP_SESSION_EV_PICK_REFUSED,
-    // Host and client alike: enter the level in levelStart. It comes once per session.
+    // Host and client alike: enter the level in levelStart. It comes again, with the next `run`, each time the session
+    // starts a level again after a RECOVER event.
     COOP_SESSION_EV_LEVEL_START,
+    // Host and client alike, in a level: the level cannot go on as it is (reason, playerIndex), and the host is going
+    // to start it again for everyone: stop lockstep and wait for LEVEL_START. The session stays up.
+    COOP_SESSION_EV_RECOVER,
 } CoopSessionEventType;
+
+// Why a level is started again, as SESSION_RECOVER carries it.
+typedef enum {
+    COOP_RECOVER_LOST = 1, // a player's connection was lost; the host waits COOP_SESSION_REJOIN_MS for it
+    COOP_RECOVER_LEFT,     // a player left, or was dropped because it sent no input
+    COOP_RECOVER_DESYNC,   // the games parted (WP-23)
+    COOP_RECOVER_REASONS,
+} CoopRecoverReason;
 
 typedef enum {
     COOP_SESSION_END_NONE,
-    COOP_SESSION_END_REFUSED,      // the host refused our identity
-    COOP_SESSION_END_CLOSED,       // the other side closed
-    COOP_SESSION_END_TIMEOUT,      // the connection went quiet
-    COOP_SESSION_END_HOST_FULL,    // no free slot on the host
-    COOP_SESSION_END_PROTOCOL,     // the other side runs another COOP_PROTOCOL_VERSION
-    COOP_SESSION_END_NO_HANDSHAKE, // connected, but the handshake did not finish in time
-    COOP_SESSION_END_BAD_MESSAGE,  // the other side sent a session message we could not read
+    COOP_SESSION_END_REFUSED,       // the host refused our identity
+    COOP_SESSION_END_CLOSED,        // the other side closed
+    COOP_SESSION_END_TIMEOUT,       // the connection went quiet
+    COOP_SESSION_END_HOST_FULL,     // no free slot on the host
+    COOP_SESSION_END_PROTOCOL,      // the other side runs another COOP_PROTOCOL_VERSION
+    COOP_SESSION_END_NO_HANDSHAKE,  // connected, but the handshake did not finish in time
+    COOP_SESSION_END_BAD_MESSAGE,   // the other side sent a session message we could not read
+    COOP_SESSION_END_NO_RECOVERY,   // client: the host did not start the level again within COOP_SESSION_RECOVER_MS
+    COOP_SESSION_END_OTHER_SESSION, // client, coming back: the host runs another session now (its id differs)
 } CoopSessionEnd;
 
 // Reason bit in a refusal next to the CoopIdentityDiff bits: the hello could not be read.
 #define COOP_SESSION_REFUSE_MALFORMED (1u << 8)
 // The same: a level has started, and nobody joins after that.
 #define COOP_SESSION_REFUSE_STARTED (1u << 9)
+// The same, to a SESSION_REJOIN: the session id is not this session's, so the host has started another one.
+#define COOP_SESSION_REFUSE_UNKNOWN (1u << 10)
 
 typedef struct {
     CoopSessionEventType type;
@@ -90,7 +114,10 @@ typedef struct {
     uint16_t msgId;      // MESSAGE
     uint16_t size;       // MESSAGE
     const uint8_t* data; // MESSAGE, valid until the next Poll
-    const CoopLevelStart* levelStart; // LEVEL_START, valid until the session is closed
+    const CoopLevelStart* levelStart; // LEVEL_START, valid until the next LEVEL_START or the session is closed
+    uint8_t reason; // RECOVER: a CoopRecoverReason; playerIndex is the player it is about, 0xFF for nobody
+    bool away;      // LEFT, host, in a level: the connection was lost, and the slot is kept for COOP_SESSION_REJOIN_MS
+    bool rejoined;  // JOINED: a player of this session came back (host), or we did (client)
 } CoopSessionEvent;
 
 typedef struct CoopSession CoopSession;
@@ -98,7 +125,47 @@ typedef struct CoopSession CoopSession;
 // The session takes over the transport and closes it in CoopSession_Close. identity is copied.
 CoopSession* CoopSession_Host(CoopTransport* transport, const CoopIdentity* identity);
 CoopSession* CoopSession_Join(CoopTransport* transport, const CoopIdentity* identity, uint32_t nowMs);
+// Client: come back to the session `id` this game was welcomed into (CoopSession_Id) as the player who flew `character`
+// there, on a new connection, after the old one was lost in a level. It sends SESSION_REJOIN in place of the hello; the
+// host answers with a welcome (the slot may be another one) or a refusal, and its new level start follows.
+CoopSession* CoopSession_Rejoin(CoopTransport* transport, const CoopIdentity* identity, uint32_t nowMs, uint64_t id,
+                                uint8_t character);
+// The session id: a random 64-bit number the host's owner makes outside the simulation (CoopSessionId_New) and sets
+// before anyone joins. It goes to every client in the welcome, and a client that comes back echoes it, so the host
+// tells a returning player from a stranger and a client refuses a host that started another session. 0 means none:
+// then nobody can come back. It is no authentication; the protocol has none.
+void CoopSession_SetId(CoopSession* s, uint64_t id);
+uint64_t CoopSession_Id(const CoopSession* s);
 bool CoopSession_Poll(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev);
+
+// ---- Recovery: the session survives a lost player or a desync ----
+//
+// One message cannot repair games that have parted, so the recovery point is a level start: the level ends for
+// everyone, and the host sends its save and a level start again (the restart point below), so every game enters the
+// level from the host's state. In a level, on the host:
+//  - a client whose connection times out keeps its slot and character for COOP_SESSION_REJOIN_MS (LEFT with `away`),
+//    and SESSION_REJOIN with the session id and that character gives them back, on whatever connection it comes;
+//  - a client that says goodbye is gone at once; one that sends no input is dropped as lost (CoopSession_Kick);
+//  - then, or after CoopSession_Recover, every client is sent SESSION_RECOVER and the owner gets a RECOVER event; once
+//    nobody is waited for, a LEVEL_START with the next run follows for everyone who is there;
+//  - with no client left there is nothing to recover: CoopSession_Recovering is false after the LEFT event, and the
+//    owner ends the session as it always did.
+// A client accepts a second save and level start only after SESSION_RECOVER.
+
+// Host: the level start a recovery sends, which is the level the team last entered as the host entered it. The owner
+// sets it whenever its game enters a level by itself; CoopSession_StartLevel sets it to the level it starts.
+void CoopSession_SetRestart(CoopSession* s, const CoopLevelStart* start);
+// The level cannot go on as it is (a CoopRecoverReason; a desync). Host: start the recovery. Client: wait for the
+// host's, COOP_SESSION_RECOVER_MS at most; then ENDED with NO_RECOVERY. A RECOVER event follows. False, and nothing
+// changes, outside a level, and on a host with no client: then the session ends as before.
+bool CoopSession_Recover(CoopSession* s, uint8_t reason, uint32_t nowMs);
+// Host, in a level: the client at `peer` stopped sending input, so it is dropped as a connection that timed out is:
+// its slot is kept for COOP_SESSION_REJOIN_MS if the session has an id (LEFT with `away` and RECOVER follow), and
+// without an id it is gone and the others start again. False, and nothing changes, if that would leave a host without
+// an id alone: then the session ends as before.
+bool CoopSession_Kick(CoopSession* s, int peer, uint32_t nowMs);
+// True from a RECOVER event to the LEVEL_START that follows it (or, on a host, to the LEFT event that leaves it alone).
+bool CoopSession_Recovering(const CoopSession* s);
 // Only to a peer that has joined, and only ids from COOP_MSG_SESSION_END up.
 bool CoopSession_Send(CoopSession* s, int peer, uint16_t msgId, const void* data, uint16_t size, CoopNetLane lane);
 // The identity a joined peer sent (host) or the host's (client); NULL before the handshake.
@@ -144,6 +211,8 @@ const CoopSessionNames* CoopSession_Names(const CoopSession* s);
 void CoopSession_CleanName(const char* in, char* out);
 
 const char* CoopSession_EndText(CoopSessionEnd end);
+// The line a RECOVER event shows, the same on every game: "The games parted. Starting the level again together."
+void CoopSession_RecoverText(uint8_t reason, uint8_t player, char* out, size_t cap);
 // "Falco"; "" for a value that is no character.
 const char* CoopSession_CharacterName(uint8_t character);
 

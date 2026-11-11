@@ -2256,7 +2256,8 @@ def plain(args, folder, feed, frames, exe=None, env=None, host_env=None, client_
     try:
         wait_for([host, client], until, seconds or args.level_seconds, "in the plain run")
         if until == "over":
-            wait_for([host, client], "alive", 120, "after the session ended: a game hangs")
+            # A desync stops lockstep, and the session starts the level again (the session survives).
+            wait_for([host, client], "again", SURVIVE_AGAIN_SECONDS, "after the desync: the level did not start again")
     finally:
         client.close()
         host.close()
@@ -2286,7 +2287,7 @@ def sc_full(args, folder):
           flush=True)
 
     # Both fly on, so that what the poke changes can only show in the hash of the frame it lands on. The desync check
-    # then ends the session (WP-23), and each game has to say where.
+    # then stops the level (WP-23), each game has to say where, and the session starts the level again.
     poke = frames - 2000
     host, client = plain(args, folder / "poke", feed, poke + 400, client_env={"SF64_COOP_LOCKSTEP_POKE": str(poke),
                                                                               "SF64_COOP_HASH_POKE_PLAYER": "1"},
@@ -2738,7 +2739,9 @@ def sc_save_own(args, folder):
     """The control for the session's save (decision 0009 item 8): the client keeps its own save
     (SF64_COOP_JOIN_KEEP_OWN_SAVE), which differs from the host's in one byte, Corneria played. That has to show at
     frame 0 as a desync in region globals, and desync_report.py has to name gSaveFile.planet: a save that drifted is
-    a named difference, not a map that parts later."""
+    a named difference, not a map that parts later. It is also a recovery that cannot help: the level starts again, the
+    client keeps its own save again and the games part at frame 0 again, so the session gives up and ends as it did
+    before there was a recovery (SYNC_QUICK_PARTS, lockstep_game.c), with two level starts and no third."""
     one_byte = make_save.save_file(played=make_save.slots("corneria"))
     folder.mkdir(parents=True, exist_ok=True)
     feed = folder / "feed.txt"
@@ -2747,25 +2750,34 @@ def sc_save_own(args, folder):
     host, client = session(args, folder, both=env, client_env={"SF64_COOP_JOIN_KEEP_OWN_SAVE": "1"},
                            saves={"host": None, "client0": one_byte})
     try:
-        wait_for([host, client], "over", 600, "with the client on its own save")
+        survive_wait([host, client], "over", 2, 600, "with the client on its own save")
+        wait_for([host, client], "alive", 120, "after the session ended: a game hangs")
+        time.sleep(2)
     finally:
         host.close()
         client.close()
     reports = {}
     for game in (host, client):
         found = own_reports(game)
-        expect(len(found) == 1, f"{game.name} wrote {len(found)} desync reports")
+        expect(len(found) == 2, f"{game.name} wrote {len(found)} desync reports, want one per level start")
         reports[game.name] = desync_report.Report(found[0])
         header = reports[game.name].header
         expect(header.get("frame") == "0", f"{game.name}: {found[0].name} says frame {header.get('frame')}, want 0")
         expect(header.get("regions differing") == "globals", f"{game.name}: regions {header.get('regions differing')}")
         problems = reports[game.name].verify()
         expect(not problems, f"{game.name}: {problems[0] if problems else ''}")
+        expect([run for run, _ in survive_starts(game)] == [1, 2], f"{game.name}: level starts {survive_starts(game)}")
+        ended = [line for _, _, line in game.report() if line.startswith("ended")]
+        expect(ended and "out of step at frame 0" in ended[0], f"{game.name}: {ended[:1]}")
+        expect(any("parted again at once, so the session is over" in line for line in ended), f"{game.name}: {ended}")
+        expect(not join_test.said(game.sync(), "again") or len(join_test.said(game.sync(), "again")) == 1,
+               f"{game.name}: the level started again more than once")
     done = report_diff(own_reports(host)[0], own_reports(client)[0])
     first = next((line.strip() for line in done.stdout.splitlines() if "differs" in line and ":" in line), None)
     expect(first is not None and first.startswith("globals: gSaveFile.planet differs in 1 of"),
            f"desync_report.py diff did not name gSaveFile.planet: {done.stdout[-400:]}")
-    return f"a save one byte apart parts the games at frame 0, in globals: `{first}`"
+    return (f"a save one byte apart parts the games at frame 0, in globals: `{first}`; the level started again once, "
+            f"parted at frame 0 again, and the session ended there")
 
 
 def play_states(game):
@@ -2974,10 +2986,26 @@ def lost_player(args, folder, leaver, stayer_name, how):
         wait_for([stays], "over", TIMEOUT_MS / 1000 + 30, "after the player left")
         ended = time.monotonic() - started
         wait_for([stays], "alive", 120, "after the session ended: the game hangs")
-        said = [line for _, _, line in stays.report() if line.startswith(("left", "ended"))]
-        expect(said, f"{stays.name} says nothing about the end")
-        expect(stays.proc.poll() is None, f"{stays.name} is gone")
-        return f"{stays.name} ended the session after {ended:.0f} s, said `{said[-1]}`, and played on"
+        # With nobody else in the session there is nothing to start again: the host keeps the lost player's slot for
+        # COOP_SESSION_REJOIN_MS, a client tries to come back to its host until the connection times out, and then the
+        # session ends as it always did.
+        deadline = time.monotonic() + TIMEOUT_MS / 1000 + 45
+        while not [line for _, _, line in stays.report() if line.startswith("ended")]:
+            expect(stays.proc.poll() is None, f"{stays.name} is gone")
+            expect(time.monotonic() < deadline, f"{stays.name}'s session never ended: "
+                                                f"{[line for _, _, line in stays.report()][-3:]}")
+            time.sleep(0.5)
+        over = time.monotonic() - started
+        said = [line for _, _, line in stays.report() if line.startswith(("left", "ended", "rejoin", "recover"))]
+        tried = [line.split(" ")[0] for line in said]
+        expect(tried[:2] == (["rejoin", "ended"] if leaver == "host" else ["left", "recover"]),
+               f"{stays.name}: {said}")
+        expect(not join_test.said(stays.sync(), "again"), f"{stays.name}: a level started again with nobody there")
+        frames_alive = len(join_test.said(stays.sync(), "alive"))
+        time.sleep(3)
+        expect(len(join_test.said(stays.sync(), "alive")) > frames_alive, f"{stays.name} does not play on")
+        return (f"{stays.name} stopped lockstep after {ended:.0f} s, waited for the other ({' '.join(tried)}), ended "
+                f"the session after {over:.0f} s with `{said[-1]}`, and played on")
     finally:
         host.close()
         client.close()
@@ -2992,31 +3020,51 @@ def sc_host_left(args, folder):
 
 
 def sc_stall(args, folder):
-    """A client that keeps its connection and stops sending input: nothing but lockstep can see that."""
+    """A client that keeps its connection and stops sending input: nothing but lockstep can see that. The host drops
+    it as a lost player (its slot is kept), the client sees the host close and comes back with the session id, and
+    the level starts again for both (the session survives)."""
     folder.mkdir(parents=True, exist_ok=True)
     feed = folder / "feed.txt"
     write_feed(feed, 3 * SHORT_FRAMES, sway)
     mute = JOIN_FRAME + 50
-    host, client = session(args, folder, client_env={"SF64_COOP_LOCKSTEP_MUTE": str(mute)},
-                           both={"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(JOIN_FRAME)})
+    games = session(args, folder, client_env={"SF64_COOP_LOCKSTEP_MUTE": str(mute)},
+                    both={"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(SURVIVE_FRAMES)})
+    host, client = games
     try:
         wait_for([host, client], "done", 900, "before the stall")
         started = time.monotonic()
-        wait_for([host], "over", STALL_SECONDS + 40, "after the stall")
+        wait_for([host], "over", STALL_SECONDS + 900, "after the stall")
         ended = time.monotonic() - started
-        wait_for([host, client], "alive", 120, "after the stall: a game hangs")
+        survive_wait(games, "again", 1, SURVIVE_AGAIN_SECONDS, "after the stall: the level did not start again")
+        survive_wait(games, "done", 2, 600, "in the level that started again")
+        survive_no_end(games)
         over = int(join_test.said(host.sync(), "over")[0]["frame"])
         expect(mute <= over <= mute + 2 * INPUT_DELAY, f"the host ran to frame {over}, input stopped at {mute}")
-        said = [line for game in (host, client) for _, _, line in game.report() if line.startswith("ended")]
-        expect(any("stopped sending input" in line for line in said), f"no clear end: {said}")
-        return f"ended after {ended:.0f} s at frame {over}: {said}"
     finally:
         host.close()
         client.close()
+    parted = [line for _, _, line in host.report() if line.startswith("parted")]
+    expect(parted and "reason=2" in parted[0] and "stopped sending input" in parted[0], f"host: {parted}")
+    left = join_test.said(host.report(), "left")
+    expect(left and left[0]["away"] == "1", f"host: the slot of the player it dropped was not kept: {left}")
+    recover = [line for _, _, line in host.report() if line.startswith("recover")]
+    expect(recover and "Player 2 lost the connection" in recover[0], f"host: {recover}")
+    expect(join_test.said(client.report(), "rejoin"), "the client did not try to come back")
+    back = [v for v in join_test.said(client.report(), "joined") if v.get("rejoined") == "1"]
+    expect(len(back) == 1 and back[0]["player"] == "1", f"the client did not come back as player 2: {back}")
+    for game in games:
+        expect(survive_starts(game) == [(1, "Fox,Falco,-,-"), (2, "Fox,Falco,-,-")],
+               f"{game.name}: level starts {survive_starts(game)}")
+    frames = survive_compare(games, 2, SURVIVE_FRAMES)
+    no_desync(games)
+    return (f"the host stopped at frame {over} after {ended:.0f} s and dropped player 2 with its slot kept; the client "
+            f"came back with the session id, and the level that started again is equal on {frames} frames")
 
 
 def sc_frozen(args, folder):
-    """A client that stops dead, and comes back to a session that is over."""
+    """A client that stops dead for longer than the host waits for input, and then goes on: a connection that dropped
+    and came back. The host drops the player with its slot kept, the thawed client finds its connection closed, comes
+    back with the session id as the player it was, and the level starts again for both (the session survives)."""
     expect(IS_LINUX, "needs SIGSTOP")
 
     def freeze(game):
@@ -3025,8 +3073,9 @@ def sc_frozen(args, folder):
     folder.mkdir(parents=True, exist_ok=True)
     feed = folder / "feed.txt"
     write_feed(feed, 3 * SHORT_FRAMES, sway)
-    host, client = session(args, folder, both={"SF64_COOP_LOCKSTEP_FEED": str(feed),
-                                               "SF64_COOP_LOCKSTEP_END": str(JOIN_FRAME)})
+    games = session(args, folder, both={"SF64_COOP_LOCKSTEP_FEED": str(feed),
+                                        "SF64_COOP_LOCKSTEP_END": str(SURVIVE_FRAMES)})
+    host, client = games
     try:
         wait_for([host, client], "done", 900, "before the freeze")
         freeze(client)
@@ -3035,14 +3084,28 @@ def sc_frozen(args, folder):
         ended = time.monotonic() - started
         wait_for([host], "alive", 120, "after the freeze: the host hangs")
         os.kill(client.proc.pid, signal.SIGCONT)
-        wait_for([client], "over", TIMEOUT_MS / 1000 + 30, "after the thaw")
-        wait_for([client], "alive", 120, "after the thaw: the client hangs")
-        said = [line for _, _, line in host.report() if line.startswith(("left", "ended"))]
-        return f"the host ended the session after {ended:.0f} s ({said[-1]}), and the thawed client played on too"
+        survive_wait(games, "again", 1, SURVIVE_AGAIN_SECONDS, "after the thaw: the level did not start again")
+        survive_wait(games, "done", 2, 600, "in the level that started again")
+        survive_no_end(games)
     finally:
         os.kill(client.proc.pid, signal.SIGCONT)
         host.close()
         client.close()
+    left = join_test.said(host.report(), "left")
+    expect(len(left) == 1 and left[0]["away"] == "1", f"host: the lost player's slot was not kept: {left}")
+    recover = [line for _, _, line in host.report() if line.startswith("recover")]
+    expect(recover and "reason=1" in recover[0] and "Player 2 lost the connection. Waiting for it to come back (15 s)"
+           in recover[0], f"host: {recover}")
+    expect(join_test.said(client.report(), "rejoin"), "the client did not try to come back")
+    back = [v for v in join_test.said(client.report(), "joined") if v.get("rejoined") == "1"]
+    expect(len(back) == 1 and back[0]["player"] == "1", f"the client did not come back as player 2: {back}")
+    for game in games:
+        expect(survive_starts(game) == [(1, "Fox,Falco,-,-"), (2, "Fox,Falco,-,-")],
+               f"{game.name}: level starts {survive_starts(game)}")
+    frames = survive_compare(games, 2, SURVIVE_FRAMES)
+    no_desync(games)
+    return (f"the host stopped lockstep after {ended:.0f} s and kept player 2's slot; the thawed client came back "
+            f"with the session id, and the level that started again is equal on {frames} frames")
 
 
 class MenuClient(menu_test.Game):
@@ -3174,7 +3237,7 @@ def report_diff(a, b):
     return done
 
 
-def check_desync(host, client, poke, mode, pair=(1, 2), clients=None):
+def check_desync(host, client, poke, mode, pair=(1, 2), clients=None, ended_later=False):
     """Both games found the flipped bit of player 2 at exactly `poke`: a report each, with the frame, the pair, the
     region and a verified dump, the session over within a few frames and the text for the player; and the diff tool
     names gPlayer[1]. Returns a line about it."""
@@ -3193,18 +3256,25 @@ def check_desync(host, client, poke, mode, pair=(1, 2), clients=None):
         for key in ("this game", "other game"):
             expect(header.get(key, "").startswith("build "), f"{game.name}: {key}: {header.get(key)}")
         over = join_test.said(game.sync(), "over")
-        expect(over, f"{game.name}: the session did not end")
+        expect(over, f"{game.name}: lockstep did not stop")
         frame = int(over[0]["frame"])
         expect(poke <= frame <= poke + DESYNC_SEEN_WITHIN, f"{game.name}: over at frame {frame}, poke at {poke}")
-        ended = [line for _, _, line in game.report() if line.startswith("ended")]
-        expect(ended, f"{game.name} says nothing about the end")
+        # The session does not end: every game says where the games parted, or hears from the host that the level
+        # starts again, and takes the second level start (the session survives).
+        said = [line for _, _, line in game.report() if line.startswith(("parted", "recover"))]
+        expect(said, f"{game.name} says nothing about the desync")
+        ended = [line for _, _, line in game.report() if line.startswith(("ended", "leaving"))]
+        expect(ended_later or not ended, f"{game.name}'s session ended: {ended[:1]}")
         if game in (host, client):
-            expect(f"out of step at frame {poke} of Corneria ({mode})" in ended[-1], f"{game.name}: {ended[-1]}")
-            expect("report for the developers is in" in ended[-1], f"{game.name}: no report named: {ended[-1]}")
+            parted = [line for line in said if line.startswith("parted")]
+            expect(parted, f"{game.name}: {said}")
+            expect(f"out of step at frame {poke} of Corneria ({mode})" in parted[0], f"{game.name}: {parted[0]}")
+            expect("report for the developers is in" in parted[0], f"{game.name}: no report named: {parted[0]}")
         else:
-            # A game outside the pair waits the grace out, and the host closes first: it reads the host's end, and its
-            # report comes from the session's end (NOTES.md, 2026-11-07, #21).
-            expect("out of step" in ended[-1] or "closed" in ended[-1], f"{game.name}: {ended[-1]}")
+            # A game outside the pair waits the grace out, and the host's word comes first: it stops on that, and its
+            # report comes from there (NOTES.md, 2026-11-07, #21).
+            expect("The games parted" in said[0] or "out of step" in said[0], f"{game.name}: {said[0]}")
+        expect(join_test.said(game.sync(), "again"), f"{game.name}: the level did not start again")
     for game in (host, client):
         expect(reports[game.name].header.get("regions differing") == "players",
                f"{game.name}: regions {reports[game.name].header.get('regions differing')}")
@@ -3218,10 +3288,11 @@ def check_desync(host, client, poke, mode, pair=(1, 2), clients=None):
     return f"both reports verified, `{first}`"
 
 
-def poke_session(args, folder, poke, jump=None, both=None, client_envs=None, clients=1):
+def poke_session(args, folder, poke, jump=None, both=None, client_envs=None, clients=1, after=None):
     """A session with sway, a bit of player 2 flipped on the first client at `poke`, into all-range first when `jump`
-    says when player 1 presses L (CVar gDebugJumpToAllRange on every game). Waits for the session to end, or for
-    `done` when `both` turns the check off. Returns the games, stopped."""
+    says when player 1 presses L (CVar gDebugJumpToAllRange on every game). Waits for lockstep to stop and the level to
+    start again (the session survives), or for `done` when `both` turns the check off. after(games) runs before the
+    games are stopped. Returns the games, stopped."""
     folder.mkdir(parents=True, exist_ok=True)
     feed = folder / "feed.txt"
     frames = poke + 400
@@ -3235,7 +3306,9 @@ def poke_session(args, folder, poke, jump=None, both=None, client_envs=None, cli
             wait_for(list(games), "done", 900, "with the check off")
         else:
             wait_for(list(games), "over", 900, "after the flipped bit")
-            wait_for(list(games), "alive", 120, "after the session ended: a game hangs")
+            wait_for(list(games), "again", SURVIVE_AGAIN_SECONDS, "after the desync: the level did not start again")
+        if after is not None:
+            after(games)
     finally:
         for game in games:
             game.close()
@@ -3280,10 +3353,20 @@ def sc_handover(args, folder):
     """#189: before the connection goes, each game hands its report and the rest of its log to the other. After a desync
     both folders hold both reports, byte for byte the sender's; the diff tool reads the two of one folder as it reads
     the originals; each folder's copy of the other player's log runs on up to its `session closed`; the handover ends
-    because it is done, not because its time is up; and the session still ends, with both games playing on."""
+    because it is done, not because its time is up; and the session still ends, with both games playing on. A desync
+    alone ends no session any more (the level starts again), so the client leaves the level that started again
+    (SF64_COOP_JOIN_LEAVE_FILE): the report of the desync is what crosses then."""
     poke = JOIN_FRAME + 300
-    host, client = poke_session(args, folder, poke)
-    found = check_desync(host, client, poke, "rails")
+
+    def leave(games):
+        (games[1].run / "leave").write_text("", encoding="utf-8")
+        survive_wait(games, "over", 2, 120, "after the client left the level that started again")
+        wait_for(list(games), "alive", 120, "after the session ended: a game hangs")
+
+    envs = [{"SF64_COOP_LOCKSTEP_POKE": str(poke), "SF64_COOP_HASH_POKE_PLAYER": "1",
+             "SF64_COOP_JOIN_LEAVE_FILE": "leave"}]
+    host, client = poke_session(args, folder, poke, client_envs=envs, after=leave)
+    found = check_desync(host, client, poke, "rails", ended_later=True)
     games = (host, client)
     names = {game: own_reports(game)[0].name for game in games}
     for game in games:
@@ -3447,6 +3530,370 @@ def sc_player_names(args, folder):
             f"{frames} frames")
 
 
+# ---- The session survives (#189 and its sibling): a desync or a lost player starts the level again ----
+
+SURVIVE_FRAMES = 600  # frames of the level after a restart that have to hash alike: the intro, from frame 0 on
+SURVIVE_AGAIN_SECONDS = 120  # a level that starts again does so within a second or two; a build without it never
+SURVIVE_REASONS = {"lost": 1, "left": 2, "desync": 3}  # CoopRecoverReason, src/port/coop/session/session.h
+
+
+def survive_run_rows(game, run):
+    """(names, rows) of a game's hash log from the first frame of its lockstep run `run` on (1 is the first level start
+    of the session), without their frame numbers: the join driver says `level_running` once per level start."""
+    names, rows = hash_check.read_log(game.run / "state-hash.txt")
+    running = join_test.said(game.report(), "level_running")
+    expect(len(running) >= run, f"{game.name} got to the level {len(running)} times, want {run}")
+    first = int(running[run - 1]["frame"])
+    return names, [r[1:] for r in rows if r[0] >= first]
+
+
+def survive_run_log(game, run):
+    """The lines of a game's lockstep log that belong to run `run`."""
+    lines = game.sync_log.read_text(encoding="utf-8").splitlines()
+    marks = [i for i, line in enumerate(lines) if line.startswith("# run ")]
+    starts = [0] + [i + 1 for i in marks]
+    ends = marks + [len(lines)]
+    expect(len(starts) >= run, f"{game.name}'s lockstep log holds {len(starts)} runs, want {run}")
+    return lines[starts[run - 1]:ends[run - 1]]
+
+
+def survive_wait(games, word, count, seconds, what):
+    """Until every game's lockstep report says `word` at least `count` times."""
+    deadline = time.monotonic() + seconds
+    while True:
+        pending = [game for game in games if len(join_test.said(game.sync(), word)) < count]
+        if not pending:
+            return
+        for game in pending:
+            expect(game.proc.poll() is None, f"{game.name} ended with code {game.proc.returncode} before `{word}` {what}")
+        expect(time.monotonic() < deadline,
+               f"no `{word}` number {count} from {', '.join(g.name for g in pending)} after {seconds} s {what}")
+        time.sleep(0.5)
+
+
+def survive_compare(games, run, frames):
+    """The games' hash logs and lockstep logs of run `run` are equal on `frames` frames from its frame 0. Returns the
+    number of frames compared."""
+    names, ours = survive_run_rows(games[0], run)
+    logs = survive_run_log(games[0], run)
+    for other in games[1:]:
+        _, theirs = survive_run_rows(other, run)
+        n = min(len(ours), len(theirs))
+        expect(n >= frames, f"run {run}: only {n} frames of {games[0].name} and {other.name} to compare, want {frames}")
+        difference = join_test.first_difference(names, ours[:frames], theirs[:frames])
+        expect(difference is None, f"run {run}: the hash logs of {games[0].name} and {other.name} differ at {difference}")
+        theirs_log = survive_run_log(other, run)
+        m = min(len(logs), len(theirs_log), frames)
+        for i in range(m):
+            expect(logs[i] == theirs_log[i], f"run {run}: the lockstep logs differ at frame {i}: {logs[i]} against "
+                                             f"{theirs_log[i]}")
+    return frames
+
+
+def survive_starts(game):
+    """The level starts a game took, as (run, roster) from its join report."""
+    return [(int(v["run"]), v["roster"]) for v in join_test.said(game.report(), "level_start")]
+
+
+def survive_no_end(games):
+    for game in games:
+        ended = [line for _, _, line in game.report() if line.startswith("ended")]
+        expect(not ended, f"{game.name}'s session ended: {ended[-1] if ended else ''}")
+        expect(game.proc.poll() is None, f"{game.name} is gone")
+
+
+def survive_first_difference(games, poke):
+    """#189: every game of the pair wrote the same `first difference` line into its own co-op log, each folder holds
+    it in its copy of the other player's log too, each report ends with it, and it starts as the line of
+    desync_report.py diff on the two report files does. Returns the line."""
+    needle = f"first difference at frame {poke}, players 1 and 2: "
+    lines = {}
+    for game in games:
+        player = player_of(game)
+        logs = coop_logs(game)
+        for holder, path in sorted(logs.items()):
+            found = [line.format() for line in coop_log.read_lines(path, holder) if needle in line.format()]
+            expect(len(found) == 1, f"{game.name}'s copy of player {holder}'s log says `{needle}` {len(found)} times")
+            lines[(game.name, holder)] = found[0].split(needle, 1)[1]
+            category = [line.category for line in coop_log.read_lines(path, holder) if needle in line.format()]
+            expect(category == ["desync"], f"{game.name}: the line is in category {category}")
+        report = own_reports(game)
+        expect(len(report) == 1, f"{game.name} wrote {len(report)} desync reports")
+        tail = report[0].read_text(encoding="utf-8", errors="replace").splitlines()[-1]
+        expect(tail == f"# {needle}{lines[(game.name, player)]}", f"{game.name}'s report ends with `{tail[:200]}`")
+    expect(len(set(lines.values())) == 1, f"the games wrote different lines: {sorted(set(lines.values()))}")
+    line = next(iter(lines.values()))
+    done = report_diff(own_reports(games[0])[0], own_reports(games[1])[0])
+    tool = next((text.strip() for text in done.stdout.splitlines() if " differs in " in text), "")
+    head = line.split("; word at", 1)[0]
+    expect(tool.startswith(head), f"the game says `{head}`, desync_report.py diff says `{tool}`")
+    return line
+
+
+def sc_survive_desync(args, folder):
+    """A bit of player 2 flipped on the client: both games find the desync, and the session does not end. Both stop
+    lockstep, the host sends its save and the level start again (run 2), both enter the level from it, and the level
+    is equal on both from its frame 0. Both co-op logs name the first differing field (#189)."""
+    folder.mkdir(parents=True, exist_ok=True)
+    poke = JOIN_FRAME + 300
+    feed = folder / "feed.txt"
+    write_feed(feed, poke + 16, sway)
+    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(SURVIVE_FRAMES)}
+    games = session(args, folder, both=env,
+                    client_envs=[{"SF64_COOP_LOCKSTEP_POKE": str(poke), "SF64_COOP_HASH_POKE_PLAYER": "1"}])
+    try:
+        survive_wait(games, "over", 1, 900, "after the flipped bit")
+        survive_wait(games, "again", 1, SURVIVE_AGAIN_SECONDS, "after the desync: the level did not start again")
+        survive_wait(games, "done", 2, 600, "in the level that started again")
+        survive_no_end(games)
+        time.sleep(2)  # the co-op log's stream: the last lines to the other folder
+    finally:
+        for game in games:
+            game.close()
+    host, client = games
+    for game in games:
+        over = join_test.said(game.sync(), "over")
+        expect(poke <= int(over[0]["frame"]) <= poke + DESYNC_SEEN_WITHIN,
+               f"{game.name}: lockstep stopped at frame {over[0]['frame']}, poke at {poke}")
+        parted = [line for _, _, line in game.report() if line.startswith("parted")]
+        expect(parted and f"out of step at frame {poke} of Corneria (rails)" in parted[0]
+               and "report for the developers is in" in parted[0], f"{game.name}: {parted[:1]}")
+        recover = join_test.said(game.report(), "recover")
+        expect(recover and all(int(v["reason"]) == SURVIVE_REASONS["desync"] for v in recover),
+               f"{game.name}: recover {recover}")
+        said = [line for _, _, line in game.report() if line.startswith("recover")]
+        expect("The games parted. Starting the level again together." in said[0], f"{game.name}: {said[0]}")
+        expect(survive_starts(game) == [(1, "Fox,Falco,-,-"), (2, "Fox,Falco,-,-")],
+               f"{game.name}: level starts {survive_starts(game)}")
+        expect(len(own_reports(game)) == 1, f"{game.name} wrote {len(own_reports(game))} desync reports, want the one "
+                                            "of the flipped bit and none in the level that started again")
+    # No checkpoint was reached, so the level starts again from its start (a checkpoint: survive_checkpoint).
+    for game in games:
+        second = survive_level_values(game, 2)
+        expect(not any(second[SURVIVE_CHECKPOINT_FLAG:]), f"{game.name}: level start 2 carries a checkpoint: "
+                                                  f"{second[SURVIVE_CHECKPOINT_FLAG:]}")
+        again = survive_run_state(game, 2)
+        expect(again["load"] == 0 and again["saved_load"] == 0 and again["path"] == 0 and again["allrange"] == 0,
+               f"{game.name}: run 2 did not begin at the level's start: {again}")
+    expect(not join_test.said(host.report(), "restart_at_checkpoint"), "the host took a checkpoint it never reached")
+    line = survive_first_difference(games, poke)
+    frames = survive_compare(games, 2, SURVIVE_FRAMES)
+    return (f"poke at {poke}: both games stopped lockstep, took level start 2 from the level's start and hash alike on its first {frames} "
+            f"frames; no session ended; both logs say `{line}`, as desync_report.py diff does")
+
+
+def sc_survive_three(args, folder):
+    """Three games, and one client leaves the level on purpose (SF64_COOP_JOIN_LEAVE_FILE, the menu's Leave with its
+    handover). The session does not end for the other two: the host answers the one who goes, tells the one who stays,
+    and starts the level again for the two of them, without the player who left; the level is equal on both from its
+    frame 0. The one who left plays on alone."""
+    folder.mkdir(parents=True, exist_ok=True)
+    feed = folder / "feed.txt"
+    write_feed(feed, 3 * SHORT_FRAMES, sway)
+    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(SURVIVE_FRAMES)}
+    games = session(args, folder, both=env, clients=2, client_envs=[{}, {"SF64_COOP_JOIN_LEAVE_FILE": "leave"}])
+    host, stays, goes = games
+    try:
+        wait_for(list(games), "done", 900, "before the player left")
+        (goes.run / "leave").write_text("", encoding="utf-8")
+        survive_wait([host, stays], "again", 1, SURVIVE_AGAIN_SECONDS, "after the player left: the level did not start again")
+        survive_wait([host, stays], "done", 2, 600, "in the level that started again")
+        survive_no_end([host, stays])
+        wait_for([goes], "alive", 120, "after leaving: the game hangs")
+    finally:
+        for game in games:
+            game.close()
+    gone = player_of(goes)
+    # The two clients join in either order, so who is player 2 and who player 3 comes from the first level start.
+    roster = survive_starts(host)[0][1].split(",")
+    expect(sorted(roster) == ["-", "Falco", "Fox", "Slippy"], f"the first level start's roster is {roster}")
+    kept = list(roster)
+    kept[gone - 1] = "-"
+    for game in (host, stays):
+        expect(survive_starts(game) == [(1, ",".join(roster)), (2, ",".join(kept))],
+               f"{game.name}: level starts {survive_starts(game)}, want the second without player {gone}")
+        recover = [line for _, _, line in game.report() if line.startswith("recover")]
+        expect(recover and f"Player {gone} left. Starting the level again together." in recover[0],
+               f"{game.name}: {recover}")
+    expect(len(survive_starts(goes)) == 1, f"{goes.name} took {len(survive_starts(goes))} level starts")
+    expect(not join_test.said(goes.sync(), "again"), f"{goes.name}: the level started again for the one who left")
+    frames = survive_compare([host, stays], 2, SURVIVE_FRAMES)
+    no_desync(games)
+    return (f"player {gone} left a level of three: the host and player {player_of(stays)} took level start 2 without "
+            f"it and hash alike on its first {frames} frames; the one who left plays on alone")
+
+
+
+SURVIVE_CHECKPOINT_FLAG = 171  # the level start value that says the level starts at a checkpoint (level_start.c)
+SURVIVE_ITEM_CHECKPOINT = 3  # SF64_COOP_LOCKSTEP_ITEM kind: the ring a rails level saves its checkpoint at
+SURVIVE_FORTUNA = 14  # LEVEL_FORTUNA: its checkpoint is Star Wolf's arrival (src/overlays/ovl_i4/fox_fo.c:300)
+
+
+def survive_level_values(game, run):
+    """The values of the level start of `run` in a game's join report, as numbers."""
+    starts = join_test.said(game.report(), "level_start")
+    expect(len(starts) >= run, f"{game.name} took {len(starts)} level starts, want {run}")
+    return [int(v) for v in starts[run - 1]["values"].split(",")]
+
+
+def survive_run_state(game, run):
+    """The lockstep driver's `run_state` line of `run`: where that run's level began."""
+    states = [v for v in join_test.said(game.sync(), "run_state") if v["run"] == str(run)]
+    expect(len(states) == 1, f"{game.name} has {len(states)} run_state lines of run {run}")
+    return {key: int(value) for key, value in states[0].items()}
+
+
+def survive_checkpoint_run(args, folder, both, host_env=None, after=300):
+    """A session that reaches a checkpoint in its level; `after` frames later a bit of player 2 is flipped on the
+    client. Returns (games stopped, the frame of the checkpoint, the frame of the flipped bit)."""
+    folder.mkdir(parents=True, exist_ok=True)
+    feed = folder / "feed.txt"
+    write_feed(feed, 6000, sway)
+    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(SURVIVE_FRAMES), **both}
+    games = session(args, folder, both=env, host_env=host_env,
+                    client_envs=[{"SF64_COOP_LOCKSTEP_POKE_AFTER": str(after), "SF64_COOP_HASH_POKE_PLAYER": "1"}])
+    try:
+        survive_wait(games, "over", 1, 900, "after the flipped bit behind the checkpoint")
+        survive_wait(games, "again", 1, SURVIVE_AGAIN_SECONDS, "after the desync: the level did not start again")
+        survive_wait(games, "done", 2, 600, "in the level that started again")
+        survive_no_end(games)
+        time.sleep(2)
+    finally:
+        for game in games:
+            game.close()
+    reached = [join_test.said(game.sync(), "checkpoint") for game in games]
+    expect(all(reached), "a game never reached a checkpoint")
+    expect(reached[0][0] == reached[1][0], f"the games reached different checkpoints: {reached[0][0]}, {reached[1][0]}")
+    at = int(reached[0][0]["frame"])
+    return games, reached[0][0], at + after
+
+
+def survive_check_checkpoint(games, checkpoint, poke, level, mode):
+    """After a desync behind a checkpoint both games took a level start that begins at the host's checkpoint, began
+    there, and are equal from the first frame of that run on. Returns a line."""
+    host, client = games
+    for game in games:
+        over = int(join_test.said(game.sync(), "over")[0]["frame"])
+        expect(poke <= over <= poke + DESYNC_SEEN_WITHIN, f"{game.name}: lockstep stopped at {over}, poke at {poke}")
+        expect([run for run, _ in survive_starts(game)] == [1, 2], f"{game.name}: level starts {survive_starts(game)}")
+        first, second = survive_level_values(game, 1), survive_level_values(game, 2)
+        expect(first[SURVIVE_CHECKPOINT_FLAG] == 0 and not any(first[SURVIVE_CHECKPOINT_FLAG:]),
+               f"{game.name}: the first level start carries a checkpoint: {first[SURVIVE_CHECKPOINT_FLAG:]}")
+        expect(second[SURVIVE_CHECKPOINT_FLAG] == 1, f"{game.name}: the second level start does not begin at the checkpoint: "
+                                             f"{second[SURVIVE_CHECKPOINT_FLAG:]}")
+        expect(second[SURVIVE_CHECKPOINT_FLAG + 1] == int(checkpoint["load"]) and
+               second[SURVIVE_CHECKPOINT_FLAG + 4] == int(checkpoint["allrange"]) and
+               second[SURVIVE_CHECKPOINT_FLAG + 2] == int(checkpoint["hits"]),
+               f"{game.name}: the level start's checkpoint {second[SURVIVE_CHECKPOINT_FLAG:]} is not the one reached, "
+               f"{checkpoint}")
+        began, again = survive_run_state(game, 1), survive_run_state(game, 2)
+        expect(began["load"] == 0 and began["path"] == 0 and began["allrange"] == 0,
+               f"{game.name}: the first run did not begin at the level's start: {began}")
+        expect(again["level"] == level and again["mode"] == mode, f"{game.name}: run 2 is in {again}")
+        expect(again["saved_load"] == int(checkpoint["load"]) and again["allrange"] == int(checkpoint["allrange"]),
+               f"{game.name}: run 2 does not hold the checkpoint: {again}, want {checkpoint}")
+        if int(checkpoint["load"]) != 0:
+            # On rails the level's setup puts the players at the saved path progress (src/engine/fox_play.c:4734), and
+            # five frames in they are a little past it.
+            expect(again["load"] >= int(checkpoint["load"]) and
+                   0 <= again["path"] - int(checkpoint["path"]) < 400,
+                   f"{game.name}: run 2 did not begin at the checkpoint's place: {again}, want {checkpoint}")
+        expect(again["hits"] == int(checkpoint["hits"]), f"{game.name}: run 2 began with {again['hits']} hits, the "
+                                                         f"checkpoint held {checkpoint['hits']}")
+        expect(again["lives"] == began["lives"], f"{game.name}: the restart cost a life: {again['lives']}")
+    expect(join_test.said(host.report(), "restart_at_checkpoint"), "the host did not take its checkpoint")
+    expect(survive_run_state(host, 2) == survive_run_state(client, 2),
+           f"the games began run 2 apart: {survive_run_state(host, 2)}, {survive_run_state(client, 2)}")
+    frames = survive_compare(games, 2, SURVIVE_FRAMES)
+    line = survive_first_difference(games, poke)
+    again = survive_run_state(host, 2)
+    return (f"checkpoint at frame {checkpoint['frame']} (object index {checkpoint['load']}, path {checkpoint['path']}, "
+            f"all-range {checkpoint['allrange']}, {checkpoint['hits']} hits), poke at {poke}: both games took level "
+            f"start 2 at the checkpoint, began there (object index {again['load']}, path {again['path']}, all-range "
+            f"{again['allrange']}) and hash alike on its first {frames} frames; `{line}`")
+
+
+def sc_survive_checkpoint(args, folder):
+    """A desync after a checkpoint, on rails: the level starts again at the checkpoint (the owner's rule of
+    2026-11-11). A checkpoint ring is put in front of player 2 on Corneria's rails (the lockstep driver's item), the
+    game's own code saves the checkpoint when player 2 flies through it, and 300 frames later a bit is flipped on the
+    client. Both games then take a level start that carries the host's checkpoint, begin the level there as the game
+    does after a death, without a life taken, and are equal from that run's frame 0 on."""
+    ring = JOIN_FRAME + 200
+    games, checkpoint, poke = survive_checkpoint_run(
+        args, folder, {"SF64_COOP_LOCKSTEP_ITEM": f"{ring}:1:{SURVIVE_ITEM_CHECKPOINT}"})
+    # The driver holds the ring back until the level has loaded 40 objects: the game's own restart reads that many back.
+    expect(ring <= int(checkpoint["frame"]) and int(checkpoint["load"]) > 40,
+           f"the ring from frame {ring} on gave no rails checkpoint: {checkpoint}")
+    return survive_check_checkpoint(games, checkpoint, poke, 0, 0)
+
+
+def sc_survive_checkpoint_allrange(args, folder):
+    """The same in an all-range level, with the game's own checkpoint: on Fortuna it is Star Wolf's arrival
+    (gAllRangeCheckpoint, src/overlays/ovl_i4/fox_fo.c:300). 300 frames later a bit is flipped on the client; the
+    level starts again with Star Wolf there, on both games alike."""
+    games, checkpoint, poke = survive_checkpoint_run(args, folder, {}, host_env={"SF64_COOP_JOIN_LEVEL": str(SURVIVE_FORTUNA)})
+    expect(int(checkpoint["allrange"]) == 1 and int(checkpoint["load"]) == 0,
+           f"Fortuna's checkpoint is not the all-range one: {checkpoint}")
+    return survive_check_checkpoint(games, checkpoint, poke, SURVIVE_FORTUNA, 1)
+
+
+SURVIVE_MISSION_NUMBER = 89  # the level start value that holds gMissionNumber (level_start.c: 87 values, then the
+SURVIVE_TOTAL_HITS = 88      # level's hits, gTotalHits, gMissionNumber)
+
+
+def sc_survive_next_level(args, folder):
+    """A desync in the level after the map: the restart point is the level the host's game entered by itself. Pilots
+    fly Corneria to its end and through the map into the next level, and 200 frames into it a bit is flipped on the
+    client. The host had kept that level's start when its game went into it (`entering` in its join report), so both
+    games take a level start for that level, with the mission number and the total hits the campaign had built, and
+    are equal from its frame 0 on. Corneria is not flown again."""
+    folder.mkdir(parents=True, exist_ok=True)
+    env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt",
+           "SF64_COOP_LOCKSTEP_END": str(SURVIVE_FRAMES)}
+    games = session(args, folder, both=env, client_envs=[{"SF64_COOP_LOCKSTEP_POKE_IN_LEVEL": "2:200",
+                                                          "SF64_COOP_HASH_POKE_PLAYER": "1"}])
+    host, client = games
+    try:
+        survive_wait(games, "over", 1, args.level_seconds, "after the flipped bit in the level after the map")
+        survive_wait(games, "again", 1, SURVIVE_AGAIN_SECONDS, "after the desync: the level did not start again")
+        survive_wait(games, "done", 2, 600, "in the level that started again")
+        survive_no_end(games)
+        time.sleep(2)
+    finally:
+        for game in games:
+            game.close()
+    poked = join_test.said(client.sync(), "poke_in_level")
+    expect(len(poked) == 1 and poked[0]["level"] != "0", f"the bit was not flipped in the level after the map: {poked}")
+    poke, level = int(poked[0]["frame"]), int(poked[0]["level"])
+    entering = join_test.said(host.report(), "entering")
+    expect(entering and int(entering[-1]["level"]) == level, f"the host kept no restart point for level {level}: "
+                                                              f"{entering}")
+    for game in games:
+        over = int(join_test.said(game.sync(), "over")[0]["frame"])
+        expect(poke <= over <= poke + DESYNC_SEEN_WITHIN, f"{game.name}: lockstep stopped at {over}, poke at {poke}")
+        starts = join_test.said(game.report(), "level_start")
+        expect([(v["run"], v["level"]) for v in starts] == [("1", "0"), ("2", str(level))],
+               f"{game.name}: level starts {[(v['run'], v['level']) for v in starts]}, want Corneria and then level "
+               f"{level}")
+        first, second = survive_level_values(game, 1), survive_level_values(game, 2)
+        expect(first[SURVIVE_MISSION_NUMBER] == 0 and second[SURVIVE_MISSION_NUMBER] == 1,
+               f"{game.name}: the mission number is {first[SURVIVE_MISSION_NUMBER]} in level start 1 and "
+               f"{second[SURVIVE_MISSION_NUMBER]} in level start 2, want 0 and 1")
+        expect(second[SURVIVE_TOTAL_HITS] > 0, f"{game.name}: level start 2 carries no hits of Corneria")
+        expect(not any(second[SURVIVE_CHECKPOINT_FLAG:]), f"{game.name}: level start 2 carries a checkpoint")
+        again = survive_run_state(game, 2)
+        expect(again["level"] == level and again["load"] == 0 and again["path"] == 0 and again["hits"] == 0,
+               f"{game.name}: run 2 did not begin at the start of level {level}: {again}")
+    expect(survive_level_values(host, 2) == survive_level_values(client, 2), "the games took different level starts")
+    frames = survive_compare(games, 2, SURVIVE_FRAMES)
+    line = survive_first_difference(games, poke)
+    total = survive_level_values(host, 2)[SURVIVE_TOTAL_HITS]
+    return (f"Corneria to the map and into level {level}; poke at frame {poke}, 200 frames into it: both games took "
+            f"level start 2 for level {level} with mission number 1 and {total} total hits, began at its start and "
+            f"hash alike on its first {frames} frames; `{line}`")
+
+
 SCENARIOS = {
     "sim": sc_sim,
     "desync_sim": sc_desync_sim,
@@ -3507,6 +3954,11 @@ SCENARIOS = {
     "desync_three": sc_desync_three,
     "handover": sc_handover,
     "log": sc_log,
+    "survive_desync": sc_survive_desync,
+    "survive_three": sc_survive_three,
+    "survive_checkpoint": sc_survive_checkpoint,
+    "survive_checkpoint_allrange": sc_survive_checkpoint_allrange,
+    "survive_next_level": sc_survive_next_level,
     "vehicles": sc_vehicles,
     "vehicle_end": sc_vehicle_end,
     "bosses": sc_bosses,
@@ -3514,7 +3966,7 @@ SCENARIOS = {
     "eels": sc_eels,
     "player_names": sc_player_names,
 }
-LONG = ("fox_refill_levels", "fox_refill_long", "fox_lead_swap", "fox_lead_swap_all_range", "full", "scenes", "allrange", "allrange_down", "allrange_others", "allrange_down_others", "teambar",
+LONG = ("survive_next_level", "fox_refill_levels", "fox_refill_long", "fox_lead_swap", "fox_lead_swap_all_range", "full", "scenes", "allrange", "allrange_down", "allrange_others", "allrange_down_others", "teambar",
         "map_saves", "map_saves_host_full", "map_saves_equal", "audio", "release", "rates", "vehicles", "vehicle_end", "bosses", "other_bosses",
         "eels")
 

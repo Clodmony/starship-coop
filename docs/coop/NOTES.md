@@ -7130,6 +7130,159 @@ clients.
 
 ## Networking
 
+### 2026-11-11, the session survives a lost player or a desync: the level starts again from the host's state
+
+Identity: ROM US 1.0, branch `issue/session-survives` on `wave6-base` (`a4867d99`), Linux, GCC, Debug, OpenGL on a
+software renderer, no window, two or three games on one PC over loopback through the join driver
+(`lockstep_test.py`) and through the real menu (`menu_test.py --game`). The rules are the owner's of 2026-11-11; the
+wire form is in PROTOCOL.md, "Recovery" and "Desync check".
+
+**Observed: every way a session ended before this change (`a4867d99`)**
+
+| What happens | Where it is seen | What followed |
+|---|---|---|
+| A player clicks Leave | `CoopMenu_Leave` (`src/port/coop/ui/menu.c`) | `Menu_EndSession(leaving)` |
+| A client's transport ends: closed, timed out, refused, no handshake, a session message it cannot read | `Client_End` in `session.c`, `COOP_SESSION_EV_ENDED` in `Menu_OnEvent` | `Menu_EndSession` |
+| The host sees a joined client go in a level | `Host_Left` in `session.c`, `COOP_SESSION_EV_LEFT` with `levelStarted` in `Menu_OnEvent` | `CoopMenu_Fail`: "Player n left, so the session is over." |
+| A player sends no input for 10 s (`COOP_LOCKSTEP_STALL_MS`), seen by any game | `Sync_Stalled` in `lockstep_game.c` | `Link_Fail` to `CoopMenu_Fail` |
+| A desync is complete | `Sync_CheckDesync` in `lockstep_game.c`, text from `CoopDesyncGame_Check` | `Link_Fail` |
+| A `SYNC_INPUT`, `SYNC_HASH` or `SYNC_DESYNC` that cannot be read | `CoopSyncGame_Receive` | `Link_Fail` |
+| Another game began a handover (`HANDOVER` `BEGIN`) | `CoopHandoverGame_Heard` from `CoopMenuGame_Message` | `CoopMenu_Fail` |
+
+- All of them end in `Menu_EndSession`: the handover (`CoopMenuGame_Handover`, which runs `CoopSyncGame_End` first),
+  `CoopSession_Close`, then `sessionEnded` (`CoopMenuGame_SessionEnded`: `CoopSyncGame_End` again, the roster gone,
+  the save back from its file). The test join driver has the same paths in `Link_Fail` and `Session_End`.
+- `s->started` was set once, in `CoopSession_StartLevel` and `Client_LevelStart`, and never cleared: `Host_Hello`
+  refused every later hello with bit 9, and a client dropped a second save or level start.
+- A slot was the transport peer index plus one everywhere (`CoopSession_PeerPlayer`, lockstep, the desync check, the
+  log), and `Host_Left` freed the slot and the character at once.
+
+**Observed: what a level start in the middle of a campaign has to carry**
+
+- The level start's values held the seeds, the team arrays, lives, bombs, lasers and rings (87 values), and none of
+  what a campaign builds: `gMissionNumber`, `gMissionPlanet`, `gMissionTeamStatus`, `gMissionHitCount`,
+  `gMissionMedal`, `gTotalHits`, `gPlanetPathStatus` (22 entries, `src/engine/fox_context.c:68`), `gMissionStatus`,
+  `gLeveLClearStatus` and the level's own `gHitCount`. A level reads little of it; the map (`Map_Setup_Play`,
+  `Map_RetryCourse` in `src/overlays/ovl_menu/fox_map.c`) and the ending read all of it. They are values 88 to 171 now.
+- A checkpoint is `gSavedObjectLoadIndex`, `gSavedPathProgress`, `gSavedGroundSurface`, `gSavedZoSearchlightStatus`
+  and `gSavedHitCount` on rails, set where a player flies through the ring (`ItemCheckpoint_Update`,
+  `src/engine/fox_enmy.c:2512-2520`, with `gSavedTeamShields` and, in co-op, each player's own hits), and
+  `gAllRangeCheckpoint` in all-range, set by Fortuna (`src/overlays/ovl_i4/fox_fo.c:300`), Katina (`fox_ka.c:943`),
+  Bolse (`fox_bo.c:227`, `:309`) and Andross (`src/overlays/ovl_i6/fox_andross.c:1084`) with `gSavedHitCount` and the
+  team's shields. The level's setup reads them after a death (`Player_Setup`, `src/engine/fox_play.c:4697-4735`). They
+  are values 172 to 182.
+- The level's first setup plays the intro and clears the all-range checkpoint while `D_ctx_8017782C` is set and no
+  rails checkpoint is saved (`src/engine/fox_play.c:4820-4828`); `Play_Setup` sets it on every level entry. A game
+  that restarts from a checkpoint is past that, so a level start at a checkpoint clears it with the checkpoint.
+- The restart from a rails checkpoint loads the 40 objects before the saved index (`func_enmy_80062568`,
+  `src/engine/fox_enmy.c:540-553`). With an index below 40 it reads from before the level's object table: a test ring
+  put at object index 8 made the host load three objects from that memory and the client none, and the games parted at
+  frame 1 of the level that started again (`gItems[0]`, `gScenery[0]`, `gSprites[0]`). The test's ring now waits for
+  index 41; the game's own rings were not checked for this.
+- `Game_SetGameState` runs `Play_Setup` for `GSTATE_PLAY` (`src/engine/fox_game.c:86`, `src/engine/fox_play.c:530`),
+  which clears the checkpoint (`gSavedObjectLoadIndex`, `gSavedPathProgress`, `gAllRangeCheckpoint`,
+  `gSavedHitCount`, `gSavedZoSearchlightStatus`), so `CoopLevelStart_Enter` of the level a game is in starts that
+  level from its start, as the pause menu's retry does (`src/engine/fox_hud.c:1590-1609`) but with no life taken.
+- The host's game enters a level by itself in two ways. A level jumps to the next with `gNextGameState =
+  GSTATE_PLAY` (Venom 1, Venom 2, Area 6, Bolse: `src/overlays/ovl_i1/fox_ve1.c:2521`, `ovl_i6/fox_ve2.c:442`,
+  `ovl_i3/fox_a6.c:2937`, `ovl_i4/fox_bo.c:1658`), which `GamePreUpdateEvent` sees one frame before
+  `Game_SetGameState` takes it (`src/engine/fox_game.c:352-354`). The map sets `gGameState` itself (`Map_PlayLevel`,
+  `src/overlays/ovl_menu/fox_map.c:4290`: `GSTATE_PLAY`, `PLAY_STANDBY`, the hit count 0, `Play_Setup`), so the first
+  frame after it is the one that shows it. Both are where the restart point is taken (`CoopLevelStart_Entering`,
+  `CoopLevelStart_Entered`, from `CoopSyncGame_OnGamePreUpdate`). Only the map's way ran (`survive_next_level`).
+
+**Observed (runs, this branch at `921d6411`; the first block of rows ran at `896cdaa7`, which differs by the restart point at the map's entry, a test driver switch and one test)**
+
+| Run | Result |
+|---|---|
+| `lockstep_test.py --only survive_desync` on the base build (`a4867d99`) | `FAILED survive_desync: no \`again\` number 1 from host, client0 after 120 s after the desync: the level did not start again` |
+| the same, this branch | `ok`: poke at 2000, both games stopped lockstep, took level start 2 from the level's start and hash alike on its first 600 frames; no session ended; both logs say `players: gPlayer[1] differs in 1 of 1264 bytes, first at +116: b3 vs b2; word at +116: 0x444844b3 vs 0x444844b2`, as `desync_report.py diff` does |
+| `--only survive_checkpoint` | `ok`: checkpoint at frame 2581 (object index 41, path 32448, 1 hit), poke at 2881; both games took level start 2 at the checkpoint, began there (object index 41, path 32608) and hash alike on its first 600 frames |
+| `--only survive_checkpoint_allrange` | `ok`: Fortuna's own checkpoint at frame 2883 (all-range 1, 1 hit), poke at 3183; both games began level start 2 with the all-range checkpoint set and hash alike on its first 600 frames |
+| `--only survive_three` | `ok`: player 3 left a level of three; the host and player 2 took level start 2 without it and hash alike on its first 600 frames; the one who left plays on alone |
+| `--only survive_next_level` | `ok`: Corneria to the map and into level 1 (Meteo); poke at frame 11593, 200 frames into it; both games took level start 2 for level 1 with mission number 1 and 34 total hits, began at its start and hash alike on its first 600 frames. Before the restart point was taken at the map's entry: `FAILED: the host kept no restart point for level 1` |
+| `--only save_own` | `ok`: a save one byte apart parts the games at frame 0 in `globals` (`gSaveFile.planet`); the level started again once, parted at frame 0 again, and the session ended there |
+| `--only desync` | `ok`: rails (poke at 2000) and all-range (poke at 2400), both reports verified, the level started again |
+| `--only handover` | `ok`: after the client left the level that started again, both folders hold both reports byte for byte, and each copy of the other's log runs to `session closed` |
+| `--only stall` | `ok`: the host stopped at frame 1752 after 15 s and dropped player 2 with its slot kept; the client came back with the session id, and the level that started again is equal on 600 frames |
+| `--only frozen` | `ok`: the host stopped lockstep after 11 s and kept player 2's slot; the thawed client came back with the session id, and the level that started again is equal on 600 frames |
+| `--only left` | `ok`: the host stopped lockstep after 11 s, waited for the other (`left recover left ended`) and ended the session after 26 s |
+| `--only host_left` | `ok`: the client stopped lockstep after 30 s (the join driver's time-out), tried to come back (`rejoin ended`) and ended the session after 60 s |
+| `--only three`, `log`, `leave`, `menu` | `ok` each: 2700 frames equal with three games; the log scenario; Leave in the real window ends a session of two; a level through the real menu |
+| `hash_check.py base --base <build of a4867d99>` | `hash: co-op off: the base build and this one equal on all 5800 frames`, `hash: PASS` |
+| `join_test.py` | `RESULT: 5/5 scenarios passed` |
+| `menu_test.py --game` | `RESULT: 8/8 scenarios passed`; `game_leave`: 3 games, player 2 left in the level and the level started again for the two who stayed, player 3 left and the session ended, then a second session and level held past the time-out |
+| `--only map_saves_equal` | `ok`: both all cleared, equal on 11449 frames, Corneria to the map at 10541, the next level at 11149 and 300 frames of it |
+| `session_test.py`, `--asan` | `RESULT: 17/17 scenarios passed`, both |
+| `session_mutants.py`, `net_mutants.py`, `lockstep_mutants.py`, `desync_mutants.py` | all 417, 20, 22 and 25 breaks caught; 110 of the session's and 4 of the transport's are new |
+| `menu_test.py`, `--asan` | `sim: PASS: 25 scenarios`, `udp` ok; both |
+| `net_test.py` | `RESULT: 17/17 scenarios passed` |
+| `desync_dump_test.py` | `PASS`, under ASan and UBSan: 20 hostile messages refused, 137 cut streams, 35 differing and 5 equal random pairs named as `desync_report.py diff` names them |
+| `steam_test.py` | `RESULT: 52/52 scenarios passed` |
+| `check.py` | `co-op checks: ALL OK` (`sp-audit: OK`) |
+
+**Derived**
+
+- A level start at a checkpoint has to put the checkpoint in place after the level was entered and before its first
+  setup: `Game_SetGameState` clears it on the frame of `CoopLevelStart_Enter`, and `Play_Init` comes a few frames
+  later (`PLAY_STANDBY` counts `gNextGameStateTimer` down from 3). `CoopLevelStart_AfterEntry` does it first thing of
+  the next frame, from `CoopSyncGame_HoldFrame`, with no change to the game's files.
+- A recovery can fail to help: a restart that parts again at once would start the level again for ever (8277 level
+  starts in ten minutes in the run with the ring at index 8, and a client on another save does the same at frame 0).
+  Two desyncs in a row within 300 frames of their level start end the session as before.
+- A recovery is a second level start, not a repair: after it every game holds the host's values and the host's save,
+  whatever its own history was, so nothing has to be known about what differed. That is why the state hash and the
+  desync check did not change, and why a desync in the level that started again is found as any other.
+- Frames count from 0 again after a restart, so what was sent before it must not be taken for the new level: an
+  input of frame 5000 would be far ahead of the new frame 3 and end the session, and a hash total of frame 5000 would
+  wait four messages deep and be compared with the new level's frame 5000. Every sync message therefore carries the
+  run number of its level start, and one of another run is dropped.
+- The player index is the transport peer index plus one, and a player who comes back comes on a new connection, which
+  takes the lowest free peer. So a returning player is known by the character it flew, which is unique in the roster,
+  and takes the slot of its new connection; if two players are lost and come back the other way round, they change
+  slots and keep their characters.
+- A client that stops sending input and a connection that broke one way look the same to the host for the first ten
+  seconds, and the lockstep stall (10 s) races the transport's time-out (10 s in the menu). So a stall drops the
+  player as a lost one, with its slot kept, and both end in the same wait.
+- A host that drops a client cannot count on its goodbye arriving: the dropped client's socket holds ten seconds of
+  input datagrams, and in the first run of `frozen` the three goodbyes were lost behind them (the client's log shows
+  160 messages dropped unread), so the client only noticed after its own 30 s time-out, when the host's wait was over.
+  A host now answers a datagram of a connection it does not hold with a goodbye (`Core_Stray`, `net_core.c`).
+- The report of a desync is still handed over when the session ends (`CoopDesyncGame_TakeReport`): the path survives
+  the lockstep run it was written in. The `first difference` line is appended to the report as a `#` comment, which
+  `desync_report.py` skips, so both tools read the same files.
+
+**Choices the owner can reverse** (decided 2026-11-11 unless marked mine)
+
+- The level the team last entered, from its start, with the host's values on entering it; and, added the same day,
+  from the host's last checkpoint when it reached one, with the host's values of that moment. The host waits 15 s for
+  a lost player; a known player who comes later is refused as anyone is. One line in the co-op window, which comes up.
+- Mine: the give-up rule above (two quick desyncs in a row), and its numbers.
+- Mine: a player who leaves on purpose is not waited for. A session of two ends when one leaves, as before; with three
+  or four the others start the level again at once.
+- Mine: a client that sees another player stall waits 40 s for the host to act before it ends its own session (10 s
+  before), and a client whose host goes without a handover tries to come back for the transport's connect time.
+- Mine: the host answers stray datagrams with a goodbye on UDP only; the Steam transport does not.
+
+**Unknown**
+
+- Two PCs, Windows, MSVC, a real connection that drops and comes back, a Release build, four players: not run.
+- The map after a level that started again, and the levels after it: not run. The campaign's values travel now (a
+  level start for Meteo carried mission number 1 and Corneria's 34 hits), but the map's
+  own statics (`sCurrentPlanetId`, `sPaths`, `D_menu_*` in `fox_map.c`) are each game's own and are not sent. Games
+  that never parted hold the same ones; a game that parted on the map itself may not.
+- A restart from the map (the games part there): the level before the map is flown again. Not run.
+- Levels with a phase (Venom 2's second part, Andross): the restart point is taken at each `GSTATE_PLAY` entry, with
+  the phase, but none was run. There the level's setup also restores Fox's shields, rings, wings and hits from
+  `D_ctx_80177C9C` and the values beside it (`src/engine/fox_play.c:4698-4711`), which are not sent: each game uses
+  its own, which are equal unless the games parted before Venom's end. Vehicles (Titania, Macbeth, Aquas): not run.
+- A checkpoint restart in Katina, Bolse, Andross and on the other rails levels, Zoness' searchlight status among them:
+  only Corneria's rails (with a ring the test placed) and Fortuna (the game's own checkpoint) ran.
+- Whether any of the game's own checkpoint rings sits at an object index below 40.
+- A client that comes back after its game was restarted: the session id lives in memory, so it cannot.
+- Steam: `transport_steam.c` did not change. A dropped client there ends by its own time-out, 10 s in the menu, which
+  is inside the host's 15 s only if both noticed the loss at about the same time.
+
 ### 2026-11-10, #25 (WP-27), lag and loss with real game clients: numbers from the chaos relay
 
 Identity: ROM US 1.0, branch `issue/25-chaos-numbers` on `80ff9be6` (the tool), run against the build of

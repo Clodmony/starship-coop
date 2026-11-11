@@ -16,6 +16,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "port/coop/game/level_start.h"
 #include "port/coop/net/transport.h"
 
 #ifdef __cplusplus
@@ -32,13 +33,33 @@ typedef struct {
     // One line on a game's identity for a desync report (WP-23): peer -1 is this game, as the session knows them. May
     // be NULL, or leave "" when it does not know.
     void (*identity)(int peer, char* out, size_t cap);
+    // The level cannot go on as it is, and the session may start it again (the session survives): a desync (`player`
+    // is -1), or on the host a player who stopped sending input. `text` is what a failure would show. True if a
+    // recovery is on its way: the session's owner then calls CoopSyncGame_Pause, and CoopSyncGame_Begin when the new
+    // level start comes. False, or NULL: `fail` follows, as it always did.
+    bool (*recover)(int32_t reason, int32_t player, const char* text);
+    // Host: this game is entering a level by itself, on this frame (the map's next level, a level's next part). start
+    // is what a recovery has to start again from here on, as the session's own level start was for the first level.
+    // May be NULL.
+    void (*entering)(const CoopLevelStart* start);
 } CoopSyncLink;
+
+// Reasons of CoopSyncLink.recover.
+#define COOP_SYNC_RECOVER_DESYNC 1
+#define COOP_SYNC_RECOVER_STALL 2
 
 void CoopSyncGame_Init(void);
 
 // The session started a level, with these CoopCharacters by player index, and this game is player `self`. The roster
-// tells who plays, and the local player's camera, HUD and controller follow `self` from here on.
-void CoopSyncGame_Begin(const CoopSyncLink* link, const uint8_t* roster, int32_t self, bool host);
+// tells who plays, and the local player's camera, HUD and controller follow `self` from here on. `run` is the level
+// start's number in its session (CoopLevelStart.run): every sync message carries it in front, and one of another run
+// is dropped, so nothing of the level before a restart is taken for the level after it.
+void CoopSyncGame_Begin(const CoopSyncLink* link, const uint8_t* roster, int32_t self, bool host, uint8_t run);
+
+// The level cannot go on as it is and the session is going to start it again (a RECOVER event): lockstep stops, input
+// goes back to the local controller and the level goes on in this game until the new level start comes, as after
+// CoopSyncGame_End; but the session's save and its sine stay, and the game still counts as in a session.
+void CoopSyncGame_Pause(void);
 
 // A message above the session range. Ids that are not lockstep's are left alone.
 void CoopSyncGame_Receive(int peer, uint16_t msgId, const uint8_t* data, uint16_t size);

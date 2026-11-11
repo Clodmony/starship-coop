@@ -14,6 +14,7 @@
 #include "port/coop/log/coop_log.h"
 #include "port/coop/net/protocol.h"
 #include "desync.h"
+#include "desync_dump.h"
 #include "desync_report.h"
 #include "state_hash.h"
 
@@ -38,6 +39,27 @@ static bool sReported = false;
 static char sSelfIdentity[IDENTITY_SIZE];
 static char sPeerIdentity[COOP_NET_MAX_PEERS][IDENTITY_SIZE];
 static bool sFoundSaid = false;
+
+// #189: the dump of the last desync, on its way to the other game of the pair, and the other game's on its way here.
+// It outlives the lockstep run it came from: the level starts again while it crosses.
+static struct {
+    bool on;
+    bool said;          // the first-difference line is written, or why there is none
+    int peer;           // the other game of the pair
+    int32_t players[2]; // the pair, lower index first
+    int32_t self;
+    int32_t other;
+    uint32_t frame;
+    uint32_t sinceMs;
+    uint8_t* stream; // our own, NULL if this game held no dump of the frame
+    uint32_t size;
+    CoopDesyncDumpOut out;
+    CoopDesyncDumpIn in;
+    bool (*send)(int peer, uint16_t msgId, const void* data, uint16_t size, CoopNetLane lane);
+    char report[PATH_SIZE];
+} sDump;
+// Parts sent in one pump: the window is 128, and the session's own messages need room in it.
+#define DUMP_PARTS_PER_PUMP 16
 
 // The co-op log hears of a desync the moment this game finds it or hears of it, before the report.
 static void Log_Found(void) {
@@ -128,7 +150,8 @@ void CoopDesyncGame_Begin(const CoopDesyncGameLink* link, int32_t self, bool hos
     config.period = COOP_DESYNC_PERIOD;
     CoopDesync_Start(&sDesync, &config);
     Dumps_Allocate();
-    sReportPath[0] = '\0';
+    // sReportPath stays: the report of a desync earlier in this session is still the one to hand over when the session
+    // ends (CoopDesyncGame_TakeReport), until a later desync writes another.
     sReported = false;
     sFoundSaid = false;
     sOn = true;
@@ -214,6 +237,147 @@ static void Report_Write(void) {
     CoopDesyncReport_Write(&sDesync, dump, &info, sReportPath, sizeof(sReportPath));
 }
 
+static const char* Dump_RegionName(uint8_t region) {
+    return (region < COOP_HASH_REGION_COUNT) ? CoopStateHash_RegionName((CoopHashRegion) region) : NULL;
+}
+
+// One line into the co-op log and behind the report, as a comment: tools/coop/desync_report.py skips it.
+static void Dump_Say(const char* what) {
+    FILE* f;
+
+    sDump.said = true;
+    CoopLog_Write(COOP_LOG_DESYNC, false, "first difference at frame %u, players %d and %d: %s", (unsigned) sDump.frame,
+                  (int) sDump.players[0] + 1, (int) sDump.players[1] + 1, what);
+    if (sDump.report[0] == '\0') {
+        return;
+    }
+    f = fopen(sDump.report, "a");
+    if (f != NULL) {
+        fprintf(f, "# first difference at frame %u, players %d and %d: %s\n", (unsigned) sDump.frame,
+                (int) sDump.players[0] + 1, (int) sDump.players[1] + 1, what);
+        fclose(f);
+    }
+}
+
+void CoopDesyncGame_DropDump(void) {
+    if (sDump.on && !sDump.said) {
+        Dump_Say("unknown: the session went before the other game's dump came");
+    }
+    free(sDump.stream);
+    CoopDesyncDump_InFree(&sDump.in);
+    memset(&sDump, 0, sizeof(sDump));
+}
+
+// The desync is complete: if this game is one of the pair, its dump of the frame starts for the other one.
+static void Dump_Begin(uint32_t nowMs) {
+    int32_t self = sDesync.config.self;
+    int32_t other;
+    const CoopStateDump* dump = NULL;
+
+    CoopDesyncGame_DropDump();
+    if ((sDesync.pair[0] != self) && (sDesync.pair[1] != self)) {
+        return; // a third game: it compares nothing, and reads the line in the logs of the two
+    }
+    other = (sDesync.pair[0] == self) ? sDesync.pair[1] : sDesync.pair[0];
+    if ((Peer_Of(other) < 0) || (Peer_Of(other) >= COOP_NET_MAX_PEERS) || (sLink.sendRaw == NULL)) {
+        return;
+    }
+    sDump.on = true;
+    sDump.peer = Peer_Of(other);
+    sDump.self = self;
+    sDump.other = other;
+    sDump.players[0] = (self < other) ? self : other;
+    sDump.players[1] = (self < other) ? other : self;
+    sDump.frame = sDesync.frame;
+    sDump.sinceMs = nowMs;
+    sDump.send = sLink.sendRaw;
+    snprintf(sDump.report, sizeof(sDump.report), "%s", sReportPath);
+    if ((sDumpBytes != NULL) && sDesync.mine.held) {
+        dump = &sDumps[sDesync.frame % COOP_DESYNC_RING];
+    }
+    if ((dump != NULL) && !dump->overflow) {
+        size_t size = CoopDesyncDump_StreamSize(dump);
+
+        sDump.stream = ((size != 0) && (size <= COOP_DESYNC_DUMP_MAX)) ? malloc(size) : NULL;
+        if (sDump.stream != NULL) {
+            sDump.size = (uint32_t) CoopDesyncDump_Stream(dump, sDump.stream, size);
+        }
+    }
+    CoopDesyncDump_OutBegin(&sDump.out, sLink.run, sDump.frame, (uint8_t) self, sDump.stream, sDump.size);
+    CoopLog_Write(COOP_LOG_DESYNC, false, "dump of frame %u: %u bytes in %u parts go to player %d",
+                  (unsigned) sDump.frame, (unsigned) sDump.size, (unsigned) sDump.out.parts, (int) other + 1);
+}
+
+// Both dumps are here, or it is known that one never will be: the line.
+static void Dump_Compare(void) {
+    char line[COOP_DESYNC_DUMP_LINE];
+    const uint8_t* a;
+    const uint8_t* b;
+    size_t aSize, bSize;
+
+    if (sDump.said || !sDump.in.done) {
+        return;
+    }
+    if (sDump.in.none || (sDump.stream == NULL)) {
+        snprintf(line, sizeof(line), "unknown: player %d held no dump of that frame",
+                 (int) (sDump.in.none ? sDump.other : sDump.self) + 1);
+        Dump_Say(line);
+        return;
+    }
+    if (sDump.self < sDump.other) {
+        a = sDump.stream;
+        aSize = sDump.size;
+        b = sDump.in.stream;
+        bSize = sDump.in.size;
+    } else {
+        a = sDump.in.stream;
+        aSize = sDump.in.size;
+        b = sDump.stream;
+        bSize = sDump.size;
+    }
+    CoopDesyncDump_FirstDifference(a, aSize, b, bSize, Dump_RegionName, line, sizeof(line));
+    Dump_Say(line);
+}
+
+void CoopDesyncGame_Pump(uint32_t nowMs) {
+    uint8_t message[COOP_DESYNC_DUMP_MESSAGE_MAX];
+    int parts;
+
+    if (!sDump.on) {
+        return;
+    }
+    for (parts = 0; parts < DUMP_PARTS_PER_PUMP; parts++) {
+        uint16_t size = CoopDesyncDump_OutNext(&sDump.out, message);
+
+        if ((size == 0) || !sDump.send(sDump.peer, COOP_MSG_SYNC_DUMP, message, size, COOP_NET_RELIABLE)) {
+            break;
+        }
+        CoopDesyncDump_OutSent(&sDump.out);
+    }
+    Dump_Compare();
+    if (!sDump.said && (nowMs - sDump.sinceMs >= COOP_DESYNC_DUMP_MS)) {
+        char line[COOP_DESYNC_DUMP_LINE];
+
+        snprintf(line, sizeof(line), "unknown: player %d's dump did not come within %d ms", (int) sDump.other + 1,
+                 (int) COOP_DESYNC_DUMP_MS);
+        Dump_Say(line);
+    }
+}
+
+void CoopDesyncGame_ReceiveDump(int peer, const uint8_t* data, uint16_t size, uint32_t nowMs) {
+    (void) nowMs;
+    if (!sDump.on || (peer != sDump.peer) || sDump.said) {
+        return; // nothing this game waits for
+    }
+    if (!CoopDesyncDump_InReceive(&sDump.in, sDump.out.run, sDump.frame, (uint8_t) sDump.other, data, size)) {
+        if (sDump.in.refused) {
+            Dump_Say("unknown: the other game's dump could not be read");
+        }
+        return;
+    }
+    Dump_Compare();
+}
+
 bool CoopDesyncGame_Check(uint32_t nowMs, char* text, size_t cap) {
     char regions[160];
     char name[32];
@@ -229,12 +393,13 @@ bool CoopDesyncGame_Check(uint32_t nowMs, char* text, size_t cap) {
                   (int) sDesync.pair[1] + 1, regions, (sReportPath[0] != '\0') ? sReportPath : "none");
     snprintf(text, cap,
              "The games went out of step at frame %u of %s (%s): player %d's game and player %d's game differ in %s. "
-             "The session is over, and the level goes on here alone. %s%s",
+             "%s%s",
              (unsigned) sDesync.frame, CoopDesyncReport_LevelName(sDesync.mine.state[1], name, sizeof(name)),
              CoopDesyncReport_ModeName(sDesync.mine.state[2]), (int) sDesync.pair[0] + 1, (int) sDesync.pair[1] + 1,
              regions, (sReportPath[0] != '\0') ? "A report for the developers is in " : "No report could be written",
              sReportPath);
-    sOn = false; // one report per session
+    Dump_Begin(nowMs);
+    sOn = false; // one report per lockstep run
     return true;
 }
 
@@ -296,6 +461,20 @@ bool CoopDesyncGame_Check(uint32_t nowMs, char* text, size_t cap) {
 }
 
 void CoopDesyncGame_End(void) {
+}
+
+void CoopDesyncGame_Pump(uint32_t nowMs) {
+    (void) nowMs;
+}
+
+void CoopDesyncGame_ReceiveDump(int peer, const uint8_t* data, uint16_t size, uint32_t nowMs) {
+    (void) peer;
+    (void) data;
+    (void) size;
+    (void) nowMs;
+}
+
+void CoopDesyncGame_DropDump(void) {
 }
 
 bool CoopDesyncGame_TakeReport(char* out, size_t cap) {

@@ -45,6 +45,11 @@ void CoopScore_Checkpoint(void);
 // hits saved there, as the game gives back gHitCount; a new level keeps 0 and forgets the saved ones.
 void CoopScore_LevelInit(void);
 
+// Each player's own hits as saved at the last checkpoint, for a level start that begins at a checkpoint
+// (level_start.h): the host's go to every game with the checkpoint, and CoopScore_LevelInit gives them back there.
+int32_t CoopScore_SavedHits(int32_t player);
+void CoopScore_SetSavedHits(int32_t player, int32_t hits);
+
 // The status screen (pause and level clear): one row per human, the character's face and that player's own hits,
 // right of the team's "enemies down". Nothing outside co-op or with one player.
 void CoopScore_DrawStatus(void);

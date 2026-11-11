@@ -18,6 +18,7 @@
 #include "port/coop/game/level_start.h"
 #include "port/coop/game/names.h"
 #include "port/coop/session/identity_game.h"
+#include "port/coop/session/session_id.h"
 #include "port/coop/test/menu_driver.h"
 #include "port/ui/UIWidgets.h"
 
@@ -34,7 +35,8 @@ const char* const kNameCvar = "gCoopName";
 const CoopMenuBackend kBackend = { CoopNetSdl_Host,           CoopNetSdl_Connect,   CoopNetSdl_Port,
                                    CoopIdentity_FromGame,     CoopMenuGame_Level,   CoopMenuGame_EnterLevel,
                                    CoopMenuGame_SessionEnded, CoopMenuGame_Message, CoopMenuGame_Waiting,
-                                   CoopMenuGame_Handover,     CoopNames_Set };
+                                   CoopMenuGame_Handover,     CoopNames_Set,        CoopSessionId_New,
+                                   CoopMenuGame_Recover };
 
 CoopMenu sMenu;
 char sAddress[COOP_MENU_ADDRESS_SIZE];

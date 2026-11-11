@@ -16,7 +16,7 @@ and that a desync, if one happens, is caught and reported.
   commit made with different compiler versions count as different platforms, see the next point.
 - **Windows and Linux may meet.** A Windows game and a Linux game join one session, and both see a warning that names
   the two platforms. Nobody has shown yet that the two compute the same game (decision 0010), so such a session may
-  desync: the game stops with a report, see "What to send back". Two builds of one commit from different compiler
+  desync: the level starts again for both, with a report, see "What to send back". Two builds of one commit from different compiler
   versions get the same warning.
 - **Check the label.** Press F1 to open the menu bar. Its right end shows `Co-op <id>`. It must be the same on both
   PCs.
@@ -57,16 +57,24 @@ and that a desync, if one happens, is caught and reported.
   restarts at its last save point for both players; at 0 lives, game over. The record's refill of Fox in place is not
   built.
 - The pause menu belongs to the host: cursor, retry and quit.
-- If one player leaves or stops sending input for 10 seconds, the session ends for both.
+- If the connection drops, or one player sends no input for 10 seconds, the host waits 15 seconds for that player.
+  Its game comes back by itself, and the level starts again for both (at the last checkpoint, or from its start). If it does not come back, or a
+  player leaves on purpose, the session ends for both (with three or four players the others start the level again).
+- If the games go out of step (a desync), the level starts again for everyone: at the last checkpoint if one was
+  reached, as after a death but without a life lost, otherwise from its start with the host's lives, shields and score
+  as they were on entering it. One line in the co-op window says so. If the games part again at once after that, twice
+  in a row, the session ends.
 - No Steam yet: this is a direct connection.
 
 ## What to send back
 
-- **If the game reports a desync:** it says so on screen, names the frame and what differs, and tells you where its
-  report file is: `coop-desync-<frame>-player<n>.txt`. Before the connection closes, each game hands its report to the
-  other (#189, a few hundred ms, 8 seconds at most), so one PC's folder normally holds both players' reports;
-  `python tools/coop/desync_report.py diff <a> <b>` compares the two. Keep the files from **both** PCs anyway, in
-  case the connection was already gone. Say what each PC ran: Windows or Linux, and the
+- **If the game reports a desync:** the co-op window says "The games parted. Starting the level again together.", and
+  both co-op logs (below) name the frame, the level, the two players and the first value that differed, with both
+  games' values: a line `first difference at frame ..., players 1 and 2: ...` (#189). One PC's logs are enough for
+  that; nobody has to fetch a file from the other PC. Each game also writes a report file,
+  `coop-desync-<frame>-player<n>.txt`, which holds the whole state of that frame; when the session ends with the
+  connection still up, each game hands its last report to the other, and `python tools/coop/desync_report.py diff <a>
+  <b>` compares two. Send the reports along if you have them. Say what each PC ran: Windows or Linux, and the
   platform line the menu's warning showed, if the two differed. A desync between two platforms is the result decision
   0010 waits for, not a surprise.
 - **The co-op logs:** `coop-log-<session start>-player1.txt` and `-player2.txt` from the game folder, where its config
