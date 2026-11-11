@@ -77,7 +77,7 @@ desync check below decides ([decision 0010](docs/coop/decisions/0010-cross-platf
 |---|---|---|
 | Lives | One shared pool of lives for the team ([decision 0007](docs/coop/decisions/0007-lives-and-respawn.md)). | The pool is the game's own life count; any life anyone collects goes into it. Its start size ("2 plus 1 per extra player" in the record) is **unknown**: I found no code that sets it. |
 | A second player goes down | They leave the level, and 150 game frames (about 5 seconds) later come back beside Fox, at full shields, for one life from the pool. At pool 0 they wait for a life or the next level. | Observed in scripted two-client runs on Corneria ([#14](https://github.com/Clodmony/starship-coop/issues/14), NOTES.md, 2026-11-09); nobody has reported it from a hand-played run. |
-| Fox (the host) goes down | The record wants Fox refilled in place for a life; **not built**. Today the original rule holds: one life, and the level restarts at its last save point for everyone. At 0 lives, game over. | From the code and the record ([NOTES.md, 2026-11-08, #7](docs/coop/NOTES.md)). |
+| Fox (the host) goes down | Fox is refilled in place for one life from the pool (rule 12), on 16 levels; with no life left the original rule holds, game over. The owner opened all 16 levels on 2026-11-11 instead of one at a time. | Scripted two-client runs on every one of the 16 levels (NOTES.md, 2026-11-11, "Fox goes down"); nobody has seen it in play. |
 | Shields between levels | Every player's shields carry over and heal by 64 at each level load. | wingman part, [#15](https://github.com/Clodmony/starship-coop/issues/15); scripted, not hand-checked. |
 | Who steers (the path owner) | The host: at a path split the side comes from the host's position, and on the map only the host's input decides go on, change path and retry ([decision 0008](docs/coop/decisions/0008-routes-and-score.md)). Any player can earn a route or a warp. Boost and brake of **any** player change the level's speed. | Boost: [#194](https://github.com/Clodmony/starship-coop/issues/194). The rest is the original game's path handling plus the record. |
 | Score | Hits by any player count for the team; medals keep the original check, so a player who is down at the clear costs a medal. | From the record; not checked in play. |
@@ -148,6 +148,14 @@ Sessions on the evening of 2026-11-10 (a Windows host and a Linux joining player
 and fixed two more faults: the map reading each PC's own save, and an Aquas eel reading its smoke position from outside an array. The first public release still waits for a Windows Release check
 ([#145](https://github.com/Clodmony/starship-coop/issues/145)) and for the open issues below.
 
+**Added on 2026-11-11, tested by scripts on one Linux PC and not yet played by hand:** a lost player or a desync starts
+the level again from the host's state instead of ending the session ([decision 0014](docs/coop/decisions/0014-the-session-survives.md)),
+Fox is refilled in place for a life ([decision 0007](docs/coop/decisions/0007-lives-and-respawn.md), rule 12, on 16
+levels), a player's name shows over the other ships ([#257](https://github.com/Clodmony/starship-coop/issues/257),
+[#258](https://github.com/Clodmony/starship-coop/issues/258)), and the test pilot finishes all 17 levels with two clients,
+equal on every frame, while Sector X's Spyborg and Titania's Goras go after the nearest human
+([#220](https://github.com/Clodmony/starship-coop/issues/220)). A real connection drop, Windows and four players are not tried.
+
 ### What works
 
 Everything here is tested by scripts, on Linux; determinism also on Windows (Release and Debug). Two PCs (Windows host, Linux client) have played by hand since 2026-11-08: the first runs parted in Corneria (fixed), the campaign run of 2026-11-09 did not part.
@@ -161,8 +169,8 @@ Everything here is tested by scripts, on Linux; determinism also on Windows (Rel
 | Menu | Co-op menu with host, join, characters, status and ping, and starting a level for everyone together |
 | Steam relay | Built, off by default, tested on a fake Steam only |
 | Determinism | Two runs of one build match on every frame through all of Corneria, and Release, Debug and frame rates from 30 to 360 match too. Two clients that draw different cameras, booted at different times and render different audio sample counts match on 15 Arwing levels (the first 80 seconds of each) |
-| Lockstep | [Decision 0002](docs/coop/decisions/0002-sync-model.md) is built: inputs go over the network, every frame waits for every player, any player can pause, and a lost player ends the session cleanly |
-| Desync check | Every client hashes its state on every frame and the clients compare. A desync names its frame, level, players and regions in the game, each game writes a report into its own folder, and the session ends. A tool compares two reports and names the first value that differs |
+| Lockstep | [Decision 0002](docs/coop/decisions/0002-sync-model.md) is built: inputs go over the network, every frame waits for every player, any player can pause, and a lost player or a desync starts the level again for the others ([decision 0014](docs/coop/decisions/0014-the-session-survives.md)); the session ends only when nobody is left or the games part twice in a row |
+| Desync check | Every client hashes its state on every frame and the clients compare. A desync names its frame, level, players and regions in the game, each game writes a report into its own folder, and the level starts again from the host's state (a second desync right after ends the session). A tool compares two reports and names the first value that differs |
 | Co-op log | Every game writes a log of the session into its own folder (session, transport, lockstep, desync check, game state, a state line per player each second, the game's own warnings) and streams it to the other players, so every folder holds every player's log, with the home folder and user name taken out. `python tools/coop/coop_log.py merge` makes one timeline of them |
 | Tests | One command runs everything (`python tools/coop/test_all.py`): replays, a state hash per frame, deliberate-break tests, and uncapped, silent test games that can skip the drawing and start straight in a level. See [tools/coop](tools/coop/README.md) |
 
@@ -174,7 +182,7 @@ Not yet on `coop`: [#259](https://github.com/Clodmony/starship-coop/pull/259) (t
 
 | What | Where |
 |---|---|
-| What a session does after a desync: it ends now, the smallest honest choice, for the owner to revise | [WP-23](https://github.com/Clodmony/starship-coop/issues/21), [decision 0002](docs/coop/decisions/0002-sync-model.md) |
+| What a session does after a desync or a lost player: the level starts again from the host's state, proven with real games on one PC only; the text of the rules waits for the owner | [decision 0014](docs/coop/decisions/0014-the-session-survives.md), [WP-23](https://github.com/Clodmony/starship-coop/issues/21) |
 | A run on two PCs | [#2](https://github.com/Clodmony/starship-coop/issues/2): needed before a first public release. Windows Release matches itself, Debug and every rate ([#145](https://github.com/Clodmony/starship-coop/issues/145)); Windows against Linux parted at frame 22 on the first try ([#186](https://github.com/Clodmony/starship-coop/issues/186), [#187](https://github.com/Clodmony/starship-coop/issues/187)) |
 | Real Steam test | [WP-26](https://github.com/Clodmony/starship-coop/issues/24): needs two PCs and two Steam accounts |
 | Lag and loss testing | [WP-27](https://github.com/Clodmony/starship-coop/issues/25) |

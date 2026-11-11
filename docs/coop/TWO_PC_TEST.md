@@ -48,14 +48,17 @@ and that a desync, if one happens, is caught and reported.
 
 ## What is known not to work yet
 
-- Only Corneria is tested. In Landmaster and Blue Marine sections the second player is parked.
+- By hand on two PCs only one route has been played (Corneria to the ending, 2026-11-09 and 2026-11-10); the code merged
+  on 2026-11-11 has not been played by hand. Scripts now fly all 17 levels with two clients (a test pilot that cannot
+  die, and with unlimited bombs on Zoness and Venom), with equal hashes on every frame (NOTES.md, "2026-11-11, the
+  campaign run").
 - Lives follow [decision 0007](decisions/0007-lives-and-respawn.md) only in part. The team shares one pool, the game's
   own life count, and a life anyone collects goes into it; how many lives the pool starts with is unknown. If the other
   player goes down, they leave the level and come back beside Fox 150 game frames (about 5 seconds) later, at full
   shields, for one life from the pool; at 0 lives they wait for a life or the next level. That return is seen in
-  scripted two-client runs on Corneria only. If Fox goes down, the original rule still holds: one life, and the level
-  restarts at its last save point for both players; at 0 lives, game over. The record's refill of Fox in place is not
-  built.
+  scripted two-client runs on Corneria only. If Fox goes down, he is refilled in place for one life from the pool (rule
+  12), on the 16 levels the owner opened on 2026-11-11; scripted two-client runs only, nobody has seen it in play. With
+  no life left in the pool the original rule holds: game over.
 - The pause menu belongs to the host: cursor, retry and quit.
 - If the connection drops, or one player sends no input for 10 seconds, the host waits 15 seconds for that player.
   Its game comes back by itself, and the level starts again for both (at the last checkpoint, or from its start). If it does not come back, or a
