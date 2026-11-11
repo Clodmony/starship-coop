@@ -271,6 +271,11 @@ escape kills Fox past `Player_Down`), the warp zones and training; there, and at
 paragraph holds. The spike of rule 13 ran as an experiment behind a test switch: a survivor's ship can take slot 0 on
 the levels it was run on, hash-equal; it is not a rule, and rule 6 keeps its interim form until the owner decides.
 
+**Owner's choice, 2026-11-11 (rule 12):** all 16 levels listed above are open as built, instead of one at a time. Each was
+proven by two-client runs with equal hashes (`docs/coop/NOTES.md`, "Fox goes down"), but the list of the ways Fox can go
+down is written for Corneria only. A level that shows trouble in play is taken out of the table in
+`CoopPlayers_FoxRefillOpen` (one line); the owner also kept the spike of rule 13 in the code behind its test switch.
+
 ### Every client decides alike
 
 - The rule reads simulated state only: `gLifeCount[0]`, the player slots, the return counter, `gPlayer[0].state`, and
