@@ -42,6 +42,11 @@ extern void Graphics_PushFrame(Gfx* data);
 // A client that waits for another player's input leaves that to the host for this long: the host drops a player who
 // sends nothing, or the connection to the host times out. Only then does the client end the session by itself.
 #define SYNC_CLIENT_STALL_MS 40000
+// A recovery that does not help: the games part again within this many frames of a level start. After
+// SYNC_QUICK_PARTS of those in a row the session ends as it did before there was a recovery, or it would start the
+// level again for ever: a client on another save, for example, parts at frame 0 of every level start.
+#define SYNC_QUICK_FRAMES 300
+#define SYNC_QUICK_PARTS 2
 
 typedef enum {
     SYNC_OFF,
@@ -65,6 +70,7 @@ static uint32_t sSummaryMs = 0;
 static uint8_t sRun = 0;         // the level start's number in its session: the first byte of every sync message
 static uint32_t sOtherRuns = 0;  // messages of another run, dropped
 static bool sStallAsked = false; // host: the session was asked to drop the player this frame waits for
+static uint32_t sQuickParts = 0; // desyncs in a row that came within SYNC_QUICK_FRAMES of their level start
 
 // Lockstep cannot go on: the log hears why, then the session's owner.
 static void Sync_Fail(const char* text) {
@@ -136,9 +142,17 @@ static void Sync_CheckDesync(void) {
     char text[SYNC_DESYNC_TEXT_SIZE];
 
     if ((sState == SYNC_RUNNING) && CoopDesyncGame_Check(SDL_GetTicks(), text, sizeof(text))) {
-        if ((sLink.recover == NULL) || !sLink.recover(COOP_SYNC_RECOVER_DESYNC, -1, text)) {
-            char over[SYNC_DESYNC_TEXT_SIZE + 64];
+        char over[SYNC_DESYNC_TEXT_SIZE + 160];
 
+        // Every game of the session counts the same frames, so they give up on the same desync.
+        sQuickParts = (sLockstep.frame < SYNC_QUICK_FRAMES) ? sQuickParts + 1 : 0;
+        if (sQuickParts >= SYNC_QUICK_PARTS) {
+            snprintf(over, sizeof(over),
+                     "%s The level started again and the games parted again at once, so the session is over, and "
+                     "the level goes on here alone.",
+                     text);
+            Sync_Fail(over);
+        } else if ((sLink.recover == NULL) || !sLink.recover(COOP_SYNC_RECOVER_DESYNC, -1, text)) {
             snprintf(over, sizeof(over), "%s The session is over, and the level goes on here alone.", text);
             Sync_Fail(over);
         }
@@ -399,6 +413,7 @@ void CoopSyncGame_End(void) {
     }
     CoopDesyncGame_End();
     CoopDesyncGame_DropDump(); // #189: nobody is left to send it, so the log says what is missing
+    sQuickParts = 0;
     CoopMath_SetSession(0); // the C library again, as upstream (decision 0011)
     sState = SYNC_OFF;
     sWaiting = false;

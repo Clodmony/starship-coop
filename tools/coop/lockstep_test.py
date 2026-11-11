@@ -2221,7 +2221,9 @@ def sc_save_own(args, folder):
     """The control for the session's save (decision 0009 item 8): the client keeps its own save
     (SF64_COOP_JOIN_KEEP_OWN_SAVE), which differs from the host's in one byte, Corneria played. That has to show at
     frame 0 as a desync in region globals, and desync_report.py has to name gSaveFile.planet: a save that drifted is
-    a named difference, not a map that parts later."""
+    a named difference, not a map that parts later. It is also a recovery that cannot help: the level starts again, the
+    client keeps its own save again and the games part at frame 0 again, so the session gives up and ends as it did
+    before there was a recovery (SYNC_QUICK_PARTS, lockstep_game.c), with two level starts and no third."""
     one_byte = make_save.save_file(played=make_save.slots("corneria"))
     folder.mkdir(parents=True, exist_ok=True)
     feed = folder / "feed.txt"
@@ -2230,25 +2232,34 @@ def sc_save_own(args, folder):
     host, client = session(args, folder, both=env, client_env={"SF64_COOP_JOIN_KEEP_OWN_SAVE": "1"},
                            saves={"host": None, "client0": one_byte})
     try:
-        wait_for([host, client], "over", 600, "with the client on its own save")
+        survive_wait([host, client], "over", 2, 600, "with the client on its own save")
+        wait_for([host, client], "alive", 120, "after the session ended: a game hangs")
+        time.sleep(2)
     finally:
         host.close()
         client.close()
     reports = {}
     for game in (host, client):
         found = own_reports(game)
-        expect(len(found) == 1, f"{game.name} wrote {len(found)} desync reports")
+        expect(len(found) == 2, f"{game.name} wrote {len(found)} desync reports, want one per level start")
         reports[game.name] = desync_report.Report(found[0])
         header = reports[game.name].header
         expect(header.get("frame") == "0", f"{game.name}: {found[0].name} says frame {header.get('frame')}, want 0")
         expect(header.get("regions differing") == "globals", f"{game.name}: regions {header.get('regions differing')}")
         problems = reports[game.name].verify()
         expect(not problems, f"{game.name}: {problems[0] if problems else ''}")
+        expect([run for run, _ in survive_starts(game)] == [1, 2], f"{game.name}: level starts {survive_starts(game)}")
+        ended = [line for _, _, line in game.report() if line.startswith("ended")]
+        expect(ended and "out of step at frame 0" in ended[0], f"{game.name}: {ended[:1]}")
+        expect(any("parted again at once, so the session is over" in line for line in ended), f"{game.name}: {ended}")
+        expect(not join_test.said(game.sync(), "again") or len(join_test.said(game.sync(), "again")) == 1,
+               f"{game.name}: the level started again more than once")
     done = report_diff(own_reports(host)[0], own_reports(client)[0])
     first = next((line.strip() for line in done.stdout.splitlines() if "differs" in line and ":" in line), None)
     expect(first is not None and first.startswith("globals: gSaveFile.planet differs in 1 of"),
            f"desync_report.py diff did not name gSaveFile.planet: {done.stdout[-400:]}")
-    return f"a save one byte apart parts the games at frame 0, in globals: `{first}`"
+    return (f"a save one byte apart parts the games at frame 0, in globals: `{first}`; the level started again once, "
+            f"parted at frame 0 again, and the session ended there")
 
 
 def play_states(game):
