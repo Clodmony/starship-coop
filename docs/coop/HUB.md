@@ -4,12 +4,16 @@ This project follows [Co-op Anything](https://github.com/cranebeaker/coop-anythi
 and a directory of co-op projects; each game's code lives in its own repository, like this one. Give back to it when
 a phase finishes (hub AGENTS.md, "Sending what you learned back").
 
-## Not done yet
+## Done and not done yet
 
 Both steps go out under the owner's account, so only the owner sends them.
 
-1. Open a "claim a game" issue on the hub for Star Fox 64 so others can find this project.
-2. Send the directory entry and the write-up in a draft PR from a fork of the hub, branch `game/star-fox-64`.
+1. Done, 2026-11-11: the "claim a game" issue for Star Fox 64 is open on the hub
+   ([cranebeaker/coop-anything#355](https://github.com/cranebeaker/coop-anything/issues/355)). It has no `in-progress`
+   label: the issue was made with the command line, not the form that sets it.
+2. Not done: send the directory entry and the write-up in a draft PR from a fork of the hub, branch `game/star-fox-64`.
+   The owner chose to send it after the combined test build of 2026-11-11 is merged into `coop`, so that the entry
+   matches what is on `coop`.
 
 ## Drafts
 
