@@ -5737,7 +5737,8 @@ void Player_UpdateOnRails(Player* player) {
             Player_WaterEffects(player);
             Player_FloorCheck(player);
             Player_LowHealthAlarm(player);
-            if ((player->shields <= 0) && (player->radioDamageTimer != 0)) {
+            // COOP: in a level open for it, a life refills player 0 in place instead (decision 0007 rule 3)
+            if ((player->shields <= 0) && (player->radioDamageTimer != 0) && !CoopPlayers_RefillFox(player)) {
                 Player_Down(player);
                 player->vel.x *= 0.2f;
                 player->vel.y = 5.0f;
@@ -5790,7 +5791,8 @@ void Player_Update360(Player* player) {
             Player_WaterEffects(player);
             Player_FloorCheck(player);
             Player_LowHealthAlarm(player);
-            if ((player->shields <= 0) && (player->radioDamageTimer != 0)) {
+            // COOP: in a level open for it, a life refills player 0 in place instead (decision 0007 rule 3)
+            if ((player->shields <= 0) && (player->radioDamageTimer != 0) && !CoopPlayers_RefillFox(player)) {
                 Player_Down(player);
                 player->vel.y = 5.0f;
                 if (gLevelType == LEVELTYPE_SPACE) {

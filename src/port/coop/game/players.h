@@ -99,8 +99,40 @@ int32_t CoopPlayers_ReleaseLockOns(struct Actor* actor);
 // the level and Player_Down must return, because it also stops the music, plays the "player down" theme and starts
 // the fade to a level restart for everyone. The player comes back beside player 0 after 150 game frames, for one life
 // from the pool gLifeCount[0], with full shields (decision 0007 rule 4); CoopPlayers_SkipUpdate brings it back. Player
-// 0 going down is not handled here: it keeps the original restart until a level opens for 0007 rule 3.
+// 0 going down is not handled here: CoopPlayers_RefillFox keeps it from going down in a level open for 0007 rule 3,
+// and otherwise it keeps the original restart.
 int32_t CoopPlayers_OnPlayerDown(struct Player* player);
+
+// Call where Player_Update is about to call Player_Down, as part of that test: nonzero means player 0 was refilled in
+// place and must not go down (decision 0007 rule 3). That is so in co-op, in a level open for it (rule 12; Corneria),
+// while the pool gLifeCount[0] holds a life: the life is spent and player 0 gets full shields, both wings, 3 bombs, a
+// single laser and the mercyTimer of a return, where it flies. No fade, no restart, the path does not stop and the
+// other players fly on. Zero otherwise (not player 0, co-op off, a level that is not open, pool 0): the caller goes
+// on to Player_Down, as upstream. Reads and writes simulated state only, inside the player loop.
+int32_t CoopPlayers_RefillFox(struct Player* player);
+
+// Test switch SF64_COOP_TEST_FOX_REFILL_OFF: nonzero closes every level for the refill.
+void CoopPlayers_SetFoxRefillOff(int32_t off);
+
+// How often player 0 was refilled since the last Play_Init. For the co-op log; not simulation state.
+int32_t CoopPlayers_FoxRefillCount(void);
+
+// ---- Spike #183 (decision 0007 rule 13): passing the lead. An experiment behind SF64_COOP_TEST_LEAD_SWAP; with the
+// switch off none of it does anything, and nothing of it is a rule yet. See docs/coop/NOTES.md, 2026-11-11.
+
+// The session player this client is (what CoopPlayers_SetLocalIndex was given). CoopPlayers_LocalIndex is the slot that
+// player flies: the same number unless a lead swap moved it.
+int32_t CoopPlayers_SeatIndex(void);
+
+// The session player that flies slot `slot`: `slot` itself unless a lead swap moved it. After CoopInput_Route has
+// filled the pad slots by session player, input_game.c puts them in slot order with this.
+int32_t CoopPlayers_SeatOfSlot(int32_t slot);
+
+// Test switch: at pool 0, where player 0 would go down while another player flies, that player takes slot 0.
+void CoopPlayers_SetLeadSwapOn(int32_t on);
+
+// Lead swaps since the last Play_Init.
+int32_t CoopPlayers_LeadSwapCount(void);
 
 // What Actor.dmgSource holds after a hit by `sourceId`: a player index, or an NPC's shot id. Upstream writes
 // sourceId + 1, which for player index 1 is DMG_SRC_2, the value an enemy's hit on a wingman has. So in co-op, players
