@@ -41,8 +41,10 @@ and that a desync, if one happens, is caught and reported.
    campaign builds on the way, and the map after it is untested.
 6. **Fly the level together.** Either player's Start pauses both games. If the host's save has the level cleared,
    either player's Start in the intro skips it on both games; otherwise Start does nothing there (#191).
-7. **Stop at the map** after the level is complete, and quit. The map is not tested yet: each player has their own
-   save, and the map reads it.
+7. **Go on through the map into the next level.** The map reads the save, and every game plays on the host's progress
+   (decision 0009, item 8): the host sends it once before the level starts, and no PC's save file is written during a
+   session. A session with a Windows host and a Linux joining player went through two maps on the evening of 2026-11-10. What the
+   session earns is not kept. Quit when you are done.
 
 ## What is known not to work yet
 
