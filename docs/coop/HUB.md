@@ -29,9 +29,13 @@ Before sending:
 
 | Field | Value | Source |
 |---|---|---|
-| `coop_scope` | `no` for all five: nothing is shared between clients yet | `docs/coop/QA.md`, "Current project level"; no call into `src/port/coop/session/` or `net/` from outside `src/port/coop/` |
-| `players` | 2 planned, later up to 4 | `README.md`, "Goal" |
-| `networking` | `direct-ip`: a client connects to a host and port. Loopback only so far | `src/port/coop/net/transport.h:92`, decision 0004 |
-| `status`, `qa` | `prototype`, `none` | `README.md`, `docs/coop/QA.md` |
+| `coop_scope` | `players_visible`, `enemies`, `world_state` yes; `story` partial; `items` per-player | `README.md` "What the game does in a session": lockstep shares the whole level, the host's input drives cutscenes and radio, an item works for the player who takes it, lives and gold rings are the team's |
+| `players` | 2 played, up to 4 in the code, three clients in scripted tests | `README.md` "Goal"; the `three` scenario of `tools/coop/lockstep_test.py` |
+| `networking` | `direct-ip`: a client connects to a host and port; the played sessions were over a VPN | `src/port/coop/net/transport.h`, decision 0004, `README.md` "Host and join" |
+| `status`, `qa` | `alpha`, `automated` | `docs/coop/QA.md` "Current project level"; the 66-minute campaign run is named in the notes, and `verified-playthrough` is for the owner to claim |
 | `open_source` | `yes`, CC0 1.0 | `LICENSE.md` |
 | `made_with_coop_anything` | `true` | `AGENTS.md` |
+
+Updated 2026-11-11 after the merge of the combined test build (PR #263). The hub was searched again that day: no
+`games/star-fox-64`, no directory entry (not even a "gap" row), and no issue or pull request that mentions Star Fox,
+Starship or SF64. The entry passed the hub's validator (`validate_entry`).
