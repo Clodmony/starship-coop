@@ -1739,7 +1739,7 @@ def plain(args, folder, feed, frames, exe=None, env=None, host_env=None, client_
         wait_for([host, client], until, seconds or args.level_seconds, "in the plain run")
         if until == "over":
             # A desync stops lockstep, and the session starts the level again (the session survives).
-            wait_for([host, client], "again", 300, "after the desync: the level did not start again")
+            wait_for([host, client], "again", SURVIVE_AGAIN_SECONDS, "after the desync: the level did not start again")
     finally:
         client.close()
         host.close()
@@ -2517,7 +2517,7 @@ def sc_stall(args, folder):
         started = time.monotonic()
         wait_for([host], "over", STALL_SECONDS + 900, "after the stall")
         ended = time.monotonic() - started
-        survive_wait(games, "again", 1, 120, "after the stall: the level did not start again")
+        survive_wait(games, "again", 1, SURVIVE_AGAIN_SECONDS, "after the stall: the level did not start again")
         survive_wait(games, "done", 2, 600, "in the level that started again")
         survive_no_end(games)
         over = int(join_test.said(host.sync(), "over")[0]["frame"])
@@ -2566,7 +2566,7 @@ def sc_frozen(args, folder):
         ended = time.monotonic() - started
         wait_for([host], "alive", 120, "after the freeze: the host hangs")
         os.kill(client.proc.pid, signal.SIGCONT)
-        survive_wait(games, "again", 1, 120, "after the thaw: the level did not start again")
+        survive_wait(games, "again", 1, SURVIVE_AGAIN_SECONDS, "after the thaw: the level did not start again")
         survive_wait(games, "done", 2, 600, "in the level that started again")
         survive_no_end(games)
     finally:
@@ -2788,7 +2788,7 @@ def poke_session(args, folder, poke, jump=None, both=None, client_envs=None, cli
             wait_for(list(games), "done", 900, "with the check off")
         else:
             wait_for(list(games), "over", 900, "after the flipped bit")
-            wait_for(list(games), "again", 300, "after the desync: the level did not start again")
+            wait_for(list(games), "again", SURVIVE_AGAIN_SECONDS, "after the desync: the level did not start again")
         if after is not None:
             after(games)
     finally:
@@ -2972,6 +2972,7 @@ def sc_log(args, folder):
 # ---- The session survives (#189 and its sibling): a desync or a lost player starts the level again ----
 
 SURVIVE_FRAMES = 600  # frames of the level after a restart that have to hash alike: the intro, from frame 0 on
+SURVIVE_AGAIN_SECONDS = 120  # a level that starts again does so within a second or two; a build without it never
 SURVIVE_REASONS = {"lost": 1, "left": 2, "desync": 3}  # CoopRecoverReason, src/port/coop/session/session.h
 
 
@@ -3081,7 +3082,7 @@ def sc_survive_desync(args, folder):
                     client_envs=[{"SF64_COOP_LOCKSTEP_POKE": str(poke), "SF64_COOP_HASH_POKE_PLAYER": "1"}])
     try:
         survive_wait(games, "over", 1, 900, "after the flipped bit")
-        survive_wait(games, "again", 1, 300, "after the desync: the level did not start again")
+        survive_wait(games, "again", 1, SURVIVE_AGAIN_SECONDS, "after the desync: the level did not start again")
         survive_wait(games, "done", 2, 600, "in the level that started again")
         survive_no_end(games)
         time.sleep(2)  # the co-op log's stream: the last lines to the other folder
@@ -3134,7 +3135,7 @@ def sc_survive_three(args, folder):
     try:
         wait_for(list(games), "done", 900, "before the player left")
         (goes.run / "leave").write_text("", encoding="utf-8")
-        survive_wait([host, stays], "again", 1, 120, "after the player left: the level did not start again")
+        survive_wait([host, stays], "again", 1, SURVIVE_AGAIN_SECONDS, "after the player left: the level did not start again")
         survive_wait([host, stays], "done", 2, 600, "in the level that started again")
         survive_no_end([host, stays])
         wait_for([goes], "alive", 120, "after leaving: the game hangs")
@@ -3190,7 +3191,7 @@ def survive_checkpoint_run(args, folder, both, host_env=None, after=300):
                     client_envs=[{"SF64_COOP_LOCKSTEP_POKE_AFTER": str(after), "SF64_COOP_HASH_POKE_PLAYER": "1"}])
     try:
         survive_wait(games, "over", 1, 900, "after the flipped bit behind the checkpoint")
-        survive_wait(games, "again", 1, 300, "after the desync: the level did not start again")
+        survive_wait(games, "again", 1, SURVIVE_AGAIN_SECONDS, "after the desync: the level did not start again")
         survive_wait(games, "done", 2, 600, "in the level that started again")
         survive_no_end(games)
         time.sleep(2)
