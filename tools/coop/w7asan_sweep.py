@@ -32,8 +32,9 @@ has. A file named `stop` in that folder, or the one --stop-file names, ends the 
 --gdb <script> runs each game under gdb with a script of breakpoints that print (tools/coop/w7asan_slots.gdb: what
 the Garoa's and the Gorgon's remembered effect slots hold each time they use them), far slower than without.
 
-Exit code 0 when no report of AddressSanitizer's was found and every level reached level complete; 1 otherwise. UBSan
-reports alone do not fail it: `--strict` makes them.
+Exit code 0 when no report of AddressSanitizer's and no bounds report of UBSan's was found and every level reached
+level complete; 1 otherwise. UBSan's other reports (shifts, signed overflow, casts) are listed and do not fail it:
+`--strict` makes them.
 """
 import argparse
 import json
@@ -219,16 +220,22 @@ def w7asan_save(folder, summary):
     temp.replace(folder / "summary.json")
 
 
+def w7asan_counts(merged):
+    """(AddressSanitizer reports, UBSan bounds reports, other UBSan reports) of a merged report table."""
+    asan = sum(1 for r in merged.values() if r["tool"] == "asan")
+    bounds = sum(1 for r in merged.values() if r["tool"] == "ubsan" and r["kind"] == "bounds")
+    return asan, bounds, len(merged) - asan - bounds
+
+
 def w7asan_finish(folder, summary, strict):
     lines, merged = w7asan_table(summary)
     (folder / "table.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n".join(lines))
-    asan = sum(1 for r in merged.values() if r["tool"] == "asan")
-    ubsan = len(merged) - asan
+    asan, bounds, other = w7asan_counts(merged)
     open_levels = [name for name, row in summary["levels"].items() if row["complete"] is None and name != "baseline"]
-    bad = asan or open_levels or (strict and ubsan)
-    print(f"w7asan: {len(summary['levels'])} runs, {asan} distinct AddressSanitizer reports, {ubsan} distinct UBSan "
-          f"reports; without level complete: {', '.join(open_levels) or 'none'}; folder {folder}")
+    bad = asan or bounds or open_levels or (strict and other)
+    print(f"w7asan: {len(summary['levels'])} runs, distinct reports: {asan} AddressSanitizer, {bounds} UBSan bounds, "
+          f"{other} other UBSan; without level complete: {', '.join(open_levels) or 'none'}; folder {folder}")
     print("w7asan: FAIL" if bad else "w7asan: PASS")
     return 1 if bad else 0
 
@@ -261,9 +268,11 @@ def w7asan_cmd_baseline(args):
     w7asan_save(folder, summary)
     lines, merged = w7asan_table(summary)
     print("\n".join(lines))
-    ok = hash_check.played_through(values) and not merged
-    print(f"w7asan: baseline, {frames} frames through the menus into Corneria, replay {result}, "
-          f"{len(merged)} distinct reports; folder {folder}")
+    asan, bounds, other = w7asan_counts(merged)
+    ok = hash_check.played_through(values) and not asan and not bounds
+    print(f"w7asan: baseline, {frames} frames through the menus into Corneria, replay {result} (input by rule has no "
+          f"checkpoints: FAIL_MISMATCH is its normal end), distinct reports: {asan} AddressSanitizer, {bounds} UBSan "
+          f"bounds, {other} other UBSan; folder {folder}")
     print("w7asan: PASS" if ok else "w7asan: FAIL")
     return 0 if ok else 1
 
