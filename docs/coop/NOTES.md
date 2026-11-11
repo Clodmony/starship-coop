@@ -7128,6 +7128,59 @@ clients.
 - A client coming from a level it played to a checkpoint: the checkpoint values come from CVars per level
   (`src/engine/fox_play.c:4717-4724`); not tried.
 
+### 2026-11-11, #266, two long lockstep scenarios that failed on `coop`: a frame count that followed the fight, a frame limit that was too short
+
+Identity: ROM US 1.0, `coop` at `33bd5fe6`, Linux x86-64, GCC 16.2, Debug, OpenGL on a software renderer, no window,
+two game clients over loopback, `gInvincible` on both.
+
+Observed (run):
+
+- `lockstep_test.py --only bosses --levels dogfight` fails the same way on every start: `kept player 1 on 1819 frames,
+  player 0 on 2574` (22 s). #213's run of this scenario (above) had `3528` and `2573`. Player 0's count is the same to a
+  frame; player 1's fell by 1709.
+- The host's boss trace lists a Star Wolf member only while it chases Fox (`aiIndex == AI360_FOX`,
+  `src/port/coop/test/boss_trace.c:51`). In this run: gActors[4] (Wolf) on every frame from 321, gActors[7] (Andrew)
+  from 2949, gActors[6] (Pigma) from 4058, gActors[5] (Leon) never. Leon, Pigma and Andrew start out chasing a wingman
+  (`sStarWolfSpawnTargets`, `src/engine/fox_360.c:439`) and turn on Fox later.
+- The picks, a kept slot going from -1 to a player (`src/port/coop/game/aim.c:65`), at frames 771, 1162, 1871, 2359,
+  2781, 3064, 3351, 3594 (Wolf: 0, 1, 0, 0, 0, 0, 0, 0) and 3307, 4026 (Andrew: 1, 1). Each went to the human nearer
+  the member on the trace line of the pick and on the lines before and after it (the closest call: 698 from player 0,
+  641 from player 1, frame 1162). Wolf picked player 0 six times from 1871 on, each time beside it (444 to 4814 from
+  player 0, 538 to 19855 from player 1) and not near the fight player 1 held.
+- Movement per frame on that trace, at most: a Star Wolf 79 units, a ship 47.
+- The whole `bosses` scenario, four runs, on a build of the same commit: ok, 102 s (`gorgon` kept player 1 on 381 frames
+  and player 0 on 0, `andross` 1192 and 270 (1334 and 0 in #213's run), `dogfight`, `inhale`).
+- `lockstep_test.py --only vehicle_end --levels titania` with the frame limit raised from 34000 to 42000: ok, level
+  complete at 36223, the same hash on all 42000 frames, player 1 drove on 38883, 504 s. `campaign.py --levels titania`
+  completes at level frame 36223 too (table above). The earlier records of this level's end: 29169 (vehicle_end, first
+  run, 2026-11-08), 43591 (campaign run before `303890d2`), 36223 (`303890d2` and now).
+- The whole `vehicle_end` scenario on a build of the same commit, with the limit at 42000: ok, 1398 s with other tests
+  running. Macbeth level complete at 9956 (9522 in the 2026-11-08 run), Titania at 36223, Aquas at 7369, the same hash
+  on every frame of all three.
+
+Derived:
+
+- Nothing in how a Star Wolf picks its human is wrong in that trace: 10 of 10 picks are the nearer human. The dogfight
+  check counted frames, and the trace counts only the members that chase Fox on that frame, so the frames a human is
+  kept on are not the rule. The check is now the picks (`check_dogfight_picks`, `lockstep_test.py`): every pick to the nearer
+  human within `PICK_MARGIN` (250, one frame of drift: 2 * 79 + 47 + 47), and player 1 picked at least once (a
+  Star Wolf that only goes after player 0 never picks it). The frames are still printed. Tried on the real trace with every pick flipped, with every kept
+  slot forced to player 0 and with no slot ever emptied: each fails, with a different message.
+- Titania's `vehicle_end` failed because 36223 is past the 34000 frames it was given, not because of a fault in the
+  fight. The limit is 42000, about as far above the latest run as 34000 was above the first; a fight as long as the
+  43591 one fails it.
+
+Guess:
+
+- That the dogfight's frames moved because Leon, Pigma and Andrew turn on Fox at other frames than in #213's run, which
+  follows the wingmen's fights (`src/engine/fox_360.c:1954`) and whatever changed them since. Not bisected.
+
+Unknown:
+
+- Which commit moved the dogfight from `3528` to `1819` frames, and `andross` from `1334 and 0` to `1192 and 270`.
+- Why Titania's end moved between 29169, 43591 and 36223 (NOTES above guesses that Goras follows the tank lined up with
+  it).
+
 ## Networking
 
 ### 2026-11-11, the session survives a lost player or a desync: the level starts again from the host's state

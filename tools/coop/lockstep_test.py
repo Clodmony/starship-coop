@@ -98,7 +98,8 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   release   the plain run on a Release build (--release-exe) and on Debug: all four clients have to hash alike.
   vehicles  Titania, Aquas and Macbeth, the Landmaster and Blue Marine levels: same hash, both drive where co-op has opened.
   vehicle_end a vehicle level to its end: pilots drive it live, one on each client, with gInvincible on both, through
-            the boss to level complete. Same hash on every frame. Macbeth takes minutes, Titania about an hour.
+            the boss to level complete. Same hash on every frame. By hand, not in test_all.py. All three took 23
+            minutes with other tests running, Titania alone about 8 (level complete at frame 36223, limit 42000, #266).
   rates     the plain run at real time, with the two clients at different gInterpolationFPS.
   desync_sim src/port/coop/sync/desync.c alone, in a virtual network (tools/coop/desynctest), WP-23.
   desync    a bit flipped on one client, on rails and in all-range: both games name that frame, the players and the
@@ -112,8 +113,11 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             in Venom 2, with player 1 the nearer one. Each run ends with a bit flipped, and the boss's or Star Wolf's
             place is read from the desync report's dump, so the check runs on an old build too. Hashes equal up to the
             poke; with src/port/coop/test/boss_trace.h the boss trace is alike on both games and shows player 1 kept.
-            `inhale`: the face's inhale swallows player 1, chews and spits it out (its wings break), and player 0 flies
-            on and is not hit meanwhile (owner's choice A for #213's option D).
+            `dogfight` checks the picks (#266): each time a Star Wolf member that chases Fox picks a human, it takes the
+            nearer one (PICK_MARGIN), and player 1 is picked at least once; the frames each human is kept on are
+            printed, not checked, as they follow which members chase Fox when. `inhale`: the face's inhale swallows
+            player 1, chews and spits it out (its wings break), and player 0 flies on and is not hit meanwhile
+            (owner's choice A for #213's option D). By hand, not in test_all.py: about 2 minutes.
   other_bosses the other bosses go after the nearer human too (#220), read from the boss trace, which the base build
             writes as well: `granga`, Corneria's Granga walks at and turns to player 1 on most frames that player 1 is
             the nearer; `shogun`, Sector Y's Shoguns keep player 1 often and turn toward the player they keep;
@@ -1643,6 +1647,49 @@ def boss_trace_story(name, trace):
     return kept
 
 
+# How much nearer the human a Star Wolf did not pick may be at the pick before it counts as a wrong pick (#266). The trace
+# line is written after the frame's moves, so who is nearer can change between the pick and the line: in the dogfight
+# trace a Star Wolf moves up to 79 units a frame and a ship up to 47, and the difference of two distances then moves by
+# at most 2 * 79 + 47 + 47 = 252.
+PICK_MARGIN = 250.0
+
+
+def dogfight_picks(trace):
+    """The picks of the Star Wolf members that chase Fox, from the boss trace of `dogfight`: each frame on which a member's
+    kept slot (the last number of its aN field) goes from empty (-1) to player 0 or 1 while both can be picked. Returns
+    [(frame, member, human, (distance to player 0, distance to player 1))]. #213 keeps a pick until the AI's next choice,
+    so the picks are where the rule shows. How many frames a member holds a player does not: it depends on which members
+    chase Fox at all (Leon, Pigma and Andrew chase a wingman first) and on where the fight has got to by then."""
+    picks, last = [], {}
+    for row in trace:
+        members = {key: row[key].split(",") for key in row if re.fullmatch(r"a\d+", key)}
+        players = [row.get(f"p{i}", "").split(",") for i in (0, 1)]
+        # Who a Star Wolf may pick (CoopAim_CanAimAt): player 0 always, player 1 when it is not parked and in state 3
+        # or 5 (PLAYERSTATE_ACTIVE, PLAYERSTATE_U_TURN). Only then is "the nearer of the two" what it chose from.
+        both = len(players[0]) >= 5 and len(players[1]) >= 5 and players[1][1] == "0" and players[1][0] in ("3", "5")
+        for key, fields in members.items():
+            if both and last.get(key) == "-1" and fields[8] in ("0", "1"):
+                where = [float(v) for v in fields[2:5]]
+                distances = tuple(math.dist(where, [float(v) for v in p[2:5]]) for p in players)
+                picks.append((row["frame"], key, int(fields[8]), distances))
+        last = {key: fields[8] for key, fields in members.items()}
+    return picks
+
+
+def check_dogfight_picks(trace):
+    """Every Star Wolf pick went to the nearer human (within PICK_MARGIN), and player 1 was picked at least once (a
+    Star Wolf that only ever goes after player 0 never picks it). Returns a line."""
+    picks = dogfight_picks(trace)
+    expect(picks, "dogfight: no pick of a Star Wolf in the trace (a kept slot going from -1 to a player)")
+    for frame, key, human, distances in picks:
+        expect(distances[human] <= distances[1 - human] + PICK_MARGIN,
+               f"dogfight: {key} kept player {human} at frame {frame}, the farther one: {distances[0]:.0f} from player 0, "
+               f"{distances[1]:.0f} from player 1")
+    on1 = sum(1 for pick in picks if pick[2] == 1)
+    expect(on1, f"dogfight: no Star Wolf picked player 1 in {len(picks)} picks")
+    return f"{len(picks)} picks, all to the nearer human, {on1} of them player 1"
+
+
 def inhale_story(trace):
     """From the boss trace of `inhale`: player 1 swallowed, chewed, spat out and flying again, player 0 flying and not
     hit by the face meanwhile. Returns a line."""
@@ -1698,6 +1745,13 @@ def sc_bosses(args, folder):
             lines.append(f"{name}: same hash on {frames} frames; {text}; {inhale_story(trace)}")
             continue
         kept = boss_trace_story(name, trace)
+        if name == "dogfight":
+            # Not the frames each human was kept on (#266): that moved from 3528 and 2573 (#213) to 1819 and 2574
+            # with every pick right, and it counts only the members that chase Fox on that frame (NOTES.md, #266). The
+            # rule is in the picks.
+            lines.append(f"{name}: same hash on {frames} frames; {text}; {check_dogfight_picks(trace)}; kept player 1 on "
+                         f"{kept[1]} frames, player 0 on {kept[0]}")
+            continue
         expect(kept[1] > kept[0], f"{name}: kept player 1 on {kept[1]} frames, player 0 on {kept[0]}")
         lines.append(f"{name}: same hash on {frames} frames; {text}; kept player 1 on {kept[1]} frames, player 0 on "
                      f"{kept[0]}")
@@ -2116,10 +2170,14 @@ def sc_eels(args, folder):
 
 # A level, its frames from the join to well past level complete with the pilot and gInvincible (#16): Titania reached
 # level complete at frame 29169 in the first run, Macbeth at 9523, Aquas at 7240 (the join is close to its boss), so
-# there is room for a slower fight. Macbeth's boss
-# kills player 0 outright when the train reaches the end of its track first (Macbeth_Actor207_Update, state 18-19), and
-# with gInvincible that tank is never downed: it climbs on and the game crashes later. A slower pilot fails there.
-VEHICLE_END_LEVELS = (("Macbeth", 11, 14000), ("Titania", 12, 34000), ("Aquas", 13, 14000))
+# there is room for a slower fight. Titania's moved (#266): level complete came at 43591 on a later build, and at 36223
+# on `coop` at 33bd5fe6 (this scenario and campaign.py alike; NOTES.md, "the campaign run"), past the 34000 frames it
+# had been given. Why it moves is a guess (Goras follows the tank lined up with it, #220). Its limit is now 42000, about
+# 16 % above the latest run as 34000 was above the first, so a fight as long as the 43591 one fails here.
+# Macbeth's boss kills player 0 outright when the train reaches the end of its track first (Macbeth_Actor207_Update,
+# state 18-19), and with gInvincible that tank is never downed: it climbs on and the game crashes later. A slower pilot
+# fails there.
+VEHICLE_END_LEVELS = (("Macbeth", 11, 14000), ("Titania", 12, 42000), ("Aquas", 13, 14000))
 
 
 def sc_vehicle_end(args, folder):
