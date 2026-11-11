@@ -16,6 +16,7 @@
 #include "assets/ast_enmy_planet.h"
 #include "port/coop/game/players.h"    // COOP: the session gate (#209)
 #include "port/coop/math/rand_order.h" // COOP: two draws in their written order in a session (#209)
+#include "port/coop/game/aim.h"        // COOP: Goras follows and aims at the nearest human (campaign run, #220)
 
 typedef struct {
     /* 0x00 */ PosRot unk_00;
@@ -3802,6 +3803,10 @@ const char D_i5_801BAB5C[] = "Enm->chpt=<%d>\n";
 
 // Titania_TiGoras_Attack ?
 void Titania_80193DF0(TiGoras* this) {
+    // COOP: the player it follows across the path and turns its attack to, was player 0; kept until its next state
+    // (#220)
+    Player* aimed = &gPlayer[CoopAim_BossTarget(this->index, this->obj.pos.x, this->obj.pos.y, this->obj.pos.z)];
+    s32 coopState; // COOP: (#220)
     Vec3f spD4;
     Vec3f spC8;
     Actor* actor;
@@ -4358,15 +4363,16 @@ void Titania_80193DF0(TiGoras* this) {
     if ((this->state >= 7) && (this->state <= 12) && ((this->fwork[9] > 0.0f) || (this->fwork[6] > 0.0f))) {
         if (this->state == 12) {
             if ((this->fwork[9] > 0.0f) && (this->fwork[6] > 0.0f)) {
-                Math_SmoothStepToF(&this->obj.pos.x, gPlayer[0].pos.x, 0.1f, 10.0f, 0.01f);
+                Math_SmoothStepToF(&this->obj.pos.x, aimed->pos.x, 0.1f, 10.0f, 0.01f); // COOP: was gPlayer[0] (#220)
             } else {
-                Math_SmoothStepToF(&this->obj.pos.x, gPlayer[0].pos.x, 0.1f, 4.0f, 0.01f);
+                Math_SmoothStepToF(&this->obj.pos.x, aimed->pos.x, 0.1f, 4.0f, 0.01f); // COOP: as above
             }
         } else {
-            Math_SmoothStepToF(&this->obj.pos.x, gPlayer[0].pos.x, 0.1f, 3.0f, 0.01f);
+            Math_SmoothStepToF(&this->obj.pos.x, aimed->pos.x, 0.1f, 3.0f, 0.01f); // COOP: as above
         }
     }
 
+    coopState = this->state; // COOP: a new state picks the nearest human again (#220)
     switch (this->state) {
         case 5:
             if (this->timer_050 == 0) {
@@ -4535,8 +4541,8 @@ void Titania_80193DF0(TiGoras* this) {
             }
             if (((this->animFrame >= 0) && (this->animFrame < 18)) ||
                 ((this->animFrame >= 62) && (this->animFrame < 80))) {
-                D_i5_801BBEF4[12] =
-                    Math_Atan2F(gPlayer[0].pos.x - this->obj.pos.x, gPlayer[0].pos.z - this->obj.pos.z) * M_RTOD;
+                D_i5_801BBEF4[12] = // COOP: aimed was gPlayer[0] (#220)
+                    Math_Atan2F(aimed->pos.x - this->obj.pos.x, aimed->pos.z - this->obj.pos.z) * M_RTOD;
                 D_i5_801BBEF4[11] = __cosf(D_i5_801BBEF4[12] * M_DTOR) * 580.0f;
             }
             if ((this->animFrame >= 37) && (this->animFrame < 41) && (this->swork[11] > 0)) {
@@ -4804,6 +4810,9 @@ void Titania_80193DF0(TiGoras* this) {
                 }
             }
             break;
+    }
+    if (this->state != coopState) {
+        CoopAim_ForgetBoss(this->index); // COOP: (#220)
     }
 
     pad2 = this->swork[34];

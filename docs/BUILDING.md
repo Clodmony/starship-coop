@@ -72,8 +72,10 @@ work and older ones are not ruled out.
     on Linux `SHIP_HOME` if set, else the working directory (`:481-486`, `:500`). So a test instance is a folder with
     the two `.o2r` files and `gamecontrollerdb.txt` and `SHIP_HOME` pointing at it.
 11. **Linux dependencies differ between the lists.** This page's Debian/Ubuntu list has no `libglew-dev`, the CI job
-    installs it (`.github/workflows/coop-build.yml`). **Unknown** whether a build needs it. The co-op transport needs
-    `libsdl2-net-dev` (Debian/Ubuntu) or `sdl2_net` (Arch); the macOS list below lacks SDL2_net, and
+    installs it (`.github/workflows/coop-build.yml`). A Linux build does not use it: libultraship includes `GL/glew.h`
+    only for Windows and macOS, and a Linux build compiles no file that includes it and links no GLEW library (NOTES.md,
+    2026-11-11, the campaign run's small boxes; a build on a system without GLEW was not tried). The co-op transport
+    needs `libsdl2-net-dev` (Debian/Ubuntu) or `sdl2_net` (Arch); the macOS list below lacks SDL2_net, and
     `.github/macports.yml` adds it with a `COOP:` comment.
 12. **The Linux CI package needs Ubuntu 24.04's libraries** (`libzip.so.4`, `libtinyxml2.so.10`, `libspdlog.so.1.12`,
     `libfmt.so.9`) and does not start on a newer distribution (NOTES.md, 2026-11-06, #26; issue #121). A package made

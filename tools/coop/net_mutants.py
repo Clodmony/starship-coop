@@ -25,6 +25,22 @@ import net_test  # noqa: E402  (scenario names and how the test program is found
 # name, text in net_core.c (exactly once), replacement, scenarios that must fail. Newlines are "\n" here; files
 # checked out with CRLF are handled.
 BREAKS = [
+    ("stray_not_answered",
+     "if (p->msgId != COOP_MSG_DISCONNECT) {\n        Core_Write(core, from, p->connId, COOP_MSG_DISCONNECT,",
+     "if (0) {\n        Core_Write(core, from, p->connId, COOP_MSG_DISCONNECT,",
+     ["sim"]),
+    ("stray_goodbye_answered",
+     "if (p->msgId != COOP_MSG_DISCONNECT) {\n        Core_Write(core, from, p->connId, COOP_MSG_DISCONNECT,",
+     "if (1) {\n        Core_Write(core, from, p->connId, COOP_MSG_DISCONNECT,",
+     ["sim"]),
+    ("stray_answer_other_connection",
+     "Core_Write(core, from, p->connId, COOP_MSG_DISCONNECT, 0, 0, 0, 0, NULL, 0);",
+     "Core_Write(core, from, p->connId + 1, COOP_MSG_DISCONNECT, 0, 0, 0, 0, NULL, 0);",
+     ["sim"]),
+    ("stray_uncounted",
+     "core->strayDatagrams++;\n    if (p->msgId != COOP_MSG_DISCONNECT) {",
+     "if (p->msgId != COOP_MSG_DISCONNECT) {",
+     ["sim"]),
     ("no_checksum",
      "if (Get32(data) != CoopNetCore_Crc32(data + 4, size - 4) || Get16(data + 4) != MAGIC) {",
      "if (Get16(data + 4) != MAGIC) {",

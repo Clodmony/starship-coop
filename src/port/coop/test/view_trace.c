@@ -7,6 +7,7 @@
 #include "global.h"
 #include "sf64audio_provisional.h"
 #include "port/hooks/Events.h"
+#include "port/coop/game/names.h"
 #include "port/coop/game/players.h"
 #include "port/coop/game/view.h"
 
@@ -107,6 +108,28 @@ static void CoopViewTrace_WriteSfx(void) {
     }
 }
 
+// The names drawn over other players this frame (#257, #258). A name's spaces are written as _, so the line stays split
+// by spaces.
+static void CoopViewTrace_WriteTags(void) {
+    s32 tags = 0;
+    s32 i;
+    const char* c;
+
+    fputs(" tags=", sFile);
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        if (!CoopView_TagShown(i)) {
+            continue;
+        }
+        fprintf(sFile, "%s%d:", (tags++ == 0) ? "" : ",", i);
+        for (c = CoopNames_Label(i); *c != '\0'; c++) {
+            fputc((*c == ' ') ? '_' : *c, sFile);
+        }
+    }
+    if (tags == 0) {
+        fputc('-', sFile);
+    }
+}
+
 static void CoopViewTrace_OnGamePostUpdate(IEvent* event) {
     s32 bars = 0;
     s32 i;
@@ -132,6 +155,7 @@ static void CoopViewTrace_OnGamePostUpdate(IEvent* event) {
     if (bars == 0) {
         fputc('-', sFile);
     }
+    CoopViewTrace_WriteTags();
     for (i = 0; i < CoopPlayers_Count(); i++) {
         const Player* p = &gPlayer[i];
 
@@ -153,6 +177,26 @@ static void CoopViewTrace_OnGamePostUpdate(IEvent* event) {
         fprintf(sFile, "%s%d", (i == 0) ? "" : ",", sPlayerNoise[i].form);
     }
     fprintf(sFile, " pause=%d", gPlayState == PLAY_PAUSE);
+    fputs(" reticles=", sFile);
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        fprintf(sFile, "%s%d", (i == 0) ? "" : ",", gShowReticles[i]);
+    }
+    {
+        int32_t heatShields;
+        int32_t heatHeight;
+
+        if (CoopView_HeatAlarmSet(&heatShields, &heatHeight)) {
+            fprintf(sFile, " heat=%d,%d", heatShields, heatHeight);
+        } else {
+            fputs(" heat=-", sFile);
+        }
+    }
+    {
+        int32_t billboards;
+        int32_t turned = CoopView_TakeTurned(&billboards);
+
+        fprintf(sFile, " turned=%d/%d", turned, billboards);
+    }
     CoopViewTrace_WriteSfx();
     fputc('\n', sFile);
     if ((gGameFrameCount % 60) == 0) {
@@ -189,8 +233,24 @@ static void CoopViewTrace_ReadPokes(const char* text) {
     }
 }
 
+// SF64_COOP_TEST_NAMES: the players' names without a session, as the session would hand them in (#258).
+static void CoopViewTrace_ReadNames(const char* text) {
+    char name[COOP_NAME_MAX + 1];
+    s32 i;
+    s32 n;
+
+    for (i = 0; (text != NULL) && (i < COOP_PLAYERS_MAX); i++) {
+        for (n = 0; (text[n] != '\0') && (text[n] != ','); n++) {}
+        snprintf(name, sizeof(name), "%.*s", n, text);
+        CoopNames_Set(i, name);
+        text = (text[n] == ',') ? text + n + 1 : NULL;
+    }
+}
+
 void CoopViewTrace_Init(void) {
     const char* path = getenv("SF64_COOP_VIEW_TRACE");
+
+    CoopViewTrace_ReadNames(getenv("SF64_COOP_TEST_NAMES"));
 
     if ((path == NULL) || (path[0] == '\0')) {
         return;

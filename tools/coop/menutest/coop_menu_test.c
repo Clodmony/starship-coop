@@ -173,6 +173,7 @@ static struct {
     uint32_t picksSent;
     bool failPicks; // the transport's window is full
     bool dropPongs; // nobody gets a round trip
+    bool cut;       // nothing arrives anywhere: every connection goes quiet
 } sNet;
 
 static void Sim_Tx(void* user, CoopNetAddr to, const uint8_t* data, uint16_t size) {
@@ -180,6 +181,9 @@ static void Sim_Tx(void* user, CoopNetAddr to, const uint8_t* data, uint16_t siz
 
     // The message id is at byte 8 of a datagram, see PROTOCOL.md.
     if (sNet.dropPongs && size >= 10 && (data[8] | (data[9] << 8)) == COOP_MSG_PONG) {
+        return;
+    }
+    if (sNet.cut) {
         return;
     }
     if (sNet.count == SIM_MAX_PACKETS) {
@@ -302,6 +306,26 @@ static uint32_t Sync_Waiting(int32_t* player) {
 static const CoopMenuBackend sSimBackend = { Sim_Host,    Sim_Connect,   Sim_Port,     Id_Test,     Level_FromGame,
                                              Level_Enter, Session_Ended, Sync_Message, Sync_Waiting };
 
+// The same with a session id and a game that hears of a recovery, as the real game's backend has them: a session
+// someone can come back to. The id is fixed, and the tests count what the game is told.
+#define TEST_SESSION_ID 0x1122334455667788ull
+
+static int sRecovers[MENUS];
+
+static uint64_t Session_Id(void) {
+    return TEST_SESSION_ID;
+}
+
+static void Game_Recover(void) {
+    EXPECT(sTicking != NOT_TICKING, "a game was told of a recovery outside CoopMenu_Tick");
+    sRecovers[sTicking]++;
+}
+
+static const CoopMenuBackend sSurviveBackend = { Sim_Host,       Sim_Connect, Sim_Port,      Id_Test,
+                                                 Level_FromGame, Level_Enter, Session_Ended, Sync_Message,
+                                                 Sync_Waiting,   NULL,        NULL,          Session_Id,
+                                                 Game_Recover };
+
 static void Sim_Reset(uint32_t latencyMs) {
     int n;
 
@@ -322,6 +346,8 @@ static void Sim_Reset(uint32_t latencyMs) {
     sNet.picksSent = 0;
     sNet.failPicks = false;
     sNet.dropPongs = false;
+    sNet.cut = false;
+    memset(sRecovers, 0, sizeof(sRecovers));
     memset(sNet.extraMs, 0, sizeof(sNet.extraMs));
     sIdentityReads = 0;
     sBuild = "test-build";
@@ -1143,18 +1169,50 @@ static void Test_LevelLost(void) {
     Expect_Has(View(HOST)->level, "The level has started", "the wait is still shown");
     EXPECT(!CoopMenu_WantsEyes(HOST), "the window wants the player's eyes after the wait");
 
+    // One of two clients leaves: the session goes on, and the level starts again for the two who stay (the session
+    // survives). Each is told in one line, and the window comes up once to show it.
     CoopMenu_Leave(B);
     EXPECT(sSessionsEnded == 1, "the one who left did not end its own session");
     EXPECT(!CoopMenu_WantsEyes(B), "leaving on purpose brings the window up");
     Run(500);
+    EXPECT(sSessionsEnded == 1, "the session of those who stayed ended with the one who left");
+    v = View(HOST);
+    EXPECT(v->phase == COOP_MENU_HOSTING, "the host lost its session");
+    Expect_Has(v->message, "Player 3 left. Starting the level again together.", "the host is not told");
+    Expect_Has(v->level, "The level has started", "the host's level line is stuck in the recovery");
+    v = View(A);
+    EXPECT(v->phase == COOP_MENU_JOINED, "the client lost its session");
+    Expect_Has(v->message, "Player 3 left. Starting the level again together.", "the other client is not told");
+    EXPECT(sEnters[0] == 2 && sEnters[1] == 2 && sEnters[2] == 1,
+           "the level did not start again for the two who stayed");
+    EXPECT(sEntered[0].run == 2 && sEntered[1].run == 2 && sEntered[0].roster[2] == NO_PLAYER &&
+               sEntered[1].roster[1] == FALCO && sEntered[1].values[0] == TEST_VALUE_FIRST,
+           "the second level start is not the host's level again, without the player who left");
+    EXPECT(CoopMenu_WantsEyes(HOST) && !CoopMenu_WantsEyes(HOST), "the host's window does not come up, once");
+    EXPECT(CoopMenu_WantsEyes(A) && !CoopMenu_WantsEyes(A), "the client's window does not come up, once");
+
+    // The last client leaves: nothing is left to start again, and the session is over as it always was.
+    CoopMenu_Leave(A);
+    Run(500);
     EXPECT(sSessionsEnded == 3, "a level went on as a session without a player");
     v = View(HOST);
     EXPECT(v->phase == COOP_MENU_IDLE, "the host still holds a session");
-    Expect_Has(v->message, "Player 3 left, so the session is over", "the host is not told");
+    Expect_Has(v->message, "Player 2 left, so the session is over", "the host is not told");
+    EXPECT(CoopMenu_WantsEyes(HOST) && !CoopMenu_WantsEyes(HOST), "the host's window does not come up, once");
+    EXPECT(sEnters[0] == 2, "a host left alone started the level again");
+    Menus_Close();
+
+    // The host leaves: every client's session is over, with two of them too.
+    Menus_Init(20);
+    Start_Three();
+    EXPECT(CoopMenu_Start(HOST), "Start did nothing");
+    Run(500);
+    CoopMenu_Leave(HOST);
+    Run(500);
+    EXPECT(sSessionsEnded == 3, "a client's session outlived its host");
     v = View(A);
     EXPECT(v->phase == COOP_MENU_IDLE, "the client still holds a session");
-    Expect_Has(v->message, "closed the connection", "the other client is not told");
-    EXPECT(CoopMenu_WantsEyes(HOST) && !CoopMenu_WantsEyes(HOST), "the host's window does not come up, once");
+    Expect_Has(v->message, "closed the connection", "the client is not told");
     EXPECT(CoopMenu_WantsEyes(A) && !CoopMenu_WantsEyes(A), "the client's window does not come up, once");
     Menus_Close();
 
@@ -1212,6 +1270,195 @@ static void Test_LevelEnds(void) {
     Menus_Close();
 }
 
+// #258: what the game was handed as each player's name, by the menu that ticked; a call outside a tick (a session
+// ending in Leave) counts as handed to sPlayerNamesOutside.
+static char sPlayerNamesGot[MENUS][COOP_SESSION_PLAYERS][COOP_NAME_MAX + 1];
+static uint32_t sPlayerNamesOutside;
+
+static void PlayerNames_Got(int32_t player, const char* name) {
+    EXPECT(player >= 0 && player < COOP_SESSION_PLAYERS, "names handed for a player slot that cannot be");
+    EXPECT(name != NULL && strlen(name) <= COOP_NAME_MAX, "a name handed that is too long");
+    if (sTicking == NOT_TICKING) {
+        sPlayerNamesOutside++;
+        EXPECT(name[0] == '\0', "a name handed outside a tick");
+        return;
+    }
+    snprintf(sPlayerNamesGot[sTicking][player], sizeof(sPlayerNamesGot[sTicking][player]), "%s", name);
+}
+
+static const CoopMenuBackend sPlayerNamesBackend = { Sim_Host,       Sim_Connect, Sim_Port,       Id_Test,
+                                                     Level_FromGame, Level_Enter, Session_Ended,  Sync_Message,
+                                                     Sync_Waiting,   NULL,        PlayerNames_Got };
+
+static void Test_PlayerNames(void) {
+    const CoopMenuView* v;
+    int i;
+
+    sScenario = "names";
+    Menus_Init(0);
+    for (i = 0; i < MENUS; i++) {
+        CoopMenu_Init(&sMenus[i], &sPlayerNamesBackend);
+    }
+    memset(sPlayerNamesGot, 0, sizeof(sPlayerNamesGot));
+    sPlayerNamesOutside = 0;
+    CoopMenu_SetName(HOST, " Captain Fox");
+    CoopMenu_SetName(A, "sam!");
+    CoopMenu_SetName(B, "");
+    Start_Host();
+    Join(A);
+    Join(B);
+    Run(500);
+    for (i = 0; i < 3; i++) {
+        EXPECT(strcmp(sPlayerNamesGot[i][0], "CAPTAIN") == 0, "a game was not handed the host's name");
+        EXPECT(strcmp(sPlayerNamesGot[i][1], "SAM!") == 0, "a game was not handed player 2's name");
+        EXPECT(sPlayerNamesGot[i][2][0] == '\0' && sPlayerNamesGot[i][3][0] == '\0',
+               "a game was handed a name nobody typed");
+    }
+    v = View(B);
+    Expect_Has(v->players[0].text, "Player 1: CAPTAIN, Fox", "the host's line does not carry its name");
+    Expect_Has(v->players[1].text, "Player 2: SAM!, no character", "player 2's line does not carry its name");
+    Expect_Has(v->players[2].text, "Player 3 (you): no character", "a line without a name changed");
+    v = View(HOST);
+    Expect_Has(v->players[1].text, "Player 2: SAM!", "the host does not show player 2's name");
+
+    // A name set during a session is for the next one.
+    CoopMenu_SetName(A, "other");
+    Run(500);
+    EXPECT(strcmp(sPlayerNamesGot[0][1], "SAM!") == 0, "a name changed in the middle of a session");
+
+    // Gone with its player, and with the session.
+    CoopMenu_Leave(A);
+    Run(500);
+    EXPECT(sPlayerNamesGot[0][1][0] == '\0' && sPlayerNamesGot[2][1][0] == '\0', "a name stayed after its player left");
+    EXPECT(sPlayerNamesOutside == COOP_SESSION_PLAYERS, "leaving did not hand the game empty names");
+    Menus_Close();
+    EXPECT(sPlayerNamesOutside == 3 * COOP_SESSION_PLAYERS, "the session's end did not hand the game empty names");
+}
+
+static void Survive_Init(void) {
+    int i;
+
+    Menus_Init(20);
+    for (i = 0; i < MENUS; i++) {
+        CoopMenu_Init(&sMenus[i], &sSurviveBackend);
+    }
+}
+
+// The session survives: a desync, a connection that drops and comes back, and one that stays away.
+static void Test_Survive(void) {
+    const CoopMenuView* v;
+
+    sScenario = "survive";
+
+    // The games parted (what sync tells the session): one line on both, the window once, the game told to stop its
+    // lockstep, and the level again from the host's level start.
+    Survive_Init();
+    Start_Host();
+    Join(A);
+    Pick(A, FALCO);
+    EXPECT(CoopMenu_Start(HOST), "Start did nothing");
+    Run(500);
+    EXPECT(CoopSession_Id(HOST->session) == TEST_SESSION_ID && CoopSession_Id(A->session) == TEST_SESSION_ID,
+           "the session has no id, or the client did not get it");
+    EXPECT(CoopSession_Recover(HOST->session, COOP_RECOVER_DESYNC, sNet.now), "the session would not recover");
+    sTicking = 0;
+    CoopMenu_Tick(HOST, sNet.now);
+    sTicking = NOT_TICKING;
+    v = View(HOST);
+    Expect_Has(v->message, "The games parted. Starting the level again together.", "the host is not told");
+    EXPECT(sRecovers[0] == 1, "the host's game was not told to stop");
+    Run(500);
+    v = View(A);
+    Expect_Has(v->message, "The games parted. Starting the level again together.", "the client is not told");
+    Expect_Has(v->level, "The level has started", "the client's level line is stuck in the recovery");
+    EXPECT(sRecovers[1] == 1 && sEnters[0] == 2 && sEnters[1] == 2 && sEntered[1].run == 2 && sSessionsEnded == 0,
+           "the level did not start again on both");
+    EXPECT(CoopMenu_WantsEyes(HOST) && !CoopMenu_WantsEyes(HOST) && CoopMenu_WantsEyes(A) && !CoopMenu_WantsEyes(A),
+           "the windows did not come up, once");
+    EXPECT(View(HOST)->phase == COOP_MENU_HOSTING && View(A)->phase == COOP_MENU_JOINED, "a session ended");
+
+    // The connection drops for longer than the time-out and comes back: the host keeps the player's slot and says
+    // so, the client goes back by itself with the session id, and the level starts again.
+    sNet.cut = true;
+    Run(COOP_MENU_TIMEOUT_MS + 1000);
+    v = View(HOST);
+    EXPECT(v->phase == COOP_MENU_HOSTING && sSessionsEnded == 0, "the host ended its session over a lost connection");
+    Expect_Has(v->message, "Player 2 lost the connection. Waiting for it to come back (15 s)", "the host is not told");
+    Expect_Has(v->level, "Waiting for the level to start again", "the host's level line does not say so");
+    Expect_Has(v->players[1].text, "Falco", "the lost player's character was not kept");
+    v = View(A);
+    EXPECT(v->phase == COOP_MENU_CONNECTING, "the client did not try to come back");
+    Expect_Has(v->status, "Coming back to sim:45000", "the client's status does not say so");
+    Expect_Has(v->message, "The connection to the host was lost. Trying to come back", "the client is not told");
+    EXPECT(sRecovers[0] == 2 && sRecovers[1] == 2, "a game was not told to stop its lockstep");
+    EXPECT(CoopMenu_WantsEyes(HOST) && CoopMenu_WantsEyes(A), "the windows did not come up");
+    sNet.cut = false;
+    Run(1500);
+    v = View(A);
+    EXPECT(v->phase == COOP_MENU_JOINED && sSessionsEnded == 0, "the client did not get back in");
+    Expect_Has(v->status, "as player 2", "the client is not the player it was");
+    Expect_Has(v->level, "The level has started", "the client's level line is stuck");
+    EXPECT(sEnters[0] == 3 && sEnters[1] == 3 && sEntered[0].run == 3 && sEntered[1].run == 3 &&
+               sEntered[1].roster[1] == FALCO,
+           "the level did not start again for the player who came back");
+    EXPECT(View(HOST)->phase == COOP_MENU_HOSTING, "the host lost its session");
+
+    // The connection drops and stays away: the client gives up when it reaches nobody, the host when the wait is
+    // over, and each says how it lost the other, as before.
+    sNet.cut = true;
+    Run(COOP_MENU_TIMEOUT_MS + 1000);
+    EXPECT(View(A)->phase == COOP_MENU_CONNECTING && View(HOST)->phase == COOP_MENU_HOSTING, "nobody waited");
+    Run(COOP_MENU_TIMEOUT_MS + 500);
+    v = View(A);
+    EXPECT(v->phase == COOP_MENU_IDLE, "the client still tries to come back");
+    Expect_Has(v->message, "timed out", "the client does not say how it lost the host");
+    Run(COOP_SESSION_REJOIN_MS);
+    v = View(HOST);
+    EXPECT(v->phase == COOP_MENU_IDLE, "the host still waits");
+    Expect_Has(v->message, "Player 2 left, so the session is over", "the host is not told");
+    EXPECT(sSessionsEnded == 2 && sEnters[0] == 3, "the sessions did not end once each, or a level started for nobody");
+    sNet.cut = false;
+    Menus_Close();
+
+    // The host goes without a word in a level (no handover here): the client tries to come back, reaches nobody,
+    // and says that the host closed. Leave works while it tries.
+    Survive_Init();
+    Start_Host();
+    Join(A);
+    Pick(A, FALCO);
+    EXPECT(CoopMenu_Start(HOST), "Start did nothing");
+    Run(500);
+    CoopMenu_Leave(HOST);
+    Run(500);
+    EXPECT(View(A)->phase == COOP_MENU_CONNECTING && sSessionsEnded == 1, "the client did not try to come back");
+    CoopMenu_Leave(A);
+    EXPECT(View(A)->phase == COOP_MENU_IDLE && sSessionsEnded == 2, "Leave did not end the try");
+    Menus_Close();
+    Survive_Init();
+    Start_Host();
+    Join(A);
+    Pick(A, FALCO);
+    EXPECT(CoopMenu_Start(HOST), "Start did nothing");
+    Run(500);
+    CoopMenu_Leave(HOST);
+    Run(COOP_MENU_TIMEOUT_MS + 1000);
+    v = View(A);
+    EXPECT(v->phase == COOP_MENU_IDLE && sSessionsEnded == 2, "the client still tries to come back");
+    Expect_Has(v->message, "closed the connection", "the client does not say how it lost the host");
+    Menus_Close();
+
+    // Before the level nobody comes back: a client that loses its host there is out.
+    Survive_Init();
+    Start_Host();
+    Join(A);
+    sNet.cut = true;
+    Run(COOP_MENU_TIMEOUT_MS + 1000);
+    EXPECT(View(A)->phase == COOP_MENU_IDLE && View(HOST)->phase == COOP_MENU_HOSTING, "a lobby tried to recover");
+    EXPECT(sRecovers[0] == 0 && sRecovers[1] == 0, "a game was told of a recovery in the lobby");
+    sNet.cut = false;
+    Menus_Close();
+}
+
 static int Run_Sim(void) {
     Test_Idle();
     Test_BadInput();
@@ -1237,7 +1484,9 @@ static int Run_Sim(void) {
     Test_LevelPickInFlight();
     Test_LevelLost();
     Test_LevelEnds();
-    printf("PASS: 24 scenarios\n");
+    Test_PlayerNames();
+    Test_Survive();
+    printf("PASS: 25 scenarios\n");
     return 0;
 }
 

@@ -216,6 +216,9 @@ static void CoopPilot_FlyRails(const Player* p, s32 i, PilotPad* pad) {
     if ((gGameFrameCount % PILOT_FIRE_PERIOD) == 0) {
         pad->button |= A_BUTTON;
     }
+    if (CoopPilot_RailBomb(p, i)) { // pilot_aim.c, 2026-11-11
+        pad->button |= gBombButton[i];
+    }
 }
 
 // The tank's own test, without its matrix: whether a point is in one of an object's hitboxes, each grown by `margin`
@@ -848,7 +851,10 @@ f32 CoopPilot_SteerAt(const Player* p, f32 x, f32 y, f32 z, PilotPad* pad) {
     f32 pitch = CoopPilot_Wrap(Math_RadToDeg(Math_Atan2F(dy, sqrtf(SQ(dx) + SQ(dz)))));
     s32 i = p - gPlayer;
 
-    if ((p->pos.y < PILOT_MIN_HEIGHT) && (pitch < 12.0f)) {
+    // Above the ground, not above 0: a level in space has none (gGroundHeight -25000, Play_GenerateStarfield), and
+    // Sector Y's Shoguns walk at y 0 and below, where a floor of 220 held the nose up and every shot went over them
+    // (#181).
+    if ((p->pos.y < (gGroundHeight + PILOT_MIN_HEIGHT)) && (pitch < 12.0f)) {
         pitch = 12.0f;
     }
     // The heading is yRot_114 + rot.y, and yRot_114 goes on turning by yRotVel_11C (0.03 of rot.y) every frame, while

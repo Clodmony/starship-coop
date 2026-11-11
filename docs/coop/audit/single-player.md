@@ -24,19 +24,19 @@ pattern without reading the code, so treat it as a guess.
 
 ## Summary
 
-1735 sites in 419 functions in 46 files.
+1702 sites in 419 functions in 46 files.
 A function whose sites have more than one verdict counts once per verdict in the functions column.
 
 | verdict | sites | functions | `gPlayer[0]` | `gPlayer->` | `gPlayer arg` | `gMainController` | `gCamCount` | `shooter` |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| sim | 779 | 166 | 774 | 1 | 2 | 0 | 0 | 2 |
+| sim | 738 | 165 | 733 | 1 | 2 | 0 | 0 | 2 |
 | view | 217 | 84 | 151 | 0 | 0 | 43 | 3 | 20 |
 | input | 13 | 9 | 0 | 0 | 0 | 8 | 0 | 5 |
-| flow | 478 | 102 | 436 | 0 | 3 | 3 | 0 | 36 |
+| flow | 486 | 103 | 444 | 0 | 3 | 3 | 0 | 36 |
 | setup | 53 | 34 | 1 | 0 | 1 | 0 | 51 | 0 |
 | ok | 195 | 84 | 14 | 2 | 15 | 87 | 8 | 69 |
 
-Basis per site: read 345, site 893, name 497.
+Basis per site: read 353, site 852, name 497.
 
 ## Sites
 
@@ -174,17 +174,17 @@ Basis per site: read 345, site 893, name 497.
 |---|---|---|---|---|
 | `ActorTeamArwing_Draw` | 569:P0, 570:P0, 573:P0, 575:P0, 577:P0, 579:P0, 580:P0, 606:P0 | view | site | team Arwing look copies player 0 wing state and state |
 | `Object_SetShadowDL` | 736:P0 | view | site | player 0 state |
-| `Object_SetMatrix` | 962:P0 | view | site | billboard to player 0 camera |
-| `Actor_DrawAllRange` | 1229:P0, 1240:P0, 1276:P0 | view | site | all-range markers by player 0 state |
-| `Actor_DrawAllRange` | 1298:CC | setup | site | loops players for markers |
-| `Item_Draw` | 1536:CC | setup | site | gCamCount == 1 as "not versus" for all-range item marker |
-| `Object_SetSfxSourceToPos` | 1644:CC, 1649:P0, 1650:P0 | view | site | object sounds placed relative to player 0 camera (gCamCount != 1 skips: versus has no positional sound) |
-| `Object_UpdateSfxSource` | 1667:CC | view | site | gCamCount != 1 skips positional sound |
-| `Object_SetSfxSourceToView` | 1679:CC | view | site | gCamCount != 1 skips positional sound |
-| `Display_SetSecondLight` | 1781:P0 | view | site | player 0 state |
-| `Object_DrawAll` | 1972:P0, 1973:P0 | view | site | player 0 state |
-| `Object_Draw` | 2092:P0 | view | site | water reflection by player 0 state |
-| `Effect_Draw` | 2109:P0 | view | site | water reflection by player 0 state |
+| `Object_SetMatrix` | 963:P0 | view | site | billboard to player 0 camera |
+| `Actor_DrawAllRange` | 1237:P0, 1248:P0, 1284:P0 | view | site | all-range markers by player 0 state |
+| `Actor_DrawAllRange` | 1306:CC | setup | site | loops players for markers |
+| `Item_Draw` | 1544:CC | setup | site | gCamCount == 1 as "not versus" for all-range item marker |
+| `Object_SetSfxSourceToPos` | 1652:CC, 1657:P0, 1658:P0 | view | site | object sounds placed relative to player 0 camera (gCamCount != 1 skips: versus has no positional sound) |
+| `Object_UpdateSfxSource` | 1675:CC | view | site | gCamCount != 1 skips positional sound |
+| `Object_SetSfxSourceToView` | 1687:CC | view | site | gCamCount != 1 skips positional sound |
+| `Display_SetSecondLight` | 1789:P0 | view | site | player 0 state |
+| `Object_DrawAll` | 1980:P0, 1981:P0 | view | site | player 0 state |
+| `Object_Draw` | 2100:P0 | view | site | water reflection by player 0 state |
+| `Effect_Draw` | 2117:P0 | view | site | water reflection by player 0 state |
 
 ### `src/engine/fox_effect.c`
 
@@ -310,32 +310,32 @@ Basis per site: read 345, site 893, name 497.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Play_InitEnvironment` | 585:P0 | view | site | kills a sound on player 0 source |
-| `Player_CollisionCheck` | 1840:CC, 2265:CC | setup | site | gCamCount != 1 and == 4 mean versus (mercy rules, player-vs-player hits); a co-op gCamCount of 2 would turn half of this on |
-| `Player_CollisionCheck` | 2179:P0 | view | site | warp ring sound played on player 0 source |
-| `Player_CollisionCheck` | 2193:SH | ok | site | dmgSource through CoopPlayers_DmgSource since #86 |
-| `Player_FloorCheck` | 2400:CC, 2415:CC | setup | site | gCamCount == 1 / != 1 as versus flag |
-| `Play_Init` | 2931:CC, 2934:CC | setup | read | sets gCamCount 1 (4 in versus), then CoopPlayers_LevelInit; since WP-10 CoopPlayers_Count() sizes the player allocation, the clear (Player_InitializeAll) and the init loop |
-| `Play_Init` | 2953:PA | setup | read | MEM_ARRAY_ALLOCATE(gPlayer, CoopPlayers_Count()): allocates every player, nothing to do |
-| `Player_SetupArwingShot` | 3094:SH | ok | site | writes player->num |
-| `Player_SetupTankShot` | 3144:SH | ok | site | writes player->num |
-| `Player_SetupOnFootShot` | 3294:SH | ok | site | writes player->num |
-| `Player_CanLockOn` | 3322:CC | setup | site | loops gCamCount players |
-| `Player_UpdateLockOn` | 3435:CC | setup | site | loops gCamCount players |
-| `Player_CheckBounds360` | 3701:CC | setup | read | gCamCount != 1 as versus flag: wraps the arena at 12000 |
-| `Player_Setup` | 4942:CC | setup | site | gCamCount == gPlayerNum + 1: HUD and hit counters reset only when the last player is set up |
-| `Player_UpdateTankJets` | 5483:CC, 5487:CC | setup | site | gCamCount == 1 as "not versus" for jet effects |
-| `Player_UpdateEffects` | 5529:CC | setup | site | loops gCamCount players |
-| `Player_Update` | 5907:MC, 5908:MC, 5909:MC | ok | read | with co-op off; in co-op CoopPlayers_SelectInput points at the player's own slot right after (WP-14) |
-| `Player_Update` | 6145:CC | setup | site | gCamCount == 4: down in versus goes to VS_STANDBY, else fade out and restart level |
-| `Player_Update` | 6155:P0, 6224:P0 | flow | site | death restart resets gPlayer[0].zPath and path progress; boost check reads player 0 state for every player |
-| `Camera_SetStarfieldPos` | 6653:P0, 6665:P0 | view | site | starfield from player 0 camera |
-| `Camera_SetupLights` | 6748:P0 | view | site | lights depend on player 0 state |
-| `Play_UpdateLevel` | 6878:P0, 6879:P0, 6880:P0, 6881:P0, 6882:P0, 6895:P0, 6896:P0, 6911:P0, 6920:P0, 6921:P0, 6946:P0, 6951:P0, 6954:P0, 6957:P0, 6960:P0, 6963:P0, 6966:P0, 6976:P0, 6978:P0, 6980:P0, 6981:P0, 6983:P0, 6984:P0, 6986:P0, 6993:P0, 6997:P0, 6999:P0, 7005:P0, 7015:P0, 7021:P0, 7022:P0 | flow | site | per-level triggers on player 0: level complete, warp zone, Solar heat damage to player 0 only, Venom 2 / Aquas checks |
-| `Play_UpdateLevel` | 6883:PA | flow | site | Camera_Update360 for player 0 as Venom 2 ends: level complete is one player's (WP-16) |
-| `Play_Main` | 7176:P0, 7177:P0, 7179:P0, 7180:P0, 7181:P0, 7217:P0, 7249:P0, 7250:P0 | flow | site | all-range z setup for player 0 only |
-| `Play_Main` | 7229:CC | setup | site | intro skip resets gCamCount to 1; its sound cleanup loop is on CoopPlayers_Count() since WP-10 |
-| `Play_Main` | 7249:MC | input | site | R while paused (toggles gShowReticles[0], no radio here) is read from gMainController only; Start (intro skip, pause, unpause) goes through CoopPlayers_PausePressed, any player in co-op (#20, #191); versus reads R per controller |
+| `Play_InitEnvironment` | 586:P0 | view | site | kills a sound on player 0 source |
+| `Player_CollisionCheck` | 1841:CC, 2266:CC | setup | site | gCamCount != 1 and == 4 mean versus (mercy rules, player-vs-player hits); a co-op gCamCount of 2 would turn half of this on |
+| `Player_CollisionCheck` | 2180:P0 | view | site | warp ring sound played on player 0 source |
+| `Player_CollisionCheck` | 2194:SH | ok | site | dmgSource through CoopPlayers_DmgSource since #86 |
+| `Player_FloorCheck` | 2401:CC, 2416:CC | setup | site | gCamCount == 1 / != 1 as versus flag |
+| `Play_Init` | 2932:CC, 2935:CC | setup | read | sets gCamCount 1 (4 in versus), then CoopPlayers_LevelInit; since WP-10 CoopPlayers_Count() sizes the player allocation, the clear (Player_InitializeAll) and the init loop |
+| `Play_Init` | 2954:PA | setup | read | MEM_ARRAY_ALLOCATE(gPlayer, CoopPlayers_Count()): allocates every player, nothing to do |
+| `Player_SetupArwingShot` | 3095:SH | ok | site | writes player->num |
+| `Player_SetupTankShot` | 3145:SH | ok | site | writes player->num |
+| `Player_SetupOnFootShot` | 3295:SH | ok | site | writes player->num |
+| `Player_CanLockOn` | 3323:CC | setup | site | loops gCamCount players |
+| `Player_UpdateLockOn` | 3436:CC | setup | site | loops gCamCount players |
+| `Player_CheckBounds360` | 3702:CC | setup | read | gCamCount != 1 as versus flag: wraps the arena at 12000 |
+| `Player_Setup` | 4943:CC | setup | site | gCamCount == gPlayerNum + 1: HUD and hit counters reset only when the last player is set up |
+| `Player_UpdateTankJets` | 5484:CC, 5488:CC | setup | site | gCamCount == 1 as "not versus" for jet effects |
+| `Player_UpdateEffects` | 5530:CC | setup | site | loops gCamCount players |
+| `Player_Update` | 5911:MC, 5912:MC, 5913:MC | ok | read | with co-op off; in co-op CoopPlayers_SelectInput points at the player's own slot right after (WP-14) |
+| `Player_Update` | 6149:CC | setup | site | gCamCount == 4: down in versus goes to VS_STANDBY, else fade out and restart level |
+| `Player_Update` | 6159:P0, 6228:P0 | flow | site | death restart resets gPlayer[0].zPath and path progress; boost check reads player 0 state for every player |
+| `Camera_SetStarfieldPos` | 6657:P0, 6669:P0 | view | site | starfield from player 0 camera |
+| `Camera_SetupLights` | 6752:P0 | view | site | lights depend on player 0 state |
+| `Play_UpdateLevel` | 6882:P0, 6883:P0, 6884:P0, 6885:P0, 6886:P0, 6899:P0, 6900:P0, 6915:P0, 6924:P0, 6925:P0, 6950:P0, 6955:P0, 6958:P0, 6961:P0, 6964:P0, 6967:P0, 6970:P0, 6980:P0, 6982:P0, 6984:P0, 6985:P0, 6987:P0, 6988:P0, 6990:P0, 6997:P0, 7001:P0, 7003:P0, 7009:P0, 7019:P0, 7025:P0, 7026:P0 | flow | site | per-level triggers on player 0: level complete, warp zone, Solar heat damage to player 0 only, Venom 2 / Aquas checks |
+| `Play_UpdateLevel` | 6887:PA | flow | site | Camera_Update360 for player 0 as Venom 2 ends: level complete is one player's (WP-16) |
+| `Play_Main` | 7180:P0, 7181:P0, 7183:P0, 7184:P0, 7185:P0, 7221:P0, 7254:P0, 7255:P0 | flow | site | all-range z setup for player 0 only |
+| `Play_Main` | 7233:CC | setup | site | intro skip resets gCamCount to 1; its sound cleanup loop is on CoopPlayers_Count() since WP-10 |
+| `Play_Main` | 7254:MC | input | site | R while paused (toggles gShowReticles[0], no radio here) is read from gMainController only; Start (intro skip, pause, unpause) goes through CoopPlayers_PausePressed, any player in co-op (#20, #191); versus reads R per controller |
 
 ### `src/engine/fox_radio.c`
 
@@ -351,8 +351,8 @@ Basis per site: read 345, site 893, name 497.
 |---|---|---|---|---|
 | `func_tank_800438E0` | 132:P0, 133:P0 | view | site | tank dust effect velocity from player 0 |
 | `func_tank_80045678` | 689:CC, 695:CC | setup | site | gCamCount == 1 as "not versus" for tank effects |
-| `func_tank_80047FBC` | 1319:P0 | flow | site | skips while player 0 is in level complete |
-| `func_tank_800481F4` | 1425:SH | ok | site | dmgSource through CoopPlayers_DmgSource since #86 |
+| `func_tank_80047FBC` | 1320:P0 | flow | site | skips while player 0 is in level complete |
+| `func_tank_800481F4` | 1426:SH | ok | site | dmgSource through CoopPlayers_DmgSource since #86 |
 
 ### `src/engine/fox_versus.c`
 
@@ -427,13 +427,13 @@ Basis per site: read 345, site 893, name 497.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `SectorX_8018F030` | 29:P0, 30:P0, 31:P0 | flow | site | Slippy placed at player 0 camera for a cutscene |
-| `SectorX_SxSlippy_Setup` | 49:P0, 50:P0, 51:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `SectorX_SxSlippy_Update` | 114:P0, 142:P0, 143:P0, 144:P0, 145:P0, 146:P0, 149:P0, 150:P0, 151:P0 | sim | site | Slippy rescue; moves player 0 camera for the cutscene |
-| `SectorX_8018FA04` | 214:P0, 215:P0, 216:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `SectorX_SxSpyborg_Update` | 379:P0, 380:P0, 384:P0, 395:P0, 506:P0, 518:P0, 591:P0, 592:P0, 615:P0, 616:P0, 649:P0, 650:P0, 696:P0, 697:P0, 735:P0, 741:P0, 745:P0, 749:P0, 755:P0, 759:P0, 763:P0, 769:P0, 773:P0, 777:P0, 783:P0, 787:P0, 869:P0, 870:P0, 893:P0, 894:P0, 905:P0, 925:P0, 926:P0, 1090:P0, 1091:P0, 1092:P0, 1093:P0 | sim | site | boss; on death sets player 0 state |
-| `SectorX_LevelStart_SetupTeam` | 1461:P0, 1462:P0, 1463:P0 | flow | name | intro team around player 0 |
-| `SectorX_LevelComplete_SetupTeam` | 1671:P0 | flow | name | level complete team |
+| `SectorX_8018F030` | 30:P0, 31:P0, 32:P0 | flow | site | Slippy placed at player 0 camera for a cutscene |
+| `SectorX_SxSlippy_Setup` | 50:P0, 51:P0, 52:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `SectorX_SxSlippy_Update` | 115:P0, 143:P0, 144:P0, 145:P0, 146:P0, 147:P0, 150:P0, 151:P0, 152:P0 | sim | site | Slippy rescue; moves player 0 camera for the cutscene |
+| `SectorX_8018FA04` | 215:P0, 216:P0, 217:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `SectorX_SxSpyborg_Update` | 400:P0, 511:P0, 524:P0, 911:P0, 1096:P0, 1097:P0, 1098:P0, 1099:P0 | flow | read | its head, arms and fists turn and fly to its kept human, picked again at a new state (#220, aim.h); left: its z on the path, its start on player 0's path, the wait on player 0's state, level complete |
+| `SectorX_LevelStart_SetupTeam` | 1470:P0, 1471:P0, 1472:P0 | flow | name | intro team around player 0 |
+| `SectorX_LevelComplete_SetupTeam` | 1680:P0 | flow | name | level complete team |
 
 ### `src/overlays/ovl_i3/fox_a6.c`
 
@@ -620,23 +620,23 @@ Basis per site: read 345, site 893, name 497.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Titania_801891F4` | 146:P0, 147:P0, 159:P0, 160:P0, 161:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_80189380` | 180:P0, 181:P0, 182:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiDesertRover_Update` | 239:P0, 248:P0, 257:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiFekuda_Update` | 375:P0, 376:P0, 377:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiLandmine_Update` | 645:P0, 646:P0, 647:P0, 648:P0, 649:P0, 650:P0, 651:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiRasco_Update` | 794:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiBomb_Update` | 953:P0, 954:P0, 955:P0, 983:P0, 984:P0, 985:P0, 986:P0, 987:P0, 989:P0, 990:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiBomb_Update` | 981:PA | sim | read | right for now: an actor on Titania, rails in a Landmaster, where co-op players stay parked (CoopPlayers_SectionSupported); WP-18 |
-| `Titania_TiDesertCrawler_Update` | 1292:P0, 1296:P0, 1356:P->, 1364:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiDelphorHead_Update` | 1809:P0, 1810:P0, 1811:P0, 1890:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_Cactus_Update` | 2048:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiPillar_Update` | 2133:P0, 2135:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_80190A08` | 2856:P0, 2857:P0, 2858:P0, 2865:P0, 2866:P0, 2867:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_80192118` | 3243:P0, 3244:P0, 3245:P0, 3301:P0, 3310:P0, 3383:P0, 3384:P0, 3385:P0, 3527:P0 | sim | site | enemy follows player 0 and changes player 0 state fields |
-| `Titania_80193DF0` | 4361:P0, 4363:P0, 4366:P0, 4377:P0, 4378:P0, 4414:P0, 4420:P0, 4421:P0, 4448:P0, 4539:P0, 4984:P0 | sim | site | enemy follows player 0 and changes player 0 state fields |
-| `Titania_TiGoras_Update` | 5007:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Titania_TiGoras_Dying` | 5549:P0, 5573:P0, 5575:P0, 5607:P0, 5609:P0, 5639:P0, 5641:P0, 5650:P0, 5652:P0, 5653:P0 | flow | name | boss death cutscene |
+| `Titania_801891F4` | 147:P0, 148:P0, 160:P0, 161:P0, 162:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_80189380` | 181:P0, 182:P0, 183:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiDesertRover_Update` | 240:P0, 249:P0, 258:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiFekuda_Update` | 376:P0, 377:P0, 378:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiLandmine_Update` | 646:P0, 647:P0, 648:P0, 649:P0, 650:P0, 651:P0, 652:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiRasco_Update` | 795:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiBomb_Update` | 954:P0, 955:P0, 956:P0, 984:P0, 985:P0, 986:P0, 987:P0, 988:P0, 990:P0, 991:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiBomb_Update` | 982:PA | sim | read | right for now: an actor on Titania, rails in a Landmaster, where co-op players stay parked (CoopPlayers_SectionSupported); WP-18 |
+| `Titania_TiDesertCrawler_Update` | 1293:P0, 1297:P0, 1357:P->, 1365:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiDelphorHead_Update` | 1810:P0, 1811:P0, 1812:P0, 1891:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_Cactus_Update` | 2049:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiPillar_Update` | 2134:P0, 2136:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_80190A08` | 2857:P0, 2858:P0, 2859:P0, 2866:P0, 2867:P0, 2868:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_80192118` | 3244:P0, 3245:P0, 3246:P0, 3302:P0, 3311:P0, 3384:P0, 3385:P0, 3386:P0, 3528:P0 | sim | site | enemy follows player 0 and changes player 0 state fields |
+| `Titania_80193DF0` | 4383:P0, 4384:P0, 4420:P0, 4426:P0, 4427:P0, 4454:P0, 4993:P0 | sim | site | Goras follows its kept human across the path and turns its attack to it, picked again at a new state (#220, aim.h); left: its z on the path, its entrance on player 0, player 0's camera and stop fields |
+| `Titania_TiGoras_Update` | 5016:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Titania_TiGoras_Dying` | 5558:P0, 5582:P0, 5584:P0, 5616:P0, 5618:P0, 5648:P0, 5650:P0, 5659:P0, 5661:P0, 5662:P0 | flow | name | boss death cutscene |
 
 ### `src/overlays/ovl_i5/fox_ti_cs.c`
 
