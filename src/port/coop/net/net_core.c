@@ -408,6 +408,17 @@ static void Core_Refuse(CoopNetCore* core, CoopNetAddr to, uint32_t connId, uint
     Core_Write(core, to, connId, COOP_MSG_CONNECT_REFUSE, 0, 0, 0, 0, &reason, 1);
 }
 
+// A datagram of a connection this host does not hold (any more): a client it dropped while that client could not hear
+// the goodbye, for example one that sent no input for too long. The answer is a goodbye for that connection id, so
+// the client learns at once that it is out and can come back (the session survives), and not by its own time-out.
+// Nothing for a goodbye, which needs no answer.
+static void Core_Stray(CoopNetCore* core, CoopNetAddr from, const Packet* p) {
+    core->strayDatagrams++;
+    if (p->msgId != COOP_MSG_DISCONNECT) {
+        Core_Write(core, from, p->connId, COOP_MSG_DISCONNECT, 0, 0, 0, 0, NULL, 0);
+    }
+}
+
 static Link* Core_FindByAddr(CoopNetCore* core, CoopNetAddr addr) {
     uint8_t i;
 
@@ -433,7 +444,7 @@ static void Core_HostReceive(CoopNetCore* core, CoopNetAddr from, const Packet* 
     l = Core_FindByAddr(core, from);
     if (l == NULL) {
         if (p->msgId != COOP_MSG_CONNECT_REQUEST) {
-            core->strayDatagrams++;
+            Core_Stray(core, from, p);
             return;
         }
         for (i = 0; i < core->maxLinks; i++) {
@@ -458,7 +469,7 @@ static void Core_HostReceive(CoopNetCore* core, CoopNetAddr from, const Packet* 
         if (p->msgId == COOP_MSG_CONNECT_REQUEST && l->state == LINK_CONNECTED) {
             Link_End(l, COOP_NET_END_TIMEOUT);
         } else {
-            core->strayDatagrams++;
+            Core_Stray(core, from, p);
         }
         return;
     }

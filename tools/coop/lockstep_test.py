@@ -1738,7 +1738,8 @@ def plain(args, folder, feed, frames, exe=None, env=None, host_env=None, client_
     try:
         wait_for([host, client], until, seconds or args.level_seconds, "in the plain run")
         if until == "over":
-            wait_for([host, client], "alive", 120, "after the session ended: a game hangs")
+            # A desync stops lockstep, and the session starts the level again (the session survives).
+            wait_for([host, client], "again", 300, "after the desync: the level did not start again")
     finally:
         client.close()
         host.close()
@@ -1768,7 +1769,7 @@ def sc_full(args, folder):
           flush=True)
 
     # Both fly on, so that what the poke changes can only show in the hash of the frame it lands on. The desync check
-    # then ends the session (WP-23), and each game has to say where.
+    # then stops the level (WP-23), each game has to say where, and the session starts the level again.
     poke = frames - 2000
     host, client = plain(args, folder / "poke", feed, poke + 400, client_env={"SF64_COOP_LOCKSTEP_POKE": str(poke),
                                                                               "SF64_COOP_HASH_POKE_PLAYER": "1"},
@@ -2456,10 +2457,26 @@ def lost_player(args, folder, leaver, stayer_name, how):
         wait_for([stays], "over", TIMEOUT_MS / 1000 + 30, "after the player left")
         ended = time.monotonic() - started
         wait_for([stays], "alive", 120, "after the session ended: the game hangs")
-        said = [line for _, _, line in stays.report() if line.startswith(("left", "ended"))]
-        expect(said, f"{stays.name} says nothing about the end")
-        expect(stays.proc.poll() is None, f"{stays.name} is gone")
-        return f"{stays.name} ended the session after {ended:.0f} s, said `{said[-1]}`, and played on"
+        # With nobody else in the session there is nothing to start again: the host keeps the lost player's slot for
+        # COOP_SESSION_REJOIN_MS, a client tries to come back to its host until the connection times out, and then the
+        # session ends as it always did.
+        deadline = time.monotonic() + TIMEOUT_MS / 1000 + 45
+        while not [line for _, _, line in stays.report() if line.startswith("ended")]:
+            expect(stays.proc.poll() is None, f"{stays.name} is gone")
+            expect(time.monotonic() < deadline, f"{stays.name}'s session never ended: "
+                                                f"{[line for _, _, line in stays.report()][-3:]}")
+            time.sleep(0.5)
+        over = time.monotonic() - started
+        said = [line for _, _, line in stays.report() if line.startswith(("left", "ended", "rejoin", "recover"))]
+        tried = [line.split(" ")[0] for line in said]
+        expect(tried[:2] == (["rejoin", "ended"] if leaver == "host" else ["left", "recover"]),
+               f"{stays.name}: {said}")
+        expect(not join_test.said(stays.sync(), "again"), f"{stays.name}: a level started again with nobody there")
+        frames_alive = len(join_test.said(stays.sync(), "alive"))
+        time.sleep(3)
+        expect(len(join_test.said(stays.sync(), "alive")) > frames_alive, f"{stays.name} does not play on")
+        return (f"{stays.name} stopped lockstep after {ended:.0f} s, waited for the other ({' '.join(tried)}), ended "
+                f"the session after {over:.0f} s with `{said[-1]}`, and played on")
     finally:
         host.close()
         client.close()
@@ -2474,31 +2491,51 @@ def sc_host_left(args, folder):
 
 
 def sc_stall(args, folder):
-    """A client that keeps its connection and stops sending input: nothing but lockstep can see that."""
+    """A client that keeps its connection and stops sending input: nothing but lockstep can see that. The host drops
+    it as a lost player (its slot is kept), the client sees the host close and comes back with the session id, and
+    the level starts again for both (the session survives)."""
     folder.mkdir(parents=True, exist_ok=True)
     feed = folder / "feed.txt"
     write_feed(feed, 3 * SHORT_FRAMES, sway)
     mute = JOIN_FRAME + 50
-    host, client = session(args, folder, client_env={"SF64_COOP_LOCKSTEP_MUTE": str(mute)},
-                           both={"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(JOIN_FRAME)})
+    games = session(args, folder, client_env={"SF64_COOP_LOCKSTEP_MUTE": str(mute)},
+                    both={"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(SURVIVE_FRAMES)})
+    host, client = games
     try:
         wait_for([host, client], "done", 900, "before the stall")
         started = time.monotonic()
-        wait_for([host], "over", STALL_SECONDS + 40, "after the stall")
+        wait_for([host], "over", STALL_SECONDS + 900, "after the stall")
         ended = time.monotonic() - started
-        wait_for([host, client], "alive", 120, "after the stall: a game hangs")
+        survive_wait(games, "again", 1, 120, "after the stall: the level did not start again")
+        survive_wait(games, "done", 2, 600, "in the level that started again")
+        survive_no_end(games)
         over = int(join_test.said(host.sync(), "over")[0]["frame"])
         expect(mute <= over <= mute + 2 * INPUT_DELAY, f"the host ran to frame {over}, input stopped at {mute}")
-        said = [line for game in (host, client) for _, _, line in game.report() if line.startswith("ended")]
-        expect(any("stopped sending input" in line for line in said), f"no clear end: {said}")
-        return f"ended after {ended:.0f} s at frame {over}: {said}"
     finally:
         host.close()
         client.close()
+    parted = [line for _, _, line in host.report() if line.startswith("parted")]
+    expect(parted and "reason=2" in parted[0] and "stopped sending input" in parted[0], f"host: {parted}")
+    left = join_test.said(host.report(), "left")
+    expect(left and left[0]["away"] == "1", f"host: the slot of the player it dropped was not kept: {left}")
+    recover = [line for _, _, line in host.report() if line.startswith("recover")]
+    expect(recover and "Player 2 lost the connection" in recover[0], f"host: {recover}")
+    expect(join_test.said(client.report(), "rejoin"), "the client did not try to come back")
+    back = [v for v in join_test.said(client.report(), "joined") if v.get("rejoined") == "1"]
+    expect(len(back) == 1 and back[0]["player"] == "1", f"the client did not come back as player 2: {back}")
+    for game in games:
+        expect(survive_starts(game) == [(1, "Fox,Falco,-,-"), (2, "Fox,Falco,-,-")],
+               f"{game.name}: level starts {survive_starts(game)}")
+    frames = survive_compare(games, 2, SURVIVE_FRAMES)
+    no_desync(games)
+    return (f"the host stopped at frame {over} after {ended:.0f} s and dropped player 2 with its slot kept; the client "
+            f"came back with the session id, and the level that started again is equal on {frames} frames")
 
 
 def sc_frozen(args, folder):
-    """A client that stops dead, and comes back to a session that is over."""
+    """A client that stops dead for longer than the host waits for input, and then goes on: a connection that dropped
+    and came back. The host drops the player with its slot kept, the thawed client finds its connection closed, comes
+    back with the session id as the player it was, and the level starts again for both (the session survives)."""
     expect(IS_LINUX, "needs SIGSTOP")
 
     def freeze(game):
@@ -2507,8 +2544,9 @@ def sc_frozen(args, folder):
     folder.mkdir(parents=True, exist_ok=True)
     feed = folder / "feed.txt"
     write_feed(feed, 3 * SHORT_FRAMES, sway)
-    host, client = session(args, folder, both={"SF64_COOP_LOCKSTEP_FEED": str(feed),
-                                               "SF64_COOP_LOCKSTEP_END": str(JOIN_FRAME)})
+    games = session(args, folder, both={"SF64_COOP_LOCKSTEP_FEED": str(feed),
+                                        "SF64_COOP_LOCKSTEP_END": str(SURVIVE_FRAMES)})
+    host, client = games
     try:
         wait_for([host, client], "done", 900, "before the freeze")
         freeze(client)
@@ -2517,14 +2555,28 @@ def sc_frozen(args, folder):
         ended = time.monotonic() - started
         wait_for([host], "alive", 120, "after the freeze: the host hangs")
         os.kill(client.proc.pid, signal.SIGCONT)
-        wait_for([client], "over", TIMEOUT_MS / 1000 + 30, "after the thaw")
-        wait_for([client], "alive", 120, "after the thaw: the client hangs")
-        said = [line for _, _, line in host.report() if line.startswith(("left", "ended"))]
-        return f"the host ended the session after {ended:.0f} s ({said[-1]}), and the thawed client played on too"
+        survive_wait(games, "again", 1, 120, "after the thaw: the level did not start again")
+        survive_wait(games, "done", 2, 600, "in the level that started again")
+        survive_no_end(games)
     finally:
         os.kill(client.proc.pid, signal.SIGCONT)
         host.close()
         client.close()
+    left = join_test.said(host.report(), "left")
+    expect(len(left) == 1 and left[0]["away"] == "1", f"host: the lost player's slot was not kept: {left}")
+    recover = [line for _, _, line in host.report() if line.startswith("recover")]
+    expect(recover and "reason=1" in recover[0] and "Player 2 lost the connection. Waiting for it to come back (15 s)"
+           in recover[0], f"host: {recover}")
+    expect(join_test.said(client.report(), "rejoin"), "the client did not try to come back")
+    back = [v for v in join_test.said(client.report(), "joined") if v.get("rejoined") == "1"]
+    expect(len(back) == 1 and back[0]["player"] == "1", f"the client did not come back as player 2: {back}")
+    for game in games:
+        expect(survive_starts(game) == [(1, "Fox,Falco,-,-"), (2, "Fox,Falco,-,-")],
+               f"{game.name}: level starts {survive_starts(game)}")
+    frames = survive_compare(games, 2, SURVIVE_FRAMES)
+    no_desync(games)
+    return (f"the host stopped lockstep after {ended:.0f} s and kept player 2's slot; the thawed client came back "
+            f"with the session id, and the level that started again is equal on {frames} frames")
 
 
 class MenuClient(menu_test.Game):
@@ -2656,7 +2708,7 @@ def report_diff(a, b):
     return done
 
 
-def check_desync(host, client, poke, mode, pair=(1, 2), clients=None):
+def check_desync(host, client, poke, mode, pair=(1, 2), clients=None, ended_later=False):
     """Both games found the flipped bit of player 2 at exactly `poke`: a report each, with the frame, the pair, the
     region and a verified dump, the session over within a few frames and the text for the player; and the diff tool
     names gPlayer[1]. Returns a line about it."""
@@ -2675,18 +2727,25 @@ def check_desync(host, client, poke, mode, pair=(1, 2), clients=None):
         for key in ("this game", "other game"):
             expect(header.get(key, "").startswith("build "), f"{game.name}: {key}: {header.get(key)}")
         over = join_test.said(game.sync(), "over")
-        expect(over, f"{game.name}: the session did not end")
+        expect(over, f"{game.name}: lockstep did not stop")
         frame = int(over[0]["frame"])
         expect(poke <= frame <= poke + DESYNC_SEEN_WITHIN, f"{game.name}: over at frame {frame}, poke at {poke}")
-        ended = [line for _, _, line in game.report() if line.startswith("ended")]
-        expect(ended, f"{game.name} says nothing about the end")
+        # The session does not end: every game says where the games parted, or hears from the host that the level
+        # starts again, and takes the second level start (the session survives).
+        said = [line for _, _, line in game.report() if line.startswith(("parted", "recover"))]
+        expect(said, f"{game.name} says nothing about the desync")
+        ended = [line for _, _, line in game.report() if line.startswith(("ended", "leaving"))]
+        expect(ended_later or not ended, f"{game.name}'s session ended: {ended[:1]}")
         if game in (host, client):
-            expect(f"out of step at frame {poke} of Corneria ({mode})" in ended[-1], f"{game.name}: {ended[-1]}")
-            expect("report for the developers is in" in ended[-1], f"{game.name}: no report named: {ended[-1]}")
+            parted = [line for line in said if line.startswith("parted")]
+            expect(parted, f"{game.name}: {said}")
+            expect(f"out of step at frame {poke} of Corneria ({mode})" in parted[0], f"{game.name}: {parted[0]}")
+            expect("report for the developers is in" in parted[0], f"{game.name}: no report named: {parted[0]}")
         else:
-            # A game outside the pair waits the grace out, and the host closes first: it reads the host's end, and its
-            # report comes from the session's end (NOTES.md, 2026-11-07, #21).
-            expect("out of step" in ended[-1] or "closed" in ended[-1], f"{game.name}: {ended[-1]}")
+            # A game outside the pair waits the grace out, and the host's word comes first: it stops on that, and its
+            # report comes from there (NOTES.md, 2026-11-07, #21).
+            expect("The games parted" in said[0] or "out of step" in said[0], f"{game.name}: {said[0]}")
+        expect(join_test.said(game.sync(), "again"), f"{game.name}: the level did not start again")
     for game in (host, client):
         expect(reports[game.name].header.get("regions differing") == "players",
                f"{game.name}: regions {reports[game.name].header.get('regions differing')}")
@@ -2700,10 +2759,11 @@ def check_desync(host, client, poke, mode, pair=(1, 2), clients=None):
     return f"both reports verified, `{first}`"
 
 
-def poke_session(args, folder, poke, jump=None, both=None, client_envs=None, clients=1):
+def poke_session(args, folder, poke, jump=None, both=None, client_envs=None, clients=1, after=None):
     """A session with sway, a bit of player 2 flipped on the first client at `poke`, into all-range first when `jump`
-    says when player 1 presses L (CVar gDebugJumpToAllRange on every game). Waits for the session to end, or for
-    `done` when `both` turns the check off. Returns the games, stopped."""
+    says when player 1 presses L (CVar gDebugJumpToAllRange on every game). Waits for lockstep to stop and the level to
+    start again (the session survives), or for `done` when `both` turns the check off. after(games) runs before the
+    games are stopped. Returns the games, stopped."""
     folder.mkdir(parents=True, exist_ok=True)
     feed = folder / "feed.txt"
     frames = poke + 400
@@ -2717,7 +2777,9 @@ def poke_session(args, folder, poke, jump=None, both=None, client_envs=None, cli
             wait_for(list(games), "done", 900, "with the check off")
         else:
             wait_for(list(games), "over", 900, "after the flipped bit")
-            wait_for(list(games), "alive", 120, "after the session ended: a game hangs")
+            wait_for(list(games), "again", 300, "after the desync: the level did not start again")
+        if after is not None:
+            after(games)
     finally:
         for game in games:
             game.close()
@@ -2762,10 +2824,20 @@ def sc_handover(args, folder):
     """#189: before the connection goes, each game hands its report and the rest of its log to the other. After a desync
     both folders hold both reports, byte for byte the sender's; the diff tool reads the two of one folder as it reads
     the originals; each folder's copy of the other player's log runs on up to its `session closed`; the handover ends
-    because it is done, not because its time is up; and the session still ends, with both games playing on."""
+    because it is done, not because its time is up; and the session still ends, with both games playing on. A desync
+    alone ends no session any more (the level starts again), so the client leaves the level that started again
+    (SF64_COOP_JOIN_LEAVE_FILE): the report of the desync is what crosses then."""
     poke = JOIN_FRAME + 300
-    host, client = poke_session(args, folder, poke)
-    found = check_desync(host, client, poke, "rails")
+
+    def leave(games):
+        (games[1].run / "leave").write_text("", encoding="utf-8")
+        survive_wait(games, "over", 2, 120, "after the client left the level that started again")
+        wait_for(list(games), "alive", 120, "after the session ended: a game hangs")
+
+    envs = [{"SF64_COOP_LOCKSTEP_POKE": str(poke), "SF64_COOP_HASH_POKE_PLAYER": "1",
+             "SF64_COOP_JOIN_LEAVE_FILE": "leave"}]
+    host, client = poke_session(args, folder, poke, client_envs=envs, after=leave)
+    found = check_desync(host, client, poke, "rails", ended_later=True)
     games = (host, client)
     names = {game: own_reports(game)[0].name for game in games}
     for game in games:
