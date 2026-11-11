@@ -239,7 +239,7 @@ static void Feed_Load(const char* path) {
 
 // What this client's person does now. With a delay of d, a line of the feed has to go in d frames before its own frame.
 static void Driver_Pad(s32 frame) {
-    s32 self = CoopPlayers_LocalIndex();
+    s32 self = CoopPlayers_SeatIndex(); // the feed's column is the session player's (#183)
 
     memset(&gControllerHold[0], 0, sizeof(gControllerHold[0]));
     memset(&gControllerPress[0], 0, sizeof(gControllerPress[0]));

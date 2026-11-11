@@ -25,6 +25,13 @@
 //   SF64_COOP_TEST_START_SEEDS=<a,b,c,d,e,f>  host: the level starts from these seeds, whatever frame Start came on
 //   SF64_COOP_TEST_NO_DESYNC_CHECK=1  no state hashes go out or are compared in a session (desync_game.h, WP-23), so
 //                                     a run can show what the check is there for
+// And for the lives rules (decision 0007):
+//   SF64_COOP_TEST_FOX_REFILL_OFF=1   no level is open for the refill of player 0 (rule 3, CoopPlayers_RefillFox), so
+//                                     "player 0 goes down in a level that is not open" can be run on a level that is.
+//                                     It can only close levels. Set it on every game of a test.
+//   SF64_COOP_TEST_LEAD_SWAP=1        the spike of #183 (0007 rule 13): at pool 0, where player 0 would go down while
+//                                     another player flies, that player takes slot 0 (CoopPlayers_LeadSwap). An
+//                                     experiment, not a rule; the seat map it keeps is not in the state hash.
 // With none of them set, nothing changes.
 
 #ifdef __cplusplus

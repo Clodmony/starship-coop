@@ -1433,6 +1433,238 @@ Unknown:
 - The other bosses (Granga, Meteo, Fortuna, Solar, Macbeth and the rest) were not read for this; Star Wolf in Fortuna,
   Bolse, Katina and Sector Z goes through the same dogfight code but was not run.
 
+### 2026-11-11, Fox goes down, the team flies on: the refill in place (decision 0007 rules 3 and 12), the lead swap spike (#183), and #88
+
+Identity: ROM US 1.0, commit `0a2f8a83` (build id `0a2f8a83c960`), base `a4867d99`, Linux, GCC, Debug, OpenGL on a
+software renderer, no window, two games over loopback in lockstep, input delay 3. Every run below is
+`tools/coop/lockstep_test.py`, with the same pokes on both games (`SF64_COOP_VIEW_POKE`), so they stay one game.
+
+#### How Fox goes down in Corneria (read)
+
+There is one way into `PLAYERSTATE_DOWN`: `Player_Down` (`src/engine/fox_play.c:5689`, the only writer of the state,
+`:5693`). `Player_Update` calls it from one test, written once per vehicle: `shields <= 0` and `radioDamageTimer != 0`,
+at the end of the `ACTIVE` update. Corneria's two are the Arwing's: on the rails (`Player_UpdateOnRails`, `:5741`) and
+in all-range (`Player_Update360`, `:5796`). So Fox goes down when his shields are 0 and a hit came in the last 4
+frames: `Player_ApplyDamage` sets `radioDamageTimer = 4` (`:998`), the timer counts down at the start of every
+`Player_Update` in any state (`Player_UpdateEffects`, `:5519`), and the damage drains the shields by 2 a frame
+(`Player_UpdateShields`, `:5644`).
+
+| Way Fox loses his last shields | Where the damage comes from | Ends in |
+|---|---|---|
+| An enemy's shot, missile or beam | `src/engine/fox_effect.c:1030`, `:2282`, `:2969`, `:3115`, `:3930`; `fox_enmy.c:3125`, `:3127` | the test above |
+| A crash into scenery: buildings, arches, the mountains of the all-range part | `Player_CollisionCheck`, `fox_play.c:1873`, `:1910` (all-range), `:1987`, `:2023` (rails) | the test above |
+| A crash into an enemy, a sprite or the boss (Granga's body and legs, the attack carrier) | `fox_play.c:2075` to `:2255` | the test above |
+| A wing on the ground | `fox_play.c:1815`, `:1828`: 21 a hit, on land only (water takes none) | the test above |
+| A wing lost | `Player_DamageWings` (`:935`) only breaks the wing; the hit that broke it is one of the rows above | not a way down by itself |
+| The last hit of a big one | A hit of 40 drains for 20 frames and its timer runs 4, so the shields can reach 0 with the timer out: Fox then flies on at 0 and goes down at the next hit of any size | the test above, at that next hit |
+| A teammate's shot (0007 rule 11) | `src/engine/fox_beam.c:884`, `:886` | the test above |
+| Falling, or flying into the ground | The Arwing is held above the floor (`Player_FloorCheck`, `:2359`); only the wing rows above take shields | the test above |
+| While not `ACTIVE`: the cut to all-range (`START_360`, `:6086`), a U-turn at the edge of the all-range map (`U_TURN`, `:6047`), the level's end (`LEVEL_COMPLETE`, `:6070`), the intro | Shields still drain (`Player_UpdateShields`), but the test is not run | nothing until Fox is `ACTIVE` again and the timer still runs, or the next hit |
+
+After `Player_Down`, the crash is a cutscene (`Cutscene_PlayerDown`, `src/engine/fox_demo.c:1872`) that ends in
+`Cutscene_KillPlayer` (`:1590`): `PLAYERSTATE_NEXT`, `gFadeoutType = 7`, one life (`:1633`), then the restart from the
+save point or the game over (`fox_play.c:6182`). Corneria has no other caller of `Cutscene_KillPlayer`: the five are the
+three vehicle crashes in `fox_demo.c` (`:1666`, `:1752`, `:1857`), the Blue Marine's (`src/overlays/ovl_i3/fox_aq.c:1086`)
+and Andross' escape (`src/overlays/ovl_i6/fox_andross.c:760`). The checkpoint (`OBJ_ITEM_CHECKPOINT`,
+`src/engine/fox_enmy.c:2513-2517`) is only read by that restart.
+
+#### What was built
+
+- `CoopPlayers_RefillFox` (`src/port/coop/game/players.c:418`) is part of the test: `... && !CoopPlayers_RefillFox(player)`
+  at `fox_play.c:5741` (Arwing, rails), `:5796` (Arwing, all-range), `:5770` (Blue Marine) and
+  `src/engine/fox_tank.c:1182` (Landmaster), each marked `// COOP:`. It returns nonzero, and `Player_Down` is not
+  called, when the player is player 0, the game is co-op (`CoopPlayers_IsCoop`), the level is open
+  (`CoopPlayers_FoxRefillOpen`, `players.c:287`) and the pool `gLifeCount[0]` is above 0. Then one life is spent and
+  player 0 gets what a return gets (`CoopPlayers_ReturnFromDown`, `:258`) without the placement: `Play_GetMaxShields()`,
+  no damage, heal, hit or radio timers, no knockback, `mercyTimer` 30 (`COOP_RETURN_MERCY_FRAMES`, `:40`; it stops
+  collisions and enemy shots, `fox_play.c:1840`, `fox_effect.c:1029`), both wings and their health, the wing flash and
+  debris timers at 0, a single laser, 3 bombs. Position, speed, the path, a loop or U-turn timer and the charge stay:
+  Fox flies on where he is. Nothing else runs: no `Player_Down`, so the music, the HUD, the fade and the checkpoint
+  are untouched, and the callers' writes after `Player_Down` (speed, `csTimer`, `:5743-5751`) are skipped with it.
+- It reads the player count, the level, the pool and what `Player_Update` had just tested, inside the player loop, so
+  every client decides alike. No message, nothing new in the hash: what it writes is hashed already.
+- Otherwise it returns 0 and the original runs: a player 2-4 (who goes on to `CoopPlayers_OnPlayerDown`), co-op off,
+  one player alone in a session (not co-op, `players.c:126`), a level that is not open, and pool 0, where Fox goes
+  down, the others park on that frame and the death takes the pool to -1: game over (rule 6's interim form).
+- The four sites not touched: the all-range Landmaster and on-foot tests (`fox_play.c:5825`, `:5841`; versus only, no
+  campaign level has them) and `Aquas_Update360`.
+- The co-op log says `player 1 refilled in place, pool P` (`src/port/coop/log/log_game.c:181`).
+- Test switch `SF64_COOP_TEST_FOX_REFILL_OFF=1` (`src/port/coop/test/switches.h`): no level is open. It can only close.
+  `return_fox_down` uses it, so "player 0 goes down in a level that is not open, with a return waiting" stays tested.
+
+#### Which levels are open (rule 12), and why
+
+Open: Corneria, Meteo, Sector X, Area 6, Sector Y, Venom 1, Solar, Zoness, Fortuna, Katina, Bolse, Sector Z, Venom 2,
+Titania, Macbeth, Aquas. Not open: Andross' lair (`LEVEL_VENOM_ANDROSS`), the warp zones (`LEVEL_WARP_ZONE`),
+training.
+
+Read, for every open level: Fox goes down only through one of the four tests above. No overlay calls `Player_Down` or
+writes `PLAYERSTATE_DOWN` (`git grep`). What the overlays do to Fox's shields ends in the same test: Solar's heat takes
+a point at a time without the timer (`fox_play.c:6981`), so Fox sits at 0 until the next hit; a Macbeth actor sets them
+to 0 (`src/overlays/ovl_i5/fox_ma.c:5058`); Zoness only reads the timer (`src/overlays/ovl_i3/fox_zo.c:2117`). A
+U-turn in Katina runs the collision check (`fox_play.c:6063`) but not the test. The level-end and mission-failed
+branches set `PLAYERSTATE_NEXT` or `LEVEL_COMPLETE` directly and are not deaths.
+
+Not open, and why: in Andross' lair the escape sets Fox's shields to 0 and calls `Cutscene_KillPlayer` by its own timer
+(`src/overlays/ovl_i6/fox_andross.c:751-760`), past `Player_Down`; that is a story death and was not run. The warp
+zones were not run. Both keep the restart for everyone.
+
+Observed, per level, two runs each:
+
+- `fox_refill` / `fox_refill_all_range` (Corneria) and `fox_refill_levels --levels <name>` (the others): the pool is
+  set to 2, player 0 is poked to 0 shields with the timer running twice, and once more at pool 0. On every level, on
+  both games: the pool goes 2 to 1 and 1 to 0 on the frame of the test, player 0 stays `ACTIVE` at 255 shields with 3
+  bombs (6 poked before) and a single laser, player 1 is not parked, not moved, keeps its 6 bombs and its shields but
+  for a frame's drain, the rails path goes on, the screen does not fade, `NA_SE_ARWING_DOWN` is not requested and none
+  of the "player down" lines (20090 to 20092, 20318) is on the radio; the trace's frames never go back (no restart).
+  At pool 0 player 0 is `DOWN` on the frame of the test, player 1 parks on that frame and the pool is still 0 (the
+  life goes at `Cutscene_KillPlayer`). Hashes equal on every frame.
+
+  | Level | Frames equal | Refills at | Down at pool 0 |
+  |---|---|---|---|
+  | Corneria, rails | 2640 | 1801, 2101 | 2601 |
+  | Corneria, all-range (Granga) | 3140 | 2401, 2701 | 3101 |
+  | Meteo | 1353 | 914, 1114 | 1314 |
+  | Sector X | 843 | 404, 604 | 804 |
+  | Area 6 | 1042 | 603, 803 | 1003 |
+  | Sector Y | 1111 | 672, 872 | 1072 |
+  | Venom 1 | 802 | 363, 563 | 763 |
+  | Solar | 1131 | 692, 892 | 1092 |
+  | Zoness | 772 | 333, 533 | 733 |
+  | Fortuna | 876 | 327, 527 | 801 |
+  | Katina | 872 | 323, 523 | 818 |
+  | Bolse | 882 | 333, 533 | 733 |
+  | Sector Z | 1412 | 863, 1063 | 1359 |
+  | Venom 2 | 1232 | 683, 883 | 1139 |
+  | Macbeth (Landmaster) | 764 | 325, 525 | 725 |
+  | Titania (Landmaster) | 1102 | 663, 863 | 1063 |
+  | Aquas (Blue Marine) | 1046 | 607, 807 | 1007 |
+
+- `fox_refill_long --levels <name>`: nothing pokes Fox down. The pool is set to 90, the feed does not dodge, and Fox's
+  shields are set to 1 twenty-four times, so the level's own next hit takes the last of them with the timers a real
+  hit leaves. Player 0 is never `DOWN`, the level never restarts, every life that goes is either a refill of player 0
+  (at 255 shields, 3 bombs, `ACTIVE`) or a return of player 1, and the two games are equal on every frame:
+
+  | Level | Frames equal | Refills of player 0 | Returns of player 1 |
+  |---|---|---|---|
+  | Corneria | 9000 (6874 rails, 2126 all-range) | 18 | 3 |
+  | Meteo | 9000 | 6 | 1 |
+  | Sector X | 9000 | 14 | 3 |
+  | Area 6 | 9000 | 13 | 2 |
+  | Sector Y | 9000 (6520 rails, 2480 all-range) | 11 | 2 |
+  | Venom 1 | 9000 | 25 | 12 |
+  | Solar | 9000 | 23 | 8 |
+  | Zoness | 9000 | 17 | 2 |
+  | Fortuna | 4000 | 6 | 1 |
+  | Katina | 4000 | 1 | 0 |
+  | Bolse | 4000 | 8 | 2 |
+  | Sector Z | 4300 | 1 | 0 |
+  | Venom 2 | 4000 | 12 | 1 |
+  | Macbeth | 9000 | 21 | 1 |
+  | Titania | 9000 | 18 | 3 |
+  | Aquas | 9000 | 17 | 4 |
+
+- On the base build `a2032968ad36` (same tree as `a4867d99`): `fox_refill` and `fox_refill_all_range` fail with `the
+  level restarted (the trace's frames go back)`.
+- Co-op off: `hash_check.py base` against that build, equal on all 5800 frames.
+- Also run on this build, all ok: `return`, `return_all_range`, `return_fox_down` (with the level closed), `lives`,
+  `steer`, `three`, `pause`, `control`, `aim`, `boost`, `kill`, `vehicles`, `full` (10601 frames of Corneria).
+- With the same feed and the levels closed (the probes for the frames above), Fox went down by himself in Sector X
+  (frame 1632), Area 6 (1558), Sector Y (2267), Venom 1 (2034), Solar (1702), Zoness (2636) and Bolse (1675), and the
+  level restarted for both players each time: the case the owner's session hit.
+
+Derived:
+
+- An open level never restarts from its checkpoint through a death: with a life Fox is refilled, without one the
+  death is the game over. Only the host's retry (rule 7) still uses the checkpoint. 0007 names this cost of the refill.
+- A refill costs what a death cost, one life, but gives no restart: bombs go to 3 and the laser to single as after a
+  death, hits since the checkpoint are kept.
+
+Unknown:
+
+- How it plays, and whether 30 frames of `mercyTimer` are enough when Fox is refilled inside something that keeps
+  hitting him. In the long runs he was refilled up to 25 times in 9000 frames and never twice within the mercy time.
+- Whether the long runs reached each level's boss: the trace shows it only where the boss is all-range (Corneria,
+  Sector Y). The other rails levels ran 9000 frames from their start.
+- Three or four players, Windows, two PCs.
+
+#### The spike: can the lead pass to a survivor (#183, rule 13)
+
+Answer: yes, as an experiment behind `SF64_COOP_TEST_LEAD_SWAP=1`: on the rails and in all-range of Corneria and on
+the rails of ten more levels (table below), two clients stay hash-equal through the swap and what follows it. It is
+off without the switch and decides nothing. Not run: all-range outside Corneria, three or four players.
+
+What the experiment does (`CoopPlayers_LeadSwap`, `players.c:325`, called from `CoopPlayers_RefillFox` when the pool is
+0, the switch is on and a player 2-4 flies): the survivor's `Player` struct and Fox's change places, with `num` and the
+sound pointers put right; on the rails slot 0 keeps the path fields Fox had just computed (the list of
+`CoopPlayers_FollowPath`); the per-player arrays that `CoopPlayers_JoinFromPlayer0` copies change places (not
+`gLifeCount`); shots in flight and every actor's lock-on timers change index; what was Fox goes down in the
+survivor's old slot as a player 2-4 does (`CoopPlayers_SetDown`), so it waits for a life or the next `Play_Init`. What
+belongs to the person and not to the slot goes through one map, `sSeatOfSlot` (`players.c:60`): the pads are filled by
+session player and then put in slot order (`src/port/coop/game/input_game.c:17-30`), and `CoopPlayers_LocalIndex`
+(`players.c:137`) returns the slot the client's person flies, so each game looks through and draws the HUD of the right
+ship. `CoopPlayers_LevelInit` puts the map back: at a level load the host leads again.
+
+Observed (`fox_lead_swap`, `fox_lead_swap_all_range`, pool 0 throughout but for one life):
+
+- Corneria, rails: swap on frame 1801. Slot 0 then holds player 1's ship (its 135 shields, its 5 bombs, its place),
+  slot 1 is down, the pool stays 0, the path goes on, the client's game has local index 0 and the host's 1, and slot
+  0's sideways movement follows the client's stick from then on (the two feeds steer against each other). A life comes
+  in: the host's ship returns in slot 1 on 2101 at 255 shields. Slot 0 poked down again at pool 0: the lead swaps back
+  on 2301. Poked once more with nobody else flying: slot 0 is `DOWN` on 2501, as in the original. Hash equal on 2540
+  frames.
+- Corneria, all-range: swap on 2401, return on 2701, swap back on 2901, down for good on 3176 (after a U-turn). Hash
+  equal on 3250 frames.
+- Other levels, `fox_lead_swap --levels <name>`, the same plan from the frame both fly, with a feed that steers
+  from there. On each: the swap, slot 0 following the client's stick, the path going on, the return, the swap back
+  and the last down as on Corneria, and equal hashes on every frame:
+
+  | Level | Frames equal | Swap | Host's ship back in slot 1 | Swap back | Down for good |
+  |---|---|---|---|---|---|
+  | Meteo | 1653 | 1014 | 1214 | 1414 | 1614 |
+  | Sector X | 1143 | 504 | 704 | 904 | 1104 |
+  | Area 6 | 1342 | 703 | 903 | 1103 | 1303 |
+  | Sector Y | 1411 | 772 | 972 | 1172 | 1372 |
+  | Venom 1 | 1102 | 463 | 663 | 863 | 1063 |
+  | Solar | 1431 | 792 | 992 | 1192 | 1392 |
+  | Zoness | 1072 | 433 | 633 | 833 | 1033 |
+  | Macbeth (Landmaster) | 1064 | 425 | 625 | 825 | 1025 |
+  | Titania (Landmaster) | 1402 | 763 | 963 | 1163 | 1363 |
+  | Aquas (Blue Marine) | 1346 | 707 | 907 | 1107 | 1307 |
+
+What breaks or is missing, from reading (not run unless it says so):
+
+- The seat map is not in the state hash and not in any join or rejoin snapshot. The runs are hash-equal because what
+  the map does shows in the player slots at once; a real build has to hash it and send it to a client that joins late.
+- The survivor misses one update: the swap runs inside player 0's update, before the survivor's own, and slot 0 is
+  not updated twice.
+- Fox's crash is not shown: the host's ship vanishes as a player 2-4's does, with no down theme and no line.
+- To the game, slot 0 is Fox: the radio speaks to Fox, the team store of the survivor's character (`CoopTeam_OfPlayer`,
+  `src/port/coop/game/team.c`) now belongs to the host's person, and `CoopTeam_OnPlayerDown` marks that wingman down.
+  Names, letters and anything else drawn per person have to go by seat, not by slot.
+- Per-slot stores the experiment does not swap: the vehicle states (`gCoopTankState`, `gCoopMarineState`,
+  `src/port/coop/game/vehicles.c:28-29`; the vehicle levels above are hash-equal all the same, since both games
+  leave them alike, but whether a tank then drives with the other tank's state was not looked at), the saved scores
+  per player (`src/port/coop/game/score.c:27`), the carried
+  shields (`team.c:45`), the camera smoothing and shield bars of `view.c` (not simulated). An item in flight toward a
+  player, an actor's `dmgSource` and anything else that holds a player index for more than a frame keeps the old
+  index: a kill by a shot in the air at the swap can score for the other person.
+- With three or four players the lowest flying slot takes the lead; not run.
+- Rule 6 as the owner stated it then holds by construction: at pool 0 a swap costs nothing, so the run ends when the
+  last flying player goes down.
+
+If the owner wants it built: a decision record first (who is "Fox" to the radio and the story after a swap; whether the
+host gets the lead back when it returns, or only at the level load as here), then the seat map in the hash, the
+per-slot stores above, and a scenario per level as for the refill, all-range levels included. Nothing seen here asks
+for the ghost build.
+
+#### #88, scripted radio lines while player 0 is not active
+
+With the refill, player 0 is not down while anyone flies on in an open level, and where the level is not open or the
+pool is 0 the others park on the frame Fox goes down, so `EVOP_PLAY_MSG` (`src/engine/fox_enmy2.c:1342-1347`) never
+skips a line that a flying team would have heard; #88 needs no code and can be closed (the U-turn window stays as in
+single player, 0007 "`EVOP_PLAY_MSG` while player 0 is down").
+
 ### 2026-11-09, #14 (WP-16), players 2-4 come back after going down (decision 0007 rule 4)
 
 Identity: ROM US 1.0, on top of `6becd73a` (the combined test branch of 2026-11-09), Linux, GCC, Debug, OpenGL on a
