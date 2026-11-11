@@ -272,6 +272,7 @@ src/overlays/ovl_i4/fox_sz.c	SectorZ_Missile_Update	sim	site	missiles; set playe
 src/overlays/ovl_i4/fox_sz.c	SectorZ_EnemyUpdate	sim	site	sets player 0 to STANDBY and moves its camera
 src/overlays/ovl_i5/fox_ma.c	Macbeth_MaLocomotive_Update	sim	site	train; sets player 0 to LEVEL_COMPLETE
 src/overlays/ovl_i5/fox_ma.c	Macbeth_MaRailwaySignal_Update	sim	site	sets player 0 to LEVEL_COMPLETE
+src/overlays/ovl_i5/fox_ma.c	Macbeth_Actor207_Update	flow	read	the train's end goes to, faces and swoops on its kept human, picked again at a new state (#220, aim.h); left: the ram at the end of the track (states 18, 19) and its kill of player 0, its z on the path, damage only while player 0 is 200 behind, the attack start on player 0's state, level complete
 src/overlays/ovl_i6/fox_andross.c	Andross_80188A4C	flow	read	the brain's death sets player 0 to STANDBY; its warp goes to the nearest human (#213)
 src/overlays/ovl_i6/fox_andross.c	Andross_AndAndross_Update	flow	read	eyes, punches and slaps follow its kept target; the inhale pulls every flying human and swallows the first in the mouth, the chew follows that player (#213, owner's choice A); left: z keeps to player 0's path otherwise, camera roll, debris around player 0's camera
 src/overlays/ovl_i6/fox_andross.c	Andross_AndBrain_Update	flow	read	chases its kept target, catches the nearest flying human in reach, one at a time (#213, owner's choice A); left: player 0 to START_360, its camera as the brain dies, the escape start, faces player 0's camera (camYaw is draw state)

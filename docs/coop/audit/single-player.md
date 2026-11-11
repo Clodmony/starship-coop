@@ -24,19 +24,19 @@ pattern without reading the code, so treat it as a guess.
 
 ## Summary
 
-1702 sites in 419 functions in 46 files.
+1691 sites in 418 functions in 46 files.
 A function whose sites have more than one verdict counts once per verdict in the functions column.
 
 | verdict | sites | functions | `gPlayer[0]` | `gPlayer->` | `gPlayer arg` | `gMainController` | `gCamCount` | `shooter` |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| sim | 738 | 165 | 733 | 1 | 2 | 0 | 0 | 2 |
+| sim | 703 | 163 | 698 | 1 | 2 | 0 | 0 | 2 |
 | view | 217 | 84 | 151 | 0 | 0 | 43 | 3 | 20 |
 | input | 13 | 9 | 0 | 0 | 0 | 8 | 0 | 5 |
-| flow | 486 | 103 | 444 | 0 | 3 | 3 | 0 | 36 |
+| flow | 510 | 104 | 468 | 0 | 3 | 3 | 0 | 36 |
 | setup | 53 | 34 | 1 | 0 | 1 | 0 | 51 | 0 |
 | ok | 195 | 84 | 14 | 2 | 15 | 87 | 8 | 69 |
 
-Basis per site: read 353, site 852, name 497.
+Basis per site: read 377, site 852, name 462.
 
 ## Sites
 
@@ -570,51 +570,50 @@ Basis per site: read 353, site 852, name 497.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Macbeth_8019A2F4` | 606:P0, 657:P0, 658:P0, 662:P0, 666:P0, 670:P0, 673:P0 | sim | site | train speed and position follow player 0 z |
-| `Macbeth_8019A830` | 704:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_8019A87C` | 710:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_MaLocomotive_Update` | 954:P0, 1049:P0, 1050:P0, 1051:P0, 1055:P0, 1056:P0, 1096:P0 | sim | site | train; sets player 0 to LEVEL_COMPLETE |
-| `Macbeth_8019D048` | 1165:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_MaTrainCar7_Update` | 1666:P0, 1667:P0, 1668:P0, 1671:P0 | sim | read | blast hits player 0 only; right for now: Macbeth is a Landmaster level, co-op players stay parked (WP-18, #136) |
-| `Macbeth_MaTrainCar7_Update` | 1677:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Macbeth_8019F164` | 1727:P0, 1728:P0, 1729:P0, 1803:P0, 1804:P0, 1805:P0, 1806:P0, 1807:P0, 1808:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_MaSwitchTrack_Update` | 2232:P0, 2238:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_Train_Draw` | 2342:P0, 2343:P0, 2344:P0, 2348:P0, 2349:P0, 2361:P0, 2511:P0, 2527:P0, 2544:P0 | view | name | drawing by player 0 |
-| `Macbeth_TrainTrack_Draw` | 2622:P0, 2623:P0, 2631:P0, 2632:P0 | view | name | drawing by player 0 |
-| `Macbeth_IndicatorSign_Draw` | 2739:P0 | view | name | drawing by player 0 |
-| `Macbeth_MaTrainStopBlock_Update` | 2805:MC, 2806:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Macbeth_MaRailroadSwitch_Update` | 3125:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_MaBoulder_Update` | 3241:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_MaRailwaySignal_Update` | 3345:P0, 3366:P0, 3408:P0, 3409:P0, 3413:P0, 3414:P0 | sim | site | sets player 0 to LEVEL_COMPLETE |
-| `Macbeth_Effect378_Update` | 3545:P0, 3559:P0, 3560:P0, 3561:P0, 3571:P0, 3572:P0, 3573:P0, 3575:P0 | sim | read | shot hits player 0 only; right for now: Landmaster level, co-op players parked (WP-18, #136) |
-| `Macbeth_Effect380_Update` | 3606:P0, 3618:P0, 3619:P0, 3620:P0, 3622:P0, 3624:P0, 3626:P0, 3628:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_Effect380_Update` | 3621:PA | sim | read | right for now: Macbeth is rails in a Landmaster, where co-op players stay parked (CoopPlayers_SectionSupported); WP-18 |
-| `Macbeth_MaHorizontalLockBar_Update` | 3659:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_MaVerticalLockBar_Update` | 3685:P0, 3688:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_MaBarrier_Update` | 3713:P0, 3728:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_MaProximityLight_Draw` | 3778:P0 | view | name | drawing by player 0 |
-| `Macbeth_MaFallingBoulder_Update` | 3797:P0, 3803:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_801A6984` | 3854:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_801A6C78` | 3935:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_801A6FB4` | 3993:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_801A74C4` | 4066:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_Actor207_FacePlayer` | 4186:P0, 4187:P0, 4192:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_Actor207_Update` | 4338:P0, 4417:P0, 4418:P0, 4420:P0, 4422:P0, 4423:P0, 4438:P0, 4445:P0, 4454:P0, 4482:P0, 4484:P0, 4490:P0, 4492:P0, 4495:P0, 4840:P0, 4841:P0, 4842:P0, 4904:P0, 4926:P0, 4929:P0, 5024:P0, 5025:P0, 5028:P0, 5041:P0, 5058:P0, 5065:P0, 5068:P0, 5069:P0, 5119:P0, 5149:P0, 5199:P0, 5253:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_Actor207_Update` | 5102:MC, 5103:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Macbeth_Actor207_Draw` | 5446:P0, 5447:P0, 5448:P0, 5452:P0, 5453:P0 | view | name | drawing by player 0 |
-| `Macbeth_EffectClouds_Setup` | 5672:P0, 5673:P0, 5674:P0 | view | name | clouds around player 0 |
-| `Macbeth_801AD144` | 5776:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_MaBombDrop_Update` | 5834:P0, 5884:P0, 5885:P0, 5886:P0, 5887:P0, 5888:P0 | sim | read | blast hits player 0 only; right for now: Landmaster level, co-op players parked (WP-18, #136) |
-| `Macbeth_MaBombDrop_Update` | 5867:MC, 5868:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Macbeth_MaSpear_Update` | 5960:P0, 5986:P0, 5989:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_MaSpear_Update` | 6002:MC, 6003:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Macbeth_MaShockBox_Update` | 6242:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_801AF27C` | 6350:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_801AF44C` | 6392:P0, 6393:P0, 6394:P0, 6396:P0, 6397:P0, 6398:P0 | flow | site | cutscene actor placed at player 0 |
-| `Macbeth_801AF628` | 6434:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_801B28BC` | 7264:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_LevelComplete1_TeamSetup` | 7467:P0 | flow | name | level complete team |
-| `Macbeth_801B3718` | 7510:P0, 7511:P0, 7512:P0, 7514:P0, 7515:P0, 7516:P0 | flow | site | cutscene actor placed at player 0 |
+| `Macbeth_8019A2F4` | 607:P0, 658:P0, 659:P0, 663:P0, 667:P0, 671:P0, 674:P0 | sim | site | train speed and position follow player 0 z |
+| `Macbeth_8019A830` | 705:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_8019A87C` | 711:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_MaLocomotive_Update` | 955:P0, 1050:P0, 1051:P0, 1052:P0, 1056:P0, 1057:P0, 1097:P0 | sim | site | train; sets player 0 to LEVEL_COMPLETE |
+| `Macbeth_8019D048` | 1166:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_MaTrainCar7_Update` | 1667:P0, 1668:P0, 1669:P0, 1672:P0 | sim | read | blast hits player 0 only; right for now: Macbeth is a Landmaster level, co-op players stay parked (WP-18, #136) |
+| `Macbeth_MaTrainCar7_Update` | 1678:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Macbeth_8019F164` | 1728:P0, 1729:P0, 1730:P0, 1804:P0, 1805:P0, 1806:P0, 1807:P0, 1808:P0, 1809:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_MaSwitchTrack_Update` | 2233:P0, 2239:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_Train_Draw` | 2343:P0, 2344:P0, 2345:P0, 2349:P0, 2350:P0, 2362:P0, 2512:P0, 2528:P0, 2545:P0 | view | name | drawing by player 0 |
+| `Macbeth_TrainTrack_Draw` | 2623:P0, 2624:P0, 2632:P0, 2633:P0 | view | name | drawing by player 0 |
+| `Macbeth_IndicatorSign_Draw` | 2740:P0 | view | name | drawing by player 0 |
+| `Macbeth_MaTrainStopBlock_Update` | 2806:MC, 2807:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Macbeth_MaRailroadSwitch_Update` | 3126:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_MaBoulder_Update` | 3242:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_MaRailwaySignal_Update` | 3346:P0, 3367:P0, 3409:P0, 3410:P0, 3414:P0, 3415:P0 | sim | site | sets player 0 to LEVEL_COMPLETE |
+| `Macbeth_Effect378_Update` | 3546:P0, 3560:P0, 3561:P0, 3562:P0, 3572:P0, 3573:P0, 3574:P0, 3576:P0 | sim | read | shot hits player 0 only; right for now: Landmaster level, co-op players parked (WP-18, #136) |
+| `Macbeth_Effect380_Update` | 3607:P0, 3619:P0, 3620:P0, 3621:P0, 3623:P0, 3625:P0, 3627:P0, 3629:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_Effect380_Update` | 3622:PA | sim | read | right for now: Macbeth is rails in a Landmaster, where co-op players stay parked (CoopPlayers_SectionSupported); WP-18 |
+| `Macbeth_MaHorizontalLockBar_Update` | 3660:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_MaVerticalLockBar_Update` | 3686:P0, 3689:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_MaBarrier_Update` | 3714:P0, 3729:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_MaProximityLight_Draw` | 3779:P0 | view | name | drawing by player 0 |
+| `Macbeth_MaFallingBoulder_Update` | 3798:P0, 3804:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_801A6984` | 3855:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_801A6C78` | 3936:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_801A6FB4` | 3994:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_801A74C4` | 4067:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_Actor207_Update` | 4348:P0, 4428:P0, 4430:P0, 4432:P0, 4433:P0, 4455:P0, 4492:P0, 4505:P0, 4850:P0, 4914:P0, 4936:P0, 4939:P0, 5034:P0, 5035:P0, 5038:P0, 5051:P0, 5068:P0, 5075:P0, 5078:P0, 5079:P0, 5129:P0, 5159:P0, 5209:P0, 5263:P0 | flow | read | the train's end goes to, faces and swoops on its kept human, picked again at a new state (#220, aim.h); left: the ram at the end of the track (states 18, 19) and its kill of player 0, its z on the path, damage only while player 0 is 200 behind, the attack start on player 0's state, level complete |
+| `Macbeth_Actor207_Update` | 5112:MC, 5113:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Macbeth_Actor207_Draw` | 5459:P0, 5460:P0, 5461:P0, 5465:P0, 5466:P0 | view | name | drawing by player 0 |
+| `Macbeth_EffectClouds_Setup` | 5685:P0, 5686:P0, 5687:P0 | view | name | clouds around player 0 |
+| `Macbeth_801AD144` | 5789:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_MaBombDrop_Update` | 5847:P0, 5897:P0, 5898:P0, 5899:P0, 5900:P0, 5901:P0 | sim | read | blast hits player 0 only; right for now: Landmaster level, co-op players parked (WP-18, #136) |
+| `Macbeth_MaBombDrop_Update` | 5880:MC, 5881:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Macbeth_MaSpear_Update` | 5973:P0, 5999:P0, 6002:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_MaSpear_Update` | 6015:MC, 6016:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Macbeth_MaShockBox_Update` | 6255:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_801AF27C` | 6363:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_801AF44C` | 6405:P0, 6406:P0, 6407:P0, 6409:P0, 6410:P0, 6411:P0 | flow | site | cutscene actor placed at player 0 |
+| `Macbeth_801AF628` | 6447:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_801B28BC` | 7277:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_LevelComplete1_TeamSetup` | 7480:P0 | flow | name | level complete team |
+| `Macbeth_801B3718` | 7523:P0, 7524:P0, 7525:P0, 7527:P0, 7528:P0, 7529:P0 | flow | site | cutscene actor placed at player 0 |
 
 ### `src/overlays/ovl_i5/fox_ti.c`
 
