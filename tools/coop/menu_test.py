@@ -18,7 +18,8 @@ a platform warning (decision 0010), on the host's side and the joining player's.
 platform, so the other side there is coop_session_test, which says what it is told to. game_leave
 has player 2 leave during the level, which ends the session for everyone under lockstep (#160) while every game keeps
 running, then the same games hold a second session, start again and keep every player past the time-out (#132).
-game_level and game_leave print the longest gap between two session ticks (menu-stall.txt).
+game_level and game_leave print the longest gap between two session ticks (menu-stall.txt). game_names types the
+players' names into the window (#258) and reads them back from both windows and from each game's own config.
 
 Prints one line per scenario and a RESULT line, keeps logs in local/test-menu/<stamp>/, exits 0 only when everything
 passed. Each game gets its own folder under local/ with its own SHIP_HOME, removed when the run passed.
@@ -626,9 +627,57 @@ def scenario_program(mode):
     return run
 
 
+NAME_CVAR_258 = "gCoopName"  # src/port/coop/ui/menu_window.cpp: where the window keeps the name
+
+
+def saved_name_258(game):
+    """What the game's own config holds for the player's name, None if nothing (yet)."""
+    try:
+        cvars = json.loads((game.run / "starship.cfg.json").read_text(encoding="utf-8")).get("CVars", {})
+    except (OSError, ValueError):
+        return None
+    return cvars.get(NAME_CVAR_258)
+
+
+def scenario_game_names_258(args, exe, out):
+    """#258: each player types a name in the window before hosting or joining. The field takes what the game's font
+    draws, upper case, at most 8 characters; both windows show both names; each game keeps its own in its own config,
+    and a game that starts with that config hosts under it without typing."""
+    games = []
+
+    def body():
+        host, a = games[0], games[1]
+        open_windows(games)
+        host.type("name", "Captain Fox")  # 8 at most: CAPTAIN and a space, which the session drops
+        a.type("name", "sam_ok,!")  # _ and , are not in the font
+        port = host_session(host)
+        host.wait_text("player1", r"^Player 1 \(you\): CAPTAIN, Fox$")
+        join(a, port, 2)
+        a.wait_text("player1", r"^Player 1: CAPTAIN, Fox")
+        a.wait_text("player2", r"^Player 2 \(you\): SAMOK!, no character yet$")
+        host.wait_text("player2", r"^Player 2: SAMOK!, no character yet")
+        for game, want in ((host, "CAPTAIN"), (a, "SAMOK!")):
+            game.wait(lambda g=game, w=want: saved_name_258(g) == w, f"{want} in the game's own config")
+        host.click("leave")
+        a.wait_text("status", r"Not in a session\.")
+        for game in (host, a):
+            game.stop()
+
+        again = Game(exe, "again", out, {NAME_CVAR_258: "CAPTAIN"})
+        games.append(again)
+        open_windows([again])
+        host_session(again)
+        again.wait_text("player1", r"^Player 1 \(you\): CAPTAIN, Fox$")
+        return "typed Captain Fox and sam_ok,!: both windows show CAPTAIN and SAMOK!, both saved; a new game hosts as CAPTAIN"
+
+    games.extend([Game(exe, "host", out), Game(exe, "a", out)])
+    return level_run(args, games, body)
+
+
 GAME_SCENARIOS = {"game": scenario_game, "game_level": scenario_game_level, "game_start_level": scenario_game_start_level,
                   "game_level_map": scenario_game_level_map,
-                  "game_platform": scenario_game_platform, "game_leave": scenario_game_leave}
+                  "game_platform": scenario_game_platform, "game_leave": scenario_game_leave,
+                  "game_names": scenario_game_names_258}
 SCENARIOS = {"sim": scenario_program("sim"), "udp": scenario_program("udp"), **GAME_SCENARIOS}
 
 

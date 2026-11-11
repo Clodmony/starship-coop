@@ -1,8 +1,8 @@
 # Wire protocol
 
 Status: the transport (WP-20), the session handshake (WP-21), the characters (WP-34), the level start (WP-24), the
-session's save (decision 0009 item 8), lockstep (WP-22), the desync check (WP-23), the co-op log (#172) and the handover
-(#189) exist; `COOP_PROTOCOL_VERSION` is 8. Other sync and game messages come
+session's save (decision 0009 item 8), the players' names (#258), lockstep (WP-22), the desync check (WP-23), the co-op
+log (#172) and the handover (#189) exist; `COOP_PROTOCOL_VERSION` is 9. Other sync and game messages come
 with their work packages. This page sets the rules so parallel work does not collide.
 
 ## Rules
@@ -242,6 +242,39 @@ What does not fit:
 - A save of another size ends the client with `BAD_MESSAGE`. A second save before the level start, a save after it,
   one before the welcome and one from a client are dropped and counted (`CoopSession_Ignored`).
 
+## Names
+
+Each player can type a name in the co-op window before hosting or joining (#258). It is shown over that player's Arwing
+on the other players' screens and in its row of the hits, nowhere in the game state: no game reads it, and the state
+hash never sees it. The code is in `src/port/coop/session/session.c`; the game takes the names in
+`src/port/coop/game/names.c`. `SESSION_NAME` goes on the reliable lane, after the welcome, both ways, with one layout:
+
+| Size | Field |
+|---|---|
+| 1 | Entries n |
+| n x | Entry: u8 player, u8 length L (0 to 8), then L characters |
+
+A name holds at most 8 characters, each one of `A` to `Z`, `0` to `9`, the space, `-`, `.`, `!` and `:`, what the
+game's small font draws (`sSmallChars`, `src/engine/fox_std_lib.c`), with no space at either end. Length 0 is no name.
+The window takes only these, and turns lower case into upper case (`CoopSession_CleanName`).
+
+1. A client sends its own name in one entry for its own slot, once the host has let it in, and again only when it
+   changes. A client with no name sends nothing, as the host holds none for it.
+2. The host holds every name and sends the whole list, one entry per slot in slot order (n = 4), to every client that
+   joined whenever a name changes: a client's name came, the host's own was set, a client with a name left. A client
+   that joins gets the list after its welcome if anyone has a name. A list held back by a full window goes on the next
+   poll, the one that is current then.
+3. A name changes nothing about the roster or the level start, and a client that leaves takes its name along. Names
+   still arrive after the level start, as they are only shown.
+
+What does not fit, as with the characters:
+
+- The host ends a client, as for a pick it cannot have sent, on an entry for any slot but its own, a count other than
+  1, a name that breaks the rule above, or bytes missing or left over. A name from a client that has not joined is
+  dropped and counted (`CoopSession_Ignored`).
+- A client ends with `BAD_MESSAGE` on a list of another count, its slots out of order, a name that breaks the rule, or
+  bytes missing or left over.
+
 ## Lockstep
 
 [Decision 0002](decisions/0002-sync-model.md): every client runs the whole game, and only inputs travel. The code is
@@ -452,6 +485,7 @@ Nothing is passed on: with three players a client gets the host's report, the ho
 | 0x0015 | `SESSION_ROSTER` | host to client | u8 for each of the 4 players, see Characters | WP-34 |
 | 0x0016 | `SESSION_LEVEL_START` | host to client | level, phase, roster and values, see Level start (the cleared flag of version 7 is gone) | WP-24, #191 |
 | 0x0017 | `SESSION_SAVE` | host to client | the host's `Save`, 256 bytes, just ahead of the level start, see Session's save | decision 0009 item 8 |
+| 0x0018 | `SESSION_NAME` | both | entries of u8 player, u8 length (0 to 8), the characters: a client's own name, the host's list of all four, see Names | #258 |
 | 0x0040 | `SYNC_INPUT` | both | frames of each player, see Lockstep | WP-22 |
 | 0x0041 | `SYNC_HASH` | both | the total state hash of the last 10 frames, see Desync check | WP-23 |
 | 0x0042 | `SYNC_DESYNC` | both | the sender's hash of the first differing frame, region by region, see Desync check | WP-23 |

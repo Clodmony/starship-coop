@@ -1,6 +1,7 @@
 #include "score.h"
 
 #include "global.h"
+#include "port/coop/game/names.h"
 #include "port/coop/game/players.h"
 #include "port/coop/session/session.h"
 #include "port/mods/PortEnhancements.h" // SETUPDL_76_OPTIONAL, as src/engine/fox_hud.c draws
@@ -75,17 +76,18 @@ static s32 CoopScore_Face(s32 index) {
 }
 
 #define COOP_SCORE_ROW 17.0f
+#define COOP_SCORE_NAME_W 52.0f // #258: the name between the face and the hits, squeezed to this many pixels at most
 
 void CoopScore_DrawStatus(void) {
     s32 count = CoopPlayers_Count();
-    f32 x = 212.0f; // right of the "enemies down" window (x 124 to 194 in HUD_LevelClearStatusScreen_Draw)
+    f32 x = 200.0f; // right of the "enemies down" window (x 124 to 194 in HUD_LevelClearStatusScreen_Draw)
     f32 y = 28.0f;
     s32 i;
 
     if (!CoopPlayers_IsCoop() || gVersusMode || (count < 2)) {
         return;
     }
-    HUD_MsgWindowBg_Draw2(x - 4.0f, y - 4.0f, 2.7f, (count * COOP_SCORE_ROW + 6.0f) / 17.0f);
+    HUD_MsgWindowBg_Draw2(x - 4.0f, y - 4.0f, 5.0f, (count * COOP_SCORE_ROW + 6.0f) / 17.0f);
     for (i = 0; i < count; i++) {
         f32 rowY = y + (i * COOP_SCORE_ROW);
 
@@ -99,7 +101,21 @@ void CoopScore_DrawStatus(void) {
 
         RCP_SetupDL(&gMasterDisp, SETUPDL_76_OPTIONAL);
         gDPSetPrimColor(gMasterDisp++, 0, 0, 255, 255, 255, 255);
-        HUD_Number_Draw(x + 20.0f, rowY + 3.0f, gPlayerScores[i], 1.0f, true, 9999);
+        {
+            char* name = (char*) CoopNames_Label(i); // #258: the typed name, else the character's
+            s32 width = Graphics_GetSmallTextWidth(name);
+            s32 digits = 1;
+            s32 n;
+
+            for (n = gPlayerScores[i]; n >= 10; n /= 10) {
+                digits++;
+            }
+
+            Graphics_DisplaySmallText(x + 17.0f, rowY + 6.0f,
+                                      (width > COOP_SCORE_NAME_W) ? COOP_SCORE_NAME_W / width : 1.0f, 1.0f, name);
+            // right-aligned, its last digit ending where the window does
+            HUD_Number_Draw(x + 98.0f - 13.0f * (digits - 1), rowY + 3.0f, gPlayerScores[i], 1.0f, true, 9999);
+        }
     }
 }
 

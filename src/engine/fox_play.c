@@ -25,6 +25,7 @@
 #include "port/coop/game/players.h" // COOP: player count apart from camera count (WP-10)
 #include "port/coop/game/score.h"   // COOP: each player's own hit count (#252)
 #include "port/coop/game/team.h"    // COOP: a human-flown wingman's gTeamShields (WP-17)
+#include "port/coop/game/view.h"    // COOP: what each client sees and hears (#140)
 
 extern float gCurrentScreenWidth;
 extern float gCurrentScreenHeight;
@@ -6992,7 +6993,7 @@ void Play_UpdateLevel(void) {
 
             shields = MIN(gPlayer[0].shields, 255);
 
-            Audio_SetHeatAlarmParams(shields, heightParam);
+            CoopView_HeatAlarm(shields, heightParam); // COOP: the alarm of the player looked through (#140)
 
             if (((gGameFrameCount % 8) == 0) && (gPlayer[0].state != PLAYERSTATE_LEVEL_COMPLETE)) {
                 Solar_8019E8B8(RAND_FLOAT_CENTERED(6000.0f), -80.0f,
@@ -7246,7 +7247,8 @@ void Play_Main(void) {
 
         case PLAY_PAUSE:
             if (!gVersusMode) {
-                if ((gControllerPress[gMainController].button & R_TRIG) && (gPlayer[0].form != FORM_BLUE_MARINE) &&
+                if (!CoopView_PauseReticles() && // COOP: in a session each player's own R, its own reticle (#140)
+                    (gControllerPress[gMainController].button & R_TRIG) && (gPlayer[0].form != FORM_BLUE_MARINE) &&
                     (gPlayer[0].state != PLAYERSTATE_STANDBY)) {
                     if (gShowReticles[0] = 1 - gShowReticles[0]) {
                         AUDIO_PLAY_SFX(NA_SE_MAP_WINDOW_OPEN, gDefaultSfxSource, 4);

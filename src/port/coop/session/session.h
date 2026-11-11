@@ -11,6 +11,7 @@
 #include <stdint.h>
 
 #include "port/coop/game/level_start.h"
+#include "port/coop/game/names.h"
 #include "port/coop/net/transport.h"
 #include "identity.h"
 
@@ -43,6 +44,11 @@ typedef enum {
 typedef struct {
     uint8_t character[COOP_SESSION_PLAYERS];
 } CoopRoster;
+
+// Every player's name, by player index; "" for none (#258). Display only: nothing in the game state reads them.
+typedef struct {
+    char name[COOP_SESSION_PLAYERS][COOP_NAME_MAX + 1];
+} CoopSessionNames;
 
 typedef enum {
     COOP_SESSION_EV_JOINED,  // host: client `peer` passed the handshake. Client: the host let us in.
@@ -125,6 +131,17 @@ bool CoopSession_LevelStarted(const CoopSession* s);
 // players before the connection goes (the handover, #189). Once per session: Close writes it if nobody did.
 void CoopSession_SayClosed(CoopSession* s);
 void CoopSession_Close(CoopSession* s);
+
+// Our own name (#258), cleaned by CoopSession_CleanName. The host shares it with every client; a client sends it to the
+// host once the host let it in, and again whenever it is set anew. Call it right after Host or Join.
+void CoopSession_SetName(CoopSession* s, const char* name);
+// Every player's name as the host last shared it, the host's own as it holds them; a slot nobody is in has "". Valid
+// until the next Poll. The names change with no event: read them when they are needed.
+const CoopSessionNames* CoopSession_Names(const CoopSession* s);
+// The one rule for a name, for the menu and for the wire: lower case becomes upper case, a character outside
+// COOP_NAME_CHARS is left out, and so is a space at either end; at most COOP_NAME_MAX characters are kept. out holds
+// COOP_NAME_MAX + 1.
+void CoopSession_CleanName(const char* in, char* out);
 
 const char* CoopSession_EndText(CoopSessionEnd end);
 // "Falco"; "" for a value that is no character.

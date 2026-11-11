@@ -115,6 +115,10 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             explode piece by piece. src/port/coop/test/smoke_trace.h names every smoke puff: each puff of an eel has to
             lie in the fight, not at a position read from outside the eel's history (the desync of a real Windows and
             Linux session, NOTES.md 2026-11-11). Hashes and smoke traces equal on both games.
+  player_names two players with names of their own (#257, #258), typed as a player might ("Captain Fox", "sam.ok!"):
+            the session cleans them to CAPTAIN and SAM.OK!, the host shares both, and by the level start each game
+            holds both. Each game marks the other player's ship with its name (CAPTAIN on the client, SAM.OK! on the
+            host) and never its own, and the hashes are equal on every frame.
   log     the co-op log (#172): each game's folder holds its own log and the other player's, streamed during the
             session; the hash stays equal with streaming on; nothing personal is in the files; coop_log.py merges them.
 
@@ -2886,6 +2890,49 @@ def sc_log(args, folder):
             f"{len(merged)} in the merged timeline of session {session}; nothing personal in them")
 
 
+NAMES_TYPED_258 = ("Captain Fox", "sam.ok!")  # what the host and the client type
+NAMES_HELD_258 = "CAPTAIN,SAM.OK!,-,-"  # what every game holds after the session cleaned them (session.h)
+
+
+def tag_rows_258(path):
+    """(frame, {player: name}) of every line of a view trace that has `tags` (src/port/coop/test/view_trace.h)."""
+    rows = []
+    for line in Path(path).read_text(encoding="utf-8", errors="replace").splitlines():
+        fields = dict(kv.split("=", 1) for kv in line.split() if "=" in kv)
+        if "tags" not in fields or "frame" not in fields:
+            continue
+        tags = {} if fields["tags"] == "-" else {
+            int(g.split(":", 1)[0]): g.split(":", 1)[1].replace("_", " ") for g in fields["tags"].split(",")}
+        rows.append((int(fields["frame"]), tags))
+    return rows
+
+
+def sc_player_names(args, folder):
+    """#257, #258: see the list at the top."""
+    view = {"SF64_COOP_VIEW_TRACE": "view-trace.txt"}
+    host, client = run_short(args, folder, host_env={"SF64_COOP_JOIN_NAME": NAMES_TYPED_258[0]},
+                             client_env={"SF64_COOP_JOIN_NAME": NAMES_TYPED_258[1]}, both=view)
+    frames = compare(host, client, SHORT_FRAMES)
+    no_desync([host, client])
+    marks = {}
+    for game, own, other, want in ((host, 0, 1, "SAM.OK!"), (client, 1, 0, "CAPTAIN")):
+        said = join_test.said(game.report(), "names")
+        expect(said and said[-1]["names"] == NAMES_HELD_258, f"{game.name} holds the names {said[-1] if said else None}")
+        start = int(join_test.said(game.report(), "level_start")[0]["frame"])
+        expect(any(int(s["frame"]) <= start and s["names"] == NAMES_HELD_258 for s in said),
+               f"{game.name} did not hold both names by the level start at frame {start}: {said}")
+        rows = tag_rows_258(game.run / "view-trace.txt")
+        marked = [tags[other] for _, tags in rows if other in tags]
+        wrong = sorted({mark for mark in marked if mark != want})
+        own_marks = sum(1 for _, tags in rows if own in tags)
+        expect(marked and not wrong and own_marks == 0,
+               f"{game.name}: player {other} marked on {len(marked)} of {len(rows)} frames, other marks {wrong}, its own "
+               f"player on {own_marks}")
+        marks[game.name] = f"{want} on {len(marked)} of {len(rows)} frames"
+    return (f"both hold {NAMES_HELD_258}; host marks {marks['host']}, client marks {marks['client0']}; same hash on "
+            f"{frames} frames")
+
+
 SCENARIOS = {
     "sim": sc_sim,
     "desync_sim": sc_desync_sim,
@@ -2945,6 +2992,7 @@ SCENARIOS = {
     "bosses": sc_bosses,
     "other_bosses": sc_other_bosses,
     "eels": sc_eels,
+    "player_names": sc_player_names,
 }
 LONG = ("full", "scenes", "allrange", "allrange_down", "allrange_others", "allrange_down_others", "teambar",
         "map_saves", "map_saves_host_full", "map_saves_equal", "audio", "release", "rates", "vehicles", "vehicle_end", "bosses", "other_bosses",

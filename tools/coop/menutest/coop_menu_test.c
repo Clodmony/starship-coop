@@ -1212,6 +1212,71 @@ static void Test_LevelEnds(void) {
     Menus_Close();
 }
 
+// #258: what the game was handed as each player's name, by the menu that ticked; a call outside a tick (a session
+// ending in Leave) counts as handed to sPlayerNamesOutside.
+static char sPlayerNamesGot[MENUS][COOP_SESSION_PLAYERS][COOP_NAME_MAX + 1];
+static uint32_t sPlayerNamesOutside;
+
+static void PlayerNames_Got(int32_t player, const char* name) {
+    EXPECT(player >= 0 && player < COOP_SESSION_PLAYERS, "names handed for a player slot that cannot be");
+    EXPECT(name != NULL && strlen(name) <= COOP_NAME_MAX, "a name handed that is too long");
+    if (sTicking == NOT_TICKING) {
+        sPlayerNamesOutside++;
+        EXPECT(name[0] == '\0', "a name handed outside a tick");
+        return;
+    }
+    snprintf(sPlayerNamesGot[sTicking][player], sizeof(sPlayerNamesGot[sTicking][player]), "%s", name);
+}
+
+static const CoopMenuBackend sPlayerNamesBackend = { Sim_Host,       Sim_Connect, Sim_Port,       Id_Test,
+                                                     Level_FromGame, Level_Enter, Session_Ended,  Sync_Message,
+                                                     Sync_Waiting,   NULL,        PlayerNames_Got };
+
+static void Test_PlayerNames(void) {
+    const CoopMenuView* v;
+    int i;
+
+    sScenario = "names";
+    Menus_Init(0);
+    for (i = 0; i < MENUS; i++) {
+        CoopMenu_Init(&sMenus[i], &sPlayerNamesBackend);
+    }
+    memset(sPlayerNamesGot, 0, sizeof(sPlayerNamesGot));
+    sPlayerNamesOutside = 0;
+    CoopMenu_SetName(HOST, " Captain Fox");
+    CoopMenu_SetName(A, "sam!");
+    CoopMenu_SetName(B, "");
+    Start_Host();
+    Join(A);
+    Join(B);
+    Run(500);
+    for (i = 0; i < 3; i++) {
+        EXPECT(strcmp(sPlayerNamesGot[i][0], "CAPTAIN") == 0, "a game was not handed the host's name");
+        EXPECT(strcmp(sPlayerNamesGot[i][1], "SAM!") == 0, "a game was not handed player 2's name");
+        EXPECT(sPlayerNamesGot[i][2][0] == '\0' && sPlayerNamesGot[i][3][0] == '\0',
+               "a game was handed a name nobody typed");
+    }
+    v = View(B);
+    Expect_Has(v->players[0].text, "Player 1: CAPTAIN, Fox", "the host's line does not carry its name");
+    Expect_Has(v->players[1].text, "Player 2: SAM!, no character", "player 2's line does not carry its name");
+    Expect_Has(v->players[2].text, "Player 3 (you): no character", "a line without a name changed");
+    v = View(HOST);
+    Expect_Has(v->players[1].text, "Player 2: SAM!", "the host does not show player 2's name");
+
+    // A name set during a session is for the next one.
+    CoopMenu_SetName(A, "other");
+    Run(500);
+    EXPECT(strcmp(sPlayerNamesGot[0][1], "SAM!") == 0, "a name changed in the middle of a session");
+
+    // Gone with its player, and with the session.
+    CoopMenu_Leave(A);
+    Run(500);
+    EXPECT(sPlayerNamesGot[0][1][0] == '\0' && sPlayerNamesGot[2][1][0] == '\0', "a name stayed after its player left");
+    EXPECT(sPlayerNamesOutside == COOP_SESSION_PLAYERS, "leaving did not hand the game empty names");
+    Menus_Close();
+    EXPECT(sPlayerNamesOutside == 3 * COOP_SESSION_PLAYERS, "the session's end did not hand the game empty names");
+}
+
 static int Run_Sim(void) {
     Test_Idle();
     Test_BadInput();
@@ -1237,7 +1302,8 @@ static int Run_Sim(void) {
     Test_LevelPickInFlight();
     Test_LevelLost();
     Test_LevelEnds();
-    printf("PASS: 24 scenarios\n");
+    Test_PlayerNames();
+    printf("PASS: 25 scenarios\n");
     return 0;
 }
 

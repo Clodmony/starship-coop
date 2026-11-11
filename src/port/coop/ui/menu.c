@@ -37,6 +37,19 @@ static bool Port_Read(const char* text, long lowest, uint16_t* out) {
     return true;
 }
 
+// Hands every player's name to the game (#258), "" for each without a session.
+static void Menu_Names(const CoopMenu* m) {
+    const CoopSessionNames* names = (m->session != NULL) ? CoopSession_Names(m->session) : NULL;
+    int i;
+
+    if (m->backend->names == NULL) {
+        return;
+    }
+    for (i = 0; i < COOP_SESSION_PLAYERS; i++) {
+        m->backend->names(i, (names != NULL) ? names->name[i] : "");
+    }
+}
+
 // The rest stays at the transport's defaults.
 static const CoopNetConfig kNetConfig = { COOP_MENU_TIMEOUT_MS, 0, 0 };
 
@@ -49,12 +62,17 @@ static void Menu_EndSession(CoopMenu* m, bool leaving) {
     m->phase = COOP_MENU_IDLE;
     m->pendingPick = 0;
     m->levelStarted = false;
+    Menu_Names(m);
     m->backend->sessionEnded();
 }
 
 void CoopMenu_Init(CoopMenu* m, const CoopMenuBackend* backend) {
     memset(m, 0, sizeof(*m));
     m->backend = backend;
+}
+
+void CoopMenu_SetName(CoopMenu* m, const char* name) {
+    CoopSession_CleanName(name, m->name);
 }
 
 bool CoopMenu_Host(CoopMenu* m, const char* portText) {
@@ -82,6 +100,7 @@ bool CoopMenu_Host(CoopMenu* m, const char* portText) {
         Menu_Say(m, "Could not start the session.");
         return false;
     }
+    CoopSession_SetName(m->session, m->name);
     m->phase = COOP_MENU_HOSTING;
     m->self = 0;
     return true;
@@ -115,6 +134,7 @@ bool CoopMenu_Join(CoopMenu* m, const char* address, const char* portText, uint3
         Menu_Say(m, "Could not start the session.");
         return false;
     }
+    CoopSession_SetName(m->session, m->name);
     snprintf(m->address, sizeof(m->address), "%s", address);
     m->port = port;
     m->phase = COOP_MENU_CONNECTING;
@@ -279,6 +299,9 @@ void CoopMenu_Tick(CoopMenu* m, uint32_t nowMs) {
     while (m->session != NULL && CoopSession_Poll(m->session, nowMs, &ev)) {
         Menu_OnEvent(m, &ev);
     }
+    if (m->session != NULL) {
+        Menu_Names(m);
+    }
 }
 
 // A host measures the round trip to each client, a client only the one to the host.
@@ -291,6 +314,7 @@ static int View_PingPeer(const CoopMenu* m, int player) {
 
 static void View_Player(const CoopMenu* m, const CoopRoster* roster, int player, CoopMenuPlayer* out) {
     const char* name;
+    const char* typed = CoopSession_Names(m->session)->name[player];
     const char* you = player == m->self ? " (you)" : "";
     char ping[32] = "";
     int peer = View_PingPeer(m, player);
@@ -313,7 +337,11 @@ static void View_Player(const CoopMenu* m, const CoopRoster* roster, int player,
             snprintf(ping, sizeof(ping), ", ping not measured yet");
         }
     }
-    snprintf(out->text, sizeof(out->text), "Player %d%s: %s%s", player + 1, you, name, ping);
+    if (typed[0] != '\0') {
+        snprintf(out->text, sizeof(out->text), "Player %d%s: %s, %s%s", player + 1, you, typed, name, ping);
+    } else {
+        snprintf(out->text, sizeof(out->text), "Player %d%s: %s%s", player + 1, you, name, ping);
+    }
 }
 
 static void View_Choice(const CoopMenu* m, const CoopRoster* roster, uint8_t character, CoopMenuChoice* out) {

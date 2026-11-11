@@ -53,6 +53,9 @@ typedef struct {
     // Optional, NULL for none: right before the session closes, while the players still connected can be reached (the
     // handover, #189). leaving: the player chose to leave. It may take a few seconds; the session stays the menu's.
     void (*handover)(CoopSession* s, bool leaving);
+    // Optional, NULL for none: every player's name (#258), for what the game shows. Called for each player slot on
+    // every tick of a session, and with "" for each when the session ends. Display only.
+    void (*names)(int32_t player, const char* name);
 } CoopMenuBackend;
 
 typedef struct {
@@ -66,6 +69,7 @@ typedef struct {
     bool levelStarted;   // the session said so: nothing left to pick or start
     bool lost;           // a session ended in a level, and the player has not been shown why yet
     char message[COOP_SESSION_TEXT];
+    char name[COOP_NAME_MAX + 1]; // what this player calls itself (#258), "" for no name
 } CoopMenu;
 
 typedef struct {
@@ -96,6 +100,9 @@ typedef struct {
 } CoopMenuView;
 
 void CoopMenu_Init(CoopMenu* m, const CoopMenuBackend* backend);
+// This player's name for the next Host or Join (#258), cleaned by CoopSession_CleanName; "" for none. A session that
+// is open already keeps the name it started with.
+void CoopMenu_SetName(CoopMenu* m, const char* name);
 // Start hosting on portText, 0 for a free port. False if nothing started; the message says why.
 bool CoopMenu_Host(CoopMenu* m, const char* portText);
 // Start joining. A host name is resolved here, which can block on a DNS lookup (transport.h). False if nothing started;

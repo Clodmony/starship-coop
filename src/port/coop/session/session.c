@@ -1,5 +1,5 @@
 // Co-op session: handshake (WP-21), characters (WP-34), level start (WP-24) and the session's save (decision 0009 item
-// 8). Messages and their layout: docs/coop/PROTOCOL.md, ids 0x0010-0x0017.
+// 8), and the players' names (#258). Messages and their layout: docs/coop/PROTOCOL.md, ids 0x0010-0x0018.
 //
 // Host, per peer: WAIT_HELLO from the transport's CONNECTED, then JOINED or REFUSED. A refused peer stays until the
 // refusal is acknowledged, the client goes, or COOP_SESSION_REFUSE_LINGER_MS pass; the transport's disconnect drops
@@ -45,6 +45,7 @@ typedef struct {
     uint8_t refusedPick; // owed a refusal for this character, 0 if none
     bool saveDue;        // owed the session's save, which goes ahead of the level start
     bool levelDue;       // owed the level start
+    bool namesDue;       // owed the names: they changed since it last got them (#258)
 } Peer;
 
 struct CoopSession {
@@ -65,6 +66,9 @@ struct CoopSession {
     CoopSessionEnd pendingEnd;
     uint32_t ignored;
     bool closedSaid; // `session closed` is in the log (CoopSession_SayClosed)
+    CoopSessionNames names; // client: what the host last sent, all "" before that (#258)
+    char ownName[COOP_NAME_MAX + 1];
+    char sentName[COOP_NAME_MAX + 1]; // client: the name the host holds for us, as far as we know
     // The co-op log (#172): when the transport's counters were last written, and what they were then.
     uint32_t nowMs;
     uint32_t statsMs;
@@ -197,6 +201,88 @@ bool CoopSession_Pick(CoopSession* s, CoopCharacter character) {
     }
     CoopLog_Write(COOP_LOG_SESSION, false, "asking the host for %s", CoopSession_CharacterName(wire));
     return s->t->ops->send(s->t, 0, COOP_MSG_SESSION_PICK, &wire, 1, COOP_NET_RELIABLE);
+}
+
+// ---- Names (#258) ----
+
+void CoopSession_CleanName(const char* in, char* out) {
+    size_t n = 0;
+
+    for (; (in != NULL) && (*in != '\0') && (n < COOP_NAME_MAX); in++) {
+        char c = (*in >= 'a' && *in <= 'z') ? (char) (*in - 'a' + 'A') : *in;
+
+        if ((strchr(COOP_NAME_CHARS, c) != NULL) && !((c == ' ') && (n == 0))) {
+            out[n++] = c;
+        }
+    }
+    while ((n > 0) && (out[n - 1] == ' ')) {
+        n--;
+    }
+    out[n] = '\0';
+}
+
+static void Host_PlayerNamesChanged(CoopSession* s);
+
+void CoopSession_SetName(CoopSession* s, const char* name) {
+    CoopSession_CleanName(name, s->ownName);
+    if (s->isHost) {
+        if (strcmp(s->names.name[0], s->ownName) != 0) {
+            snprintf(s->names.name[0], sizeof(s->names.name[0]), "%s", s->ownName);
+            Host_PlayerNamesChanged(s);
+        }
+    }
+}
+
+const CoopSessionNames* CoopSession_Names(const CoopSession* s) {
+    return &s->names;
+}
+
+// SESSION_NAME on the wire: a count of entries, then each entry as its player, its length and its characters. A client
+// sends one, its own; the host sends one per player slot, in slot order. Returns the size written.
+static uint16_t PlayerNames_Write(const CoopSessionNames* names, int first, int count, uint8_t* out) {
+    uint16_t size = 0;
+    int i;
+
+    out[size++] = (uint8_t) count;
+    for (i = first; i < first + count; i++) {
+        size_t n = strlen(names->name[i]);
+
+        out[size++] = (uint8_t) i;
+        out[size++] = (uint8_t) n;
+        memcpy(out + size, names->name[i], n);
+        size += (uint16_t) n;
+    }
+    return size;
+}
+
+// True if data holds count entries for the players from first on, in order, each a name CoopSession_CleanName keeps as
+// it is, and nothing else. The names go into out.
+static bool PlayerNames_Read(const uint8_t* data, uint16_t size, int first, int count, CoopSessionNames* out) {
+    uint16_t at = 1;
+    int i;
+
+    if (size < 1 || data[0] != count) {
+        return false;
+    }
+    for (i = first; i < first + count; i++) {
+        char name[COOP_NAME_MAX + 1];
+        char clean[COOP_NAME_MAX + 1];
+        uint8_t n;
+
+        if (size - at < 2 || data[at] != i || data[at + 1] > COOP_NAME_MAX || size - at - 2 < data[at + 1]) {
+            return false;
+        }
+        n = data[at + 1];
+        memcpy(name, data + at + 2, n);
+        name[n] = '\0';
+        CoopSession_CleanName(name, clean);
+        if (strlen(name) != n || strcmp(name, clean) != 0) {
+            return false;
+        }
+        memcpy(out->name[i], name, n + 1);
+        at = (uint16_t) (at + 2 + n);
+    }
+    return at == size;
 }
 
 bool CoopSession_CanStart(const CoopSession* s) {
@@ -368,6 +454,26 @@ static void Host_RosterChanged(CoopSession* s) {
     s->rosterEvent = true;
 }
 
+static bool PlayerNames_Any(const CoopSessionNames* names) {
+    int i;
+
+    for (i = 0; i < COOP_SESSION_PLAYERS; i++) {
+        if (names->name[i][0] != '\0') {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Every joined client is owed the names as they are now (#258).
+static void Host_PlayerNamesChanged(CoopSession* s) {
+    int i;
+
+    for (i = 0; i < COOP_NET_MAX_PEERS; i++) {
+        s->peers[i].namesDue = true;
+    }
+}
+
 static bool Host_RosterEvent(CoopSession* s, CoopSessionEvent* ev) {
     if (!s->rosterEvent) {
         return false;
@@ -404,6 +510,13 @@ static void Host_SendOwed(CoopSession* s) {
                                             sizeof(s->roster.character), COOP_NET_RELIABLE)) {
             p->rosterDue = false;
         }
+        if (p->namesDue) {
+            uint16_t size = PlayerNames_Write(&s->names, 0, COOP_SESSION_PLAYERS, s->buffer);
+
+            if (s->t->ops->send(s->t, i, COOP_MSG_SESSION_NAME, s->buffer, size, COOP_NET_RELIABLE)) {
+                p->namesDue = false;
+            }
+        }
         if (p->saveDue &&
             s->t->ops->send(s->t, i, COOP_MSG_SESSION_SAVE, s->level.save, COOP_SAVE_SIZE, COOP_NET_RELIABLE)) {
             p->saveDue = false;
@@ -421,6 +534,10 @@ static void Host_SendOwed(CoopSession* s) {
 // A client that joined is gone. Its slot and its character are free at once; nothing is kept for its return.
 static void Host_Left(CoopSession* s, int peer, CoopSessionEnd end, CoopSessionEvent* ev) {
     s->roster.character[peer + 1] = COOP_CHARACTER_NO_PLAYER;
+    if (s->names.name[peer + 1][0] != '\0') { // its name goes with it (#258)
+        s->names.name[peer + 1][0] = '\0';
+        Host_PlayerNamesChanged(s);
+    }
     Host_RosterChanged(s);
     Event_Init(ev, COOP_SESSION_EV_LEFT, peer);
     ev->end = end;
@@ -492,6 +609,7 @@ static void Host_Hello(CoopSession* s, int peer, const CoopNetEvent* net, uint32
     }
     p->state = PEER_JOINED;
     s->roster.character[peer + 1] = COOP_CHARACTER_UNPICKED;
+    p->namesDue = PlayerNames_Any(&s->names); // a new client starts from no names at all (#258)
     Host_RosterChanged(s);
     Event_Init(ev, COOP_SESSION_EV_JOINED, peer);
     ev->playerIndex = (uint8_t) (peer + 1);
@@ -551,6 +669,24 @@ static bool Host_Pick(CoopSession* s, int peer, const CoopNetEvent* net, CoopSes
     return Host_RosterEvent(s, ev);
 }
 
+// A client's own name (#258). One for another slot or one that does not hold to the rule means a broken peer, as a pick
+// it cannot have sent does. True if ev was filled in.
+static bool Host_PlayerName(CoopSession* s, int peer, const CoopNetEvent* net, CoopSessionEvent* ev) {
+    CoopSessionNames got;
+
+    if (!PlayerNames_Read(net->data, net->size, peer + 1, 1, &got)) {
+        s->t->ops->disconnect(s->t, peer);
+        s->peers[peer].state = PEER_FREE;
+        Host_Left(s, peer, COOP_SESSION_END_BAD_MESSAGE, ev);
+        return true;
+    }
+    if (strcmp(s->names.name[peer + 1], got.name[peer + 1]) != 0) {
+        memcpy(s->names.name[peer + 1], got.name[peer + 1], sizeof(got.name[peer + 1]));
+        Host_PlayerNamesChanged(s);
+    }
+    return false;
+}
+
 static bool Host_Poll(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) {
     CoopNetEvent net;
 
@@ -588,6 +724,12 @@ static bool Host_Poll(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) {
                 }
                 if (p->state == PEER_JOINED && !s->started && net.msgId == COOP_MSG_SESSION_PICK) {
                     if (Host_Pick(s, net.peer, &net, ev)) {
+                        return true;
+                    }
+                    break;
+                }
+                if (p->state == PEER_JOINED && net.msgId == COOP_MSG_SESSION_NAME) {
+                    if (Host_PlayerName(s, net.peer, &net, ev)) {
                         return true;
                     }
                     break;
@@ -694,6 +836,35 @@ static void Client_Roster(CoopSession* s, const CoopNetEvent* net, CoopSessionEv
     Event_Init(ev, COOP_SESSION_EV_ROSTER, 0);
 }
 
+// The host's list of names (#258). True if ev was filled in: a list that cannot be read ends the session.
+static bool Client_PlayerNames(CoopSession* s, const CoopNetEvent* net, CoopSessionEvent* ev) {
+    CoopSessionNames got;
+
+    if (!PlayerNames_Read(net->data, net->size, 0, COOP_SESSION_PLAYERS, &got)) {
+        Client_Broken(s, ev);
+        return true;
+    }
+    s->names = got;
+    return false;
+}
+
+// Our own name, owed to the host from the welcome on while it differs from what the host holds for us, which starts as
+// none; a full window keeps it owed.
+static void Client_SendPlayerName(CoopSession* s) {
+    CoopSessionNames own;
+    uint16_t size;
+
+    if (s->client != CLIENT_ACTIVE || strcmp(s->ownName, s->sentName) == 0) {
+        return;
+    }
+    memset(&own, 0, sizeof(own));
+    snprintf(own.name[s->player], sizeof(own.name[s->player]), "%s", s->ownName);
+    size = PlayerNames_Write(&own, s->player, 1, s->buffer);
+    if (s->t->ops->send(s->t, 0, COOP_MSG_SESSION_NAME, s->buffer, size, COOP_NET_RELIABLE)) {
+        snprintf(s->sentName, sizeof(s->sentName), "%s", s->ownName);
+    }
+}
+
 static void Client_PickRefused(CoopSession* s, const CoopNetEvent* net, CoopSessionEvent* ev) {
     if (!Character_Read(net)) {
         Client_Broken(s, ev);
@@ -760,6 +931,7 @@ static bool Client_Poll(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) {
     if (s->client == CLIENT_ENDED) {
         return false;
     }
+    Client_SendPlayerName(s);
     // While connecting, the transport's own timeout applies.
     if (s->client == CLIENT_WAIT_ANSWER && nowMs - s->clientSince >= COOP_SESSION_HANDSHAKE_MS) {
         s->t->ops->disconnect(s->t, 0);
@@ -803,6 +975,12 @@ static bool Client_Poll(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) {
                 if (s->client == CLIENT_ACTIVE && !s->started && net.msgId == COOP_MSG_SESSION_LEVEL_START) {
                     Client_LevelStart(s, &net, ev);
                     return true;
+                }
+                if (s->client == CLIENT_ACTIVE && net.msgId == COOP_MSG_SESSION_NAME) {
+                    if (Client_PlayerNames(s, &net, ev)) {
+                        return true;
+                    }
+                    break;
                 }
                 if (s->client == CLIENT_ACTIVE && net.msgId == COOP_MSG_SESSION_PICK_REFUSE) {
                     Client_PickRefused(s, &net, ev);

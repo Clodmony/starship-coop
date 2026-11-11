@@ -35,6 +35,16 @@ Rules, on the frames they talk about:
   pause           pause is part of the shared game, and any player can: player 1's Start pauses both clients on the
                   same frames and player 0's resumes, then player 0's Start pauses, player 1's B does nothing, as the
                   pause menu stays player 0's, and its B resumes
+  names_shown     a client marks the other player with its name wherever it draws that player's shield bar, never its
+                  own (#257, #258; the owner chose the name alone as the mark). Client 1 has the names of
+                  SF64_COOP_TEST_NAMES and shows player 0's; client 0 has none and shows FALCO, the character's name
+                  (player 1 is the Falco of the debug player count). The hash rule then shows that names on one client
+                  and none on the other, and other names drawn, are one game
+  reticle_own     R in the pause menu (#140): player 1's R hides and shows player 1's reticle on both clients and is
+                  heard on client 1 only, player 0's the same for player 0; neither touches the other's
+  billboards_own  Corneria's poles, trees and facades face the eye a client draws (#140): client 0, which looks through
+                  player 0, never turns one; client 1 turns some while it flies and none while it looks through player
+                  0. What the game holds stays player 0's, which the hash rule shows
   hash            both clients played one game, pokes and all
 
 Exit code 0 on PASS, 1 otherwise.
@@ -54,11 +64,13 @@ import replay as replay_tool  # noqa: E402
 BUTTON_B = 0x4000
 BUTTON_START = 0x1000
 BUTTON_C_UP = 0x0008  # U_CBUTTONS
+BUTTON_R = 0x0010  # R_TRIG
 
 # include/sfx.h
 SFX_ENGINE = 0x0100F005  # NA_SE_ARWING_ENGIN_GRD
 SFX_VIEW_IN = 0x4900002C  # NA_SE_VIEW_MOVE_IN
 SFX_SHIELD_WARNING = 0x49008010  # NA_SE_SHIELD_WARNING0
+SFX_RETICLE_ON, SFX_RETICLE_OFF = 0x49000019, 0x4900101A  # NA_SE_MAP_WINDOW_OPEN, _CLOSE
 FORM_NONE = 255  # include/sf64player.h, what sPlayerNoise holds while a player has no engine sound
 
 # Through the intro, not past it: what a client looks through while its player waits is part of what this checks.
@@ -92,6 +104,11 @@ PRESS_P0_PAUSE = ACTIVE + 845
 PRESS_P1_MENU = ACTIVE + 855  # B, in the pause menu: must do nothing
 PRESS_P0_RESUME = ACTIVE + 870  # B, in the pause menu
 PAUSE_SPANS = 2
+# R while paused (#140): player 1 hides its reticle, player 0 hides its, then each shows it again, in that order.
+PRESS_R_140 = ((ACTIVE + 806, 1), (ACTIVE + 811, 0), (ACTIVE + 816, 1), (ACTIVE + 821, 0))
+# #257, #258: client 1 has names (player 0's typed, player 1 none, as a game that typed nothing holds), client 0 none.
+NAMES_258 = {1: "CAPTAIN,"}
+NAMES_SHOWN_258 = {0: {1: "FALCO"}, 1: {0: "CAPTAIN"}}  # by client, then by player marked
 PAUSE_MIN_ROWS = 15
 ALL_RANGE_NUMBERS = 2300  # both players fly all-range by then
 ALL_RANGE_DOWN = 3060  # player 1 is ACTIVE here; a U-turn has no down check
@@ -102,13 +119,14 @@ BOMBS_P0, BOMBS_P1 = 5, 7
 
 # Section -> (replay frames, when L goes into all-range, from when player 0 flies). All-range ends up with both players
 # flying again.
-SECTIONS = {"rails": (START.level + ACTIVE + 930, None), "all-range": (START.frame(1525), hash_check.GENERATED_L)}
+# Corneria's first poles, trees and facades come at level frame 2708 (#140), so the rails run goes on past them.
+SECTIONS = {"rails": (START.level + ACTIVE + 1130, None), "all-range": (START.frame(1525), hash_check.GENERATED_L)}
 TIMEOUT = 1500
 
 Client = namedtuple("Client", "index rows by_frame")
 Slot = namedtuple("Slot", "state parked shields bombs lives alternate sfx pos")
 Row = namedtuple("Row", "frame mode local view eye at shield bombs cockpit fill flash bars players noise paused sfx "
-                       "seen guns")
+                       "seen guns tags reticles turned heat")
 
 
 def floats(text):
@@ -127,10 +145,16 @@ def parse_row(line):
     bars = {} if f["bars"] == "-" else {int(b.split(":")[0]): float(b.split(":")[1]) for b in f["bars"].split(",")}
     sfx = [] if f["sfx"] == "-" else [(int(s.split("@")[0], 16), s.split("@")[1]) for s in f["sfx"].split(",")]
     guns = tuple(tuple(float(v) for v in g.split("/")) for g in f["guns"].split(","))
+    # #257, #258 and #140; a build before them writes none of these, and the rules that read them fail on None.
+    tags = None if "tags" not in f else {} if f["tags"] == "-" else {
+        int(g.split(":", 1)[0]): g.split(":", 1)[1].replace("_", " ") for g in f["tags"].split(",")}
+    reticles = tuple(int(v) != 0 for v in f["reticles"].split(",")) if "reticles" in f else None
+    turned = tuple(int(v) for v in f["turned"].split("/")) if "turned" in f else None
+    heat = None if "heat" not in f else () if f["heat"] == "-" else tuple(int(v) for v in f["heat"].split(","))
     return Row(int(f["frame"]), int(f["mode"]), int(f["local"]), int(f["view"]), floats(f["eye"]), floats(f["at"]), float(f["shield"]),
                int(f["bombs"]), int(f["cockpit"]) != 0, tuple(int(v) for v in f["fill"].split(",")), int(f["flash"]),
                bars, players, tuple(int(v) for v in f["noise"].split(",")), int(f["pause"]) != 0, sfx,
-               tuple(int(v) != 0 for v in f["seen"].split(",")), guns)
+               tuple(int(v) != 0 for v in f["seen"].split(",")), guns, tags, reticles, turned, heat)
 
 
 def read_trace(index, path):
@@ -387,6 +411,65 @@ def rule_guns(clients):
     return good, "; ".join(results)
 
 
+def rule_names_shown(clients):
+    """#257, #258: see the top of this file."""
+    results = []
+    good = True
+    for client in clients:
+        other = 1 - client.index
+        if any(row.tags is None for row in client.rows):
+            return False, f"client {client.index}: the trace has no tags (a build before #257)"
+        tagged = [row for row in client.rows if other in row.tags]
+        apart = [row.frame for row in client.rows if set(row.tags) != set(row.bars)]
+        want = NAMES_SHOWN_258[client.index][other]
+        wrong = sorted({row.tags[other] for row in tagged if row.tags[other] != want})
+        own = [row.frame for row in client.rows if client.index in row.tags]
+        results.append(f"client {client.index}: player {other} marked {want} on {len(tagged)} frames, apart from its "
+                       f"bar on {len(apart)}, other names {wrong or 'none'}, own {len(own)}")
+        good = good and len(tagged) > 0 and not apart and not wrong and not own
+    return bool(good), "; ".join(results)
+
+
+def reticle_changes_258(client):
+    """Every change of gShowReticles in a client's trace, in order: (player, now shown, the sounds of reticles on and off
+    heard on that row). A paused game does not count its frames, so this goes by rows."""
+    changes = []
+    for prev, row in zip(client.rows, client.rows[1:]):
+        for player, (was, now) in enumerate(zip(prev.reticles, row.reticles)):
+            if was != now:
+                heard = sum(1 for s, _ in row.sfx if s in (SFX_RETICLE_ON, SFX_RETICLE_OFF))
+                changes.append((player, now, heard))
+    return changes
+
+
+def rule_reticle_own(clients):
+    """#140: see the top of this file."""
+    if any(row.reticles is None for client in clients for row in client.rows):
+        return False, "the trace has no reticles (a build before #140)"
+    # The presses of PRESS_R_140, in order: each flips the reticle of the player who pressed, and only its own client
+    # hears it.
+    want = [[(player, k >= 2, 1 if player == client.index else 0) for k, (_, player) in enumerate(PRESS_R_140)]
+            for client in clients]
+    got = [reticle_changes_258(client) for client in clients]
+    good = got == want
+    return good, f"client 0: {got[0]}; client 1: {got[1]} (player, shown, heard)"
+
+
+def rule_billboards_own(clients):
+    """#140: see the top of this file."""
+    if any(row.turned is None for client in clients for row in client.rows):
+        return False, "the trace has no turned billboards (a build before #140)"
+    zero = sum(row.turned[0] for row in clients[0].rows)
+    seen = [sum(row.turned[1] for row in client.rows) for client in clients]
+    own = [row for row in clients[1].rows if row.view == 1 and row.turned[1] > 0]
+    through_0 = sum(row.turned[0] for row in clients[1].rows if row.view == 0)
+    turning = sum(1 for row in own if row.turned[0] > 0)
+    good = zero == 0 and through_0 == 0 and turning > 0
+    return good, (f"billboards drawn {seen[0]} and {seen[1]} times; client 0 turned {zero}; client 1 turned some on "
+                  f"{turning} of {len(own)} frames it drew some through player 1, {through_0} while it looked through "
+                  f"player 0")
+
+
 RULES = {
     "rails": {
         "camera-parked": rule_camera_parked,
@@ -401,6 +484,9 @@ RULES = {
         "sound-engine": rule_sound_engine,
         "guns": rule_guns,
         "pause": rule_pause,
+        "names_shown": rule_names_shown,
+        "reticle_own": rule_reticle_own,
+        "billboards_own": rule_billboards_own,
     },
     "all-range": {
         "camera-parked": rule_camera_parked,
@@ -411,6 +497,7 @@ RULES = {
         "sound-engine": rule_sound_engine,
         "sound-source": rule_sound_source,
         "player-down": rule_player_down,
+        "names_shown": rule_names_shown,
     },
 }
 
@@ -424,6 +511,8 @@ def extra_buttons(flight, pad):
         return BUTTON_START
     if pad == 0 and level == PRESS_P0_RESUME or pad == 1 and level == PRESS_P1_MENU:
         return BUTTON_B
+    if (level, pad) in PRESS_R_140:
+        return BUTTON_R
     return 0
 
 
@@ -453,7 +542,9 @@ def play_section(section, exe, args):
                             config={"CVars": cvars}, start=START,
                             env_extra={"SF64_COOP_TEST_LOCAL_INDEX": str(index),
                                        "SF64_COOP_VIEW_TRACE": "view-trace.txt",
-                                       "SF64_COOP_VIEW_POKE": pokes(section)}) for index in (0, 1)]
+                                       "SF64_COOP_VIEW_POKE": pokes(section),
+                                       **({"SF64_COOP_TEST_NAMES": NAMES_258[index]} if index in NAMES_258 else {})})
+                for index in (0, 1)]
         results = [job.result() for job in jobs]
 
     if any(values is None or rows is None for values, _, rows in results):

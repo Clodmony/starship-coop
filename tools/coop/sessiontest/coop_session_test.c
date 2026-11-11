@@ -3524,6 +3524,302 @@ static void Sim_Identity(void) {
     }
 }
 
+// ---- Players' names (#258) ----
+
+// The one rule for a name.
+static void Script_NamesClean(void) {
+    static const struct {
+        const char* in;
+        const char* out;
+    } cases[] = {
+        { "sam", "SAM" },          { "Captain Fox", "CAPTAIN" }, { "  a  b  ", "A  B" },  { "x\xc3\xb6y", "XY" },
+        { "a,b;c_d", "ABCD" },     { "12345678901", "12345678" }, { "-.!:", "-.!:" },     { "", "" },
+        { "   ", "" },             { "\t\nZ", "Z" },               { "ab\xff", "AB" },     { "ABCDEFGH", "ABCDEFGH" },
+    };
+    char out[COOP_NAME_MAX + 1];
+    size_t i;
+
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        memset(out, 'x', sizeof(out));
+        CoopSession_CleanName(cases[i].in, out);
+        EXPECT(strcmp(out, cases[i].out) == 0, "names_clean", cases[i].in);
+    }
+    CoopSession_CleanName(NULL, out);
+    EXPECT(out[0] == '\0', "names_clean", "NULL is no name");
+}
+
+// SESSION_NAME as it goes on the wire: count entries for the players from first on.
+static uint16_t Wire_Names(uint8_t* out, int first, int count, const char* const* names) {
+    uint16_t size = 0;
+    int i;
+
+    out[size++] = (uint8_t) count;
+    for (i = 0; i < count; i++) {
+        size_t n = strlen(names[i]);
+
+        out[size++] = (uint8_t) (first + i);
+        out[size++] = (uint8_t) n;
+        memcpy(out + size, names[i], n);
+        size += (uint16_t) n;
+    }
+    return size;
+}
+
+static void Script_NameMsg(Script* t, int peer, uint8_t player, const char* name) {
+    uint8_t buf[64];
+
+    Script_Message(t, peer, COOP_MSG_SESSION_NAME, buf, Wire_Names(buf, player, 1, &name));
+}
+
+static void Expect_Names(const char* test, const CoopSessionNames* got, const char* a, const char* b, const char* c,
+                         const char* d) {
+    const char* want[COOP_SESSION_PLAYERS] = { a, b, c, d };
+    int i;
+
+    EXPECT(got != NULL, test, "no names");
+    for (i = 0; i < COOP_SESSION_PLAYERS; i++) {
+        EXPECT(strcmp(got->name[i], want[i]) == 0, test, "a name is wrong");
+    }
+}
+
+// Since from, peer got the host's list exactly `times` times, the last one with these names, on the reliable lane.
+static void Expect_NamesTo(const char* test, const Script* t, uint32_t from, int peer, uint32_t times, const char* a,
+                           const char* b, const char* c, const char* d) {
+    const char* want[COOP_SESSION_PLAYERS] = { a, b, c, d };
+    uint8_t bytes[64];
+    uint16_t size = (times > 0) ? Wire_Names(bytes, 0, COOP_SESSION_PLAYERS, want) : 0;
+    const ScriptSent* last = NULL;
+    uint32_t n = 0;
+
+    for (; from < t->sentCount; from++) {
+        if (t->sent[from].peer == peer && t->sent[from].msgId == COOP_MSG_SESSION_NAME) {
+            n++;
+            last = &t->sent[from];
+            EXPECT(last->lane == COOP_NET_RELIABLE, test, "names on the unreliable lane");
+        }
+    }
+    EXPECT(n == times, test, "a peer did not get the names as often as it should");
+    if (times > 0 && last != NULL) {
+        EXPECT(last->size == size && memcmp(last->data, bytes, size) == 0, test, "the names sent are not the host's");
+    }
+}
+
+// The host holds every name and shares the list: from a client's join on, and again whenever a name changes.
+static void Script_HostNames(void) {
+    const char* name = "host_names";
+    CoopIdentity a;
+    Script t;
+    Side sides[COOP_NET_MAX_PEERS];
+    CoopSession* s;
+    uint32_t sent;
+
+    Id_Default(&a);
+
+    // Nobody has a name: nothing about names goes out, so a session without them sends what it always did.
+    s = Script_HostWith(&t, sides, &a, 2);
+    Script_NameMsg(&t, 0, 1, "");
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(Sent_Since(&t, 0, COOP_MSG_SESSION_NAME) == 0, name, "names went out where nobody has one");
+    Expect_Names(name, CoopSession_Names(s), "", "", "", "");
+    CoopSession_Close(s);
+
+    s = Script_Host(&t, sides, &a);
+    CoopSession_SetName(s, "  host one");
+    Expect_Names(name, CoopSession_Names(s), "HOST ONE", "", "", "");
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(t.sentCount == 0, name, "a host with nobody joined sent something");
+
+    // A client that joins gets the list after its welcome.
+    Script_Connected(&t, 0);
+    Script_Hello(&t, 0, &a);
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(t.sent[0].msgId == COOP_MSG_SESSION_WELCOME, name, "the welcome is not first");
+    Expect_NamesTo(name, &t, 0, 0, 1, "HOST ONE", "", "", "");
+
+    // Its own name: the host takes it, and everyone hears, from the next poll on, as with every message owed.
+    sent = t.sentCount;
+    Script_NameMsg(&t, 0, 1, "SAM");
+    Drain(s, SCRIPT_T0, sides);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Names(name, CoopSession_Names(s), "HOST ONE", "SAM", "", "");
+    Expect_NamesTo(name, &t, sent, 0, 1, "HOST ONE", "SAM", "", "");
+    EXPECT(sides[0].events == 1 && sides[0].left == 0, name, "a name made an event");
+
+    // The same name again changes nothing.
+    sent = t.sentCount;
+    Script_NameMsg(&t, 0, 1, "SAM");
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_NAME) == 0, name, "an unchanged name went out again");
+
+    // A second client gets the whole list; a full window keeps it owed.
+    sent = t.sentCount;
+    Script_Connected(&t, 2);
+    Script_Hello(&t, 2, &a);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_NamesTo(name, &t, sent, 2, 1, "HOST ONE", "SAM", "", "");
+    Expect_NamesTo(name, &t, sent, 0, 0, NULL, NULL, NULL, NULL);
+    sent = t.sentCount;
+    t.failSends = 1;
+    Script_NameMsg(&t, 2, 3, "AL");
+    Drain(s, SCRIPT_T0, sides);
+    Expect_NamesTo(name, &t, sent, 0, 0, NULL, NULL, NULL, NULL);
+    Drain(s, SCRIPT_T0, sides);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_NamesTo(name, &t, sent, 0, 1, "HOST ONE", "SAM", "", "AL");
+    Expect_NamesTo(name, &t, sent, 2, 1, "HOST ONE", "SAM", "", "AL");
+
+    // One who goes takes its name along.
+    sent = t.sentCount;
+    Script_Gone(&t, 0, COOP_NET_END_CLOSED);
+    Drain(s, SCRIPT_T0, sides);
+    Expect_Names(name, CoopSession_Names(s), "HOST ONE", "", "", "AL");
+    Expect_NamesTo(name, &t, sent, 2, 1, "HOST ONE", "", "", "AL");
+    CoopSession_Close(s);
+}
+
+// A client's name that does not hold to the rule, or one for a slot that is not its own: the client is dropped.
+static void Expect_BadName(const char* test, const uint8_t* data, uint16_t size) {
+    CoopIdentity a;
+    Script t;
+    Side sides[COOP_NET_MAX_PEERS];
+    CoopSession* s;
+
+    Id_Default(&a);
+    s = Script_HostWith(&t, sides, &a, 2);
+    Script_NameMsg(&t, 0, 1, "OK");
+    Drain(s, SCRIPT_T0, sides);
+    Script_Message(&t, 1, COOP_MSG_SESSION_NAME, data, size);
+    Drain(s, SCRIPT_T0, sides);
+    EXPECT(sides[1].left == 1 && sides[1].end == COOP_SESSION_END_BAD_MESSAGE, test,
+           "a name that cannot be read did not end the client");
+    EXPECT(t.disconnects[1] == 1 && t.disconnects[0] == 0, test, "the wrong peer was dropped");
+    EXPECT(CoopSession_PeerIdentity(s, 1) == NULL, test, "a dropped client counts as joined");
+    Expect_Names(test, CoopSession_Names(s), "", "OK", "", "");
+    CoopSession_Close(s);
+}
+
+static void Script_HostBadNames(void) {
+    const char* two[2] = { "A", "B" };
+    uint8_t buf[64];
+    uint16_t size;
+
+    Expect_BadName("name_empty", NULL, 0);
+    Expect_BadName("name_other_slot", buf, Wire_Names(buf, 1, 1, two));
+    Expect_BadName("name_host_slot", buf, Wire_Names(buf, 0, 1, two));
+    Expect_BadName("name_two", buf, Wire_Names(buf, 2, 2, two));
+    {
+        const char* bad[] = { "sam", "A,B", "TOOLONGXX", " A", "A ", "\xc3\xb6" };
+        size_t i;
+
+        for (i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+            Expect_BadName("name_not_clean", buf, Wire_Names(buf, 2, 1, &bad[i]));
+        }
+    }
+    size = Wire_Names(buf, 2, 1, two);
+    buf[size] = 0;
+    Expect_BadName("name_trailing", buf, (uint16_t) (size + 1));
+    Expect_BadName("name_short", buf, (uint16_t) (size - 1));
+    buf[0] = 1;
+    buf[1] = 2;
+    buf[2] = 4; // four characters, two there
+    buf[3] = 'A';
+    buf[4] = 'B';
+    Expect_BadName("name_past_end", buf, 5);
+}
+
+// A client sends its own name once it is let in, again only when it changes, and holds the host's list.
+static void Script_ClientNames(void) {
+    const char* name = "client_names";
+    const char* own[1] = { "SAM" };
+    const char* list[COOP_SESSION_PLAYERS] = { "HOST ONE", "", "SAM", "" };
+    uint8_t want[64];
+    uint8_t buf[64];
+    CoopIdentity a;
+    Script t;
+    Side side;
+    CoopSession* s;
+    const ScriptSent* m;
+    uint32_t sent;
+
+    Id_Default(&a);
+
+    // Without a name nothing goes out.
+    s = Script_Joined(&t, &side, &a, 2);
+    Drain(s, SCRIPT_T0 + 2, &side);
+    EXPECT(Sent_Since(&t, 0, COOP_MSG_SESSION_NAME) == 0, name, "a client without a name sent one");
+    CoopSession_Close(s);
+
+    s = Script_Client(&t, &side, &a);
+    CoopSession_SetName(s, "sam");
+    Drain(s, SCRIPT_T0, &side);
+    EXPECT(Sent_Since(&t, 0, COOP_MSG_SESSION_NAME) == 0, name, "a name went out before the welcome");
+    Script_Welcome(&t, &a, 2);
+    Drain(s, SCRIPT_T0 + 1, &side);
+    Drain(s, SCRIPT_T0 + 2, &side);
+    m = Last_Sent(&t, COOP_MSG_SESSION_NAME);
+    EXPECT(m != NULL && m->peer == 0 && m->lane == COOP_NET_RELIABLE, name, "no name went to the host");
+    EXPECT(m != NULL && m->size == Wire_Names(want, 2, 1, own) && memcmp(m->data, want, m->size) == 0, name,
+           "the name sent is not ours, for our slot");
+    EXPECT(Sent_Since(&t, 0, COOP_MSG_SESSION_NAME) == 1, name, "the name went out more than once");
+
+    // The same again: nothing. Another: once, and a full window keeps it owed.
+    sent = t.sentCount;
+    CoopSession_SetName(s, "SAM");
+    Drain(s, SCRIPT_T0 + 3, &side);
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_NAME) == 0, name, "an unchanged name went out again");
+    t.failSends = 1;
+    CoopSession_SetName(s, "al");
+    Drain(s, SCRIPT_T0 + 3, &side);
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_NAME) == 0, name, "a failed send counted as sent");
+    Drain(s, SCRIPT_T0 + 3, &side);
+    Drain(s, SCRIPT_T0 + 3, &side);
+    EXPECT(Sent_Since(&t, sent, COOP_MSG_SESSION_NAME) == 1, name, "a name held back by a full window was lost");
+
+    // The host's list.
+    Expect_Names(name, CoopSession_Names(s), "", "", "", "");
+    Script_Message(&t, 0, COOP_MSG_SESSION_NAME, buf, Wire_Names(buf, 0, COOP_SESSION_PLAYERS, list));
+    Drain(s, SCRIPT_T0 + 4, &side);
+    Expect_Names(name, CoopSession_Names(s), "HOST ONE", "", "SAM", "");
+    EXPECT(side.ended == 0 && side.events == 1, name, "a list of names made an event");
+    CoopSession_Close(s);
+}
+
+static void Expect_BadNames(const char* test, const uint8_t* data, uint16_t size) {
+    CoopIdentity a;
+    Script t;
+    Side side;
+    CoopSession* s;
+
+    Id_Default(&a);
+    s = Script_Joined(&t, &side, &a, 1);
+    Script_Message(&t, 0, COOP_MSG_SESSION_NAME, data, size);
+    Drain(s, SCRIPT_T0 + 2, &side);
+    EXPECT(side.ended == 1 && side.end == COOP_SESSION_END_BAD_MESSAGE, test, "a broken list did not end the session");
+    EXPECT(t.disconnects[0] == 1, test, "the client did not leave once");
+    Expect_Names(test, CoopSession_Names(s), "", "", "", "");
+    CoopSession_Close(s);
+}
+
+static void Script_ClientBadNames(void) {
+    const char* good[COOP_SESSION_PLAYERS] = { "A", "B", "", "" };
+    const char* lower[COOP_SESSION_PLAYERS] = { "A", "b", "", "" };
+    const char* longer[COOP_SESSION_PLAYERS] = { "A", "ABCDEFGHI", "", "" };
+    uint8_t buf[64];
+    uint16_t size;
+
+    Expect_BadNames("names_empty", NULL, 0);
+    Expect_BadNames("names_one", buf, Wire_Names(buf, 0, 1, good));
+    Expect_BadNames("names_from_1", buf, Wire_Names(buf, 1, 3, good));
+    Expect_BadNames("names_lower", buf, Wire_Names(buf, 0, COOP_SESSION_PLAYERS, lower));
+    Expect_BadNames("names_long", buf, Wire_Names(buf, 0, COOP_SESSION_PLAYERS, longer));
+    size = Wire_Names(buf, 0, COOP_SESSION_PLAYERS, good);
+    buf[size] = 0;
+    Expect_BadNames("names_trailing", buf, (uint16_t) (size + 1));
+    Expect_BadNames("names_short", buf, (uint16_t) (size - 1));
+    buf[4] = 2; // player 1 written as 2
+    Expect_BadNames("names_order", buf, size);
+}
+
 static int Sim_Main(void) {
     uint32_t dropped;
 
@@ -3566,13 +3862,18 @@ static int Sim_Main(void) {
     Script_HostStartOwed();
     Script_LevelOutOfPlace();
     Script_ClientStart();
+    Script_NamesClean();
+    Script_HostNames();
+    Script_HostBadNames();
+    Script_ClientNames();
+    Script_ClientBadNames();
     Sim_Characters();
     Sim_LevelStart();
     dropped = Sim_Lossy(40);
     dropped += Sim_CharactersLossy(20);
     dropped += Sim_LevelStartLossy(20);
     printf("sim: PASS identity, 12 mismatch cases, two clients, broken, silent and raw peers, scripted transport, "
-           "characters, level start, 120 lossy runs (dropped %u datagrams)\n",
+           "characters, level start, names, 120 lossy runs (dropped %u datagrams)\n",
            (unsigned) dropped);
     return 0;
 }

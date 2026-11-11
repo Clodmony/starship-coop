@@ -632,6 +632,80 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-11, names and letters (#257, #258): the name as the mark, and three things that still followed player 0 (#140)
+
+Identity: ROM US 1.0, branch `issue/names-letters` on `wave6-base` (`a4867d99`), Linux, GCC, Debug, OpenGL on a software
+renderer, no window, one PC. Games over loopback where a line says so.
+
+How the game marks things in the world (read in the code; step 1 of #257):
+
+- **Teammates.** `Display_ActorMarks` (`src/engine/fox_display.c:1668`) draws `sTeammateMarkDLs[i]` (`:1600`) at
+  `gTeamArrowsViewPos[i]`, a point in the view of the camera drawn, which the actor's draw writes: on the rails the
+  event actors that fly as wingmen (`src/engine/fox_enmy2.c:4245-4247`), in all-range the wingmen while player 0 is
+  ACTIVE (`src/engine/fox_edisplay.c:1289`), the team boss and Sector X's Slippy (`:1174`). It blinks (`(gGameFrameCount
+  & 4) == 0`), and its size is `|view| * 0.0015`, held between 1 and 100, times 0.25, 150 units up: about the same on
+  screen at any distance, larger close up. The marks of Falco, Slippy and Peppy are 16x16 textures of the letters F, S
+  and P in a coloured arrow (`aFalcoMarkTex`, `aSlippyMarkTex`, `aPeppyMarkTex`, read from the archive and not kept);
+  Katt, Bill and James have their own. Fox has none. So the original already says F for Falco, which is why a letter
+  for every human could not be both short and unambiguous; the owner chose the name alone as the mark (#257).
+- **Lock-on**: `Display_LockOnIndicator` (`:1714`), one view position per camera. **Radar**: `HUD_RadarMarks_Setup` and
+  `HUD_RadarMark_Draw` (`src/engine/fox_hud.c:1992`, `:1878`) into `gRadarMarks`, which the state hash holds; an
+  Arwing's mark is coloured by its slot (`HUD_RadarMark_Arwing_Draw`, `:1794`).
+- **Fonts.** The small font draws `" ABCDEFGHIJKLMNOPQRSTUVWXYZ!:-.0123456789"`, 8x8 IA8 (digits 16x8); the large one
+  `"ABCDEFGHIJKLMNOPQRSTUVWXYZ. 0123456789st-"`, 16x15 IA8, W and X 32 wide (`src/engine/fox_std_lib.c:929-930`,
+  `:1075`). No lower case, no accents.
+
+What this change does, all display only and gated on co-op:
+
+| Item | Where | Writes what the simulation reads |
+|---|---|---|
+| The name over each other human, Fox included, never the own ship: wherever its shield bar shows (#30), in white in the small font above the bar, a dark copy behind it; the character's name (FOX, FALCO) when none is typed. HUD text size on screen at any distance; nothing off screen; no letter (the owner's choice) | `src/port/coop/game/view.c` (`CoopView_DrawShieldBars`), `names.c` | No |
+| The name: a field in the co-op window, kept as `gCoopName` in the game's own config; `SESSION_NAME` 0x0018 (PROTOCOL.md, Names), the host shares the list | `src/port/coop/ui/`, `session.c`, `COOP_PROTOCOL_VERSION` 9 | No: the hash never sees it |
+| The name in each human's row of the hits (pause and level clear), squeezed to 52 pixels when long | `src/port/coop/game/score.c` | No |
+| Solar's heat alarm: the shields and height of the player looked through | `CoopView_HeatAlarm`, `src/engine/fox_play.c:6996` | No: a sound's settings; the drain stays (#200) |
+| R in the pause menu: each player's own R, from its own pad slot, flips its own `gShowReticles`, heard on its own client | `CoopView_PauseReticles`, `fox_play.c:7250` | No: `gShowReticles` is only read where the reticle of the player looked through is drawn |
+| Corneria's facades (`Object_SetMatrix`) and the poles and trees `Sprite_UpdateDoodad` turns: drawn facing the eye drawn | `CoopView_DrawnRotY`, `src/engine/fox_edisplay.c:975` | No: `obj.rot.y` stays player 0's on every client; only the matrix of the draw differs |
+
+Observed (runs, this branch):
+
+- `view_check.py`, rails (now to level frame 2810, as the first billboard comes at 2708) and all-range: PASS, every
+  rule, on the final build. `names_shown`: client 0, no names, marks player 1 `FALCO` on 1326 frames (all-range 404),
+  client 1 with player 0 named `CAPTAIN` marks `CAPTAIN` on 1262 (893), always and only where the bar shows, never its
+  own. `reticle_own`: the four R presses flip the right reticle on both clients, each heard on its own client only.
+  `billboards_own`: client 0 turned none; client 1 turned some on all 214 frames it drew any through player 1, none
+  while it looked through player 0. `hash`: equal on all 2820 and 3209 frames, with names on one client and none on the
+  other. Earlier runs of the same rules counted other numbers of frames (1222, 1318): how many frames carry a mark or a
+  billboard moves from run to run on a busy PC, the rules and the hash do not.
+- `solar_check.py`: PASS. `alarm_own`: the alarm set on 400 of 400 frames, on its own player's shields on all; on the
+  188 frames the two players' shields lay more than 10 apart, each client's alarm was the nearer to its own player.
+- `lockstep_test.py --only player_names`: both games hold `CAPTAIN,SAM.OK!,-,-` (typed `Captain Fox` and `sam.ok!`)
+  by the level start; the host marks `SAM.OK!`, the client `CAPTAIN`, on about 1075 of 2750 frames each; same hash on
+  2700 frames. `steer`, `three`, `pause`: pass.
+- `menu_test.py --only game_names`: the field takes `Captain Fox` as `CAPTAIN` and `sam_ok,!` as `SAMOK!`; both windows
+  show both, each game's own config holds its own, and a fresh game with that config hosts as `CAPTAIN`. `sim`, `udp`,
+  `game`, `game_level`: pass.
+- `session_test.py`: 17 of 17; `session_mutants.py`: all 322 breaks caught, 13 of them new for the names.
+- `hash_check.py base` against `wave6-base`'s build: co-op off equal on all 5800 frames.
+- A local picture of client 1 on Corneria (given to the owner, not in git): `CAPTAIN` in white over the green bar above
+  Fox's Arwing, about the height of the HUD's own text, with the game's own S mark over the computer Slippy beside it.
+  A first try with the letter drew the tag as large as the bar close up; the size is fixed above.
+- Every replay run of this base ends with `result=FAIL_MISMATCH` at frame 0 (all zeros wanted), the reference build's
+  too; the tools count those runs as played through.
+
+Derived:
+
+- Names cannot part two games: they reach the game only through `CoopNames_Set`, and only the draw reads them. The
+  `names_shown` and `player_names` runs show it on every frame they compare.
+
+Unknown:
+
+- How any of it looks moving, on a real screen, at 3 or 4 players, or on Windows; nobody has seen it but in one local
+  picture.
+- Fortuna's poles (`OBJ_SPRITE_FO_POLE`): read, not run. Other billboards in update code (`MeteoBall_Update`,
+  `Effect_Effect362_Update` and the rest of #30's list) still face player 0 on every client.
+- Whether a name in the small font is large enough at a glance on a real screen: the owner chose it for the next
+  two-PC run.
+
 ### 2026-11-10, #252, each human's own hits on the status screen
 
 Identity: ROM US 1.0, branch `issue/252-player-hits` on `ed61d6fd` (`issue/combined-test-4`), Windows 11, MSVC v143,

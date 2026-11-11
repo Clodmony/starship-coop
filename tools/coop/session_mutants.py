@@ -598,6 +598,26 @@ BREAKS = [
     # them too (roster_trailing, level_short), as the session also has to refuse the message.
     ("roster_read_past_end", ROSTER_HEAD, ROSTER_HEAD.replace("size != COOP_SESSION_PLAYERS", "size < 1"), SIM),
     ("level_read_past_end", LEVEL_HEAD, LEVEL_HEAD.replace("size != LEVEL_START_SIZE", "size < 1"), SIM),
+
+    # Players' names (#258): the rule, the host's list, a client's own name.
+    ("names_258_clean_no_upper", "(*in >= 'a' && *in <= 'z') ? (char) (*in - 'a' + 'A') : *in;", "*in;", SIM),
+    ("names_258_clean_keeps_trailing_space", "while ((n > 0) && (out[n - 1] == ' ')) {", "while (0) {", SIM),
+    ("names_258_read_unclean", "if (strlen(name) != n || strcmp(name, clean) != 0) {", "if (strlen(name) != n) {",
+     SIM),
+    ("names_258_read_trailing", "    return at == size;\n}", "    return at <= size;\n}", SIM),
+    ("names_258_never_shared", "        s->peers[i].namesDue = true;\n", "", SIM),
+    ("names_258_new_client_none", "p->namesDue = PlayerNames_Any(&s->names);", "p->namesDue = false;", SIM),
+    ("names_258_new_client_empty_list", "p->namesDue = PlayerNames_Any(&s->names);", "p->namesDue = true;", SIM),
+    ("names_258_left_keeps_name", "        s->names.name[peer + 1][0] = '\\0';\n        Host_PlayerNamesChanged(s);\n",
+     "        Host_PlayerNamesChanged(s);\n", SIM),
+    ("names_258_host_any_slot", "PlayerNames_Read(net->data, net->size, peer + 1, 1, &got)",
+     "PlayerNames_Read(net->data, net->size, net->size > 1 ? net->data[1] : 0, 1, &got)", SIM),
+    ("names_258_client_never_sends", "if (s->client != CLIENT_ACTIVE || strcmp(s->ownName, s->sentName) == 0) {",
+     "if (1) {", SIM),
+    ("names_258_client_before_welcome", "if (s->client != CLIENT_ACTIVE || strcmp(s->ownName, s->sentName) == 0) {",
+     "if (strcmp(s->ownName, s->sentName) == 0) {", SIM),
+    ("names_258_client_resends", "        snprintf(s->sentName, sizeof(s->sentName), \"%s\", s->ownName);\n", "", SIM),
+    ("names_258_client_keeps_old_list", "    s->names = got;\n", "", SIM),
 ]
 
 # Texts the sanitizer breaks use more than once.

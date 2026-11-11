@@ -16,6 +16,7 @@
 
 #include "global.h"
 #include "port/coop/game/level_start.h"
+#include "port/coop/game/names.h"
 #include "port/coop/game/players.h"
 #include "port/coop/game/save.h"
 #include "port/coop/session/identity_game.h"
@@ -62,6 +63,8 @@ static bool sStartRefusedSaid = false;
 static bool sEntered = false;
 static bool sRunningSaid = false;
 static s32 sSelf = 0;
+static const char* sName = NULL;
+static char sNamesSaid[COOP_SESSION_PLAYERS * (COOP_NAME_MAX + 1) + 1];
 
 static void Report(const char* format, ...) {
     va_list args;
@@ -156,7 +159,40 @@ static void Session_Open(void) {
         }
         sSession = CoopSession_Join(t, &id, SDL_GetTicks());
     }
+    if ((sSession != NULL) && (sName != NULL)) {
+        CoopSession_SetName(sSession, sName);
+    }
     Report("session build=%s", id.build);
+}
+
+// The players' names as the session holds them, into the game as the menu hands them in (#258), and a `names` line
+// whenever they change: one word per player slot, - for none, a space as _.
+static void Names_Pump(void) {
+    const CoopSessionNames* names = (sSession != NULL) ? CoopSession_Names(sSession) : NULL;
+    char said[sizeof(sNamesSaid)];
+    size_t used = 0;
+    s32 i;
+    const char* c;
+
+    for (i = 0; i < COOP_SESSION_PLAYERS; i++) {
+        const char* name = (names != NULL) ? names->name[i] : "";
+
+        CoopNames_Set(i, name);
+        if (i != 0) {
+            said[used++] = ',';
+        }
+        if (name[0] == '\0') {
+            said[used++] = '-';
+        }
+        for (c = name; *c != '\0'; c++) {
+            said[used++] = (*c == ' ') ? '_' : *c;
+        }
+    }
+    said[used] = '\0';
+    if (strcmp(said, sNamesSaid) != 0) {
+        memcpy(sNamesSaid, said, used + 1);
+        Report("names frame=%u names=%s", (unsigned) sFrame, said);
+    }
 }
 
 static void Values_Word(char* out, size_t size, const int32_t* values, s32 count) {
@@ -206,6 +242,9 @@ static void Session_EndAs(bool leaving) {
     CoopHandoverGame_Run(sSession, leaving);
     CoopSession_Close(sSession);
     sSession = NULL;
+    if (sName != NULL) {
+        Names_Pump(); // none from here on
+    }
 }
 
 static void Session_End(void) {
@@ -412,6 +451,9 @@ static void Session_Pump(void) {
     while ((sSession != NULL) && CoopSession_Poll(sSession, SDL_GetTicks(), &ev)) {
         Session_Event(&ev);
     }
+    if ((sSession != NULL) && (sName != NULL)) {
+        Names_Pump();
+    }
 }
 
 static void CoopJoinDriver_OnGamePreUpdate(IEvent* event) {
@@ -471,6 +513,10 @@ void CoopJoinDriver_Init(void) {
     sKeepOwn = Env_Text("SF64_COOP_JOIN_KEEP_OWN") != NULL;
     sKeepOwnSave = Env_Text("SF64_COOP_JOIN_KEEP_OWN_SAVE") != NULL;
     sLeaveFile = Env_Text("SF64_COOP_JOIN_LEAVE_FILE");
+    sName = Env_Text("SF64_COOP_JOIN_NAME");
+    if (sName != NULL) {
+        strcpy(sNamesSaid, "-,-,-,-");
+    }
     // After the state hash (EVENT_PRIORITY_NORMAL): a frame's hash shows what came before this frame's session.
     REGISTER_LISTENER(GamePreUpdateEvent, CoopJoinDriver_OnGamePreUpdate, EVENT_PRIORITY_HIGH);
 }

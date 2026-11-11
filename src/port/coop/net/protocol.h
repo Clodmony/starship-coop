@@ -3,7 +3,7 @@
 // Message ids and the protocol version. The registry and the wire layout are in docs/coop/PROTOCOL.md.
 
 // Bump whenever a message layout changes (PROTOCOL.md rule 2).
-#define COOP_PROTOCOL_VERSION 8
+#define COOP_PROTOCOL_VERSION 9
 
 typedef enum {
     // Transport. These never reach the layers above it.
@@ -30,6 +30,8 @@ typedef enum {
     COOP_MSG_SESSION_LEVEL_START = 0x0016,
     // The session's save (decision 0009 item 8): the host's, once, just ahead of the level start.
     COOP_MSG_SESSION_SAVE = 0x0017,
+    // Players' names (#258): a client's own after its welcome, the host's list of all of them. Display only.
+    COOP_MSG_SESSION_NAME = 0x0018,
     COOP_MSG_SESSION_END = 0x0040,
 
     // Lockstep (WP-22): frame-stamped inputs between all clients.
