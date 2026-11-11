@@ -2,6 +2,7 @@
 
 #include "global.h"
 #include "sfx.h"
+#include "port/coop/game/names.h"
 #include "port/coop/game/players.h"
 #include "port/coop/session/session.h"
 #include "port/hooks/Events.h"
@@ -109,7 +110,7 @@ static void CoopScore_OnPlayUpdate(IEvent* event) {
             sResultsReady[i] = 1;
             AUDIO_PLAY_SFX(NA_SE_DECIDE, gDefaultSfxSource, 4);
         }
-        all = all && sResultsReady[i];
+        all = all && (sResultsReady[i] || CoopPlayers_IsOut(i)); // a seat without a human holds nobody
     }
     if (!CoopScore_ResultsHolding()) {
         return;
@@ -148,7 +149,6 @@ static s32 CoopScore_Face(s32 index) {
     }
 }
 
-static const char* sFaceNames[] = { "FOX", "PEPPY", "SLIPPY", "FALCO" };
 
 static void CoopScore_Color(s32 r, s32 g, s32 b) {
     RCP_SetupDL(&gMasterDisp, SETUPDL_76_OPTIONAL);
@@ -198,10 +198,14 @@ void CoopScore_DrawStatus(void) {
         HUD_VsModePortraitTex_Draw(x, rowY, face, CoopScore_Face(i));
 
         if (row >= 19.0f) {
+            char* name = (char*) CoopNames_Label(i); // #258: the typed name, else the character's
+            s32 width = Graphics_GetSmallTextWidth(name);
+            f32 room = right - CoopScore_Digits(hits) * 13.0f - (x + row) - 2.0f; // up to the first digit of the hits
+
             CoopScore_Color(255, 255, 255);
-            Graphics_DisplaySmallText(x + row, rowY + 1.0f, 1.0f, 1.0f, (char*) sFaceNames[CoopScore_Face(i)]);
+            Graphics_DisplaySmallText(x + row, rowY + 1.0f, (width > room) ? room / width : 1.0f, 1.0f, name);
         }
-        if (results && CoopScore_ResultsReady(i)) {
+        if (results && CoopScore_ResultsReady(i) && !CoopPlayers_IsOut(i)) {
             CoopScore_Color(80, 255, 80);
             Graphics_DisplaySmallText(x + row, rowY + ((row >= 19.0f) ? 11.0f : 1.0f), 1.0f, 1.0f, "OK");
         }
@@ -213,6 +217,16 @@ void CoopScore_DrawStatus(void) {
     if (results && CoopScore_ResultsHolding() && ((gGameFrameCount & 16) == 0)) {
         CoopScore_Color(255, 255, 255);
         Graphics_DisplaySmallText(116, 222, 1.0f, 1.0f, "PRESS A");
+    }
+}
+
+int32_t CoopScore_SavedHits(int32_t player) {
+    return ((player >= 0) && (player < COOP_PLAYERS_MAX)) ? sSavedScores[player] : 0;
+}
+
+void CoopScore_SetSavedHits(int32_t player, int32_t hits) {
+    if ((player >= 0) && (player < COOP_PLAYERS_MAX)) {
+        sSavedScores[player] = (u16) CLAMP(hits, 0, 9999);
     }
 }
 

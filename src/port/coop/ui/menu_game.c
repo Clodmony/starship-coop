@@ -99,6 +99,29 @@ static void Link_Fail(const char* text) {
     CoopMenu_Fail(sMenu, text);
 }
 
+// The session survives: a desync, or on the host a player who sends no input, starts the level again instead of
+// ending the session, where the session can do that (session.h, "Recovery"). The text is in the co-op log already;
+// what the player reads is the RECOVER event's line.
+static bool Link_Recover(int32_t reason, int32_t player, const char* text) {
+    uint32_t now = SDL_GetTicks();
+
+    (void) text;
+    if (sMenu->session == NULL) {
+        return false;
+    }
+    if (reason == COOP_SYNC_RECOVER_STALL) {
+        return (sMenu->phase == COOP_MENU_HOSTING) && CoopSession_Kick(sMenu->session, player - 1, now);
+    }
+    return CoopSession_Recover(sMenu->session, COOP_RECOVER_DESYNC, now);
+}
+
+// Host: the level this game enters by itself is what a recovery starts again from here on.
+static void Link_Entering(const CoopLevelStart* start) {
+    if (sMenu->session != NULL) {
+        CoopSession_SetRestart(sMenu->session, start);
+    }
+}
+
 // For a desync report: this game's identity from the menu's backend, a peer's as the session holds it.
 static void Link_Identity(int peer, char* out, size_t cap) {
     const CoopIdentity* id = NULL;
@@ -116,12 +139,12 @@ static void Link_Identity(int peer, char* out, size_t cap) {
     }
 }
 
-static const CoopSyncLink sLink = { Link_Send, Link_Pump, Link_Fail, Link_Identity };
+static const CoopSyncLink sLink = { Link_Send, Link_Pump, Link_Fail, Link_Identity, Link_Recover, Link_Entering };
 
 void CoopMenuGame_EnterLevel(const CoopLevelStart* start) {
     CoopSave_Enter(start->save); // the host's progress for the session, until CoopSyncGame_End (decision 0009 item 8)
     CoopLevelStart_Enter(start);
-    CoopSyncGame_Begin(&sLink, start->roster, sMenu->self, sMenu->phase == COOP_MENU_HOSTING);
+    CoopSyncGame_Begin(&sLink, start->roster, sMenu->self, sMenu->phase == COOP_MENU_HOSTING, start->run);
 }
 
 void CoopMenuGame_SessionEnded(void) {
@@ -140,6 +163,19 @@ void CoopMenuGame_Message(int peer, uint16_t msgId, const uint8_t* data, uint16_
         return;
     }
     CoopSyncGame_Receive(peer, msgId, data, size);
+}
+
+void CoopMenuGame_Recover(void) {
+    CoopLevelStart start;
+
+    // Host, as lockstep stops: if this game reached a checkpoint in the level, the level starts again there, and at
+    // its start otherwise (the restart point taken when the level was entered stays). Later calls of one recovery find
+    // lockstep stopped and change nothing: by then this game flies on alone.
+    if ((sMenu->phase == COOP_MENU_HOSTING) && (sMenu->session != NULL) && (CoopSyncGame_Frame() >= 0) &&
+        CoopLevelStart_AtCheckpoint(&start)) {
+        CoopSession_SetRestart(sMenu->session, &start);
+    }
+    CoopSyncGame_Pause();
 }
 
 void CoopMenuGame_Handover(CoopSession* s, bool leaving) {

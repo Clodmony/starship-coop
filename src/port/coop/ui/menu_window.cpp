@@ -4,7 +4,9 @@
 
 #ifdef USE_NETWORKING
 
+#include <cctype>
 #include <cstdio>
+#include <cstring>
 #include <memory>
 
 #include <SDL2/SDL.h>
@@ -14,7 +16,9 @@
 #include "menu.h"
 #include "menu_game.h"
 #include "port/coop/game/level_start.h"
+#include "port/coop/game/names.h"
 #include "port/coop/session/identity_game.h"
+#include "port/coop/session/session_id.h"
 #include "port/coop/test/menu_driver.h"
 #include "port/ui/UIWidgets.h"
 
@@ -25,15 +29,19 @@ constexpr size_t kPortSize = 6;
 // Keeps the button in a menu with nothing else in it from shrinking to its label.
 constexpr float kMenuButtonWidth = 200.0f;
 const char* const kWindowCvar = "gCoopMenuWindow";
+// The player's name (#258), kept in the co-op settings between sessions: the config of the game that runs.
+const char* const kNameCvar = "gCoopName";
 
 const CoopMenuBackend kBackend = { CoopNetSdl_Host,           CoopNetSdl_Connect,   CoopNetSdl_Port,
                                    CoopIdentity_FromGame,     CoopMenuGame_Level,   CoopMenuGame_EnterLevel,
                                    CoopMenuGame_SessionEnded, CoopMenuGame_Message, CoopMenuGame_Waiting,
-                                   CoopMenuGame_Handover };
+                                   CoopMenuGame_Handover,     CoopNames_Set,        CoopSessionId_New,
+                                   CoopMenuGame_Recover };
 
 CoopMenu sMenu;
 char sAddress[COOP_MENU_ADDRESS_SIZE];
 char sPort[kPortSize];
+char sName[COOP_NAME_MAX + 1];
 
 class MenuWindow : public Ship::GuiWindow {
   public:
@@ -82,14 +90,48 @@ void DrawField(const char* id, const char* label, char* buffer, size_t size, ImG
     CoopMenuDriver_Item(id, label, true);
 }
 
+// Takes only what the game's font can draw (COOP_NAME_CHARS), lower case as upper case.
+int NameFilter(ImGuiInputTextCallbackData* data) {
+    if (data->EventChar < 128) {
+        data->EventChar = (ImWchar) toupper((int) data->EventChar);
+    }
+    return (data->EventChar >= 128 || data->EventChar == 0 || strchr(COOP_NAME_CHARS, (int) data->EventChar) == nullptr)
+               ? 1
+               : 0;
+}
+
+// The name the other players see over this player's Arwing and in the hits (#258), saved as it is typed.
+void DrawName() {
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Your name");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(-1.0f);
+    if (ImGui::InputText("##name", sName, sizeof(sName),
+                         ImGuiInputTextFlags_CallbackCharFilter | ImGuiInputTextFlags_AutoSelectAll, NameFilter)) {
+        char clean[COOP_NAME_MAX + 1];
+
+        CoopSession_CleanName(sName, clean);
+        CVarSetString(kNameCvar, clean);
+        Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+    }
+    CoopMenuDriver_Item("name", "Your name", true); // before the tooltip, which is an item of its own
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Up to %d letters, digits, spaces and - . ! :", COOP_NAME_MAX);
+    }
+}
+
 void DrawIdle() {
+    DrawName();
+    UIWidgets::PaddedSeparator();
     DrawField("port", "Port", sPort, sizeof(sPort), ImGuiInputTextFlags_CharsDecimal);
     if (Button("host", "Host a game")) {
+        CoopMenu_SetName(&sMenu, sName);
         CoopMenu_Host(&sMenu, sPort);
     }
     UIWidgets::PaddedSeparator();
     DrawField("address", "Host's address", sAddress, sizeof(sAddress), ImGuiInputTextFlags_None);
     if (Button("join", "Join a game")) {
+        CoopMenu_SetName(&sMenu, sName);
         CoopMenu_Join(&sMenu, sAddress, sPort, SDL_GetTicks());
     }
 }
@@ -187,6 +229,7 @@ void Setup() {
     CoopMenuDriver_Init();
     CoopMenu_Init(&sMenu, &kBackend);
     snprintf(sPort, sizeof(sPort), "%d", COOP_MENU_DEFAULT_PORT);
+    CoopSession_CleanName(CVarGetString(kNameCvar, ""), sName);
     sWindow = std::make_shared<MenuWindow>(kWindowCvar, "Co-op", ImVec2(420.0f, 400.0f));
     Ship::Context::GetInstance()->GetWindow()->GetGui()->AddGuiWindow(sWindow);
 }

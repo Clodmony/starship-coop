@@ -23,8 +23,9 @@ void CoopHandoverGame_Run(CoopSession* s, bool leaving);
 
 // A COOP_MSG_HANDOVER message while the session runs: another game has begun to end the session. True, with the text
 // for the player, if this session has to end now too and hand over: in a level every player is needed, and a client's
-// only peer is its host. A host before the level answers that client and goes on with the others: false. Anything but
-// a BEGIN is dropped here (false); what follows a BEGIN belongs to the handover it starts.
+// only peer is its host. A host before the level answers that client and goes on with the others: false. So does a
+// host in a level with another client still there: the session then starts the level again for those who stay.
+// Anything but a BEGIN is dropped here (false); what follows a BEGIN belongs to the handover it starts.
 bool CoopHandoverGame_Heard(CoopSession* s, int peer, const uint8_t* data, uint16_t size, char* text, size_t cap);
 
 #ifdef __cplusplus

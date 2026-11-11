@@ -6,6 +6,7 @@
 #include "aim_trace.h"
 #include "boss_trace.h"
 #include "score_probe.h"
+#include "smoke_trace.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -148,9 +149,20 @@ void CoopTestSwitches_Init(void) {
         REGISTER_LISTENER(GamePreUpdateEvent, CoopTestSwitches_OnGamePreUpdate, EVENT_PRIORITY_HIGH);
     }
 
+    if (CoopTestSwitches_IsSet(getenv("SF64_COOP_TEST_FOX_REFILL_OFF"))) {
+        CoopPlayers_SetFoxRefillOff(1);
+        LUSLOG_INFO("coop: test switch: no level is open for the refill of player 0%s", "");
+    }
+
+    if (CoopTestSwitches_IsSet(getenv("SF64_COOP_TEST_LEAD_SWAP"))) {
+        CoopPlayers_SetLeadSwapOn(1);
+        LUSLOG_INFO("coop: test switch: the lead passes to a survivor at pool 0 (spike #183)%s", "");
+    }
+
     CoopTeamTrace_Init(); // no-op unless SF64_COOP_TEAM_* is set (#89)
     CoopAimTrace_Init();  // no-op unless SF64_COOP_AIM_TRACE is set (#193)
     CoopBossTrace_Init(); // no-op unless SF64_COOP_BOSS_TRACE is set (#213)
     CoopScoreProbe_Init(); // no-op unless SF64_COOP_SCORE_PROBE is set (#210)
+    CoopSmokeTrace_Init(); // no-op unless SF64_COOP_SMOKE_TRACE is set
     CoopTestStart_Init(); // no-op unless SF64_COOP_TEST_START_LEVEL is set (#148)
 }

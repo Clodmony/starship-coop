@@ -15,6 +15,7 @@
 #include "pilot.h"
 #include "port/coop/game/input.h"
 #include "port/coop/game/players.h"
+#include "port/coop/game/score.h"
 #include "port/coop/sync/lockstep_game.h"
 #include "port/coop/sync/state_hash.h"
 #include "port/hooks/Events.h"
@@ -58,6 +59,17 @@ static s32 sLastFrame = -1;
 static s32 sOwnFrame = -1;
 static s32 sFramesAfter = 0;
 static bool sOverSaid = false;
+static s32 sRuns = 1;            // lockstep runs of this game: one per level start of its session
+static s32 sPokeAfter = -1;      // SF64_COOP_LOCKSTEP_POKE_AFTER=<frames>
+static s32 sPokeAfterFrame = -1; // the frame that makes
+static s32 sSeenLoad = 0;        // the checkpoint last reported: gSavedObjectLoadIndex, gAllRangeCheckpoint
+static s32 sSeenAllRange = 0;
+static s32 sStateRun = 0;       // the run whose `run_state` line is out
+static s32 sPokeLevel = -1;     // SF64_COOP_LOCKSTEP_POKE_IN_LEVEL=<n>:<frames>: the n-th level this game entered
+static s32 sPokeLevelAfter = 0; // and how many frames into it
+static s32 sLevelsEntered = 0;
+static s32 sLevelFrames = 0;
+static bool sInLevel = false;
 static bool sStartSaid = false;
 static s32 sItemFrame = -1; // SF64_COOP_LOCKSTEP_ITEM=<frame>:<player>
 static s32 sItemPlayer = 0;
@@ -80,7 +92,7 @@ static void Report(const char* format, ...) {
     fflush(sReport);
 }
 
-typedef enum ItemKind { ITEM_KIND_LASERS, ITEM_KIND_REPAIR, ITEM_KIND_CRATE } ItemKind;
+typedef enum ItemKind { ITEM_KIND_LASERS, ITEM_KIND_REPAIR, ITEM_KIND_CRATE, ITEM_KIND_CHECKPOINT } ItemKind;
 
 static void Item_BreakWings(s32 player) {
     gPlayer[player].arwing.rightWingState = gPlayer[player].arwing.leftWingState = WINGSTATE_BROKEN;
@@ -142,7 +154,9 @@ static void Item_Place(s32 frame) {
         }
         Item_Initialize(item);
         item->obj.status = OBJ_ACTIVE;
-        item->obj.id = (sItemKind == ITEM_KIND_REPAIR) ? OBJ_ITEM_WING_REPAIR : OBJ_ITEM_LASERS;
+        item->obj.id = (sItemKind == ITEM_KIND_REPAIR)       ? OBJ_ITEM_WING_REPAIR
+                       : (sItemKind == ITEM_KIND_CHECKPOINT) ? OBJ_ITEM_CHECKPOINT
+                                                             : OBJ_ITEM_LASERS;
         Object_SetInfo(&item->info, item->obj.id);
         item->obj.pos.x = p->pos.x + p->vel.x;
         item->obj.pos.y = p->pos.y + p->vel.y;
@@ -163,7 +177,11 @@ static void Driver_Item(s32 frame) {
     if ((sItemFrame < 0) || (gGameState != GSTATE_PLAY)) {
         return;
     }
-    if (!sItemPlaced && (frame == sItemFrame)) {
+    // A checkpoint ring waits for a place the game could have one at: its restart from a checkpoint loads the 40
+    // objects before the saved index (func_enmy_80062568, src/engine/fox_enmy.c:540), so an index below 40 would read
+    // from before the level's table.
+    if (!sItemPlaced && ((frame == sItemFrame) || ((sItemKind == ITEM_KIND_CHECKPOINT) && (frame > sItemFrame))) &&
+        ((sItemKind != ITEM_KIND_CHECKPOINT) || (gObjectLoadIndex > 40))) {
         Item_Place(frame);
     }
     if (!sItemPlaced) {
@@ -239,7 +257,7 @@ static void Feed_Load(const char* path) {
 
 // What this client's person does now. With a delay of d, a line of the feed has to go in d frames before its own frame.
 static void Driver_Pad(s32 frame) {
-    s32 self = CoopPlayers_LocalIndex();
+    s32 self = CoopPlayers_SeatIndex(); // the feed's column is the session player's (#183)
 
     memset(&gControllerHold[0], 0, sizeof(gControllerHold[0]));
     memset(&gControllerPress[0], 0, sizeof(gControllerPress[0]));
@@ -288,6 +306,53 @@ static void Driver_Log(s32 frame) {
     fflush(sLog);
 }
 
+// SF64_COOP_LOCKSTEP_POKE_IN_LEVEL: the levels this game has entered in its first run, the session's own first and
+// then each one the map starts, and the frames since. True on the frame the bit has to be flipped.
+static bool Driver_PokeInLevel(void) {
+    bool inLevel = gGameState == GSTATE_PLAY;
+
+    if (sRuns != 1) {
+        return false;
+    }
+    if (inLevel && !sInLevel) {
+        sLevelsEntered++;
+        sLevelFrames = 0;
+    }
+    sInLevel = inLevel;
+    if (!inLevel || (gPlayState != PLAY_UPDATE)) {
+        return false;
+    }
+    sLevelFrames++;
+    return (sLevelsEntered == sPokeLevel) && (sLevelFrames == sPokeLevelAfter);
+}
+
+// `checkpoint` whenever the game's checkpoint changes in a level, and `run_state` once
+// per lockstep run, a few frames in, when the level's setup has read the checkpoint: where the level started.
+static void Driver_Checkpoints(s32 frame) {
+    if ((gGameState != GSTATE_PLAY) || (gPlayState != PLAY_UPDATE)) {
+        return;
+    }
+    if ((gSavedObjectLoadIndex != sSeenLoad) || (gAllRangeCheckpoint != sSeenAllRange)) {
+        sSeenLoad = gSavedObjectLoadIndex;
+        sSeenAllRange = gAllRangeCheckpoint;
+        if ((sSeenLoad != 0) || (sSeenAllRange != 0)) {
+            Report("checkpoint frame=%d run=%d load=%d allrange=%d path=%d hits=%d", (int) frame, (int) sRuns,
+                   (int) sSeenLoad, (int) sSeenAllRange, (int) gSavedPathProgress, (int) gSavedHitCount);
+            if ((sPokeAfter >= 0) && (sPokeAfterFrame < 0) && (sRuns == 1)) {
+                sPokeAfterFrame = frame + sPokeAfter;
+            }
+        }
+    }
+    if ((frame == 5) && (sStateRun != sRuns)) {
+        sStateRun = sRuns;
+        Report("run_state run=%d frame=%d level=%d mode=%d load=%d saved_load=%d allrange=%d path=%d hits=%d "
+               "player0=%d lives=%d",
+               (int) sRuns, (int) frame, (int) gCurrentLevel, (int) gLevelMode, (int) gObjectLoadIndex,
+               (int) gSavedObjectLoadIndex, (int) gAllRangeCheckpoint, (int) gPathProgress, (int) gHitCount,
+               (int) gPlayer[0].state, (int) gLifeCount[0]);
+    }
+}
+
 // With no lockstep to count frames, the control run of the test counts them from the same place.
 static s32 Driver_Frame(void) {
     s32 frame = CoopSyncGame_Frame();
@@ -330,15 +395,34 @@ static void CoopLockstepDriver_OnGamePreUpdate(IEvent* event) {
         Report("start");
     }
     if (CoopSyncGame_Frame() >= 0) {
+        // The session started the level again (the session survives): a new run, counted from frame 0, and `over`
+        // is said again when it ends. The log keeps the runs apart with a line.
+        if (sOverSaid) {
+            sOverSaid = false;
+            sFramesAfter = 0;
+            sRuns++;
+            Report("again run=%d", (int) sRuns);
+            if (sLog != NULL) {
+                fprintf(sLog, "# run %d\n", (int) sRuns);
+            }
+        }
         sLastFrame = frame;
         Driver_Log(frame);
     }
     Driver_Pad(frame);
     Driver_Item(frame);
-    if (frame == sMuteFrame) {
+    if (CoopSyncGame_Frame() >= 0) {
+        Driver_Checkpoints(frame);
+    }
+    // Once each, in the first run: a level the session starts again plays on without them.
+    if ((frame == sMuteFrame) && (sRuns == 1)) {
         CoopSyncGame_Mute();
     }
-    if (frame == sPokeFrame) {
+    if (((frame == sPokeFrame) || (frame == sPokeAfterFrame)) && (sRuns == 1)) {
+        CoopStateHash_PokeNow();
+    }
+    if ((CoopSyncGame_Frame() >= 0) && Driver_PokeInLevel()) {
+        Report("poke_in_level frame=%d level=%d", (int) frame, (int) gCurrentLevel);
         CoopStateHash_PokeNow();
     }
     if (frame == sZeroFrame) {
@@ -386,6 +470,13 @@ void CoopLockstepDriver_Init(void) {
     sEndFrame = Env_Number("SF64_COOP_LOCKSTEP_END");
     sMuteFrame = Env_Number("SF64_COOP_LOCKSTEP_MUTE");
     sPokeFrame = Env_Number("SF64_COOP_LOCKSTEP_POKE");
+    sPokeAfter = Env_Number("SF64_COOP_LOCKSTEP_POKE_AFTER");
+    if (Env_Text("SF64_COOP_LOCKSTEP_POKE_IN_LEVEL") != NULL) {
+        const char* spec = Env_Text("SF64_COOP_LOCKSTEP_POKE_IN_LEVEL");
+
+        sPokeLevel = atoi(spec);
+        sPokeLevelAfter = (strchr(spec, ':') != NULL) ? atoi(strchr(spec, ':') + 1) : 1;
+    }
     if (slow != NULL) {
         sSlowEvery = atoi(slow);
         sSlowMs = (strchr(slow, ':') != NULL) ? atoi(strchr(slow, ':') + 1) : 0;

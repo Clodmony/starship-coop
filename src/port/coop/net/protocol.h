@@ -3,7 +3,7 @@
 // Message ids and the protocol version. The registry and the wire layout are in docs/coop/PROTOCOL.md.
 
 // Bump whenever a message layout changes (PROTOCOL.md rule 2).
-#define COOP_PROTOCOL_VERSION 8
+#define COOP_PROTOCOL_VERSION 10
 
 typedef enum {
     // Transport. These never reach the layers above it.
@@ -30,6 +30,13 @@ typedef enum {
     COOP_MSG_SESSION_LEVEL_START = 0x0016,
     // The session's save (decision 0009 item 8): the host's, once, just ahead of the level start.
     COOP_MSG_SESSION_SAVE = 0x0017,
+    // Players' names (#258): a client's own after its welcome, the host's list of all of them. Display only.
+    COOP_MSG_SESSION_NAME = 0x0018,
+    // The session survives (#189's sibling): a player whose connection was lost comes back with the session id of its
+    // welcome, in place of a hello; and the host says that the level is going to start again, ahead of the new save
+    // and level start. 0x0018 is the name at join (names and letters).
+    COOP_MSG_SESSION_REJOIN = 0x0019,
+    COOP_MSG_SESSION_RECOVER = 0x001A,
     COOP_MSG_SESSION_END = 0x0040,
 
     // Lockstep (WP-22): frame-stamped inputs between all clients.
@@ -37,6 +44,9 @@ typedef enum {
     // Desync check (WP-23): state hash totals per frame, and the hash of the first frame that differed.
     COOP_MSG_SYNC_HASH = 0x0041,
     COOP_MSG_SYNC_DESYNC = 0x0042,
+    // #189: a game's dump of the desync frame, in numbered parts, so the other game of the pair can name the first
+    // field that differs. See src/port/coop/sync/desync_dump.h.
+    COOP_MSG_SYNC_DUMP = 0x0043,
 
     // The handover (#189): before a session closes, every game hands its desync report and the rest of its co-op log
     // to every player still connected. A kind byte first, see src/port/coop/sync/handover.h.

@@ -10,6 +10,9 @@ first WINDOW frames of the level from when player 1 flies. Rules:
   joined   player 1 flies (not parked) in the window, on both clients
   fall-0   player 0's shields fall by at least FALL points over the window (upstream drain, unchanged)
   fall-1   player 1's shields fall by at least FALL points: this is the fix, and fails on a build without it
+  alarm_own  each client's heat alarm goes by the player it looks through (#140): its shields within ALARM_SLACK_140 on
+           every frame of the window, and where the two players' shields lie more than ALARM_APART_140 apart, client 1's
+           alarm is nearer player 1's and client 0's nearer player 0's. Needs a build that traces the alarm (#140)
   hash     both clients played one game
 
 Exit code 0 on PASS, 1 otherwise.
@@ -27,8 +30,27 @@ import view_check  # noqa: E402
 
 START = hash_check.level_start("solar")
 WINDOW = 400  # level frames watched, from when player 1 flies (it does by frame 100); Solar starts both at 255 shields
+ALARM_SLACK_140 = 2  # the alarm is set in Play_UpdateLevel, the trace reads the shields at the end of the frame
+ALARM_APART_140 = 10
 FALL = 60  # the heat costs 50 to 400 in 400 frames by height (player 0 at 350 loses 100); a stray hit costs 20, so a player the heat spares stays under this
 TIMEOUT = 1500
+
+
+def alarm_own_140(client, joined):
+    """The rule alarm_own: see the top of this file. Returns its failures."""
+    if any(r.heat is None for r in joined):
+        print(f"solar: client {client.index}: alarm_own: FAIL: the trace holds no alarm (a build before #140)")
+        return [f"client {client.index}: alarm_own"]
+    set_rows = [r for r in joined if r.heat]
+    off = [r.frame for r in set_rows if abs(r.heat[0] - max(0, min(r.players[r.view].shields, 255))) > ALARM_SLACK_140]
+    apart = [r for r in set_rows if abs(r.players[0].shields - r.players[1].shields) > ALARM_APART_140]
+    nearer = [r for r in apart if abs(r.heat[0] - r.players[client.index].shields)
+              < abs(r.heat[0] - r.players[1 - client.index].shields)]
+    good = len(set_rows) >= len(joined) - 2 and not off and apart and len(nearer) == len(apart)
+    print(f"solar: client {client.index}: alarm_own: {'ok' if good else 'FAIL'}: alarm set on {len(set_rows)} of "
+          f"{len(joined)} frames, off its player's shields on {len(off)}; players apart on {len(apart)}, the alarm "
+          f"nearer player {client.index} on {len(nearer)}")
+    return [] if good else [f"client {client.index}: alarm_own"]
 
 
 def main():
@@ -70,6 +92,7 @@ def main():
         if not ok:
             failures.append(f"client {client.index}: joined")
             continue
+        failures += alarm_own_140(client, joined)
         first, last = joined[0], joined[-1]
         for i in (0, 1):
             lost = first.players[i].shields - last.players[i].shields

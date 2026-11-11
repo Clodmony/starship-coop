@@ -1789,7 +1789,11 @@ void Aquas_Actor255_Update(Actor255* this) {
             }
             if (this->timer_0BC == 0) {
                 var_v0 = this->iwork[0] * 50 + this->counter_04E - D_i3_801BFB64[this->iwork[1]];
-                if (var_v0 < this->iwork[0] * 50) {
+                // COOP: was "var_v0 < this->iwork[0] * 50". iwork is unsigned and 64 bits wide in the port (s32 on the
+                // N64), so a negative var_v0 compared as a huge number: for the eel of pod 0 the index was not wrapped
+                // and the smoke's position was read up to 30 entries before D_i3_801C27C8, from whatever the compiler
+                // put there. A Windows and a Linux game spawned the puff in two places (docs/coop/NOTES.md, 2026-11-11)
+                if (var_v0 < (s32) (this->iwork[0] * 50)) {
                     if (var_v0 > 0) {
                         var_v0 -= this->iwork[0] * 50;
                     }
@@ -1872,7 +1876,8 @@ void Aquas_Actor255_Draw(Actor255* this) {
 
         index = ((this->iwork[0] * 50) + this->counter_04E) - D_i3_801BFB64[i];
 
-        if (index < (this->iwork[0] * 50)) {
+        // COOP: was "index < (this->iwork[0] * 50)", an unsigned comparison in the port: see Aquas_Actor255_Update
+        if (index < (s32) (this->iwork[0] * 50)) {
             if (index > 0) {
                 index -= this->iwork[0] * 50;
             }

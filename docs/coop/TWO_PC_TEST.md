@@ -16,7 +16,7 @@ and that a desync, if one happens, is caught and reported.
   commit made with different compiler versions count as different platforms, see the next point.
 - **Windows and Linux may meet.** A Windows game and a Linux game join one session, and both see a warning that names
   the two platforms. Nobody has shown yet that the two compute the same game (decision 0010), so such a session may
-  desync: the game stops with a report, see "What to send back". Two builds of one commit from different compiler
+  desync: the level starts again for both, with a report, see "What to send back". Two builds of one commit from different compiler
   versions get the same warning.
 - **Check the label.** Press F1 to open the menu bar. Its right end shows `Co-op <id>`. It must be the same on both
   PCs.
@@ -41,30 +41,43 @@ and that a desync, if one happens, is caught and reported.
    campaign builds on the way, and the map after it is untested.
 6. **Fly the level together.** Either player's Start pauses both games. If the host's save has the level cleared,
    either player's Start in the intro skips it on both games; otherwise Start does nothing there (#191).
-7. **Stop at the map** after the level is complete, and quit. The map is not tested yet: each player has their own
-   save, and the map reads it.
+7. **Go on through the map into the next level.** The map reads the save, and every game plays on the host's progress
+   (decision 0009, item 8): the host sends it once before the level starts, and no PC's save file is written during a
+   session. A session with a Windows host and a Linux joining player went through two maps on the evening of 2026-11-10. What the
+   session earns is not kept. Quit when you are done.
 
 ## What is known not to work yet
 
-- Only Corneria is tested. In Landmaster and Blue Marine sections the second player is parked.
+- By hand on two PCs only one route has been played (Corneria to the ending, 2026-11-09 and 2026-11-10); the code merged
+  on 2026-11-11 has not been played by hand. Scripts now fly all 17 levels with two clients (a test pilot that cannot
+  die, and with unlimited bombs on Zoness and Venom), with equal hashes on every frame (NOTES.md, "2026-11-11, the
+  campaign run").
 - Lives follow [decision 0007](decisions/0007-lives-and-respawn.md) only in part. The team shares one pool, the game's
   own life count, and a life anyone collects goes into it; how many lives the pool starts with is unknown. If the other
   player goes down, they leave the level and come back beside Fox 150 game frames (about 5 seconds) later, at full
   shields, for one life from the pool; at 0 lives they wait for a life or the next level. That return is seen in
-  scripted two-client runs on Corneria only. If Fox goes down, the original rule still holds: one life, and the level
-  restarts at its last save point for both players; at 0 lives, game over. The record's refill of Fox in place is not
-  built.
+  scripted two-client runs on Corneria only. If Fox goes down, he is refilled in place for one life from the pool (rule
+  12), on the 16 levels the owner opened on 2026-11-11; scripted two-client runs only, nobody has seen it in play. With
+  no life left in the pool the original rule holds: game over.
 - The pause menu belongs to the host: cursor, retry and quit.
-- If one player leaves or stops sending input for 10 seconds, the session ends for both.
+- If the connection drops, or one player sends no input for 10 seconds, the host waits 15 seconds for that player.
+  Its game comes back by itself, and the level starts again for both (at the last checkpoint, or from its start). If it does not come back, or a
+  player leaves on purpose, the session ends for both (with three or four players the others start the level again).
+- If the games go out of step (a desync), the level starts again for everyone: at the last checkpoint if one was
+  reached, as after a death but without a life lost, otherwise from its start with the host's lives, shields and score
+  as they were on entering it. One line in the co-op window says so. If the games part again at once after that, twice
+  in a row, the session ends.
 - No Steam yet: this is a direct connection.
 
 ## What to send back
 
-- **If the game reports a desync:** it says so on screen, names the frame and what differs, and tells you where its
-  report file is: `coop-desync-<frame>-player<n>.txt`. Before the connection closes, each game hands its report to the
-  other (#189, a few hundred ms, 8 seconds at most), so one PC's folder normally holds both players' reports;
-  `python tools/coop/desync_report.py diff <a> <b>` compares the two. Keep the files from **both** PCs anyway, in
-  case the connection was already gone. Say what each PC ran: Windows or Linux, and the
+- **If the game reports a desync:** the co-op window says "The games parted. Starting the level again together.", and
+  both co-op logs (below) name the frame, the level, the two players and the first value that differed, with both
+  games' values: a line `first difference at frame ..., players 1 and 2: ...` (#189). One PC's logs are enough for
+  that; nobody has to fetch a file from the other PC. Each game also writes a report file,
+  `coop-desync-<frame>-player<n>.txt`, which holds the whole state of that frame; when the session ends with the
+  connection still up, each game hands its last report to the other, and `python tools/coop/desync_report.py diff <a>
+  <b>` compares two. Send the reports along if you have them. Say what each PC ran: Windows or Linux, and the
   platform line the menu's warning showed, if the two differed. A desync between two platforms is the result decision
   0010 waits for, not a surprise.
 - **The co-op logs:** `coop-log-<session start>-player1.txt` and `-player2.txt` from the game folder, where its config

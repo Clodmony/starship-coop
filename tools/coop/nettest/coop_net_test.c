@@ -481,6 +481,72 @@ static void Sim_VersionMismatch(void) {
     CoopNetCore_Destroy(client);
 }
 
+// A client the host no longer holds learns of it from its next datagram: the host answers a datagram of a connection
+// it does not hold with a goodbye for that connection, and the client ends as closed, at once, not by its time-out.
+// So a client that was dropped while it could not hear can come back (the session survives). A goodbye that is itself
+// stray gets no answer.
+static void Sim_StrayGoodbye(void) {
+    CoopNetConfig config = { 0 };
+    CoopNetCore* host = CoopNetCore_CreateHost(&config, Capture_Tx, NULL);
+    CoopNetCore* client = CoopNetCore_CreateClient(&config, Capture_Tx, NULL, SIM_HOST, 91, 0);
+    CoopNetEvent ev;
+    CoopNetStats stats;
+    uint8_t datagram[COOP_NET_MAX_DATAGRAM];
+    uint16_t size;
+
+    CoopNetCore_Update(client, 0);
+    size = sCapturedSize;
+    memcpy(datagram, sCaptured, size);
+    sCapturedSize = 0;
+    CoopNetCore_Receive(host, SIM_CLIENT, datagram, size, 1);
+    size = sCapturedSize;
+    memcpy(datagram, sCaptured, size);
+    CoopNetCore_Receive(client, SIM_HOST, datagram, size, 2);
+    if (!CoopNetCore_Poll(host, &ev) || ev.type != COOP_NET_EVENT_CONNECTED || !CoopNetCore_Poll(client, &ev) ||
+        ev.type != COOP_NET_EVENT_CONNECTED) {
+        Sim_Fail(0, "stray goodbye: no connection to start from");
+    }
+
+    // The host drops the client, and none of its goodbyes arrives.
+    CoopNetCore_Disconnect(host, 0);
+    sCapturedSize = 0;
+    CoopNetCore_Update(client, 400); // a ping is due
+    size = sCapturedSize;
+    if (size < COOP_NET_HEADER_SIZE) {
+        Sim_Fail(0, "stray goodbye: the client sent nothing to answer");
+    }
+    memcpy(datagram, sCaptured, size);
+    sCapturedSize = 0;
+    CoopNetCore_Receive(host, SIM_CLIENT, datagram, size, 401);
+    if (sCapturedSize == 0) {
+        Sim_Fail(0, "the host did not answer a datagram of a connection it had dropped");
+    }
+    if (!CoopNetCore_Stats(host, 0, &stats) || stats.strayDatagrams != 1) {
+        Sim_Fail(0, "the host did not count the stray datagram");
+    }
+    if (CoopNetCore_Poll(host, &ev)) {
+        Sim_Fail(0, "a stray datagram reached the host's owner");
+    }
+    size = sCapturedSize;
+    memcpy(datagram, sCaptured, size);
+    CoopNetCore_Receive(client, SIM_HOST, datagram, size, 402);
+    if (!CoopNetCore_Poll(client, &ev) || ev.type != COOP_NET_EVENT_DISCONNECTED || ev.end != COOP_NET_END_CLOSED) {
+        Sim_Fail(0, "the client did not end as closed on the host's answer to its stray datagram");
+    }
+
+    // That answer is a goodbye. Sent to the host from an address it does not know, it is stray too, and gets nothing.
+    sCapturedSize = 0;
+    CoopNetCore_Receive(host, SIM_CLIENT + 5, datagram, size, 403);
+    if (sCapturedSize != 0) {
+        Sim_Fail(0, "the host answered a stray goodbye");
+    }
+    if (!CoopNetCore_Stats(host, 0, &stats) || stats.strayDatagrams != 2) {
+        Sim_Fail(0, "the host did not count the stray goodbye");
+    }
+    CoopNetCore_Destroy(host);
+    CoopNetCore_Destroy(client);
+}
+
 // The checksum protects every byte of a datagram, and a bad one has no effect at all.
 static void Sim_Checksum(void) {
     CoopNetConfig config = { 0 };
@@ -565,6 +631,7 @@ static int Sim_Main(uint32_t seeds) {
     SimLink clean = { 0 };
 
     Sim_VersionMismatch();
+    Sim_StrayGoodbye();
     Sim_Checksum();
     Sim_OneWayAcks();
 

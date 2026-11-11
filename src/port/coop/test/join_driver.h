@@ -20,6 +20,8 @@
 //                                    menu does, and play on
 //   SF64_COOP_JOIN_MAIN_PORT=<n>     test only: gMainController when the level start comes, as the title screen of a PC
 //                                    with its first controller on another port leaves it
+//   SF64_COOP_JOIN_NAME=<name>       this player's name, as typed in the menu (#258); with it the game takes every
+//                                    player's name from the session and reports them
 //   SF64_COOP_JOIN_WATCH=1           no session of its own: reports `level_running` for a level the co-op menu started,
 //                                    for tools/coop/menu_test.py
 // With none set, no listener is registered and the game runs unchanged.
@@ -30,7 +32,8 @@
 // level=N phase=N players=N characters=a,b,c,d seeds=... team_damage=... team_event=... main=N` on the first frame
 // after Play_Init. Until then gGameFrameCount still counts the screen the game came from, so that is where games can
 // agree. `save_session frame=N save=<hex>` holds this game's save in memory once it entered the session's (all 256
-// bytes, as the file holds them), `leaving frame=N` when SF64_COOP_JOIN_LEAVE_FILE turned up, and `save_after frame=N
+// bytes, as the file holds them), `names frame=N names=a,b,c,d` with SF64_COOP_JOIN_NAME whenever the names change (-
+// for none, a space as _), `leaving frame=N` when SF64_COOP_JOIN_LEAVE_FILE turned up, and `save_after frame=N
 // save=<hex>` the save in memory once the session ended, however it ended.
 
 #ifdef __cplusplus
