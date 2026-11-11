@@ -1,6 +1,7 @@
 // #include "prevent_bss_reordering.h"
 #include "global.h"
 #include "assets/ast_sector_x.h"
+#include "port/coop/game/aim.h" // COOP: the Spyborg aims at and follows the nearest human (campaign run, #220)
 
 s32 D_i2_80195D80;
 f32 D_i2_80195D88[3];
@@ -325,6 +326,9 @@ void SectorX_SxSpyborgRightArm_Draw(SxSpyborgRightArm* this) {
 }
 
 void SectorX_SxSpyborg_Update(SxSpyborg* this) {
+    // COOP: the player its head, its arms and its fists turn and fly to, was player 0; kept until its next state (#220)
+    Player* aimed = &gPlayer[CoopAim_BossTarget(this->index, this->obj.pos.x, this->obj.pos.y, this->obj.pos.z)];
+    s32 coopState; // COOP: (#220)
     u8 attack;
     s32 i;
     Vec3f frameTable[50];
@@ -376,12 +380,13 @@ void SectorX_SxSpyborg_Update(SxSpyborg* this) {
         gBossHealthBar = (this->swork[3] + this->health) / 2.73f;
     }
 
-    sp68 = gPlayer[0].pos.x - this->obj.pos.x;
-    sp64 = gPlayer[0].trueZpos - (this->obj.pos.z + (-237.0f));
+    sp68 = aimed->pos.x - this->obj.pos.x;                  // COOP: aimed was gPlayer[0] here and below (#220)
+    sp64 = aimed->trueZpos - (this->obj.pos.z + (-237.0f)); // COOP: as above
 
     if (this->swork[7] != 0) {
         sp70 = Math_RadToDeg(Math_Atan2F(sp68, sp64));
-        sp6C = Math_RadToDeg(-Math_Atan2F(gPlayer[0].pos.y - (this->obj.pos.y + 334.0f), sqrtf(SQ(sp68) + SQ(sp64))));
+        sp6C = Math_RadToDeg(
+            -Math_Atan2F(aimed->pos.y - (this->obj.pos.y + 334.0f), sqrtf(SQ(sp68) + SQ(sp64)))); // COOP: as above
         Math_SmoothStepToAngle(&this->fwork[4], sp70, 0.1f, 5.0f, 0.00001f);
         Math_SmoothStepToAngle(&this->fwork[6], sp6C, 0.1f, 5.0f, 0.00001f);
     } else {
@@ -512,6 +517,7 @@ void SectorX_SxSpyborg_Update(SxSpyborg* this) {
 
     this->vel.z = -20.0f;
 
+    coopState = this->state; // COOP: a new state picks the nearest human again (#220)
     switch (this->state) {
         case 0:
             this->swork[7] = 1;
@@ -588,8 +594,8 @@ void SectorX_SxSpyborg_Update(SxSpyborg* this) {
 
         case 1: // Taunt
             this->fwork[1] = -1800.0f;
-            this->fwork[3] = gPlayer[0].pos.x;
-            this->fwork[2] = gPlayer[0].pos.y;
+            this->fwork[3] = aimed->pos.x; // COOP: as above
+            this->fwork[2] = aimed->pos.y; // COOP: as above
             this->fwork[42] = 30.0f;
             this->fwork[44] = 5.0f;
             this->fwork[43] = 5.0f;
@@ -612,8 +618,8 @@ void SectorX_SxSpyborg_Update(SxSpyborg* this) {
 
         case 2: // right arm attack
             attack = true;
-            this->fwork[3] = gPlayer[0].pos.x;
-            this->fwork[2] = gPlayer[0].pos.y;
+            this->fwork[3] = aimed->pos.x; // COOP: as above
+            this->fwork[2] = aimed->pos.y; // COOP: as above
 
             if (this->animFrame > 60) {
                 this->fwork[1] = -1000.0f;
@@ -646,8 +652,8 @@ void SectorX_SxSpyborg_Update(SxSpyborg* this) {
 
         case 3: // left arm attack
             attack = true;
-            this->fwork[3] = gPlayer[0].pos.x;
-            this->fwork[2] = gPlayer[0].pos.y;
+            this->fwork[3] = aimed->pos.x; // COOP: as above
+            this->fwork[2] = aimed->pos.y; // COOP: as above
 
             if (this->animFrame > 60) {
                 this->fwork[1] = -1000.0f;
@@ -693,8 +699,8 @@ void SectorX_SxSpyborg_Update(SxSpyborg* this) {
         case 4: // Arms launch setup
             this->swork[7] = 0;
             this->fwork[1] = -3000.0f;
-            this->fwork[3] = gPlayer[0].pos.x;
-            this->fwork[2] = gPlayer[0].pos.y;
+            this->fwork[3] = aimed->pos.x; // COOP: as above
+            this->fwork[2] = aimed->pos.y; // COOP: as above
 
             Math_SmoothStepToF(&this->fwork[44], 10.0f, 1.0f, 1.0f, 0);
             Math_SmoothStepToF(&this->fwork[43], 10.0f, 1.0f, 1.0f, 0);
@@ -732,59 +738,59 @@ void SectorX_SxSpyborg_Update(SxSpyborg* this) {
             Math_SmoothStepToF(&this->fwork[27], 30.0f, 0.05f, 1.0f, 0);
             Math_SmoothStepToF(&this->fwork[28], -30.0f, 0.05f, 1.0f, 0);
 
-            sp60 = fabsf(this->obj.pos.x + this->fwork[8] - gPlayer[0].pos.x) * 0.1f;
+            sp60 = fabsf(this->obj.pos.x + this->fwork[8] - aimed->pos.x) * 0.1f; // COOP: as above
 
             if (sp60 > 5.0f) {
                 sp60 = 5.0f;
             }
 
-            if ((this->obj.pos.x + this->fwork[8]) < gPlayer[0].pos.x) {
+            if ((this->obj.pos.x + this->fwork[8]) < aimed->pos.x) { // COOP: as above
                 this->fwork[29] += sp60;
             }
 
-            if (gPlayer[0].pos.x < (this->obj.pos.x + this->fwork[8])) {
+            if (aimed->pos.x < (this->obj.pos.x + this->fwork[8])) { // COOP: as above
                 this->fwork[29] -= sp60;
             }
 
-            sp60 = fabsf((this->obj.pos.y + this->fwork[9]) - gPlayer[0].pos.y) * 0.1f;
+            sp60 = fabsf((this->obj.pos.y + this->fwork[9]) - aimed->pos.y) * 0.1f; // COOP: as above
 
             if (sp60 > 5.0f) {
                 sp60 = 5.0f;
             }
 
-            if ((this->obj.pos.y + this->fwork[9]) < gPlayer[0].pos.y) {
+            if ((this->obj.pos.y + this->fwork[9]) < aimed->pos.y) { // COOP: as above
                 this->fwork[30] += sp60;
             }
 
-            if (gPlayer[0].pos.y < (this->obj.pos.y + this->fwork[9])) {
+            if (aimed->pos.y < (this->obj.pos.y + this->fwork[9])) { // COOP: as above
                 this->fwork[30] -= sp60;
             }
 
-            sp60 = fabsf((this->obj.pos.x + this->fwork[11]) - gPlayer[0].pos.x) * 0.1f;
+            sp60 = fabsf((this->obj.pos.x + this->fwork[11]) - aimed->pos.x) * 0.1f; // COOP: as above
 
             if (sp60 > 5.0f) {
                 sp60 = 5.0f;
             }
 
-            if ((this->obj.pos.x + this->fwork[11]) < gPlayer[0].pos.x) {
+            if ((this->obj.pos.x + this->fwork[11]) < aimed->pos.x) { // COOP: as above
                 this->fwork[32] += sp60;
             }
 
-            if (gPlayer[0].pos.x < (this->obj.pos.x + this->fwork[11])) {
+            if (aimed->pos.x < (this->obj.pos.x + this->fwork[11])) { // COOP: as above
                 this->fwork[32] -= sp60;
             }
 
-            sp60 = fabsf((this->obj.pos.y + this->fwork[12]) - gPlayer[0].pos.y) * 0.1f;
+            sp60 = fabsf((this->obj.pos.y + this->fwork[12]) - aimed->pos.y) * 0.1f; // COOP: as above
 
             if (sp60 > 5.0f) {
                 sp60 = 5.0f;
             }
 
-            if ((this->obj.pos.y + this->fwork[12]) < gPlayer[0].pos.y) {
+            if ((this->obj.pos.y + this->fwork[12]) < aimed->pos.y) { // COOP: as above
                 this->fwork[33] += sp60;
             }
 
-            if (gPlayer[0].pos.y < (this->obj.pos.y + this->fwork[12])) {
+            if (aimed->pos.y < (this->obj.pos.y + this->fwork[12])) { // COOP: as above
                 this->fwork[33] -= sp60;
             }
 
@@ -866,8 +872,8 @@ void SectorX_SxSpyborg_Update(SxSpyborg* this) {
                 Radio_PlayMessage(gMsg_ID_5497, RCID_BOSS_SECTORX);
             }
             this->fwork[41] = 0.0f;
-            this->fwork[2] = gPlayer[0].pos.y;
-            this->fwork[3] = gPlayer[0].pos.x;
+            this->fwork[2] = aimed->pos.y; // COOP: as above
+            this->fwork[3] = aimed->pos.x; // COOP: as above
             this->fwork[44] = 5.0f;
             this->fwork[1] = -1800.0f;
             this->fwork[43] = 5.0f;
@@ -890,8 +896,8 @@ void SectorX_SxSpyborg_Update(SxSpyborg* this) {
 
         case 85:
             this->fwork[1] = -3000.0f;
-            this->fwork[2] = gPlayer[0].pos.y;
-            this->fwork[3] = gPlayer[0].pos.x;
+            this->fwork[2] = aimed->pos.y; // COOP: as above
+            this->fwork[3] = aimed->pos.x; // COOP: as above
 
             frameData = Animation_GetFrameData(&D_SX_60123BC, this->animFrame, frameTable);
             Math_SmoothStepToVec3fArray(frameTable, this->vwork, 1, frameData, this->fwork[0], 50.0f, 0.0f);
@@ -922,8 +928,8 @@ void SectorX_SxSpyborg_Update(SxSpyborg* this) {
                 Radio_PlayMessage(gMsg_ID_5492, RCID_BOSS_SECTORX);
             }
             this->fwork[1] = -2000.0f;
-            this->fwork[2] = gPlayer[0].pos.y;
-            this->fwork[3] = gPlayer[0].pos.x;
+            this->fwork[2] = aimed->pos.y; // COOP: as above
+            this->fwork[3] = aimed->pos.x; // COOP: as above
 
             frameData = Animation_GetFrameData(&D_SX_601AA28, this->animFrame, frameTable);
             Math_SmoothStepToVec3fArray(frameTable, this->vwork, 1, frameData, this->fwork[0], 50.0f, 0.0f);
@@ -1099,6 +1105,9 @@ void SectorX_SxSpyborg_Update(SxSpyborg* this) {
 
         default:
             break;
+    }
+    if (this->state != coopState) {
+        CoopAim_ForgetBoss(this->index); // COOP: (#220)
     }
 
     D_i2_80195640 = 1;
