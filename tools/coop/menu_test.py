@@ -18,7 +18,8 @@ a platform warning (decision 0010), on the host's side and the joining player's.
 platform, so the other side there is coop_session_test, which says what it is told to. game_leave
 has player 2 leave during the level, which ends the session for everyone under lockstep (#160) while every game keeps
 running, then the same games hold a second session, start again and keep every player past the time-out (#132).
-game_level and game_leave print the longest gap between two session ticks (menu-stall.txt).
+game_level and game_leave print the longest gap between two session ticks (menu-stall.txt). game_names types the
+players' names into the window (#258) and reads them back from both windows and from each game's own config.
 
 Prints one line per scenario and a RESULT line, keeps logs in local/test-menu/<stamp>/, exits 0 only when everything
 passed. Each game gets its own folder under local/ with its own SHIP_HOME, removed when the run passed.
@@ -568,19 +569,33 @@ def scenario_game_leave(args, exe, out):
         for game in games:
             game.wait(lambda g=game: in_level(g), "frame in the level", LEVEL_SECONDS)
 
-        # Player 2 leaves in the level. Every frame needs every player, so the session ends for everyone (#160,
-        # docs/coop/PROTOCOL.md, End): the host says who left, player 3 reads that the host closed, and every game
-        # goes on alone in its level.
+        # Player 2 leaves in the level. Every frame needs every player, so the level cannot go on as it is; with
+        # another player still there the session survives: the host starts the level again for the two who stay, and
+        # both read one line about it (docs/coop/PROTOCOL.md, Recovery). The one who left goes on alone in its level.
         frames = {game.name: frames_logged(game) for game in games}
         a.click("leave")
         a.wait_text("status", r"Not in a session\.")
-        host.wait_text("message", r"Player 2 left, so the session is over")
-        host.wait_text("status", r"Not in a session\.")
-        b.wait_text("status", r"Not in a session\.")
-        b.wait_text("message", r"closed the connection")
+        host.wait_text("message", r"Player 2 left\. Starting the level again together\.")
+        b.wait_text("message", r"Player 2 left\. Starting the level again together\.")
+        host.wait_text("status", r", 2 of 4 players\.")
+        b.wait_text("status", r" as player 3\.")
+        for game in (host, b):
+            game.wait_text("level", r"The level has started", LEVEL_SECONDS)
         for game in games:
             game.wait(lambda g=game: frames_logged(g) > frames[g.name] + 60, "frames after the leave", STEP_SECONDS,
                       every=1)
+        a.wait(lambda: "level" not in a.texts, "the level line gone after the session")
+
+        # Player 3 leaves too. Nobody is left to start the level again with, so the session ends as it always did
+        # (#160): the host says who left, and every game goes on alone in its level.
+        frames = {game.name: frames_logged(game) for game in games}
+        b.click("leave")
+        b.wait_text("status", r"Not in a session\.")
+        host.wait_text("message", r"Player 3 left, so the session is over")
+        host.wait_text("status", r"Not in a session\.")
+        for game in games:
+            game.wait(lambda g=game: frames_logged(g) > frames[g.name] + 60, "frames after the second leave",
+                      STEP_SECONDS, every=1)
         for game in games:
             game.wait(lambda g=game: "level" not in g.texts, "the level line gone after the session")
 
@@ -597,8 +612,9 @@ def scenario_game_leave(args, exe, out):
         a.wait_text("status", r" as player 2\.")
         b.wait_text("status", r" as player 3\.")
         stall = max(longest_stall(game) for game in games)
-        return f"3 games: player 2 left in the level and the session ended for all, then a second session and level " \
-               f"held past the time-out; longest stall {stall} ms"
+        return f"3 games: player 2 left in the level and the level started again for the two who stayed, player 3 " \
+               f"left and the session ended, then a second session and level held past the time-out; longest stall " \
+               f"{stall} ms"
 
     return level_run(args, games, body)
 
@@ -626,9 +642,57 @@ def scenario_program(mode):
     return run
 
 
+NAME_CVAR_258 = "gCoopName"  # src/port/coop/ui/menu_window.cpp: where the window keeps the name
+
+
+def saved_name_258(game):
+    """What the game's own config holds for the player's name, None if nothing (yet)."""
+    try:
+        cvars = json.loads((game.run / "starship.cfg.json").read_text(encoding="utf-8")).get("CVars", {})
+    except (OSError, ValueError):
+        return None
+    return cvars.get(NAME_CVAR_258)
+
+
+def scenario_game_names_258(args, exe, out):
+    """#258: each player types a name in the window before hosting or joining. The field takes what the game's font
+    draws, upper case, at most 8 characters; both windows show both names; each game keeps its own in its own config,
+    and a game that starts with that config hosts under it without typing."""
+    games = []
+
+    def body():
+        host, a = games[0], games[1]
+        open_windows(games)
+        host.type("name", "Captain Fox")  # 8 at most: CAPTAIN and a space, which the session drops
+        a.type("name", "sam_ok,!")  # _ and , are not in the font
+        port = host_session(host)
+        host.wait_text("player1", r"^Player 1 \(you\): CAPTAIN, Fox$")
+        join(a, port, 2)
+        a.wait_text("player1", r"^Player 1: CAPTAIN, Fox")
+        a.wait_text("player2", r"^Player 2 \(you\): SAMOK!, no character yet$")
+        host.wait_text("player2", r"^Player 2: SAMOK!, no character yet")
+        for game, want in ((host, "CAPTAIN"), (a, "SAMOK!")):
+            game.wait(lambda g=game, w=want: saved_name_258(g) == w, f"{want} in the game's own config")
+        host.click("leave")
+        a.wait_text("status", r"Not in a session\.")
+        for game in (host, a):
+            game.stop()
+
+        again = Game(exe, "again", out, {NAME_CVAR_258: "CAPTAIN"})
+        games.append(again)
+        open_windows([again])
+        host_session(again)
+        again.wait_text("player1", r"^Player 1 \(you\): CAPTAIN, Fox$")
+        return "typed Captain Fox and sam_ok,!: both windows show CAPTAIN and SAMOK!, both saved; a new game hosts as CAPTAIN"
+
+    games.extend([Game(exe, "host", out), Game(exe, "a", out)])
+    return level_run(args, games, body)
+
+
 GAME_SCENARIOS = {"game": scenario_game, "game_level": scenario_game_level, "game_start_level": scenario_game_start_level,
                   "game_level_map": scenario_game_level_map,
-                  "game_platform": scenario_game_platform, "game_leave": scenario_game_leave}
+                  "game_platform": scenario_game_platform, "game_leave": scenario_game_leave,
+                  "game_names": scenario_game_names_258}
 SCENARIOS = {"sim": scenario_program("sim"), "udp": scenario_program("udp"), **GAME_SCENARIOS}
 
 

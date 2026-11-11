@@ -23,3 +23,4 @@ One file per architecture decision: `NNNN-short-title.md`, numbered in order. Co
 | [0011](0011-deterministic-sine-in-sessions.md) | Sine, cosine and arctangent in a session come from the N64's own code, not the C library | Accepted |
 | [0012](0012-taken-wingman-scenes.md) | A wingman a human flies is not shown twice: the scene goes to a free computer wingman, else Katt or Bill | Accepted (changes 0006 C1 for on-rails scenes) |
 | [0013](0013-rescue-lines.md) | A borrowed rescue keeps its radio: the substitute's own help and thanks lines | Accepted (changes 0012 rule 5 for the scenes in its table) |
+| [0014](0014-the-session-survives.md) | The session survives a lost player or a desync: the level starts again from the host's state | Proposed (the owner's answers of 2026-11-11 are its rules; the text waits for the owner) |

@@ -34,6 +34,8 @@ void CoopMenuGame_Message(int peer, uint16_t msgId, const uint8_t* data, uint16_
 uint32_t CoopMenuGame_Waiting(int32_t* player);
 // CoopMenuBackend.handover: lockstep ends first, so its last lines go along, then the handover (handover_game.h).
 void CoopMenuGame_Handover(CoopSession* s, bool leaving);
+// CoopMenuBackend.recover: lockstep stops until the session starts the level again (CoopSyncGame_Pause).
+void CoopMenuGame_Recover(void);
 
 #ifdef __cplusplus
 }

@@ -21,6 +21,9 @@ typedef struct {
     bool (*send)(int peer, uint16_t msgId, const void* data, uint16_t size, CoopNetLane lane);
     // One line on a game's identity, for the report: peer -1 is this game. "" if it is not known.
     void (*identity)(int peer, char* out, size_t cap);
+    // A message that goes as it is, without the run in front: SYNC_DUMP names its own run (#189).
+    bool (*sendRaw)(int peer, uint16_t msgId, const void* data, uint16_t size, CoopNetLane lane);
+    uint8_t run; // the level start's number in its session
 } CoopDesyncGameLink;
 
 void CoopDesyncGame_Init(void);
@@ -36,8 +39,20 @@ void CoopDesyncGame_Frame(uint32_t frame, uint32_t nowMs);
 bool CoopDesyncGame_Receive(int peer, uint16_t msgId, const uint8_t* data, uint16_t size, uint32_t nowMs);
 
 // True once a desync is complete, or the grace for the other side's answer is over: the report is written then,
-// and `text` holds what the player reads. Call it after every frame and every message.
+// and `text` holds what happened, for the player or the log: the frame, the level, the two players, the regions and
+// the report's path. What the session does about it is the caller's to add. Call it after every frame and every
+// message. From here on this game's dump of that frame goes to the other game of the pair (CoopDesyncGame_Pump).
 bool CoopDesyncGame_Check(uint32_t nowMs, char* text, size_t cap);
+
+// #189, the first field that differs, in every co-op log. After a desync each game of the pair sends the other its
+// dump of the frame (SYNC_DUMP, desync_dump.h), and the one that holds both writes one line, category `desync`, into
+// its log and its report: `first difference at frame F, players A and B: <region>: <field> differs in ...`. Both
+// games write the same line, and the log's stream puts each into both folders. This runs beside lockstep and across
+// a new level start: Pump sends what the window takes and gives up after COOP_DESYNC_DUMP_MS, ReceiveDump takes a
+// part, Drop ends it when the session goes.
+void CoopDesyncGame_Pump(uint32_t nowMs);
+void CoopDesyncGame_ReceiveDump(int peer, const uint8_t* data, uint16_t size, uint32_t nowMs);
+void CoopDesyncGame_DropDump(void);
 
 // Frees the rings. Nothing happens here until the next Begin.
 void CoopDesyncGame_End(void);

@@ -223,8 +223,9 @@ number of clients, transport.
    `game_level_map` scenarios (#126) go on to the Start button and compare the state hash logs from the first frame after
    `Play_Init`, as `join_test.py` does. Its `game_platform` scenario reads what the menu shows both players for a
    platform warning (decision 0010), against `coop_session_test` as the other side, because two games on one PC never
-   differ in platform. Its `game_leave` scenario (#132) has player 2 leave during a level, checks that the session ends
-   for everyone while every game keeps running (lockstep, #160), then holds a second session in the same games, starts
+   differ in platform. Its `game_leave` scenario (#132) has player 2 leave during a level, checks that the level starts
+   again for the two who stay (the session survives), has player 3 leave and checks that the session then ends while
+   every game keeps running (lockstep, #160), then holds a second session in the same games, starts
    a level again and checks that all three players stay past the time-out. `game_level` and `game_leave` print the
    longest stall of the session tick that any game saw. Neither says how the window looks.
 6. **Regression per bug.** Every desync fix comes with the replay that triggered it; every transport fix adds a
@@ -235,6 +236,25 @@ Running tests must never use or modify the owner's own `starship.cfg.json`, save
 ## Results
 
 Newest first. One block per run that matters (a milestone, a release, a QA level change).
+
+```
+date:       2026-11-11
+commit:     issue/session-survives at 921d6411, on top of a4867d99 (coop)
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 or 3 game clients on one PC,
+            UDP over loopback, through the join driver and through the real menu
+what ran:   python tools/coop/lockstep_test.py --only survive_desync,survive_three,survive_checkpoint,
+            survive_checkpoint_allrange,survive_next_level,save_own,desync,handover,stall,frozen,left,host_left
+            (one scenario per run); python tools/coop/menu_test.py --game; python tools/coop/join_test.py;
+            python tools/coop/hash_check.py base --base <build of a4867d99>
+result:     automated. A session survives a desync and a lost player: the level starts again from the host's state
+            and is equal on its first 600 frames in every scenario (from the level's start; from a rails checkpoint
+            on Corneria; from Fortuna's all-range checkpoint; in the level after the map, with the campaign's values;
+            with a client that stopped sending input or was frozen and came back with the session id; with one of two
+            clients gone). Both co-op logs name the first differing field as desync_report.py diff does (#189). With
+            nobody left, or after two restarts that part at once, the session ends as before. menu_test.py --game
+            8/8, join_test.py 5/5, co-op off equal to the base build on 5800 frames. Not run: two PCs, Windows, a
+            real connection drop, a Release build, four players, the map after a level that started again.
+```
 
 ```
 date:       2026-11-10

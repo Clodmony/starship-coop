@@ -632,6 +632,142 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-11, names and letters (#257, #258): the name as the mark, and three things that still followed player 0 (#140)
+
+Identity: ROM US 1.0, branch `issue/names-letters` on `wave6-base` (`a4867d99`), Linux, GCC, Debug, OpenGL on a software
+renderer, no window, one PC. Games over loopback where a line says so.
+
+How the game marks things in the world (read in the code; step 1 of #257):
+
+- **Teammates.** `Display_ActorMarks` (`src/engine/fox_display.c:1668`) draws `sTeammateMarkDLs[i]` (`:1600`) at
+  `gTeamArrowsViewPos[i]`, a point in the view of the camera drawn, which the actor's draw writes: on the rails the
+  event actors that fly as wingmen (`src/engine/fox_enmy2.c:4245-4247`), in all-range the wingmen while player 0 is
+  ACTIVE (`src/engine/fox_edisplay.c:1289`), the team boss and Sector X's Slippy (`:1174`). It blinks (`(gGameFrameCount
+  & 4) == 0`), and its size is `|view| * 0.0015`, held between 1 and 100, times 0.25, 150 units up: about the same on
+  screen at any distance, larger close up. The marks of Falco, Slippy and Peppy are 16x16 textures of the letters F, S
+  and P in a coloured arrow (`aFalcoMarkTex`, `aSlippyMarkTex`, `aPeppyMarkTex`, read from the archive and not kept);
+  Katt, Bill and James have their own. Fox has none. So the original already says F for Falco, which is why a letter
+  for every human could not be both short and unambiguous; the owner chose the name alone as the mark (#257).
+- **Lock-on**: `Display_LockOnIndicator` (`:1714`), one view position per camera. **Radar**: `HUD_RadarMarks_Setup` and
+  `HUD_RadarMark_Draw` (`src/engine/fox_hud.c:1992`, `:1878`) into `gRadarMarks`, which the state hash holds; an
+  Arwing's mark is coloured by its slot (`HUD_RadarMark_Arwing_Draw`, `:1794`).
+- **Fonts.** The small font draws `" ABCDEFGHIJKLMNOPQRSTUVWXYZ!:-.0123456789"`, 8x8 IA8 (digits 16x8); the large one
+  `"ABCDEFGHIJKLMNOPQRSTUVWXYZ. 0123456789st-"`, 16x15 IA8, W and X 32 wide (`src/engine/fox_std_lib.c:929-930`,
+  `:1075`). No lower case, no accents.
+
+What this change does, all display only and gated on co-op:
+
+| Item | Where | Writes what the simulation reads |
+|---|---|---|
+| The name over each other human, Fox included, never the own ship: wherever its shield bar shows (#30), in white in the small font above the bar, a dark copy behind it; the character's name (FOX, FALCO) when none is typed. HUD text size on screen at any distance; nothing off screen; no letter (the owner's choice) | `src/port/coop/game/view.c` (`CoopView_DrawShieldBars`), `names.c` | No |
+| The name: a field in the co-op window, kept as `gCoopName` in the game's own config; `SESSION_NAME` 0x0018 (PROTOCOL.md, Names), the host shares the list | `src/port/coop/ui/`, `session.c`, `COOP_PROTOCOL_VERSION` 9 | No: the hash never sees it |
+| The name in each human's row of the hits (pause and level clear), squeezed to 52 pixels when long | `src/port/coop/game/score.c` | No |
+| Solar's heat alarm: the shields and height of the player looked through | `CoopView_HeatAlarm`, `src/engine/fox_play.c:6996` | No: a sound's settings; the drain stays (#200) |
+| R in the pause menu: each player's own R, from its own pad slot, flips its own `gShowReticles`, heard on its own client | `CoopView_PauseReticles`, `fox_play.c:7250` | No: `gShowReticles` is only read where the reticle of the player looked through is drawn |
+| Corneria's facades (`Object_SetMatrix`) and the poles and trees `Sprite_UpdateDoodad` turns: drawn facing the eye drawn | `CoopView_DrawnRotY`, `src/engine/fox_edisplay.c:975` | No: `obj.rot.y` stays player 0's on every client; only the matrix of the draw differs |
+
+Observed (runs, this branch):
+
+- `view_check.py`, rails (now to level frame 2810, as the first billboard comes at 2708) and all-range: PASS, every
+  rule, on the final build. `names_shown`: client 0, no names, marks player 1 `FALCO` on 1326 frames (all-range 404),
+  client 1 with player 0 named `CAPTAIN` marks `CAPTAIN` on 1262 (893), always and only where the bar shows, never its
+  own. `reticle_own`: the four R presses flip the right reticle on both clients, each heard on its own client only.
+  `billboards_own`: client 0 turned none; client 1 turned some on all 214 frames it drew any through player 1, none
+  while it looked through player 0. `hash`: equal on all 2820 and 3209 frames, with names on one client and none on the
+  other. Earlier runs of the same rules counted other numbers of frames (1222, 1318): how many frames carry a mark or a
+  billboard moves from run to run on a busy PC, the rules and the hash do not.
+- `solar_check.py`: PASS. `alarm_own`: the alarm set on 400 of 400 frames, on its own player's shields on all; on the
+  188 frames the two players' shields lay more than 10 apart, each client's alarm was the nearer to its own player.
+- `lockstep_test.py --only player_names`: both games hold `CAPTAIN,SAM.OK!,-,-` (typed `Captain Fox` and `sam.ok!`)
+  by the level start; the host marks `SAM.OK!`, the client `CAPTAIN`, on about 1075 of 2750 frames each; same hash on
+  2700 frames. `steer`, `three`, `pause`: pass.
+- `menu_test.py --only game_names`: the field takes `Captain Fox` as `CAPTAIN` and `sam_ok,!` as `SAMOK!`; both windows
+  show both, each game's own config holds its own, and a fresh game with that config hosts as `CAPTAIN`. `sim`, `udp`,
+  `game`, `game_level`: pass.
+- `session_test.py`: 17 of 17; `session_mutants.py`: all 322 breaks caught, 13 of them new for the names.
+- `hash_check.py base` against `wave6-base`'s build: co-op off equal on all 5800 frames.
+- A local picture of client 1 on Corneria (given to the owner, not in git): `CAPTAIN` in white over the green bar above
+  Fox's Arwing, about the height of the HUD's own text, with the game's own S mark over the computer Slippy beside it.
+  A first try with the letter drew the tag as large as the bar close up; the size is fixed above.
+- Every replay run of this base ends with `result=FAIL_MISMATCH` at frame 0 (all zeros wanted), the reference build's
+  too; the tools count those runs as played through.
+
+Derived:
+
+- Names cannot part two games: they reach the game only through `CoopNames_Set`, and only the draw reads them. The
+  `names_shown` and `player_names` runs show it on every frame they compare.
+
+Unknown:
+
+- How any of it looks moving, on a real screen, at 3 or 4 players, or on Windows; nobody has seen it but in one local
+  picture.
+- Fortuna's poles (`OBJ_SPRITE_FO_POLE`): read, not run. Other billboards in update code (`MeteoBall_Update`,
+  `Effect_Effect362_Update` and the rest of #30's list) still face player 0 on every client.
+- Whether a name in the small font is large enough at a glance on a real screen: the owner chose it for the next
+  two-PC run.
+
+### 2026-11-11, the campaign run, #220's leftovers: Sector X's Spyborg and Titania's Goras go after the nearest human
+
+Read at `wave6-base` (`a4867d99`, `coop` after the merge of the combined test build). Rule as #220's entry below: aim and
+chase the kept human (`CoopAim_BossTarget`), picked again at the boss's own new state (`CoopAim_ForgetBoss`); level
+flow, the path (a z every player shares on rails), cutscenes and "player 0 down restarts the level" stay player 0's.
+Line numbers are this branch's.
+
+Observed (code), every `gPlayer[0]` site of the three bosses #220 listed and did not change:
+
+| boss: function | sites | what they do | verdict |
+|---|---|---|---|
+| Spyborg: `SectorX_SxSpyborg_Update` (`src/overlays/ovl_i2/fox_sx.c`) | 37 | `:383-389` its head turns to the player (yaw, pitch); `:597-598`, `:621-622`, `:655-656`, `:702-703`, `:875-876`, `:899-900`, `:931-932` the x and y it moves to in its attack states (1, 2, 3, 4, 8, 85, 9: `fwork[3]`, `fwork[2]`); `:741-793` its two launched fists home in on the player's x and y (state 5) | aim and chase: changed (29 sites), a new state picks again |
+| (same) | | `:400` its z to player 0's z (the path); `:524` its start at player 0's `xPath`; `:511` it waits (state 8) while player 0 is not active; `:911` the same for standby; `:1096-1099` level complete | path, flow: left (8 sites) |
+| Goras: `Titania_80193DF0` (`src/overlays/ovl_i5/fox_ti.c`) | 11 | `:4366-4371` the x it follows in states 7 to 12; `:4544-4545` the angle of its attack (`D_i5_801BBEF4[12]`, whose cosine also sets how far it keeps in z, `:4993`) | aim and chase: changed (4 sites), a new state picks again |
+| (same) | | `:4383-4384` its entrance in front of player 0; `:4420`, `:4993` its z on the path; `:4426-4427`, `:4454` player 0's `unk_19C` and `unk_000` (the tank's stop in the fight) | path, flow: left |
+| Goras: `Titania_80192118`, `Titania_TiGoras_Update`, `Titania_TiGoras_Dying` | 9, 1, 10 | its parts' z and speed from player 0 (the path), player 0's stop field; `:5016` it jumps when player 0 is on the ground (`grounded`); the death cutscene | path, trigger, flow: left |
+| train's end: `Macbeth_Actor207_Update`, `Macbeth_Actor207_FacePlayer` (`src/overlays/ovl_i5/fox_ma.c`) | 32 + 2 MC, 3 | `:4186-4192` it faces player 0; `:4417`, `:5024` its x and `:4490`, `:4492`, `:5068` its y to player 0's; `:4438`, `:4484`, `:5065` an x from player 0 (`D_i5_801BE368[9]`) for its drops; 15 sites its z and speed on the path; `:5119`, `:5149` its damage only while player 0 is 200 behind it; `:5058` it kills player 0 at the end of the track; `:4338`, `:5199`, `:5253` flow; `:5102-5103` rumble | not changed: an actor (the kept slot would be `CoopAim_ActorTarget`) in the Landmaster fight at Macbeth's end, and the kill at the track's end is level flow under decision 0007; listed for a follow-up with a vehicle scenario |
+
+Built: the Spyborg and Goras get the Sarumarine's edit: a pointer to the kept human at the top of the function, in
+player 0's place on the sites marked "changed", and `CoopAim_ForgetBoss` when the state changed around the state switch.
+Deterministic: the pick reads positions and states only, no random draw is added or moved (a boss that goes after
+another player takes other branches of its own code and their draws, the same on every game). Co-op off:
+`CoopAim_BossTarget` is player 0. `sp_audit.py`: verdicts updated, OK.
+
+Test: `lockstep_test.py --only other_bosses` gets `spyborg` (Sector X), `goras` (Titania) and `vulkain` (Solar; #220
+changed its head and ran nothing). The boss trace writes the Vulkain's head yaw and pitch (`so=`). On rails player 0
+holds the top left and player 1 the bottom right (`rails_script`), so player 1 is the nearer one to these bosses.
+
+Observed (runs), two real games in lockstep over loopback, one PC, `gInvincible` on both, US 1.0, Linux, GCC, Debug,
+OpenGL on a software renderer, no window; this branch at `303890d2`. The base is `wave6-base`'s C code (the seven C files
+this branch changes, checked out at `a4867d99` and built in this folder); for `vulkain`, whose edit #220 merged, it is this
+branch with that one line back on player 0 (a throwaway build):
+
+- `spyborg`: `same hash on 13000 frames; 2297 frames it goes after its target, nearer player 1 on 2297, player 0 on 0;
+  kept -1: 22, 1: 2275`. Base: `FAILED ... the boss goes after player 0: 2297 frames ..., nearer player 1 on 4, player 0
+  on 2293; kept -1: 2297`.
+- `goras` (pilots on both clients, as Goras waits in state 3 until it is shot): `same hash on 13000 frames; chase frames
+  with the players apart, per kept slot (nearer the kept player, nearer the other): 1: 693, 55`. Base: `FAILED ...
+  Goras seldom keeps player 1: ... -1: 651, 69` (it keeps nobody and is nearer player 0 on 651).
+- `vulkain`: `same hash on 12000 frames; 1344 frames its head moves, at player 1 on 1260, at player 0 on 0`. Base:
+  `FAILED ... the Vulkain turns its head to player 0: 1444 frames its head moves, at player 1 on 0, at player 0 on
+  1377`.
+- The two levels with two pilots to their end (`campaign.py --levels sector-x,titania`): Sector X `equal on every frame
+  to the end; 12174 frames compared, level complete at level frame 10899`, Titania `37743 frames compared, level
+  complete at level frame 36223` (43591 on the build before this change; see the guess below).
+- Unchanged runs of #220 on this branch: `granga` `kept 0: 80, 1: 946`, `shogun` `player 1 kept on 4149`, `crusher`
+  `800 rings, 400 came nearest player 1`, `sarumarine` `75 balls, 72 came nearest player 1`, `bacoon` `at player 1 on
+  862, at player 0 on 84`; all `ok`, hashes equal.
+
+Derived:
+
+- On rails the Spyborg and Goras now stay with the player they keep, as the Sarumarine and the Bacoon do; the base
+  build's Spyborg was nearer player 0 on all but 4 of its chase frames with player 1 the nearer human.
+- The Vulkain's edit of #220 does what it says: its head points at player 1, the nearer, on 1260 of 1344 frames.
+
+Guess: Titania's shorter fight comes from Goras following the tank that is lined up with it.
+
+Unknown:
+
+- How a Spyborg or Goras that changes players at a new state reads to two humans by hand.
+- Macbeth's train end with two Landmasters: not changed, not run with a scenario.
+
 ### 2026-11-10, #252, each human's own hits on the status screen
 
 Identity: ROM US 1.0, branch `issue/252-player-hits` on `ed61d6fd` (`issue/combined-test-4`), Windows 11, MSVC v143,
@@ -1358,6 +1494,238 @@ Unknown:
   crashes, and the face has to die first); the catch is read code only.
 - The other bosses (Granga, Meteo, Fortuna, Solar, Macbeth and the rest) were not read for this; Star Wolf in Fortuna,
   Bolse, Katina and Sector Z goes through the same dogfight code but was not run.
+
+### 2026-11-11, Fox goes down, the team flies on: the refill in place (decision 0007 rules 3 and 12), the lead swap spike (#183), and #88
+
+Identity: ROM US 1.0, commit `0a2f8a83` (build id `0a2f8a83c960`), base `a4867d99`, Linux, GCC, Debug, OpenGL on a
+software renderer, no window, two games over loopback in lockstep, input delay 3. Every run below is
+`tools/coop/lockstep_test.py`, with the same pokes on both games (`SF64_COOP_VIEW_POKE`), so they stay one game.
+
+#### How Fox goes down in Corneria (read)
+
+There is one way into `PLAYERSTATE_DOWN`: `Player_Down` (`src/engine/fox_play.c:5689`, the only writer of the state,
+`:5693`). `Player_Update` calls it from one test, written once per vehicle: `shields <= 0` and `radioDamageTimer != 0`,
+at the end of the `ACTIVE` update. Corneria's two are the Arwing's: on the rails (`Player_UpdateOnRails`, `:5741`) and
+in all-range (`Player_Update360`, `:5796`). So Fox goes down when his shields are 0 and a hit came in the last 4
+frames: `Player_ApplyDamage` sets `radioDamageTimer = 4` (`:998`), the timer counts down at the start of every
+`Player_Update` in any state (`Player_UpdateEffects`, `:5519`), and the damage drains the shields by 2 a frame
+(`Player_UpdateShields`, `:5644`).
+
+| Way Fox loses his last shields | Where the damage comes from | Ends in |
+|---|---|---|
+| An enemy's shot, missile or beam | `src/engine/fox_effect.c:1030`, `:2282`, `:2969`, `:3115`, `:3930`; `fox_enmy.c:3125`, `:3127` | the test above |
+| A crash into scenery: buildings, arches, the mountains of the all-range part | `Player_CollisionCheck`, `fox_play.c:1873`, `:1910` (all-range), `:1987`, `:2023` (rails) | the test above |
+| A crash into an enemy, a sprite or the boss (Granga's body and legs, the attack carrier) | `fox_play.c:2075` to `:2255` | the test above |
+| A wing on the ground | `fox_play.c:1815`, `:1828`: 21 a hit, on land only (water takes none) | the test above |
+| A wing lost | `Player_DamageWings` (`:935`) only breaks the wing; the hit that broke it is one of the rows above | not a way down by itself |
+| The last hit of a big one | A hit of 40 drains for 20 frames and its timer runs 4, so the shields can reach 0 with the timer out: Fox then flies on at 0 and goes down at the next hit of any size | the test above, at that next hit |
+| A teammate's shot (0007 rule 11) | `src/engine/fox_beam.c:884`, `:886` | the test above |
+| Falling, or flying into the ground | The Arwing is held above the floor (`Player_FloorCheck`, `:2359`); only the wing rows above take shields | the test above |
+| While not `ACTIVE`: the cut to all-range (`START_360`, `:6086`), a U-turn at the edge of the all-range map (`U_TURN`, `:6047`), the level's end (`LEVEL_COMPLETE`, `:6070`), the intro | Shields still drain (`Player_UpdateShields`), but the test is not run | nothing until Fox is `ACTIVE` again and the timer still runs, or the next hit |
+
+After `Player_Down`, the crash is a cutscene (`Cutscene_PlayerDown`, `src/engine/fox_demo.c:1872`) that ends in
+`Cutscene_KillPlayer` (`:1590`): `PLAYERSTATE_NEXT`, `gFadeoutType = 7`, one life (`:1633`), then the restart from the
+save point or the game over (`fox_play.c:6182`). Corneria has no other caller of `Cutscene_KillPlayer`: the five are the
+three vehicle crashes in `fox_demo.c` (`:1666`, `:1752`, `:1857`), the Blue Marine's (`src/overlays/ovl_i3/fox_aq.c:1086`)
+and Andross' escape (`src/overlays/ovl_i6/fox_andross.c:760`). The checkpoint (`OBJ_ITEM_CHECKPOINT`,
+`src/engine/fox_enmy.c:2513-2517`) is only read by that restart.
+
+#### What was built
+
+- `CoopPlayers_RefillFox` (`src/port/coop/game/players.c:418`) is part of the test: `... && !CoopPlayers_RefillFox(player)`
+  at `fox_play.c:5741` (Arwing, rails), `:5796` (Arwing, all-range), `:5770` (Blue Marine) and
+  `src/engine/fox_tank.c:1182` (Landmaster), each marked `// COOP:`. It returns nonzero, and `Player_Down` is not
+  called, when the player is player 0, the game is co-op (`CoopPlayers_IsCoop`), the level is open
+  (`CoopPlayers_FoxRefillOpen`, `players.c:287`) and the pool `gLifeCount[0]` is above 0. Then one life is spent and
+  player 0 gets what a return gets (`CoopPlayers_ReturnFromDown`, `:258`) without the placement: `Play_GetMaxShields()`,
+  no damage, heal, hit or radio timers, no knockback, `mercyTimer` 30 (`COOP_RETURN_MERCY_FRAMES`, `:40`; it stops
+  collisions and enemy shots, `fox_play.c:1840`, `fox_effect.c:1029`), both wings and their health, the wing flash and
+  debris timers at 0, a single laser, 3 bombs. Position, speed, the path, a loop or U-turn timer and the charge stay:
+  Fox flies on where he is. Nothing else runs: no `Player_Down`, so the music, the HUD, the fade and the checkpoint
+  are untouched, and the callers' writes after `Player_Down` (speed, `csTimer`, `:5743-5751`) are skipped with it.
+- It reads the player count, the level, the pool and what `Player_Update` had just tested, inside the player loop, so
+  every client decides alike. No message, nothing new in the hash: what it writes is hashed already.
+- Otherwise it returns 0 and the original runs: a player 2-4 (who goes on to `CoopPlayers_OnPlayerDown`), co-op off,
+  one player alone in a session (not co-op, `players.c:126`), a level that is not open, and pool 0, where Fox goes
+  down, the others park on that frame and the death takes the pool to -1: game over (rule 6's interim form).
+- The four sites not touched: the all-range Landmaster and on-foot tests (`fox_play.c:5825`, `:5841`; versus only, no
+  campaign level has them) and `Aquas_Update360`.
+- The co-op log says `player 1 refilled in place, pool P` (`src/port/coop/log/log_game.c:181`).
+- Test switch `SF64_COOP_TEST_FOX_REFILL_OFF=1` (`src/port/coop/test/switches.h`): no level is open. It can only close.
+  `return_fox_down` uses it, so "player 0 goes down in a level that is not open, with a return waiting" stays tested.
+
+#### Which levels are open (rule 12), and why
+
+Open: Corneria, Meteo, Sector X, Area 6, Sector Y, Venom 1, Solar, Zoness, Fortuna, Katina, Bolse, Sector Z, Venom 2,
+Titania, Macbeth, Aquas. Not open: Andross' lair (`LEVEL_VENOM_ANDROSS`), the warp zones (`LEVEL_WARP_ZONE`),
+training.
+
+Read, for every open level: Fox goes down only through one of the four tests above. No overlay calls `Player_Down` or
+writes `PLAYERSTATE_DOWN` (`git grep`). What the overlays do to Fox's shields ends in the same test: Solar's heat takes
+a point at a time without the timer (`fox_play.c:6981`), so Fox sits at 0 until the next hit; a Macbeth actor sets them
+to 0 (`src/overlays/ovl_i5/fox_ma.c:5058`); Zoness only reads the timer (`src/overlays/ovl_i3/fox_zo.c:2117`). A
+U-turn in Katina runs the collision check (`fox_play.c:6063`) but not the test. The level-end and mission-failed
+branches set `PLAYERSTATE_NEXT` or `LEVEL_COMPLETE` directly and are not deaths.
+
+Not open, and why: in Andross' lair the escape sets Fox's shields to 0 and calls `Cutscene_KillPlayer` by its own timer
+(`src/overlays/ovl_i6/fox_andross.c:751-760`), past `Player_Down`; that is a story death and was not run. The warp
+zones were not run. Both keep the restart for everyone.
+
+Observed, per level, two runs each:
+
+- `fox_refill` / `fox_refill_all_range` (Corneria) and `fox_refill_levels --levels <name>` (the others): the pool is
+  set to 2, player 0 is poked to 0 shields with the timer running twice, and once more at pool 0. On every level, on
+  both games: the pool goes 2 to 1 and 1 to 0 on the frame of the test, player 0 stays `ACTIVE` at 255 shields with 3
+  bombs (6 poked before) and a single laser, player 1 is not parked, not moved, keeps its 6 bombs and its shields but
+  for a frame's drain, the rails path goes on, the screen does not fade, `NA_SE_ARWING_DOWN` is not requested and none
+  of the "player down" lines (20090 to 20092, 20318) is on the radio; the trace's frames never go back (no restart).
+  At pool 0 player 0 is `DOWN` on the frame of the test, player 1 parks on that frame and the pool is still 0 (the
+  life goes at `Cutscene_KillPlayer`). Hashes equal on every frame.
+
+  | Level | Frames equal | Refills at | Down at pool 0 |
+  |---|---|---|---|
+  | Corneria, rails | 2640 | 1801, 2101 | 2601 |
+  | Corneria, all-range (Granga) | 3140 | 2401, 2701 | 3101 |
+  | Meteo | 1353 | 914, 1114 | 1314 |
+  | Sector X | 843 | 404, 604 | 804 |
+  | Area 6 | 1042 | 603, 803 | 1003 |
+  | Sector Y | 1111 | 672, 872 | 1072 |
+  | Venom 1 | 802 | 363, 563 | 763 |
+  | Solar | 1131 | 692, 892 | 1092 |
+  | Zoness | 772 | 333, 533 | 733 |
+  | Fortuna | 876 | 327, 527 | 801 |
+  | Katina | 872 | 323, 523 | 818 |
+  | Bolse | 882 | 333, 533 | 733 |
+  | Sector Z | 1412 | 863, 1063 | 1359 |
+  | Venom 2 | 1232 | 683, 883 | 1139 |
+  | Macbeth (Landmaster) | 764 | 325, 525 | 725 |
+  | Titania (Landmaster) | 1102 | 663, 863 | 1063 |
+  | Aquas (Blue Marine) | 1046 | 607, 807 | 1007 |
+
+- `fox_refill_long --levels <name>`: nothing pokes Fox down. The pool is set to 90, the feed does not dodge, and Fox's
+  shields are set to 1 twenty-four times, so the level's own next hit takes the last of them with the timers a real
+  hit leaves. Player 0 is never `DOWN`, the level never restarts, every life that goes is either a refill of player 0
+  (at 255 shields, 3 bombs, `ACTIVE`) or a return of player 1, and the two games are equal on every frame:
+
+  | Level | Frames equal | Refills of player 0 | Returns of player 1 |
+  |---|---|---|---|
+  | Corneria | 9000 (6874 rails, 2126 all-range) | 18 | 3 |
+  | Meteo | 9000 | 6 | 1 |
+  | Sector X | 9000 | 14 | 3 |
+  | Area 6 | 9000 | 13 | 2 |
+  | Sector Y | 9000 (6520 rails, 2480 all-range) | 11 | 2 |
+  | Venom 1 | 9000 | 25 | 12 |
+  | Solar | 9000 | 23 | 8 |
+  | Zoness | 9000 | 17 | 2 |
+  | Fortuna | 4000 | 6 | 1 |
+  | Katina | 4000 | 1 | 0 |
+  | Bolse | 4000 | 8 | 2 |
+  | Sector Z | 4300 | 1 | 0 |
+  | Venom 2 | 4000 | 12 | 1 |
+  | Macbeth | 9000 | 21 | 1 |
+  | Titania | 9000 | 18 | 3 |
+  | Aquas | 9000 | 17 | 4 |
+
+- On the base build `a2032968ad36` (same tree as `a4867d99`): `fox_refill` and `fox_refill_all_range` fail with `the
+  level restarted (the trace's frames go back)`.
+- Co-op off: `hash_check.py base` against that build, equal on all 5800 frames.
+- Also run on this build, all ok: `return`, `return_all_range`, `return_fox_down` (with the level closed), `lives`,
+  `steer`, `three`, `pause`, `control`, `aim`, `boost`, `kill`, `vehicles`, `full` (10601 frames of Corneria).
+- With the same feed and the levels closed (the probes for the frames above), Fox went down by himself in Sector X
+  (frame 1632), Area 6 (1558), Sector Y (2267), Venom 1 (2034), Solar (1702), Zoness (2636) and Bolse (1675), and the
+  level restarted for both players each time: the case the owner's session hit.
+
+Derived:
+
+- An open level never restarts from its checkpoint through a death: with a life Fox is refilled, without one the
+  death is the game over. Only the host's retry (rule 7) still uses the checkpoint. 0007 names this cost of the refill.
+- A refill costs what a death cost, one life, but gives no restart: bombs go to 3 and the laser to single as after a
+  death, hits since the checkpoint are kept.
+
+Unknown:
+
+- How it plays, and whether 30 frames of `mercyTimer` are enough when Fox is refilled inside something that keeps
+  hitting him. In the long runs he was refilled up to 25 times in 9000 frames and never twice within the mercy time.
+- Whether the long runs reached each level's boss: the trace shows it only where the boss is all-range (Corneria,
+  Sector Y). The other rails levels ran 9000 frames from their start.
+- Three or four players, Windows, two PCs.
+
+#### The spike: can the lead pass to a survivor (#183, rule 13)
+
+Answer: yes, as an experiment behind `SF64_COOP_TEST_LEAD_SWAP=1`: on the rails and in all-range of Corneria and on
+the rails of ten more levels (table below), two clients stay hash-equal through the swap and what follows it. It is
+off without the switch and decides nothing. Not run: all-range outside Corneria, three or four players.
+
+What the experiment does (`CoopPlayers_LeadSwap`, `players.c:325`, called from `CoopPlayers_RefillFox` when the pool is
+0, the switch is on and a player 2-4 flies): the survivor's `Player` struct and Fox's change places, with `num` and the
+sound pointers put right; on the rails slot 0 keeps the path fields Fox had just computed (the list of
+`CoopPlayers_FollowPath`); the per-player arrays that `CoopPlayers_JoinFromPlayer0` copies change places (not
+`gLifeCount`); shots in flight and every actor's lock-on timers change index; what was Fox goes down in the
+survivor's old slot as a player 2-4 does (`CoopPlayers_SetDown`), so it waits for a life or the next `Play_Init`. What
+belongs to the person and not to the slot goes through one map, `sSeatOfSlot` (`players.c:60`): the pads are filled by
+session player and then put in slot order (`src/port/coop/game/input_game.c:17-30`), and `CoopPlayers_LocalIndex`
+(`players.c:137`) returns the slot the client's person flies, so each game looks through and draws the HUD of the right
+ship. `CoopPlayers_LevelInit` puts the map back: at a level load the host leads again.
+
+Observed (`fox_lead_swap`, `fox_lead_swap_all_range`, pool 0 throughout but for one life):
+
+- Corneria, rails: swap on frame 1801. Slot 0 then holds player 1's ship (its 135 shields, its 5 bombs, its place),
+  slot 1 is down, the pool stays 0, the path goes on, the client's game has local index 0 and the host's 1, and slot
+  0's sideways movement follows the client's stick from then on (the two feeds steer against each other). A life comes
+  in: the host's ship returns in slot 1 on 2101 at 255 shields. Slot 0 poked down again at pool 0: the lead swaps back
+  on 2301. Poked once more with nobody else flying: slot 0 is `DOWN` on 2501, as in the original. Hash equal on 2540
+  frames.
+- Corneria, all-range: swap on 2401, return on 2701, swap back on 2901, down for good on 3176 (after a U-turn). Hash
+  equal on 3250 frames.
+- Other levels, `fox_lead_swap --levels <name>`, the same plan from the frame both fly, with a feed that steers
+  from there. On each: the swap, slot 0 following the client's stick, the path going on, the return, the swap back
+  and the last down as on Corneria, and equal hashes on every frame:
+
+  | Level | Frames equal | Swap | Host's ship back in slot 1 | Swap back | Down for good |
+  |---|---|---|---|---|---|
+  | Meteo | 1653 | 1014 | 1214 | 1414 | 1614 |
+  | Sector X | 1143 | 504 | 704 | 904 | 1104 |
+  | Area 6 | 1342 | 703 | 903 | 1103 | 1303 |
+  | Sector Y | 1411 | 772 | 972 | 1172 | 1372 |
+  | Venom 1 | 1102 | 463 | 663 | 863 | 1063 |
+  | Solar | 1431 | 792 | 992 | 1192 | 1392 |
+  | Zoness | 1072 | 433 | 633 | 833 | 1033 |
+  | Macbeth (Landmaster) | 1064 | 425 | 625 | 825 | 1025 |
+  | Titania (Landmaster) | 1402 | 763 | 963 | 1163 | 1363 |
+  | Aquas (Blue Marine) | 1346 | 707 | 907 | 1107 | 1307 |
+
+What breaks or is missing, from reading (not run unless it says so):
+
+- The seat map is not in the state hash and not in any join or rejoin snapshot. The runs are hash-equal because what
+  the map does shows in the player slots at once; a real build has to hash it and send it to a client that joins late.
+- The survivor misses one update: the swap runs inside player 0's update, before the survivor's own, and slot 0 is
+  not updated twice.
+- Fox's crash is not shown: the host's ship vanishes as a player 2-4's does, with no down theme and no line.
+- To the game, slot 0 is Fox: the radio speaks to Fox, the team store of the survivor's character (`CoopTeam_OfPlayer`,
+  `src/port/coop/game/team.c`) now belongs to the host's person, and `CoopTeam_OnPlayerDown` marks that wingman down.
+  Names, letters and anything else drawn per person have to go by seat, not by slot.
+- Per-slot stores the experiment does not swap: the vehicle states (`gCoopTankState`, `gCoopMarineState`,
+  `src/port/coop/game/vehicles.c:28-29`; the vehicle levels above are hash-equal all the same, since both games
+  leave them alike, but whether a tank then drives with the other tank's state was not looked at), the saved scores
+  per player (`src/port/coop/game/score.c:27`), the carried
+  shields (`team.c:45`), the camera smoothing and shield bars of `view.c` (not simulated). An item in flight toward a
+  player, an actor's `dmgSource` and anything else that holds a player index for more than a frame keeps the old
+  index: a kill by a shot in the air at the swap can score for the other person.
+- With three or four players the lowest flying slot takes the lead; not run.
+- Rule 6 as the owner stated it then holds by construction: at pool 0 a swap costs nothing, so the run ends when the
+  last flying player goes down.
+
+If the owner wants it built: a decision record first (who is "Fox" to the radio and the story after a swap; whether the
+host gets the lead back when it returns, or only at the level load as here), then the seat map in the hash, the
+per-slot stores above, and a scenario per level as for the refill, all-range levels included. Nothing seen here asks
+for the ghost build.
+
+#### #88, scripted radio lines while player 0 is not active
+
+With the refill, player 0 is not down while anyone flies on in an open level, and where the level is not open or the
+pool is 0 the others park on the frame Fox goes down, so `EVOP_PLAY_MSG` (`src/engine/fox_enmy2.c:1342-1347`) never
+skips a line that a flying team would have heard; #88 needs no code and can be closed (the U-turn window stays as in
+single player, 0007 "`EVOP_PLAY_MSG` while player 0 is down").
 
 ### 2026-11-09, #14 (WP-16), players 2-4 come back after going down (decision 0007 rule 4)
 
@@ -5114,6 +5482,145 @@ player 0 loses 100.
 
 ## Determinism
 
+### 2026-11-11, the campaign run: a pilot that finishes every campaign level, and the route with two real clients
+
+Identity: ROM US 1.0, branch `issue/campaign-runs` on `wave6-base` (`a4867d99`), Linux, GCC, Debug, OpenGL on a
+software renderer, no window, one PC. The route ran on the build of `2de6770c` (the pilot, before the Spyborg and Goras
+edits); four levels again on `303890d2` (the branch's end). Pilot flights alone: `hash_check.py`'s `pilot_flight` (one
+game, 2 players, `gInvincible`), on the reference build of `wave6-base` (`a2032968ad36`) and on the builds made along the
+way to `2de6770c` (each level's column below is the first build that finished it; the route has the final code).
+
+**Observed: why the pilot did not finish, and what changed** (from its log, `SF64_COOP_PILOT_LOG`, which now writes a
+line per boss with what its fight counts; one game, 2 players)
+
+| Level | Base (`wave6-base`), one game | Cause | Change (`src/port/coop/test/pilot*.c`) | This branch, one game |
+|---|---|---|---|---|
+| Sector Y | 36014 frames, no end: one Shogun at 10 of 100, the leader (150) never came in | The pilot's floor was `y < 220` (`pilot.c`, `CoopPilot_SteerAt`), made for Corneria's ground at 0. In space `gGroundHeight` is -25000 (`Play_SetupStarfield`, `src/engine/fox_play.c`), and the Shoguns walk at y 0 and below: the nose stayed up, the shots went over them | the floor is `gGroundHeight + 220` | level complete at replay frame 7757 |
+| Bolse | 26014 frames, no end: the core in state 0 the whole run | The core opens (state 2) only after the six shield reactors are down (`Bolse_8018D584`: a hit on box 0 or 1 in state 0 adds to the reactor's health, down at 100; `Bolse_BoBaseCore_Update`); the pilot shot the nearest foe, and fighters keep coming while the shield stands | a reactor in state 0 is an objective, ranked after missiles and before Star Wolf, aimed at its box 0 or 1; the core's table holds only the parts still up (the last one had a turn in eight and sat at 20 for 8000 frames) | level complete at 16301 |
+| Area 6 | 40014 frames, no end: the Gorgon at 780, no round done | A round ends when its three bars (`swork[15..17]`, hitbox entries 4 to 6) are all shot to 0 while the cover is open (`fwork[0]` over 5, `Area6_8018B9BC`); the next arm phase sets them to 40 again (state 4, `timer_050` 1400). The generic cycle spread its shots over 15 boxes. (#181's "aiming at entries 1 to 3 did nothing": those are the arms, which only shorten the arm phase, `Area6_8018A2C4`) | the Gorgon's table: the bars still up while the cover is open, the arms in the arm phase, the core (entry 0) after the rounds; one bomb on a fresh round with the cover wide open (a hit on any bar while a bomb burns takes its damage off all three) | level complete at 21178 |
+| Zoness | (#181: 24014 frames, the Sarumarine untouched at 300) | Its parts take only bombs (`DMG_BOMB`, 20) until they are down: parts 3 to 5 and 8 to 11 in state 3, 7 and 12 in state 5, each with a 50 frame pause after a hit (`Zoness_ZoSarumarine_Update`); about 7 bombs; 2 players start with 3 each | with `gInfiniteBombs` (owner's choice of 2026-11-11, below): player 0 bombs it in states 3 and 5 and sets the bomb off at its depth with a second press (allowed once the bomb's timer is under 25, `PlayerShot_UpdateBomb`) | level complete at 10400 |
+| Venom (Andross) | 24014 frames, no end: health 100; one hand at 0 (not down: a hand is down below 0), the other untouched | His hands take hits only between punches (`swork[7]` 0, `Andross_8018D2B0`) and rest wide of the path (x 900 to 1500, the ships reach 700) or under its floor (y -200 to -800; the ships are held at 40 and cannot pitch down within 50 of the ground, `Player_MoveArwingOnRails`). Since #213 his face follows the x of the player it keeps, so that player lining up with a hand drags the hand away. Two pilots on two hands also swapped them every 45 frames | the rail aim keeps each player on one box of a table and leads a moving box, and skips a box under a ground-level floor; the player Andross keeps flies high to the side away from the hand still up, the other one lines up; with `gInfiniteBombs` player 0 bombs him in states 2 to 10 and sets the bomb off at his face's depth: the burst (scale to 30, 900 across) reaches the hands, and after them the eyes | level complete at 13131 |
+
+The rail changes (a table's boxes kept per player, the lead, the floor test) act at every boss on rails; the floor of
+the all-range pilot at every level in space. Both are in the route below.
+
+**Observed: the route** (`python tools/coop/campaign.py --route all --lock <nettest lock>`, two real games per level over
+loopback, a pilot on each client flying its own player, `gInvincible` on both but in Corneria; frames compared are
+lockstep frames from the first in the level to the map or what follows level complete, plus 60; level complete is the
+host trace's frame)
+
+| Level | What the pilot did | Frames compared | Level complete (level frame) | Complete | Desync | Downs | Cheats |
+|---|---|---|---|---|---|---|---|
+| Corneria | flew to the map or what follows level complete | 10601 | 9206 | yes | no | 0, 0 | gInvincible off |
+| Meteo | flew to the map or what follows level complete | 20790 | 19109 | yes | no | 0, 0 | gInvincible |
+| Fortuna | flew to the map or what follows level complete | 7164 | 5483 | yes | no | 0, 0 | gInvincible |
+| Sector X | flew to the map or what follows level complete | 12155 | 10880 | yes | no | 0, 0 | gInvincible |
+| Sector X, again on `303890d2` | flew to the map or what follows level complete | 12174 | 10899 | yes | no | 0, 0 | gInvincible |
+| Titania | flew to the map or what follows level complete | 45111 | 43591 | yes | no | 0, 0 | gInvincible |
+| Titania, again on `303890d2` | flew to the map or what follows level complete | 37743 | 36223 | yes | no | 0, 0 | gInvincible |
+| Bolse | stopped at the frame cap (26000) | 26134 | - | no | no | 0, 0 | gInvincible |
+| Bolse, again on `303890d2` | flew to the map or what follows level complete | 28304 | 27147 | yes | no | 0, 0 | gInvincible |
+| Venom 1 | flew to the map or what follows level complete | 12323 | 1 | yes | no | 0, 0 | gInvincible |
+| Venom (Andross) | stopped at the frame cap (26000) | 26653 | - | no | no | 0, 0 | gInvincible, gInfiniteBombs |
+| Venom (Andross), again on `303890d2` | flew to the map or what follows level complete | 7581 | 7069 | yes | no | 0, 0 | gInvincible, gInfiniteBombs |
+| Sector Y | flew to the map or what follows level complete | 9683 | 8057 | yes | no | 0, 0 | gInvincible |
+| Aquas | flew to the map or what follows level complete | 8808 | 7369 | yes | no | 0, 0 | gInvincible |
+| Zoness | flew to the map or what follows level complete | 11026 | 9660 | yes | no | 0, 0 | gInvincible, gInfiniteBombs |
+| Sector Z | flew to the map or what follows level complete | 6769 | 4642 | yes | no | 0, 0 | gInvincible |
+| Area 6 | flew to the map or what follows level complete | 15940 | 14756 | yes | no | 0, 0 | gInvincible |
+| Venom 2 | flew to the map or what follows level complete | 9529 | 9143 | yes | no | 0, 0 | gInvincible |
+| Katina | flew to the map or what follows level complete | 16751 | 14881 | yes | no | 0, 0 | gInvincible |
+| Solar | flew to the map or what follows level complete | 10010 | 8384 | yes | no | 0, 0 | gInvincible |
+| Macbeth | flew to the map or what follows level complete | 11315 | 9956 | yes | no | 0, 0 | gInvincible |
+
+- No game wrote a desync report; hash logs and input logs were equal on every frame compared, in every level.
+- The host looked through player 0 and the client through player 1 in every level.
+- Bolse and Venom (Andross) did not finish on the route's build; they were fixed after it (Bolse's cap, the bomb's
+  input delay) and ran again on the branch's end with Sector X and Titania (whose bosses changed): `python tools/coop/campaign.py --levels venom-andross,bolse,sector-x,titania --lock <nettest lock>` on `303890d2`: `4/4 levels equal on every frame to the end` (the rows marked "again").
+
+**Observed: `views --pilot`** (`python tools/coop/hash_check.py views --pilot --level
+sector-y,bolse,area-6,zoness,venom-andross` on `303890d2`: one game with the pilot, then two games play its replay with
+local index 0 and 1): `hash: PASS`; Sector Y 9383 replay frames (level complete at 7757), Bolse 17458 (16301), Area 6
+22362 (21178), Zoness 11766 (10400), Venom (Andross) 13643 (13131), each equal on every frame to the end, downs 0, 0. These are the
+single-game numbers of the table above, frame for frame: the five levels' later parts (boss and end) are now in
+`views --pilot` too, with two views.
+
+**Observed: what else**
+
+- Venom 1's level complete comes in Venom 2's id and the session goes on into Andross (as #181 found), so its row says
+  level frame 1.
+- In the two-client Bolse run of the route the core was down to 2 of 8 parts at the cap of 26000 frames; the parts
+  fell more slowly as fewer stood (8 to 4 in 4400 frames, 4 to 2 in 6800). A part that is down keeps its box, which
+  takes shots meant for the parts behind it (derived from `Bolse_BoBaseCore_Update`, which only counts a part's health
+  down; not measured).
+- A pilot in a lockstep session acts 3 frames late (`COOP_LOCKSTEP_INPUT_DELAY`): its second bomb press, set for the
+  face's depth, burst about 540 units past it, and the second hand drained from 130 to 70 in 20000 frames. The press
+  now counts the bomb's travel in those frames.
+
+**Derived**
+
+- Every campaign level is now flown from its start through its boss to the map or what follows level complete by two
+  real clients, equal on every frame: the five that only people had played to their end (Sector Y, Bolse, Area 6,
+  Zoness, Andross) included. Zoness and Andross with `gInfiniteBombs` on both games.
+- `gInfiniteBombs` keeps player 0 at 9 bombs (`src/port/mods/PortEnhancements.c`); it is a simulation CVar that both
+  games of a session agree on (`src/port/coop/session/sim_cvars.c`). In those two levels the bomb count of player 0 is
+  not what a player has; the boss, the level and its end are.
+
+**What a pilot without `gInfiniteBombs` would need there** (guesses, not built)
+
+- Zoness: 6 bombs between two players and about 7 to place, each on a part in its state and after its part's pause; a
+  bomb set off where it reaches the most parts at once (parts 3 to 5 and 8 to 11 lie close), and the bomb items of the
+  level picked up.
+- Andross: shots at the hands while they are in reach and not punching, which means the player he keeps luring them
+  into the other player's reach at the right time; with the bombs two players had (7, one picked up) the hands fell to
+  100 and 140 of 200 in 7000 frames in one try here.
+
+**Unknown**
+
+- Training (no level complete), level 4 (the pilot's pads did not show in its trace, #181) and level 15 (crashes on
+  entry with co-op off too) are not in the route.
+- A route with state carried from level to level (each level starts as a new game), Windows, MSVC, two PCs, a Release
+  build, `--mortal`.
+
+### 2026-11-11, the campaign run's small boxes: Fortuna's slots, the TiBoulder arguments, the ADPCM over-read, GLEW
+
+Identity: ROM US 1.0, branch `issue/campaign-runs` at `303890d2`, Linux, GCC, Debug, OpenGL on a software renderer, no
+window. The rest of #232's and #246's boxes, each read or run once; nothing in the game was changed for them.
+
+Observed:
+
+- Fortuna's effect slots (#246): `python tools/coop/hash_check.py slots --level fortuna --frames 12000` (input by
+  rule, `gInvincible`, 1 player against 2): `median effects in use 0 with 1 player, 15.0 with 2`, `PASS` (the check
+  fails above 15 more). Effects peak 89 of 100 with one player and 95 with two; in the last sample one player holds 26
+  and two hold 0. #246's run of 15000 frames gave 0 against 10. The two-player set is the base's burn
+  (`FoBase_BurnEffects`, #246) and is gone before the end; at 9000 frames a run ends inside it.
+- `Titania_TiBoulder_Spawn2` (`src/overlays/ovl_i5/fox_ti.c:484-485`, #209's `args` site: three draws in three
+  arguments of `Titania_TiBoulder_Spawn`): in this build (GCC, Debug) the first `Rand_ZeroOne` call goes, through
+  `RAND_FLOAT(-20.0f)`, to the sixth argument (`zVel`, `xmm5`), the second to the fifth (`yVel`, `xmm4`) and the third
+  to the fourth (`xVel`, `xmm3`): right to left, the order #199 measured for GCC and MSVC at other call sites (NOTES,
+  2026-11-09, #199). The boulders run in Titania (`Titania_TiBoulder_Update`, `:516`); the Titania runs of this branch
+  were equal between two GCC clients.
+- The ADPCM loader's over-read (#145 (c), `src/audio/audio_synthesis.c:1088`, #145's `:1086`): read again, nothing new; #145's entry
+  holds (the N64's 16-byte load reads past a sample's end and decodes nothing from those bytes; bounding it means an
+  exact-size load in `mixer.c` or padded sample buffers).
+- GLEW on Linux (#1, #232): `libultraship/src/graphic/Fast3D/backends/gfx_opengl.h` and `gfx_sdl2.cpp` include
+  `GL/glew.h` only under `_MSC_VER`, `FOR_WINDOWS` or `__APPLE__`; Linux takes `SDL2/SDL_opengl.h`.
+  `libultraship/cmake/dependencies/linux.cmake` has no `find_package(GLEW)`, unlike `windows.cmake` and `mac.cmake`. In
+  this folder's build `ninja -t deps` lists no header with `glew` in its name for any object, `build.ninja` names no
+  GLEW, and `ldd` of the game shows no GLEW library. `docs/BUILDING.md` item 11 says so now.
+
+Derived:
+
+- No game change is proven for these four: Fortuna's set ends by itself (a run of `slots` that stops inside the burn,
+  as 9000 frames does, can fail on it; 12000 passes on the limit); the boulder arguments take the order the
+  other measured call sites take on both compilers; the over-read decodes nothing; GLEW is not used on Linux.
+
+Unknown:
+
+- MSVC's order at the TiBoulder site itself (a Windows run of `python tools/coop/rand_order_test.py` with this form, or
+  a Compiler Explorer measurement, would tell; not done here).
+- A Linux build on a system without GLEW installed: not tried (this PC has it).
+
 ### 2026-11-11, the Aquas boss desync: a dying eel read its smoke's place from before its array
 
 Identity: ROM US 1.0. The real session: Windows host (MSVC), Linux client (GCC), both build `5b0e2204ed9e`
@@ -6622,6 +7129,159 @@ clients.
   (`src/engine/fox_play.c:4717-4724`); not tried.
 
 ## Networking
+
+### 2026-11-11, the session survives a lost player or a desync: the level starts again from the host's state
+
+Identity: ROM US 1.0, branch `issue/session-survives` on `wave6-base` (`a4867d99`), Linux, GCC, Debug, OpenGL on a
+software renderer, no window, two or three games on one PC over loopback through the join driver
+(`lockstep_test.py`) and through the real menu (`menu_test.py --game`). The rules are the owner's of 2026-11-11; the
+wire form is in PROTOCOL.md, "Recovery" and "Desync check".
+
+**Observed: every way a session ended before this change (`a4867d99`)**
+
+| What happens | Where it is seen | What followed |
+|---|---|---|
+| A player clicks Leave | `CoopMenu_Leave` (`src/port/coop/ui/menu.c`) | `Menu_EndSession(leaving)` |
+| A client's transport ends: closed, timed out, refused, no handshake, a session message it cannot read | `Client_End` in `session.c`, `COOP_SESSION_EV_ENDED` in `Menu_OnEvent` | `Menu_EndSession` |
+| The host sees a joined client go in a level | `Host_Left` in `session.c`, `COOP_SESSION_EV_LEFT` with `levelStarted` in `Menu_OnEvent` | `CoopMenu_Fail`: "Player n left, so the session is over." |
+| A player sends no input for 10 s (`COOP_LOCKSTEP_STALL_MS`), seen by any game | `Sync_Stalled` in `lockstep_game.c` | `Link_Fail` to `CoopMenu_Fail` |
+| A desync is complete | `Sync_CheckDesync` in `lockstep_game.c`, text from `CoopDesyncGame_Check` | `Link_Fail` |
+| A `SYNC_INPUT`, `SYNC_HASH` or `SYNC_DESYNC` that cannot be read | `CoopSyncGame_Receive` | `Link_Fail` |
+| Another game began a handover (`HANDOVER` `BEGIN`) | `CoopHandoverGame_Heard` from `CoopMenuGame_Message` | `CoopMenu_Fail` |
+
+- All of them end in `Menu_EndSession`: the handover (`CoopMenuGame_Handover`, which runs `CoopSyncGame_End` first),
+  `CoopSession_Close`, then `sessionEnded` (`CoopMenuGame_SessionEnded`: `CoopSyncGame_End` again, the roster gone,
+  the save back from its file). The test join driver has the same paths in `Link_Fail` and `Session_End`.
+- `s->started` was set once, in `CoopSession_StartLevel` and `Client_LevelStart`, and never cleared: `Host_Hello`
+  refused every later hello with bit 9, and a client dropped a second save or level start.
+- A slot was the transport peer index plus one everywhere (`CoopSession_PeerPlayer`, lockstep, the desync check, the
+  log), and `Host_Left` freed the slot and the character at once.
+
+**Observed: what a level start in the middle of a campaign has to carry**
+
+- The level start's values held the seeds, the team arrays, lives, bombs, lasers and rings (87 values), and none of
+  what a campaign builds: `gMissionNumber`, `gMissionPlanet`, `gMissionTeamStatus`, `gMissionHitCount`,
+  `gMissionMedal`, `gTotalHits`, `gPlanetPathStatus` (22 entries, `src/engine/fox_context.c:68`), `gMissionStatus`,
+  `gLeveLClearStatus` and the level's own `gHitCount`. A level reads little of it; the map (`Map_Setup_Play`,
+  `Map_RetryCourse` in `src/overlays/ovl_menu/fox_map.c`) and the ending read all of it. They are values 88 to 171 now.
+- A checkpoint is `gSavedObjectLoadIndex`, `gSavedPathProgress`, `gSavedGroundSurface`, `gSavedZoSearchlightStatus`
+  and `gSavedHitCount` on rails, set where a player flies through the ring (`ItemCheckpoint_Update`,
+  `src/engine/fox_enmy.c:2512-2520`, with `gSavedTeamShields` and, in co-op, each player's own hits), and
+  `gAllRangeCheckpoint` in all-range, set by Fortuna (`src/overlays/ovl_i4/fox_fo.c:300`), Katina (`fox_ka.c:943`),
+  Bolse (`fox_bo.c:227`, `:309`) and Andross (`src/overlays/ovl_i6/fox_andross.c:1084`) with `gSavedHitCount` and the
+  team's shields. The level's setup reads them after a death (`Player_Setup`, `src/engine/fox_play.c:4697-4735`). They
+  are values 172 to 182.
+- The level's first setup plays the intro and clears the all-range checkpoint while `D_ctx_8017782C` is set and no
+  rails checkpoint is saved (`src/engine/fox_play.c:4820-4828`); `Play_Setup` sets it on every level entry. A game
+  that restarts from a checkpoint is past that, so a level start at a checkpoint clears it with the checkpoint.
+- The restart from a rails checkpoint loads the 40 objects before the saved index (`func_enmy_80062568`,
+  `src/engine/fox_enmy.c:540-553`). With an index below 40 it reads from before the level's object table: a test ring
+  put at object index 8 made the host load three objects from that memory and the client none, and the games parted at
+  frame 1 of the level that started again (`gItems[0]`, `gScenery[0]`, `gSprites[0]`). The test's ring now waits for
+  index 41; the game's own rings were not checked for this.
+- `Game_SetGameState` runs `Play_Setup` for `GSTATE_PLAY` (`src/engine/fox_game.c:86`, `src/engine/fox_play.c:530`),
+  which clears the checkpoint (`gSavedObjectLoadIndex`, `gSavedPathProgress`, `gAllRangeCheckpoint`,
+  `gSavedHitCount`, `gSavedZoSearchlightStatus`), so `CoopLevelStart_Enter` of the level a game is in starts that
+  level from its start, as the pause menu's retry does (`src/engine/fox_hud.c:1590-1609`) but with no life taken.
+- The host's game enters a level by itself in two ways. A level jumps to the next with `gNextGameState =
+  GSTATE_PLAY` (Venom 1, Venom 2, Area 6, Bolse: `src/overlays/ovl_i1/fox_ve1.c:2521`, `ovl_i6/fox_ve2.c:442`,
+  `ovl_i3/fox_a6.c:2937`, `ovl_i4/fox_bo.c:1658`), which `GamePreUpdateEvent` sees one frame before
+  `Game_SetGameState` takes it (`src/engine/fox_game.c:352-354`). The map sets `gGameState` itself (`Map_PlayLevel`,
+  `src/overlays/ovl_menu/fox_map.c:4290`: `GSTATE_PLAY`, `PLAY_STANDBY`, the hit count 0, `Play_Setup`), so the first
+  frame after it is the one that shows it. Both are where the restart point is taken (`CoopLevelStart_Entering`,
+  `CoopLevelStart_Entered`, from `CoopSyncGame_OnGamePreUpdate`). Only the map's way ran (`survive_next_level`).
+
+**Observed (runs, this branch at `921d6411`; the first block of rows ran at `896cdaa7`, which differs by the restart point at the map's entry, a test driver switch and one test)**
+
+| Run | Result |
+|---|---|
+| `lockstep_test.py --only survive_desync` on the base build (`a4867d99`) | `FAILED survive_desync: no \`again\` number 1 from host, client0 after 120 s after the desync: the level did not start again` |
+| the same, this branch | `ok`: poke at 2000, both games stopped lockstep, took level start 2 from the level's start and hash alike on its first 600 frames; no session ended; both logs say `players: gPlayer[1] differs in 1 of 1264 bytes, first at +116: b3 vs b2; word at +116: 0x444844b3 vs 0x444844b2`, as `desync_report.py diff` does |
+| `--only survive_checkpoint` | `ok`: checkpoint at frame 2581 (object index 41, path 32448, 1 hit), poke at 2881; both games took level start 2 at the checkpoint, began there (object index 41, path 32608) and hash alike on its first 600 frames |
+| `--only survive_checkpoint_allrange` | `ok`: Fortuna's own checkpoint at frame 2883 (all-range 1, 1 hit), poke at 3183; both games began level start 2 with the all-range checkpoint set and hash alike on its first 600 frames |
+| `--only survive_three` | `ok`: player 3 left a level of three; the host and player 2 took level start 2 without it and hash alike on its first 600 frames; the one who left plays on alone |
+| `--only survive_next_level` | `ok`: Corneria to the map and into level 1 (Meteo); poke at frame 11593, 200 frames into it; both games took level start 2 for level 1 with mission number 1 and 34 total hits, began at its start and hash alike on its first 600 frames. Before the restart point was taken at the map's entry: `FAILED: the host kept no restart point for level 1` |
+| `--only save_own` | `ok`: a save one byte apart parts the games at frame 0 in `globals` (`gSaveFile.planet`); the level started again once, parted at frame 0 again, and the session ended there |
+| `--only desync` | `ok`: rails (poke at 2000) and all-range (poke at 2400), both reports verified, the level started again |
+| `--only handover` | `ok`: after the client left the level that started again, both folders hold both reports byte for byte, and each copy of the other's log runs to `session closed` |
+| `--only stall` | `ok`: the host stopped at frame 1752 after 15 s and dropped player 2 with its slot kept; the client came back with the session id, and the level that started again is equal on 600 frames |
+| `--only frozen` | `ok`: the host stopped lockstep after 11 s and kept player 2's slot; the thawed client came back with the session id, and the level that started again is equal on 600 frames |
+| `--only left` | `ok`: the host stopped lockstep after 11 s, waited for the other (`left recover left ended`) and ended the session after 26 s |
+| `--only host_left` | `ok`: the client stopped lockstep after 30 s (the join driver's time-out), tried to come back (`rejoin ended`) and ended the session after 60 s |
+| `--only three`, `log`, `leave`, `menu` | `ok` each: 2700 frames equal with three games; the log scenario; Leave in the real window ends a session of two; a level through the real menu |
+| `hash_check.py base --base <build of a4867d99>` | `hash: co-op off: the base build and this one equal on all 5800 frames`, `hash: PASS` |
+| `join_test.py` | `RESULT: 5/5 scenarios passed` |
+| `menu_test.py --game` | `RESULT: 8/8 scenarios passed`; `game_leave`: 3 games, player 2 left in the level and the level started again for the two who stayed, player 3 left and the session ended, then a second session and level held past the time-out |
+| `--only map_saves_equal` | `ok`: both all cleared, equal on 11449 frames, Corneria to the map at 10541, the next level at 11149 and 300 frames of it |
+| `session_test.py`, `--asan` | `RESULT: 17/17 scenarios passed`, both |
+| `session_mutants.py`, `net_mutants.py`, `lockstep_mutants.py`, `desync_mutants.py` | all 417, 20, 22 and 25 breaks caught; 110 of the session's and 4 of the transport's are new |
+| `menu_test.py`, `--asan` | `sim: PASS: 25 scenarios`, `udp` ok; both |
+| `net_test.py` | `RESULT: 17/17 scenarios passed` |
+| `desync_dump_test.py` | `PASS`, under ASan and UBSan: 20 hostile messages refused, 137 cut streams, 35 differing and 5 equal random pairs named as `desync_report.py diff` names them |
+| `steam_test.py` | `RESULT: 52/52 scenarios passed` |
+| `check.py` | `co-op checks: ALL OK` (`sp-audit: OK`) |
+
+**Derived**
+
+- A level start at a checkpoint has to put the checkpoint in place after the level was entered and before its first
+  setup: `Game_SetGameState` clears it on the frame of `CoopLevelStart_Enter`, and `Play_Init` comes a few frames
+  later (`PLAY_STANDBY` counts `gNextGameStateTimer` down from 3). `CoopLevelStart_AfterEntry` does it first thing of
+  the next frame, from `CoopSyncGame_HoldFrame`, with no change to the game's files.
+- A recovery can fail to help: a restart that parts again at once would start the level again for ever (8277 level
+  starts in ten minutes in the run with the ring at index 8, and a client on another save does the same at frame 0).
+  Two desyncs in a row within 300 frames of their level start end the session as before.
+- A recovery is a second level start, not a repair: after it every game holds the host's values and the host's save,
+  whatever its own history was, so nothing has to be known about what differed. That is why the state hash and the
+  desync check did not change, and why a desync in the level that started again is found as any other.
+- Frames count from 0 again after a restart, so what was sent before it must not be taken for the new level: an
+  input of frame 5000 would be far ahead of the new frame 3 and end the session, and a hash total of frame 5000 would
+  wait four messages deep and be compared with the new level's frame 5000. Every sync message therefore carries the
+  run number of its level start, and one of another run is dropped.
+- The player index is the transport peer index plus one, and a player who comes back comes on a new connection, which
+  takes the lowest free peer. So a returning player is known by the character it flew, which is unique in the roster,
+  and takes the slot of its new connection; if two players are lost and come back the other way round, they change
+  slots and keep their characters.
+- A client that stops sending input and a connection that broke one way look the same to the host for the first ten
+  seconds, and the lockstep stall (10 s) races the transport's time-out (10 s in the menu). So a stall drops the
+  player as a lost one, with its slot kept, and both end in the same wait.
+- A host that drops a client cannot count on its goodbye arriving: the dropped client's socket holds ten seconds of
+  input datagrams, and in the first run of `frozen` the three goodbyes were lost behind them (the client's log shows
+  160 messages dropped unread), so the client only noticed after its own 30 s time-out, when the host's wait was over.
+  A host now answers a datagram of a connection it does not hold with a goodbye (`Core_Stray`, `net_core.c`).
+- The report of a desync is still handed over when the session ends (`CoopDesyncGame_TakeReport`): the path survives
+  the lockstep run it was written in. The `first difference` line is appended to the report as a `#` comment, which
+  `desync_report.py` skips, so both tools read the same files.
+
+**Choices the owner can reverse** (decided 2026-11-11 unless marked mine)
+
+- The level the team last entered, from its start, with the host's values on entering it; and, added the same day,
+  from the host's last checkpoint when it reached one, with the host's values of that moment. The host waits 15 s for
+  a lost player; a known player who comes later is refused as anyone is. One line in the co-op window, which comes up.
+- Mine: the give-up rule above (two quick desyncs in a row), and its numbers.
+- Mine: a player who leaves on purpose is not waited for. A session of two ends when one leaves, as before; with three
+  or four the others start the level again at once.
+- Mine: a client that sees another player stall waits 40 s for the host to act before it ends its own session (10 s
+  before), and a client whose host goes without a handover tries to come back for the transport's connect time.
+- Mine: the host answers stray datagrams with a goodbye on UDP only; the Steam transport does not.
+
+**Unknown**
+
+- Two PCs, Windows, MSVC, a real connection that drops and comes back, a Release build, four players: not run.
+- The map after a level that started again, and the levels after it: not run. The campaign's values travel now (a
+  level start for Meteo carried mission number 1 and Corneria's 34 hits), but the map's
+  own statics (`sCurrentPlanetId`, `sPaths`, `D_menu_*` in `fox_map.c`) are each game's own and are not sent. Games
+  that never parted hold the same ones; a game that parted on the map itself may not.
+- A restart from the map (the games part there): the level before the map is flown again. Not run.
+- Levels with a phase (Venom 2's second part, Andross): the restart point is taken at each `GSTATE_PLAY` entry, with
+  the phase, but none was run. There the level's setup also restores Fox's shields, rings, wings and hits from
+  `D_ctx_80177C9C` and the values beside it (`src/engine/fox_play.c:4698-4711`), which are not sent: each game uses
+  its own, which are equal unless the games parted before Venom's end. Vehicles (Titania, Macbeth, Aquas): not run.
+- A checkpoint restart in Katina, Bolse, Andross and on the other rails levels, Zoness' searchlight status among them:
+  only Corneria's rails (with a ring the test placed) and Fortuna (the game's own checkpoint) ran.
+- Whether any of the game's own checkpoint rings sits at an object index below 40.
+- A client that comes back after its game was restarted: the session id lives in memory, so it cannot.
+- Steam: `transport_steam.c` did not change. A dropped client there ends by its own time-out, 10 s in the menu, which
+  is inside the host's 15 s only if both noticed the loss at about the same time.
 
 ### 2026-11-10, #25 (WP-27), lag and loss with real game clients: numbers from the chaos relay
 

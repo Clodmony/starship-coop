@@ -86,6 +86,7 @@ def all_steps():
         Step("math", SERIAL, ["math_test.py"]),
         Step("rand_order", SERIAL, ["rand_order_test.py"]),
         Step("handover", SERIAL, ["handover_test.py"]),
+        Step("desync_dump", SERIAL, ["desync_dump_test.py"]),
         Step("net", SERIAL, ["net_test.py"], "build", "net"),
         Step("session", SERIAL, ["session_test.py"], "build", "net"),
         Step("steam", SERIAL, ["steam_test.py"], "build", "net"),

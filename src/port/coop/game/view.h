@@ -22,6 +22,7 @@ extern "C" {
 #endif
 
 struct Player;
+struct Object;
 
 // Around Game_Draw, every frame. Begin gives every player the camera angles Display_Update would give it, End puts
 // them back after the camera drawn has changed its own, and points gPlayerNum at player 0 again.
@@ -51,15 +52,40 @@ void CoopView_ToDrawnCamera(const Vec3f* pos, float* sfxSrc);
 // client shares: Game_Update calls this after the screen fill.
 void CoopView_DrawHitFlash(void);
 
-// A bar with the shields of every other player, over its Arwing. See takes each player while gGfxMatrix holds the
-// camera drawn, Draw comes after that matrix is popped, as Display_ActorMarks does.
+// A bar with the shields of every other player, over its Arwing, and above the bar its name (#257, #258, names.h). See
+// takes each player while gGfxMatrix holds the camera drawn, Draw comes after that matrix is popped, as
+// Display_ActorMarks does. A client marks every other player that flies in front of its camera, Fox included, never the
+// one it looks through; nothing off screen.
 void CoopView_SeePlayer(const struct Player* player);
 void CoopView_DrawShieldBars(void);
+
+// What still followed player 0 on every client (#140). All of it is for this client's eyes and ears; none of it writes
+// what the simulation reads.
+//
+// Solar's heat alarm, in place of Audio_SetHeatAlarmParams with player 0's numbers: the shields and height of the
+// player this client looks through. A sound's settings only; the drain stays in the simulation (CoopPlayers_SolarHeat).
+void CoopView_HeatAlarm(uint8_t shields, uint8_t heightParam);
+// R in the pause menu. Nonzero in co-op: each player's own R showed or hid its own reticle, from its own pad slot,
+// the same on every client, and only its own client heard it. gShowReticles is no game state: the reticle is drawn
+// for the player looked through only (Display_Reticle). Outside co-op 0, and the game does as upstream.
+int32_t CoopView_PauseReticles(void);
+// The yaw Object_SetMatrix draws `obj` with: obj->rot.y, the state every client holds, which for Corneria's facades
+// (`facade`) and the doodads Sprite_UpdateDoodad turns (poles, trees) faces player 0's eye. A client that looks through
+// another player draws them facing its own eye instead. flipped: a facade turned since its last draw, so the frame
+// interpolation must not blend the two (left alone otherwise).
+float CoopView_DrawnRotY(const struct Object* obj, int32_t facade, int32_t* flipped);
 
 // Test only, for src/port/coop/test/view_trace.c. The alpha of the red of a hit on this client's screen, and the shield
 // bar drawn on player `index` this frame, as a fraction, negative for none.
 int32_t CoopView_HitFlashAlpha(void);
 float CoopView_ShieldBar(int32_t index);
+// Nonzero when player `index`'s name was drawn this frame; what it says is CoopNames_Label.
+int32_t CoopView_TagShown(int32_t index);
+// The last heat alarm settings of this frame, nonzero if any were set; clears them.
+int32_t CoopView_HeatAlarmSet(int32_t* shields, int32_t* heightParam);
+// How many billboards were drawn facing this client's own eye in place of player 0's since the last call; billboards:
+// how many were drawn at all.
+int32_t CoopView_TakeTurned(int32_t* billboards);
 
 #ifdef __cplusplus
 }

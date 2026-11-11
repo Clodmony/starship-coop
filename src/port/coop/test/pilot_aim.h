@@ -30,6 +30,10 @@ bool CoopPilot_BoxCenter(const Object* obj, const f32* data, s32 n, Vec3f* at);
 // PILOT_AIM_DWELL frames to the next box, the two players on different boxes, so that every part gets shots.
 bool CoopPilot_RailAim(const Player* p, s32 i, f32* x, f32* y);
 
+// On rails: whether player i, lined up by CoopPilot_RailAim, should let a bomb go now (level knowledge: the bosses
+// whose fight a bomb ends sooner).
+bool CoopPilot_RailBomb(const Player* p, s32 i);
+
 // In all-range, anywhere but at Granga: a run at the nearest foe, firing on the way in.
 void CoopPilot_FlyAllRangeAim(const Player* p, s32 i, PilotPad* pad);
 

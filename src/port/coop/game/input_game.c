@@ -13,7 +13,22 @@ static void CoopInput_OnGamePreUpdate(IEvent* event) {
         CoopInput_Rest();
         return;
     }
-    CoopInput_Route(CoopPlayers_Count(), CoopPlayers_LocalIndex(), gControllerHold, gControllerPress);
+    // By session player; the same as the slot unless the lead swap spike moved one (#183).
+    CoopInput_Route(CoopPlayers_Count(), CoopPlayers_SeatIndex(), gControllerHold, gControllerPress);
+    if (CoopPlayers_LeadSwapCount() > 0) {
+        OSContPad hold[COOP_PLAYERS_MAX];
+        OSContPad press[COOP_PLAYERS_MAX];
+        s32 i;
+
+        for (i = 0; i < COOP_PLAYERS_MAX; i++) {
+            hold[i] = gControllerHold[CoopPlayers_SeatOfSlot(i)];
+            press[i] = gControllerPress[CoopPlayers_SeatOfSlot(i)];
+        }
+        for (i = 0; i < COOP_PLAYERS_MAX; i++) {
+            gControllerHold[i] = hold[i];
+            gControllerPress[i] = press[i];
+        }
+    }
 }
 
 void CoopInput_Init(void) {

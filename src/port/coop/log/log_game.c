@@ -28,6 +28,8 @@ static int32_t sLevel = -1;
 static int32_t sMode = -1;
 static int32_t sPlayerState[COOP_PLAYERS_MAX];
 static int32_t sParked[COOP_PLAYERS_MAX];
+static int32_t sFoxRefills = 0; // CoopPlayers_FoxRefillCount as last seen
+static int32_t sLeadSwaps = 0;  // CoopPlayers_LeadSwapCount as last seen
 static uint32_t sStateLineMs = 0;
 static bool sTracking = false;
 
@@ -124,6 +126,8 @@ static void Track_Reset(void) {
         sPlayerState[i] = -1;
         sParked[i] = -1;
     }
+    sFoxRefills = CoopPlayers_FoxRefillCount();
+    sLeadSwaps = CoopPlayers_LeadSwapCount();
     sStateLineMs = SDL_GetTicks();
     sTracking = true;
 }
@@ -172,6 +176,16 @@ static void Player_Changes(void) {
     if (!Players_Readable()) {
         return;
     }
+    // Player 0 refilled in place for a life (decision 0007 rule 3).
+    if (CoopPlayers_FoxRefillCount() > sFoxRefills) {
+        CoopLog_Write(COOP_LOG_PLAYER, false, "player 1 refilled in place, pool %d", (int) gLifeCount[0]);
+    }
+    sFoxRefills = CoopPlayers_FoxRefillCount();
+    if (CoopPlayers_LeadSwapCount() > sLeadSwaps) { // spike #183, test switch only
+        CoopLog_Write(COOP_LOG_PLAYER, false, "lead swap: this game now flies slot %d",
+                      (int) CoopPlayers_LocalIndex() + 1);
+    }
+    sLeadSwaps = CoopPlayers_LeadSwapCount();
     for (i = 0; (i < count) && (i < COOP_PLAYERS_MAX); i++) {
         int32_t parked = CoopPlayers_IsParked(i) ? 1 : 0;
         int32_t state = gPlayer[i].state;

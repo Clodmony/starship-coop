@@ -11,6 +11,7 @@
 static FILE* sFile = NULL;
 
 extern f32 D_i3_801C4308[82]; // src/overlays/ovl_i3/fox_aq.c: the Bacoon's head and eye angles, among others
+extern f32 D_i3_801C2768[14]; // src/overlays/ovl_i3/fox_so.c: the Vulkain's head, [0] pitch and [1] yaw, among others
 
 static s32 CoopBossTrace_InLevel(void) {
     return (gGameState == GSTATE_PLAY) && (gPlayer != NULL) && CoopPlayers_IsCoop();
@@ -60,6 +61,13 @@ static void CoopBossTrace_OnGamePostUpdate(IEvent* event) {
         if ((gBosses[i].obj.status == OBJ_ACTIVE) && (gBosses[i].obj.id == OBJ_BOSS_AQ_BACOON)) {
             fprintf(sFile, " aq=%.2f,%.2f,%.2f,%.2f", D_i3_801C4308[15], D_i3_801C4308[14], D_i3_801C4308[18],
                     D_i3_801C4308[19]);
+            break;
+        }
+    }
+    // Where Solar's Vulkain turns its head, along which it spits its fireballs (campaign run, #220): yaw and pitch.
+    for (i = 0; i < ARRAY_COUNT(gBosses); i++) {
+        if ((gBosses[i].obj.status == OBJ_ACTIVE) && (gBosses[i].obj.id == OBJ_BOSS_SO_VULKAIN)) {
+            fprintf(sFile, " so=%.2f,%.2f", D_i3_801C2768[1], D_i3_801C2768[0]);
             break;
         }
     }

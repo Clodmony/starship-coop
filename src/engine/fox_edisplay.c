@@ -956,6 +956,7 @@ void Object_SetMatrix(Object* obj, s32 drawType) {
     bool isBanned = (obj->id >= OBJ_SCENERY_CO_BUILDING_5 && obj->id <= OBJ_SCENERY_CO_BUILDING_8 ||
                      obj->id == OBJ_SCENERY_CO_BUILDING_10);
     bool skipRot = false;
+    f32 drawnRotY; // COOP: the yaw drawn, see below (#140)
 
     if (isBanned) {
         f32 prevRot = obj->rot.y;
@@ -966,6 +967,13 @@ void Object_SetMatrix(Object* obj, s32 drawType) {
         }
 
         skipRot = prevRot != obj->rot.y;
+    }
+    // COOP: facades and doodads face the eye drawn; rot.y stays player 0's, the state of every client (#140)
+    {
+        s32 flipped = skipRot;
+
+        drawnRotY = CoopView_DrawnRotY(obj, isBanned, &flipped);
+        skipRot = flipped;
     }
 
     if (drawType == 2) {
@@ -978,7 +986,7 @@ void Object_SetMatrix(Object* obj, s32 drawType) {
         if (isBanned && skipRot) {
             FrameInterpolation_ShouldInterpolateFrame(false);
         }
-        Matrix_RotateY(gCalcMatrix, obj->rot.y * M_DTOR, MTXF_APPLY);
+        Matrix_RotateY(gCalcMatrix, drawnRotY * M_DTOR, MTXF_APPLY); // COOP: was obj->rot.y
         Matrix_RotateX(gCalcMatrix, obj->rot.x * M_DTOR, MTXF_APPLY);
         Matrix_RotateZ(gCalcMatrix, obj->rot.z * M_DTOR, MTXF_APPLY);
     } else {
@@ -987,7 +995,7 @@ void Object_SetMatrix(Object* obj, s32 drawType) {
         if (isBanned && skipRot) {
             FrameInterpolation_ShouldInterpolateFrame(false);
         }
-        Matrix_RotateY(gGfxMatrix, obj->rot.y * M_DTOR, MTXF_APPLY);
+        Matrix_RotateY(gGfxMatrix, drawnRotY * M_DTOR, MTXF_APPLY); // COOP: was obj->rot.y
         Matrix_RotateX(gGfxMatrix, obj->rot.x * M_DTOR, MTXF_APPLY);
         Matrix_RotateZ(gGfxMatrix, obj->rot.z * M_DTOR, MTXF_APPLY);
         Matrix_SetGfxMtx(&gMasterDisp);
