@@ -6,6 +6,7 @@ order of a route, the state hashes compared on every frame, and one summary at t
     python tools/coop/campaign.py --route owner           # the route the owner and a friend played on 2026-11-09
     python tools/coop/campaign.py --levels meteo,bolse    # only these, in this order
     python tools/coop/campaign.py --lock <file>           # hold an flock on <file> for each level's session (Linux)
+    python tools/coop/campaign.py --seeds 1,2,3,4,5,6     # other start seeds: another flight
     python tools/coop/campaign.py --list
 
 Each level is a session of its own: a host and a client through the join driver (src/port/coop/test/join_driver.h),
@@ -143,8 +144,8 @@ def desync_value(host, client):
 
 def fly_level(args, folder, name):
     """One level, two clients, pilots on both. Returns a dict for the summary."""
-    first, last = W8_ANDPILOT_THROUGH.get(name, (name, name))
-    level, target = LEVELS[first], LEVELS[last]
+    starts_in, ends_in = W8_ANDPILOT_THROUGH.get(name, (name, name))
+    level, target = LEVELS[starts_in], LEVELS[ends_in]
     cap = FRAMES_BY_LEVEL.get(name, FRAMES) if args.frames is None else args.frames
     env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt",
            "SF64_COOP_LOCKSTEP_END": str(cap)}
@@ -156,11 +157,16 @@ def fly_level(args, folder, name):
            "bombs": name in BOMBS}
     if name in W8_ANDPILOT_THROUGH:
         row["through"] = target
+    if args.seeds:
+        row["seeds"] = args.seeds
     began = time.monotonic()
     held = lock(args.lock)
     try:
-        host, client = lockstep_test.session(args, folder, {"SF64_COOP_JOIN_LEVEL": str(level)}, None, env,
-                                             config=config, replay_frames=cap + 20000)
+        host_env = {"SF64_COOP_JOIN_LEVEL": str(level)}
+        if args.seeds:
+            host_env["SF64_COOP_TEST_START_SEEDS"] = args.seeds  # the level start's RNG, in place of lockstep_test.SEEDS
+        host, client = lockstep_test.session(args, folder, host_env, None, env, config=config,
+                                             replay_frames=cap + 20000)
         # Frames of the host's hash log (from boot, with game state and level on every row) for the end, lockstep
         # frames for the cap. The level complete may come in another level's id: Venom 1 sets Venom 2's at its exit
         # (src/overlays/ovl_i6/fox_andross.c) and goes on to Andross in the same session.
@@ -256,7 +262,7 @@ def fly_level(args, folder, name):
     if row["bombs"]:
         row["result"] += " (gInfiniteBombs on)"
     if name in W8_ANDPILOT_THROUGH:
-        row["result"] += f" (from {first} through its jump into {last})"
+        row["result"] += f" (from {starts_in} through its jump into {ends_in})"
     if views.get("host") == views.get("client0"):
         row["result"] += "; both games looked through the same player"
     return row
@@ -273,6 +279,9 @@ def main():
     p.add_argument("--level-seconds", type=float, default=7200, help="give up on a level after this long (default 7200)")
     p.add_argument("--lock", help="hold an flock on this file for each level's session, so that other tests on this "
                    "PC can take their turn in between (Linux)")
+    p.add_argument("--seeds", help="six numbers a,b,c,d,e,f the host's level starts from (default lockstep_test.SEEDS): "
+                   "another flight, for a level that draws at random, as Andross' escape draws one of three mazes "
+                   "(#275)")
     p.add_argument("--exe", help="Starship executable (default: newest build found)")
     p.add_argument("--out", help="folder for the logs (default: a new one under local/)")
     args = p.parse_args()
