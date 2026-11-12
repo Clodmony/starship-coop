@@ -69,6 +69,51 @@ static s32 CoopAimTrace_ShotTarget(const Effect* effect) {
     return best;
 }
 
+// Nonzero for a Sector Y robot (SectorY_SyRobot_Update's actors).
+static s32 CoopAimTrace_IsSyRobot(const Actor* actor) {
+    if (actor->obj.id == OBJ_ACTOR_SY_ROBOT) {
+        return 1;
+    }
+    return (actor->obj.id == OBJ_ACTOR_EVENT) &&
+           ((actor->eventType == EVID_SY_ROBOT_1) || (actor->eventType == EVID_SY_ROBOT_2) ||
+            (actor->eventType == EVID_SY_ROBOT_3));
+}
+
+// The `syrobot` line of a shot that a Sector Y robot fired (#273), as the header says; nothing for other shots.
+static void CoopAimTrace_SyRobotShot(const Effect* effect) {
+    s32 i;
+    s32 n;
+
+    if (effect->obj.id != OBJ_EFFECT_354) {
+        return;
+    }
+    for (i = 0; i < ARRAY_COUNT(gActors); i++) {
+        const Actor* robot = &gActors[i];
+
+        if ((robot->obj.status == OBJ_FREE) || !CoopAimTrace_IsSyRobot(robot) ||
+            (robot->fwork[16] != effect->obj.pos.x) || (robot->fwork[17] != effect->obj.pos.y) ||
+            (robot->fwork[18] != effect->obj.pos.z)) {
+            continue;
+        }
+        fprintf(sTraceFile,
+                "syrobot level=%d frame=%d slot=%d script=%d spread=%lld start=%.3f,%.3f,%.3f "
+                "dir=%.6f,%.6f,%.6f",
+                (int) gCurrentLevel, (int) gGameFrameCount, (int) i, (int) robot->aiType,
+                (long long) (intptr_t) robot->iwork[19], effect->obj.pos.x, effect->obj.pos.y, effect->obj.pos.z,
+                effect->vel.x - gPathVelX, effect->vel.y - gPathVelY, effect->vel.z + gPathVelZ);
+        for (n = 0; n < CoopPlayers_Count(); n++) {
+            const Player* p = &gPlayer[n];
+            s32 flies = (n == 0) || (!CoopPlayers_IsParked(n) &&
+                                     ((p->state == PLAYERSTATE_ACTIVE) || (p->state == PLAYERSTATE_U_TURN)));
+
+            fprintf(sTraceFile, " p%d=%.3f,%.3f,%.3f,%d", (int) n, p->pos.x, p->pos.y, p->trueZpos, (int) flies);
+        }
+        fprintf(sTraceFile, "\n");
+        fflush(sTraceFile);
+        return;
+    }
+}
+
 static void CoopAimTrace_OnObjectInit(IEvent* event) {
     const ObjectInitEvent* init = (const ObjectInitEvent*) event;
     const Effect* effect;
@@ -83,6 +128,7 @@ static void CoopAimTrace_OnObjectInit(IEvent* event) {
     fprintf(sTraceFile, "shot level=%d frame=%d id=%d player=%d\n", (int) gCurrentLevel, (int) gGameFrameCount,
             (int) effect->obj.id, CoopAimTrace_ShotTarget(effect));
     fflush(sTraceFile); // tests stop the game from outside
+    CoopAimTrace_SyRobotShot(effect);
 }
 
 static s32 CoopAimTrace_MissileTarget(const Actor* actor) {

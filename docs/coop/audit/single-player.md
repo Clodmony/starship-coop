@@ -24,19 +24,19 @@ pattern without reading the code, so treat it as a guess.
 
 ## Summary
 
-1702 sites in 419 functions in 46 files.
+1706 sites in 419 functions in 46 files.
 A function whose sites have more than one verdict counts once per verdict in the functions column.
 
 | verdict | sites | functions | `gPlayer[0]` | `gPlayer->` | `gPlayer arg` | `gMainController` | `gCamCount` | `shooter` |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| sim | 737 | 164 | 733 | 1 | 1 | 0 | 0 | 2 |
+| sim | 741 | 164 | 737 | 1 | 1 | 0 | 0 | 2 |
 | view | 217 | 84 | 151 | 0 | 0 | 43 | 3 | 20 |
 | input | 13 | 9 | 0 | 0 | 0 | 8 | 0 | 5 |
 | flow | 486 | 103 | 444 | 0 | 3 | 3 | 0 | 36 |
 | setup | 53 | 34 | 1 | 0 | 1 | 0 | 51 | 0 |
 | ok | 196 | 85 | 14 | 2 | 16 | 87 | 8 | 69 |
 
-Basis per site: read 361, site 852, name 489.
+Basis per site: read 374, site 852, name 480.
 
 ## Sites
 
@@ -689,7 +689,7 @@ Basis per site: read 361, site 852, name 489.
 | `SectorY_801A06A4` | 2669:P0, 2670:P0, 2671:P0, 2673:P0, 2674:P0, 2675:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 | `SectorY_801A0AC0` | 2992:MC, 3392:MC, 3393:MC | view | site | rumble on gMainController (controller index used as player index) |
 | `SectorY_801A0AC0` | 3259:P0, 3263:P0, 3268:P0, 3415:P0 | flow | site | cutscene moves player 0 to the centre |
-| `SectorY_SyRobot_Update` | 3691:P0, 3692:P0, 3694:P0, 3695:P0, 3698:P0, 3699:P0, 3787:P0, 3788:P0, 3789:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `SectorY_SyRobot_Update` | 3696:P0, 3698:P0, 3699:P0, 3701:P0, 3702:P0, 3703:P0, 3704:P0, 3708:P0, 3709:P0, 3710:P0, 3798:P0, 3799:P0, 3800:P0 | sim | read | spreads its shot around the human Effect_EnemyLaser aims at, the nearest, by moving player 0 and the other humans to the spread point (CoopAim_PointShot, #273); left: it turns its head and gun, where the shot starts, to player 0 |
 
 ### `src/overlays/ovl_i6/fox_turret.c`
 

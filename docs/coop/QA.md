@@ -256,6 +256,27 @@ result:     automated. Macbeth's bomb fire and state-16 beams, placed on one tan
 ```
 
 ```
+date:       2026-11-12
+commit:     issue/273-sy-robot-spread, build 103b864c717c, on coop 07c03c1f; red build 70e49d5caebf (the base's game
+            code with this branch's aim trace); reference build 07c03c1f822d
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 game clients on one PC, UDP over
+            loopback, through the join driver, gInvincible on both
+what ran:   python tools/coop/lockstep_test.py --only sy_robot_spread (branch, red build, reference build), aim, steer,
+            other_bosses --levels shogun (one scenario per run); test_all.py --only checks,draw,exit-test,coop-off
+            --base-exe <07c03c1f>, then --only wingman, then --only shots,effects,effects-allrange,lowhealth-rails,
+            lowhealth-allrange; Sector Y with one player from its level start against 07c03c1f (a scratch script with
+            hash_check.py's play and compare, no tool does it)
+result:     automated. Sector Y's robots spread their shots around the human they aim at (#273): equal on all 9500
+            frames, 23 robot shots, the 10 plain ones at the nearest human (within 0.00), the 13 spread ones within 150
+            in x and y of it, 11 around player 1 with a root mean square of 100. The red build fails: 11 of 11 spread
+            shots with player 1 the nearer fly straight at it, and one with player 0 the nearer went to player 1. Co-op
+            off equal to 07c03c1f on Corneria (5800 frames) and on Sector Y (9510 frames). The test_all.py steps:
+            all ok. Not run: the steps that start three or more games at once (full-level, hash-run-1, hash-run-2,
+            rails-2, rails-4, replay-test, determinism) and the rest of the default lockstep run, two PCs, Windows, a
+            Release build, more than two players.
+```
+
+```
 date:       2026-11-11
 commit:     issue/session-survives at 921d6411, on top of a4867d99 (coop)
 identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 or 3 game clients on one PC,

@@ -632,6 +632,84 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-12, #273, Sector Y's robots: the spread around the aimed human, and the `iwork[19] < 0` test that is never true
+
+Read and run on `issue/273-sy-robot-spread` (from `coop` `07c03c1f`). Line numbers are this branch's. Level script
+references as `tools/coop/script_reader.py` takes them (US 1.0 archive); the scripts are game data and are described
+here, not copied.
+
+Observed (code):
+
+- `SectorY_SyRobot_Update` (`src/overlays/ovl_i6/fox_sy.c`) fires 15 frames into its shooting state. With
+  `iwork[19] != 0` it spreads the shot: upstream moves player 0 by `RAND_FLOAT_CENTERED(300.0f)` in x, then in y (two
+  draws), calls `Effect_EnemyLaser(OBJ_EFFECT_354)` from `fwork[16..18]` (where its gun is, set in
+  `SectorY_SyRobot_PostLimbDraw`, `:3947`) and puts player 0 back. Since #193 `Effect_EnemyLaser` and
+  `func_effect_8007E6B8` (`src/engine/fox_effect.c`) aim at `CoopAim_Nearest` of the shot's start, so the offset was on
+  player 0 while the shot could go to player 1, straight at it.
+- `RAND_FLOAT_CENTERED(w)` is `(Rand_ZeroOne() - 0.5f) * w` (`include/macros.h:21`), and `Rand_ZeroOne` is
+  `fabsf(Math_ModF(..., 1.0f))`, in [0, 1) (`src/sys/sys_math.c`): each axis moves by -150 up to just under 150.
+- `iwork[19]` comes from the robot's command (`work_048`, set by `EVOP_SET_ACTION`, `src/engine/fox_enmy2.c:1316`;
+  `ActorEvent_ProcessActions` leaves the robots to their own update): actions 1 and 2 set 0 (`fox_sy.c:3591`, `:3597`),
+  8 and 9 set 1 (`:3613`, `:3619`), 10 and 11 set -1 (`:3625`, `:3631`). `iwork` is `uintptr_t` on the port
+  (`include/sf64object.h:286`), so -1 is stored as 2^64 - 1, `if (this->iwork[19] < 0)` (`:3688`) is never true, and
+  those robots take the spread branch. On the N64 (`s32`) they call `ActorEvent_8006F254` (`fox_enmy2.c:1834`): an
+  `OBJ_EFFECT_ENEMY_LASER_1` straight along the robot's own aim, with no random draw.
+- Sector Y's table (`D_SY_6032E18`, 150 scripts): action 11 is given to a robot by S22 (commands 11, 14), S66 (9, 11,
+  13), S67 (47, 49, 51; S67 starts as an event handler and becomes a robot at command 11), S69 (20, 23) and S89 (16,
+  18). Action 10 appears only in scripts of event handlers and ship missiles (S26, S27, S34, S36). Action 9 (a real
+  spread, `iwork[19]` 1) is in S22 (36), S37 (7) and S67 (17, 21); action 8 only in `EVID_GAMMA_OFF` scripts. The
+  level's object list (`D_SY_602E4F4`, 488 objects) places S22, S66, S67 and S89 (z 22400, 20299, 20300, 156300) and
+  neither S37 nor S69; no Sector Y script switches to another script (no `EVOP_LOOP` or trigger target from 200 on).
+- The robot turns its head and gun to player 0 (`sp5C = gPlayer[0].pos - obj.pos`, `fox_sy.c:3798-3800`), so the shot
+  starts where a gun aimed at player 0 is, whoever it then flies at. Not changed here.
+
+Built: the spread point is taken around the human the shot aims at. `CoopAim_Nearest` of the shot's start (the same
+point `Effect_EnemyLaser` gets) picks it before anyone moves; player 0 goes to that human's x and y plus the two draws
+and to its `trueZpos`, and `CoopAim_PointShot` (#220, the Shogun's) moves the other humans that may be aimed at to the
+same point, so the nearest is then player 0 by the tie rule and the shot flies at the point; `CoopAim_PointShotEnd` and
+the saved `trueZpos` put everyone back. Granga's way (`fox_co.c:451`, the offset on the nearest human only) was not
+taken: the moved human can stop being the nearest, and the shot then flies straight at another one. The draws and their
+order are upstream's. Outside co-op the nearest is player 0 and each changed line computes what upstream does.
+
+Observed (runs), two real games in lockstep over loopback, one PC, `gInvincible` on both, US 1.0, Linux, GCC, Debug,
+OpenGL on a software renderer, no window; the aim trace's new `syrobot` line (`src/port/coop/test/aim_trace.h`) gives
+each robot shot's start, direction, the players and `iwork[19]`:
+
+- `lockstep_test.py --only sy_robot_spread` (player 0 at the top left, player 1 where it joined, near the middle), on
+  this branch (build `103b864c717c`): `same hash on 9500 frames; 23 robot shots: 10 plain, all within 0.00 of the
+  nearest human; 13 spread (iwork[19] -1: 10, 1: 3), 11 around player 1, the nearer: x -91 to 139 (mean 8), y -149 to
+  145 (mean -72), root mean square 100; 2 around player 0, the nearer: x -98 to -74 (mean -86), y -78 to 75 (mean -1),
+  root mean square 82`.
+- The same on the base's game code with this branch's trace (commit `70e49d5c`, build `70e49d5caebf`): `FAILED ... 1 of
+  13 spread shots are not around the nearest human, more than 150 off in x or y (frame 1589 misses player 0 by 1774,
+  -997); 11 of the 11 spread shots with player 1 the nearer fly straight at it; the spread around player 1 is too
+  small`. Frame 1589 is the pick flipping: player 0 was the nearer by 28 (3880 against 3908), was moved by the spread,
+  and the shot went straight at player 1. The reference build itself (`07c03c1f`) has no `syrobot` line: `no robot
+  shot in the trace`.
+- Both builds fire the same 23 robot shots at the same frames; 10 of the 13 spread shots are commands 10 and 11.
+- Co-op off: `hash_check.py base` (Corneria through the menus) equal to `07c03c1f` on all 5800 frames. Sector Y, one
+  player, input by rule from the level start (a scratch script with `hash_check.py`'s own play and compare; no tool
+  does Sector Y): equal to `07c03c1f` on all 9510 frames. Under gdb the same flight passed the changed spread lines 32
+  times before it was stopped (25 with `iwork[19]` -1, 7 with 1; the player went down twice and the level went on
+  again, so shots repeat), always with player 0 the aimed one.
+- `lockstep_test.py --only aim`, `steer`, `other_bosses --levels shogun` (`player 1 kept on 4149`, as in #220) and
+  `test_all.py --only checks,draw,exit-test,coop-off,wingman,shots,effects,effects-allrange,lowhealth-rails,
+  lowhealth-allrange` (in three runs): all ok on this branch.
+
+Derived:
+
+- In co-op the spread now lands around the human that is shot at, as one player sees it around player 0.
+- The `< 0` test changes gameplay compared with the N64 in Sector Y as #262's sweep said: of the four placed robots
+  that reach these commands, the port fires up to 10 aimed spread shots (two draws each) where the N64 fires straight
+  ahead (S22 2, S66 3, S67 3, S89 2; all 10 fired in the run above). Fixing it would change co-op off and the random
+  sequence; it is left for its own issue.
+
+Unknown:
+
+- What the N64 does there was read from the code, not run on hardware or an emulator.
+- Whether a player who shoots the robots first sees fewer of those shots: the run above shoots nothing.
+- How a robot that looks at player 0 while it shoots at player 1 reads to two humans by hand.
+
 ### 2026-11-11, names and letters (#257, #258): the name as the mark, and three things that still followed player 0 (#140)
 
 Identity: ROM US 1.0, branch `issue/names-letters` on `wave6-base` (`a4867d99`), Linux, GCC, Debug, OpenGL on a software
