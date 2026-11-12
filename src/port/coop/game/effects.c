@@ -112,3 +112,24 @@ void CoopEffects_BeamHit(Effect* effect) {
         }
     }
 }
+
+void CoopEffects_MacbethBeamHit(Effect* effect) {
+    s32 i;
+
+    if (!CoopPlayers_IsCoop()) {
+        return;
+    }
+    for (i = 0; (i < CoopPlayers_Count()) && (effect->obj.status != OBJ_FREE); i++) {
+        Player* p = &gPlayer[i];
+
+        if (!CoopEffects_CanHit(i, 0) || !(fabsf(p->trueZpos - effect->obj.pos.z) < 100.0f) ||
+            !(fabsf(p->pos.x - effect->obj.pos.x) < 100.0f) || !(fabsf(p->pos.y - effect->obj.pos.y) < 30.0f) ||
+            (p->mercyTimer != 0)) {
+            continue;
+        }
+        Player_ApplyDamage(p, 0, effect->info.damage);
+        p->knockback.x = (effect->vel.x < 0.0f) ? -20.0f : 20.0f;
+        p->knockback.y = (effect->vel.y < 0.0f) ? -20.0f : 20.0f;
+        Object_Kill(&effect->obj, effect->sfxSource);
+    }
+}

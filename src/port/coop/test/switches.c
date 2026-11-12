@@ -7,6 +7,7 @@
 #include "boss_trace.h"
 #include "score_probe.h"
 #include "smoke_trace.h"
+#include "mabomb_probe.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -164,5 +165,6 @@ void CoopTestSwitches_Init(void) {
     CoopBossTrace_Init(); // no-op unless SF64_COOP_BOSS_TRACE is set (#213)
     CoopScoreProbe_Init(); // no-op unless SF64_COOP_SCORE_PROBE is set (#210)
     CoopSmokeTrace_Init(); // no-op unless SF64_COOP_SMOKE_TRACE is set
+    CoopMaBombProbe_Init(); // no-op unless SF64_COOP_MABOMB_PROBE is set (#272)
     CoopTestStart_Init(); // no-op unless SF64_COOP_TEST_START_LEVEL is set (#148)
 }
