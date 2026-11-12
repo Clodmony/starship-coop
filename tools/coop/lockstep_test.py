@@ -136,6 +136,9 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             the session cleans them to CAPTAIN and SAM.OK!, the host shares both, and by the level start each game
             holds both. Each game marks the other player's ship with its name (CAPTAIN on the client, SAM.OK! on the
             host) and never its own, and the hashes are equal on every frame.
+  macbeth_bombs Macbeth with two Landmasters (#272): a bomb's fire and a state-16 beam of the train's end, placed on
+            one tank at a time by src/port/coop/test/mabomb_probe.h, hit that tank, player 1 as well as player 0, and
+            no other; on a build without the fix they hit player 0 only. Hashes and the two probe logs equal.
   log     the co-op log (#172): each game's folder holds its own log and the other player's, streamed during the
             session; the hash stays equal with streaming on; nothing personal is in the files; coop_log.py merges them.
 
@@ -3952,6 +3955,88 @@ def sc_survive_next_level(args, folder):
             f"hash alike on its first {frames} frames; `{line}`")
 
 
+# ---- #272: Macbeth's bomb fire and state-16 beams hit every tank (lane macbeth-bombs) ----
+#
+# src/port/coop/test/mabomb_probe.h places a bomb of the train's end, or a beam of its state 16, where one tank will be,
+# while every other tank is at least 250 across the track, and logs whom the hazard's own update hit. Each kind runs for
+# each tank in turn, W8_MABOMB_ROUNDS times. Upstream both tests look at player 0 only (Macbeth_MaBombDrop_Update,
+# Macbeth_Effect380_Update in src/overlays/ovl_i5/fox_ma.c), so on a build without the fix of #272 a hazard on player 1
+# hits nobody, while the cases on player 0 hit it on every build: they show the probe reaches its target.
+W8_MABOMB_FRAMES = 4500  # level frames: the tanks part from JOIN_FRAME on (sway), 12 cases fit well after that
+W8_MABOMB_CASES = ("bomb", "beam")  # sMaBombCases in src/port/coop/test/mabomb_probe.c
+W8_MABOMB_WORDS = {"bomb": "under a bomb's fire", "beam": "in a beam"}
+W8_MABOMB_ROUNDS = 3  # MABOMB_ROUNDS there
+W8_MABOMB_PROBE = "mabomb.txt"  # in each game's run folder
+W8_MABOMB_LINE = re.compile(r"mabomb frame=(\d+) case=(\w+) target=(\d+) hit=(\d+) first=(\S+) lost=(\d) dx=(\S+)")
+
+
+def w8_mabomb_rows(path):
+    """The probe's case lines as dicts, and whether it wrote its last line."""
+    rows, done = [], False
+    if not path.exists():
+        return rows, done
+    for line in path.read_text(encoding="utf-8").splitlines():
+        match = W8_MABOMB_LINE.match(line)
+        if match:
+            rows.append({"frame": int(match.group(1)), "case": match.group(2), "target": int(match.group(3)),
+                         "hit": int(match.group(4)), "first": [int(v) for v in match.group(5).split(",")],
+                         "lost": match.group(6) == "1", "dx": float(match.group(7))})
+        elif line.startswith("mabomb done"):
+            done = True
+    return rows, done
+
+
+def w8_mabomb_story(rows):
+    """(case, target) -> [cases that ran to their end, of those the ones that hit the target, the ones that hit another
+    tank]. A lost case (the hazard gone early, as at a restart) does not count."""
+    story = {(case, target): [0, 0, 0] for case in W8_MABOMB_CASES for target in (0, 1)}
+    for row in rows:
+        counts = story.setdefault((row["case"], row["target"]), [0, 0, 0])
+        if row["lost"]:
+            continue
+        counts[0] += 1
+        counts[1] += bool(row["hit"] & (1 << row["target"]))
+        counts[2] += bool(row["hit"] & ~(1 << row["target"]))
+    return story
+
+
+def sc_macbeth_bombs(args, folder):
+    """Macbeth with two Landmasters (#272): a bomb's fire and a state-16 beam of the train's end, placed on one tank by
+    src/port/coop/test/mabomb_probe.h, hit that tank, player 1 as well as player 0, and no other. Both games sway as in
+    `vehicles`, with their shields held (SF64_COOP_TRACE_SHIELDS) so that nobody goes down between cases; hashes and the
+    two probe logs equal on every frame."""
+    host, client = run_short(args, folder, script=sway, frames=W8_MABOMB_FRAMES,
+                             host_env={"SF64_COOP_JOIN_LEVEL": "11"},
+                             both={"SF64_COOP_MABOMB_PROBE": W8_MABOMB_PROBE, "SF64_COOP_TRACE_SHIELDS": "255,255"},
+                             seconds=1800)
+    frames = compare(host, client, W8_MABOMB_FRAMES)
+    rows, done = w8_mabomb_rows(host.run / W8_MABOMB_PROBE)
+    expect(rows, "the probe placed nothing: a build without src/port/coop/test/mabomb_probe.c (#272), or the tanks "
+                 "never parted by 250")
+    expect((rows, done) == w8_mabomb_rows(client.run / W8_MABOMB_PROBE), "the two games' probe logs differ")
+    wanted = len(W8_MABOMB_CASES) * 2 * W8_MABOMB_ROUNDS
+    expect(done, f"the probe ran {len(rows)} of {wanted} cases in {frames} frames")
+    story = w8_mabomb_story(rows)
+    lost = sum(row["lost"] for row in rows)
+    for (case, target), (ran, _, _) in sorted(story.items()):
+        expect(ran >= W8_MABOMB_ROUNDS - 1, f"{case} on player {target}: only {ran} cases ran to their end "
+                                            f"({lost} lost in all)")
+
+    def hits(target):
+        return ", ".join(f"{W8_MABOMB_WORDS[case]} on {story[(case, target)][1]} of {story[(case, target)][0]}"
+                         for case in W8_MABOMB_CASES)
+
+    expect(all(story[(case, 0)][1] == story[(case, 0)][0] for case in W8_MABOMB_CASES),
+           f"player 0, the control, is not hit every time: {hits(0)}")
+    expect(all(story[(case, 1)][1] == story[(case, 1)][0] for case in W8_MABOMB_CASES),
+           f"player 1 is not hit: {hits(1)}; player 0, the control: {hits(0)}")
+    others = sum(counts[2] for counts in story.values())
+    expect(others == 0, f"a hazard hit a tank it was not placed on in {others} cases (the tanks were too close)")
+    first = sorted({row["first"][row["target"]] for row in rows if not row["lost"]})
+    return (f"same hash on {frames} frames; {len(rows)} cases, {lost} lost; player 1 hit {hits(1)}; player 0 hit "
+            f"{hits(0)}; no hazard hit the other tank; frames to the hit {first}")
+
+
 SCENARIOS = {
     "sim": sc_sim,
     "desync_sim": sc_desync_sim,
@@ -4023,6 +4108,7 @@ SCENARIOS = {
     "other_bosses": sc_other_bosses,
     "eels": sc_eels,
     "player_names": sc_player_names,
+    "macbeth_bombs": sc_macbeth_bombs,
 }
 LONG = ("survive_next_level", "fox_refill_levels", "fox_refill_long", "fox_lead_swap", "fox_lead_swap_all_range", "full", "scenes", "allrange", "allrange_down", "allrange_others", "allrange_down_others", "teambar",
         "map_saves", "map_saves_host_full", "map_saves_equal", "audio", "release", "rates", "vehicles", "vehicle_end", "bosses", "other_bosses",

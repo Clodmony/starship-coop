@@ -25,6 +25,13 @@ void CoopHits_BolseBeam(struct Boss* base, float xRot, float yRot, float xOffset
 // The test of Andross_8018D0D8, for the players after player 0, measured from (x, y) as that function does.
 void CoopHits_AndrossReach(float x, float y);
 
+struct Actor;
+
+// The test of the fire of a bomb of Macbeth's train end (Macbeth_MaBombDrop_Update, state 1), for the players after
+// player 0 (#272): a box around the bomb, as high as its fire has grown. The fire burns on after a hit, as it does for
+// player 0, so every tank in it is hit.
+void CoopHits_MacbethBombFire(struct Actor* bomb);
+
 #ifdef __cplusplus
 }
 #endif

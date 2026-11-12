@@ -706,6 +706,95 @@ Unknown:
 - Whether a name in the small font is large enough at a glance on a real screen: the owner chose it for the next
   two-PC run.
 
+### 2026-11-12, #272, Macbeth's bomb fire and state-16 beams hit every tank
+
+Read at `07c03c1f` (`coop`). Rule: an enemy's hit test that looks at player 0 alone gets a co-op test beside it that
+repeats it for the other players, as #100 (effects, `src/port/coop/game/effects.c`) and #136 (other hits, `hits.c`) did
+on the other levels; where an object aims or chases, the nearest human (#193, #220); the path (a z taken from player 0)
+and level flow stay player 0's (decisions 0007, 0008). #136 had left Macbeth's hits out because "co-op players stay
+parked" in a Landmaster level; since #16 a second human drives a tank there. Line numbers are this branch's (at
+`07c03c1f` the Effect380 sites sit 2 lines earlier, the bomb's 3).
+
+Observed (code), the 14 `gPlayer[0]` sites of the two functions (lines with a site, as `sp_audit.py` lists them; bare a
+bare `gPlayer` argument, MC `gMainController`):
+
+| function | sites | lines | what they do | verdict |
+|---|---|---|---|---|
+| `Macbeth_Effect380_Update` (a beam of the train's end, fired two at a time in `Macbeth_Actor207_Update` state 16) | 8 + 1 bare | `:3608` | the beam is gone 2000 behind player 0 | path: left |
+| | | `:3620-3622` | its box: z within 100 of `trueZpos`, x within 100, y within 30, and player 0's `mercyTimer` | hit: the same box for the other tanks, `CoopEffects_MacbethBeamHit` (`:3634`) |
+| | | `:3623` (bare) | `Player_ApplyDamage(gPlayer, 0, 20)` | hit: the tank in the box |
+| | | `:3624`, `:3626`, `:3628`, `:3630` | knockback 20 in x and y, signed by the beam's velocity; then the beam is used up (`Object_Kill`) | hit: the tank hit; one beam hits one tank, player 0 first |
+| `Macbeth_MaBombDrop_Update` (a bomb of the train's end, dropped in its state 11; also what Effect378 leaves where it lands) | 6 + 2 MC | `:5837` | the bomb is gone 500 behind player 0 | path: left |
+| | | `:5887-5890` | its fire (state 1): z within 40 of `trueZpos`, x within 80, from 5 below the bomb up to 35 times its scale (it grows from 2.5 to 20 in about 28 frames, then fades in about 10), and player 0's `mercyTimer` | hit: the same box for the other tanks, `CoopHits_MacbethBombFire` (`:5894`) |
+| | | `:5891` | `Player_ApplyDamage(&gPlayer[0], 0, 40)`; the fire burns on | hit: every tank in the fire, each by its own mercy timer |
+| | | `:5870`, `:5871` (MC) | rumble when it explodes | view: left |
+
+Nothing in the two functions aims or chases: they test where the object already is. Where the objects go is their
+spawner's (`Macbeth_Actor207_Update`, #220's function): a bomb drops from the train's end with its swing over the track
+(`D_i5_801BE368[0]`, `Macbeth_801A6FB4`) as x speed, and a beam goes at a ground point 80 beside each gun at player 0's
+z plus 50 (state 16), which draft PR #269 classes as the path. So no `CoopAim_*` call and no kept target: no new state
+for the hash.
+
+The four ways a tank is "under" something, read for the co-op test: `gPlayer[i]` is the tank (`Player_ApplyDamage`
+takes any player and writes that player, its shield flash (`gShieldTimer[num]`), its sounds and `gCalcMatrix`,
+`src/engine/fox_play.c:976`); the tests use `trueZpos` for z and `pos` for x and y, as the upstream test does, each tank
+its own (a tank moves its own `pos.z`, `src/engine/fox_tank.c:479`); a parked player, and a player who is out, is not
+tested (`CoopPlayers_IsParked`); the tank's own rail copy (`gCoopTankState`) is not read by either test.
+
+Built:
+
+- `CoopHits_MacbethBombFire` (`src/port/coop/game/hits.c`, an actor's test, beside #136's) and
+  `CoopEffects_MacbethBeamHit` (`effects.c`, an effect's, beside #100's) repeat the upstream test for players 1 to 3,
+  right after it, with each player's own mercy timer. The beam's stops at the first hit, and at a beam the cull has
+  already taken out (status free), so a beam 2000 behind player 0 hurts nobody; the bomb's tests every tank, also on the
+  frame its fire fades, as the upstream test does for player 0. Four `// COOP:` lines in `fox_ma.c`: the two includes
+  and the two calls. Co-op off: both return at once.
+- Tests only: `SF64_COOP_MABOMB_PROBE=<file>` (`src/port/coop/test/mabomb_probe.h`) places a bomb (with the "explode
+  where you are" velocity `999.9`) a few frames ahead of one tank, or a beam at rest on its next place, while the other
+  tanks are at least 250 across the track, marks the hazard's damage (33, 23) and logs whom it hit (hit timer 20,
+  direction 0, the mark). `lockstep_test.py --only macbeth_bombs`.
+
+Observed (runs), two real games in lockstep over loopback, one PC, US 1.0, Linux, GCC, Debug, OpenGL on a software
+renderer, no window, `SF64_COOP_TRACE_SHIELDS=255,255` (nobody goes down):
+
+- `macbeth_bombs` on this branch (`c121da89`): `same hash on 4500 frames; 12 cases, 0 lost; player 1 hit under a bomb's
+  fire on 3 of 3, in a beam on 3 of 3; player 0 hit under a bomb's fire on 3 of 3, in a beam on 3 of 3; no hazard hit
+  the other tank; frames to the hit [0, 1]`.
+- The same on the test commit alone (`c670ff0c`, the probe without the fix): `FAILED macbeth_bombs: player 1 is not hit:
+  under a bomb's fire on 0 of 3, in a beam on 0 of 3; player 0, the control: under a bomb's fire on 3 of 3, in a beam on
+  3 of 3`; hashes and probe logs equal there too. On the reference build `07c03c1f` the probe does not exist:
+  `FAILED macbeth_bombs: the probe placed nothing ...`.
+- Unchanged by it, on this branch's build (`c121da89`): `--only vehicles --levels macbeth` `same hash; Macbeth 6000
+  frames, player 0 active on 3760, player 1 on 3610`; `--only vehicle_end --levels macbeth` (pilots, `gInvincible`)
+  `same hash; Macbeth 14000 frames, level complete at 9956, player 1 drove on 11365`; `--only aim` `same hash on 4000
+  frames; 14 shots or missiles at player 1, 8 at player 0, 60 at nobody`; `test_all.py --only` the rows of
+  `src/port/coop/game/`, an upstream file and `src/port/coop/test/` but `lockstep` and `determinism` (below): `PASS`.
+- Co-op off: `hash_check.py base --base <the build of 07c03c1f>` (Corneria through the menus) `PASS`. No repo tool plays
+  Macbeth alone, so a scratch script played one replay in Macbeth (`SF64_COOP_TEST_START_LEVEL=11`, past the intro) on
+  both builds through `hash_check.play`: idle input, `equal on all 5900 frames`; the tank pilot of #16
+  (`SF64_COOP_PILOT`, `gInvincible`), `equal on all 13900 frames`. In that second run the tank stopped at z about -33800
+  from frame 2700 on, in both builds, so neither run reached the train's end: it shows Macbeth alone unchanged, not the
+  two functions with co-op off (they return at their first line then).
+
+Derived:
+
+- Upstream a second tank drove through the fire and the beams unhurt; now it is hurt as player 0 is. A bomb that bursts
+  between two tanks hurts both when both are in its fire, as Zoness' column does (#100, `CoopEffects_ColumnHit`, the same
+  box shape); a beam is used up by the first tank it hits, as an enemy laser is (`CoopEffects_ShotHit`). Neither needed a
+  rule of its own: the upstream code already says whether a hit uses the object up.
+- Deterministic: the co-op tests read simulation state only (positions, mercy timers), in player order, and add no
+  random draw. A hit on player 1 changes what follows (its shields, knockback, mercy) the same way on every game.
+
+Left (not this issue's lane, proposed as follow-ups): `Macbeth_Effect378_Update` (`:3547-3577`, a shot that also
+drops a bomb where it lands) and `Macbeth_MaTrainCar7_Update` (`:1668-1673`, a blast) test player 0 only, with the same
+stale "co-op players parked" rows; the beams' aim at player 0's z in state 16 is #269's.
+
+Unknown:
+
+- A bomb or beam that the train's end itself drops or fires hitting player 1 in a fight: the probe places them; in the
+  `vehicle_end` run above the pilots dodge bombs and `gInvincible` zeroes `dmgType`, so its hits are not told apart.
+- How it reads to two people driving; nobody played it. Windows, two PCs, three or four players, Release.
+
 ### 2026-11-11, the campaign run, #220's leftovers: Sector X's Spyborg and Titania's Goras go after the nearest human
 
 Read at `wave6-base` (`a4867d99`, `coop` after the merge of the combined test build). Rule as #220's entry below: aim and
