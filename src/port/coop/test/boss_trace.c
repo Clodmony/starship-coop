@@ -12,6 +12,7 @@ static FILE* sFile = NULL;
 
 extern f32 D_i3_801C4308[82]; // src/overlays/ovl_i3/fox_aq.c: the Bacoon's head and eye angles, among others
 extern f32 D_i3_801C2768[14]; // src/overlays/ovl_i3/fox_so.c: the Vulkain's head, [0] pitch and [1] yaw, among others
+extern s16 D_i5_801BE320[35]; // src/overlays/ovl_i5/fox_ma.c: Macbeth's train end, [18] the track's stage
 
 static s32 CoopBossTrace_InLevel(void) {
     return (gGameState == GSTATE_PLAY) && (gPlayer != NULL) && CoopPlayers_IsCoop();
@@ -130,9 +131,32 @@ static void CoopBossTrace_OnPokeUpdate(IEvent* event) {
     }
 }
 
+// SF64_COOP_MA_TRACK_END (#220, wave 7): the track's end for Macbeth's train end, once its fight is on.
+static s32 sTrackEndDone = 0;
+
+static void CoopBossTrace_OnTrackEndUpdate(IEvent* event) {
+    s32 i;
+
+    if (sTrackEndDone || !CoopBossTrace_InLevel() || (gCurrentLevel != LEVEL_MACBETH)) {
+        return;
+    }
+    for (i = 0; i < ARRAY_COUNT(gActors); i++) {
+        if ((gActors[i].obj.status == OBJ_ACTIVE) && (gActors[i].obj.id == OBJ_ACTOR_207) && (gActors[i].state == 4)) {
+            D_i5_801BE320[18] = 4;
+            sTrackEndDone = 1;
+            return;
+        }
+    }
+}
+
 void CoopBossTrace_Init(void) {
     const char* path = getenv("SF64_COOP_BOSS_TRACE");
     const char* poke = getenv("SF64_COOP_BOSS_POKE");
+    const char* trackEnd = getenv("SF64_COOP_MA_TRACK_END");
+
+    if ((trackEnd != NULL) && (trackEnd[0] == '1')) {
+        REGISTER_LISTENER(GamePostUpdateEvent, CoopBossTrace_OnTrackEndUpdate, EVENT_PRIORITY_NORMAL);
+    }
 
     if ((poke != NULL) && (sscanf(poke, "%d:%d:%d:%d", &sPoke[0], &sPoke[1], &sPoke[2], &sPoke[3]) == 4)) {
         sPoked = 0;

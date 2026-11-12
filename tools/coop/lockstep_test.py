@@ -131,6 +131,11 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             is the nearer when each of its states starts; pilots drive both Landmasters and keep them apart in the
             fight (SF64_COOP_PILOT_LANES), player 1 on the train's side. The build before it fails as "goes to and
             faces player 0 while player 1 is nearer". About 5 minutes.
+  w7macbeth_ram Macbeth's train end at the end of the track (#220, the owner's choice of 2026-11-12): it rams player 0
+            (states 18 and 19), and that ends the try as upstream: player 0 goes down at the ram, not refilled under
+            it (decision 0007's refill would buy only the next ram until the pool is gone). Pilots in lanes, no
+            gInvincible, a pool of 90, SF64_COOP_MA_TRACK_END to reach the track's end at the fight's start. By hand,
+            about 3 minutes.
   eels    Aquas' boss fight with both marines firing, so the eels of the Bacoon's pods (actor 255) are shot and
             explode piece by piece. src/port/coop/test/smoke_trace.h names every smoke puff: each puff of an eel has to
             lie in the fight, not at a position read from outside the eel's history (the desync of a real Windows and
@@ -2188,6 +2193,79 @@ def sc_other_bosses(args, folder):
     return "; ".join(lines)
 
 
+# Macbeth's ram at the end of the track (wave 7, #220; the owner's choice of 2026-11-12): once the track's stage reaches 4
+# the train's end rams player 0 (Macbeth_Actor207_Update, states 18 and 19) and zeroes its shields at every touch. That
+# ends the try as upstream: player 0 goes down, past decision 0007's refill (CoopPlayers_RefillFox). The run: pilots on
+# both clients, in lanes apart once the fight is on, without gInvincible (it keeps a hit from taking a tank down), a pool of
+# W7MACBETH_RAM_POOL lives so that both reach the fight, and SF64_COOP_MA_TRACK_END, which gives the track's stage 4 the
+# first time the train's end is in state 4, so it rams at once.
+W7MACBETH_RAM_FRAMES = 8000  # the fight starts at about level frame 6400; the ram and player 0's down come within 400
+W7MACBETH_RAM_POOL = 90
+W7MACBETH_RAM_WAIT = 600  # frames from the ram's start (state 19) by which player 0 has to be down
+
+
+def w7macbeth_ram_story(boss_rows, view):
+    """From the host's boss trace and view trace: the frame the train's end starts its ram (state 19), the frames on which
+    player 0 was refilled from then on (a life gone from the pool while it stays ACTIVE and player 1 does not come back),
+    the first frame it is DOWN, and the pool when the ram starts. Only up to the level's start again (frames go back)."""
+    start = next((int(r["frame"]) for r in boss_rows if r.get("ma", "").split(",")[1:2] == ["19"]), None)
+    if start is None:
+        return None, [], None, None
+    rows = []
+    for row in view.rows:
+        if row.frame < start:
+            continue
+        if rows and row.frame <= rows[-1].frame:
+            break  # the level started again
+        rows.append(row)
+    refills = []
+    for before, now in zip(rows, rows[1:]):
+        p, q = before.players[0], now.players[0]
+        came_back = len(now.players) > 1 and before.players[1].parked and not now.players[1].parked
+        if q.lives == p.lives - 1 and q.state == player_trace.ACTIVE and not came_back:
+            refills.append(now.frame)
+    down = next((r.frame for r in rows if r.players[0].state == PLAYERSTATE_DOWN), None)
+    return start, refills, down, (rows[0].players[0].lives if rows else None)
+
+
+def sc_w7macbeth_ram(args, folder):
+    """#220, the owner's choice of 2026-11-12: Macbeth's train end rams player 0 at the end of the track, and that ends the
+    try as upstream: player 0 goes down at the ram, once, and is not refilled under it (decision 0007's refill would buy
+    only the next ram, about every 31 frames, until the pool is gone). Hashes equal on both games."""
+    folder.mkdir(parents=True, exist_ok=True)
+    frames = W7MACBETH_RAM_FRAMES
+    traces = {name: folder / f"{name}-boss.txt" for name in ("host", "client")}
+    views = {name: folder / f"{name}-view.txt" for name in ("host", "client")}
+    for path in [*traces.values(), *views.values()]:
+        if path.exists():
+            path.unlink()  # the traces append
+    both = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt", "SF64_COOP_PILOT_LANES": "60,-60",
+            "SF64_COOP_MA_TRACK_END": "1", "SF64_COOP_VIEW_POKE": f"100:0:lives:{W7MACBETH_RAM_POOL}",
+            "SF64_COOP_LOCKSTEP_END": str(frames)}
+    host, client = session(args, folder, {"SF64_COOP_JOIN_LEVEL": "11", "SF64_COOP_BOSS_TRACE": str(traces["host"]),
+                                          "SF64_COOP_VIEW_TRACE": str(views["host"])},
+                           {"SF64_COOP_BOSS_TRACE": str(traces["client"]), "SF64_COOP_VIEW_TRACE": str(views["client"])},
+                           both, config={"CVars": {}})
+    try:
+        wait_for([host, client], "done", 900)
+    finally:
+        host.close()
+        client.close()
+    compared = compare(host, client, frames)
+    stories = [w7macbeth_ram_story(boss_trace(traces[name]), view_check.read_trace(1, views[name]))
+               for name in ("host", "client")]
+    expect(stories[0] == stories[1], f"w7macbeth_ram: the games differ: host {stories[0]}, client {stories[1]}")
+    start, refills, down, pool = stories[0]
+    expect(start is not None, f"w7macbeth_ram: the train's end never started its ram (state 19) in {frames} frames")
+    text = (f"the ram starts at frame {start} with {pool} lives in the pool; player 0 refilled under it "
+            f"{len(refills)} times{f' (first {refills[0]}, last {refills[-1]})' if refills else ''}, down at "
+            f"{down if down is not None else 'no frame'}")
+    expect(not refills, f"w7macbeth_ram: player 0 is refilled under the ram, so it drains the pool: {text}")
+    expect(down is not None and down - start <= W7MACBETH_RAM_WAIT,
+           f"w7macbeth_ram: player 0 does not go down at the ram: {text}")
+    return f"same hash on {compared} frames; {text}"
+
+
 EELS_FRAMES = 9000  # Aquas from the join: the Bacoon lets its eels out from about level frame 5600 on
 EEL_PUFF_SCALE = 3.0  # the smoke of an eel's piece (Aquas_Actor255_Update); nothing else in Aquas spawns this size here
 EEL_REACH = 6000.0  # an eel swims between the Bacoon and the marines, about 3000 apart along the path
@@ -4106,12 +4184,13 @@ SCENARIOS = {
     "vehicle_end": sc_vehicle_end,
     "bosses": sc_bosses,
     "other_bosses": sc_other_bosses,
+    "w7macbeth_ram": sc_w7macbeth_ram,
     "eels": sc_eels,
     "player_names": sc_player_names,
 }
 LONG = ("survive_next_level", "fox_refill_levels", "fox_refill_long", "fox_lead_swap", "fox_lead_swap_all_range", "full", "scenes", "allrange", "allrange_down", "allrange_others", "allrange_down_others", "teambar",
         "map_saves", "map_saves_host_full", "map_saves_equal", "audio", "release", "rates", "vehicles", "vehicle_end", "bosses", "other_bosses",
-        "eels")
+        "eels", "w7macbeth_ram")
 
 
 def main():

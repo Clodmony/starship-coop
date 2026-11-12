@@ -28,6 +28,11 @@
 // state `from` after a game frame of a co-op level, it is put in state `to` with timer_050 `timer`, once per level, so
 // a test reaches a boss's attack that takes the players' hits to get to. Every game of a session gets the same value,
 // so they stay one game.
+//
+// SF64_COOP_MA_TRACK_END=1 (#220, wave 7): the first time Macbeth's train end (actor 207) is in state 4 after a game
+// frame of a co-op level, the track's stage D_i5_801BE320[18] is set to 4, as the track table does at the end of the
+// track (Macbeth_8019A2F4). The train's end then goes into its ram (states 18 and 19) at once, which otherwise takes
+// the whole track and a fight in which nobody shoots it down. Once per game.
 
 #ifdef __cplusplus
 extern "C" {
