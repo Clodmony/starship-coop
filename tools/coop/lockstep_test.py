@@ -1809,7 +1809,7 @@ OTHER_BOSS_RUNS = {  # name: level, frames, script, CVars beyond gInvincible, en
     "goras": (12, 13000, rails_script, {}, {"SF64_COOP_LOCKSTEP_PILOT": "1"}),
     # Macbeth's train end (wave 7, #220): see W7MACBETH_FRAMES.
     "macbeth": (11, 14000, rails_script, {}, {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt",
-                                             "SF64_COOP_PILOT_LANES": "80,-80"}),
+                                             "SF64_COOP_PILOT_LANES": "60,-60"}),
 }
 OBJ_BOSS_SX_SPYBORG, OBJ_BOSS_TI_GORAS, OBJ_BOSS_SO_VULKAIN = 303, 306, 315  # include/sf64object.h
 SPYBORG_CHASES = (1, 2, 3, 4, 8, 9, 85)  # SectorX_SxSpyborg_Update's states that move it to its target's x and y

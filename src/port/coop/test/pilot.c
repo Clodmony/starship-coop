@@ -530,6 +530,21 @@ static bool CoopPilot_MacbethBossTarget(const Player* p, Vec3f* at) {
     return false;
 }
 
+// Where SF64_COOP_PILOT_LANES holds: a boss in gBosses[0], or Macbeth's train end (actor 207) once it leaves the train.
+static bool CoopPilot_LaneFight(void) {
+    s32 k;
+
+    if (gBosses[0].obj.status == OBJ_ACTIVE) {
+        return true;
+    }
+    for (k = 0; (gCurrentLevel == LEVEL_MACBETH) && (k < ARRAY_COUNT(gActors)); k++) {
+        if ((gActors[k].obj.status == OBJ_ACTIVE) && (gActors[k].obj.id == OBJ_ACTOR_207) && (gActors[k].state >= 1)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Goras, Titania's boss (Titania_TiGoras_Update): its hitbox is rebuilt each frame (aTiGorasHitbox, plain boxes, no
 // markers), and box n is part D_i5_801B7904[n]. From state 7 to 13 a beam hit on a part with a number in
 // D_i5_801BAA78 (1 to 4) takes that part's health, swork[8 + number]; once all four are gone and the health bar shows,
@@ -589,7 +604,7 @@ static void CoopPilot_Drive(const Player* p, s32 i, PilotPad* pad) {
     s32 h;
     f32 x;
 
-    if (i < sLanes) {
+    if ((i < sLanes) && CoopPilot_LaneFight()) {
         wantX = p->xPath + sLane[i] * edge; // its own lane (SF64_COOP_PILOT_LANES), whatever is ahead but hazards
         wantWeight = 1.0f;
     } else if (CoopPilot_GorasTarget(p, &aim) || CoopPilot_MacbethBossTarget(p, &aim)) {
