@@ -632,6 +632,31 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-12, #252, the results screen on the merged tree: a seat without a human, and how the window looks
+
+Identity: ROM US 1.0, branch `issue/252-results-time` = PR #259's commit `711e474f` plus a merge of `origin/coop`
+(`07c03c1f`), Linux, GCC, Debug, OpenGL on a software renderer, no window, one PC.
+
+Observed (code): "every human" is every seat the roster fills. A seat with no human (`COOP_SLOT_OUT`: a roster hole,
+for example after a player of three left and the level started again, `survive_three`) has no pad to wait for, so
+`CoopPlayers_IsOut` (`players.c`) lets the hold skip it. Seats that are parked, away or down still hold a human with a
+pad, so they count. A player lost or desynced mid-hold ends the level by decision 0014 (a new level start, which resets
+the hold through `CoopScore_LevelInit` and `gShowLevelClearStatusScreen` off in `Play_Init`); the 900-frame limit is the
+backstop. Every level turns the screen on and off from its own cutscene counter (20 sites, all 200 frames apart), and
+the hold only stops that counter, so no level shows the hold where it does not show the screen.
+
+Observed (runs): `results` 3 of 3, `results_hole` (new: the player in seat 1 of three leaves, the other two press, the
+hold ends the frame after the later press at 2201; without the IsOut line it holds 900 frames and fails), `player_hits`,
+`kill`, `lives`, `wing`, `saucerer`, `three`, `fox_refill`, `survive_three`, `survive_desync`, `survive_next_level`,
+`map_saves`: pass. A drawn run (a throwaway `SDL_GL_SwapWindow` hook read the back buffer; nothing of it is in the repo)
+shows the HITS window top right at 640x480 over the game's own lives, shield bar and bomb counter, which show through
+its translucent ground: the faces, `FOX`/`FALCO`, the hits at the right edge, green `OK` under Fox after its press, and
+`PRESS A` small at the bottom centre, on and off every 16 frames. It reads, but it is crowded where it covers the
+bomb counter.
+
+Unknown: three or four humans drawn (row 19 and 15 layouts), a long typed name squeezed, the real clear screens of
+other levels (the probe turns the screen on in Corneria), Windows, two PCs.
+
 ### 2026-11-11, names and letters (#257, #258): the name as the mark, and three things that still followed player 0 (#140)
 
 Identity: ROM US 1.0, branch `issue/names-letters` on `wave6-base` (`a4867d99`), Linux, GCC, Debug, OpenGL on a software

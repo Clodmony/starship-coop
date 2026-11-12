@@ -149,7 +149,6 @@ static s32 CoopScore_Face(s32 index) {
     }
 }
 
-
 static void CoopScore_Color(s32 r, s32 g, s32 b) {
     RCP_SetupDL(&gMasterDisp, SETUPDL_76_OPTIONAL);
     gDPSetPrimColor(gMasterDisp++, 0, 0, r, g, b, 255);
