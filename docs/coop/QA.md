@@ -238,6 +238,24 @@ Running tests must never use or modify the owner's own `starship.cfg.json`, save
 Newest first. One block per run that matters (a milestone, a release, a QA level change).
 
 ```
+date:       2026-11-12
+commit:     issue/272-macbeth-bombs, C sources as built c121da89 (later commits docs only), on 07c03c1f (coop)
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 game clients on one PC,
+            UDP over loopback, through the join driver
+what ran:   python tools/coop/lockstep_test.py --only macbeth_bombs (on this branch, on the test commit c670ff0c
+            alone, and on 07c03c1f); --only vehicles --levels macbeth; --only vehicle_end --levels macbeth;
+            --only aim; python tools/coop/test_all.py --no-build --only coop-off,effects,effects-allrange,rails-2,
+            rails-4,shots,lowhealth-rails,lowhealth-allrange,full-level,wingman,hash-run-1,hash-run-2,draw,exit-test,
+            replay-test; determinism.py --only no-draw; check.py; sp_audit.py --check
+result:     automated. Macbeth's bomb fire and state-16 beams, placed on one tank at a time by a probe, hit player 1
+            3 of 3 times each (0 of 3 on the test commit without the fix), player 0 3 of 3 (the control), never the
+            other tank; hashes and probe logs equal on every frame. Macbeth to level complete with two pilots and
+            the other runs unchanged; co-op off equal to 07c03c1f on Corneria and, by a scratch script, in Macbeth.
+            Not run: the train's end's own bombs and beams hitting player 1 in a fight, two PCs, Windows, Release,
+            three or four players, a person driving it.
+```
+
+```
 date:       2026-11-11
 commit:     issue/session-survives at 921d6411, on top of a4867d99 (coop)
 identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 or 3 game clients on one PC,
