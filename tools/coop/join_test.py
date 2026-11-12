@@ -136,7 +136,8 @@ def play(folder, exe, frames, picks, host_env=None, client_env=None, press_until
     port = port_file.read_text(encoding="utf-8").strip()
     clients = []
     for n, wishes in enumerate(picks):
-        env = {"SF64_COOP_JOIN_CONNECT": f"127.0.0.1:{port}", "SF64_COOP_JOIN_PICKS": ",".join(wishes)}
+        env = {"SF64_COOP_JOIN_CONNECT": f"127.0.0.1:{port}", "SF64_COOP_JOIN_PICKS": ",".join(wishes),
+               "SF64_COOP_JOIN_CONNECT_FRAME": str(replay_tool.CLIENT_JOIN_FRAME)}
         clients.append(Game(folder, f"client{n}", exe, client_frames or frames, {**env, **(client_env or {})}))
         clients[-1].thread.start()
     for game in [host, *clients]:

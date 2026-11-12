@@ -322,7 +322,9 @@ def session(args, folder, host_env=None, client_env=None, both=None, config=None
     games = [host]
     for n, pick in zip(range(clients), ("falco", "slippy", "peppy")):
         games.append(Client(args, folder, f"client{n}", {**env, "SF64_COOP_JOIN_CONNECT": f"127.0.0.1:{port}",
-                                                         "SF64_COOP_JOIN_PICKS": pick, **(client_env or {}),
+                                                         "SF64_COOP_JOIN_PICKS": pick,
+                                                         "SF64_COOP_JOIN_CONNECT_FRAME": str(replay_tool.CLIENT_JOIN_FRAME),
+                                                         **(client_env or {}),
                                                          **((client_envs or [{}] * clients)[n])}, replay_frames))
         if saves and saves.get(f"client{n}") is not None:
             put_save(saves[f"client{n}"], games[-1].run)
