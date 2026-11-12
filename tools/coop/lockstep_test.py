@@ -145,8 +145,9 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   survive_gaps_map #267: the games part on the map after Corneria: Corneria starts again from the session's own level
             start, the map's changes to the route and the save dropped, equal from its frame 0.
   survive_gaps_map_lost the same with a client that stops sending input on the map: it comes back with the session id.
-  survive_gaps_checkpoints #267: a restart from the game's own checkpoint in each level that has one (--levels):
-            the rails rings and the all-range checkpoints of Katina, Bolse and Andross; flown on to the level's end.
+  survive_gaps_checkpoints #267: a restart from the game's own checkpoint, one session per level (--levels; by default
+            the 11 rails levels' own rings, put where player 2 flies, and Katina and Bolse; andross by name), flown
+            on to the level's end. About 20 minutes.
   survive_gaps_venom_jump #267: a restart in Venom 2's second part, which Venom 1 jumps into: the restart point a
             jump leaves, flown on into the level after.
   survive_gaps_four #267: four games; one lost, the level starts again for three; a second lost, again for two.
@@ -3838,9 +3839,12 @@ def survive_checkpoint_run(args, folder, both, host_env=None, after=300):
     return games, reached[0][0], at + after
 
 
-def survive_check_checkpoint(games, checkpoint, poke, level, mode):
+def survive_check_checkpoint(games, checkpoint, poke, level, mode, saved_hits=True):
     """After a desync behind a checkpoint both games took a level start that begins at the host's checkpoint, began
-    there, and are equal from the first frame of that run on. Returns a line."""
+    there, and are equal from the first frame of that run on. Returns a line. saved_hits: the level's setup takes its
+    hits from the checkpoint's gSavedHitCount; Andross takes them from D_ctx_80177CA4 instead
+    (src/engine/fox_play.c:4710, saved at the brain's arrival, src/overlays/ovl_i6/fox_andross.c:1120), and then the
+    run only has to begin with the same hits on every game."""
     host, client = games
     for game in games:
         over = int(join_test.said(game.sync(), "over")[0]["frame"])
@@ -3857,7 +3861,8 @@ def survive_check_checkpoint(games, checkpoint, poke, level, mode):
                f"{game.name}: the level start's checkpoint {second[SURVIVE_CHECKPOINT_FLAG:]} is not the one reached, "
                f"{checkpoint}")
         began, again = survive_run_state(game, 1), survive_run_state(game, 2)
-        expect(began["load"] == 0 and began["path"] == 0 and began["allrange"] == 0,
+        # A level's start: no checkpoint, and the path at 0 or behind it (Macbeth's tank begins at -770).
+        expect(began["load"] == 0 and began["saved_load"] == 0 and began["path"] <= 0 and began["allrange"] == 0,
                f"{game.name}: the first run did not begin at the level's start: {began}")
         expect(again["level"] == level and again["mode"] == mode, f"{game.name}: run 2 is in {again}")
         expect(again["saved_load"] == int(checkpoint["load"]) and again["allrange"] == int(checkpoint["allrange"]),
@@ -3868,8 +3873,8 @@ def survive_check_checkpoint(games, checkpoint, poke, level, mode):
             expect(again["load"] >= int(checkpoint["load"]) and
                    0 <= again["path"] - int(checkpoint["path"]) < 400,
                    f"{game.name}: run 2 did not begin at the checkpoint's place: {again}, want {checkpoint}")
-        expect(again["hits"] == int(checkpoint["hits"]), f"{game.name}: run 2 began with {again['hits']} hits, the "
-                                                         f"checkpoint held {checkpoint['hits']}")
+        expect(not saved_hits or again["hits"] == int(checkpoint["hits"]),
+               f"{game.name}: run 2 began with {again['hits']} hits, the checkpoint held {checkpoint['hits']}")
         expect(again["lives"] == began["lives"], f"{game.name}: the restart cost a life: {again['lives']}")
     expect(join_test.said(host.report(), "restart_at_checkpoint"), "the host did not take its checkpoint")
     expect(survive_run_state(host, 2) == survive_run_state(client, 2),
@@ -3977,6 +3982,7 @@ SURVIVE_GAPS_REPLAY = 150000  # frames of the empty replay: longer than any run 
 SURVIVE_GAPS_ROUTE_FIELDS = ("state", "level", "phase", "mission", "planets", "mission_hits", "medals", "team", "paths",
                              "total", "clear", "status", "lives", "save")
 GSTATE_ENDING = 8
+SURVIVE_GAPS_GAME_OVER = 5  # GSTATE_GAME_OVER
 
 
 def survive_gaps_routes(game, run=None):
@@ -4328,14 +4334,26 @@ SURVIVE_GAPS_LEVELS = {
 }
 
 
+# What runs without --levels: every level the pilots take to its end from the checkpoint, the rails with their own
+# ring put where player 2 flies. Andross' second part runs with --levels andross: there the pilots run out of lives in
+# the brain fight (2026-11-12).
+SURVIVE_GAPS_DEFAULT = [f"{name}@ring" for name in ("corneria", "meteo", "sector_x", "area_6", "sector_y", "venom_1",
+                                                      "solar", "zoness", "macbeth", "titania", "aquas")] + ["katina",
+                                                                                                             "bolse"]
+
+
 def survive_gaps_checkpoint_in(args, folder, name):
     """One level of survive_gaps_checkpoints. Returns its line. `<level>@ring`: the level's own checkpoint ring is put
     across the path where player 2 flies (SF64_COOP_LOCKSTEP_RING_TO, its depth unchanged), as the pilot does not steer
-    for rings: the checkpoint is still the level's own, at its object index and path."""
+    for rings: the checkpoint is still the level's own, at its object index and path. `<level>@testring`: a ring the
+    driver makes in front of player 2 once the level has loaded 40 objects (item kind 3, as survive_checkpoint), which
+    builds from before RING_TO have too (a run against the reference build)."""
     name, _, how = name.partition("@")
     level, phase, cap, what = SURVIVE_GAPS_LEVELS[name]
     if how == "ring":
         what = f"{what}, put where player 2 flies"
+    elif how == "testring":
+        what = f"a test ring from frame {JOIN_FRAME + 1000}"
     cvars = {} if name == "corneria" else {"gInvincible": 1}  # as tools/coop/campaign.py flies a level
     if name in ("zoness", "andross"):
         cvars["gInfiniteBombs"] = 1
@@ -4344,21 +4362,29 @@ def survive_gaps_checkpoint_in(args, folder, name):
            "SF64_COOP_LOCKSTEP_ROUTE": "1"}
     if how == "ring":
         env["SF64_COOP_LOCKSTEP_RING_TO"] = "1"
+    elif how == "testring":
+        env["SF64_COOP_LOCKSTEP_ITEM"] = f"{JOIN_FRAME + 1000}:1:{SURVIVE_ITEM_CHECKPOINT}"
     games = session(args, folder, both=env, config={"CVars": cvars} if cvars else None, replay_frames=SURVIVE_GAPS_REPLAY,
                     host_env={"SF64_COOP_JOIN_LEVEL": str(level), "SF64_COOP_JOIN_PHASE": str(phase)},
                     client_envs=[{"SF64_COOP_LOCKSTEP_POKE_AFTER": "300", "SF64_COOP_HASH_POKE_PLAYER": "1"}])
     host, client = games
 
+    def left_routes(run):
+        # The map, or another level (a jump); not the same level set up again inside itself (Andross' brain, frame
+        # 977 of a run: one frame of PLAY_INIT).
+        return [r for r in survive_gaps_routes(host, run) if r["place"].startswith("M") or
+                (r["place"] != "L1" and (r["level"], r["phase"]) != (str(level), str(phase)))]
+
     def run1_over():
-        left = [r for r in survive_gaps_routes(host, 1) if r["place"] != "L1"]
+        left = left_routes(1)
         expect(not left, f"{name}: the level ended at frame {left[0]['frame'] if left else 0} without a checkpoint")
         expect(not join_test.said(host.sync(), "done"), f"{name}: no checkpoint in {cap} frames")
         return all(join_test.said(g.sync(), "again") for g in games)
 
     def run2_left():
-        # The map, the level a jump goes to, or what follows Andross: a frame neither in the level nor its pause.
+        # The map, the level a jump goes to, or what follows Andross: the ending.
         expect(len(join_test.said(host.sync(), "done")) < 2, f"{name}: the level did not end in {cap} frames of run 2")
-        left = [r for r in survive_gaps_routes(host, 2) if r["place"] != "L1"]
+        left = left_routes(2)
         if left:
             return survive_gaps_run_frames(host, 2) >= int(left[0]["frame"]) + 60
         rows = survive_run_log(host, 2) if survive_gaps_run_frames(host, 2) else []
@@ -4381,24 +4407,29 @@ def survive_gaps_checkpoint_in(args, folder, name):
     expect(theirs == before, f"{name}: the games reached different checkpoints: {before}, {theirs}")
     checkpoint = before[-1]
     mode = 0 if int(checkpoint["load"]) != 0 else 1
-    line = survive_check_checkpoint(games, checkpoint, poke, level, mode)
+    line = survive_check_checkpoint(games, checkpoint, poke, level, mode, saved_hits=name != "andross")
     frames = survive_gaps_compare(games, 2)
-    left = [r for r in survive_gaps_routes(host, 2) if r["place"] != "L1"]
+    left = left_routes(2)
+    # Out of lives, the game goes to its game over and on to the map: that is no end of the level.
+    over = [i for i, row in enumerate(survive_run_log(host, 2)) if row.split()[1] == str(SURVIVE_GAPS_GAME_OVER)]
+    expect(not over, f"{name} ({what}): the restart held, {line}, equal on all {frames} frames; but the team ran out of "
+                     f"lives at frame {over[0] if over else 0} of run 2 (game over): the pilot did not end the level")
     end = (f"the map at frame {left[0]['frame']}" if left and left[0]["place"].startswith("M") else
            f"level {left[0]['level']} (a jump) at frame {left[0]['frame']}" if left else "the ending")
     return f"{name}{'@' + how if how else ''} ({what}): {line}; run 2 flew on to {end}, equal on all {frames} frames"
 
 
 def sc_survive_gaps_checkpoints(args, folder):
-    """#267 item 3: a restart from the game's own checkpoint in the levels beyond Corneria's rails (--levels, default all
-    of SURVIVE_GAPS_LEVELS). Pilots fly the level from its start (gInvincible on but in Corneria, gInfiniteBombs in
-    Zoness and Andross, as tools/coop/campaign.py); 300 frames after the first checkpoint a bit of player 2 is flipped on
-    the client. Both games take a level start at the host's checkpoint, begin there as after a death with no life taken
-    (survive_check_checkpoint), and fly on to the level's end: equal on every frame of that run. One session per level;
-    the failures are named together. `<level>@ring` uses a test ring instead (survive_gaps_checkpoint_in)."""
-    names = args.levels or list(SURVIVE_GAPS_LEVELS)
+    """#267 item 3: a restart from the game's own checkpoint in the levels beyond Corneria's rails (--levels, default
+    SURVIVE_GAPS_DEFAULT; the names are those of SURVIVE_GAPS_LEVELS). Pilots fly the level from its start (gInvincible
+    on but in Corneria, gInfiniteBombs in Zoness and Andross, as tools/coop/campaign.py); 300 frames after the first
+    checkpoint a bit of player 2 is flipped on the client. Both games take a level start at the host's checkpoint, begin
+    there as after a death with no life taken (survive_check_checkpoint), and fly on to the level's end, the map or the
+    level a jump goes to (a game over is no end): equal on every frame of that run. One session per level; the failures
+    are named together. `<level>@ring` and `<level>@testring`: survive_gaps_checkpoint_in."""
+    names = args.levels or SURVIVE_GAPS_DEFAULT
     unknown = [name for name in names if name.partition("@")[0] not in SURVIVE_GAPS_LEVELS or
-               name.partition("@")[2] not in ("", "ring")]
+               name.partition("@")[2] not in ("", "ring", "testring")]
     expect(not unknown, f"no level {', '.join(unknown)}; the choices are {', '.join(SURVIVE_GAPS_LEVELS)}")
     lines, failed = [], []
     for name in names:
