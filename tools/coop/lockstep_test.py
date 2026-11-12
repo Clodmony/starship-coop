@@ -1807,6 +1807,9 @@ OTHER_BOSS_RUNS = {  # name: level, frames, script, CVars beyond gInvincible, en
     # Titania: Goras waits in state 3 until it is shot, so pilots on both clients drive the Landmasters (the feed is
     # not played then) and bring it into its fight, states 7 to 12, from about 7800 frames in.
     "goras": (12, 13000, rails_script, {}, {"SF64_COOP_LOCKSTEP_PILOT": "1"}),
+    # Macbeth's train end (wave 7, #220): see W7MACBETH_FRAMES.
+    "macbeth": (11, 14000, rails_script, {}, {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt",
+                                             "SF64_COOP_PILOT_LANES": "80,-80"}),
 }
 OBJ_BOSS_SX_SPYBORG, OBJ_BOSS_TI_GORAS, OBJ_BOSS_SO_VULKAIN = 303, 306, 315  # include/sf64object.h
 SPYBORG_CHASES = (1, 2, 3, 4, 8, 9, 85)  # SectorX_SxSpyborg_Update's states that move it to its target's x and y
@@ -2024,6 +2027,64 @@ def other_boss_vulkain_story(trace):
     return face, frames
 
 
+# Macbeth's train end (wave 7, #220): actor 207 (Macbeth_Actor207_Update, src/overlays/ovl_i5/fox_ma.c), the end of the
+# train in the Landmaster fight at the end of Macbeth, with a kept slot of its own (the `ma=` field of the boss trace).
+W7MACBETH_GOES = (5, 7, 15)  # its states that move it across the path to its target's x
+W7MACBETH_FACES = (4, 5, 6)  # its states in which Macbeth_Actor207_FacePlayer turns it to its target on every frame
+W7MACBETH_APART = 300.0  # the players more than this apart across the path, or nobody is the nearer by much
+
+
+def w7macbeth_story(trace):
+    """Macbeth's train end, from the boss trace. Each time it enters one of W7MACBETH_GOES or W7MACBETH_FACES, the human
+    then nearer to it (as CoopAim_Nearest measures: x, y and trueZpos, on the row before) is the one it should go after
+    in that state. Per that nearer player: the frames of W7MACBETH_GOES on which its x is nearer that player's than the
+    other's and the other way round (`goes`), and the frames of W7MACBETH_FACES on which it faces (rot y within FACING)
+    that player and not the other (within NOT_FACING) and the other way round (`faces`); only frames with the players
+    more than W7MACBETH_APART apart across the path. Also its kept slot per value, over those states."""
+    def turn(a):
+        return (a + 180.0) % 360.0 - 180.0
+
+    goes = {0: [0, 0], 1: [0, 0]}
+    faces = {0: [0, 0], 1: [0, 0]}
+    picks = {0: 0, 1: 0}
+    kept = {}
+    state = None
+    pick = None
+    last = None
+    for row in trace:
+        m = row.get("ma", "").split(",")
+        if "p1" not in row or len(m) < 8:
+            state = None
+            last = None
+            continue
+        now = int(m[1])
+        pos = [float(v) for v in m[2:5]]
+        players = [[float(v) for v in row[f"p{i}"].split(",")[2:5]] for i in (0, 1)]
+        if now != state and now in W7MACBETH_GOES + W7MACBETH_FACES:
+            at = last if last is not None else (pos, players)
+            dist = [math.dist(at[0], p) for p in at[1]]
+            pick = 1 if dist[1] < dist[0] else 0
+            picks[pick] += 1
+        state = now
+        last = (pos, players)
+        if now not in W7MACBETH_GOES + W7MACBETH_FACES:
+            continue
+        kept[m[7]] = kept.get(m[7], 0) + 1
+        if abs(players[0][0] - players[1][0]) <= W7MACBETH_APART:
+            continue
+        if now in W7MACBETH_GOES:
+            mine, other = abs(pos[0] - players[pick][0]), abs(pos[0] - players[1 - pick][0])
+            goes[pick][0 if mine < other else 1] += 1
+        if now in W7MACBETH_FACES:
+            yaw = float(m[6])
+            off = [abs(turn(yaw - math.degrees(math.atan2(p[0] - pos[0], p[2] - 130.0 - pos[2])))) for p in players]
+            if off[pick] < FACING and off[1 - pick] > NOT_FACING:
+                faces[pick][0] += 1
+            elif off[1 - pick] < FACING and off[pick] > NOT_FACING:
+                faces[pick][1] += 1
+    return goes, faces, picks, kept
+
+
 def sc_other_bosses(args, folder):
     """#220: the bosses other than Area 6's and Andross go after the nearer human. granga: Corneria's Granga walks at
     and turns its guns to player 1 when player 1 is the nearer. --levels picks some of OTHER_BOSS_RUNS."""
@@ -2100,6 +2161,21 @@ def sc_other_bosses(args, folder):
             expect(sum(face) >= 30, f"vulkain: too few frames of the Vulkain's head to tell: {text}")
             expect(face[1] > 2 * face[0], f"vulkain: the Vulkain turns its head to player 0: {text}")
             lines.append(f"vulkain: same hash on {frames} frames; {text}")
+        if name == "macbeth":
+            goes, faces, picks, kept = w7macbeth_story(trace)
+            text = (f"states picked with player 1 the nearer {picks[1]}, player 0 {picks[0]}; going across the path "
+                    f"with player 1 the nearer it goes to player 1 on {goes[1][0]}, to player 0 on {goes[1][1]}, with "
+                    f"player 0 the nearer to player 0 on {goes[0][0]}, to player 1 on {goes[0][1]}; facing, with player 1 "
+                    f"the nearer, player 1 on {faces[1][0]}, player 0 on {faces[1][1]}, with player 0 the nearer, player "
+                    f"0 on {faces[0][0]}, player 1 on {faces[0][1]}; kept "
+                    f"{', '.join(f'{k}: {v}' for k, v in sorted(kept.items()))}")
+            expect(sum(goes[1]) >= 100 and sum(faces[1]) >= 100,
+                   f"macbeth: too few frames with player 1 the nearer to tell: {text}")
+            expect(goes[1][0] > 2 * goes[1][1] and goes[0][0] > 2 * goes[0][1],
+                   f"macbeth: the train's end goes to player 0 while player 1 is nearer: {text}")
+            expect(faces[1][0] > 2 * faces[1][1] and faces[0][0] > 2 * faces[0][1],
+                   f"macbeth: the train's end faces player 0 while player 1 is nearer: {text}")
+            lines.append(f"macbeth: same hash on {frames} frames; {text}")
     return "; ".join(lines)
 
 
