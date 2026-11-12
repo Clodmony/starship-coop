@@ -127,7 +127,10 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             across the path, `goras`, Titania's Goras goes after the player it keeps (pilots on both), and `vulkain`,
             Solar's Vulkain turns its head to player 1 (campaign run). On
             rails player 0 holds the top left and player 1 the bottom right, the nearer one. Hashes and boss traces
-            equal on both games.
+            equal on both games. `macbeth` (wave 7): Macbeth's train end, actor 207, goes to and faces the tank that
+            is the nearer when each of its states starts; pilots drive both Landmasters and keep them apart in the
+            fight (SF64_COOP_PILOT_LANES), player 1 on the train's side. The build before it fails as "goes to and
+            faces player 0 while player 1 is nearer". About 5 minutes.
   eels    Aquas' boss fight with both marines firing, so the eels of the Bacoon's pods (actor 255) are shot and
             explode piece by piece. src/port/coop/test/smoke_trace.h names every smoke puff: each puff of an eel has to
             lie in the fight, not at a position read from outside the eel's history (the desync of a real Windows and
