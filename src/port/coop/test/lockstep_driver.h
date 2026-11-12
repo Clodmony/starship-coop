@@ -40,6 +40,9 @@
 //   SF64_COOP_LOCKSTEP_POKE_AT=<run>:<place>:<frames>[,...]  flip the bit (as SF64_COOP_LOCKSTEP_POKE) on that frame of
 //                                      that place in that run, up to 4 of them; the report says `poke_at ...`
 //   SF64_COOP_LOCKSTEP_MUTE_AT=<run>:<place>:<frames>[,...]  stop sending input there, as SF64_COOP_LOCKSTEP_MUTE
+//   SF64_COOP_LOCKSTEP_RING_TO=<player>  in the first run, the level's own checkpoint ring is put across the path where
+//                                      that player is (x and y; its depth stays), until someone flies through it; the
+//                                      report says `ring_to frame=N ...` once
 //   SF64_COOP_LOCKSTEP_CAMPAIGN_CHEATS=1  gInvincible on but in Corneria, gInfiniteBombs in Zoness and Andross, set on
 //                                      every game on the same lockstep frame of each level, as tools/coop/campaign.py
 //                                      sets them for a level of its own

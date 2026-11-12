@@ -373,6 +373,8 @@ static GapsAt sGapsMute[GAPS_AT_MAX];
 static s32 sGapsMuteCount = 0;
 static bool sGapsRoute = false;
 static bool sGapsCheats = false;
+static s32 sGapsRingTo = -1; // SF64_COOP_LOCKSTEP_RING_TO: the player the level's own ring is put in front of
+static bool sGapsRingSaid = false;
 static s32 sGapsRun = 0;    // the run the counts below belong to
 static s32 sGapsLevels = 0; // levels this game entered in that run
 static s32 sGapsMaps = 0;   // maps
@@ -467,9 +469,41 @@ static void Gaps_Cheat(const char* name, s32 on) {
     }
 }
 
+// SF64_COOP_LOCKSTEP_RING_TO: in the first run, the level's own checkpoint ring, while nobody has flown through it,
+// is put across the path where that player is (x and y; its depth stays), so the player flies through it where the
+// level has it: the checkpoint it saves is the level's own (object index, path, ground). A pilot does not steer for
+// rings.
+static void Gaps_RingTo(s32 frame) {
+    Player* p = &gPlayer[sGapsRingTo];
+    s32 i;
+
+    if ((sRuns != 1) || (gGameState != GSTATE_PLAY) || (gPlayState != PLAY_UPDATE) ||
+        (sGapsRingTo >= CoopPlayers_Count())) {
+        return;
+    }
+    for (i = 0; i < ARRAY_COUNT(gItems); i++) {
+        Item* ring = &gItems[i];
+
+        if ((ring->obj.status != OBJ_ACTIVE) || (ring->obj.id != OBJ_ITEM_CHECKPOINT) || (ring->state != 0) ||
+            ring->collected) {
+            continue;
+        }
+        ring->obj.pos.x = p->pos.x;
+        ring->obj.pos.y = p->pos.y + ((p->form == FORM_LANDMASTER) ? 50.0f : 0.0f);
+        if (!sGapsRingSaid) {
+            sGapsRingSaid = true;
+            Report("ring_to frame=%d player=%d slot=%d z=%d", (int) frame, (int) sGapsRingTo, (int) i,
+                   (int) ring->obj.pos.z);
+        }
+    }
+}
+
 static void Gaps_Frame(s32 frame) {
     s32 i;
 
+    if (sGapsRingTo >= 0) {
+        Gaps_RingTo(frame);
+    }
     if (!sGapsRoute) {
         return;
     }
@@ -652,6 +686,7 @@ void CoopLockstepDriver_Init(void) {
         sGapsMuteCount = Gaps_Parse(Env_Text("SF64_COOP_LOCKSTEP_MUTE_AT"), sGapsMute);
     }
     sGapsCheats = Env_Text("SF64_COOP_LOCKSTEP_CAMPAIGN_CHEATS") != NULL;
+    sGapsRingTo = Env_Number("SF64_COOP_LOCKSTEP_RING_TO");
     sGapsRoute =
         (Env_Text("SF64_COOP_LOCKSTEP_ROUTE") != NULL) || (sGapsPokeCount > 0) || (sGapsMuteCount > 0) || sGapsCheats;
     if (slow != NULL) {

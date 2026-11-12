@@ -4111,8 +4111,9 @@ def sc_survive_gaps_route(args, folder):
         expect([(v["run"], v["level"]) for v in starts] == [("1", "0"), ("2", "0"), ("3", str(level2))],
                f"{game.name}: level starts {[(v['run'], v['level']) for v in starts]}, want Corneria twice, then "
                f"level {level2}")
+        # A client hears of a desync twice: from its own check and from the host (SESSION_RECOVER).
         recover = join_test.said(game.report(), "recover")
-        expect(len(recover) == 2 and all(int(v["reason"]) == SURVIVE_REASONS["desync"] for v in recover),
+        expect(len(recover) >= 2 and all(int(v["reason"]) == SURVIVE_REASONS["desync"] for v in recover),
                f"{game.name}: recover {recover}")
         overs = [int(v["frame"]) for v in join_test.said(game.sync(), "over")]
         expect(len(overs) == 2 and poke1 <= overs[0] <= poke1 + DESYNC_SEEN_WITHIN and
@@ -4129,6 +4130,7 @@ def sc_survive_gaps_route(args, folder):
             began = survive_run_state(game, run)
             expect(began["level"] == level and began["load"] == 0 and began["path"] == 0 and began["hits"] == 0,
                    f"{game.name}: run {run} did not begin at the start of level {level}: {began}")
+    expect(len(join_test.said(host.report(), "recover")) == 2, f"host: {join_test.said(host.report(), 'recover')}")
     expect(survive_level_values(host, 3) == survive_level_values(client, 3), "the games took different level starts")
     survive_gaps_same_routes(games, 1, ["L1"])
     run2 = survive_gaps_same_routes(games, 2, ["L1", "M1", "L2"])
@@ -4212,8 +4214,9 @@ def sc_survive_gaps_map(args, folder):
         over = int(join_test.said(game.sync(), "over")[0]["frame"])
         expect(poke <= over <= poke + DESYNC_SEEN_WITHIN, f"{game.name}: lockstep stopped at {over}, poke at {poke}")
         recover = join_test.said(game.report(), "recover")
-        expect(len(recover) == 1 and int(recover[0]["reason"]) == SURVIVE_REASONS["desync"],
+        expect(recover and all(int(v["reason"]) == SURVIVE_REASONS["desync"] for v in recover),
                f"{game.name}: recover {recover}")
+    expect(len(join_test.said(host.report(), "recover")) == 1, f"host: {join_test.said(host.report(), 'recover')}")
     parted = next(line for _, _, line in host.report() if line.startswith("parted"))
     frames, changed = survive_gaps_map_check(games)
     line = survive_first_difference(games, poke)  # one report each: none in the level that started again
@@ -4326,14 +4329,21 @@ SURVIVE_GAPS_LEVELS = {
 
 
 def survive_gaps_checkpoint_in(args, folder, name):
-    """One level of survive_gaps_checkpoints. Returns its line."""
+    """One level of survive_gaps_checkpoints. Returns its line. `<level>@ring`: the level's own checkpoint ring is put
+    across the path where player 2 flies (SF64_COOP_LOCKSTEP_RING_TO, its depth unchanged), as the pilot does not steer
+    for rings: the checkpoint is still the level's own, at its object index and path."""
+    name, _, how = name.partition("@")
     level, phase, cap, what = SURVIVE_GAPS_LEVELS[name]
+    if how == "ring":
+        what = f"{what}, put where player 2 flies"
     cvars = {} if name == "corneria" else {"gInvincible": 1}  # as tools/coop/campaign.py flies a level
     if name in ("zoness", "andross"):
         cvars["gInfiniteBombs"] = 1
     folder.mkdir(parents=True, exist_ok=True)
     env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt", "SF64_COOP_LOCKSTEP_END": str(cap),
            "SF64_COOP_LOCKSTEP_ROUTE": "1"}
+    if how == "ring":
+        env["SF64_COOP_LOCKSTEP_RING_TO"] = "1"
     games = session(args, folder, both=env, config={"CVars": cvars} if cvars else None, replay_frames=SURVIVE_GAPS_REPLAY,
                     host_env={"SF64_COOP_JOIN_LEVEL": str(level), "SF64_COOP_JOIN_PHASE": str(phase)},
                     client_envs=[{"SF64_COOP_LOCKSTEP_POKE_AFTER": "300", "SF64_COOP_HASH_POKE_PLAYER": "1"}])
@@ -4376,7 +4386,7 @@ def survive_gaps_checkpoint_in(args, folder, name):
     left = [r for r in survive_gaps_routes(host, 2) if r["place"] != "L1"]
     end = (f"the map at frame {left[0]['frame']}" if left and left[0]["place"].startswith("M") else
            f"level {left[0]['level']} (a jump) at frame {left[0]['frame']}" if left else "the ending")
-    return f"{name} ({what}): {line}; run 2 flew on to {end}, equal on all {frames} frames"
+    return f"{name}{'@' + how if how else ''} ({what}): {line}; run 2 flew on to {end}, equal on all {frames} frames"
 
 
 def sc_survive_gaps_checkpoints(args, folder):
@@ -4385,9 +4395,10 @@ def sc_survive_gaps_checkpoints(args, folder):
     Zoness and Andross, as tools/coop/campaign.py); 300 frames after the first checkpoint a bit of player 2 is flipped on
     the client. Both games take a level start at the host's checkpoint, begin there as after a death with no life taken
     (survive_check_checkpoint), and fly on to the level's end: equal on every frame of that run. One session per level;
-    the failures are named together."""
+    the failures are named together. `<level>@ring` uses a test ring instead (survive_gaps_checkpoint_in)."""
     names = args.levels or list(SURVIVE_GAPS_LEVELS)
-    unknown = [name for name in names if name not in SURVIVE_GAPS_LEVELS]
+    unknown = [name for name in names if name.partition("@")[0] not in SURVIVE_GAPS_LEVELS or
+               name.partition("@")[2] not in ("", "ring")]
     expect(not unknown, f"no level {', '.join(unknown)}; the choices are {', '.join(SURVIVE_GAPS_LEVELS)}")
     lines, failed = [], []
     for name in names:
