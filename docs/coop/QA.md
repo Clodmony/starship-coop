@@ -242,6 +242,28 @@ Newest first. One block per run that matters (a milestone, a release, a QA level
 
 ```
 date:       2026-11-12
+commit:     issue/combined-test-6 (PR #285): C sources as built 04af2b4d, the gate on its head e8f038c6 (the commits after
+            04af2b4d change docs only), on 07c03c1f (coop)
+identity:   ROM US 1.0, Linux, GCC, Debug (the Release build is the one the `builds` step compares), OpenGL on a software
+            renderer, no window; 2 or 3 game clients on one PC, UDP over loopback
+what ran:   python tools/coop/test_all.py --no-build --base-exe <build of 07c03c1f> --lanes 2 (53 steps, 42 minutes);
+            before it, one scenario per run on 04af2b4d: lockstep_test.py --only macbeth_bombs, sy_robot_spread,
+            other_bosses --levels macbeth, survive_gaps_checkpoints --levels andross, aim, bosses --levels andross;
+            campaign.py --levels venom-2-andross; hash_check.py base --base <build of 07c03c1f>; then results_hole alone
+            (see result)
+result:     automated. 52 of 53 steps passed, among them coop-off (equal to the build of 07c03c1f), builds (Release
+            against Debug), determinism, both rates steps, rails-2, rails-4, full-level, views, replay-test, the session,
+            net, steam, lockstep, desync and steam mutant suites (every break caught), and the check that no tracked
+            file changed. The one failure is the `lockstep` step's scenario results_hole (#259): "seats: the one who left
+            is player 3, the other 2". It is intermittent and also fails on the build of #259 alone: alternating, 6 of 8
+            runs passed on each build (7 of 12 on this tree and 10 of 13 on #259 alone over all runs); the other 50
+            lockstep scenarios passed (issue #286). The Andross end is reached with equal hashes (36998 frames), and
+            survive_gaps_checkpoints --levels andross flies on to the ending (5339 frames). Not run: Windows and MSVC,
+            two PCs, a real connection that drops, three or four players beyond the scenarios of #270, a person playing.
+```
+
+```
+date:       2026-11-12
 commit:     issue/272-macbeth-bombs, C sources as built c121da89 (later commits docs only), on 07c03c1f (coop)
 identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 game clients on one PC,
             UDP over loopback, through the join driver
