@@ -238,6 +238,25 @@ Running tests must never use or modify the owner's own `starship.cfg.json`, save
 Newest first. One block per run that matters (a milestone, a release, a QA level change).
 
 ```
+date:       2026-11-12
+commit:     issue/262-stray-reads: the sweep on the game code of wave7-base (07c03c1f), the runs after the fixes on
+            a7e3f2c2
+identity:   ROM US 1.0, Linux, GCC, Debug with AddressSanitizer and UBSan (build-asan), OpenGL on a software
+            renderer, no window; one game per run, 2 players by gCoopDebugPlayerCount, no transport; each level
+            started past its intro, gInvincible but in Corneria, gInfiniteBombs in Zoness and at Andross
+what ran:   python tools/coop/w7asan_sweep.py baseline; python tools/coop/w7asan_sweep.py sweep (17 levels, 229304
+            frames, 71 minutes), and the same again after the fixes
+result:     QA level none (one game per run). Before: 17 AddressSanitizer and 18 UBSan bounds reports in 71 distinct
+            lines, 17 of them not known as harmless: six places that read or wrote outside an array (the map's
+            mission bar, Aquas' jellyfish, Venom 1's Golemech, Katina's team at the end, Macbeth's texture scroll,
+            which ended that game at frame 4494, and the test pilot at Goras). After: w7asan: PASS, 17 of 17 levels
+            to level complete, 0 reports that fail the run (7, 10 and 28 known or listed). Two clients on the plain build of a7e3f2c2 (automated): eels,
+            vehicle_end macbeth, aquas and titania, campaign.py venom-1 and katina, each equal on every frame; co-op
+            off equal to the reference build on 5800 frames. Not run: Windows, MSVC, a Release build, a session
+            under the sanitizers, test_all.py. docs/coop/NOTES.md, 2026-11-12, the sanitizer sweep.
+```
+
+```
 date:       2026-11-11
 commit:     issue/session-survives at 921d6411, on top of a4867d99 (coop)
 identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 or 3 game clients on one PC,
