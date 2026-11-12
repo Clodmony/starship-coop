@@ -127,7 +127,15 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             across the path, `goras`, Titania's Goras goes after the player it keeps (pilots on both), and `vulkain`,
             Solar's Vulkain turns its head to player 1 (campaign run). On
             rails player 0 holds the top left and player 1 the bottom right, the nearer one. Hashes and boss traces
-            equal on both games.
+            equal on both games. `macbeth` (wave 7): Macbeth's train end, actor 207, goes to and faces the tank that
+            is the nearer when each of its states starts; pilots drive both Landmasters and keep them apart in the
+            fight (SF64_COOP_PILOT_LANES), player 1 on the train's side. The build before it fails as "goes to and
+            faces player 0 while player 1 is nearer". About 5 minutes.
+  w7macbeth_ram Macbeth's train end at the end of the track (#220, the owner's choice of 2026-11-12): it rams player 0
+            (states 18 and 19), and that ends the try as upstream: player 0 goes down at the ram, not refilled under
+            it (decision 0007's refill would buy only the next ram until the pool is gone). Pilots in lanes, no
+            gInvincible, a pool of 90, SF64_COOP_MA_TRACK_END to reach the track's end at the fight's start. By hand,
+            about 3 minutes.
   eels    Aquas' boss fight with both marines firing, so the eels of the Bacoon's pods (actor 255) are shot and
             explode piece by piece. src/port/coop/test/smoke_trace.h names every smoke puff: each puff of an eel has to
             lie in the fight, not at a position read from outside the eel's history (the desync of a real Windows and
@@ -1807,6 +1815,12 @@ OTHER_BOSS_RUNS = {  # name: level, frames, script, CVars beyond gInvincible, en
     # Titania: Goras waits in state 3 until it is shot, so pilots on both clients drive the Landmasters (the feed is
     # not played then) and bring it into its fight, states 7 to 12, from about 7800 frames in.
     "goras": (12, 13000, rails_script, {}, {"SF64_COOP_LOCKSTEP_PILOT": "1"}),
+    # Macbeth's train end (wave 7, #220): pilots on both clients (the feed is not played then) drive the Landmasters to
+    # the fight, from about level frame 6400 on, and there keep apart (SF64_COOP_PILOT_LANES): player 0 on the right of
+    # the path, player 1 on the left, the side of the train over which the train's end hovers between its attacks. They
+    # do not aim at it, so it is not shot down and the run ends before the track does (the ram of states 18 and 19).
+    "macbeth": (11, 12000, rails_script, {}, {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt",
+                                             "SF64_COOP_PILOT_LANES": "60,-60"}),
 }
 OBJ_BOSS_SX_SPYBORG, OBJ_BOSS_TI_GORAS, OBJ_BOSS_SO_VULKAIN = 303, 306, 315  # include/sf64object.h
 SPYBORG_CHASES = (1, 2, 3, 4, 8, 9, 85)  # SectorX_SxSpyborg_Update's states that move it to its target's x and y
@@ -2024,6 +2038,64 @@ def other_boss_vulkain_story(trace):
     return face, frames
 
 
+# Macbeth's train end (wave 7, #220): actor 207 (Macbeth_Actor207_Update, src/overlays/ovl_i5/fox_ma.c), the end of the
+# train in the Landmaster fight at the end of Macbeth, with a kept slot of its own (the `ma=` field of the boss trace).
+W7MACBETH_GOES = (5, 7, 15)  # its states that move it across the path to its target's x
+W7MACBETH_FACES = (4, 5, 6)  # its states in which Macbeth_Actor207_FacePlayer turns it to its target on every frame
+W7MACBETH_APART = 300.0  # the players more than this apart across the path, or nobody is the nearer by much
+
+
+def w7macbeth_story(trace):
+    """Macbeth's train end, from the boss trace. Each time it enters one of W7MACBETH_GOES or W7MACBETH_FACES, the human
+    then nearer to it (as CoopAim_Nearest measures: x, y and trueZpos, on the row before) is the one it should go after
+    in that state. Per that nearer player: the frames of W7MACBETH_GOES on which its x is nearer that player's than the
+    other's and the other way round (`goes`), and the frames of W7MACBETH_FACES on which it faces (rot y within FACING)
+    that player and not the other (within NOT_FACING) and the other way round (`faces`); only frames with the players
+    more than W7MACBETH_APART apart across the path. Also its kept slot per value, over those states."""
+    def turn(a):
+        return (a + 180.0) % 360.0 - 180.0
+
+    goes = {0: [0, 0], 1: [0, 0]}
+    faces = {0: [0, 0], 1: [0, 0]}
+    picks = {0: 0, 1: 0}
+    kept = {}
+    state = None
+    pick = None
+    last = None
+    for row in trace:
+        m = row.get("ma", "").split(",")
+        if "p1" not in row or len(m) < 8:
+            state = None
+            last = None
+            continue
+        now = int(m[1])
+        pos = [float(v) for v in m[2:5]]
+        players = [[float(v) for v in row[f"p{i}"].split(",")[2:5]] for i in (0, 1)]
+        if now != state and now in W7MACBETH_GOES + W7MACBETH_FACES:
+            at = last if last is not None else (pos, players)
+            dist = [math.dist(at[0], p) for p in at[1]]
+            pick = 1 if dist[1] < dist[0] else 0
+            picks[pick] += 1
+        state = now
+        last = (pos, players)
+        if now not in W7MACBETH_GOES + W7MACBETH_FACES:
+            continue
+        kept[m[7]] = kept.get(m[7], 0) + 1
+        if abs(players[0][0] - players[1][0]) <= W7MACBETH_APART:
+            continue
+        if now in W7MACBETH_GOES:
+            mine, other = abs(pos[0] - players[pick][0]), abs(pos[0] - players[1 - pick][0])
+            goes[pick][0 if mine < other else 1] += 1
+        if now in W7MACBETH_FACES:
+            yaw = float(m[6])
+            off = [abs(turn(yaw - math.degrees(math.atan2(p[0] - pos[0], p[2] - 130.0 - pos[2])))) for p in players]
+            if off[pick] < FACING and off[1 - pick] > NOT_FACING:
+                faces[pick][0] += 1
+            elif off[1 - pick] < FACING and off[pick] > NOT_FACING:
+                faces[pick][1] += 1
+    return goes, faces, picks, kept
+
+
 def sc_other_bosses(args, folder):
     """#220: the bosses other than Area 6's and Andross go after the nearer human. granga: Corneria's Granga walks at
     and turns its guns to player 1 when player 1 is the nearer. --levels picks some of OTHER_BOSS_RUNS."""
@@ -2100,7 +2172,98 @@ def sc_other_bosses(args, folder):
             expect(sum(face) >= 30, f"vulkain: too few frames of the Vulkain's head to tell: {text}")
             expect(face[1] > 2 * face[0], f"vulkain: the Vulkain turns its head to player 0: {text}")
             lines.append(f"vulkain: same hash on {frames} frames; {text}")
+        if name == "macbeth":
+            goes, faces, picks, kept = w7macbeth_story(trace)
+            text = (f"states picked with player 1 the nearer {picks[1]}, player 0 {picks[0]}; going across the path "
+                    f"with player 1 the nearer it goes to player 1 on {goes[1][0]}, to player 0 on {goes[1][1]}, with "
+                    f"player 0 the nearer to player 0 on {goes[0][0]}, to player 1 on {goes[0][1]}; facing, with player 1 "
+                    f"the nearer, player 1 on {faces[1][0]}, player 0 on {faces[1][1]}, with player 0 the nearer, player "
+                    f"0 on {faces[0][0]}, player 1 on {faces[0][1]}; kept "
+                    f"{', '.join(f'{k}: {v}' for k, v in sorted(kept.items()))}")
+            # Player 1 drives the train's side of the path, so it is mostly the nearer one when a state starts. What
+            # counts is that the train's end goes after whoever is the nearer then: player 1 there, and player 0 when
+            # player 0 is (seldom here, so that half is not asked to be large).
+            expect(sum(goes[1]) >= 100 and sum(faces[1]) >= 50,
+                   f"macbeth: too few frames with player 1 the nearer to tell: {text}")
+            wrong = [what for what, v in (("goes to", goes[1]), ("faces", faces[1])) if not v[0] > 2 * v[1]]
+            expect(not wrong, f"macbeth: the train's end {' and '.join(wrong)} player 0 while player 1 is nearer: {text}")
+            expect(goes[0][0] + faces[0][0] >= 2 * (goes[0][1] + faces[0][1]),
+                   f"macbeth: the train's end goes after player 1 while player 0 is nearer: {text}")
+            lines.append(f"macbeth: same hash on {frames} frames; {text}")
     return "; ".join(lines)
+
+
+# Macbeth's ram at the end of the track (wave 7, #220; the owner's choice of 2026-11-12): once the track's stage reaches 4
+# the train's end rams player 0 (Macbeth_Actor207_Update, states 18 and 19) and zeroes its shields at every touch. That
+# ends the try as upstream: player 0 goes down, past decision 0007's refill (CoopPlayers_RefillFox). The run: pilots on
+# both clients, in lanes apart once the fight is on, without gInvincible (it keeps a hit from taking a tank down), a pool of
+# W7MACBETH_RAM_POOL lives so that both reach the fight, and SF64_COOP_MA_TRACK_END, which gives the track's stage 4 the
+# first time the train's end is in state 4, so it rams at once.
+W7MACBETH_RAM_FRAMES = 8000  # the fight starts at about level frame 6400; the ram and player 0's down come within 400
+W7MACBETH_RAM_POOL = 90
+W7MACBETH_RAM_WAIT = 600  # frames from the ram's start (state 19) by which player 0 has to be down
+
+
+def w7macbeth_ram_story(boss_rows, view):
+    """From the host's boss trace and view trace: the frame the train's end starts its ram (state 19), the frames on which
+    player 0 was refilled from then on (a life gone from the pool while it stays ACTIVE and player 1 does not come back),
+    the first frame it is DOWN, and the pool when the ram starts. Only up to the level's start again (frames go back)."""
+    start = next((int(r["frame"]) for r in boss_rows if r.get("ma", "").split(",")[1:2] == ["19"]), None)
+    if start is None:
+        return None, [], None, None
+    rows = []
+    for row in view.rows:
+        if row.frame < start:
+            continue
+        if rows and row.frame <= rows[-1].frame:
+            break  # the level started again
+        rows.append(row)
+    refills = []
+    for before, now in zip(rows, rows[1:]):
+        p, q = before.players[0], now.players[0]
+        came_back = len(now.players) > 1 and before.players[1].parked and not now.players[1].parked
+        if q.lives == p.lives - 1 and q.state == player_trace.ACTIVE and not came_back:
+            refills.append(now.frame)
+    down = next((r.frame for r in rows if r.players[0].state == PLAYERSTATE_DOWN), None)
+    return start, refills, down, (rows[0].players[0].lives if rows else None)
+
+
+def sc_w7macbeth_ram(args, folder):
+    """#220, the owner's choice of 2026-11-12: Macbeth's train end rams player 0 at the end of the track, and that ends the
+    try as upstream: player 0 goes down at the ram, once, and is not refilled under it (decision 0007's refill would buy
+    only the next ram, about every 31 frames, until the pool is gone). Hashes equal on both games."""
+    folder.mkdir(parents=True, exist_ok=True)
+    frames = W7MACBETH_RAM_FRAMES
+    traces = {name: folder / f"{name}-boss.txt" for name in ("host", "client")}
+    views = {name: folder / f"{name}-view.txt" for name in ("host", "client")}
+    for path in [*traces.values(), *views.values()]:
+        if path.exists():
+            path.unlink()  # the traces append
+    both = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt", "SF64_COOP_PILOT_LANES": "60,-60",
+            "SF64_COOP_MA_TRACK_END": "1", "SF64_COOP_VIEW_POKE": f"100:0:lives:{W7MACBETH_RAM_POOL}",
+            "SF64_COOP_LOCKSTEP_END": str(frames)}
+    host, client = session(args, folder, {"SF64_COOP_JOIN_LEVEL": "11", "SF64_COOP_BOSS_TRACE": str(traces["host"]),
+                                          "SF64_COOP_VIEW_TRACE": str(views["host"])},
+                           {"SF64_COOP_BOSS_TRACE": str(traces["client"]), "SF64_COOP_VIEW_TRACE": str(views["client"])},
+                           both, config={"CVars": {}})
+    try:
+        wait_for([host, client], "done", 900)
+    finally:
+        host.close()
+        client.close()
+    compared = compare(host, client, frames)
+    stories = [w7macbeth_ram_story(boss_trace(traces[name]), view_check.read_trace(1, views[name]))
+               for name in ("host", "client")]
+    expect(stories[0] == stories[1], f"w7macbeth_ram: the games differ: host {stories[0]}, client {stories[1]}")
+    start, refills, down, pool = stories[0]
+    expect(start is not None, f"w7macbeth_ram: the train's end never started its ram (state 19) in {frames} frames")
+    text = (f"the ram starts at frame {start} with {pool} lives in the pool; player 0 refilled under it "
+            f"{len(refills)} times{f' (first {refills[0]}, last {refills[-1]})' if refills else ''}, down at "
+            f"{down if down is not None else 'no frame'}")
+    expect(not refills, f"w7macbeth_ram: player 0 is refilled under the ram, so it drains the pool: {text}")
+    expect(down is not None and down - start <= W7MACBETH_RAM_WAIT,
+           f"w7macbeth_ram: player 0 does not go down at the ram: {text}")
+    return f"same hash on {compared} frames; {text}"
 
 
 EELS_FRAMES = 9000  # Aquas from the join: the Bacoon lets its eels out from about level frame 5600 on
@@ -4021,12 +4184,13 @@ SCENARIOS = {
     "vehicle_end": sc_vehicle_end,
     "bosses": sc_bosses,
     "other_bosses": sc_other_bosses,
+    "w7macbeth_ram": sc_w7macbeth_ram,
     "eels": sc_eels,
     "player_names": sc_player_names,
 }
 LONG = ("survive_next_level", "fox_refill_levels", "fox_refill_long", "fox_lead_swap", "fox_lead_swap_all_range", "full", "scenes", "allrange", "allrange_down", "allrange_others", "allrange_down_others", "teambar",
         "map_saves", "map_saves_host_full", "map_saves_equal", "audio", "release", "rates", "vehicles", "vehicle_end", "bosses", "other_bosses",
-        "eels")
+        "eels", "w7macbeth_ram")
 
 
 def main():

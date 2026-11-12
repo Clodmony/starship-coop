@@ -632,6 +632,105 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-12, #220, Macbeth's train end goes after the nearest tank, and its ram at the end of the track ends the try
+
+Read at `wave7-base` (`07c03c1f`, `coop`). Rule as #220's entries below: aim and chase the kept human, picked again at
+the actor's own new state; level flow, the path (a z every tank shares) and "player 0 down restarts the level" stay
+player 0's. Macbeth's train end is actor 207 (`Macbeth_Actor207_Update`, `Macbeth_Actor207_FacePlayer`,
+`src/overlays/ovl_i5/fox_ma.c`), not a boss slot, so its kept slot is the actor's (`CoopAim_ActorTarget`,
+`CoopAim_ForgetActor`). Line numbers are this branch's (at `wave7-base` the same sites sit 6 to 12 lines earlier;
+`docs/coop/audit/single-player.md` lists both by function).
+
+Observed (code), all 37 sites the audit listed (3 in `FacePlayer`, 32 `gPlayer[0]` and 2 `gMainController` in
+`Update`):
+
+| lines | state | what it does | verdict |
+|---|---|---|---|
+| `:4192`, `:4193`, `:4198` (`FacePlayer`) | 4, 5, 6, 7 (while far), 18, 19 | the yaw and pitch it turns to | aim: changed, its kept human; player 0 in states 18 and 19 |
+| `:4427` | 5 | the x it moves to before its swoop | chase: changed |
+| `:4448`, `:4494` | 6, 7 | `D_i5_801BE368[9]`, the x of its swoop (`:4497` moves it there) | chase: changed |
+| `:4464`, `:4500`, `:4502` | 7 | the height of its swoop above that player (250), its climb back (1210) and the end of the climb (1200) | chase: changed |
+| `:4851`, `:4852` | 15 | the y and x of its charge once both parts are gone | chase: changed |
+| `:4428`, `:4430`, `:4432`, `:4433`, `:4455`, `:4492`, `:4505`, `:4850`, `:4914` | 5, 7, 15, 16 | its z ahead of player 0 (1500, 1300, 1200, 100, 700, 250) and heights taken from that z gap | path: left |
+| `:4936`, `:4939` | 16 | the z of the ground points its two beams sweep (player 0's z + 50; their x come from its own sides) | path: left |
+| `:5034`, `:5035`, `:5038`, `:5051`, `:5077`, `:5080`, `:5081` | 18, 19 | the ram at the end of the track: it goes to player 0's x, rises, then sits on player 0 at its speed | flow: left on player 0, as the ram kills player 0 |
+| `:5070` | 19 | any touch or shot on it sets player 0's shields to 0 | flow: left; under it player 0 is no longer refilled (below) |
+| `:5131`, `:5161` | any | its parts take damage only while player 0 is more than 200 behind it | path: left |
+| `:4348` | 4 | it starts an attack only while player 0 is `ACTIVE`; at track stage 4 it starts the ram | flow: left |
+| `:5211`, `:5265` | any | the boss health bar; level complete sends it to state 20 | flow, view: left |
+| `:5114`, `:5115` (MC) | 20 | rumble when it blows up | view: left |
+
+Its helpers read player 0's z only (`Macbeth_801A6984` `:3854`, `Macbeth_801A6C78` `:3935`, `Macbeth_801A6FB4` `:3993`,
+`Macbeth_801A74C4` `:4066`: path). The fight's stages come from a track table read against player 0's z
+(`Macbeth_8019A2F4`, `:606-637`): `D_i5_801BE320[16]` starts the fight, `[26]` allows the swoop (state 5), `[18]` is the
+stage, and at 4 the next state 4 starts the ram. Both tanks can touch it: `func_tank_800481F4` (`src/engine/fox_tank.c`)
+tests every tank against actor 207 and sets its `dmgType`, so player 1's touch or shot in state 19 also zeroes player
+0's shields.
+
+Built:
+
+- The train's end goes to, faces and swoops on its kept human (`fox_ma.c`, 11 sites): a pointer to it at the top of
+  `Update` and `FacePlayer` in player 0's place, picked again when its state changes (`CoopAim_ForgetActor` at the end
+  of `Update`, after every state change the function makes). The ram at the end of the track (states 18 and 19) stays
+  on player 0. Co-op off: `CoopAim_ActorTarget` is player 0 and writes nothing.
+- The ram ends the try (the owner's choice on #220, 2026-11-12, option C; the spec had said to leave the kill alone):
+  `CoopPlayers_RefillFox` (`src/port/coop/game/players.c`) refuses while the train's end is in state 19
+  (`CoopPlayers_TrainEndRams`), so player 0 goes down at the ram as upstream; a `// COOP:` line marks the kill in
+  `fox_ma.c`. Its own commit, so it can be dropped. Co-op off: unchanged, the refill is never asked outside a session.
+- Tests only: the boss trace writes the train's end (`ma=`, `src/port/coop/test/boss_trace.h`);
+  `SF64_COOP_MA_TRACK_END=1` sets the track's stage to 4 the first time the train's end is in state 4;
+  `SF64_COOP_PILOT_LANES=<p0>,<p1>` keeps each tank in a lane of its own once a boss fight is on
+  (`src/port/coop/test/pilot.h`). `lockstep_test.py --only other_bosses --levels macbeth` and `--only w7macbeth_ram`.
+
+Observed (runs), two real games in lockstep over loopback, one PC, US 1.0, Linux, GCC, Debug, OpenGL on a software
+renderer, no window. C sources as built `ebfdd215` (the `macbeth` run and the campaign gave the same lines on
+`e3422944`, the aim edit without the ram's fix):
+
+- `other_bosses --levels macbeth` (pilots on both, `gInvincible`, lanes 60 and -60 of the half-width: player 1 on the
+  train's side): `same hash on 12000 frames; states picked with player 1 the nearer 33, player 0 6; going across the
+  path with player 1 the nearer it goes to player 1 on 906, to player 0 on 0, with player 0 the nearer to player 0 on 0,
+  to player 1 on 0; facing, with player 1 the nearer, player 1 on 396, player 0 on 0, with player 0 the nearer, player 0
+  on 34, player 1 on 0; kept -1: 39, 0: 326, 1: 2547`. The same run on this branch with `fox_ma.c` back at `wave7-base`
+  (a throwaway build, `e3422944-dirty`): `FAILED ... the train's end goes to and faces player 0 while player 1 is
+  nearer: states picked with player 1 the nearer 21, player 0 21; ... with player 1 the nearer it goes to player 1 on
+  225, to player 0 on 286, ...; facing, with player 1 the nearer, player 1 on 18, player 0 on 369, ...; kept -1: 3134`.
+- `w7macbeth_ram` (pilots on both, lanes, no `gInvincible`, a pool of 90, `SF64_COOP_MA_TRACK_END`): `same hash on 8000
+  frames; the ram starts at frame 6876 with 89 lives in the pool; player 0 refilled under it 0 times, down at 6967`;
+  the next frame the pool is 88 and the level starts again from its checkpoint, player 1 parked. Before the fix
+  (`5e4304d9`, the test commits without it): `FAILED ... player 0 refilled under it 34 times (first 6967, last 8015),
+  down at no frame`: a life about every 31 frames.
+- Unchanged by it, all `ok` with equal hashes: `campaign.py --levels macbeth` `macbeth: equal on every frame to the end;
+  11284 frames compared, level complete at level frame 9925, downs 0,0`; `--only vehicle_end --levels macbeth` `Macbeth
+  14000 frames, level complete at 9925, player 1 drove on 11335`, `--levels titania` `Titania 42000 frames, level
+  complete at 36223, player 1 drove on 38827`; `--only vehicles` (the three levels, 6000 frames each);
+  `--only fox_refill_levels --levels macbeth` `refilled at 325, pool 2 -> 1; refilled at 525, pool 1 -> 0; down at 725
+  at pool 0, player 1 parked with it`; `--only fox_refill_long --levels macbeth` `same hash on 9000 frames ...; player 0
+  refilled 21 times (first 687, last 8622), never down, no restart`; the other eight runs of `other_bosses` with the
+  numbers of the entries below (`granga` `kept 0: 80, 1: 946`, `shogun` `player 1 kept on 4149`, `crusher` `800 rings,
+  400 came nearest player 1`, `sarumarine` `75 balls, 72 came nearest player 1, 3 player 0`, `bacoon` `at player 1 on
+  862, at player 0 on 84`, `spyborg` `nearer player 1 on 2297, player 0 on 0`, `vulkain` `at player 1 on 1260, at
+  player 0 on 0`, `goras` `1: 693, 55`); `hash_check.py base --base <build of 33bd5fe6>` `co-op off: the base build and
+  this one equal on all 5800 frames`, `hash: PASS`.
+
+Derived:
+
+- With the tanks apart the train's end now stays with the tank nearer to it when a state starts; between attacks it
+  goes back over the train, so the tank on the train's side is the one it takes most often.
+- Under decision 0007's refill the ram would have emptied the pool and ended the run, where upstream it costs one life.
+  The reference build and the stock pilot never show this: the pilot shoots the train's end down before the track ends,
+  and with `gInvincible` a hit never sets `radioDamageTimer`, so no tank goes down at all.
+
+Left alone (not this issue's lane, follow-ups): its bombs (`Macbeth_MaBombDrop_Update`, state 11) and the beams of state
+16 (`Macbeth_Effect380_Update`) hurt player 0 only; their audit rows still say "co-op players parked", which is stale
+since #16 opened Macbeth to two tanks.
+
+Unknown:
+
+- How a train's end that changes tanks at a new state reads to two people by hand; nobody played it.
+- The ram with two tanks close together, or with player 1 touching it first: read in code (`func_tank_800481F4`), not
+  run.
+- Windows, two PCs, three or four players, Release.
+
 ### 2026-11-11, names and letters (#257, #258): the name as the mark, and three things that still followed player 0 (#140)
 
 Identity: ROM US 1.0, branch `issue/names-letters` on `wave6-base` (`a4867d99`), Linux, GCC, Debug, OpenGL on a software
