@@ -87,7 +87,9 @@ bool w8AndPilot_Escape(const Player* p, s32 i, PilotPad* pad) {
     if (!w8AndPilot_InEscape() || (i < 0) || (i >= COOP_PLAYERS_MAX)) {
         return false;
     }
-    if ((sW8AndPilotLast[i] + 1 != gGameFrameCount) || (gGameFrameCount <= 1)) {
+    // A lockstep session calls the pilot twice in a frame: the same frame again goes on as well.
+    if (((gGameFrameCount != sW8AndPilotLast[i]) && (gGameFrameCount != sW8AndPilotLast[i] + 1)) ||
+        (gGameFrameCount <= 1)) {
         // A new escape, or the same one again from its checkpoint: from the waypoint nearest to the ship.
         f32 best = 1e30f;
         s32 n;
