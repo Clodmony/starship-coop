@@ -191,9 +191,11 @@ def fly_level(args, folder, name):
                 lines, trace_at = lines_from(host.run / "trace.txt", trace_at)
                 for line in lines:
                     fields = dict(kv.split("=", 1) for kv in line.split() if "=" in kv)
-                    if fields.get("level") == str(target):
-                        reached = True
                     p0 = fields["p0"].split(",") if "p0" in fields else []
+                    # In the level it waits for, once player 0 is out of the level complete that led there: the trace
+                    # names Andross' id while Venom 2's ends (frame 9469 of #275's first campaign run).
+                    if fields.get("level") == str(target) and p0 and p0[0] != str(LEVEL_COMPLETE):
+                        reached = True
                     if (complete is None and reached and len(p0) > 1 and p0[0] == str(LEVEL_COMPLETE) and
                             (int(fields["level"]), int(p0[1])) not in W8_ANDPILOT_NOT_AN_END):
                         complete = hashed  # read just before the trace: no later than the real one
