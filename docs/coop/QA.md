@@ -253,7 +253,7 @@ what ran:   python tools/coop/test_all.py --no-build --base-exe <build of 07c03c
             (see result)
 result:     automated. 52 of 53 steps passed, among them coop-off (equal to the build of 07c03c1f), builds (Release
             against Debug), determinism, both rates steps, rails-2, rails-4, full-level, views, replay-test, the session,
-            net, steam, lockstep, desync and steam mutant suites (every break caught), and the check that no tracked
+            net, lockstep, desync and steam mutant suites (every break caught), and the check that no tracked
             file changed. The one failure is the `lockstep` step's scenario results_hole (#259): "seats: the one who left
             is player 3, the other 2". It is intermittent and also fails on the build of #259 alone: alternating, 6 of 8
             runs passed on each build (7 of 12 on this tree and 10 of 13 on #259 alone over all runs); the other 50
