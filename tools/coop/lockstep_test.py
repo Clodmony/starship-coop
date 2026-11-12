@@ -2103,6 +2103,167 @@ def sc_other_bosses(args, folder):
     return "; ".join(lines)
 
 
+# ---- sy_robot_spread (#273) ----
+# Some of Sector Y's robots spread their shot (SectorY_SyRobot_Update, iwork[19] != 0): the point they aim at is moved
+# by RAND_FLOAT_CENTERED(300.0f) in x and in y, (Rand_ZeroOne() - 0.5f) * 300 (include/macros.h), and Rand_ZeroOne is
+# in [0, 1) (src/sys/sys_math.c): each axis by -150 up to just under 150, uniform, mean 0, root mean square 86.6.
+W8_SYROBOT_LEVEL = 5  # LEVEL_SECTOR_Y, campaign.py's "sector-y"
+W8_SYROBOT_STEER = 650  # both players fly from level frame 611 in Sector Y with this file's seeds (FOX_REFILL_LEVELS)
+W8_SYROBOT_FRAMES = 9500  # robot 89 (level script 89, the last that spreads) fires at about level frame 8500
+W8_SYROBOT_BOUND = 150.0
+W8_SYROBOT_TOLERANCE = 2.0  # how far a shot aimed straight at a player may miss it here: the trace's printed digits
+W8_SYROBOT_MIN_AT_1 = 6  # spread shots with player 1 the nearer, fewer is too few to tell
+W8_SYROBOT_LINE = re.compile(r"syrobot level=(\d+) frame=(\d+) slot=(\d+) script=(\d+) spread=(-?\d+) start=(\S+) "
+                             r"dir=(\S+)((?: p\d=\S+)+)$")
+
+
+def w8_syrobot_script(frame, player):
+    """Sector Y's rails: from W8_SYROBOT_STEER player 0 holds the top left; player 1 never steers and flies where it
+    joined, near the middle of the path (250, 80). The robots that spread their shots fire from the middle (level
+    scripts 66, 22 and 89), so player 1 is the nearer one for most of their shots."""
+    if frame < W8_SYROBOT_STEER or player != 0:
+        return 0, 0, 0
+    return 0, -70, -60
+
+
+def w8_syrobot_rows(path):
+    """The syrobot lines of an aim trace (src/port/coop/test/aim_trace.h): one dict per robot shot."""
+    rows = []
+    if not path.exists():
+        return rows
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        match = W8_SYROBOT_LINE.match(line)
+        if not match:
+            continue
+        players = {}
+        for part in match.group(8).split():
+            key, value = part.split("=")
+            values = value.split(",")
+            players[int(key[1:])] = ([float(v) for v in values[:3]], values[3] == "1")
+        rows.append({"level": int(match.group(1)), "frame": int(match.group(2)), "script": int(match.group(4)),
+                     "spread": int(match.group(5)), "start": [float(v) for v in match.group(6).split(",")],
+                     "dir": [float(v) for v in match.group(7).split(",")], "players": players, "line": line})
+    return rows
+
+
+def w8_syrobot_nearest(row):
+    """The player the shot aims at by the rule of src/port/coop/game/aim.c: of the players that may be aimed at, the
+    nearest to the shot's start, a tie to the lower index."""
+    best, best_dist = 0, None
+    for i in sorted(row["players"]):
+        pos, flies = row["players"][i]
+        if not flies:
+            continue
+        dist = sum((a - b) ** 2 for a, b in zip(pos, row["start"]))
+        if best_dist is None or dist < best_dist:
+            best, best_dist = i, dist
+    return best
+
+
+def w8_syrobot_miss(row, player):
+    """Where the shot crosses the depth (trueZpos) of `player`, less that player's x and y: the offset of the point the
+    robot aimed at from that player. None for a shot that does not fly along z."""
+    (px, py, pz), _ = row["players"][player]
+    sx, sy, sz = row["start"]
+    dx, dy, dz = row["dir"]
+    if abs(dz) < 1e-6:
+        return None
+    t = (pz - sz) / dz
+    return sx + t * dx - px, sy + t * dy - py
+
+
+def w8_syrobot_spread_text(misses):
+    if not misses:
+        return "none"
+    xs, ys = [m[0] for m in misses], [m[1] for m in misses]
+    rms = math.sqrt(sum(v * v for v in xs + ys) / (2 * len(misses)))
+    return (f"x {min(xs):.0f} to {max(xs):.0f} (mean {sum(xs) / len(xs):.0f}), y {min(ys):.0f} to {max(ys):.0f} "
+            f"(mean {sum(ys) / len(ys):.0f}), root mean square {rms:.0f}")
+
+
+def sc_sy_robot_spread(args, folder):
+    """#273: Sector Y's robots spread a shot around the human it aims at. On the rails player 0 holds the top left and
+    player 1 flies in the middle, near the robots that spread. Each robot shot is read from the aim trace's syrobot
+    lines: a plain one flies at the nearest human, a spread one at a point at most W8_SYROBOT_BOUND from it in x and y,
+    and the spread shots at player 1 are spread: none straight at it, root mean square at least a fifth of the bound."""
+    folder.mkdir(parents=True, exist_ok=True)
+    feed = folder / "feed.txt"
+    write_feed(feed, W8_SYROBOT_FRAMES + 16, w8_syrobot_script)
+    traces = {game: folder / f"{game}-aim.txt" for game in ("host", "client")}
+    for path in traces.values():
+        if path.exists():
+            path.unlink()  # the trace appends
+    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(W8_SYROBOT_FRAMES)}
+    host, client = session(args, folder, {"SF64_COOP_JOIN_LEVEL": str(W8_SYROBOT_LEVEL),
+                                          "SF64_COOP_AIM_TRACE": str(traces["host"])},
+                           {"SF64_COOP_AIM_TRACE": str(traces["client"])}, env, config={"CVars": {"gInvincible": 1}})
+    try:
+        wait_for([host, client], "done", 1200)
+    finally:
+        host.close()
+        client.close()
+    frames = compare(host, client, W8_SYROBOT_FRAMES)
+    ours, theirs = w8_syrobot_rows(traces["host"]), w8_syrobot_rows(traces["client"])
+    # A game runs on a little past `done`: the lines both traces hold are compared, the checks read the plan's frames.
+    n = min(len(ours), len(theirs))
+    for a, b in zip(ours[:n], theirs[:n]):
+        expect(a["line"] == b["line"], f"the robot shot lines differ: host `{a['line']}`, client `{b['line']}`")
+    rows = [row for row in ours[:n] if row["level"] == W8_SYROBOT_LEVEL and row["frame"] <= W8_SYROBOT_FRAMES]
+    expect(rows, "no robot shot in the trace (a build without the syrobot line of aim_trace.h writes none)")
+    problems, text = w8_syrobot_story(rows)
+    expect(not problems, f"{'; '.join(problems)}. {text}")
+    return f"same hash on {frames} frames; {text}"
+
+
+def w8_syrobot_story(rows):
+    """The checks of sy_robot_spread on its robot shots: (the problems found, the summary)."""
+    plain = [row for row in rows if row["spread"] == 0]
+    spread = [row for row in rows if row["spread"] != 0]
+    worst = 0.0
+    wide = []  # plain shots that miss the nearest human
+    for row in plain:
+        miss = w8_syrobot_miss(row, w8_syrobot_nearest(row))
+        if miss is not None:
+            worst = max(worst, abs(miss[0]), abs(miss[1]))
+            if max(abs(miss[0]), abs(miss[1])) > W8_SYROBOT_TOLERANCE:
+                wide.append(f"frame {row['frame']} misses player {w8_syrobot_nearest(row)} by {miss[0]:.1f}, "
+                            f"{miss[1]:.1f}")
+    at = {0: [], 1: []}
+    off = []  # spread shots that are not around the nearest human
+    for row in spread:
+        aimed = w8_syrobot_nearest(row)
+        miss = w8_syrobot_miss(row, aimed)
+        if miss is None:
+            continue
+        if max(abs(miss[0]), abs(miss[1])) > W8_SYROBOT_BOUND + W8_SYROBOT_TOLERANCE:
+            off.append(f"frame {row['frame']} misses player {aimed} by {miss[0]:.0f}, {miss[1]:.0f}")
+            continue
+        at.setdefault(aimed, []).append(miss)
+    by_command = {value: sum(1 for row in spread if row["spread"] == value)
+                  for value in sorted({row["spread"] for row in spread})}
+    text = (f"{len(rows)} robot shots: {len(plain)} plain, all within {worst:.2f} of the nearest human; {len(spread)} "
+            f"spread (iwork[19] {', '.join(f'{k}: {v}' for k, v in by_command.items()) or 'none'}), {len(at[1])} "
+            f"around player 1, the nearer: {w8_syrobot_spread_text(at[1])}; {len(at[0])} around player 0, the nearer: "
+            f"{w8_syrobot_spread_text(at[0])}")
+    problems = []
+    if wide:
+        problems.append(f"{len(wide)} plain shots miss the nearest human ({'; '.join(wide)})")
+    if off:
+        problems.append(f"{len(off)} of {len(spread)} spread shots are not around the nearest human, more than "
+                        f"{W8_SYROBOT_BOUND:.0f} off in x or y ({'; '.join(off)})")
+    if len(at[1]) < W8_SYROBOT_MIN_AT_1:
+        problems.append(f"too few spread shots around player 1 to tell, {len(at[1])}")
+    straight = sum(1 for m in at[1] if abs(m[0]) <= W8_SYROBOT_TOLERANCE and abs(m[1]) <= W8_SYROBOT_TOLERANCE)
+    if straight:
+        problems.append(f"{straight} of the {len(at[1])} spread shots with player 1 the nearer fly straight at it")
+    if at[1] and math.sqrt(sum(m[0] ** 2 + m[1] ** 2 for m in at[1]) / (2 * len(at[1]))) < W8_SYROBOT_BOUND / 5:
+        problems.append("the spread around player 1 is too small")
+    every = at[0] + at[1]
+    if every and any(abs(sum(m[axis] for m in every) / len(every)) >= W8_SYROBOT_BOUND / 2 for axis in (0, 1)):
+        problems.append("the spread is not centred on the human aimed at")
+    return problems, text
+
+
 EELS_FRAMES = 9000  # Aquas from the join: the Bacoon lets its eels out from about level frame 5600 on
 EEL_PUFF_SCALE = 3.0  # the smoke of an eel's piece (Aquas_Actor255_Update); nothing else in Aquas spawns this size here
 EEL_REACH = 6000.0  # an eel swims between the Bacoon and the marines, about 3000 apart along the path
@@ -4021,12 +4182,14 @@ SCENARIOS = {
     "vehicle_end": sc_vehicle_end,
     "bosses": sc_bosses,
     "other_bosses": sc_other_bosses,
+    "sy_robot_spread": sc_sy_robot_spread,
     "eels": sc_eels,
     "player_names": sc_player_names,
 }
 LONG = ("survive_next_level", "fox_refill_levels", "fox_refill_long", "fox_lead_swap", "fox_lead_swap_all_range", "full", "scenes", "allrange", "allrange_down", "allrange_others", "allrange_down_others", "teambar",
         "map_saves", "map_saves_host_full", "map_saves_equal", "audio", "release", "rates", "vehicles", "vehicle_end", "bosses", "other_bosses",
         "eels")
+LONG += ("sy_robot_spread",)  # Sector Y's rails, 9500 frames (#273)
 
 
 def main():
