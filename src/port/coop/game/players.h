@@ -180,6 +180,11 @@ void CoopPlayers_SetSlotState(int32_t index, int32_t state);
 // Nonzero while player `index` is out after going down and has not come back (decision 0007 rule 4). It is parked then.
 int32_t CoopPlayers_IsDown(int32_t index);
 
+// Nonzero while player `index` has no human in this session: its roster seat is empty (a session of three on a
+// four-player count, or a player who left before the level began). Such a slot never joins and has no pad to wait for.
+// Simulation state. (#252: the level clear screen does not wait for it.)
+int32_t CoopPlayers_IsOut(int32_t index);
+
 // Game frames until player `index`, down, may come back (decision 0007 rule 4); 0 when none are left or it is not down.
 // Simulation state, for the state hash.
 int32_t CoopPlayers_ReturnTimer(int32_t index);

@@ -726,6 +726,10 @@ int32_t CoopPlayers_IsDown(int32_t index) {
     return (index >= 0) && (index < COOP_PLAYERS_MAX) && (sSlot[index] == COOP_SLOT_DOWN);
 }
 
+int32_t CoopPlayers_IsOut(int32_t index) {
+    return (index >= 0) && (index < COOP_PLAYERS_MAX) && (sSlot[index] == COOP_SLOT_OUT);
+}
+
 int32_t CoopPlayers_ReturnTimer(int32_t index) {
     return ((index >= 0) && (index < COOP_PLAYERS_MAX)) ? sReturnTimer[index] : 0;
 }
