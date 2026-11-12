@@ -3688,15 +3688,26 @@ void SectorY_SyRobot_Update(SyRobot* this) {
                 if (this->iwork[19] < 0) {
                     ActorEvent_8006F254(this);
                 } else {
+                    // COOP: the spread is around the human the shot aims at, the nearest (#193), not around player 0:
+                    // player 0 goes to the spread point at that human's depth, and the other humans that may be aimed
+                    // at go there too (CoopAim_PointShot), so the shot flies at the point. Outside co-op the nearest
+                    // is player 0 and every line below does what upstream does (#273)
+                    Player* aimed = &gPlayer[CoopAim_Nearest(this->fwork[16], this->fwork[17], this->fwork[18])];
+                    f32 trueZ = gPlayer[0].trueZpos; // COOP: (#273)
+
                     sp1E4 = gPlayer[0].pos.x;
                     sp1E0 = gPlayer[0].pos.y;
                     if (this->iwork[19] != 0) {
-                        gPlayer[0].pos.x += RAND_FLOAT_CENTERED(300.0f);
-                        gPlayer[0].pos.y += RAND_FLOAT_CENTERED(300.0f);
+                        gPlayer[0].pos.x = aimed->pos.x + RAND_FLOAT_CENTERED(300.0f); // COOP: was gPlayer[0] +=
+                        gPlayer[0].pos.y = aimed->pos.y + RAND_FLOAT_CENTERED(300.0f); // COOP: was gPlayer[0] +=
+                        gPlayer[0].trueZpos = aimed->trueZpos;                         // COOP: (#273)
+                        CoopAim_PointShot(gPlayer[0].pos.x, gPlayer[0].pos.y, gPlayer[0].trueZpos); // COOP: (#273)
                     }
                     Effect_EnemyLaser(OBJ_EFFECT_354, this->fwork[16], this->fwork[17], this->fwork[18], 100.0f);
+                    CoopAim_PointShotEnd(); // COOP: (#273)
                     gPlayer[0].pos.x = sp1E4;
                     gPlayer[0].pos.y = sp1E0;
+                    gPlayer[0].trueZpos = trueZ; // COOP: (#273)
                     AUDIO_PLAY_SFX(NA_SE_EN_MS_SHOT_S, this->sfxSource, 4);
                 }
                 this->work_048 = 0;
