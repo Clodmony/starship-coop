@@ -238,6 +238,24 @@ Running tests must never use or modify the owner's own `starship.cfg.json`, save
 Newest first. One block per run that matters (a milestone, a release, a QA level change).
 
 ```
+date:       2026-11-12
+commit:     issue/220-macbeth-end, C sources as built ebfdd215 (later commits docs only), on wave7-base 07c03c1f (coop)
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 game clients on one PC,
+            UDP over loopback, through the join driver, a pilot on each
+what ran:   python tools/coop/lockstep_test.py --only other_bosses --levels macbeth; --only w7macbeth_ram;
+            --only vehicle_end --levels macbeth; --only vehicles; --only fox_refill_levels --levels macbeth;
+            --only fox_refill_long --levels macbeth; --only other_bosses --levels <each of the other eight>;
+            --only vehicle_end --levels titania (one per run); python tools/coop/campaign.py --levels macbeth;
+            python tools/coop/hash_check.py base --base <build of 33bd5fe6>; check.py; sp_audit.py --check
+result:     automated. Macbeth's train end goes to and faces the tank that was the nearer when each of its states
+            started (906 and 396 frames toward player 1 when it was the nearer, 0 toward player 0; a build of this
+            branch with fox_ma.c at wave7-base fails the same run). Its ram at the end of the track takes player 0
+            down once and is not refilled under it (34 refills before the fix). Macbeth with two pilots to level
+            complete, equal on every frame; the other bosses, vehicles, the refill tests and co-op off unchanged.
+            Not run: two PCs, Windows, Release, three or four players, a person driving it.
+```
+
+```
 date:       2026-11-11
 commit:     issue/session-survives at 921d6411, on top of a4867d99 (coop)
 identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 or 3 game clients on one PC,
