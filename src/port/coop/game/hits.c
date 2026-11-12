@@ -101,3 +101,20 @@ void CoopHits_AndrossReach(float x, float y) {
         }
     }
 }
+
+void CoopHits_MacbethBombFire(Actor* bomb) {
+    s32 i;
+
+    if (!CoopPlayers_IsCoop()) {
+        return;
+    }
+    for (i = 1; i < CoopPlayers_Count(); i++) {
+        Player* p = CoopHits_Target(i);
+
+        if ((p != NULL) && (fabsf(p->trueZpos - bomb->obj.pos.z) < 40.0f) &&
+            (fabsf(p->pos.x - bomb->obj.pos.x) < 80.0f) && ((p->pos.y - bomb->obj.pos.y) > -5.0f) &&
+            ((p->pos.y - bomb->obj.pos.y) < (bomb->scale * 35.0f)) && (p->mercyTimer == 0)) {
+            Player_ApplyDamage(p, 0, bomb->info.damage);
+        }
+    }
+}

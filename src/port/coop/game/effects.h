@@ -30,6 +30,11 @@ void CoopEffects_ColumnHit(struct Effect* effect);
 // beam's rotation, and still does afterwards.
 void CoopEffects_BeamHit(struct Effect* effect);
 
+// The test of a beam of Macbeth's train end (Macbeth_Effect380_Update; Macbeth_Actor207_Update fires them in its state
+// 16), for the players after player 0 (#272). A hit uses the beam up, as it does for player 0, so one beam hits one
+// tank, player 0 first. A beam the update's cull has taken out is gone for them.
+void CoopEffects_MacbethBeamHit(struct Effect* effect);
+
 #ifdef __cplusplus
 }
 #endif

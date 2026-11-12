@@ -6,6 +6,8 @@
 
 // #include "prevent_bss_reordering.h"
 #include "global.h"
+#include "port/coop/game/effects.h" // COOP: the beams of the train's end against the other tanks (#272)
+#include "port/coop/game/hits.h"    // COOP: the fire of its bombs against the other tanks (#272)
 #include "assets/ast_macbeth.h"
 #include "assets/ast_landmaster.h"
 #include "assets/ast_enmy_planet.h"
@@ -3629,6 +3631,7 @@ void Macbeth_Effect380_Update(Effect380* this) {
         }
         Object_Kill(&this->obj, this->sfxSource);
     }
+    CoopEffects_MacbethBeamHit(this); // COOP: the same test for the other tanks (#272)
 
     if (this->obj.pos.y < (gGroundHeight - 100.0f)) {
         Object_Kill(&this->obj, this->sfxSource);
@@ -5888,6 +5891,7 @@ void Macbeth_MaBombDrop_Update(MaBombDrop* this) {
                     Player_ApplyDamage(&gPlayer[0], 0, this->info.damage);
                 }
             }
+            CoopHits_MacbethBombFire(this); // COOP: the same test for the other tanks (#272)
             break;
     }
 }
