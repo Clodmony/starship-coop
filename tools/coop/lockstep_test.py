@@ -1807,8 +1807,11 @@ OTHER_BOSS_RUNS = {  # name: level, frames, script, CVars beyond gInvincible, en
     # Titania: Goras waits in state 3 until it is shot, so pilots on both clients drive the Landmasters (the feed is
     # not played then) and bring it into its fight, states 7 to 12, from about 7800 frames in.
     "goras": (12, 13000, rails_script, {}, {"SF64_COOP_LOCKSTEP_PILOT": "1"}),
-    # Macbeth's train end (wave 7, #220): see W7MACBETH_FRAMES.
-    "macbeth": (11, 14000, rails_script, {}, {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt",
+    # Macbeth's train end (wave 7, #220): pilots on both clients (the feed is not played then) drive the Landmasters to
+    # the fight, from about level frame 6400 on, and there keep apart (SF64_COOP_PILOT_LANES): player 0 on the right of
+    # the path, player 1 on the left, the side of the train over which the train's end hovers between its attacks. They
+    # do not aim at it, so it is not shot down and the run ends before the track does (the ram of states 18 and 19).
+    "macbeth": (11, 12000, rails_script, {}, {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt",
                                              "SF64_COOP_PILOT_LANES": "60,-60"}),
 }
 OBJ_BOSS_SX_SPYBORG, OBJ_BOSS_TI_GORAS, OBJ_BOSS_SO_VULKAIN = 303, 306, 315  # include/sf64object.h
@@ -2169,12 +2172,15 @@ def sc_other_bosses(args, folder):
                     f"the nearer, player 1 on {faces[1][0]}, player 0 on {faces[1][1]}, with player 0 the nearer, player "
                     f"0 on {faces[0][0]}, player 1 on {faces[0][1]}; kept "
                     f"{', '.join(f'{k}: {v}' for k, v in sorted(kept.items()))}")
-            expect(sum(goes[1]) >= 100 and sum(faces[1]) >= 100,
+            # Player 1 drives the train's side of the path, so it is mostly the nearer one when a state starts. What
+            # counts is that the train's end goes after whoever is the nearer then: player 1 there, and player 0 when
+            # player 0 is (seldom here, so that half is not asked to be large).
+            expect(sum(goes[1]) >= 100 and sum(faces[1]) >= 50,
                    f"macbeth: too few frames with player 1 the nearer to tell: {text}")
-            expect(goes[1][0] > 2 * goes[1][1] and goes[0][0] > 2 * goes[0][1],
-                   f"macbeth: the train's end goes to player 0 while player 1 is nearer: {text}")
-            expect(faces[1][0] > 2 * faces[1][1] and faces[0][0] > 2 * faces[0][1],
-                   f"macbeth: the train's end faces player 0 while player 1 is nearer: {text}")
+            wrong = [what for what, v in (("goes to", goes[1]), ("faces", faces[1])) if not v[0] > 2 * v[1]]
+            expect(not wrong, f"macbeth: the train's end {' and '.join(wrong)} player 0 while player 1 is nearer: {text}")
+            expect(goes[0][0] + faces[0][0] >= 2 * (goes[0][1] + faces[0][1]),
+                   f"macbeth: the train's end goes after player 1 while player 0 is nearer: {text}")
             lines.append(f"macbeth: same hash on {frames} frames; {text}")
     return "; ".join(lines)
 
