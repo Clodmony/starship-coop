@@ -256,6 +256,32 @@ result:     automated. Macbeth's train end goes to and faces the tank that was t
 ```
 
 ```
+date:       2026-11-12
+commit:     issue/267-survive-gaps, code 4f162f64 (the C of the branch), on wave7-base 07c03c1f (coop)
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 to 4 game clients on one PC,
+            UDP over loopback, through the join driver; pilots on both clients (gInvincible but in Corneria, as
+            campaign.py) or a feed
+what ran:   python tools/coop/lockstep_test.py --only survive_gaps_route, survive_gaps_map, survive_gaps_map_lost,
+            survive_gaps_venom_jump, survive_gaps_four, and survive_gaps_checkpoints --levels <one level> for katina,
+            bolse, andross and corneria, meteo, sector_x, area_6, sector_y, venom_1, solar, zoness, macbeth, titania,
+            aquas (each @ring: the level's own ring put where player 2 flies), one scenario or level per run;
+            regression: survive_desync, survive_three, survive_checkpoint, survive_checkpoint_allrange,
+            survive_next_level, stall, frozen, save_own, vehicles --levels macbeth; join_test.py; check.py
+result:     automated. Decision 0014 beyond Corneria and three players. A level that started again (Corneria; Meteo
+            with the route it carried) flown to its end, the map and the next level: equal on every frame, the same
+            route and save on both games at every level and map. A desync and a lost player on the map: the level
+            the team last entered starts again from its own level start, the map's changes dropped, equal on 600
+            frames. A restart at the game's own checkpoint in 13 levels (11 rails rings, Katina, Bolse), each flown
+            on to the level's end equal on every frame; in Andross' second part the restart at the brain held for
+            4872 frames, but the pilots ran out of lives there, so its end was not reached. A restart in Venom 2's
+            second part from the point Venom 1's jump leaves, flown on into Andross. Four players: one lost, the
+            level started again for three; a second lost, again for two. Fault found and fixed: a restart at
+            Macbeth's checkpoint parted again 34 frames in (the tank's state and Macbeth's rail survived the level
+            start); seen on ebe1afbb, gone on 4f162f64. Not run: two PCs, Windows, a real connection drop, a Release
+            build, what a player sees and hears.
+```
+
+```
 date:       2026-11-11
 commit:     issue/session-survives at 921d6411, on top of a4867d99 (coop)
 identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 or 3 game clients on one PC,
