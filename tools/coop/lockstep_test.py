@@ -1828,8 +1828,10 @@ OTHER_BOSS_RUNS = {  # name: level, frames, script, CVars beyond gInvincible, en
     "spyborg": (2, 13000, rails_script, {}, {}),
     "vulkain": (7, 12000, rails_script, {}, {}),
     # Titania: Goras waits in state 3 until it is shot, so pilots on both clients drive the Landmasters (the feed is
-    # not played then) and bring it into its fight, states 7 to 12, from about 7800 frames in.
-    "goras": (12, 13000, rails_script, {}, {"SF64_COOP_LOCKSTEP_PILOT": "1"}),
+    # not played then) and bring it into its fight, states 7 to 12, from about 7800 frames in. Since the pilot reads
+    # Goras' boxes right (#262, CoopPilot_GorasTarget) it beats Goras and the level ends at about frame 11760, so the run
+    # stops before that: the map's frames hold no Goras for the trace the check counts.
+    "goras": (12, 11000, rails_script, {}, {"SF64_COOP_LOCKSTEP_PILOT": "1"}),
     # Macbeth's train end (wave 7, #220): pilots on both clients (the feed is not played then) drive the Landmasters to
     # the fight, from about level frame 6400 on, and there keep apart (SF64_COOP_PILOT_LANES): player 0 on the right of
     # the path, player 1 on the left, the side of the train over which the train's end hovers between its attacks. They
