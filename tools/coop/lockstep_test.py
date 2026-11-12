@@ -3981,7 +3981,7 @@ SURVIVE_GAPS_ON_MAP = 120  # frames into the map at which it goes wrong: well in
 SURVIVE_GAPS_REPLAY = 150000  # frames of the empty replay: longer than any run here, as a game leaves lockstep at its end
 SURVIVE_GAPS_ROUTE_FIELDS = ("state", "level", "phase", "mission", "planets", "mission_hits", "medals", "team", "paths",
                              "total", "clear", "status", "lives", "save")
-GSTATE_ENDING = 8
+SURVIVE_GAPS_ENDING = 8  # GSTATE_ENDING
 SURVIVE_GAPS_GAME_OVER = 5  # GSTATE_GAME_OVER
 
 
@@ -4388,7 +4388,7 @@ def survive_gaps_checkpoint_in(args, folder, name):
         if left:
             return survive_gaps_run_frames(host, 2) >= int(left[0]["frame"]) + 60
         rows = survive_run_log(host, 2) if survive_gaps_run_frames(host, 2) else []
-        ending = [i for i, row in enumerate(rows) if row.split()[1] == str(GSTATE_ENDING)]
+        ending = [i for i, row in enumerate(rows) if row.split()[1] == str(SURVIVE_GAPS_ENDING)]
         return bool(ending) and len(rows) >= ending[0] + 60
 
     try:
