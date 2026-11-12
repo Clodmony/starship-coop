@@ -32,9 +32,9 @@ has. A file named `stop` in that folder, or the one --stop-file names, ends the 
 --gdb <script> runs each game under gdb with a script of breakpoints that print (tools/coop/w7asan_slots.gdb: what
 the Garoa's and the Gorgon's remembered effect slots hold each time they use them), far slower than without.
 
-Exit code 0 when no report of AddressSanitizer's and no bounds report of UBSan's was found and every level reached
-level complete; 1 otherwise. UBSan's other reports (shifts, signed overflow, casts) are listed and do not fail it:
-`--strict` makes them.
+Exit code 0 when every level reached level complete and no report of AddressSanitizer's and no bounds report of UBSan's
+was found but the known ones (W7ASAN_KNOWN: read, found harmless, each with its reason in the table); 1 otherwise.
+UBSan's other reports (shifts, casts) are listed and do not fail it: `--strict` makes them.
 """
 import argparse
 import json
@@ -65,6 +65,25 @@ W7ASAN_UBSAN_OPTIONS = "halt_on_error=0:print_stacktrace=1"
 W7ASAN_LENGTH = {"fortuna": 7, "sector-z": 7, "aquas": 9, "venom-2": 9, "sector-y": 9, "solar": 10, "corneria": 11,
                  "macbeth": 11, "zoness": 12, "sector-x": 12, "venom-1": 12, "venom-andross": 14, "katina": 17,
                  "bolse": 17, "meteo": 21, "area-6": 22, "titania": 45}
+# Reports that were read and found harmless (docs/coop/NOTES.md, "2026-11-12, the sanitizer sweep"): (tool, kind,
+# function) -> why. They are listed and do not fail a run, so a new report stands out. A function, not a line: lines
+# move. A report of another kind in the same function is new.
+W7ASAN_KNOWN = {
+    ("asan", "global-buffer-overflow", "Aquas_BlueMarineShoot"):
+        "the lock-on computes a box from the floats behind gNoHitbox for an actor without a hitbox, and its timer "
+        "test refuses that actor before the box is used",
+    ("ubsan", "bounds", "Aquas_BlueMarineShoot"):
+        "gPlayerShots[-1].obj.status while no torpedo is out, and-ed with a test that is false then",
+    ("asan", "heap-buffer-overflow", "Macbeth_Texture_Scroll"):
+        "two rows read past the texture are overwritten by the saved rows in the same call",
+    ("ubsan", "bounds", "aADPCMdecImpl"):
+        "sanitizer builds only: their clamp of a sample's last load (audio_synthesis.c, __SANITIZE_ADDRESS__) leaves "
+        "old bytes in the last frame, whose header then names a table past the 8; sound only",
+    ("ubsan", "bounds", "Venom1_Ve1Golemech_Update"):
+        "pillar 6 of a row of 5 is the next row's first, inside the table; past the last row AddressSanitizer reports",
+    ("ubsan", "bounds", "Area6_A6Gorgon_Draw"):
+        "unk_28[-1] is unk_24, the field before it, written so in the source; draw only",
+}
 W7ASAN_ASAN_HEAD = re.compile(r"==\d+==ERROR: (AddressSanitizer|LeakSanitizer): (\S+)")
 W7ASAN_ASAN_ACCESS = re.compile(r"^(READ|WRITE) of size (\d+)")
 W7ASAN_FRAME = re.compile(r"^\s+#\d+ 0x[0-9a-f]+ (?:in (\S+) )?\(?([^()\s:]*)(?::(\d+))?")
@@ -145,6 +164,11 @@ def w7asan_ubsan_kind(message):
     return re.sub(r"[-0-9]+", "N", message)[:40]
 
 
+def w7asan_known(report):
+    """Why a report is known to be harmless, or None for one that fails a run."""
+    return W7ASAN_KNOWN.get((report["tool"], report["kind"], report["function"]))
+
+
 def w7asan_key(report):
     return f"{report['tool']}|{report['kind']}|{report['function']}|{report['place']}"
 
@@ -186,31 +210,32 @@ def w7asan_trace(path):
 
 
 def w7asan_table(summary):
-    """The two tables of a summary, as Markdown lines."""
-    out = ["| Level | Frames flown | Level complete at | Complete | Why it stopped | ASan | UBSan bounds | UBSan other |",
-           "|---|---|---|---|---|---|---|---|"]
+    """The two tables of a summary, as Markdown lines, and the merged reports."""
+    out = ["| Level | Frames flown | Level complete at | Complete | Why it stopped | ASan | UBSan bounds | UBSan other "
+           "| Of those known |", "|---|---|---|---|---|---|---|---|---|"]
     order = [name for name in ("baseline", *campaign.ROUTES["all"]) if name in summary["levels"]]
     order += [name for name in summary["levels"] if name not in order]
     for name in order:
         row = summary["levels"][name]
-        kinds = [key.split("|")[:2] for key in row["reports"]]
-        asan = sum(1 for tool, _ in kinds if tool == "asan")
-        bounds = sum(1 for tool, kind in kinds if tool == "ubsan" and kind == "bounds")
+        asan, bounds, other = w7asan_counts(row["reports"])
+        known = sum(1 for r in row["reports"].values() if w7asan_known(r))
         out.append(f"| {name} | {row['frames']} | {row['complete'] if row['complete'] is not None else '-'} | "
-                   f"{'yes' if row['complete'] is not None else 'no'} | {row['why']} | {asan} | {bounds} | "
-                   f"{len(kinds) - asan - bounds} |")
+                   f"{'yes' if row['complete'] is not None else 'no'} | {row['why']} | {asan} | {bounds} | {other} | "
+                   f"{known} |")
     merged = {}
     for name in order:
         for key, report in summary["levels"][name]["reports"].items():
             entry = merged.setdefault(key, {**report, "count": 0, "levels": []})
             entry["count"] += report["count"]
             entry["levels"].append(name)
-    out += ["", "| Tool | Kind | Function | Place | Levels | Detail |", "|---|---|---|---|---|---|"]
+    out += ["", "| Tool | Kind | Function | Place | Levels | Detail | Known |", "|---|---|---|---|---|---|---|"]
     rank = {"asan": 0, "ubsan": 1}
     for key, r in sorted(merged.items(), key=lambda kv: (rank[kv[1]["tool"]], kv[1]["kind"] != "bounds",
                                                          kv[1]["kind"], kv[1]["place"])):
         levels = ", ".join(r["levels"]) if len(r["levels"]) <= 4 else f"{len(r['levels'])} levels"
-        out.append(f"| {r['tool']} | {r['kind']} | `{r['function']}` | `{r['place']}` | {levels} | {r['detail']} |")
+        detail = r["detail"].replace(str(ROOT) + "/", "").replace("|", "/")
+        out.append(f"| {r['tool']} | {r['kind']} | `{r['function']}` | `{r['place']}` | {levels} | {detail} | "
+                   f"{w7asan_known(r) or ''} |")
     return out, merged
 
 
@@ -220,11 +245,18 @@ def w7asan_save(folder, summary):
     temp.replace(folder / "summary.json")
 
 
-def w7asan_counts(merged):
-    """(AddressSanitizer reports, UBSan bounds reports, other UBSan reports) of a merged report table."""
-    asan = sum(1 for r in merged.values() if r["tool"] == "asan")
-    bounds = sum(1 for r in merged.values() if r["tool"] == "ubsan" and r["kind"] == "bounds")
-    return asan, bounds, len(merged) - asan - bounds
+def w7asan_counts(reports):
+    """(AddressSanitizer reports, UBSan bounds reports, other UBSan reports) of a report table."""
+    asan = sum(1 for r in reports.values() if r["tool"] == "asan")
+    bounds = sum(1 for r in reports.values() if r["tool"] == "ubsan" and r["kind"] == "bounds")
+    return asan, bounds, len(reports) - asan - bounds
+
+
+def w7asan_new(reports, strict):
+    """The reports that fail a run: AddressSanitizer's and UBSan's bounds reports that are not in W7ASAN_KNOWN, and
+    with strict every UBSan report that is not."""
+    return [r for r in reports.values() if not w7asan_known(r) and
+            (strict or r["tool"] == "asan" or r["kind"] == "bounds")]
 
 
 def w7asan_finish(folder, summary, strict):
@@ -232,12 +264,15 @@ def w7asan_finish(folder, summary, strict):
     (folder / "table.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n".join(lines))
     asan, bounds, other = w7asan_counts(merged)
+    new = w7asan_new(merged, strict)
     open_levels = [name for name, row in summary["levels"].items() if row["complete"] is None and name != "baseline"]
-    bad = asan or bounds or open_levels or (strict and other)
+    for r in new:
+        print(f"FAIL: {r['tool']} {r['kind']} in {r['function']} at {r['place']} ({', '.join(r['levels'])})")
     print(f"w7asan: {len(summary['levels'])} runs, distinct reports: {asan} AddressSanitizer, {bounds} UBSan bounds, "
-          f"{other} other UBSan; without level complete: {', '.join(open_levels) or 'none'}; folder {folder}")
-    print("w7asan: FAIL" if bad else "w7asan: PASS")
-    return 1 if bad else 0
+          f"{other} other UBSan; {len(new)} of them fail the run, the rest is known or only listed; without level "
+          f"complete: {', '.join(open_levels) or 'none'}; folder {folder}")
+    print("w7asan: FAIL" if new or open_levels else "w7asan: PASS")
+    return 1 if new or open_levels else 0
 
 
 def w7asan_cmd_build(args):
@@ -269,10 +304,11 @@ def w7asan_cmd_baseline(args):
     lines, merged = w7asan_table(summary)
     print("\n".join(lines))
     asan, bounds, other = w7asan_counts(merged)
-    ok = hash_check.played_through(values) and not asan and not bounds
+    new = w7asan_new(merged, False)
+    ok = hash_check.played_through(values) and not new
     print(f"w7asan: baseline, {frames} frames through the menus into Corneria, replay {result} (input by rule has no "
           f"checkpoints: FAIL_MISMATCH is its normal end), distinct reports: {asan} AddressSanitizer, {bounds} UBSan "
-          f"bounds, {other} other UBSan; folder {folder}")
+          f"bounds, {other} other UBSan; {len(new)} of them fail the run; folder {folder}")
     print("w7asan: PASS" if ok else "w7asan: FAIL")
     return 0 if ok else 1
 

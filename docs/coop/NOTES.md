@@ -5482,6 +5482,261 @@ player 0 loses 100.
 
 ## Determinism
 
+### 2026-11-12, the sanitizer sweep (#262, #145, #232): every campaign level under AddressSanitizer and UBSan
+
+Identity: ROM US 1.0 (SHA-1 d8b1088520f7c5f81433292a9258c1184afa1457), branch `issue/262-stray-reads` on `wave7-base`
+(`07c03c1f`). The first sweep ran the game code of `wave7-base` (the tool's commit `790774f0`), the runs after the
+fixes `a7e3f2c2`. Linux, GCC, Debug, OpenGL on a software renderer, no window, one game at a time, 2 players in one
+game (`gCoopDebugPlayerCount`), no session. Line numbers are those of `wave7-base`.
+
+Why: on 2026-11-10 a Windows host and a Linux client parted at Aquas because a dying eel read memory from before its
+array (the entry of 2026-11-11 below). Two games of one compiler read the same stray bytes, so no test on one PC could
+see it. A sanitizer sees such a read in one game.
+
+**Observed: the build and the baseline**
+
+- `python tools/coop/w7asan_sweep.py build` is `build.py --build-dir build-asan --no-check` with `-D CMAKE_C_FLAGS=` and
+  `-D CMAKE_CXX_FLAGS=` set to `-fsanitize=address,undefined,float-cast-overflow
+  -fsanitize-recover=address,undefined,float-cast-overflow -fno-omit-frame-pointer`, in Debug. In `build.ninja` the
+  compile steps of the game's C and C++, the co-op layer and libultraship carry the flags (437 lines); 132 compile
+  steps do not: Torch and its libraries, yaml-cpp and prism, where `CMAKE_CXX_FLAGS` is set anew
+  (`tools/Torch/CMakeLists.txt:122`). They read assets, not the game's state.
+- Games run with `ASAN_OPTIONS=halt_on_error=0:detect_leaks=0:abort_on_error=0` and
+  `UBSAN_OPTIONS=halt_on_error=0:print_stacktrace=1`. UBSan writes to stderr only (`log_path` in `UBSAN_OPTIONS` did not
+  move it in a test program here), and the tools that start a game throw its output away, so the sweep starts the game
+  through a wrapper beside it (`build-asan/w7asan-run.sh`) that keeps stderr in a file.
+- UBSan's bounds check matters as much as AddressSanitizer: it reports an index outside an array that lies inside a
+  larger object (a row of a two-dimensional table, a member of a struct), where AddressSanitizer sees nothing because
+  the byte belongs to the same object.
+- The baseline, `python tools/coop/w7asan_sweep.py baseline` (co-op off, the input `hash_check.py base` plays, through
+  the menus and the prologue into Corneria): `5819 frames`, no AddressSanitizer report, 1 UBSan bounds report
+  (`mixer.c:309`, below) and 16 shifts. The `mixer.c:299` report of #145 is gone (#245). About 60 game frames a second.
+
+**Observed: the sweep, per level** (`python tools/coop/w7asan_sweep.py sweep`, on `wave7-base`'s game code; one game per
+level with `hash_check.py`'s `pilot_flight`: started past the intro, a pilot flying both players, `gInvincible` but in
+Corneria, `gInfiniteBombs` in Zoness and at Andross, to level complete and up to 1800 frames after it or until the game
+leaves the level; "reports" are distinct places)
+
+| Level | Frames flown | Level complete at | Complete | Why it stopped | ASan | UBSan bounds | UBSan other | Of those known |
+|---|---|---|---|---|---|---|---|---|
+| corneria | 7420 | 6025 | yes | left the level | 0 | 1 | 16 | 1 |
+| meteo | 17464 | 15783 | yes | left the level | 1 | 2 | 18 | 1 |
+| fortuna | 8937 | 7256 | yes | left the level | 1 | 2 | 20 | 1 |
+| sector-x | 11359 | 10084 | yes | left the level | 1 | 2 | 19 | 1 |
+| titania | 42740 | 41220 | yes | left the level | 3 | 3 | 20 | 1 |
+| bolse | 17458 | 16301 | yes | left the level | 0 | 1 | 16 | 1 |
+| venom-1 | 12057 | 11478 | yes | left the level | 1 | 9 | 20 | 9 |
+| venom-andross | 13643 | 13131 | yes | left the level | 0 | 1 | 19 | 1 |
+| sector-y | 9383 | 7757 | yes | left the level | 1 | 2 | 18 | 1 |
+| aquas | 7804 | 6365 | yes | left the level | 7 | 4 | 20 | 7 |
+| zoness | 11766 | 10400 | yes | left the level | 1 | 2 | 21 | 1 |
+| sector-z | 5428 | 3628 | yes | left the level | 0 | 1 | 16 | 1 |
+| area-6 | 22362 | 21178 | yes | left the level | 0 | 2 | 18 | 2 |
+| venom-2 | 10906 | 10282 | yes | left the level | 0 | 1 | 17 | 1 |
+| katina | 15823 | 14023 | yes | left the level | 5 | 6 | 23 | 1 |
+| solar | 10277 | 8651 | yes | left the level | 1 | 2 | 17 | 1 |
+| macbeth | 4477 | - | no | the game ended by itself with code 1 at frame 4494 | 3 | 1 | 16 | 3 |
+
+- 17 AddressSanitizer reports, 18 UBSan bounds reports (most are the same places twice, once from each tool) and 36
+  other UBSan reports, in 71 lines. No report lies in libultraship or the frame interpolation: a test game does not
+  draw (`SF64_COOP_TEST_NO_DRAW`), so the renderer got no work.
+- Macbeth ended at frame 4494: `AddressSanitizer: CHECK failed: asan_allocator.cpp:191 "((old)) == ((kAllocBegMagic))"
+  (0x5fb05fb05fb05fb, ...)`. The write of (a) 5 below had put a texel, `0x05fb`, four times over the header of the
+  next heap block.
+
+**Observed: every distinct report, by class**
+
+(a) A read or write outside its array or object, with bytes that depend on the compiler's layout: fixed, in every mode,
+each with what the N64 read or did there. The N64's neighbours are known: the decomp names a table by its address, and
+each table below ends exactly where the next one's name begins; for `gNoHitbox` the ROM itself was read.
+
+| # | Place (`wave7-base`) | What | On the N64 | Fix (`// COOP:`) |
+|---|---|---|---|---|
+| 1 | `Map_PathLineBox_Draw`, `src/overlays/ovl_menu/fox_map.c:5645`; seen after 9 levels | The mission bar on the map colours the line after each mission flown by its path's type, `sPaths[Map_GetPathId(...)]`. From the last mission flown no path leads to a next one that is not chosen yet (`gMissionPlanet[gMissionNumber]` is `PLANET_NONE` until the next planet is chosen, `:1611-1615`, `:2938`), `Map_GetPathId` says 24 (`:4265`), and the type is read one entry past the table. Draw only. | `D_menu_801AFFB8[0]`, 90.0f, read as an integer: none of the five types, so the line stays white | the type is read only for an id inside the table; white otherwise |
+| 2 | `Aquas_AqJellyfish_Update`, `src/overlays/ovl_i3/fox_aq.c:6000` | Each of three counters steps through a row of 8 of `D_i3_801C0440[24]`. The third row is used up at step 8 (105), and until the counter wraps at 120 the code compares it with entry 24. A match would step on and read `D_i3_801C0374` past its 51 floats into the jellyfish's `fwork[13]`, `[16]` and `[19]` (hashed). | `D_i3_801C04A0[0]`, 15, while the counter is 106 to 119: never equal | the compare is made only for an index inside the table |
+| 3 | `Venom1_Ve1Golemech_Update`, `src/overlays/ovl_i1/fox_ve1.c:1262` (and `:858`) | The Golemech turns to `D_i1_8019AE00[swork[21]].unk_0`, a table of 4; `swork[21]` counts to 5 (`:1595`). Entries 4 and 5 are read for the angle it turns to (`fwork[13]`, hashed). | the floats of `D_i1_8019AE20`: 258.0f for 4, 0.0f for 5 | the table has six entries, the last two the N64's values |
+| 4 | `Katina_SFTeamFleeUpdate`, `src/overlays/ovl_i4/fox_ka.c:1737-1741` | `Katina_LevelComplete` (case 100, `:2053-2065`) places the team's ships from four tables of 4 with index `idx + 1`; Peppy is `idx` 3 and reads entry 4 of each (position and yaw of a cutscene actor, hashed). | the first float of the next table: x 0, y 1000, z -1000, yaw 180 | each table has a fifth entry, the N64's value |
+| 5 | `Macbeth_Texture_Scroll2`, `src/overlays/ovl_i5/fox_ma.c:471` | Scrolling the 4 by 8 texture `D_MA_6012C98` down a row started at row 8: it copied the last row into a row behind the texture, 8 bytes written past a 64 byte heap block, every call (`Macbeth_801A6984`, from `Macbeth_Actor207_Update`). Upstream marks the call `LTODO: ASAN accuses Heap overflow`. | the 8 bytes after the texture in its segment, the next asset | the loop starts at the last row; the texture's own rows move as before |
+| 6 | `CoopPilot_GorasTarget`, `src/port/coop/test/pilot.c:551`, `:556` (the test pilot, not the game) | `MIN((s32) *data++, ...)`: the macro names its argument twice, so the count of Goras' boxes came from the float after the count and every box was read one float on, past `D_i5_801B7904` and `aTiGorasHitbox`. | - | the count is read once, then limited |
+
+(b) Outside its array, and harmless: listed, not changed.
+
+- `Aquas_BlueMarineShoot`, `fox_aq.c:1295`, `:1299-1302`: the lock-on reads `info.hitbox[1]` and `[3..6]` of every
+  active actor for a box around it; for an actor without a hitbox that is 4 to 24 bytes past `gNoHitbox`, an array of
+  one float (`src/engine/fox_edata_info.c:70`). On the N64 the checkpoint's hitbox follows (the ROM at 0xC8144: 0,
+  then 1, -40, 40, 0, 180, 0, 180). In the Linux reference build `D_edata_800CF964` and `D_edisplay_801615D0` follow
+  (`nm`), the second a value the draw code writes. A gdb pass over the whole level (`--gdb`, a breakpoint at `:1294`
+  for such actors): `5126 lines, 0 with ok=0`: every one was an event actor (`OBJ_ACTOR_EVENT`) with `timer_0C2` at 5
+  or more, and the lock tests `timer_0C2 < 5` before it uses the box (`:1304`); 3650 of them had health 511. The event
+  handler gets `timer_0C2 = 10000` (`src/engine/fox_enmy2.c:1146`), which counts down.
+- `Aquas_BlueMarineShoot`, `fox_aq.c:1263`: `gPlayerShots[D_i3_801C4190[5] - 1].obj.status` with index -1 while no
+  torpedo is out; and-ed with `D_i3_801C4190[5] != 0`, which is false then.
+- `Macbeth_Texture_Scroll`, `fox_ma.c:451`, `:452`: the scroll of the 16 by 16 texture `D_MA_6023228` reads rows 16
+  and 17, up to 24 bytes past a 256 byte heap block, into rows 14 and 15, and then overwrites those two rows with the
+  rows it saved. Upstream's comment there: `LTODO: this is causing corruption, overflow`.
+- `aADPCMdecImpl`, `src/audio/mixer.c:309` (all 17 levels and the baseline): `rspa.adpcm_table[table_index]` with an
+  index of 13 to 15 in a table of 8. The entry lies inside `rspa` (in its `buf`), so no other object is read; sound
+  only. It belongs to sanitizer builds: `audio_synthesis.c`'s
+  `__SANITIZE_ADDRESS__` block cuts a sample's last load short (#145), so the last frame's header byte is an old one.
+  The same 3000 frames of Corneria: the sanitizer build reports it (`index 15`), and the plain build of this commit
+  under gdb with a breakpoint on `table_index > 7` at `:309` never stops there (`mixer-reached: 1 lines`, no
+  `mixer-index` line).
+- `Venom1_Ve1Golemech_Update`, `fox_ve1.c:2400-2410`, `:2440-2442`: with `swork[22]` at 5 the pillars are taken from
+  `D_i1_80199CD0[row][5]` and `D_i1_80199B40[row][5]`, rows of 5: the next row's first entry, inside the same table.
+  The row is `swork[23]`, `RAND_FLOAT(5.0f)` (`:1816`); with row 4 the read would leave the table (on the N64 into
+  `D_i1_80199E60`, five `s16`, or `D_i1_80199CD0[0][0]`). Not seen: three flights of Venom 1 (the
+  sweep's seeds and `--seeds 1741,6142,6930,521,732,721` and `2741,7142,7930,1521,1732,1721`) gave no
+  AddressSanitizer report there, and the two with other seeds did not reach `swork[22]` 5 at all.
+- `Area6_A6Gorgon_Draw`, `fox_a6.c:2122`: `D_i3_801C22F0.unk_28[-1]`, written so in the source: the field before it,
+  `unk_24`, in the same struct. Draw only.
+- `CoopTrace_OnGamePostUpdate`, `src/port/coop/test/player_trace.c:168` (Katina, Titania, Aquas in one flight):
+  `load of value 157, which is not a valid value for type '_Bool'`: the test trace prints `gPlayer[i].somersault` on
+  every game update, also after the level, when the players' memory is level memory that has been given to something
+  else. Test tool only; the trace's rows outside a level are not read by any check.
+- `Audio_UpdatePlayerReverb`, `src/audio/audio_general.c:2166` (5 levels; UBSan's float cast): the loop reads
+  `gPlayer[0..3]` whatever the number of players, so with fewer than four it takes `pos.y` from the level memory behind
+  the players, and a value of 128 or more does not fit the `s8` it is stored in. Reverb only; upstream's with one
+  player too.
+
+(c) Undefined behaviour with no effect that differs between two x86-64 builds: listed, counted, not changed.
+
+- 27 places shift a bit into or past the sign of an `int`: 24 in `src/audio/audio_general.c` (the sequence and sound
+  effect commands, `0xF << 28`, `0xF8 << 24` and the like), `src/audio/audio_synthesis.c:1346` (a negative value
+  shifted left), `src/engine/fox_game.c:171`, `:183`, `:477`. Every compiler here makes the two's complement value.
+- 2 float casts: the reverb above, and `Aquas_AqAnglerFish_Update`, `fox_aq.c:4254`: `iwork[12] = y * -0.24f +
+  150.0f` is negative for a fish above y 625, and `iwork` is `uintptr_t` in the port. On the N64 it is an `s32`, the
+  next line's `< 30.0f` is true and the value becomes 30. Here GCC's conversion gives a huge number, the test is false,
+  and the light's alpha is drawn from its low bits. The value is in the actor, so in the hash. An x86-64 build of GCC
+  and of MSVC both convert through `cvttss2si` (not run on MSVC); an ARM build saturates a negative value to 0, which
+  the next line then makes 30. One line would end it: `this->iwork[12] = (s32) (...)`.
+- No signed overflow, no misaligned access and no null pointer was reported in the 229304 frames of the sweep.
+
+**Observed: after the fixes** (`a7e3f2c2`)
+
+- `python tools/coop/w7asan_sweep.py sweep` again, all 17 levels: `17 runs, distinct reports: 7 AddressSanitizer, 10
+  UBSan bounds, 28 other UBSan; 0 of them fail the run, the rest is known or only listed; without level complete:
+  none`, `w7asan: PASS`. On the first sweep the same check says `17 of them fail the run` (the six places of (a), most
+  of them from both tools) and Macbeth has no level complete.
+
+| Level | Frames flown | Level complete at | Complete | Why it stopped | ASan | UBSan bounds | UBSan other | Of those known |
+|---|---|---|---|---|---|---|---|---|
+| corneria | 7420 | 6025 | yes | left the level | 0 | 1 | 16 | 1 |
+| meteo | 17464 | 15783 | yes | left the level | 0 | 1 | 17 | 1 |
+| fortuna | 8937 | 7256 | yes | left the level | 0 | 1 | 19 | 1 |
+| sector-x | 11359 | 10084 | yes | left the level | 0 | 1 | 18 | 1 |
+| titania | 9778 | 8258 | yes | left the level | 0 | 1 | 17 | 1 |
+| bolse | 17458 | 16301 | yes | left the level | 0 | 1 | 16 | 1 |
+| venom-1 | 12057 | 11478 | yes | left the level | 0 | 8 | 19 | 8 |
+| venom-andross | 13643 | 13131 | yes | left the level | 0 | 1 | 19 | 1 |
+| sector-y | 9383 | 7757 | yes | left the level | 0 | 1 | 17 | 1 |
+| aquas | 7804 | 6365 | yes | left the level | 5 | 2 | 18 | 7 |
+| zoness | 11766 | 10400 | yes | left the level | 2 | 1 | 21 | 3 |
+| sector-z | 5428 | 3628 | yes | left the level | 0 | 1 | 16 | 1 |
+| area-6 | 22362 | 21178 | yes | left the level | 0 | 2 | 18 | 2 |
+| venom-2 | 10906 | 10282 | yes | left the level | 0 | 1 | 17 | 1 |
+| katina | 15823 | 14023 | yes | left the level | 0 | 1 | 17 | 1 |
+| solar | 10277 | 8651 | yes | left the level | 0 | 1 | 16 | 1 |
+| macbeth | 11524 | 10165 | yes | left the level | 2 | 1 | 17 | 3 |
+
+- 15 of the 17 levels flew the same frames as before the fixes, to the same frame of level complete: in this build
+  each fixed read had found the N64's value. Macbeth, which had ended at frame 4494, reaches level complete at 10165.
+  Titania reaches it at 8258, not 41220: the pilot now aims at Goras' real boxes ((a) 6).
+- What is left are the reports of (b) and (c). A game runs on a little past the cut, so a level's row can hold a
+  report from the map or the next level's start (Zoness' flight went on into Macbeth's first frames).
+- Co-op off: `python tools/coop/hash_check.py base --base <reference build>` (the build of `33bd5fe6`, the same
+  `src` and `include` as `wave7-base`): `co-op off: the base build and this one equal on all 5800 frames`, `hash: PASS`.
+- Two clients, the plain build of `a7e3f2c2`, each run under the net-test lock: `lockstep_test.py --only eels`:
+  `ok eels: same hash on 9000 frames; 171 eel puffs of 185 puffs, all in the fight`; `--only vehicle_end --levels
+  macbeth`: `same hash; Macbeth 14000 frames, level complete at 9956`; `--levels aquas`: `same hash; Aquas 14000
+  frames, level complete at 7369`; `campaign.py --levels venom-1`: `equal on every frame to the end; 12341 frames
+  compared`; `--levels katina`: `16751` frames compared, level complete at `14881`, `equal on every frame to the end`.
+  Macbeth, Aquas and Katina complete on the frame they did in the route of 2026-11-11 (9956, 7369, 14881).
+- `lockstep_test.py --only vehicle_end --levels titania`, two clients with the fixed pilot on each: `same hash;
+  Titania 42000 frames, level complete at 9399, player 1 drove on 36460`. The frame of level complete was 36223 with
+  the old pilot (#266); the scenario's frame limit and the numbers in `tools/coop/README.md`'s row are from then.
+
+**Observed: the rest of #262's first block**
+
+- The Garoa's beams (`Aquas_AqGaroa_Update`, `fox_aq.c:4670`; #262's question: can a remembered slot be freed and
+  taken by another effect while the Garoa still holds it). By reading: state 3 asks `func_effect_80081B24` for two
+  beams (`OBJ_EFFECT_395` in state 2, `timer_50` 80) and keeps `slot + 1` in `iwork[2]` and `iwork[3]`; state 4
+  writes the beam's place every frame and throws it at animation frame 20 and 57, with no test of the slot. A held
+  beam ends early in four ways: its `timer_50` runs out (`src/engine/fox_effect.c:3637`), `Object_CheckCollision`
+  hits something (`:3668`), `Effect_Move` culls it (`src/engine/fox_enmy.c:2817`), or the Garoa dies (which the Garoa
+  handles, `fox_aq.c:4694`). A touch of a player does not end it (`func_effect_8007A774`, `fox_effect.c:1025`).
+  And when no slot is free `func_effect_80081B24` returns 0 (`fox_effect.c:3542`), which the Garoa keeps as slot 0:
+  whatever effect is there.
+- The trace (`python tools/coop/w7asan_sweep.py sweep --levels aquas,area-6 --gdb tools/coop/w7asan_slots.gdb`,
+  on `a7e3f2c2`, one line each time the slot is used, `ok=0` when it is not an active beam of that kind): Aquas,
+  `garoa-take: 7 lines, 0 with ok=0` (7 volleys of 4 Garoas, each time two different slots that hold beams),
+  `garoa-hold: 557 lines, 0 with ok=0`, `garoa-dead: 4 lines, 0 with ok=0` (two Garoas shot while they held both
+  beams). The lowest `timer_50` of a held beam was 14, at the second throw: the 80 frames end 14 frames after it.
+- The Gorgon's beam (`Area6_A6Gorgon_Update`, `fox_a6.c:1078`, state 7). By reading: `swork[A6_SWK_39]` is set by
+  the beam itself (`fox_effect.c:3882`, `gBosses[0].swork[39] = this->index`, on the frame the Gorgon's timer ends
+  and it goes to state 7), so it is not a slot the Gorgon found; the beam has no end of its own in that state, and
+  the Gorgon frees it (`fox_a6.c:1101`). Only the cull of `Effect_Move` could free it before, and the beam sits 250
+  in front of the boss. The trace: Area 6, `gorgon-beam: 375 lines, 0 with ok=0`: five beams of 75 frames each, in
+  slots 62, 64, 67, 67 and 98, each the active beam (state 10).
+- `gTexturedLines`, the array that is not cleared when a slot is taken. Read, not run: `Play_ClearObjectData` zeroes
+  all 100 lines at each level start (`src/engine/fox_play.c:780`), so a line's first user in a level finds zeros and a
+  later one the last user's values. Which fields each user leaves: the event actors' line (`fox_enmy2.c:1416`) sets no
+  `posBB` when it takes the line, but `ActorEvent_UpdateTexLines` (`:1650`, called at the end of the same update,
+  `:3494`) sets it before `TexturedLine_UpdateAll` runs (`fox_enmy.c:3231`), and no `timer`, which its mode 1 does not
+  read. Aquas (`fox_aq.c:329`) and Macbeth (`fox_ma.c:3821`) set every field they use. The line of Titania's Delphor
+  head (`fox_ti.c:1970`, mode 101) sets no `timer`, which mode 101 does not read. Andross' two (`fox_andross.c:564`,
+  `:3638`, mode 50) set no `prim`; the draw takes a fixed colour in that level (`fox_edisplay.c:2167`). The turret
+  (`fox_turret.c:102`) sets no `xyScale`; it is the unused turret mode. Goras (`fox_ti.c:4649`) takes four lines by
+  writing `mode = 1` alone and fills them in `Titania_TiGoras_Draw` (`:5461-5476`), which runs after the frame's
+  update: for one update the line has mode 1, the mode that hurts, with the place its last user left. `xRot`, `yRot`
+  and `zScale` are computed from the two ends on every update (`fox_enmy.c:3099-3103`).
+- The nine sign tests on the port's unsigned `iwork` (`uintptr_t`, an `s32` on the N64), read one by one:
+
+| Place | Code | On the N64 | In the port | Seen in play |
+|---|---|---|---|---|
+| `src/engine/fox_360.c:2324` (and `:2322`), `ActorAllRange_DrawBarrelRoll` | `iwork[15]` is 1 or -1 (`:1368`, `:1372`), the side an all-range ship rolls to; the roll's ring spins by `gGameFrameCount * 20 * iwork[15]` degrees and is flipped if `iwork[15] < 0` | a roll to the other side spins the ring the other way, flipped | -1 is 2^64 - 1: the angle is about 1e22 degrees, whose sine and cosine are whatever is left of the float, and the flip never happens | yes, as a ring that jumps instead of spinning, on half of the rolls; draw only |
+| `src/engine/fox_demo.c:2403`, Fortuna's ending, the explosion | `iwork[0]` starts at 255 and loses 2 a frame; below 0 it is set to 0 and the scale to 0 | the glow fades in 128 frames and is gone | 1 - 2 wraps: the test is never true, the scale stays, the alpha is the low byte (255, 253, ... again and again), and `gLight3Brightness = iwork[0] / 255.0f` is about 7e16 | yes, from frame 129 of the explosion for as long as that scene runs: the glow comes back and the light is at its brightest; not watched |
+| `src/overlays/ovl_ending/fox_end1.c:1737` | `iwork[1]` starts at 100 (`:1567`) and loses 1; `<= 0` frees the actor | freed at 0 | `<= 0` is `== 0`, reached exactly | no difference |
+| `src/overlays/ovl_i3/fox_a6.c:2792`, `:2796`, `Area6_LevelComplete`, the explosion's light | `iwork[3]` (240) and `iwork[7]` (100) lose 4 a frame from cutscene frame 147, kept at 0 | the two alphas fade to 0 after 60 and 25 frames and stay | 240 reaches 0 and the next step wraps; 100 reaches 0 and wraps: the alphas run through their low bytes again | yes, from cutscene frame 172 on, as long as the actor is drawn: the light flickers back; not watched |
+| `src/overlays/ovl_i3/fox_aq.c:1814` (`:1805` when listed), `Aquas_Actor255_Update` | `iwork[1]--`, then `<= 0` ends the eel | ends at 0 | `== 0`, reached exactly (it starts above 0) | no difference |
+| `src/overlays/ovl_i3/fox_aq.c:6497`, a fish of a group | `iwork[0]--` in a branch that runs only while `iwork[0] != 0` (`:6475`), then `< 0` sets it to 0 | never negative: the test is dead code there too | the same | no difference |
+| `src/overlays/ovl_i5/fox_ma.c:3149`, `Macbeth_MaRailroadSwitch_Update` | `iwork[0]` is 2, and is counted down only while it is above 0 | 2, 1, 0 | the same | no difference |
+| `src/overlays/ovl_i6/fox_sy.c:3688`, `SectorY_SyRobot_Update` | `iwork[19]` is 0, 1 or -1 by the robot's command (`work_048` 10 and 11 give -1, `:3625`, `:3631`); `< 0` fires `ActorEvent_8006F254`, a shot along the robot's own aim | commands 10 and 11 fire straight ahead | never true: they take the other branch, `iwork[19] != 0`, a shot at player 0 with a random offset of up to 150 in x and y, and two more draws of the random numbers | yes: those robots aim at the player instead of firing where they point. Equal on every 64-bit build |
+
+  Candidates for upstream, each one line: `(s32) this->iwork[15]` at `fox_360.c:2322` and `:2324`;
+  `(s32) this->iwork[0] < 0` at `fox_demo.c:2403`; `(s32) actor4->iwork[3] < 0` and `(s32) actor4->iwork[7] < 0` at
+  `fox_a6.c:2792`, `:2796`; `(s32) this->iwork[19] < 0` at `fox_sy.c:3688`. The Sector Y one changes how a level
+  plays (and its random numbers), so it would also be a change for co-op off: not made here.
+
+**Derived**
+
+- The class is not rare: five places in the game read or wrote outside a table in one flight of each level, four of
+  them with a value that feeds the simulation (2, 3, 4) or the heap (5). In the Linux reference build each of the four
+  tables is followed at once by the one the N64 had behind it (`nm`: `sPaths` and `D_menu_801AFFB8`, `D_i3_801C0440`
+  and `D_i3_801C04A0`, `D_i1_8019AE00` and `D_i1_8019AE20`, the four of Katina in a row), as GCC lays initialised data
+  out in the order of its definitions: each read found the N64's value, and the fixes change no frame of the flights
+  here. What MSVC puts behind each table is not known, and nothing in C says it is the next one.
+- (a) 5 is the one fault here that can crash a game: 8 bytes of a neighbouring heap block are overwritten each
+  time `Macbeth_801A6984` runs. AddressSanitizer's own allocator died of it.
+- A pilot's flight is one path through a level. Venom 1's pillars show it: a read that leaves its table one time in
+  five was not seen in three flights.
+- `w7asan_sweep.py` keeps a list of the reports of (b) by function (`W7ASAN_KNOWN`), so a run fails on a new report
+  and not on those.
+
+**Unknown**
+
+- Windows, MSVC: nothing here ran there. A Windows run would add (1) what MSVC puts behind each of the tables of (a)
+  and behind `gNoHitbox`, from a map file or a debugger, which says whether the session of 2026-11-10 could have
+  parted at any of them; (2) AddressSanitizer for MSVC (`/fsanitize=address`) over the same flights, which sees the
+  same global and heap overruns but has no UBSan, so not the bounds reports inside an object; (3) MSVC's conversion of
+  a negative float to `uintptr_t` (`fox_aq.c:4254`).
+- A level's other paths: the warps, the branches a pilot does not take, a player going down, game over and the map's
+  way back from it (`Map_801A4394`, `fox_map.c:3368-3377`, indexes `sPaths` and `gPlanetPathStatus` with the same path
+  id, and writes; with every planet of the route set it finds a path, not run), the ending, Training, versus.
+- A session: one game with two players ran, no second client. The co-op code that only a session runs (lockstep, the
+  net layer) has its own sanitizer tests (`net_test.py --asan`, `session_test.py --asan`, `menu_test.py --asan`).
+- The draw code's own reads (libultraship's renderer got no work) and a Release build, where the compiler may drop a
+  read whose value is not used.
+
 ### 2026-11-11, the campaign run: a pilot that finishes every campaign level, and the route with two real clients
 
 Identity: ROM US 1.0, branch `issue/campaign-runs` on `wave6-base` (`a4867d99`), Linux, GCC, Debug, OpenGL on a
