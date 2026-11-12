@@ -1805,8 +1805,10 @@ OTHER_BOSS_RUNS = {  # name: level, frames, script, CVars beyond gInvincible, en
     "spyborg": (2, 13000, rails_script, {}, {}),
     "vulkain": (7, 12000, rails_script, {}, {}),
     # Titania: Goras waits in state 3 until it is shot, so pilots on both clients drive the Landmasters (the feed is
-    # not played then) and bring it into its fight, states 7 to 12, from about 7800 frames in.
-    "goras": (12, 13000, rails_script, {}, {"SF64_COOP_LOCKSTEP_PILOT": "1"}),
+    # not played then) and bring it into its fight, states 7 to 12, from about 7800 frames in. Since the pilot reads
+    # Goras' boxes right (#262, CoopPilot_GorasTarget) it beats Goras and the level ends at about frame 11760, so the run
+    # stops before that: the map's frames hold no Goras for the trace the check counts.
+    "goras": (12, 11000, rails_script, {}, {"SF64_COOP_LOCKSTEP_PILOT": "1"}),
 }
 OBJ_BOSS_SX_SPYBORG, OBJ_BOSS_TI_GORAS, OBJ_BOSS_SO_VULKAIN = 303, 306, 315  # include/sf64object.h
 SPYBORG_CHASES = (1, 2, 3, 4, 8, 9, 85)  # SectorX_SxSpyborg_Update's states that move it to its target's x and y
