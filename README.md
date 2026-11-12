@@ -136,7 +136,7 @@ No dates are promised for any of this.
 
 ## Current state
 
-Last updated 2026-11-11. For the live list see the [open issues](https://github.com/Clodmony/starship-coop/issues) and
+Last updated 2026-11-12. For the live list see the [open issues](https://github.com/Clodmony/starship-coop/issues) and
 the [roadmap](docs/coop/ROADMAP.md).
 
 **Two real games stay in step through all of Corneria on one PC, and two people have played the whole campaign on two
@@ -155,6 +155,8 @@ levels), a player's name shows over the other ships ([#257](https://github.com/C
 [#258](https://github.com/Clodmony/starship-coop/issues/258)), and the test pilot finishes all 17 levels with two clients,
 equal on every frame, while Sector X's Spyborg and Titania's Goras go after the nearest human
 ([#220](https://github.com/Clodmony/starship-coop/issues/220)). A real connection drop, Windows and four players are not tried.
+
+**Added on 2026-11-12, tested by scripts on one Linux PC and not yet played by hand:** Macbeth's train end goes after the nearest tank, and its bomb fire and beams hurt every tank, not player 0 only ([#220](https://github.com/Clodmony/starship-coop/issues/220), [#272](https://github.com/Clodmony/starship-coop/issues/272)); Sector Y's robots spread their shots around the human they aim at ([#273](https://github.com/Clodmony/starship-coop/issues/273)); the level clear screen waits for every human's A (30 s at most) ([#252](https://github.com/Clodmony/starship-coop/issues/252)); a restarted session is tested beyond Corneria (the map, the levels' own checkpoints, four players) ([#267](https://github.com/Clodmony/starship-coop/issues/267)); five stray reads and one write that a sanitizer sweep of every campaign level found are fixed ([#262](https://github.com/Clodmony/starship-coop/issues/262)). The test pilots now fly Andross' escape and the campaign runs Venom 2 through the brain and the escape to the ending, equal on every frame ([#275](https://github.com/Clodmony/starship-coop/issues/275)). What a second player gets in the escape is not decided ([#282](https://github.com/Clodmony/starship-coop/issues/282)).
 
 ### What works
 
@@ -176,7 +178,7 @@ Everything here is tested by scripts, on Linux; determinism also on Windows (Rel
 
 ### In progress
 
-Not yet on `coop`: [#259](https://github.com/Clodmony/starship-coop/pull/259) (the level clear screen waits for every human's A, a larger hit window with names), which nobody has played by hand. The next step is the same two-PC campaign again on the build that is on `coop` now: see [TWO_PC_TEST.md](docs/coop/TWO_PC_TEST.md). The player-facing text above was written for the test build and has had only the corrections this merge needs; a full pass is still open ([WP-31](https://github.com/Clodmony/starship-coop/issues/27)).
+Nothing waits in a pull request (the work of 2026-11-12 above is in `coop` with the combined test build 6, which nobody has played by hand). The next step is the same two-PC campaign again on the build that is on `coop` now: see [TWO_PC_TEST.md](docs/coop/TWO_PC_TEST.md). The player-facing text above was written for the test build and has had only the corrections this merge needs; a full pass is still open ([WP-31](https://github.com/Clodmony/starship-coop/issues/27)).
 
 ### What is open
 
