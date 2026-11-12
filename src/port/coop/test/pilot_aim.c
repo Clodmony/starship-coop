@@ -1,6 +1,7 @@
 // What the pilot aims at outside Corneria (#181). See pilot_aim.h.
 
 #include "pilot_aim.h"
+#include "pilot_andross.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -459,6 +460,10 @@ void CoopPilot_FlyAllRangeAim(const Player* p, s32 i, PilotPad* pad) {
     f32 flight;
     f32 breakOff;
 
+    if (w8AndPilot_Escape(p, i, pad)) { // Andross' escape: its route, not a foe (pilot_andross.c, #275)
+        t->kind = AIM_NONE;
+        return;
+    }
     if ((sAimFrames[i] <= 0) || !CoopPilotAim_Refresh(t)) {
         if (!CoopPilotAim_Pick(p, i, t)) {
             // Nothing to shoot: stay in the arena.
@@ -536,6 +541,7 @@ void CoopPilot_NoteAim(FILE* log, const Player* p, s32 i) {
     const AimTarget* t = &sAim[i];
     s32 k;
 
+    w8AndPilot_Note(log, p, i); // pilot_andross.c, #275
     if ((log == NULL) || ((gGameFrameCount % 60) != 0) || (p->state != PLAYERSTATE_ACTIVE)) {
         return;
     }
