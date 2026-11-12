@@ -5065,6 +5065,8 @@ void Macbeth_Actor207_Update(Actor207* this) {
             Math_SmoothStepToF(&D_i5_801BE368[34], this->obj.pos.y + RAND_FLOAT(500.0f), 0.2f, 20.0f, 0.01f);
 
             if (this->dmgType != DMG_NONE) {
+                // COOP: in a session player 0 is not refilled in this state (CoopPlayers_RefillFox), so this ends the
+                // try as upstream (owner's choice on #220, 2026-11-12)
                 gPlayer[0].shields = 0;
             }
 
