@@ -128,6 +128,11 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             Solar's Vulkain turns its head to player 1 (campaign run). On
             rails player 0 holds the top left and player 1 the bottom right, the nearer one. Hashes and boss traces
             equal on both games.
+  sy_robot_spread Sector Y's robots spread some shots around the human they aim at (#273): on the rails player 0
+            holds the top left and player 1 flies near the middle. The aim trace's syrobot lines give each robot
+            shot's start and direction: a plain one flies at the nearest human, a spread one at a point at most 150
+            from it in x and y, and those with player 1 the nearer are spread around it. Hashes equal on all 9500
+            frames. By hand, not in test_all.py: about a minute.
   eels    Aquas' boss fight with both marines firing, so the eels of the Bacoon's pods (actor 255) are shot and
             explode piece by piece. src/port/coop/test/smoke_trace.h names every smoke puff: each puff of an eel has to
             lie in the fight, not at a position read from outside the eel's history (the desync of a real Windows and
