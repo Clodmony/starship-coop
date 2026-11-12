@@ -165,7 +165,7 @@ def w7asan_set_env(log):
     os.environ["ASAN_OPTIONS"] = W7ASAN_ASAN_OPTIONS
     os.environ["UBSAN_OPTIONS"] = W7ASAN_UBSAN_OPTIONS
     os.environ["W7ASAN_STDERR"] = str(log)
-    os.environ["W7ASAN_TRACE"] = str(log.with_name("trace.txt"))
+    os.environ["W7ASAN_TRACE"] = str(log.with_name("gdb-trace.txt"))
 
 
 def w7asan_trace(path):
@@ -284,8 +284,8 @@ def w7asan_fly(name, exe, args, folder):
     logs = work / "sanitizer.txt"
     w7asan_set_env(logs)
     level = hash_check.PILOT_LEVELS[name]
-    start = replay_tool.Start(f"flying-{name}", level, True, replay_tool.FLYING.level, replay_tool.FLYING.active,
-                              replay_tool.START_SEEDS)
+    seeds = tuple(int(v) for v in args.seeds.split(",")) if args.seeds else replay_tool.START_SEEDS
+    start = replay_tool.Start(f"flying-{name}", level, True, replay_tool.FLYING.level, replay_tool.FLYING.active, seeds)
     cvars = {"gCoopDebugPlayerCount": args.players}
     if name not in campaign.MORTAL:
         cvars["gInvincible"] = 1
@@ -298,7 +298,7 @@ def w7asan_fly(name, exe, args, folder):
     row = {"frames": frames, "complete": complete, "why": why, "seconds": round(time.monotonic() - began),
            "cvars": cvars, "reports": reports}
     if args.gdb:
-        row["trace"] = w7asan_trace(logs.with_name("trace.txt"))
+        row["trace"] = w7asan_trace(logs.with_name("gdb-trace.txt"))
         for label, (total, strange, first) in sorted(row["trace"].items()):
             print(f"w7asan: {name}: trace {label}: {total} lines, {strange} with ok=0"
                   + (f", the first: {first}" if first else ""), flush=True)
@@ -360,6 +360,8 @@ def main():
     s.add_argument("--out", help="folder for the logs (default: a new one under local/; an old one is continued)")
     s.add_argument("--stop-file", help="end the sweep before the next level once this file exists")
     s.add_argument("--strict", action="store_true", help="fail on UBSan reports too")
+    s.add_argument("--seeds", help="six numbers a,b,c,d,e,f: the random seeds the levels start with (default: "
+                   "replay.py's START_SEEDS), for another flight of the same level")
     s.add_argument("--gdb", metavar="SCRIPT", help="run each game under gdb in batch mode with this script, which "
                    "ends in `run`; its `w7trace <name> ok=<0|1> ...` lines are counted (tools/coop/w7asan_slots.gdb)")
     t = sub.add_parser("table", help="print the tables of a sweep's folder again")

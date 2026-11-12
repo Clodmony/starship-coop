@@ -546,7 +546,10 @@ static bool CoopPilot_GorasTarget(const Player* p, Vec3f* at) {
         (boss->state < 7) || (boss->state >= 14)) {
         return false;
     }
-    count = MIN((s32) *data++, ARRAY_COUNT(D_i5_801B7904));
+    // Not `MIN(*data++, ...)`: the macro names its argument twice, so the count came from the float after it and
+    // every box was read one float on, past both tables (#262).
+    count = (s32) *data++;
+    count = MIN(count, (s32) ARRAY_COUNT(D_i5_801B7904));
     for (n = 0; n < count; n++, data += 6) {
         s32 part = D_i5_801B7904[n];
         s32 number = (part < ARRAY_COUNT(D_i5_801BAA78)) ? D_i5_801BAA78[part] : 0;
