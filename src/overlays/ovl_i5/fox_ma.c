@@ -11,6 +11,7 @@
 #include "assets/ast_enmy_planet.h"
 // #include "prevent_bss_reordering2.h"
 #include "fox_record.h"
+#include "port/coop/game/aim.h" // COOP: the train's end goes after the nearest human (#220)
 
 typedef struct {
     /* 0x00 */ f32 unk_00;
@@ -4177,19 +4178,24 @@ void Macbeth_801A7A30(Actor207* this) {
 }
 
 void Macbeth_Actor207_FacePlayer(Actor207* this) {
+    // COOP: the player it turns to, was player 0: its kept human (#220); player 0 in the ram at the end of the track
+    // (states 18 and 19), which goes at player 0 and kills it (level flow)
+    Player* aimed = &gPlayer[(this->state >= 18)
+                                 ? 0
+                                 : CoopAim_ActorTarget(this->index, this->obj.pos.x, this->obj.pos.y, this->obj.pos.z)];
     f32 xDist;
     f32 yDist;
     f32 xRot;
     f32 yRot;
     f32 EuclDist;
 
-    xDist = gPlayer[0].pos.x - this->obj.pos.x;
-    yDist = (gPlayer[0].trueZpos - 130.0f) - this->obj.pos.z;
+    xDist = aimed->pos.x - this->obj.pos.x;               // COOP: aimed was gPlayer[0] here and below (#220)
+    yDist = (aimed->trueZpos - 130.0f) - this->obj.pos.z; // COOP: as above
 
     EuclDist = sqrtf(SQ(xDist) + SQ(yDist));
 
     yRot = Math_Atan2F(xDist, yDist);
-    xRot = -Math_Atan2F(gPlayer[0].pos.y - this->obj.pos.y, EuclDist);
+    xRot = -Math_Atan2F(aimed->pos.y - this->obj.pos.y, EuclDist); // COOP: as above
 
     Math_SmoothStepToAngle(&this->obj.rot.y, Math_RadToDeg(yRot), 0.1f, 20.0f, 0.01f);
     Math_SmoothStepToAngle(&this->obj.rot.x, Math_RadToDeg(xRot), 0.1f, 20.0f, 0.01f);
@@ -4219,6 +4225,10 @@ Vec3f D_i5_801BA744 = { 0.0f, 0.0f, 0.0f };
 Vec3f D_i5_801BA750 = { 0.0f, 0.0f, 30.0f };
 
 void Macbeth_Actor207_Update(Actor207* this) {
+    // COOP: the player it goes to across the path and swoops on, was player 0; kept until its next state (#220). The
+    // ram at the end of the track (states 18 and 19) stays on player 0: it kills player 0 (level flow).
+    Player* aimed = &gPlayer[CoopAim_ActorTarget(this->index, this->obj.pos.x, this->obj.pos.y, this->obj.pos.z)];
+    s32 coopState = this->state; // COOP: a new state picks the nearest human again (#220)
     s32 pad;
     f32 temp;
     f32 sp374;
@@ -4414,7 +4424,7 @@ void Macbeth_Actor207_Update(Actor207* this) {
             Macbeth_8019A198(this);
             Macbeth_801A0308(this, this->obj.pos.z, this->obj.rot.y, 0);
 
-            Math_SmoothStepToF(&this->obj.pos.x, gPlayer[0].pos.x, 0.1f, 10.0f, 0.01f);
+            Math_SmoothStepToF(&this->obj.pos.x, aimed->pos.x, 0.1f, 10.0f, 0.01f); // COOP: was gPlayer[0] (#220)
             Math_SmoothStepToF(&this->obj.pos.z, gPlayer[0].trueZpos - 1500.0f, 0.1f, 20.0f, 0.01f);
             Math_SmoothStepToF(&this->obj.pos.y,
                                (this->fwork[5] + 600.0f + (gPlayer[0].trueZpos - this->obj.pos.z) * 0.25f) + 10.0f,
@@ -4435,7 +4445,7 @@ void Macbeth_Actor207_Update(Actor207* this) {
                 this->state = 7;
             }
 
-            D_i5_801BE368[9] = gPlayer[0].pos.x;
+            D_i5_801BE368[9] = aimed->pos.x; // COOP: was gPlayer[0] (#220)
 
             Macbeth_Actor207_FacePlayer(this);
             Macbeth_801A6984(this);
@@ -4451,7 +4461,7 @@ void Macbeth_Actor207_Update(Actor207* this) {
                     }
                 } else {
                     this->info.hitbox = SEGMENTED_TO_VIRTUAL(gNoHitbox);
-                    if ((gPlayer[0].pos.y + 1200.0f) < this->obj.pos.y) {
+                    if ((aimed->pos.y + 1200.0f) < this->obj.pos.y) { // COOP: was gPlayer[0] (#220)
                         this->info.hitbox = SEGMENTED_TO_VIRTUAL(aMaActor207Hitbox);
                         D_i5_801BE320[3] = 0;
                         D_i5_801BE320[2] = 1;
@@ -4481,15 +4491,15 @@ void Macbeth_Actor207_Update(Actor207* this) {
 
             if (var_fv0 < (gPlayer[0].trueZpos - this->obj.pos.z)) {
                 Macbeth_Actor207_FacePlayer(this);
-                D_i5_801BE368[9] = gPlayer[0].pos.x;
+                D_i5_801BE368[9] = aimed->pos.x; // COOP: was gPlayer[0] (#220)
             }
 
             Math_SmoothStepToF(&this->obj.pos.x, D_i5_801BE368[9], 0.2f, 30.0f, 0.01f);
 
             if (D_i5_801BE320[3] < 29) {
-                Math_SmoothStepToF(&this->obj.pos.y, gPlayer[0].pos.y + 250.0f, 0.3f, 45.0f, 0.01f);
+                Math_SmoothStepToF(&this->obj.pos.y, aimed->pos.y + 250.0f, 0.3f, 45.0f, 0.01f); // COOP: (#220)
             } else {
-                Math_SmoothStepToF(&this->obj.pos.y, gPlayer[0].pos.y + 1210.0f, 0.1f, 20.0f, 0.01f);
+                Math_SmoothStepToF(&this->obj.pos.y, aimed->pos.y + 1210.0f, 0.1f, 20.0f, 0.01f); // COOP: (#220)
             }
 
             Math_SmoothStepToF(&this->obj.pos.z, gPlayer[0].trueZpos - 100.0f, 0.3f, 60.0f, 0.01f);
@@ -4838,8 +4848,8 @@ void Macbeth_Actor207_Update(Actor207* this) {
             Math_SmoothStepToAngle(&this->obj.rot.z, 0.0f, 0.1f, 20.0f, 0.01f);
 
             Math_SmoothStepToF(&this->obj.pos.z, gPlayer[0].trueZpos - 700.0f, 0.2f, 15.0f, 0.01f);
-            Math_SmoothStepToF(&this->obj.pos.y, gPlayer[0].pos.y + 400.0f, 0.2f, 10.0f, 0.01f);
-            Math_SmoothStepToF(&this->obj.pos.x, gPlayer[0].pos.x, 0.1f, 10.0f, 0.01f);
+            Math_SmoothStepToF(&this->obj.pos.y, aimed->pos.y + 400.0f, 0.2f, 10.0f, 0.01f); // COOP: (#220)
+            Math_SmoothStepToF(&this->obj.pos.x, aimed->pos.x, 0.1f, 10.0f, 0.01f);          // COOP: (#220)
 
             if (D_i5_801BE320[3] < 15) {
                 D_i5_801BE320[3]++;
@@ -5055,6 +5065,8 @@ void Macbeth_Actor207_Update(Actor207* this) {
             Math_SmoothStepToF(&D_i5_801BE368[34], this->obj.pos.y + RAND_FLOAT(500.0f), 0.2f, 20.0f, 0.01f);
 
             if (this->dmgType != DMG_NONE) {
+                // COOP: in a session player 0 is not refilled in this state (CoopPlayers_RefillFox), so this ends the
+                // try as upstream (owner's choice on #220, 2026-11-12)
                 gPlayer[0].shields = 0;
             }
 
@@ -5300,6 +5312,9 @@ void Macbeth_Actor207_Update(Actor207* this) {
 
     if (D_i5_801BE320[31] != 0) {
         D_i5_801BE320[31]--;
+    }
+    if (this->state != coopState) {
+        CoopAim_ForgetActor(this->index); // COOP: (#220)
     }
 }
 
