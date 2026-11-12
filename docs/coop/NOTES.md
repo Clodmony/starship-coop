@@ -7183,6 +7183,118 @@ Unknown:
 
 ## Networking
 
+### 2026-11-12, #267, the session survives beyond Corneria: the map, the levels after it, the game's own checkpoints, four players
+
+Identity: ROM US 1.0, branch `issue/267-survive-gaps` on `wave7-base` (`07c03c1f`), Linux, GCC, Debug, OpenGL on a
+software renderer, no window, two to four games on one PC over loopback through the join driver, a pilot on each
+client (`src/port/coop/test/pilot.c`) or a feed. Each run below names its build: `5f92e0fc` and `ebe1afbb` (test
+code only on top of `wave7-base`), `4f162f64` (with the fix below).
+
+**Observed: the checkpoints the levels have.** Rings are `OBJ_ITEM_CHECKPOINT` (323) in a level's object table
+(`gLevelObjectInits`, `src/engine/fox_enmy.c:30-40`, and the phase tables at `:565-574`), read once on this PC from
+the port's asset archive (18 bytes an entry); the all-range ones are code.
+
+| Level | Checkpoint |
+|---|---|
+| Corneria | ring at object 369 of its rails table (none in its all-range table) |
+| Meteo | ring at 479 (none in its phase 1 table) |
+| Sector X | ring at 275 (none in its phase 1 table) |
+| Area 6 | ring at 250 |
+| Sector Y | ring at 215 |
+| Venom 1 | ring at 1164; its phase 1 table (`D_VE1_6010088`, `fox_enmy.c:571`) has one at 167 |
+| Solar | ring at 92 |
+| Zoness | ring at 271 |
+| Macbeth | ring at 313 |
+| Titania | ring at 350 |
+| Aquas | ring at 189 |
+| Fortuna | Star Wolf's arrival, `gAllRangeCheckpoint` 1 (`src/overlays/ovl_i4/fox_fo.c:300`) |
+| Katina | the Saucerer's arrival (`src/overlays/ovl_i4/fox_ka.c:943`) |
+| Bolse | the core's shield down, 1 (`src/overlays/ovl_i4/fox_bo.c:385`), and 2 (`:309`); a restart at 2 begins as 1 (`:223-228`) |
+| Andross, phase 1 | the brain's arrival (`src/overlays/ovl_i6/fox_andross.c:1084`), read by `Andross_801961AC` (`src/engine/fox_play.c:3005`); its hits are kept in `D_ctx_80177CA4` (`fox_andross.c:1120`) and restored from there (`fox_play.c:4710`), not from `gSavedHitCount` |
+| Sector Z, Venom 2, Venom 2's second part, Andross phase 0 | none |
+
+- No ring lies below object 92, so the 40 objects a restart loads before the saved index (`func_enmy_80062568`,
+  `src/engine/fox_enmy.c:540-553`) are inside every table: the question of 2026-11-11 below ("whether any of the game's
+  own checkpoint rings sits at an object index below 40") is answered no.
+- The pilots fly past the rings of Meteo, Sector X, Solar and Zoness: each of those runs (`5f92e0fc`) reached the map
+  without a checkpoint. A pilot does not steer for rings. `SF64_COOP_LOCKSTEP_RING_TO` (the lockstep driver) puts the
+  level's own ring across the path where a player flies, x and y only, so the checkpoint saved is still the level's own
+  object index and path; `<level>@ring` in `survive_gaps_checkpoints`.
+- Venom 2's second part (`LEVEL_VENOM_2`, phase 2) is what Venom 1's end jumps into (`src/overlays/ovl_i1/fox_ve1.c:2521`),
+  and it jumps into Andross in turn (`src/overlays/ovl_i6/fox_ve2.c:442`).
+
+**Observed: runs** (`python tools/coop/lockstep_test.py --only <scenario>`, one scenario or one level per run, under
+the net-test lock; "equal" is hash log and lockstep log, every region, every frame)
+
+| Scenario | Build | Result |
+|---|---|---|
+| `survive_gaps_route` | `5f92e0fc`, again `4f162f64` | ok: Corneria parted at 1999 and started again from the session's own level start (run 2); pilots flew it to the map (frame 10541) and into Meteo (11394), which parted at 11593, 200 frames in, and started again (run 3) with mission number 1 and 34 total hits; flown to its map (17090) and into Fortuna (17847) and 300 frames of it. Equal on 11593 frames of run 2 and 18611 of run 3 (18745 on `4f162f64`); the route lines equal on both games at all 7 places; Corneria and Meteo each began again with the route and the save they were first entered with |
+| `survive_gaps_map` | `5f92e0fc`, again `4f162f64` | ok: a bit of the last actor slot flipped 120 frames into the map after Corneria (frame 10660): both games took level start 2 for Corneria, the session's own, began it with the route it began with, and are equal on 600 frames |
+| `survive_gaps_map_lost` | `5f92e0fc`, again `4f162f64` | ok: the client stopped sending input 120 frames into the map; the host stopped at 10662, kept player 2's slot, the client came back with the session id, both took Corneria's own level start again, equal on 600 frames |
+| `survive_gaps_checkpoints --levels macbeth@ring` | `ebe1afbb` | FAILED: checkpoint at frame 4926 (object 333), bit at 5226; level start 2 at the checkpoint, and the games parted again 34 frames into it: `players: gPlayer[0] differs in 3 of 1264 bytes, first at +228` (`rot.x`, -2.55971e-10 against -2.83624e-10); the third level start parted again too |
+| the same | `4f162f64` | ok: the same checkpoint and bit; run 2 flew on to the map at frame 6289, equal on all 6946 frames |
+| `--levels macbeth@testring` (the driver's ring at object 202) | reference build `33bd5fe6`; `4f162f64` | ok on both: equal from the restart on |
+| the other levels (`@ring` for the rails) | `4f162f64`; Katina and Bolse first on `5f92e0fc`, Meteo, Sector X, Solar, Zoness and Aquas first on `ebe1afbb`, each ok there too | each ok: the level start at the checkpoint, begun there with no life taken, equal to the level's end (object index of the checkpoint, the end, frames of run 2): Corneria 404, map, 5198; Meteo 487, map, 13400; Sector X 288, map, 10867; Area 6 253, jump to Venom 2, 14104; Sector Y 237, map, 6563; Venom 1 1176, jump to Venom 2's second part, 6922; Solar 96, map, 8908; Zoness 273, map, 11486; Titania 386, map, 31346; Aquas 206, map, 5981; Katina all-range 1, map, 10768; Bolse all-range 1, jump to Venom 1, 10593 |
+| `--levels andross` (the session started in its phase 1) | `4f162f64` | the restart held: the brain's checkpoint at frame 12071, bit at 12371, level start 2 there; both games began it with 18 hits (from `D_ctx_80177CA4`, as the game's own rule has it) and are equal on all 4872 frames of run 2. The pilots then ran out of lives in the brain fight, gInvincible on (player 0 down again and again, then `GSTATE_GAME_OVER` and the map): the level's end was not reached. Since then the scenario names a game over as a failure |
+| `survive_gaps_venom_jump` | `4f162f64` | ok: Venom 1 jumped into Venom 2's second part at frame 11743, and the host kept that as its restart point (level 19, phase 2); a bit flipped at 11802; both games took level start 2 there, began it with the route it was entered with and flew on into Andross (frame 525 of run 2): equal on all 1374 frames |
+| `survive_gaps_four` | `4f162f64` | ok: four games (Fox, Slippy, Peppy, Falco); player 3 killed, the level started again for three; player 2 killed, again for two; equal on 2000 frames with four, three and two |
+| regression: `survive_desync`, `survive_three`, `survive_checkpoint`, `survive_checkpoint_allrange`, `survive_next_level`, `stall`, `frozen`, `save_own`, `vehicles --levels macbeth`; `join_test.py` | `4f162f64` | ok each; `join_test.py`: `RESULT: 5/5 scenarios passed` |
+
+**Observed: other**
+
+- At the restart the games stop the old level on different frames: in the Macbeth run the host's lockstep stopped at
+  5229 and the client's at 5227. So whatever a level start does not set goes into the new run from two different
+  last frames.
+- The Landmaster's state outside the Player struct (`D_800C9F00` to `D_800C9F3C`, `src/engine/fox_tank.c:16-25` and
+  `:601`) and Macbeth's rail under the tank (`D_MA_801BE250`, 40 floats; `Macbeth_InitLevel` sets 3 of them,
+  `src/overlays/ovl_i5/fox_ma.c:378-380`) are such state: nothing at a level's setup clears them.
+- A desync on the map is named as one in the level before it: `The games went out of step at frame 10660 of Corneria
+  (all-range)` (`CoopDesyncGame_Check`, `src/port/coop/sync/desync_game.c:391-399`, names `gCurrentLevel` and
+  `gLevelMode`, which the map leaves as they were).
+- A client's join report holds two `recover` lines for one desync: its own check's, then the host's `SESSION_RECOVER`.
+- On the map's first frame after Corneria, the route (the driver's `route` line) had changed in the planet's hits (34),
+  the team status, the total hits and the clear flags; the save's progress was still the one Corneria began with, and
+  differed by the time Meteo began (the map marks the planet, `Map_PlanetSaveSlot_Setup`,
+  `src/overlays/ovl_menu/fox_map.c:1716`).
+
+**The fix** (`src/port/coop/game/level_start.c`, `LevelStart_ClearSetupValues`): every game clears the tank's
+globals and Macbeth's 40 rail values at a level start, as a fresh process holds them (the #187 pattern). Co-op only;
+no change to a decision or the wire.
+
+**Derived**
+
+- A restart while the map is up starts the level the team last entered, from its restart point (decision 0014 item 2:
+  "the level the team last entered"); for the session's first level that is the session's own level start. The map's
+  changes to the route and the save are dropped, every game holds the host's values, and the level is equal from its
+  frame 0. Sound as state; the cost is a level the team had finished, which it flies again. The record does not name
+  the map, and a restart into the map itself is not a level start (`CoopLevelStart_Enter` goes to `GSTATE_PLAY`), so
+  anything else is a choice for the owner, not a small fix.
+- The campaign's values of the level start (88 to 170) are enough for the map and the next level after a restart:
+  route and save equal on every game at every level and map, Corneria to Meteo to Fortuna.
+- A restart's level start has to cover all the state the level reads that its setup does not set, as games stop the
+  old level on different frames. The tank's state was missing; other such state is not known, and a run per level
+  only finds what that level's checkpoint reaches.
+- The restart point a jump leaves (`CoopLevelStart_Entering`, one frame before `Game_SetGameState`) works for Venom 2's
+  second part, whose setup restores Fox's shields, rings, wings and hits from the `D_ctx_80177C9C` values
+  (`fox_play.c:4699-4711`), which are not sent: each game uses its own, set at Venom 1's end while in step.
+- Decision 0014 with four players works as written: a lost connection starts the level again for those who are there
+  after the 15 s wait, with four and again with three.
+
+**Guess**
+
+- That a restart at Macbeth's early test ring (object 202) held on the reference build because the tank was not yet on
+  the rails whose values `D_MA_801BE250` holds. Not checked.
+- That the `D_ctx_80177C9C` values and Andross' `D_ctx_80177CA4` could part two games that stop on different frames
+  around the frame that sets them (Venom 1's end, the brain's arrival). Not seen.
+
+**Unknown**
+
+- Two PCs, Windows, a real connection that drops: not run.
+- What a player sees and hears on the map while the level starts again: not looked at.
+- A death behind a checkpoint, then a restart, in one run: not run.
+- What enters Venom 1's phase 1, whose table has the second ring.
+- Why player 0 goes down in Andross' brain fight with gInvincible on (pilots, a session started in phase 1).
+
 ### 2026-11-11, the session survives a lost player or a desync: the level starts again from the host's state
 
 Identity: ROM US 1.0, branch `issue/session-survives` on `wave6-base` (`a4867d99`), Linux, GCC, Debug, OpenGL on a

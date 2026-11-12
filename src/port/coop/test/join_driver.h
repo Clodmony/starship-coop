@@ -10,6 +10,7 @@
 //   SF64_COOP_JOIN_PICKS=<a,b>       client: characters to ask for, the next one after each refusal
 //   SF64_COOP_JOIN_CLIENTS=<n>       host: try to start once this many clients have joined (default 1)
 //   SF64_COOP_JOIN_LEVEL=<n>         host: the LevelId to start (default 0, Corneria)
+//   SF64_COOP_JOIN_PHASE=<n>         host: its gLevelPhase (default 0; 1 is Andross' second part, #267)
 //   SF64_COOP_JOIN_START_FRAME=<n>   host: not before this frame, counted as in the state hash log
 //   SF64_COOP_JOIN_POKE_TEAM=1       host: test only, gives the values no level start clears something to carry
 //   SF64_COOP_JOIN_KEEP_OWN=1        client: test only, goes to the level but keeps its own values and save, as a

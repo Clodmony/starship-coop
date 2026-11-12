@@ -23,6 +23,21 @@ void Map_LevelStart_AudioSpecSetup(LevelId level);
 // src/audio/audio_general.c: the audio spec the game last asked for
 extern u8 sAudioSpecId;
 
+// src/engine/fox_tank.c: the Landmaster's state outside the Player struct
+extern u8 D_800C9F00;
+extern u8 D_800C9F04;
+extern u8 D_800C9F08;
+extern f32 D_800C9F10;
+extern s32 D_800C9F14;
+extern f32 D_800C9F20;
+extern f32 D_800C9F24;
+extern f32 D_800C9F28;
+extern Vec3f D_tank_800C9F2C;
+extern u8 D_800C9F3C;
+
+// src/overlays/ovl_i5/fox_ma.c: Macbeth's rail under the tank
+extern f32 D_MA_801BE250[40];
+
 // What a level reads and level init does not set, so what a game brings along from before. The order is the wire order
 // (PROTOCOL.md): a change here is a new COOP_PROTOCOL_VERSION.
 //
@@ -244,6 +259,15 @@ static void LevelStart_ClearSetupValues(void) {
     memset(gShieldAlpha, 0, sizeof(gShieldAlpha));
     gObjectLoadIndex = 0;
     gPathVelZ = 0.0f;
+    // The Landmaster's state outside the Player struct, and Macbeth's rail under it: no level setup clears them
+    // (Macbeth_InitLevel sets 3 of the 40 rail values, src/overlays/ovl_i5/fox_ma.c:378), so a level that starts again
+    // went on from where each game's own last frames left them. The games that part stop on different frames, and in
+    // Macbeth they parted again 34 frames after a restart at its checkpoint, in gPlayer[0].rot.x (#267).
+    D_800C9F00 = D_800C9F04 = D_800C9F08 = D_800C9F3C = 0;
+    D_800C9F10 = D_800C9F20 = D_800C9F24 = D_800C9F28 = 0.0f;
+    D_800C9F14 = 0;
+    D_tank_800C9F2C.x = D_tank_800C9F2C.y = D_tank_800C9F2C.z = 0.0f;
+    memset(D_MA_801BE250, 0, sizeof(D_MA_801BE250));
 }
 
 void CoopLevelStart_Enter(const CoopLevelStart* start) {
