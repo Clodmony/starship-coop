@@ -57,7 +57,7 @@ MEETING_SPEED = os.environ.get("COOP_TOOLS_MEETING_SPEED", "8")
 # its first frame, and the host's level start finds it 4 to 20 title frames after boot on a Release build with a loose
 # frame limit; the two then part at level frame 4 to 9 (voicePlayerRunning). With no limit, 30 frames passed 5 of 5 and
 # 11 or fewer parted 5 of 6 (NOTES.md #287). Frames, not seconds: what a client has played does not follow its speed.
-CLIENT_JOIN_FRAME = 100
+CLIENT_JOIN_FRAME = int(os.environ.get("COOP_TOOLS_CLIENT_JOIN_FRAME", "100"))  # another one: a measurement
 TAKE_DRAWING = "COOP_TOOLS_TAKE_DRAWING"  # set in a tool's shell, its games never draw: replay_test.py tests its guards
 RENDER_THREADS = "3"  # for a software renderer: with its default, games side by side slow each other down (#137)
 

@@ -2959,8 +2959,13 @@ RESET_FRAMES = 900
 def sc_reset(args, folder):
     """A client that played a level alone in the same process, with damage, then reset to the title: what that level
     left must not part the games at the session's level start (#187)."""
+    # The client joins once it is back at the title after its own flight: from its frame RESET_FLY_FRAMES + 100 on, with
+    # 100 title frames in a row. The host's frame count says nothing about that when the games run fast, as the host is
+    # thousands of frames on while the client boots, and neither does its own: the boot logo waits 1000 ms of the clock,
+    # 240 frames on Debug at a limit of 8 and 1750 with no limit (#287).
     client_env = {"SF64_COOP_TEST_START_LEVEL": "0", "SF64_COOP_TEST_START_SKIP_INTRO": "1",
-                  "SF64_COOP_TEST_START_TITLE_FRAMES": "40", "SF64_COOP_TEST_START_RESET": str(RESET_FLY_FRAMES)}
+                  "SF64_COOP_TEST_START_TITLE_FRAMES": "40", "SF64_COOP_TEST_START_RESET": str(RESET_FLY_FRAMES),
+                  "SF64_COOP_JOIN_CONNECT_FRAME": str(RESET_FLY_FRAMES + 100), "SF64_COOP_JOIN_CONNECT_TITLE": "100"}
     host, client = run_short(args, folder, frames=RESET_FRAMES,
                              host_env={"SF64_COOP_JOIN_START_FRAME": str(RESET_START_FRAME)}, client_env=client_env)
     _, rows = hash_check.read_log(client.run / "state-hash.txt")
