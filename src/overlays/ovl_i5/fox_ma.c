@@ -468,7 +468,10 @@ void Macbeth_Texture_Scroll2(u16* tex, s32 arg1, s32 arg2) {
     for (i = 0; i < arg1; i++) {
         a = texPtr[(arg2 - 1) * arg1 + i];
 
-        for (j = arg2; j > 0; j--) {
+        // COOP: was `j = arg2`, which copied the last row into a row behind the texture: 8 bytes written past its
+        // end, into the next asset on the N64 and into the heap on the port (#262). The texture's own rows move as
+        // they did. In every mode.
+        for (j = arg2 - 1; j > 0; j--) {
             texPtr[j * arg1 + i] = texPtr[(j - 1) * arg1 + i];
         }
 

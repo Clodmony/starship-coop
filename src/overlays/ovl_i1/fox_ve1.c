@@ -821,11 +821,11 @@ s16 D_i1_8019AD80[16][4] = {
     { 0, 0, 0, 1 }, { 1, 0, 0, 1 }, { 0, 1, 0, 1 }, { 0, 0, 8, 1 },
 };
 
-UnkStruct_i1_8019AE00 D_i1_8019AE00[4] = {
-    { 270.0f, 3, 2 },
-    { 90.0f, 2, 3 },
-    { 180.0f, 0, 1 },
-    { 0.0f, 1, 0 },
+// COOP: was [4]. The Golemech's turn counts to 5 (swork[21], Venom1_Ve1Golemech_Update) and reads entries 4 and 5
+// for the angle it turns to. On the N64 those are the floats of D_i1_8019AE20 behind this table: 258.0f and 0.0f. The
+// port read whatever its compiler put there (#262); the two entries hold what the N64 read. In every mode.
+UnkStruct_i1_8019AE00 D_i1_8019AE00[6] = {
+    { 270.0f, 3, 2 }, { 90.0f, 2, 3 }, { 180.0f, 0, 1 }, { 0.0f, 1, 0 }, { 258.0f, 0, 0 }, { 0.0f, 0, 0 },
 };
 
 f32 D_i1_8019AE20[6] = {

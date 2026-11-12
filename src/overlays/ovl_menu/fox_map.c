@@ -5642,7 +5642,10 @@ void Map_PathLineBox_Draw(s32 curMission) {
             r = g = b = 255;
             if (i < curMission) {
                 pathId = Map_GetPathId(*ptr, *(ptr + 1));
-                switch (sPaths[pathId].type) {
+                // COOP: no path leads from the last mission flown to a next one not chosen yet, and Map_GetPathId
+                // then says 24, one past the table. The N64 read the float behind it (90.0f, none of the cases), so
+                // the line stays white; the port read whatever its compiler put there (#262). In every mode.
+                switch ((pathId < ARRAY_COUNT(sPaths)) ? (s32) sPaths[pathId].type : -1) {
                     case 0:
                         r = 16;
                         g = 64;
