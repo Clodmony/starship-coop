@@ -50,6 +50,8 @@ static u16 sBank[COOP_PLAYERS_MAX];    // the trigger held to bank into a turn i
 static s32 sBankOff[COOP_PLAYERS_MAX]; // frames since a bank was let go
 static PilotBox sBoxes[PILOT_BOX_MAX];
 static s32 sBoxCount;
+static f32 sLane[COOP_PLAYERS_MAX]; // SF64_COOP_PILOT_LANES (pilot.h): a Landmaster's own lane, for sLanes players
+static s32 sLanes = 0;
 
 static void CoopPilot_AddBox(f32 x, f32 y, f32 halfX, f32 halfY) {
     if (sBoxCount < PILOT_BOX_MAX) {
@@ -587,7 +589,10 @@ static void CoopPilot_Drive(const Player* p, s32 i, PilotPad* pad) {
     s32 h;
     f32 x;
 
-    if (CoopPilot_GorasTarget(p, &aim) || CoopPilot_MacbethBossTarget(p, &aim)) {
+    if (i < sLanes) {
+        wantX = p->xPath + sLane[i] * edge; // its own lane (SF64_COOP_PILOT_LANES), whatever is ahead but hazards
+        wantWeight = 1.0f;
+    } else if (CoopPilot_GorasTarget(p, &aim) || CoopPilot_MacbethBossTarget(p, &aim)) {
         aiming = true;
         wantX = aim.x;
         wantWeight = 1.5f;
@@ -1162,8 +1167,20 @@ int CoopPilot_IsOn(void) {
 
 void CoopPilot_Init(void) {
     const char* log = getenv("SF64_COOP_PILOT_LOG");
+    const char* lanes = getenv("SF64_COOP_PILOT_LANES");
 
     sOn = 1;
+    sLanes = 0;
+    while ((lanes != NULL) && (lanes[0] != '\0') && (sLanes < COOP_PLAYERS_MAX)) {
+        char* end;
+
+        sLane[sLanes] = fmaxf(-1.0f, fminf(1.0f, strtol(lanes, &end, 10) / 100.0f)); // percent: no locale
+        if (end == lanes) {
+            break;
+        }
+        sLanes++;
+        lanes = (*end == ',') ? end + 1 : NULL;
+    }
     if ((log != NULL) && (log[0] != '\0')) {
         sLog = fopen(log, "w");
     }
