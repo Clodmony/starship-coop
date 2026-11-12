@@ -19,6 +19,9 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   sim       src/port/coop/sync/lockstep.c alone, in a virtual network with loss, lag, reordering and duplicates, for two to
             four players (tools/coop/locksteptest).
   steer     each client flies its own player. Hashes equal, each game looks through its own player.
+  unlimited the flight of steer with no frame limit on either game (#287): the games run as fast as they can, and
+            the client's frames before it joins are the same however fast that is. Hashes equal. On a Release
+            build a client that joined in its first frames left the host at level frame 4 to 9 (voice player).
   aim       enemies aim at the nearest human (#193): on Corneria's rails some enemy shots or missiles fly at player 1,
             the two games log the same ones (src/port/coop/test/aim_trace.h), and the hashes stay equal.
   return    a player 2-4 who goes down comes back (decision 0007 rule 4, #14): player 1 is forced down on Corneria's
@@ -505,6 +508,18 @@ def sc_steer(args, folder):
     moved = flown(client)
     expect(moved[0] > 500 and moved[1] > 500, f"a player did not fly: moved {moved}")
     return f"same hash on {frames} frames, moved {moved[0]:.0f} and {moved[1]:.0f}; {played(host)}, {played(client)}"
+
+
+def sc_unlimited(args, folder):
+    """steer with no frame limit (#287). A Release game plays 1100 frames a second and more, so a client that joins as
+    soon as it can has played a few title frames when the host's level start arrives, and the two part at level frame 4
+    to 9 (the voice player of the sound thread, NOTES.md #287). With a limit of 8 the client had played 290. The session
+    ends, both games play on alone and no `done` comes: this waits two minutes, a run takes seconds."""
+    host, client = run_short(args, folder, both={"SF64_COOP_TEST_SPEED": "max"}, seconds=120)
+    frames = compare(host, client, SHORT_FRAMES)
+    moved = flown(client)
+    expect(moved[0] > 500 and moved[1] > 500, f"a player did not fly: moved {moved}")
+    return f"no frame limit: same hash on {frames} frames, moved {moved[0]:.0f} and {moved[1]:.0f}; {played(host)}"
 
 
 AIM_LINE = re.compile(r"(shot|missile) level=(\d+) frame=(\d+) .*player=(-?\d+)$")
@@ -3956,6 +3971,7 @@ SCENARIOS = {
     "sim": sc_sim,
     "desync_sim": sc_desync_sim,
     "steer": sc_steer,
+    "unlimited": sc_unlimited,
     "aim": sc_aim,
     "boost": sc_boost,
     "return": sc_return,

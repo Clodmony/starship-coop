@@ -54,6 +54,7 @@ static s32 sClients = 1;
 static s32 sJoined = 0;
 static s32 sLevel = 0;
 static u32 sStartFrame = 0;
+static u32 sConnectFrame = 0;
 static bool sPokeTeam = false;
 static bool sKeepOwn = false;
 static bool sKeepOwnSave = false;
@@ -571,7 +572,7 @@ static void CoopJoinDriver_OnGamePreUpdate(IEvent* event) {
         Report_Running();
         return;
     }
-    if (!sTried) {
+    if (!sTried && (sFrame >= sConnectFrame)) {
         Session_Open();
     }
     Report_Running();
@@ -592,6 +593,7 @@ void CoopJoinDriver_Init(void) {
     const char* clients = Env_Text("SF64_COOP_JOIN_CLIENTS");
     const char* level = Env_Text("SF64_COOP_JOIN_LEVEL");
     const char* startFrame = Env_Text("SF64_COOP_JOIN_START_FRAME");
+    const char* connectFrame = Env_Text("SF64_COOP_JOIN_CONNECT_FRAME");
 
     sPortFile = Env_Text("SF64_COOP_JOIN_PORT_FILE");
     sConnect = Env_Text("SF64_COOP_JOIN_CONNECT");
@@ -608,6 +610,7 @@ void CoopJoinDriver_Init(void) {
     sClients = (clients != NULL) ? atoi(clients) : 1;
     sLevel = (level != NULL) ? atoi(level) : LEVEL_CORNERIA;
     sStartFrame = (startFrame != NULL) ? (u32) atoi(startFrame) : 0;
+    sConnectFrame = (connectFrame != NULL) ? (u32) atoi(connectFrame) : 0;
     sPokeTeam = Env_Text("SF64_COOP_JOIN_POKE_TEAM") != NULL;
     sKeepOwn = Env_Text("SF64_COOP_JOIN_KEEP_OWN") != NULL;
     sKeepOwnSave = Env_Text("SF64_COOP_JOIN_KEEP_OWN_SAVE") != NULL;

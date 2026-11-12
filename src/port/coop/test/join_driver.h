@@ -11,6 +11,8 @@
 //   SF64_COOP_JOIN_CLIENTS=<n>       host: try to start once this many clients have joined (default 1)
 //   SF64_COOP_JOIN_LEVEL=<n>         host: the LevelId to start (default 0, Corneria)
 //   SF64_COOP_JOIN_START_FRAME=<n>   host: not before this frame, counted as in the state hash log
+//   SF64_COOP_JOIN_CONNECT_FRAME=<n> host or client: open the session not before this frame, counted the same way, so
+//                                    that a game's title frames before the join do not depend on how fast it runs (#287)
 //   SF64_COOP_JOIN_POKE_TEAM=1       host: test only, gives the values no level start clears something to carry
 //   SF64_COOP_JOIN_KEEP_OWN=1        client: test only, goes to the level but keeps its own values and save, as a
 //                                    control
