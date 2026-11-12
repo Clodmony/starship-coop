@@ -673,10 +673,10 @@ started in Andross' phase 1 with `SF64_COOP_JOIN_PHASE`) was read, not run, as t
   active at 23466.
 - At level frame 24107 (pilot log) player 0's shields went from 255 to 0 in one frame: `hit dmgType=0 direction=2
   damage=0` and `near actor id=287` (`OBJ_ACTOR_AND_EXPLOSION`) at (-3806, 300, 3517), player 0 at (-3998, 519, 3040);
-  the trace has player 0 down (state 4) from 24108, then in state 6. Three restarts at the escape's checkpoint (player 0 again
-  at (-25995, 300) with csState 100, active at escape frame 241) each ended the same way at escape frame 880 or 881,
-  about 640 frames in, within 50 units of the first; then `GSTATE_GAME_OVER` at hash frame 36237. The two games were
-  equal on all 36595 frames.
+  the trace has player 0 down (state 4) from 24108, then in state 6. Three restarts at the escape's checkpoint
+  (player 0 again at (-25995, 300) with csState 100, active at escape frame 241) each ended the same way at escape
+  frame 880 or 881, about 640 frames in, within 50 units of the first; then `GSTATE_GAME_OVER` at hash frame 36237.
+  The two games were equal on all 36595 frames.
 - What the pilot flew at: every 60 frames its aim line names `kind=3` (a boss box) of boss 0, `id=321`
   (`OBJ_BOSS_AND_BRAIN`) in state 21 with health 0, at y 10000: the dead brain, which `Andross_AndBrain_Update` parks at
   y 10000 (`fox_andross.c:1143`) and which keeps its 8 boxes. `CoopPilotAim_BossUp` (`src/port/coop/test/pilot_aim.c`)
@@ -702,9 +702,11 @@ waypoints in order, from the one nearest to it, then to the trigger)
   (not pushed), `lockstep_test.py --only survive_gaps_checkpoints --levels andross`: `ok`, checkpoint at frame 12071,
   both games took level start 2 there, "run 2 flew on to the ending, equal on all 4313 frames", `RESULT: 1/1 scenarios
   passed`.
-- `campaign.py --levels venom-2-andross --lock <nettest lock>` on `c47f04fb`: `1/1 levels equal on every frame to the
-  end`, 36461 frames compared, level complete at level frame 25439 (the trigger, in Venom 2's id), the ending at hash
-  frame 37008, downs 0, 0, 170 s. The first try of the new level, on `e0bfa9e8`, passed at Venom 2's own level complete
+- `campaign.py --levels venom-2-andross --lock <nettest lock>` on `c47f04fb` and again on `3cd90834` (build
+  `3cd90834ee4f`): `1/1 levels equal on every frame to the end`, 36461 frames compared, level complete at level frame
+  25439 (the trigger, in Venom 2's id), the ending at hash frame 37008, downs 0, 0, the maze `C036B6C`. With `--seeds
+  17,71,170,710,1700,7100` on `3cd90834`: `1/1`, 33146 frames, level complete at 23281, the maze `C036310`, nearest
+  explosion 3562, downs 0, 0. The first try of the new level, on `e0bfa9e8`, passed at Venom 2's own level complete
   (level frame 9469): the trace names Andross' id while Venom 2's cutscene ends; the level it waits for now counts once
   player 0 is out of that level complete.
 - Unchanged elsewhere: `campaign.py --levels corneria,venom-andross` on `c47f04fb`: Corneria 10601 frames compared,
