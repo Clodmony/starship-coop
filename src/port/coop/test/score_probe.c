@@ -9,6 +9,7 @@
 
 #include "global.h"
 #include "port/coop/game/players.h"
+#include "port/coop/game/score.h"
 #include "port/coop/sync/lockstep_game.h"
 #include "port/hooks/Events.h"
 
@@ -21,7 +22,7 @@
 #define PROBE_STEP 20           // frames between two pokes of one kind
 #define PROBE_SECOND 60         // frame of the second poke of `lives` and `wing`
 
-typedef enum ProbeKind { PROBE_NONE, PROBE_KILL, PROBE_LIVES, PROBE_WING, PROBE_SAUCERER } ProbeKind;
+typedef enum ProbeKind { PROBE_NONE, PROBE_KILL, PROBE_LIVES, PROBE_WING, PROBE_SAUCERER, PROBE_RESULTS } ProbeKind;
 
 static FILE* sReport = NULL;
 static ProbeKind sKind = PROBE_NONE;
@@ -136,6 +137,42 @@ static void Kill_Place(s32 frame, s32 dmgSource) {
     sKillDrop = gDropHitCountItem;
     sKillLasers = Probe_LaserItems();
     Report_Players(frame);
+}
+
+#define PROBE_RESULTS_AFTER 30 // frames the screen stays on after the hold, then the probe turns it off
+
+static s32 sResultsSeen = 0; // holding + 2 * the ready mask, as last reported (nothing yet: 0)
+static s32 sResultsOffAt = -1;
+
+// The level clear status screen out of a level's end (#252): on <frame> it is turned on as a level's cutscene does, and
+// PROBE_RESULTS_AFTER frames after the hold is over turned off again.
+static void Results_Update(s32 frame) {
+    s32 seen;
+    s32 i;
+
+    if (frame == sFrame) {
+        gShowLevelClearStatusScreen = true;
+        Report("results frame=%d on=1", (int) frame);
+    }
+    if (frame < sFrame) {
+        return;
+    }
+    seen = CoopScore_ResultsHolding() ? 1 : 0;
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        seen |= (CoopScore_ResultsReady(i) ? 2 : 0) << i;
+    }
+    if (seen != sResultsSeen) {
+        Report("results frame=%d holding=%d ready=%d,%d,%d", (int) frame, (int) (seen & 1), (int) ((seen >> 1) & 1),
+               (int) ((seen >> 2) & 1), (int) ((seen >> 3) & 1));
+        if ((sResultsSeen & 1) && !(seen & 1)) {
+            sResultsOffAt = frame + PROBE_RESULTS_AFTER;
+        }
+        sResultsSeen = seen;
+    }
+    if (frame == sResultsOffAt) {
+        gShowLevelClearStatusScreen = false;
+        Report("results frame=%d on=0", (int) frame);
+    }
 }
 
 static void Kill_Update(s32 frame) {
@@ -380,6 +417,9 @@ static void CoopScoreProbe_OnGamePreUpdate(IEvent* event) {
         case PROBE_SAUCERER:
             Saucerer_Update(frame);
             break;
+        case PROBE_RESULTS:
+            Results_Update(frame);
+            break;
         case PROBE_NONE:
             break;
     }
@@ -387,7 +427,7 @@ static void CoopScoreProbe_OnGamePreUpdate(IEvent* event) {
 }
 
 void CoopScoreProbe_Init(void) {
-    static const char* names[] = { "", "kill", "lives", "wing", "saucerer" };
+    static const char* names[] = { "", "kill", "lives", "wing", "saucerer", "results" };
     const char* probe = getenv("SF64_COOP_SCORE_PROBE");
     const char* report = getenv("SF64_COOP_SCORE_REPORT");
     const char* colon;

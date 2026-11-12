@@ -5997,7 +5997,10 @@ void Aquas_AqJellyfish_Update(AqJellyfish* this) {
         Math_SmoothStepToF(&this->fwork[17 + i], D_i3_801C0374[it0 + 2], 0.1f, 5.0f, 0.000001f);
 
         it0 = 8 * i + this->iwork[10 + i];
-        if (this->iwork[7 + i] == D_i3_801C0440[it0]) {
+        // COOP: the third row is used up at step 8, and the next entry is one past the table. The N64 read 15 there
+        // (D_i3_801C04A0[0]) while the count is past 105, so it never matched; the port read whatever its compiler
+        // put behind the table, and a match would step on into strangers' numbers (#262). In every mode.
+        if ((it0 < ARRAY_COUNT(D_i3_801C0440)) && (this->iwork[7 + i] == D_i3_801C0440[it0])) {
             this->iwork[10 + i]++;
         }
     }

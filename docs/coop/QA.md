@@ -260,6 +260,24 @@ result:     automated. Macbeth's bomb fire and state-16 beams, placed on one tan
 
 ```
 date:       2026-11-12
+commit:     issue/220-macbeth-end, C sources as built ebfdd215 (later commits docs only), on wave7-base 07c03c1f (coop)
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 game clients on one PC,
+            UDP over loopback, through the join driver, a pilot on each
+what ran:   python tools/coop/lockstep_test.py --only other_bosses --levels macbeth; --only w7macbeth_ram;
+            --only vehicle_end --levels macbeth; --only vehicles; --only fox_refill_levels --levels macbeth;
+            --only fox_refill_long --levels macbeth; --only other_bosses --levels <each of the other eight>;
+            --only vehicle_end --levels titania (one per run); python tools/coop/campaign.py --levels macbeth;
+            python tools/coop/hash_check.py base --base <build of 33bd5fe6>; check.py; sp_audit.py --check
+result:     automated. Macbeth's train end goes to and faces the tank that was the nearer when each of its states
+            started (906 and 396 frames toward player 1 when it was the nearer, 0 toward player 0; a build of this
+            branch with fox_ma.c at wave7-base fails the same run). Its ram at the end of the track takes player 0
+            down once and is not refilled under it (34 refills before the fix). Macbeth with two pilots to level
+            complete, equal on every frame; the other bosses, vehicles, the refill tests and co-op off unchanged.
+            Not run: two PCs, Windows, Release, three or four players, a person driving it.
+```
+
+```
+date:       2026-11-12
 commit:     issue/273-sy-robot-spread, build 103b864c717c, on coop 07c03c1f; red build 70e49d5caebf (the base's game
             code with this branch's aim trace); reference build 07c03c1f822d
 identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 game clients on one PC, UDP over
@@ -281,6 +299,32 @@ result:     automated. Sector Y's robots spread their shots around the human the
 
 ```
 date:       2026-11-12
+commit:     issue/267-survive-gaps, code 4f162f64 (the C of the branch), on wave7-base 07c03c1f (coop)
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 to 4 game clients on one PC,
+            UDP over loopback, through the join driver; pilots on both clients (gInvincible but in Corneria, as
+            campaign.py) or a feed
+what ran:   python tools/coop/lockstep_test.py --only survive_gaps_route, survive_gaps_map, survive_gaps_map_lost,
+            survive_gaps_venom_jump, survive_gaps_four, and survive_gaps_checkpoints --levels <one level> for katina,
+            bolse, andross and corneria, meteo, sector_x, area_6, sector_y, venom_1, solar, zoness, macbeth, titania,
+            aquas (each @ring: the level's own ring put where player 2 flies), one scenario or level per run;
+            regression: survive_desync, survive_three, survive_checkpoint, survive_checkpoint_allrange,
+            survive_next_level, stall, frozen, save_own, vehicles --levels macbeth; join_test.py; check.py
+result:     automated. Decision 0014 beyond Corneria and three players. A level that started again (Corneria; Meteo
+            with the route it carried) flown to its end, the map and the next level: equal on every frame, the same
+            route and save on both games at every level and map. A desync and a lost player on the map: the level
+            the team last entered starts again from its own level start, the map's changes dropped, equal on 600
+            frames. A restart at the game's own checkpoint in 13 levels (11 rails rings, Katina, Bolse), each flown
+            on to the level's end equal on every frame; in Andross' second part the restart at the brain held for
+            4872 frames, but the pilots ran out of lives there, so its end was not reached. A restart in Venom 2's
+            second part from the point Venom 1's jump leaves, flown on into Andross. Four players: one lost, the
+            level started again for three; a second lost, again for two. Fault found and fixed: a restart at
+            Macbeth's checkpoint parted again 34 frames in (the tank's state and Macbeth's rail survived the level
+            start); seen on ebe1afbb, gone on 4f162f64. Not run: two PCs, Windows, a real connection drop, a Release
+            build, what a player sees and hears.
+```
+
+```
+date:       2026-11-12
 commit:     issue/275-andross-pilot at 3cd90834 (build 3cd90834ee4f; pilot_andross.c, campaign.py) on 07c03c1f
             (coop); the failure on the reference build of 07c03c1f
 identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window, 2 clients per run over loopback
@@ -298,6 +342,25 @@ result:     automated. Andross' second part, after Venom 2 (the face, the brain,
             0 whatever gInvincible says (src/overlays/ovl_i6/fox_andross.c:751), and the old pilot flew into one.
             Corneria and Venom/Andross' first part as on 2026-11-11 (10601 and 7581 frames, equal); full, bosses:
             ok; test_all: 6/6. Not run: two PCs, Windows, Release, --mortal, other_bosses, vehicle_end.
+```
+
+```
+date:       2026-11-12
+commit:     issue/262-stray-reads: the sweep on the game code of wave7-base (07c03c1f), the runs after the fixes on
+            a7e3f2c2
+identity:   ROM US 1.0, Linux, GCC, Debug with AddressSanitizer and UBSan (build-asan), OpenGL on a software
+            renderer, no window; one game per run, 2 players by gCoopDebugPlayerCount, no transport; each level
+            started past its intro, gInvincible but in Corneria, gInfiniteBombs in Zoness and at Andross
+what ran:   python tools/coop/w7asan_sweep.py baseline; python tools/coop/w7asan_sweep.py sweep (17 levels, 229304
+            frames, 71 minutes), and the same again after the fixes
+result:     QA level none (one game per run). Before: 17 AddressSanitizer and 18 UBSan bounds reports in 71 distinct
+            lines, 17 of them not known as harmless: six places that read or wrote outside an array (the map's
+            mission bar, Aquas' jellyfish, Venom 1's Golemech, Katina's team at the end, Macbeth's texture scroll,
+            which ended that game at frame 4494, and the test pilot at Goras). After: w7asan: PASS, 17 of 17 levels
+            to level complete, 0 reports that fail the run (7, 10 and 28 known or listed). Two clients on the plain build of a7e3f2c2 (automated): eels,
+            vehicle_end macbeth, aquas and titania, campaign.py venom-1 and katina, each equal on every frame; co-op
+            off equal to the reference build on 5800 frames. Not run: Windows, MSVC, a Release build, a session
+            under the sanitizers, test_all.py. docs/coop/NOTES.md, 2026-11-12, the sanitizer sweep.
 ```
 
 ```

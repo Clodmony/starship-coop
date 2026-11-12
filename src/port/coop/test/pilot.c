@@ -50,6 +50,8 @@ static u16 sBank[COOP_PLAYERS_MAX];    // the trigger held to bank into a turn i
 static s32 sBankOff[COOP_PLAYERS_MAX]; // frames since a bank was let go
 static PilotBox sBoxes[PILOT_BOX_MAX];
 static s32 sBoxCount;
+static f32 sLane[COOP_PLAYERS_MAX]; // SF64_COOP_PILOT_LANES (pilot.h): a Landmaster's own lane, for sLanes players
+static s32 sLanes = 0;
 
 static void CoopPilot_AddBox(f32 x, f32 y, f32 halfX, f32 halfY) {
     if (sBoxCount < PILOT_BOX_MAX) {
@@ -528,6 +530,21 @@ static bool CoopPilot_MacbethBossTarget(const Player* p, Vec3f* at) {
     return false;
 }
 
+// Where SF64_COOP_PILOT_LANES holds: a boss in gBosses[0], or Macbeth's train end (actor 207) once it leaves the train.
+static bool CoopPilot_LaneFight(void) {
+    s32 k;
+
+    if (gBosses[0].obj.status == OBJ_ACTIVE) {
+        return true;
+    }
+    for (k = 0; (gCurrentLevel == LEVEL_MACBETH) && (k < ARRAY_COUNT(gActors)); k++) {
+        if ((gActors[k].obj.status == OBJ_ACTIVE) && (gActors[k].obj.id == OBJ_ACTOR_207) && (gActors[k].state >= 1)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Goras, Titania's boss (Titania_TiGoras_Update): its hitbox is rebuilt each frame (aTiGorasHitbox, plain boxes, no
 // markers), and box n is part D_i5_801B7904[n]. From state 7 to 13 a beam hit on a part with a number in
 // D_i5_801BAA78 (1 to 4) takes that part's health, swork[8 + number]; once all four are gone and the health bar shows,
@@ -546,7 +563,10 @@ static bool CoopPilot_GorasTarget(const Player* p, Vec3f* at) {
         (boss->state < 7) || (boss->state >= 14)) {
         return false;
     }
-    count = MIN((s32) *data++, ARRAY_COUNT(D_i5_801B7904));
+    // Not `MIN(*data++, ...)`: the macro names its argument twice, so the count came from the float after it and
+    // every box was read one float on, past both tables (#262).
+    count = (s32) *data++;
+    count = MIN(count, (s32) ARRAY_COUNT(D_i5_801B7904));
     for (n = 0; n < count; n++, data += 6) {
         s32 part = D_i5_801B7904[n];
         s32 number = (part < ARRAY_COUNT(D_i5_801BAA78)) ? D_i5_801BAA78[part] : 0;
@@ -587,7 +607,10 @@ static void CoopPilot_Drive(const Player* p, s32 i, PilotPad* pad) {
     s32 h;
     f32 x;
 
-    if (CoopPilot_GorasTarget(p, &aim) || CoopPilot_MacbethBossTarget(p, &aim)) {
+    if ((i < sLanes) && CoopPilot_LaneFight()) {
+        wantX = p->xPath + sLane[i] * edge; // its own lane (SF64_COOP_PILOT_LANES), whatever is ahead but hazards
+        wantWeight = 1.0f;
+    } else if (CoopPilot_GorasTarget(p, &aim) || CoopPilot_MacbethBossTarget(p, &aim)) {
         aiming = true;
         wantX = aim.x;
         wantWeight = 1.5f;
@@ -1162,8 +1185,20 @@ int CoopPilot_IsOn(void) {
 
 void CoopPilot_Init(void) {
     const char* log = getenv("SF64_COOP_PILOT_LOG");
+    const char* lanes = getenv("SF64_COOP_PILOT_LANES");
 
     sOn = 1;
+    sLanes = 0;
+    while ((lanes != NULL) && (lanes[0] != '\0') && (sLanes < COOP_PLAYERS_MAX)) {
+        char* end;
+
+        sLane[sLanes] = fmaxf(-1.0f, fminf(1.0f, strtol(lanes, &end, 10) / 100.0f)); // percent: no locale
+        if (end == lanes) {
+            break;
+        }
+        sLanes++;
+        lanes = (*end == ',') ? end + 1 : NULL;
+    }
     if ((log != NULL) && (log[0] != '\0')) {
         sLog = fopen(log, "w");
     }

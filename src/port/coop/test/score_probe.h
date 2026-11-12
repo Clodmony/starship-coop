@@ -31,6 +31,9 @@
 //             <player> appears inside the first hatch's hitbox, 22 frames later one of player 0 inside the second's
 //             (not on one frame: the boss keeps one dmgPart). `shot frame=N player=P box=B slot=S at=x,y,z` for
 //             each, `hatch frame=N state=S hp=a,b,c,d core=C` whenever one changes
+//   results   on <frame> the level clear status screen is turned on, as a level's cutscene does (#252), and 30 frames
+//             after the results hold is over turned off again. `results frame=N on=1|0` for both, and
+//             `results frame=N holding=H ready=a,b` whenever the hold or who has pressed A changes
 // With neither set the game runs unchanged.
 
 #ifdef __cplusplus
