@@ -187,7 +187,9 @@ number of clients, transport.
    score, lasers, team shields and medals start as for a new game. A level passes when the two games are equal on
    every frame, hash log and input log, from its first frame to the map or whatever follows its level complete, with no
    desync report, and player 0 reached level complete. One summary at the end: per level the result, the frames
-   compared, the frame of level complete and the downs per player. `--lock <file>` holds an flock for each level's
+   compared, the frame of level complete and the downs per player. `venom-2-andross` (#275) is Venom 2 and the level
+   its clear jumps into, Andross' second part: the brain, then the escape through a maze to the trigger at its exit
+   and the ending; the escape's start, a level complete of its own, does not count. A game over ends a level's run. `--lock <file>` holds an flock for each level's
    session, so other tests on the PC take turns. This is not the hand-played campaign of 2026-11-09 (issue #2), the
    only `verified-playthrough`: no level here follows from the one before.
 4. **Network conditions (WP-27).** Lag, loss and reordering between the clients with a chaos relay, as in the hub's
@@ -236,6 +238,24 @@ Running tests must never use or modify the owner's own `starship.cfg.json`, save
 ## Results
 
 Newest first. One block per run that matters (a milestone, a release, a QA level change).
+
+```
+date:       2026-11-12
+commit:     issue/275-andross-pilot (pilot_andross.c, campaign.py) on 07c03c1f (coop); the failure on the reference
+            build of 07c03c1f
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window, 2 clients per run over loopback
+            through the join driver, lockstep, a pilot on each client, gInvincible and gInfiniteBombs on both
+what ran:   python tools/coop/campaign.py --levels venom-2-andross --lock <file>; --levels corneria,venom-andross;
+            the same session from Venom 2 with 8 sets of start seeds; lockstep_test.py --only full and --only bosses
+            --levels andross; test_all.py --no-build --only checks,replay-test,exit-test,hash-run-2,full-level
+result:     automated. Andross' second part, after Venom 2 (the face, the brain, the escape) to the ending: equal on
+            every frame, 36461 frames compared, level complete at the escape's exit at level frame 25439, downs 0, 0;
+            each of the 8 seed sets to the ending, equal (two of the escape's three mazes drawn). On the reference
+            build the same session ends in a game over: an escape explosion sets player 0's shields to 0 whatever
+            gInvincible says (src/overlays/ovl_i6/fox_andross.c:751), and the old pilot flew into one each time.
+            Corneria and Venom/Andross' first part as on 2026-11-11 (10601 and 7581 frames, equal); full, bosses:
+            ok; test_all: 6/6. Not run: the third maze, #270's survive_gaps_checkpoints, two PCs, Windows, Release.
+```
 
 ```
 date:       2026-11-11

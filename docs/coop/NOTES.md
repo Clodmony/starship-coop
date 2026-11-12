@@ -632,6 +632,127 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-12, #275, the test pilots run out of lives in Andross' escape: an explosion that gInvincible does not stop
+
+Identity: ROM US 1.0, branch `issue/275-andross-pilot` on `coop` (`07c03c1f`), Linux, GCC, Debug, OpenGL on a software
+renderer, no window, one PC; two game clients per run over loopback through the join driver, lockstep, a pilot on each
+client, `gInvincible` and `gInfiniteBombs` on both. Reproduced on the reference build of `07c03c1f`; the fix runs on
+`6c153a64` and later. Each session starts in Venom 2 (`SF64_COOP_JOIN_LEVEL` 19) and goes on through the game's own
+jump, as `campaign.py --levels venom-2-andross` now does; #270's `survive_gaps_checkpoints --levels andross` (a session
+started in Andross' phase 1 with `SF64_COOP_JOIN_PHASE`) was read, not run, as that variable is not in `coop`.
+
+**Observed: where Andross' second part is** (code)
+
+- `campaign.py --levels venom-andross` and `lockstep_test.py --only bosses --levels andross` start Andross in phase 0
+  (the join driver passes phase 0, `src/port/coop/test/join_driver.c`, `Host_TryStart`): the face, and after its death
+  the short escape and the ending flight of the other route (`Andross_80193C4C`, csState 2, gCurrentLevel set to Venom
+  2 at `src/overlays/ovl_i6/fox_andross.c:4073-4078`). Their "level complete" (level frame 7069 in the campaign) is the
+  one the face's death sets (`Andross_8018D2B0`). Neither reaches the brain.
+- Phase 1 comes only after Venom 2: its clear sets `gLeveLClearStatus` (`src/overlays/ovl_i6/fox_ve2.c:123`), and its
+  exit then enters Andross with `gNextLevelPhase` 1 (`fox_ve2.c:442-446`). Phase 1 is the face on rails, the brain in
+  all-range (`src/engine/fox_play.c:2875-2877`), and after the brain's death the escape.
+- The escape begins 600 frames into the brain's state 21: player 0 is put at (-25995, 300, -11140) as a level complete
+  with csState 100 for 240 frames (`fox_andross.c:1087-1113`), the maze is one of three tables picked by
+  `RAND_INT(2.9f)` (`Andross_80187C5C`, `fox_andross.c:176-187`), and James flies its waypoints, the level objects
+  `OBJ_SCENERY_LEVEL_OBJECTS` in the order of their `pathIndex` (`Andross_ActorTeamArwing_Update`,
+  `fox_andross.c:265-282`). The level ends when player 0 comes within 500 of the trigger at the exit
+  (`Andross_AndJamesTrigger_Update`, `fox_andross.c:683-691`: level complete, csState 3, in Venom 2's id), and the
+  ending follows (`GSTATE_ENDING`, `fox_andross.c:4399`). The escape's checkpoint is set at frame 500 of state 21
+  (`gAllRangeCheckpoint` 1, `fox_andross.c:1084`); a restart there puts the brain back in state 21 at 599
+  (`Andross_801961AC`), that is, straight into the escape.
+- `Andross_AndExplosion_Update` (`fox_andross.c:748-760`): an explosion within 500 of player 0 in x and z, while player
+  0 is active or in a U-turn, sets `gPlayer[0].shields = 0` (`:751`) and both wings to 0, applies two hits of 60 and 10
+  frames later calls `Cutscene_KillPlayer`. gInvincible acts only in `Player_ApplyDamage` (`fox_play.c:981-983`) and
+  `Player_UpdateShields` (`fox_play.c:5644`), so it zeroes the two hits but not the write. Within 2000 the explosion
+  creeps along its facing (`fox_andross.c:726-741`). It tests player 0 only.
+
+**Observed: the run on the reference build** (one session as above, logs read: hash log, player trace, pilot log)
+
+- Venom 2 ended at level frame 9143; Andross from hash frame 10076: the face on rails, all-range from level frame 8650,
+  the brain's death at 22427 (player 0 standby), the escape's level complete with csState 100 at 23226, player 0
+  active at 23466.
+- At level frame 24107 (pilot log) player 0's shields went from 255 to 0 in one frame: `hit dmgType=0 direction=2
+  damage=0` and `near actor id=287` (`OBJ_ACTOR_AND_EXPLOSION`) at (-3806, 300, 3517), player 0 at (-3998, 519, 3040);
+  the trace has player 0 down (state 4) from 24108, then in state 6. Three restarts at the escape's checkpoint (player 0 again
+  at (-25995, 300) with csState 100, active at escape frame 241) each ended the same way at escape frame 880 or 881,
+  about 640 frames in, within 50 units of the first; then `GSTATE_GAME_OVER` at hash frame 36237. The two games were
+  equal on all 36595 frames.
+- What the pilot flew at: every 60 frames its aim line names `kind=3` (a boss box) of boss 0, `id=321`
+  (`OBJ_BOSS_AND_BRAIN`) in state 21 with health 0, at y 10000: the dead brain, which `Andross_AndBrain_Update` parks at
+  y 10000 (`fox_andross.c:1143`) and which keeps its 8 boxes. `CoopPilotAim_BossUp` (`src/port/coop/test/pilot_aim.c`)
+  takes any active boss with boxes.
+- The explosion that killed it had moved from its table place (-3535, 300, 3744) to (-3806, 300, 3517); the other five
+  stood where the table puts them.
+
+**Observed: with the escape pilot** (`src/port/coop/test/pilot_andross.c`: in the escape each player flies James'
+waypoints in order, from the one nearest to it, then to the trigger)
+
+- Default seeds on `6c153a64`: Venom 2, Andross' face, the brain and the escape to the trigger at level frame 25446
+  (1980 frames after player 0 became active in the escape), then `GSTATE_ENDING` at hash frame 37015; equal on all
+  37249 frames; downs 0, 0. Player 0 never came within 800 of an explosion (pilot log `close` lines: none); nearest on
+  the 60-frame lines 3683.
+- Ten more sets of start seeds (`SF64_COOP_TEST_START_SEEDS` on the host, now `campaign.py --seeds`) on `6c153a64` and
+  `e0bfa9e8`: every one reached `GSTATE_ENDING` with the two games equal on every frame (23832 to 34743 frames), no
+  game over, no close line; nearest explosion to player 0 on the 60-frame lines 3279 to 3684. The 11 escapes drew all
+  three mazes: `D_ANDROSS_C036B6C` (35 waypoints, trigger at (12597, 300, 1152)) 4 times, the default seeds among them;
+  `D_ANDROSS_C03733C` (36, (-6408, 300, 43454)) 6 times; `D_ANDROSS_C036310` (41, (2375, 300, -31393)) once, with the
+  seeds `17,71,170,710,1700,7100`. The draw is a plain `Rand_ZeroOne` (`src/sys/sys_math.c:22-36`); the first 10 runs
+  never drew case 0.
+- #270's scenario with this branch: `coop` + `origin/issue/267-survive-gaps` + this branch merged in a scratch worktree
+  (not pushed), `lockstep_test.py --only survive_gaps_checkpoints --levels andross`: `ok`, checkpoint at frame 12071,
+  both games took level start 2 there, "run 2 flew on to the ending, equal on all 4313 frames", `RESULT: 1/1 scenarios
+  passed`.
+- `campaign.py --levels venom-2-andross --lock <nettest lock>` on `c47f04fb`: `1/1 levels equal on every frame to the
+  end`, 36461 frames compared, level complete at level frame 25439 (the trigger, in Venom 2's id), the ending at hash
+  frame 37008, downs 0, 0, 170 s. The first try of the new level, on `e0bfa9e8`, passed at Venom 2's own level complete
+  (level frame 9469): the trace names Andross' id while Venom 2's cutscene ends; the level it waits for now counts once
+  player 0 is out of that level complete.
+- Unchanged elsewhere: `campaign.py --levels corneria,venom-andross` on `c47f04fb`: Corneria 10601 frames compared,
+  level complete at 9206; Venom/Andross (phase 0) 7581 and 7069, both equal, downs 0, 0: the numbers of the campaign
+  run of 2026-11-11 on `303890d2`. `hash_check.py diff` of the host's hash log: Corneria on this build against the same
+  campaign level on the reference build, no difference on the 11346 common frames; Venom 2 into Andross on `c47f04fb`
+  against the reference build's run above (same seeds), first difference at hash frame 33551, nine frames after player
+  0 is active in the escape (`players`, `effects`): Venom 2, the face, the brain and the escape's start are frame for
+  frame what they were. `lockstep_test.py --only full` (pilots through Corneria, a poke in all-range): ok,
+  10601 frames to the map, equal; `--only bosses --levels andross`: ok, same hash on 2900 frames. `test_all.py
+  --no-build --only checks,replay-test,exit-test,hash-run-2,full-level`: `RESULT: PASS, 6/6 steps ok`.
+
+**Derived**
+
+- What kills player 0 is the escape's explosion: `fox_andross.c:751` writes its shields to 0 past gInvincible, and
+  `:760` kills it. Not a fall, not a Fox refill, not the level's game-over rule and not the co-op lives rule: the
+  lives ran out because the restart at the escape's checkpoint put the pilot on the same course each time.
+- The pilot flew into it because its all-range aim knew no route: it chased the dead brain's boxes at y 10000, and on
+  that course the explosion near (-3535, 3744) came within 500. Before 2026-11-12 no test reached phase 1: the campaign
+  and `bosses` fly phase 0, so the pilot's escape was never flown.
+- #270's "the brain's checkpoint" is the escape's (`fox_andross.c:1084`, set 500 frames after the brain's death), and
+  its run 2, "the brain fight", was the escape; its game over is the one above.
+- Along James' route the explosions stay out of reach: from the three tables in the US 1.0 assets, the line from
+  waypoint to waypoint to the trigger passes no explosion nearer than 3074 in x and z (3318 for `C036B6C`, 3205 for
+  `C03733C`, 3074 for `C036310`), more than the 2000 at which one starts to creep. Derived from the tables; the runs
+  agree (nearest 3279 on the 60-frame lines).
+
+**Guess**
+
+- That the explosions are put where a wrong turn leads (side passages and dead ends off James' route), so the escape
+  punishes leaving him whatever gInvincible says. Read from where they stand in the tables, not checked turn by turn.
+
+**Unknown**
+
+- How a human player 0 finds the way when James is not followed: the explosions punish a wrong turn whatever
+  gInvincible says, so `gInvincible` does not make Andross' escape safe for a player either. Whether that should change
+  in co-op (another player's ship near an explosion is not tested at all) is a design question, not this issue's.
+- What players after 0 see and do in the escape: only player 0 is tested by the explosions and the trigger; in these
+  runs player 1 flew the same route and was parked at the trigger's frame.
+- The brain's catch of a player other than 0 (#213's unknown): the brain fight ran here for about 13600 frames with two
+  pilots, equal on every frame, but no trace of the catch was taken.
+- Two PCs, Windows, a Release build, `--mortal`.
+
+Also seen: in a lockstep session the pilot runs twice per game frame, from `src/port/coop/test/replay.c:397` and from
+`src/port/coop/test/lockstep_driver.c:273`: every pilot log line is written twice, and the pilot's own frame counters
+(bank, run, aim and escape timers) step twice a frame. Both clients do the same, so the hashes stay equal. Not changed
+here; the escape pilot takes a second call in the same frame as the same frame.
+
 ### 2026-11-11, names and letters (#257, #258): the name as the mark, and three things that still followed player 0 (#140)
 
 Identity: ROM US 1.0, branch `issue/names-letters` on `wave6-base` (`a4867d99`), Linux, GCC, Debug, OpenGL on a software
