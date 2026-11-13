@@ -6121,6 +6121,113 @@ player 0 loses 100.
 
 ## Determinism
 
+### 2026-11-13, #181, two views through the later parts on this build: Katina's Saucerer, Andross' brain, every level
+
+Identity: ROM US 1.0, branch `issue/181-coverage` on `issue/combined-test-6` (`d726f9dd`), Linux, GCC, Debug, OpenGL on a
+software renderer, no window. The game code is the base's but for this branch's test code: `pilot_aim.c` (the two Katina
+entries below) and `state_hash.c` (`SF64_COOP_HASH_SLOTS_EVERY`, #284). The builds along the way differed from the last
+one only in those Katina entries, which act on Katina's two bosses alone. `views --pilot`: per level one game with 2
+players and `gInvincible`, started past its intro; the pilot flies both, then two games play its replay with local index
+0 and 1, the second 6 frames ahead since boot, the two at the high and low audio sample counts (#129), and both must
+equal the pilot's game. `campaign.py`: two real clients over loopback in lockstep, a pilot on each, each looking through
+its own player.
+
+**What was there already** (the tracker and the code): `views --pilot` (`3f4761c6` to `33e6ddaf`) flew every campaign
+level, the vehicle levels and level 4 to their end, and the pilot finished the five it could not (`2de6770c`,
+`303890d2`; the campaign run of 2026-11-11). Two later parts were in no two-view run, both found here:
+
+- Katina ended with the Saucerer's laser on the base (player 0 in level complete with csState 100,
+  `src/overlays/ovl_i4/fox_ka.c:1224-1225`), an end the game goes on from as from the other, which the tool took as "to
+  the end"; the Saucerer's defeat (csState 0, `MISSION_ACCOMPLISHED`, `fox_ka.c:1404-1414`) was in no run. A Katina
+  flight of the sanitizer sweep (2026-11-12, its own build) shows why: 396 of the pilot's 424 boss aims went to boss
+  slot 0, `OBJ_BOSS_KA_FLBASE` at the origin, the team's own base (`fox_ka.c:2378-2384`), 28 to the Saucerer.
+- Andross' second part (his face on rails, the brain, the escape) comes only after Venom 2 (#275). No `views` entry
+  reached it; `campaign.py`'s `venom-2-andross` did, with two clients that differ in camera and boot, not in audio.
+
+**Observed: Katina, red then green**
+
+- The rule (`hash_check.py`'s `FAILED_ENDS`, read by `views --pilot` and `campaign.py`): a level complete that is
+  Katina's laser end fails, with the frames compared. Red, this branch's tools on a build with the base's
+  `pilot_aim.c`: `python tools/coop/hash_check.py views --pilot --level katina --exe <that build>`:
+  `FAIL: katina: the level ended without its boss's death: Katina's base hit by the Saucerer's laser, so its defeat
+  is not in the flight`, equal on the 15823 frames flown, level complete at 14023: the numbers of #181's run of
+  2026-11-10.
+- A first change, the Saucerer's boxes in the pilot's table and the base left alone: the Saucerer stayed in standby
+  (state 0) for all 24014 frames, the pilot flying at it. Its state 0 waits for `gHitCount >= 10` or
+  `gAllRangeEventTimer > 3840` and then for `D_edisplay_801615D0.y < 0` (`fox_ka.c:890-892`): the boss seen from the
+  camera, its `.y` "in view" (`src/engine/fox_edisplay.c:1340`, `:1414`), which stays player 0's in co-op (#96). It
+  comes in only while player 0 is not looking at it.
+- With the Saucerer left alone before its fight (states 0 to 5), green: `views --pilot --level katina` equal on every
+  frame to the end, 14620 frames, level complete at 12820. In the pilot's log the Saucerer is in state 1 by game frame
+  3300 and in its fight (state 6) by 5160, its core comes down by its timer (the hatches stay at 60, 100, 100, 100),
+  is at 20 in state 12 at 12720 and at 0 in state 20 (`SAUCERER_DEFEAT`) at 12780; player 0 is in level complete with
+  csState 0 at level frame 12807.
+- Two real clients (`campaign.py --levels katina`): equal on the 16957 frames flown, but the level ended without its
+  boss's death (the laser): the core was at 80 of 400 when it fired. The pilots in lockstep do not get it down in time.
+
+**Observed: `views --pilot` on this build** (`--level a,b,...`, one group per run)
+
+| Level | Result | Replay frames | Level complete at | Downs |
+|---|---|---|---|---|
+| Corneria | equal on every frame to the end | 7445 | 5645 | 0, 0 |
+| Meteo | equal on every frame to the end | 17583 | 15783 | 0, 0 |
+| Sector X | equal on every frame to the end | 11884 | 10084 | 0, 0 |
+| Solar | equal on every frame to the end | 10451 | 8651 | 0, 0 |
+| Titania | equal on every frame to the end | 10058 | 8258 | 0, 0 |
+| Macbeth | equal on every frame to the end | 11965 | 10165 | 0, 0 |
+| Aquas | equal on every frame to the end | 8165 | 6365 | 0, 0 |
+| Sector Y | equal on every frame to the end | 8662 | 6862 | 0, 0 |
+| Zoness | equal on every frame to the end (`gInfiniteBombs`) | 12200 | 10400 | 0, 0 |
+| Bolse | equal on every frame to the end | 18101 | 16301 | 0, 0 |
+| Area 6 | equal on every frame to the end | 22978 | 21178 | 0, 0 |
+| Venom (Andross) | equal on every frame to the end (`gInfiniteBombs`) | 13643 | 13131 | 0, 0 |
+| Katina | equal on every frame to the end, the Saucerer's defeat | 14620 | 12820 | 0, 0 |
+| Fortuna | equal on every frame to the end | 9056 | 7256 | 0, 0 |
+| Sector Z | equal on every frame to the end | 5428 | 3628 | 0, 0 |
+| Venom 2 | equal on every frame to the end | 10906 | 10282 | 0, 0 |
+| Venom 1 | equal on every frame to the end | 12057 | 11478 | 0, 0 |
+| Venom 2 into Andross' second part (`venom-2-andross`, new) | pilot cannot finish: equal on all 60014 frames flown (the frame cap), Venom 2's end and the jump into Andross included; his face's second hand stayed at 140 of 200 from game frame 2460 on | 60014 | - | 0, 0 |
+| Level 4 | hash difference at its first frame, `globals`: the voice clock (this day's #232 entry) | 24014 | - | 0, 0 |
+
+**Observed: two real clients with the views' differences** (`campaign.py`, which now gives the host the high and the
+client the low audio sample count and the client 6 frames of boot ahead by default, `--audio`, `--skew`; the games' logs
+say `audio samples per update high 560, low 560` on the host and `high 528, low 528` and `gSysFrameCount starts 6
+ahead` on the client)
+
+| Level | Result | Frames compared | Level complete at level frame | Downs |
+|---|---|---|---|---|
+| Venom 2 into Andross' second part (`venom-2-andross`) | equal on every frame to the end (`gInfiniteBombs`): the face, the brain and the escape to the trigger | 37303 | 25439 | 0, 0 |
+| Titania | equal on every frame to the end | 11401 | 9399 | 0, 0 |
+| Sector Y | equal on every frame to the end | 10583 | 8057 | 0, 0 |
+| Zoness | equal on every frame to the end (`gInfiniteBombs`) | 11919 | 9653 | 0, 0 |
+| Katina | equal on the frames flown, the level ended without its boss's death (above) | 16957 | 14487 | 0, 0 |
+| Macbeth | equal on every frame to the end | 12031 | 9925 | 0, 0 |
+| Bolse | equal on every frame to the end | 29204 | 27147 | 0, 0 |
+| Area 6 | equal on every frame to the end | 16840 | 14756 | 0, 0 |
+| Aquas | not to the end: each of four runs (two with the new differences, one with `--audio same --skew 0`, one with `--skew 0`) had played 7082 to 7211 frames, in the Bacoon fight, when its 600 s ran out | - | - | - |
+
+Aquas in lockstep plays about 12 frames a second (the games kept writing to the end of each run; both stood on the
+same frame), against 200 for Bolse (29204 frames in 146 s) and 78 for the one-game pilot flight of Aquas (10267 frames
+in 132 s, Sector Y 320). Why: unknown. So a campaign run of Aquas takes about 12 minutes, more than a hold of the
+shared machine may; #28's route of 2026-11-11 had it equal to the end (8808 frames).
+
+**Derived**
+
+- Every campaign level's boss and end, Katina's Saucerer and Andross' brain and escape included, is now compared
+  between two clients with different cameras, boot times and audio sample counts: in one game per run for all but
+  Andross' second part (`views --pilot`), with two real clients for that part and the levels in the second table.
+- A level complete is not always the boss's end. The tools now say so for Katina, by player 0's csState. Fortuna
+  ends in mission complete with Star Wolf still flying (`src/overlays/ovl_i4/fox_fo.c:210-222`) and Sector Z with the
+  Great Fox hit (`src/overlays/ovl_i4/fox_sz.c:1559-1565`); their csState does not tell those ends apart, so the tools
+  do not check them, and which end each run above took is not logged (unknown). Macbeth's mission complete is its
+  boss's death (`src/overlays/ovl_i5/fox_ma.c:1045-1058`).
+
+**Unknown**
+
+- Why the one-game pilot does not get Andross' second hand down in phase 1 (the lockstep pilots do), and why the
+  lockstep pilots get less of the Saucerer's core than the one-game pilot: not looked into.
+- `--mortal`, Windows, two PCs: not run.
+
 ### 2026-11-13, #232, the pilot boxes: Goras' dying sites by Titania's end; level 4 keeps the voice clock
 
 Identity: ROM US 1.0, branch `issue/181-coverage` on `issue/combined-test-6` (`d726f9dd`), Linux, GCC, Debug, OpenGL on a
