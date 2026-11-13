@@ -118,3 +118,29 @@ void CoopHits_MacbethBombFire(Actor* bomb) {
         }
     }
 }
+
+void CoopHits_AndrossExplosion(Actor* explosion) {
+    s32 i;
+
+    if (!CoopPlayers_IsCoop()) {
+        return;
+    }
+    for (i = 1; i < CoopPlayers_Count(); i++) {
+        Player* p = CoopHits_Target(i);
+
+        if ((p == NULL) || ((p->state != PLAYERSTATE_ACTIVE) && (p->state != PLAYERSTATE_U_TURN)) ||
+            !(fabsf(explosion->obj.pos.x - p->pos.x) < 500.0f) ||
+            !(fabsf(explosion->obj.pos.z - p->trueZpos) < 500.0f)) {
+            continue;
+        }
+        // The writes of Andross_AndExplosion_Update, which do not ask gInvincible either: the cheat only makes the
+        // damage of the two hits 0 (Player_ApplyDamage). radioDamageTimer lets the down test of Player_Update360 pass
+        // on this player's next update, which takes it out by decision 0007 rule 4 (CoopPlayers_OnPlayerDown). The
+        // explosion's timer and Cutscene_KillPlayer are player 0's alone: that is the restart for everyone.
+        p->shields = 0;
+        gRightWingHealth[i] = gLeftWingHealth[i] = 0;
+        Player_ApplyDamage(p, 1, 60);
+        Player_ApplyDamage(p, 2, 60);
+        p->radioDamageTimer = 200;
+    }
+}
