@@ -168,7 +168,17 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             a train car's turret and the blast of train car 7, placed on one tank at a time by
             src/port/coop/test/mabomb_probe.h, hit that tank, player 1 as well as player 0, and no other, and a
             turret's shot at a tank in a barrel roll is deflected; on a build without the fixes they hit and are
-            deflected by player 0 only. Hashes and the two probe logs equal.
+            deflected by player 0 only. Hashes and the two probe logs equal. The view traces of the two games then show
+            car 7's flash (#303): the client whose own tank is in the blast draws the fill red, the other white, on
+            every frame of the fade, and both games hold the same fill.
+  ma_turret Macbeth with two Landmasters (#302): the turret of a train car turns to the human nearest to the car and
+            fires its salvo when that one is in its window; upstream it turned to and fired by player 0 alone. Read
+            from the aim trace's turret lines (the angle steps and who is in the window), which do not ask the aim
+            code. By hand, not in test_all.py.
+  shogun_bonus Sector Y's all-range, two sessions (#304): the score probe's `shogun` kind makes one player's laser the
+            last hit on the first small Shogun and on the last Shogun, and Falco's on the second small one. The team
+            gets the same hits whether the player is player 1 or player 0 (decision 0008, 4b), and nothing for
+            Falco's. By hand, not in test_all.py.
   ve1_pillars Venom 1 with pilots (#276): src/port/coop/test/ve1_pillar_probe.h makes the Golemech raise six pillars
             from the last row of its tables; the sixth, read past the table, stands where the N64 puts it, and the
             hashes and the two probe logs are equal. By hand, not in test_all.py.
@@ -4883,31 +4893,38 @@ def w10_blast_views(host, client, rows):
     views = [w10_blast_trace(game.run / W10_BLAST_VIEW) for game in (host, client)]
     expect(all(views), "no `drawn` field in a view trace: a build without it (#303)")
     seen = {0: 0, 1: 0}
-    frames = 0
+    frames = {0: 0, 1: 0}
+    red = {(target, player): 0 for target in (0, 1) for player in (0, 1)}  # frames a client drew the flash red
+    white = dict(red)
     for row in rows:
         if row["case"] != "blast" or row["lost"]:
             continue
         target = row["target"]
+        expect(row["hit"] == 1 << target, f"the blast on player {target} at frame {row['frame']} hit mask {row['hit']}")
         seen[target] += 1
         for frame in range(row["frame"], row["frame"] + W10_BLAST_FADE):
             for player, view in enumerate(views):
                 expect(frame in view, f"no view trace line of frame {frame} on the client of player {player}")
                 looks, fill, drawn = view[frame]
                 expect(looks == player, f"frame {frame}: the client of player {player} looks through player {looks}")
-                want = W10_RED if (row["hit"] >> player) & 1 else W10_WHITE
                 expect(drawn[3] == fill[3] and fill[3] > 0,
                        f"frame {frame}, blast on player {target}: the client of player {player} drew alpha "
                        f"{drawn[3]}, the game holds {fill[3]}")
-                expect(drawn[:3] == want,
-                       f"frame {frame}, blast on player {target} (hit mask {row['hit']}): the client of player "
-                       f"{player} drew the fill {drawn}, wanted {want + (fill[3],)}; the game holds {fill}")
+                red[(target, player)] += drawn[:3] == W10_RED
+                white[(target, player)] += drawn[:3] == W10_WHITE
             expect(views[0][frame][1] == views[1][frame][1],
                    f"frame {frame}: the two games hold different fills, {views[0][frame][1]} and {views[1][frame][1]}")
-            frames += 1
+            frames[target] += 1
     expect(seen[0] and seen[1], f"blast cases that ran: {seen[0]} on player 0, {seen[1]} on player 1")
-    return (f"car 7's flash (#303): {seen[1]} blasts on player 1 red on its client and white on player 0's, {seen[0]} "
-            f"on player 0 red on its client and white on player 1's, on each of the {frames} frames of the fades; "
-            f"the fill the games hold is the same on both")
+    text = "; ".join(f"{seen[target]} blasts on player {target}, {frames[target]} frames of flash: its own client "
+                     f"drew it red on {red[(target, target)]} and white on {white[(target, target)]}, the client of "
+                     f"player {1 - target} red on {red[(target, 1 - target)]} and white on "
+                     f"{white[(target, 1 - target)]}" for target in (1, 0))
+    expect(all(red[(target, target)] == frames[target] and white[(target, 1 - target)] == frames[target]
+               for target in (0, 1)),
+           f"car 7's flash is not red on the client whose own tank is in the blast and white on the other (#303): "
+           f"{text}")
+    return f"car 7's flash (#303): {text}; the fill the games hold is the same on both"
 
 
 # ---- #302: the turret of a Macbeth train car turns to and fires at the nearest human ----
@@ -4920,12 +4937,17 @@ def w10_blast_views(host, client, rows):
 W10_TURRET_FRAMES = 4500
 W10_TURRET_APART = 5.0  # degrees between the two players' yaws from which a step tells whom it turns to
 W10_TURRET_NEAR = 2.0  # degrees a step's target may be off the player's yaw
+W10_TURRET_EDGE = 40.0  # a player this close to an edge of the window, or the two this close in distance, is not
+#                         counted: the trace sees the car after its frame, the turret before the car moved
 
 
 def w10_turret_script(frame, player):
-    """Macbeth: both tanks sway against each other, as in `vehicles`, without firing: no turret is shot off."""
+    """Macbeth: both tanks sway against each other, as in `vehicles`, without firing: no turret is shot off. Player 1
+    boosts (C-left) for 30 frames of every 150, so it drives ahead of player 0 and is the nearer to the train when
+    the two are about as far from the track."""
     _, x, y = sway(frame, player)
-    return 0, x, y
+    boost = player == 1 and frame >= JOIN_FRAME and frame % 150 < 30
+    return (BUTTON_C_LEFT if boost else 0), x, y
 
 
 def w10_turret_rows(path):
@@ -4950,6 +4972,14 @@ def w10_turret_rows(path):
             row[f"p{n}"] = tuple(float(v) for v in p[:3])
             row[f"flies{n}"] = int(p[3])
         row["near"] = min((0, 1), key=lambda n: (math.dist(row[f"p{n}"], row["at"]), n)) if row["flies1"] else 0
+        # sure: the nearest human is the nearest by a margin and well inside the window.
+        near = row[f"p{row['near']}"]
+        dx, dz = abs(near[0] - row["at"][0]), near[2] - row["at"][2]
+        edge = W10_TURRET_EDGE
+        row["sure"] = (row[f"in{row['near']}"] and 200.0 + edge < dz < 5000.0 - edge
+                       and (row["last"] or 300.0 + edge < dx < 3000.0 - edge)
+                       and (not row["flies1"]
+                            or abs(math.dist(row["p0"], row["at"]) - math.dist(row["p1"], row["at"])) > edge))
         rows.append(row)
     return rows
 
@@ -4963,7 +4993,7 @@ def w10_turret_story(rows):
     """Counts over the turret lines: see sc_ma_turret."""
     count = {"lines": len(rows), "wait": 0, "near1": 0, "to0": 0, "to1": 0, "none": 0, "to0_near1": 0, "to1_near1": 0,
              "to0_near0": 0, "to1_near0": 0, "fires": 0, "fire_only1": 0, "fire_only0": 0, "fire_both": 0,
-             "fire_none": 0, "could1": 0, "flips": 0}
+             "fire_none": 0, "could1": 0, "flips": 0, "held": 0, "held1": 0, "held_at": []}
     before = {}
     for row in rows:
         if row["boulder"] or row["step"][0] != 0:
@@ -4979,8 +5009,13 @@ def w10_turret_story(rows):
             count["fires"] += 1
             key = {(1, 1): "fire_both", (0, 1): "fire_only1", (1, 0): "fire_only0", (0, 0): "fire_none"}
             count[key[(row["in0"], row["in1"])]] += 1
-        elif row["in1"] and not row["in0"] and row["wait"] == 0 and row["hp"] != 0:
-            count["could1"] += 1  # ready, only player 1 in the window, and no shot
+        elif row["wait"] == 0 and row["hp"] != 0:
+            if row["in1"] and not row["in0"]:
+                count["could1"] += 1  # ready, only player 1 in the window, and no shot
+            if row["sure"]:
+                count["held"] += 1  # ready, the nearest human in the window, and no shot
+                count["held1"] += row["near"]
+                count["held_at"].append(row["frame"])
         # Whom the yaw's step goes to: Math_SmoothStepToAngle moves a tenth of the way, 2 degrees at most.
         step = w10_angle(row["yaw"][1], row["yaw"][0])
         if abs(w10_angle(row["w0"], row["w1"])) < W10_TURRET_APART or abs(step) < 0.011 or row["yaw"][1] in (
@@ -5028,8 +5063,18 @@ def sc_ma_turret(args, folder):
             f"{count['to1_near0']}; {count['none']} steps fit neither or both; {count['fires']} first shots: "
             f"{count['fire_only1']} with only player 1 in the window, {count['fire_only0']} with only player 0, "
             f"{count['fire_both']} with both, {count['fire_none']} with neither; ready with only player 1 in the "
-            f"window and no shot on {count['could1']} frames; the nearest human changed between two waiting frames "
-            f"{count['flips']} times")
+            f"window and no shot on {count['could1']} frames; ready with the nearest human in the window and no shot "
+            f"on {count['held']} frames ({count['held1']} of them with player 1 the nearest); the nearest human "
+            f"changed between two waiting frames {count['flips']} times")
+    expect(count["near1"] * 5 > count["wait"] and count["fires"] >= 5,
+           f"too little to tell: player 1 is seldom the nearer, or the turrets seldom fire: {text}")
+    expect(count["held"] == 0,
+           f"a turret that is ready holds its fire while the nearest human is in its window (first on frames "
+           f"{count['held_at'][:5]}): {text}")
+    expect(count["to1_near1"] > 2 * count["to0_near1"],
+           f"the turrets turn to player 0 while player 1 is the nearer: {text}")
+    expect(count["to0_near0"] > 2 * count["to1_near0"],
+           f"the turrets turn to player 1 while player 0 is the nearer: {text}")
     return f"same hash on {frames} frames; {text}"
 
 
@@ -6003,6 +6048,7 @@ LONG = ("survive_next_level", "survive_gaps_route", "survive_gaps_map", "survive
 LONG += ("sy_robot_spread",)  # Sector Y's rails, 9500 frames (#273)
 LONG += ("sy_robot_pose", "granga_spread")  # the same rails; Corneria's Granga, 7700 frames (#281)
 LONG += ("ve1_pillars",)  # Venom 1 to its boss, 13000 frames (#276)
+LONG += ("ma_turret", "shogun_bonus")  # Macbeth's turrets, 4500 frames (#302); two Sector Y sessions (#304)
 LONG += ("escape_look",)  # five sessions in Andross' escape: the explosions hit every human (#282)
 
 

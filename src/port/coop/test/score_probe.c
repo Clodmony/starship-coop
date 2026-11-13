@@ -456,8 +456,10 @@ static void Shogun_Update(s32 frame) {
                (int) boss->swork[19], (int) gHitCount, (int) gPlayerScores[0], (int) gPlayerScores[1]);
         return;
     }
-    if ((frame < sFrame) || !Probe_BothFly() || (boss->health <= 0) || (boss->timer_05A != 0) ||
-        (boss->info.hitbox == NULL) || ((s32) boss->info.hitbox[0] < 1) ||
+    // Player 1 has to fly too when the laser is player 0's: the two sessions of a test are then the same but for it.
+    if ((frame < sFrame) || !Probe_BothFly() || CoopPlayers_IsParked(1) ||
+        ((gPlayer[1].state != PLAYERSTATE_ACTIVE) && (gPlayer[1].state != PLAYERSTATE_U_TURN)) || (boss->health <= 0) ||
+        (boss->timer_05A != 0) || (boss->info.hitbox == NULL) || ((s32) boss->info.hitbox[0] < 1) ||
         ((sShogunShot >= 0) && (frame < sShogunShot + PROBE_SY_LAND))) {
         return;
     }
