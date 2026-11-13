@@ -32,8 +32,9 @@ and a run leaves the folders of a tool started by hand beside it (run_folder.py'
 A build that is not Debug leaves out what only Debug can do: OPTIMISED below, printed at the end of a run. --mixed
 leaves nothing out: it builds Debug and Release (the checks only in Debug's build) and plays every step that
 starts the game on the Release build, which needs about 3 times less CPU per game, except the ones that need Debug's
-symbols (OPTIMISED), builds and coop-off. The unit tests, the loopback tools, their AddressSanitizer runs and the
-mutation suites run as always.
+symbols (OPTIMISED), builds and coop-off. There `lockstep` plays at no frame limit (lockstep_test.py --speed max, as
+with --config Release; #305, #316); on Debug it stays at the limit of 8. The unit tests, the loopback tools, their
+AddressSanitizer runs and the mutation suites run as always.
 
 Two steps need a second build, and without one they do not run: coop-off plays co-op off on this build and the build
 before your change, which is --base-exe or a build of --base-ref that the run makes itself (the base gets copies of
@@ -447,6 +448,8 @@ def make_plan(args, chosen):
             missing.append((step.name, args.other_why))
             continue
         command, why = command_of(step, args, other if release else exe, other, MUT_TREE if in_tree else ROOT)
+        if command and step.name == "lockstep" and (release or args.config == "Release"):
+            command += ["--speed", "max"]  # Release plays it at no frame limit: 2m35s, not 4m48s at 8 (#305, #316)
         if step.takes == "base" and args.base_ref and IS_WINDOWS:
             missing.append((step.name, "--base-ref needs symbolic links; give --base-exe"))
         elif command is None:

@@ -281,6 +281,7 @@ def scenario_dry_run(bench):
         want(plan.get(name, (None,))[0] == lane, f"{name} is in lane {plan.get(name, (None,))[0]}, want {lane}")
     for name in ("net", "session", "menu", "input", "lockstep", "net-asan"):
         want("--no-build" in plan[name][1], f"{name} is not given --no-build: {plan[name][1]!r}")
+    want("--speed" not in plan["lockstep"][1], f"lockstep on Debug is given a speed: {plan['lockstep'][1]!r}")
     for name in ("join", "version", "session-mutants", "net-mutants-asan", "rates-rails"):
         want("--no-build" not in plan[name][1], f"{name} is given --no-build: {plan[name][1]!r}")
     programs = [line for line in output.splitlines() if line.startswith("programs: ")]
@@ -322,6 +323,10 @@ def scenario_dry_run_mixed(bench):
                  "join", "lockstep", "lockstep-full"):
         want("--exe " in plan[name][1] and f"{release}/Starship" in plan[name][1],
              f"{name} does not play on Release: {plan[name][1]!r}")
+    # the Release lane of lockstep (#316): at no frame limit, and only lockstep
+    want(plan["lockstep"][1].endswith(" --speed max"), f"lockstep plays at a frame limit on Release: {plan['lockstep'][1]!r}")
+    for name in ("lockstep-full", "menu", "join"):
+        want("--speed" not in plan[name][1], f"{name} is given a speed: {plan[name][1]!r}")
     for name in ("menu", "input", "lockstep"):  # the test programs of these come from Debug's folder
         want("--build-dir " + str(bench.repo / "build-cmake") in plan[name][1] and "--config Debug" in plan[name][1],
              f"{name} does not take Debug's test programs: {plan[name][1]!r}")
