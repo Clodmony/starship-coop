@@ -9,6 +9,58 @@ Private notes (your paths, your PC, your logs) go in `local/`, not here.
 
 ## Build and run
 
+### 2026-11-13, #318, `ma_turret` and `shogun_bonus` join the default `lockstep` step; the other `LONG` scenarios
+
+The owner's rule (2026-11-13): both go into the default step when the extra time on the pipeline is under 90 s, measured
+on the `--mixed` pipeline's `lockstep` lane (`test_all.py --dry-run --mixed`: `lockstep_test.py --jobs 4` on the Release
+build at the limit of 8, `--build-dir build-cmake --config Debug`; the folder of the test programs does not change the
+time). Same identity as the #316 entry below; each pair of runs (without, with) in one hold of the machine (`slot -x`),
+"with" from a checkout where the two are out of `LONG` and in `SCENARIO_SECONDS` (57 and 23 s), so they start first.
+
+Observed:
+
+- At the limit of 8 on Release: without them 290 and 291 s (52 of 52 both times); with them 311 and 311 s (54 of 54 both times). In those runs `ma_turret` took 23 s and
+  `shogun_bonus` 56 s of play. `survive_gaps_four` passed in all four runs. A third pair was not run (the shared slots needed
+  their turn).
+- At no limit on Release (the lane of #305 and #316): without them 154, 155, 155, 155, 155 and 156 s (the six green
+  runs of #316); with them 173, 170 and 172 s, `ma_turret` 7 s and `shogun_bonus` 17 s. With them `survive_gaps_four`
+  failed 3 of 3 (the parting at frame 1698 of the #316 entry, twice in each run), against 1 of 6 without.
+
+Derived:
+
+- The step grows by about 20 s at the limit of 8 and about 17 s at no limit, under the rule's 90 s, so the two are in the
+  default run now (`LONG` and the docstring; `SCENARIO_SECONDS` starts them first). The step is in the serial lane, so
+  the pipeline grows by at most that much.
+- At no limit the two in the pool make `survive_gaps_four`'s parting the rule, not the exception: the Release lane at no
+  limit has to wait for that desync whatever #318 does.
+
+The other `LONG` scenarios, not moved (play times from the docs, none measured here; "in" means under 90 s alone, which
+the rule would still have to measure on the lane):
+
+| scenario | play time (source) | 90 s rule |
+|---|---|---|
+| `survive_next_level` | about a minute (tools README) | in by its time |
+| `survive_gaps_route` | about 3 minutes (tools README) | out |
+| `survive_gaps_map`, `survive_gaps_map_lost`, `survive_gaps_venom_jump` | unknown | unknown |
+| `survive_gaps_checkpoints` | about 20 minutes without `--levels` (tools README) | out |
+| `fox_refill_levels` | about 10 s a level, 15 levels (tools README) | out |
+| `fox_refill_long` | about 45 s a level, 16 levels (tools README) | out |
+| `fox_lead_swap`, `fox_lead_swap_all_range` | unknown; an experiment, not a rule (docstring) | out |
+| `full` | about 5 minutes (tools README) | out |
+| `scenes`, `allrange`, `allrange_down`, `allrange_others`, `allrange_down_others`, `teambar` | unknown | unknown |
+| `map_saves`, `map_saves_host_full`, `map_saves_equal` | about 15 minutes each (docstring) | out |
+| `audio`, `release`, `rates` | need `--feed` with the log of `full` (and `release` a `--release-exe`) | out |
+| `vehicles` | 83 and 88 s (two runs, NOTES.md, the vehicle levels' entries) | in by its time, at the edge |
+| `vehicle_end` | Titania alone 261 s (tools README) | out |
+| `bosses` | about 2 minutes, 102 s once (tools README, NOTES.md) | out |
+| `other_bosses` | about 5 minutes (docstring) | out |
+| `eels` | about a minute (tools README) | in by its time |
+| `w7macbeth_ram` | about 3 minutes (tools README) | out |
+| `sy_robot_spread` | 44 s at the limit of 8, 10 s at no limit, Release (#287 above) | in by its time |
+| `sy_robot_pose`, `granga_spread` | unknown | unknown |
+| `ve1_pillars` | about a minute (tools README) | in by its time |
+| `escape_look` | about 3 minutes (tools README) | out |
+
 ### 2026-11-13, #316, `log` and the item scenarios count frames; a desync in `survive_gaps_four` at no frame limit
 
 Run on `issue/316-318-lockstep-frames` (from `issue/combined-test-6` `8c342fbf`). Identity: ROM US 1.0, Linux, GCC 16.2,

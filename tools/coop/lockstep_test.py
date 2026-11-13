@@ -174,12 +174,12 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   ma_turret Macbeth with two Landmasters (#302): the turret of a train car turns to and fires at the nearest of the
             humans in its window, so a ready turret never holds its fire while a human is in the window; with nobody
             in it, it turns to the nearest human. Upstream it turned to and fired by player 0 alone. Read from the
-            aim trace's turret lines (the angle steps and who is in the window), which do not ask the aim code. By
-            hand, not in test_all.py.
+            aim trace's turret lines (the angle steps and who is in the window), which do not ask the aim code. In
+            the default run since #318.
   shogun_bonus Sector Y's all-range, two sessions (#304): the score probe's `shogun` kind makes one player's laser the
             last hit on the first small Shogun and on the last Shogun, and Falco's on the second small one. The team
             gets the same hits whether the player is player 1 or player 0 (decision 0008, 4b), and nothing for
-            Falco's. By hand, not in test_all.py.
+            Falco's. In the default run since #318.
   ve1_pillars Venom 1 with pilots (#276): src/port/coop/test/ve1_pillar_probe.h makes the Golemech raise six pillars
             from the last row of its tables; the sixth, read past the table, stands where the N64 puts it, and the
             hashes and the two probe logs are equal. By hand, not in test_all.py.
@@ -6125,13 +6125,12 @@ LONG = ("survive_next_level", "survive_gaps_route", "survive_gaps_map", "survive
 LONG += ("sy_robot_spread",)  # Sector Y's rails, 9500 frames (#273)
 LONG += ("sy_robot_pose", "granga_spread")  # the same rails; Corneria's Granga, 7700 frames (#281)
 LONG += ("ve1_pillars",)  # Venom 1 to its boss, 13000 frames (#276)
-LONG += ("ma_turret", "shogun_bonus")  # Macbeth's turrets, 4500 frames (#302); two Sector Y sessions (#304)
 LONG += ("escape_look",)  # five sessions in Andross' escape: the explosions hit every human (#282)
 
 
 # Seconds a scenario took on Debug at a limit of 8 (2026-11-13, #290). Only the order of a pool of --jobs depends on it:
 # the long ones start first, so the pool does not end on one of them.
-SCENARIO_SECONDS = {"host_left": 67, "left": 32, "delay": 31, "results_hole": 19, "slow": 14, "stall": 14, "frozen": 14,
+SCENARIO_SECONDS = {"host_left": 67, "shogun_bonus": 57, "ma_turret": 23, "left": 32, "delay": 31, "results_hole": 19, "slow": 14, "stall": 14, "frozen": 14,
                     "lag": 13}
 # They build and run the test programs of the build folder, which two of them must not do at once.
 RUN_ALONE = ("sim", "desync_sim")
