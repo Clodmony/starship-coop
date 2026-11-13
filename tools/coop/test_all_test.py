@@ -258,6 +258,10 @@ def scenario_dry_run(bench):
                    "coop_lockstep_test", "coop_desync_test"):
         want(re.search(rf"\b{target}\b", programs[0]), f"{target} is not built up front: {programs[0]!r}")
     want("mutation" not in programs[0], "the mutation suites' programs are built up front")
+    game = [name for name, (lane, _) in plan.items() if lane == "game"]
+    # (builds is not planned here: the bench has no Release build)
+    want(game[:4] == ["rates-rails", "rates-all-range", "determinism", "exit-test"] and game[4] == "view-check",
+         f"exit-test does not come right after the longest game steps: {game[:6]}")
     only_output, only_plan = dry_run(bench, "--only", "rates-rails,join")
     want(list(only_plan) == ["join", "rates-rails"] and "programs:" not in only_output,
          f"--only rates-rails,join plans {list(only_plan)}: {only_output!r}")
@@ -271,21 +275,26 @@ def scenario_dry_run(bench):
 
 
 def scenario_dry_run_mixed(bench):
-    """--mixed (#290): the steps that only count frames play on the Release build, what needs Debug stays there, and
-    without a Release build of the same commit they are not run."""
+    """--mixed (#290): every step that starts the game plays it on the Release build, except the ones that need Debug,
+    and without a Release build of the same commit those are not run."""
     output, _ = dry_run(bench, "--mixed")
-    for name in ("rates-rails", "hash-run-1", "replay-test"):
+    for name in ("rates-rails", "hash-run-1", "replay-test", "menu", "input", "join", "lockstep", "lockstep-full"):
         want(f"NOT RUN {name}: no Release build" in output, f"{name} is not reported as not run: {output!r}")
-    want("NOT RUN wingman" not in output and "NOT RUN menu" not in output, "a Debug step needs the Release build")
+    for name in ("wingman", "exit-test", "net", "version"):  # builds needs it anyway: it plays both
+        want(f"NOT RUN {name}" not in output, f"{name} needs the Release build: {output!r}")
     release = bench.repo / "build-release"
     release.mkdir()
     (release / "Starship").write_text("", encoding="utf-8")  # the folders carry no build id, so they are of one commit
     _, plan = dry_run(bench, "--mixed")
-    for name in ("rates-rails", "hash-run-1", "replay-test", "full-level", "rails-4", "hash-probe-1"):
-        want("build-release" in plan[name][1], f"{name} does not play on Release: {plan[name][1]!r}")
-    for name in ("wingman", "exit-test", "menu", "lockstep", "join", "coop-off"):
-        if name in plan:
-            want("build-release" not in plan[name][1], f"{name} plays on Release: {plan[name][1]!r}")
+    for name in ("rates-rails", "hash-run-1", "replay-test", "full-level", "rails-4", "hash-probe-1", "menu", "input",
+                 "join", "lockstep", "lockstep-full"):
+        want("--exe " in plan[name][1] and f"{release}/Starship" in plan[name][1],
+             f"{name} does not play on Release: {plan[name][1]!r}")
+    for name in ("menu", "input", "lockstep"):  # the test programs of these come from Debug's folder
+        want("--build-dir " + str(bench.repo / "build-cmake") in plan[name][1] and "--config Debug" in plan[name][1],
+             f"{name} does not take Debug's test programs: {plan[name][1]!r}")
+    for name in ("wingman", "exit-test", "version", "net"):
+        want("build-release" not in plan[name][1], f"{name} plays on Release: {plan[name][1]!r}")
     want("build-release" in plan["builds"][1] and "build-cmake" in plan["builds"][1], "builds does not take both")
     done = subprocess.run([sys.executable, str(bench.repo / "tools" / "coop" / "test_all.py"), "--dry-run", "--mixed",
                            "--config", "Release"], cwd=bench.repo, env=ENV, capture_output=True, text=True, timeout=60)

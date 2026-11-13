@@ -26,8 +26,9 @@ what it started, and counts as failed. When all steps pass, the run folders they
 keeps them); a failure keeps them for reading.
 
 A build that is not Debug leaves out what only Debug can do: OPTIMISED below, printed at the end of a run. --mixed
-leaves nothing out: it builds Debug and Release, plays the steps that only count frames (rates, hash, player_trace, ...)
-on the Release build, which needs about 3 times less CPU per game, and everything else on Debug.
+leaves nothing out: it builds Debug and Release and plays every step that starts the game on the Release build, which
+needs about 3 times less CPU per game, except the ones that need Debug's symbols (OPTIMISED), builds and coop-off. The
+unit tests, the loopback tools, their AddressSanitizer runs and the mutation suites run as always.
 
 Two steps need a second build, and without one they do not run: coop-off plays co-op off on this build and --base-exe,
 the build before your change, and builds plays this build against the other config of the same commit, found by
@@ -133,14 +134,17 @@ def all_steps():
         Step("desync-mutants", MUTANTS, ["desync_mutants.py"], "build", "net"),
         Step("steam-mutants", MUTANTS, ["steam_mutants.py"], "build", "net"),
     ]
-    # Longest first, so no lane is left with a long one at the end. exit-test goes last all the same: it waits on the
-    # clock, so it costs no time there, and under load a game can hang in the crash handler (docs/coop/NOTES.md).
+    # Longest first, so no lane is left with a long one at the end. exit-test (6 minutes, mostly waiting on the clock)
+    # comes right after the four longest, when the load drops: it used to be last, and with the serial lane no longer
+    # the clock it ended the run alone, 5 of 22 minutes (#290). Under load a game can hang in its crash handler
+    # (docs/coop/NOTES.md), so it does not go first.
     game = [
         ("rates-rails", ["hash_check.py", "rates", "--section", "rails", "--jobs", str(RATES_JOBS)], "exe", False),
         ("rates-all-range", ["hash_check.py", "rates", "--section", "all-range", "--jobs", str(RATES_JOBS)], "exe",
          False),
         ("builds", ["hash_check.py", "builds"], "other", False),
         ("determinism", ["determinism.py"], "exe", False),
+        ("exit-test", ["exit_test.py"], "exe", True),
         ("view-check", ["view_check.py"], "exe", False),
         ("solar-heat", ["solar_check.py"], "exe", False),
         ("wingman", ["wingman_check.py", "all"], "exe", True),
@@ -163,7 +167,6 @@ def all_steps():
         ("hash-start-1", ["hash_check.py", "start", "--players", "1"], "exe", False),
         ("hash-probe-2", ["hash_check.py", "probe", "--players", "2"], "exe", False),
         ("hash-probe-1", ["hash_check.py", "probe", "--players", "1"], "exe", False),
-        ("exit-test", ["exit_test.py"], "exe", True),
     ]
     return steps + [Step(name, GAME, command, takes, "game", only_linux) for name, command, takes, only_linux in game]
 
@@ -393,9 +396,11 @@ def chosen_steps(args):
 
 
 def on_release(step, args):
-    """--mixed: the steps that only count frames play on the Release build: the tools of the game lane that take just
-    the game, and not the ones that need Debug's symbols (OPTIMISED)."""
-    return args.mixed and step.lane == GAME and step.takes == "exe" and step.name not in OPTIMISED
+    """--mixed: every step that plays the game plays it on the Release build, which takes about 3 times less CPU per
+    game, except the ones that need Debug's symbols (OPTIMISED), builds (it plays both) and coop-off (it plays the base
+    build against this one). A tool that takes the build folder too (menu, input, lockstep) gets Debug's for its test
+    programs, which do not depend on the game."""
+    return args.mixed and step.lane in (GAME, SERIAL) and step.takes in ("exe", "both") and step.name not in OPTIMISED
 
 
 def program_targets(chosen):
@@ -464,7 +469,8 @@ def parse_args():
                    help="run the mutation suites last in the serial lane of this checkout, not beside the rest in a "
                         "second one")
     p.add_argument("--mixed", action="store_true",
-                   help="build Debug and Release; the steps that only count frames play on Release, the rest on Debug")
+                   help="build Debug and Release; the steps that start the game play it on Release, except the ones "
+                        "that need Debug's symbols")
     p.add_argument("--dry-run", action="store_true", help="print the lane, the build and the command of each step, and stop")
     p.add_argument("--plan", help=argparse.SUPPRESS)
     args = p.parse_args()
