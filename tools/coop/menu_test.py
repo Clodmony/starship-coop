@@ -23,6 +23,8 @@ players' names into the window (#258) and reads them back from both windows and 
 
 Prints one line per scenario and a RESULT line, keeps logs in local/test-menu/<stamp>/ (each game_ scenario's in a
 folder of its name, #293), exits 0 only when everything passed. Each game gets its own folder under local/ with its own SHIP_HOME, removed when the run passed.
+A wait on a game whose session ended, while the scenario expected it to go on, stops at the first look and prints the
+last lines of that game's own co-op log (#306); a scenario that ends a session on purpose says so (Game.session_ends).
 """
 import argparse
 import json
@@ -54,6 +56,10 @@ LEVEL_SECONDS = 600  # from the click to enough frames in the level, three games
 # Longer than any run: the menu takes as many frames as the machine draws while the clicks go by. Nothing here reads the
 # end of the replay, the games stop once the level has run long enough.
 LEVEL_REPLAY_FRAMES = 30000
+# The window's status line (src/port/coop/ui/menu.c, CoopMenu_View): in a session, and in none.
+IN_SESSION = re.compile(r"^(?:Hosting on port \d+|In the session at \S+ as player (\d+))")
+NO_SESSION = "Not in a session."
+LOG_TAIL = 12  # lines of a game's own co-op log in a failure for a session that ended (#306)
 
 
 class Fail(Exception):
@@ -67,7 +73,14 @@ def expect(cond, what):
 
 class Game(join_test.LevelLog):
     """One real game with the menu driver on, in its own folder. With seeds it starts from them, gets no input and logs
-    what join_test.py compares; press_until as in join_test.write_replay."""
+    what join_test.py compares; press_until as in join_test.write_replay.
+
+    in_session is what the scenario last saw (#306): the game was in a session at the end of its last wait that held,
+    and the scenario has not ended that session on purpose since (a Leave click of this game, or session_ends() for an
+    end another game's action brings). A wait that then sees "Not in a session." stops at once."""
+
+    in_session = False
+    player = None  # its own player number, from the status line
 
     def __init__(self, exe, name, out, cvars=None, seeds=None, press_until=0, env_extra=None):
         self.name = name
@@ -139,12 +152,40 @@ class Game(join_test.LevelLog):
             self.read()
             result = test()
             if result:
+                self.seen()
                 return result
             if self.proc.poll() is not None:
                 raise Fail(f"{self.name}: the game ended with code {self.proc.returncode} while waiting for {what}")
+            if self.in_session and self.texts.get("status") == NO_SESSION:
+                # A game in no session shows no session widgets: waiting longer could only end in the time-out (#306).
+                raise Fail(f"{self.name}: the session ended while waiting for {what}; texts {self.texts}\n"
+                           f"{self.log_tail()}")
             if time.monotonic() > end:
                 raise Fail(f"{self.name}: no {what} after {seconds} s; texts {self.texts}, items {sorted(self.items)}")
             time.sleep(every)
+
+    def seen(self):
+        """After a wait that held: whether the game is in a session now. A closed window shows no status: no news."""
+        status = self.texts.get("status")
+        if status is not None:
+            found = IN_SESSION.match(status)
+            self.in_session = found is not None
+            if found:
+                self.player = int(found.group(1) or 1)
+
+    def session_ends(self):
+        """The scenario ends this game's session on purpose from here on, so a wait may see it go."""
+        self.in_session = False
+
+    def log_tail(self, lines=LOG_TAIL):
+        """The last lines of the game's own co-op log of its newest session (src/port/coop/log/coop_log.h: the file
+        named after its player), or of the newest one when the player is not known."""
+        own = sorted(self.run.glob(f"coop-log-*-player{self.player}.txt")) if self.player else []
+        logs = own or sorted(self.run.glob("coop-log-*.txt"))
+        if not logs:
+            return f"no co-op log in {self.run}"
+        text = logs[-1].read_text(encoding="utf-8", errors="replace").splitlines()
+        return f"last {min(lines, len(text))} lines of {logs[-1].name}:\n  " + "\n  ".join(text[-lines:])
 
     def wait_item(self, item, enabled=None, label=None, seconds=STEP_SECONDS):
         def test():
@@ -160,6 +201,8 @@ class Game(join_test.LevelLog):
     def click(self, item):
         self.wait_item(item)
         self.send(f"click {item}")
+        if item == "leave":
+            self.session_ends()
 
     def type(self, item, text):
         self.wait_item(item)
@@ -285,6 +328,7 @@ def scenario_game(args, exe, out):
         host.wait_text("status", r", 2 of 4 players\.")
 
         # The host goes: the client is told, and is back at the start.
+        b.session_ends()
         host.click("leave")
         host.wait_text("status", r"Not in a session\.")
         b.wait_text("status", r"Not in a session\.")
@@ -589,6 +633,7 @@ def scenario_game_leave(args, exe, out):
         # Player 3 leaves too. Nobody is left to start the level again with, so the session ends as it always did
         # (#160): the host says who left, and every game goes on alone in its level.
         frames = {game.name: frames_logged(game) for game in games}
+        host.session_ends()
         b.click("leave")
         b.wait_text("status", r"Not in a session\.")
         host.wait_text("message", r"Player 3 left, so the session is over")
@@ -673,6 +718,7 @@ def scenario_game_names_258(args, exe, out):
         host.wait_text("player2", r"^Player 2: SAMOK!, no character yet")
         for game, want in ((host, "CAPTAIN"), (a, "SAMOK!")):
             game.wait(lambda g=game, w=want: saved_name_258(g) == w, f"{want} in the game's own config")
+        a.session_ends()
         host.click("leave")
         a.wait_text("status", r"Not in a session\.")
         for game in (host, a):
