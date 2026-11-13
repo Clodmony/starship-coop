@@ -125,6 +125,12 @@ def main():
     if menus.returncode != 0:
         failures.append("tools/coop/menu_test_test.py failed:\n  "
                         + "\n  ".join((menus.stdout + menus.stderr).strip().splitlines()))
+    # 8e. replay_test.py: person stops its game only once the stop handler is in, and no wait of it is without a limit
+    # (#308; a stand-in for the game, no build, no ROM, about 12 s).
+    waits = run_tool("replay_test_test.py")
+    if waits.returncode != 0:
+        failures.append("tools/coop/replay_test_test.py failed:\n  "
+                        + "\n  ".join((waits.stdout + waits.stderr).strip().splitlines()))
 
     # 9. Build folders: libultraship's archives belong to one build folder, or a second config shares them.
     cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
