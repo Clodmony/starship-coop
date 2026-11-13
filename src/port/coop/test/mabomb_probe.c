@@ -17,8 +17,11 @@ void Macbeth_MaBombDrop_Setup(MaBombDrop* this, f32 xPos, f32 yPos, f32 zPos, f3
 #define MABOMB_EXPLODE 999.9f // the x velocity that makes a bomb explode where it is (Macbeth_MaBombDrop_Setup)
 #define MABOMB_FALL_Y 20.0f   // a bomb falls 10 a frame for the two frames before it explodes
 #define MABOMB_FALL_Z 10.0f   // and drifts back 5 a frame
-#define MABOMB_ROUNDS 3       // each case for each target this many times
-#define MABOMB_JUMP 200.0f    // a move larger than this in one frame is a restart or a jump, not driving
+// Each case for each target this many times. Without a pilot the tanks stop at z about -33800, some 2700 frames in,
+// and are seldom MABOMB_GAP apart there: 2 rounds of 5 cases are over by frame 2100, a third was not always.
+#define MABOMB_ROUNDS 2
+#define MABOMB_JUMP 200.0f  // a move larger than this in one frame is a restart or a jump, not driving
+#define MABOMB_WAIT_LOG 100 // frames between two lines of a case that cannot start
 
 // The damage the probe gives its hazard: no other object of the level deals it, so dmgType names the hazard.
 #define MABOMB_MARK_BOMB 33
@@ -291,6 +294,26 @@ static void CoopMaBombProbe_Report(const MaBombCase* c, s32 lost) {
     fflush(sMaBombFile); // tests may kill the game on a timeout
 }
 
+// What a case that cannot start is waiting for, as the header says.
+static void CoopMaBombProbe_ReportWait(const MaBombCase* c) {
+    const Player* t = &gPlayer[sMaBombTarget];
+    Vec3f step;
+    s32 jump = CoopMaBombProbe_Step(sMaBombTarget, &step);
+    s32 i;
+
+    fprintf(sMaBombFile,
+            "mabomb wait frame=%d case=%s target=%d drives=%d jump=%d front=%d slot=%d players=", (int) gGameFrameCount,
+            c->name, (int) sMaBombTarget, (int) CoopMaBombProbe_EveryTankDrives(), (int) jump,
+            (int) ((t->trueZpos + gPathProgress) < (gPlayer[0].cam.eye.z - 100.0f)),
+            (int) CoopMaBombProbe_FreeSlot(c->kind));
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        fprintf(sMaBombFile, "%s%d:%.0f:%.0f", (i != 0) ? "," : "", (int) gPlayer[i].state, gPlayer[i].pos.x,
+                gPlayer[i].trueZpos);
+    }
+    fprintf(sMaBombFile, "\n");
+    fflush(sMaBombFile);
+}
+
 // The next case and target, or nonzero when there is none left.
 static s32 CoopMaBombProbe_Advance(void) {
     sMaBombCount++;
@@ -382,6 +405,9 @@ static void CoopMaBombProbe_OnGamePostUpdate(IEvent* event) {
             if (((s32) gGameFrameCount >= sMaBombNext) && CoopMaBombProbe_EveryTankDrives() &&
                 CoopMaBombProbe_CanPlace(c->kind, sMaBombTarget) && !CoopMaBombProbe_Place(c, sMaBombTarget)) {
                 sMaBombStage = MABOMB_STAGE_RUNNING;
+            } else if (((s32) gGameFrameCount >= (sMaBombNext + MABOMB_WAIT_LOG)) &&
+                       (((gGameFrameCount - sMaBombNext) % MABOMB_WAIT_LOG) == 0)) {
+                CoopMaBombProbe_ReportWait(c);
             }
             break;
 

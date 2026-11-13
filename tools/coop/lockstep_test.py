@@ -4721,12 +4721,14 @@ def sc_survive_next_level(args, folder):
 # player 0 only (Macbeth_MaBombDrop_Update, Macbeth_Effect380_Update, Macbeth_Effect378_Update and
 # Macbeth_MaTrainCar7_Update in src/overlays/ovl_i5/fox_ma.c), so on a build without the fixes a hazard on player 1
 # hits nobody, while the cases on player 0 hit it on every build: they show the probe reaches its target.
-W8_MABOMB_FRAMES = 4500  # level frames: the tanks part from JOIN_FRAME on (sway), 30 cases fit well after that
+W8_MABOMB_FRAMES = 4500  # level frames: the tanks part from JOIN_FRAME on (sway), 20 cases fit well after that
 W8_MABOMB_CASES = ("bomb", "beam", "shot", "roll", "blast")  # sMaBombCases in src/port/coop/test/mabomb_probe.c
 W8_MABOMB_WORDS = {"bomb": "under a bomb's fire", "beam": "in a beam", "shot": "by a turret's shot",
                    "roll": "(its roll deflects the shot)", "blast": "in a car's blast"}
 W8_MABOMB_DEFLECTS = ("roll",)  # cases whose target is not hit: the shot is deflected
-W8_MABOMB_ROUNDS = 3  # MABOMB_ROUNDS there
+# MABOMB_ROUNDS there. Not 3: without a pilot the tanks stop about 2700 frames in (z about -33800) and are seldom 250
+# apart there, so the last cases of a third round did not start on a build where a hit moves player 1 (26 of 30 ran).
+W8_MABOMB_ROUNDS = 2
 W8_MABOMB_PROBE = "mabomb.txt"  # in each game's run folder
 W8_MABOMB_LINE = re.compile(r"mabomb frame=(\d+) case=(\w+) target=(\d+) hit=(\d+) first=(\S+) lost=(\d) dx=(\S+)"
                             r"(?: defl=(\d))?")
@@ -4783,7 +4785,10 @@ def sc_macbeth_bombs(args, folder):
                  "never parted by 250")
     expect((rows, done) == w8_mabomb_rows(client.run / W8_MABOMB_PROBE), "the two games' probe logs differ")
     wanted = len(W8_MABOMB_CASES) * 2 * W8_MABOMB_ROUNDS
-    expect(done, f"the probe ran {len(rows)} of {wanted} cases in {frames} frames")
+    waits = [line for line in (host.run / W8_MABOMB_PROBE).read_text(encoding="utf-8").splitlines()
+             if line.startswith("mabomb wait")]
+    expect(done, f"the probe ran {len(rows)} of {wanted} cases in {frames} frames; the last one waited: "
+                 f"`{waits[-1] if waits else 'no wait line'}`")
     story = w8_mabomb_story(rows)
     lost = sum(row["lost"] for row in rows)
     for (case, target), (ran, _, _) in sorted(story.items()):
