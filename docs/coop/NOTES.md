@@ -225,11 +225,85 @@ Unknown:
   30 frames a second), or the games have to part there. A desync found on a message later in a level ended a
   client's session the same way before the change, whatever the audio did; not searched for in old reports.
 - Windows, MSVC, a second PC.
+### 2026-11-13, #290 (third part), the tail of a full run: `exit-test` 4 games at a time, `coop-off` with a base it builds itself, `check.py` once in the build step
+
+Identity: ROM US 1.0, Linux, GCC 16.2, Debug (`-g -ffast-math -DDEBUG`) and Release (`-O3 -ffast-math -DNDEBUG`), OpenGL
+on a software renderer, no window, silent, a Linux machine shared with other test runs (the load is given
+per run). Trees `1b8d597c`, `8a8b78a2`, `9340ad24` (branch `issue/290-exit-and-base` on the combined test build 6
+`d726f9dd`, the same C code). No whole `test_all.py` run: each step alone, through `test_all.py --only` or the tool.
+
+Observed:
+
+- `exit_test.py` as the step ran it until now, one game at a time (48 games: 16 scenarios, 3 each): 48 of 48 in 376 s,
+  load 2 to 6. A game of `idle`, `sigint`, `sigquit`, `record`, `play` and the six crash signals took 5.5 to 7 s,
+  `plain` and `crash-plain` 9 to 10 s, `fault-main` and `fault-audio` (under gdb) 10.8 s, `fault-stuck` 15.8 s; the 9
+  `fault-*` games were 112 of the 376 s.
+- Where a game's seconds go (`exit_test.py`): the ready file `imgui.ini`, which ImGui writes 5 s after the game starts to
+  draw (`READY_FILE`); a random delay of 0 to 1.5 s (`MAX_DELAY`); the exit, 0.01 to 0.21 s after the signal (5 s for
+  `fault-stuck`, which waits for the alarm); `PLAIN_WAIT` (3 s) for the two plain scenarios, which must not end; gdb's
+  run to the 300th call of the function a fault scenario stops in. `EXIT_LIMIT` (10 s) is only spent by a game that fails.
+- `--jobs 4` (new): 48 of 48 in 103 s, load 55 at the start falling to 18, 6 games and 10 test tools of other runs
+  going. `--jobs 8`: 48 of 48 in 56 s, load 15 to 18, 7 other games.
+- Fourteen runs of `--jobs 4`, each in a shared test slot of its own (672 games): 672 of 672 OK, 98 to 103 s a run,
+  slowest exit 5.08 s. In 10 of them both other slots were busy during the run (another worker's tests, or this
+  worker's two loops of `hash_check.py draw` and `replay_test.py --jobs 2` on Release), load 6 to 45, up to 21 games
+  running; the other 4 ran beside one or no other test run (load 4 to 18). 2 of the 252 signals of the `crash-*`
+  scenarios with a test variable ended by the alarm, which they allow (#158); all 84 `fault-main` and `fault-audio`
+  games ended by libultraship's handler and all 42 `fault-stuck` games by the alarm, as each must.
+- `test_all.py --no-build --only coop-off --base-ref origin/coop` (new; `origin/coop` was `07c03c1f`, 70 commits behind,
+  the same submodule commits): `base-setup` built it in 133 s alone at 4 jobs and nice 10, 811 CPU seconds; `coop-off`
+  "the base build and this one equal on all 5800 frames", PASS. `local/base-tree` and its worktree entry were gone after
+  the run, the submodules of this checkout clean. Again with `--base-ref origin/issue/combined-test-6` (the commit before
+  this branch): build 134 s, 806 CPU seconds, `coop-off` equal on all 5800 frames, 3 of 3 steps ok with `tree` ("no
+  tracked file changed"). (The first run's `tree` failed: README and CONTRIBUTING were edited during it.)
+- The build step of `--mixed`, alone on the machine, after touching the 66 C and C++ files of `src/port/coop/` (what a
+  merge into the gate tree recompiles), one sample each: as before 93 s (Debug 47 s with `check.py`, Release 46 s with
+  it again); Release with `--no-check` 65 s (47 s and 19 s); both at the same time with 8 jobs each and `--no-check`
+  for Release 62 s (Debug 63 s, Release 34 s). `check.py` alone: 27 s, 14 CPU seconds. Through `test_all.py --mixed
+  --only checks` with the change: `build` 47 s, `build-release` 18 s, `checks` 27 s.
+- Of the loops used as load, `hash_check.py draw` passed 8 of 8 and `replay_test.py --jobs 2` 14 of 15. The 4th did not
+  end: its `person` scenario's game (`replay.py record`, no `--frames`) slept in a futex wait for 534 s until killed, with
+  an empty `logs/Starship.log` and a `starship.cfg.json` of two entries. `watch_person` (`tools/coop/replay_test.py:343`)
+  sends SIGTERM once that config exists, which start-up writes (`src/port/Engine.cpp:146`, `:189`) long before
+  `CoopStopSignal_Init()` (`:316`); the tool waits on its game with no limit (`replay_test.py:216`).
+
+Derived:
+
+- `exit-test` is clock, not CPU: four games at a time take 103 s of the 376, eight 56. In the `--mixed` runs of the second
+  part it started at minute 11.9 and was the last step (369 s, to 18.1); the other game steps ended by 16.8. With 4 games
+  at a time it ends near minute 14, before them.
+- The waits are not longer than needed: the 5 s of the ready file make the signal land while the game draws (#147), the
+  random delay at another point of a frame each time, `PLAIN_WAIT` is ten times the slowest exit. Games at a time
+  overlap them anyway; shortening them would change what the test sees, for a few seconds. Not done.
+- The `fault-*` scenarios need not be kept apart: under gdb, 4 or 8 at a time beside other games, `fault-main` and
+  `fault-audio` ended by libultraship's handler in every run and `fault-stuck` by the alarm, as each must.
+- `coop-off` can be in every full run now: its base costs about 13.5 CPU minutes at low priority in a lane of its own,
+  and the step itself plays two games (about 16 s each).
+- The build step was 93 s mostly because it ran `check.py` twice (27 s each, mostly waiting); compiling 66 files
+  takes about 20 s per config. Without the second one: 65 s. The two builds at the same time saved 3 s more, not worth
+  threads and the exceptions it needs (one folder for both configs on Windows, `--build-wrap`), so not done.
+- `check.py` still runs twice in a full run: in Debug's build and as the `checks` step. Without it in the build the
+  step would be about 40 s, but a failed check would no longer stop the run before the tests.
+
+Guess:
+
+- A full `--mixed` run with these ends near 16 to 17 minutes (the other game steps ended at 16.8 in the second part,
+  the build step is 28 s shorter), and `--base-ref` adds no minutes when its build fits into idle CPU (the machine was
+  81 % busy, median, in the first part). Not run here: the coordinator measures the whole run.
+- The `person` hang is #71's: a SIGTERM before the test's stop handler takes upstream's way out, whose audio destructor
+  hangs. Not shown (gdb could not attach); a follow-up was proposed.
+
+Unknown:
+
+- How `base-setup` at nice 10 and `coop-off` fare in a full run, beside the four game lanes and the mutation suites, and
+  whether the build slows the wall-clock steps (`menu`'s `game_leave`, #293).
+- A `--base-ref` whose submodules differ from this checkout's: `mutation_tree.py` stops and says so; building the base's
+  own submodules is not done. Windows and macOS: not run (`--base-ref` needs symbolic links, as the mutation tree).
 
 ### 2026-11-13, #290 (second part), the serial lane was the clock: Release, five lanes, `--mixed`, 18m04s
 
 Identity: ROM US 1.0, Linux, GCC 16.2, Debug (`-g -ffast-math -DDEBUG`) and Release (`-O3 -ffast-math -DNDEBUG`), OpenGL on
-a software renderer, no window, silent, a machine with 16 logical CPUs and no other load, `test_all.py` at normal
+a software renderer, no window, silent, a Linux machine with no other load, `test_all.py` at normal
 priority with its default 4 game lanes, one run of each kind unless a count is given. Trees: `90594a98` (the combined test
 build 6 with PR #291) for the measurements, `47723983` and `0b9dc392` (branch `issue/290-release-steps`) for the runs of
 the change. `coop-off` did not run in any of them (no `--base-exe`).
@@ -277,6 +351,7 @@ Guess:
   suite are all running. Not shown; 4 runs are not a rate.
 - `exit-test` started at the very beginning would end the run about a minute sooner (the other steps end at 16.8, it at
   18.1) and would run while the machine is busiest, where a game can hang in the crash handler (#158). Not tried.
+  [see the entry above: with 4 games at a time `exit-test` takes about 100 s and is no longer the tail]
 
 Unknown:
 

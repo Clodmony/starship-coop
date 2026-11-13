@@ -176,6 +176,10 @@ number of clients, transport.
    2 of 2 runs of the old lanes (`game_leave`, a 40 s timer on a loaded machine) and passed in 4 of 4 of these.
    NOTES.md, 2026-11-13, #290 (second part). It was no timer: the games parted at level frame 0 of the restart and the
    client's wait was measured from the wrong time (NOTES.md, 2026-11-13, #293).
+   Since the third part `exit-test` plays 4 games at a time (376 s to about
+   100 s; 672 of 672 games in 14 runs beside other test runs), the Release build of `--mixed` skips the repository checks Debug's ran (93 s to 65 s), and
+   `--base-ref <git ref>` makes `coop-off` build its base itself, so a full run can have it: equal on all 5800 frames
+   against `origin/coop` and against the commit before. A whole run with these was not measured here.
 3. **Two clients on one machine.** Two Starship processes with their own config, save and log folders (never the
    owner's), connected over loopback, both fed replays. `python tools/coop/join_test.py` (WP-24, unattended, exit code
    0 only when everything passed) takes two or three games from the lobby into a level through the scripted flow in
