@@ -163,6 +163,12 @@ number of clients, transport.
    `join` and `menu` stay at 8: their replays are counted in frames and their ping is on the clock. NOTES.md, 2026-11-13.
    A full `test_all.py` run takes 23m26s since #290 (41m37s before): `lockstep` 4 scenarios at a time, the mutation suites in
    a second checkout beside the rest, the `rates` steps with their 5 games at once. NOTES.md, 2026-11-13, #290.
+   `python tools/coop/test_all.py --mixed` takes 18m04s (two runs, 56 of 56 steps ok, `coop-off` not run, against 23m47s
+   for the same tree on Debug): it builds Debug and Release and plays every step that starts the game on Release, except
+   `wingman`, `exit-test`, `builds` and `coop-off`, and the unit tests and loopback tools run in a lane of their own beside
+   the others. On Debug alone the lanes do not help (24m46s): the machine is the limit there. A full `menu` failed in
+   2 of 2 runs of the old lanes (`game_leave`, a 40 s timer on a loaded machine) and passed in 4 of 4 of these.
+   NOTES.md, 2026-11-13, #290 (second part).
 3. **Two clients on one machine.** Two Starship processes with their own config, save and log folders (never the
    owner's), connected over loopback, both fed replays. `python tools/coop/join_test.py` (WP-24, unattended, exit code
    0 only when everything passed) takes two or three games from the lobby into a level through the scripted flow in
