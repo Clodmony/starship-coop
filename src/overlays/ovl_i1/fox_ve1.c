@@ -70,7 +70,11 @@ typedef struct {
     /* 0xC */ f32 unk_C;
 } UnkStruct_i1_80199B40; // size = 0x10
 
-UnkStruct_i1_80199B40 D_i1_80199B40[5][5] = {
+// COOP: was [5][5]. A pillar attack of the Golemech takes up to six pillars from a row of five (swork[22] counts to 5,
+// Venom1_Ve1Golemech_Update), so the sixth is the next row's first; from row 4 (swork[23]) it is read past the table.
+// On the N64 that is D_i1_80199CD0[0][0] behind it; the port read what its compiler put there (zeros in a GCC Debug
+// build), so a pillar stood at x 0, y 0 (#276). Row 5 holds what the N64 read, and is read for nothing else.
+UnkStruct_i1_80199B40 D_i1_80199B40[6][5] = {
     {
         { 500.0f, 424.0f, 334.0f, 0.0f },
         { 500.0f, 112.0f, 328.0f, 0.0f },
@@ -105,9 +109,15 @@ UnkStruct_i1_80199B40 D_i1_80199B40[5][5] = {
         { 787.0f, 600.0f, -29.0f, 0.0f },
         { 800.0f, 291.0f, -298.0f, 0.0f },
         { 800.0f, 724.0f, -500.0f, 0.0f },
+    },
+    {
+        { -770.0f, 96.0f, 916.0f, 0.0f }, // COOP: D_i1_80199CD0[0][0] (#276)
     },
 };
-UnkStruct_i1_80199B40 D_i1_80199CD0[5][5] = {
+// COOP: was [5][5], as D_i1_80199B40 above. Past row 4 the N64 reads D_i1_80199E60, five s16 (1, 2, 2, 2, 3) and two
+// bytes up to D_i1_80199E6C, whose first float, 200.0f, is the unused unk_C: as floats x 0x00010002, y 0x00020002 and
+// z 0x00030000 (the two bytes taken as 0), tiny numbers that put the pillar at the boss's z (#276).
+UnkStruct_i1_80199B40 D_i1_80199CD0[6][5] = {
     {
         { -770.0f, 96.0f, 916.0f, 0.0f },
         { -500.0f, 478.0f, 394.0f, 0.0f },
@@ -142,6 +152,10 @@ UnkStruct_i1_80199B40 D_i1_80199CD0[5][5] = {
         { -500.0f, 78.0f, -12.0f, 0.0f },
         { -800.0f, 364.0f, -464.0f, 0.0f },
         { -870.0f, 708.0f, -600.0f, 0.0f },
+    },
+    {
+        // COOP: the N64's bytes there, as floats: the bits 0x00010002, 0x00020002, 0x00030000 (#276)
+        { 9.18383e-41f, 1.83674e-40f, 2.75506e-40f, 200.0f },
     },
 };
 s16 D_i1_80199E60[5] = { 1, 2, 2, 2, 3 };

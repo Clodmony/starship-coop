@@ -159,6 +159,9 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   macbeth_bombs Macbeth with two Landmasters (#272): a bomb's fire and a state-16 beam of the train's end, placed on
             one tank at a time by src/port/coop/test/mabomb_probe.h, hit that tank, player 1 as well as player 0, and
             no other; on a build without the fix they hit player 0 only. Hashes and the two probe logs equal.
+  ve1_pillars Venom 1 with pilots (#276): src/port/coop/test/ve1_pillar_probe.h makes the Golemech raise six pillars
+            from the last row of its tables; the sixth, read past the table, stands where the N64 puts it, and the
+            hashes and the two probe logs are equal. By hand, not in test_all.py.
   log     the co-op log (#172): each game's folder holds its own log and the other player's, streamed during the
             session; the hash stays equal with streaming on; nothing personal is in the files; coop_log.py merges them.
   survive_gaps_route #267: Corneria parts and starts again, pilots fly it to the map and into the next level, which
@@ -2587,6 +2590,69 @@ def sc_vehicle_end(args, folder):
         texts.append(f"{name} {compared} frames, level complete at {complete}, player 1 drove on {joined}")
     expect(texts, "no level chosen")
     return "same hash; " + "; ".join(texts)
+
+
+# #276: Venom 1's pillars from the last row (src/port/coop/test/ve1_pillar_probe.h). Row 4 of the two tables of
+# Venom1_Ve1Golemech_Update (src/overlays/ovl_i1/fox_ve1.c), as (x, y) of the pillars, and what the N64 reads for a
+# sixth pillar past it: D_i1_80199B40[4][5] is D_i1_80199CD0[0][0] behind it, D_i1_80199CD0[4][5] the five s16 of
+# D_i1_80199E60 (1, 2, 2, 2, 3, big-endian), so x and y are the float bits 0x00010002 and 0x00020002.
+VE1_PILLAR_ROWS = {
+    "D_i1_80199B40": {(500.0, 424.0), (500.0, 112.0), (787.0, 600.0), (800.0, 291.0), (800.0, 724.0)},
+    "D_i1_80199CD0": {(-770.0, 96.0), (-500.0, 478.0), (-500.0, 78.0), (-800.0, 364.0), (-870.0, 708.0)},
+}
+VE1_PILLAR_N64 = {"D_i1_80199B40": (0xC4408000, 0x42C00000), "D_i1_80199CD0": (0x00010002, 0x00020002)}
+VE1_PILLAR_FRAMES = 13000  # Venom 1 reached level complete at 11478 in the sanitizer sweep, the Golemech well before
+VE1_PILLAR_PROBE = "ve1-pillars.txt"
+
+
+def ve1_pillar_batches(path):
+    """The probe's pillars, by the frame they were first seen: {frame: [(x bits, y bits)]}, and the Golemech's frame."""
+    batches, golemech = {}, None
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines() if path.exists() else []:
+        words = dict(word.split("=", 1) for word in line.split()[1:] if "=" in word)
+        if line.startswith("golemech "):
+            golemech = int(words["frame"])
+        elif line.startswith("pillar "):
+            batches.setdefault(int(words["frame"]), []).append((int(words["x"], 16), int(words["y"], 16)))
+    return batches, golemech
+
+
+def float_of(bits):
+    return struct.unpack("<f", struct.pack("<I", bits))[0]
+
+
+def sc_ve1_pillars(args, folder):
+    """#276: Venom 1's Golemech raises six pillars from the last row of its tables, as it does once in a while in a
+    fight (the probe forces its count to 5 and its row to 4). The sixth is read past the table; it has to stand where
+    the N64 puts it (VE1_PILLAR_N64), and both games have to hash alike. A pilot on each client, gInvincible on both."""
+    env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt",
+           "SF64_COOP_LOCKSTEP_END": str(VE1_PILLAR_FRAMES), "SF64_COOP_VE1_PILLAR_PROBE": VE1_PILLAR_PROBE}
+    host, client = session(args, folder, {"SF64_COOP_JOIN_LEVEL": "6"}, None, env,
+                           config={"CVars": {"gInvincible": 1}}, replay_frames=VE1_PILLAR_FRAMES + 20000)
+    try:
+        wait_for([host, client], "done", max(args.level_seconds, VE1_PILLAR_FRAMES * 0.25), "in Venom 1")
+    finally:
+        host.close()
+        client.close()
+    compared = compare(host, client, VE1_PILLAR_FRAMES)
+    batches, golemech = ve1_pillar_batches(host.run / VE1_PILLAR_PROBE)
+    expect(golemech is not None, "the Golemech never came: a build without ve1_pillar_probe.c (#276), or the pilot "
+                                 "did not get there")
+    expect((batches, golemech) == ve1_pillar_batches(client.run / VE1_PILLAR_PROBE), "the two games' probe logs differ")
+    sixth = {table: [] for table in VE1_PILLAR_ROWS}
+    for frame, pillars in sorted(batches.items()):
+        places = [(float_of(x), float_of(y)) for x, y in pillars]
+        for table, row in VE1_PILLAR_ROWS.items():
+            if sum(place in row for place in places) >= 3:  # an attack from this table's row 4
+                sixth[table] += [(frame, bits) for bits, place in zip(pillars, places) if place not in row]
+    expect(any(sixth.values()), f"no attack raised a sixth pillar in {len(batches)} batches of pillars")
+    wrong = [f"{table} at frame {frame}: x {x:08x} y {y:08x} ({float_of(x):g}, {float_of(y):g}), the N64's "
+             f"{VE1_PILLAR_N64[table][0]:08x} {VE1_PILLAR_N64[table][1]:08x}"
+             for table, found in sixth.items() for frame, (x, y) in found if (x, y) != VE1_PILLAR_N64[table]]
+    expect(not wrong, f"a sixth pillar is not where the N64 puts it: {'; '.join(wrong[:4])}")
+    counts = ", ".join(f"{len(found)} from {table}" for table, found in sixth.items())
+    return (f"same hash on {compared} frames; the Golemech at frame {golemech}, {len(batches)} batches of pillars, "
+            f"sixth pillars {counts}, each where the N64 puts it")
 
 
 def sc_three(args, folder):
@@ -5178,6 +5244,7 @@ SCENARIOS = {
     "survive_gaps_four": sc_survive_gaps_four,
     "vehicles": sc_vehicles,
     "vehicle_end": sc_vehicle_end,
+    "ve1_pillars": sc_ve1_pillars,
     "bosses": sc_bosses,
     "other_bosses": sc_other_bosses,
     "sy_robot_spread": sc_sy_robot_spread,
@@ -5191,6 +5258,7 @@ LONG = ("survive_next_level", "survive_gaps_route", "survive_gaps_map", "survive
         "map_saves", "map_saves_host_full", "map_saves_equal", "audio", "release", "rates", "vehicles", "vehicle_end", "bosses", "other_bosses",
         "eels", "w7macbeth_ram")
 LONG += ("sy_robot_spread",)  # Sector Y's rails, 9500 frames (#273)
+LONG += ("ve1_pillars",)  # Venom 1 to its boss, 13000 frames (#276)
 
 
 # Seconds a scenario took on Debug at a limit of 8 (2026-11-13, #290). Only the order of a pool of --jobs depends on it:
