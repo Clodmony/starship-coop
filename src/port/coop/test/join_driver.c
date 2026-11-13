@@ -54,6 +54,7 @@ static s32 sClients = 1;
 static s32 sJoined = 0;
 static s32 sLevel = 0;
 static s32 sPhase = 0;
+static s32 sCheckpoint = 0; // SF64_COOP_JOIN_CHECKPOINT (#282)
 static u32 sStartFrame = 0;
 static u32 sConnectFrame = 0;
 static u32 sConnectTitle = 0; // frames in a row at the title screen before the session opens
@@ -508,6 +509,9 @@ static void Host_TryStart(void) {
         Team_Poke();
     }
     CoopLevelStart_FromGame(&start, (u8) sLevel, (u8) sPhase);
+    if (sCheckpoint > 0) {
+        CoopLevelStart_SetAllRangeCheckpoint(&start, sCheckpoint);
+    }
     CoopTestSwitches_StartSeeds(start.values);
     sStartTaken = CoopSession_StartLevel(sSession, &start);
     if (!sStartTaken && !sStartRefusedSaid) {
@@ -615,6 +619,7 @@ void CoopJoinDriver_Init(void) {
     sClients = (clients != NULL) ? atoi(clients) : 1;
     sLevel = (level != NULL) ? atoi(level) : LEVEL_CORNERIA;
     sPhase = (Env_Text("SF64_COOP_JOIN_PHASE") != NULL) ? atoi(Env_Text("SF64_COOP_JOIN_PHASE")) : 0;
+    sCheckpoint = (Env_Text("SF64_COOP_JOIN_CHECKPOINT") != NULL) ? atoi(Env_Text("SF64_COOP_JOIN_CHECKPOINT")) : 0;
     sStartFrame = (startFrame != NULL) ? (u32) atoi(startFrame) : 0;
     sConnectFrame = (connectFrame != NULL) ? (u32) atoi(connectFrame) : 0;
     sConnectTitle = (connectTitle != NULL) ? (u32) atoi(connectTitle) : 0;

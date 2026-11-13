@@ -172,6 +172,11 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   ve1_pillars Venom 1 with pilots (#276): src/port/coop/test/ve1_pillar_probe.h makes the Golemech raise six pillars
             from the last row of its tables; the sixth, read past the table, stands where the N64 puts it, and the
             hashes and the two probe logs are equal. By hand, not in test_all.py.
+  escape_look an observation for the owner (#282): sessions start at Andross' escape (SF64_COOP_JOIN_CHECKPOINT), and
+            src/port/coop/test/escape_probe.h puts an explosion or the exit's trigger in reach of player 1 (player 0
+            out of it), then an explosion on player 0, with gInvincible and without; then James' route alone in each
+            of the three mazes. Checks that the cases ran and the ones on player 0 acted; reports what player 1 got.
+            By hand, not in test_all.py: about 3 minutes.
   log     the co-op log (#172): each game's folder holds its own log and the other player's, streamed during the
             session; the hash stays equal with streaming on; nothing personal is in the files; coop_log.py merges them.
   survive_gaps_route #267: Corneria parts and starts again, pilots fly it to the map and into the next level, which
@@ -4884,6 +4889,167 @@ def sc_macbeth_bombs(args, folder):
             f"{rows[-1]['frame']}")
 
 
+# ---- #282: what each player gets in Andross' escape (an observation; the rule is the owner's) ----
+#
+# In the escape after the brain (src/overlays/ovl_i6/fox_andross.c) an explosion within 500 of player 0 in x and z sets
+# its shields to 0 and kills it 10 frames later whatever gInvincible says (Andross_AndExplosion_Update), and the exit's
+# trigger ends the level only for player 0 (Andross_AndJamesTrigger_Update): both test gPlayer[0] alone. Each session
+# here starts in Andross' second part at its checkpoint, which is the escape (SF64_COOP_JOIN_CHECKPOINT=1: the game's
+# own restart there, Andross_801961AC), the pilots fly James' route (src/port/coop/test/pilot_andross.c), and
+# src/port/coop/test/escape_probe.h puts an explosion or a trigger in reach of one player while every other player is
+# out of it. The scenario checks the measurement (the cases ran, the cases on player 0 acted, both games equal) and
+# reports what player 1 got; it asserts no rule for player 1, as none is decided.
+W9_ESCAPE_PROBE = "escape.txt"  # in each game's run folder
+W9_ESCAPE_CASES = ("blast1", "exit1", "blast0")  # an explosion on player 1, the trigger on player 1, an explosion on 0
+W9_ESCAPE_FRAMES = 7000  # lockstep frames: the escape, the cases, a restart at its checkpoint, the flight to the exit
+W9_ESCAPE_KEEP = 510.0  # ESCAPE_KEEP in escape_probe.c: every other player at least this far from a case's object
+W9_ESCAPE_REACH = 500.0  # both objects act under this in x and in z
+# (name, cases, gInvincible, start seeds): with the cases, with and without the cheat; then James' route alone, as #275
+# flies it, once in each of the three mazes (Andross_80187C5C draws one; these seeds draw it from the checkpoint).
+W9_ESCAPE_RUNS = (("cases_inv", W9_ESCAPE_CASES, True, None), ("cases_noinv", W9_ESCAPE_CASES, False, None),
+                  ("route_c036b6c", (), True, None), ("route_c036310", (), True, "1,2,3,4,5,6"),
+                  ("route_c03733c", (), True, "31,41,59,26,53,58"))
+W9_ESCAPE_STATES = {"3": "active", "4": "down", "5": "u-turn", "6": "next", "7": "level complete"}
+
+
+def w9_escape_rows(path):
+    """The probe's lines as (kind, {key: value}, line): kind is the word after `escape`, or the key of its first pair."""
+    rows = []
+    if not path.exists():
+        return rows
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        parts = line.split()
+        if len(parts) < 2 or parts[0] != "escape":
+            continue
+        rows.append((parts[1].split("=", 1)[0], dict(p.split("=", 1) for p in parts[1:] if "=" in p), line))
+    return rows
+
+
+def w9_escape_session(args, folder, cases, invincible, seeds=None):
+    """One session from the escape's checkpoint to lockstep frame W9_ESCAPE_FRAMES, from SEEDS or `seeds`. Returns (the
+    host's probe rows, frames compared)."""
+    folder.mkdir(parents=True, exist_ok=True)
+    both = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt",
+            "SF64_COOP_LOCKSTEP_END": str(W9_ESCAPE_FRAMES), "SF64_COOP_ESCAPE_PROBE": W9_ESCAPE_PROBE}
+    if cases:
+        both["SF64_COOP_ESCAPE_CASES"] = ",".join(cases)
+    host, client = session(args, folder, both=both, config={"CVars": {"gInvincible": 1}} if invincible else None,
+                           host_env={"SF64_COOP_JOIN_LEVEL": "9", "SF64_COOP_JOIN_PHASE": "1",
+                                     "SF64_COOP_JOIN_CHECKPOINT": "1",
+                                     **({"SF64_COOP_TEST_START_SEEDS": seeds} if seeds else {})})
+    try:
+        wait_for([host, client], "done", args.level_seconds, "in Andross' escape")
+    finally:
+        host.close()
+        client.close()
+    frames = compare(host, client)
+    ours = w9_escape_rows(host.run / W9_ESCAPE_PROBE)
+    theirs = w9_escape_rows(client.run / W9_ESCAPE_PROBE)
+    n = min(len(ours), len(theirs))
+    expect([r[2] for r in ours[:n]] == [r[2] for r in theirs[:n]], "the two games' probe logs differ")
+    expect([r for r in ours if r[0] == "start"],
+           "no escape: a build without SF64_COOP_JOIN_CHECKPOINT and src/port/coop/test/escape_probe.c (#282), or the "
+           f"level never reached it in {W9_ESCAPE_FRAMES} frames")
+    return ours, frames
+
+
+def w9_escape_players(values):
+    """{player: (least reach, most reach, shields before, least, after, states)} of a case line."""
+    found = {}
+    for key, value in values.items():
+        if re.fullmatch(r"p\d", key):
+            reach, shields, states = value.split(",", 2)
+            found[int(key[1])] = (*[float(v) for v in reach.split("/")], *[int(v) for v in shields.split("/")],
+                                  states)
+    return found
+
+
+def w9_escape_states(text):
+    return ">".join(W9_ESCAPE_STATES.get(s, s) for s in text.split("-"))
+
+
+def w9_escape_case_story(rows, name):
+    """The line of case `name` as text; checks that it ran and kept the other players out of reach."""
+    found = [v for k, v, _ in rows if k == "case" and v.get("case") == name and "target" in v]
+    expect(found, f"case {name} never ran")
+    v = found[0]
+    target = int(v["target"])
+    players = w9_escape_players(v)
+    expect(v["lost"] == "0" or v["exit"] == "1", f"case {name} lost its object after {v['updates']} updates")
+    for i, (least, _, _, _, _, _) in players.items():
+        expect(i == target or least >= W9_ESCAPE_KEEP, f"case {name}: player {i} came {least:.0f} near the object")
+    text = []
+    for i, (least, most, before, low, after, states) in sorted(players.items()):
+        hit = "hit" if int(v["hit"]) & (1 << i) else "no hit"
+        down = "down" if int(v["down"]) & (1 << i) else "not down"
+        text.append(f"player {i} at {least:.0f} to {most:.0f}, shields {before}>{low}>{after}, {hit}, {down}, "
+                    f"{w9_escape_states(states)}")
+    return v, (f"{name} (frame {v['frame']}, {v['updates']} updates, {v['off']} away): exit {v['exit']}, lives "
+               f"{v['lives']}; " + "; ".join(text))
+
+
+def w9_escape_after_exit(rows):
+    """What the players' lines say from the exit on: (exit row, [player lines after it])."""
+    for n, (kind, values, _) in enumerate(rows):
+        if kind == "exit" and values.get("case") == "-":
+            return values, [v for k, v, _ in rows[n + 1:] if k == "player"]
+    return None, []
+
+
+def w9_escape_run(args, folder, name, cases, invincible, seeds):
+    """One of W9_ESCAPE_RUNS: its summary text."""
+    rows, frames = w9_escape_session(args, folder, cases, invincible, seeds)
+    starts = [v for k, v, _ in rows if k == "start"]
+    ends = [v for k, v, _ in rows if k == "run_end"]
+    text = [f"{name}: equal on {frames} frames, gInvincible {int(invincible)}, escapes started at "
+            + ", ".join(f"{v['frame']} (lives {v['lives']}, trigger {v['trigger']})" for v in starts)]
+    for case in cases:
+        values, story = w9_escape_case_story(rows, case)
+        text.append(story)
+        if case.startswith("blast0"):
+            expect(int(values["down"]) & 1, f"{case}, the control: player 0 did not go down in the explosion")
+        if case.startswith("exit0"):
+            expect(values["exit"] == "1", f"{case}, the control: the trigger did not end the level for player 0")
+    exit_row, after = w9_escape_after_exit(rows)
+    expect(exit_row is not None, f"{name}: the pilots did not reach the exit in {W9_ESCAPE_FRAMES} frames; escapes "
+                                 f"ended: {[(v['frame'], v['why']) for v in ends]}")
+    final = [v for v in ends if v["why"] == "exit"][-1]
+    text.append(f"exit at frame {exit_row['frame']} of escape {exit_row['run']}, its nearest explosion per player "
+                f"{final['nearest']} (frames under {W9_ESCAPE_REACH:.0f}: {final['touch']})")
+    later = [v for v in after if v["player"] != "0"]
+    if later:
+        text.append("then " + ", ".join(f"player {v['player']} at {v['frame']}: state {v['state']} cs {v['cs']} "
+                                         f"parked {v['parked']} draw {v['draw']} level {v['level']}"
+                                         for v in later[:4]))
+    if not cases:
+        expect(final["touch"].split(",")[0] == "0", f"{name}: James' route took player 0 into an explosion's reach")
+    return " | ".join(text)
+
+
+def sc_escape_look(args, folder):
+    """#282, an observation: what each player gets in Andross' escape. Sessions start at the escape's checkpoint
+    (SF64_COOP_JOIN_CHECKPOINT); pilots fly James' route; src/port/coop/test/escape_probe.h puts an explosion in reach
+    of player 1 (player 0 out of it), the exit's trigger in reach of player 1, then an explosion in reach of player 0,
+    each for 60 of its updates, with gInvincible and without; then the route alone, once in each maze (--levels picks
+    some of the sessions of W9_ESCAPE_RUNS). Checks: the cases
+    ran with every other player out of reach, the explosion on player 0 took it down (the control), the pilots reached
+    the exit, James' route kept player 0 out of every explosion's reach, hashes and probe logs equal. What player 1
+    got is reported, not checked: the rule is the owner's."""
+    lines, failed = [], []
+    names = args.levels or [run[0] for run in W9_ESCAPE_RUNS]
+    unknown = [name for name in names if name not in [run[0] for run in W9_ESCAPE_RUNS]]
+    expect(not unknown, f"no session {', '.join(unknown)}; the choices are {', '.join(r[0] for r in W9_ESCAPE_RUNS)}")
+    for name, cases, invincible, seeds in [run for run in W9_ESCAPE_RUNS if run[0] in names]:
+        try:
+            lines.append(w9_escape_run(args, folder / name, name, cases, invincible, seeds))
+            print(f"        {lines[-1]}", flush=True)
+        except (Fail, join_test.Fail) as failure:
+            failed.append(f"{name}: {failure}")
+            print(f"        FAILED {name}: {failure}", flush=True)
+    expect(not failed, "; ".join(failed))
+    return f"{len(lines)} sessions: " + " || ".join(lines)
+
+
 # ---- #267: the session survives beyond its first level and its first three players (survive_gaps_*) ----
 #
 # Decision 0014 on more than Corneria and three games: a level that started again and is then flown to its end, the
@@ -5511,6 +5677,7 @@ SCENARIOS = {
     "eels": sc_eels,
     "player_names": sc_player_names,
     "macbeth_bombs": sc_macbeth_bombs,
+    "escape_look": sc_escape_look,
 }
 LONG = ("survive_next_level", "survive_gaps_route", "survive_gaps_map", "survive_gaps_map_lost",
         "survive_gaps_checkpoints", "survive_gaps_venom_jump", "fox_refill_levels", "fox_refill_long", "fox_lead_swap", "fox_lead_swap_all_range", "full", "scenes", "allrange", "allrange_down", "allrange_others", "allrange_down_others", "teambar",
@@ -5519,6 +5686,7 @@ LONG = ("survive_next_level", "survive_gaps_route", "survive_gaps_map", "survive
 LONG += ("sy_robot_spread",)  # Sector Y's rails, 9500 frames (#273)
 LONG += ("sy_robot_pose", "granga_spread")  # the same rails; Corneria's Granga, 7700 frames (#281)
 LONG += ("ve1_pillars",)  # Venom 1 to its boss, 13000 frames (#276)
+LONG += ("escape_look",)  # three sessions in Andross' escape, an observation for the owner (#282)
 
 
 # Seconds a scenario took on Debug at a limit of 8 (2026-11-13, #290). Only the order of a pool of --jobs depends on it:
@@ -5561,7 +5729,8 @@ def main():
                          "for `vehicles` and `vehicle_end`: some of titania,aquas,macbeth (default all); for "
                          "`bosses`: some of gorgon,andross,dogfight,inhale; for `other_bosses`: some of "
                          + ",".join(OTHER_BOSS_RUNS) + "; for `survive_gaps_checkpoints`: some of "
-                         + ",".join(SURVIVE_GAPS_LEVELS))
+                         + ",".join(SURVIVE_GAPS_LEVELS) + "; for `escape_look`: some of "
+                         + ",".join(run[0] for run in W9_ESCAPE_RUNS))
     args = ap.parse_args()
     if args.list:
         print("\n".join(SCENARIOS))

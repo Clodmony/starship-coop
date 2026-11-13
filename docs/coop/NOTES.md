@@ -1099,6 +1099,95 @@ Unknown:
 - The two bytes between `D_i1_80199E60` and `D_i1_80199E6C` on the N64 (taken as 0); they make the z of a pillar that
   is added to the boss's z, so no game can see them.
 - How often a real fight reaches count 5 with row 4 (the sweep's flights did not).
+### 2026-11-13, #282, Andross' escape with two players: what player 1 gets from the explosions and the exit (observation)
+
+Run on `issue/282-escape-look` (`5722fd4f`, from `issue/combined-test-6` `d726f9dd`), ROM US 1.0, Linux, GCC, Debug,
+OpenGL on a software renderer, no window, one PC; two game clients per session over loopback through the join driver,
+lockstep, a pilot on each client (James' route, `src/port/coop/test/pilot_andross.c`). Command:
+`python tools/coop/lockstep_test.py --only escape_look` (170 s, `RESULT: 1/1`), five sessions; logs read: the probe's
+`escape.txt` of both games, the pilot logs. Line numbers are this branch's; `fox_andross.c` has no change in the lines
+quoted. Nothing here is a rule: the owner decides #282 from it.
+
+**How the escape is reached in a scripted run.** A session starts in Andross' second part at its checkpoint
+(`SF64_COOP_JOIN_CHECKPOINT=1` with `SF64_COOP_JOIN_LEVEL=9` and `SF64_COOP_JOIN_PHASE=1`): the level start carries
+`gAllRangeCheckpoint` 1 (`CoopLevelStart_SetAllRangeCheckpoint`, `src/port/coop/game/level_start.c`), so the level's
+setup takes the game's own restart path after a death there, `Andross_801961AC` (`src/engine/fox_play.c:3005-3010`;
+the brain in state 21 at `gCsFrameCount` 599, `src/overlays/ovl_i6/fox_andross.c:4536-4545`). The escape begins on
+level frame 2, the second frame of the session's level (lockstep frame 0 is already in it), where the way through
+Venom 2 and the brain fight takes about 23000 frames. The probe (`src/port/coop/test/escape_probe.h`) spawns an
+explosion (`OBJ_ACTOR_AND_EXPLOSION`) or the exit's trigger (`OBJ_ACTOR_AND_JAMES_TRIGGER`) as the maze table does
+(`Andross_80187C5C`), and before each of
+its 60 updates puts it 450 from one player in x or in z with every other player at least 510 away (both objects act
+under 500 in x and in z); the object's own update does the test. Cases in this order: `blast1`, `exit1`, `blast0`; then
+the pilots fly on to the exit.
+
+Observed (runs; "frame" is the level frame, `gGameFrameCount`, counted from 0 at each level start; the two games of
+every session were equal on every frame, 7003 to 7084 frames compared, and wrote the same probe log):
+
+| what | gInvincible | player 0 | player 1 | exit | lives (pool `gLifeCount[0]`) |
+|---|---|---|---|---|---|
+| escape start | 1 and 0 | level complete, csState 100 from frame 2; flies (state 3) at 241 | parked from frame 2; joins at 241, beside player 0 | - | 2 |
+| explosion 450 from player 1, frames 272-331 (`blast1`) | 1 and 0 | 673-684 from it: shields 255, no hit, flies | 450 from it on all 60 updates: shields 255 throughout, `hitTimer` 0 (no hit), flies, not down | no | 2, unchanged |
+| trigger 450 from player 1, frames 362-421 (`exit1`) | 1 and 0 | 618-657 from it: nothing | 450 from it on all 60 updates: nothing | no level complete; `gDrawBackdrop` went to 7 (the trigger's other test: player 0 within 9000) | 2, unchanged |
+| explosion 450 from player 0, frames 452-511 (`blast0`) | 1 | frame 452: shields 255 to 0, `hitTimer` 20, `dmgType` 0; 453: down (state 4); 461: state 6 | 511-634 from it: shields 255, no hit; parked from 453 | no | 2 to 1 at frame 461 |
+| the same | 0 | the same frames; `dmgType` 60 | 525 or more from it (it waited 3000 away for 2 updates while player 0 fell toward player 1); parked from 453 | no | 2 to 1 at frame 461 |
+| after `blast0` | 1 and 0 | escape over at frame 547; the level starts again at the checkpoint: csState 100 from frame 1, flies at 241 | parked from frame 0, joins at 241 | - | 1 |
+| James' route, to the exit | 1 and 0 | at the trigger on frame 2218 (mazes `C036B6C`, `C03733C`) or 2254 (`C036310`): state 7, csState 3, level 19 (Venom 2's id); csState 4 at 2368, 5 at 2578, then `GSTATE_ENDING` | parked from the next frame (2219, 2255), `draw` 0, and parked into the ending | yes, by player 0 | unchanged |
+
+- James' route, nearest of the level's own explosions to player 0 / player 1 over the whole flight (the explosion's own
+  measure), and frames under 500: `C036B6C` 3330 / 3332 (seeds `lockstep_test.SEEDS`), `C03733C` 3230 / 3231 (seeds
+  `31,41,59,26,53,58`, and the same maze after `blast0`'s restart with gInvincible), `C036310` 3061 / 3061 (seeds
+  `1,2,3,4,5,6`); 0 frames under 500 for either player in all of them.
+- The full path as #275 flies it, `campaign.py --levels venom-2-andross` on `5722fd4f`: `1/1 levels equal on every
+  frame to the end`, 37267 frames, level complete at level frame 25439 (the number of #275's run), downs 0, 0, maze
+  `C036B6C`; pilot log: no `close` line (under 800), nearest explosion on the 60-frame lines 3683 to player 0 (as in
+  #275) and 3645 to player 1.
+- The base build (`d726f9dd`'s C code) has neither switch: the same scenario fails on all five sessions with "no
+  escape" (103 s for the first three), its games equal.
+
+Observed (code), what explains each row:
+
+- The explosion tests player 0 only: within 500 in x and z of `gPlayer[0]` and player 0 flying or in a U-turn
+  (`fox_andross.c:748-750`), it sets `gPlayer[0].shields = 0` (`:751`) and both of player 0's wings to 0, applies two
+  hits of 60 (`Player_ApplyDamage`, which makes them 0 under gInvincible, `src/engine/fox_play.c:981-983`: the
+  `dmgType` 0 and 60 above), sets its timer to 10 (`:755`) and on its timer's last frame calls
+  `Cutscene_KillPlayer(&gPlayer[0])` (`:759-760`). No line reads another player: player 1's 60 frames in its reach
+  change nothing.
+- Shields 0 with `radioDamageTimer` set take player 0 down on its next update (`fox_play.c:5797`, all-range; no refill
+  in Andross: `CoopPlayers_FoxRefillOpen` leaves `LEVEL_VENOM_ANDROSS` out, `src/port/coop/game/players.c:287`);
+  `Cutscene_KillPlayer` makes it `PLAYERSTATE_NEXT` (`src/engine/fox_demo.c:1596`) and spends a life of
+  `gLifeCount[gPlayerNum]` (`:1633`), which is the pool: objects update with `gPlayerNum` 0 in co-op
+  (`fox_play.c:7072`). The level then starts again at the escape's checkpoint.
+- The trigger tests player 0 only, twice: within 9000 it plays James' line, stops the music and sets `gDrawBackdrop` 7
+  (`fox_andross.c:674-681`); within 500, with player 0 flying, it ends the level in Venom 2's id and makes player 0's
+  state level complete, csState 3 (`:683-691`). Player 1 at 450 does neither.
+- Player 1 leaves with player 0: a joined player is parked on the frame player 0 is neither flying nor in a U-turn
+  (down, next, level complete) and hidden (`src/port/coop/game/players.c:500-509`), and joins again beside player 0
+  when player 0 flies (`:520-526`). So it is parked from the frame after player 0's down, and from the frame after the
+  exit on, through the ending.
+
+Derived:
+
+- Today a second human in the escape cannot be hurt by an explosion and cannot end the level: the escape is player 0's
+  alone. Player 1 can fly through every explosion unhurt; when player 0 is caught, player 1 is taken out with it and
+  both start the escape again for one life of the pool; when player 0 reaches the exit, player 1 is taken out and
+  sees the ending through player 0 (a parked player looks through player 0, `CoopPlayers_ViewIndex`, players.h).
+- gInvincible does not save player 0 from an explosion, with or without the cheat on any other player: the write of
+  `:751` and the kill of `:760` do not read it; the cheat only zeroes the two hits' damage value. Upstream behaviour.
+- Opening Andross for decision 0007's refill would not save player 0 here either: the kill on the explosion's timer
+  (`:760`) does not go through the down test the refill sits in.
+- The pilot's route (James' waypoints) keeps both players more than 3000 from every explosion in all three mazes, so
+  the test pilots need neither the cheat nor a rule here; #275's fix holds on this base.
+
+Guesses: none.
+
+Unknown:
+
+- Three or four players: only two were run (the code reads player 0 alone, so players 2 and 3 are expected to get what
+  player 1 gets; not run).
+- A player 1 flying into an explosion without the probe's placement: not run (the same update does the test).
+- Whether the parked player 1's own screen shows anything wrong in the ending: no window in these runs.
+- The brain's catch of player 1 (#213's unknown): not looked at here.
 
 ### 2026-11-12, #273, Sector Y's robots: the spread around the aimed human, and the `iwork[19] < 0` test that is never true
 

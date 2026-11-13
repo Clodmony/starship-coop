@@ -58,6 +58,12 @@ void CoopLevelStart_Entered(CoopLevelStart* out);
 // Andross), with the hits and each player's own hits saved there.
 bool CoopLevelStart_AtCheckpoint(CoopLevelStart* out);
 
+// Test only (SF64_COOP_JOIN_CHECKPOINT, src/port/coop/test/join_driver.h, #282): `out`, made by
+// CoopLevelStart_FromGame, begins at the all-range checkpoint `checkpoint` instead of the level's start, as the game's
+// own restart there after a death does (in Andross' second part, 1 is the escape: Andross_801961AC). Every other
+// checkpoint value stays 0.
+void CoopLevelStart_SetAllRangeCheckpoint(CoopLevelStart* out, int32_t checkpoint);
+
 // Call first thing of every frame. A level start that begins at a checkpoint puts the checkpoint in place here, one
 // frame after CoopLevelStart_Enter: entering a level clears it (Play_Setup, src/engine/fox_play.c:530), and the level's
 // first setup, a few frames later, reads it. Nothing outside that one frame.
