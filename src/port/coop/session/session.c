@@ -113,6 +113,8 @@ struct CoopSession {
     bool recoverEvent; // client: a RECOVER event is owed for CoopSession_Recover
     // The co-op log (#172): when the transport's counters were last written, and what they were then.
     uint32_t nowMs;
+    // nowMs holds a time: see Session_Clock
+    bool clockSet;
     uint32_t statsMs;
     CoopNetStats lastStats[COOP_NET_MAX_PEERS];
     uint8_t buffer[COOP_NET_MAX_MESSAGE];
@@ -144,6 +146,21 @@ static void Log_Identity(const char* what, const CoopIdentity* id) {
     CoopLog_Write(COOP_LOG_SESSION, false, "%s: %s", what, line);
 }
 
+// The session's clock never runs backwards. Its owner reads the time once per tick and polls with it until no event
+// is left, and a call from inside that tick (CoopSession_Kick, CoopSession_Recover, from a message the tick handed
+// out) comes with a time read later. A wait that began at the later time and was then measured from the tick's own
+// would be over at once, as the difference of two unsigned times is huge when it should be negative (#293: a client
+// whose desync was complete on a message ended its session with NO_RECOVERY in that same millisecond). So every time
+// that comes in is held to the latest one seen, and that is what the session counts from. The comparison is by
+// difference, so it holds across the wrap of a 32-bit millisecond clock.
+static uint32_t Session_Clock(CoopSession* s, uint32_t nowMs) {
+    if (!s->clockSet || (int32_t) (nowMs - s->nowMs) > 0) {
+        s->nowMs = nowMs;
+        s->clockSet = true;
+    }
+    return s->nowMs;
+}
+
 CoopSession* CoopSession_Host(CoopTransport* transport, const CoopIdentity* identity) {
     CoopSession* s = Session_New(transport, identity, true);
 
@@ -162,6 +179,7 @@ CoopSession* CoopSession_Join(CoopTransport* transport, const CoopIdentity* iden
         s->client = CLIENT_CONNECTING;
         s->clientSince = nowMs;
         s->nowMs = nowMs;
+        s->clockSet = true;
         CoopLog_Begin(false, nowMs);
         Log_Identity("joining a host; this game", identity);
     }
@@ -176,6 +194,7 @@ CoopSession* CoopSession_Rejoin(CoopTransport* transport, const CoopIdentity* id
         s->client = CLIENT_CONNECTING;
         s->clientSince = nowMs;
         s->nowMs = nowMs;
+        s->clockSet = true;
         s->rejoin = true;
         s->id = id;
         s->rejoinCharacter = character;
@@ -1069,6 +1088,7 @@ bool CoopSession_Kick(CoopSession* s, int peer, uint32_t nowMs) {
         (s->id == 0 && Host_JoinedCount(s) < 2 && !Host_AnyAway(s))) {
         return false;
     }
+    nowMs = Session_Clock(s, nowMs);
     away = s->id != 0;
     slot = peer + 1;
     s->t->ops->disconnect(s->t, peer);
@@ -1094,6 +1114,7 @@ bool CoopSession_Recover(CoopSession* s, uint8_t reason, uint32_t nowMs) {
     if (!s->started || reason < COOP_RECOVER_LOST || reason >= COOP_RECOVER_REASONS) {
         return false;
     }
+    nowMs = Session_Clock(s, nowMs);
     if (s->isHost) {
         if (Host_JoinedCount(s) == 0 && !Host_AnyAway(s)) {
             return false;
@@ -1632,7 +1653,7 @@ static void Log_Event(CoopSession* s, const CoopSessionEvent* ev) {
 }
 
 bool CoopSession_Poll(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) {
-    s->nowMs = nowMs;
+    nowMs = Session_Clock(s, nowMs);
     CoopLog_Pump(nowMs, Log_Send, Log_Pending, s);
     Log_Net(s, nowMs);
     while (s->isHost ? Host_Poll(s, nowMs, ev) : Client_Poll(s, nowMs, ev)) {

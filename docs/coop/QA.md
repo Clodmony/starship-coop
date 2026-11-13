@@ -174,7 +174,8 @@ number of clients, transport.
    `wingman`, `exit-test`, `builds` and `coop-off`, and the unit tests and loopback tools run in a lane of their own beside
    the others. On Debug alone the lanes do not help (24m46s): the machine is the limit there. A full `menu` failed in
    2 of 2 runs of the old lanes (`game_leave`, a 40 s timer on a loaded machine) and passed in 4 of 4 of these.
-   NOTES.md, 2026-11-13, #290 (second part).
+   NOTES.md, 2026-11-13, #290 (second part). It was no timer: the games parted at level frame 0 of the restart and the
+   client's wait was measured from the wrong time (NOTES.md, 2026-11-13, #293).
 3. **Two clients on one machine.** Two Starship processes with their own config, save and log folders (never the
    owner's), connected over loopback, both fed replays. `python tools/coop/join_test.py` (WP-24, unattended, exit code
    0 only when everything passed) takes two or three games from the lobby into a level through the scripted flow in

@@ -21,8 +21,8 @@ running, then the same games hold a second session, start again and keep every p
 game_level and game_leave print the longest gap between two session ticks (menu-stall.txt). game_names types the
 players' names into the window (#258) and reads them back from both windows and from each game's own config.
 
-Prints one line per scenario and a RESULT line, keeps logs in local/test-menu/<stamp>/, exits 0 only when everything
-passed. Each game gets its own folder under local/ with its own SHIP_HOME, removed when the run passed.
+Prints one line per scenario and a RESULT line, keeps logs in local/test-menu/<stamp>/ (each game_ scenario's in a
+folder of its name, #293), exits 0 only when everything passed. Each game gets its own folder under local/ with its own SHIP_HOME, removed when the run passed.
 """
 import argparse
 import json
@@ -303,7 +303,7 @@ def scenario_game(args, exe, out):
 
 
 def scenario_game_platform(args, exe, out):
-    run = net_test.Run(args.session_program, out / "game_platform")
+    run = net_test.Run(args.session_program, out)
     games = []
 
     def start(name, env_extra=None):
@@ -696,6 +696,14 @@ GAME_SCENARIOS = {"game": scenario_game, "game_level": scenario_game_level, "gam
 SCENARIOS = {"sim": scenario_program("sim"), "udp": scenario_program("udp"), **GAME_SCENARIOS}
 
 
+def scenario_out(out, name):
+    """Where a scenario keeps its logs: one with games in a folder of its own, as several of them start a game called
+    host, a or b, and the log of a scenario that failed has to be there to read after the later ones ran (#293)."""
+    folder = out / name if name in GAME_SCENARIOS else out
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--only", help="comma separated scenario names")
@@ -763,7 +771,7 @@ def main():
         started = time.monotonic()
         exe = replay.find_exe(args.exe) if name in GAME_SCENARIOS else program
         try:
-            line = f"ok      {name}: {SCENARIOS[name](args, exe, out)}"
+            line = f"ok      {name}: {SCENARIOS[name](args, exe, scenario_out(out, name))}"
         except (Fail, join_test.Fail, net_test.Fail) as e:
             line = f"FAILED  {name}: {e}"
             failed.append(name)

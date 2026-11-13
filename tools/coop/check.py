@@ -118,6 +118,12 @@ def main():
     if slots.returncode != 0:
         failures.append("tools/coop/hash_check.py slots --rule-test failed:\n  "
                         + "\n  ".join((slots.stdout + slots.stderr).strip().splitlines()))
+    # 8d. menu_test.py: each scenario with games keeps their logs in a folder of its own (#293; no build, no game).
+    menus = subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "coop" / "menu_test_test.py")],
+                           cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
+    if menus.returncode != 0:
+        failures.append("tools/coop/menu_test_test.py failed:\n  "
+                        + "\n  ".join((menus.stdout + menus.stderr).strip().splitlines()))
 
     # 9. Build folders: libultraship's archives belong to one build folder, or a second config shares them.
     cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
