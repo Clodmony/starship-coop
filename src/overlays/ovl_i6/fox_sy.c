@@ -7,7 +7,8 @@
 #include "global.h"
 #include "assets/ast_sector_y.h"
 #include "fox_record.h"
-#include "port/coop/game/aim.h" // COOP: the Shoguns go after the nearest human (#220)
+#include "port/coop/game/aim.h"   // COOP: the Shoguns go after the nearest human (#220)
+#include "port/coop/game/score.h" // COOP: a Shogun's bonus for any human's kill (#304)
 
 #define SHOGUN_SHIP (0)
 
@@ -565,9 +566,11 @@ void SectorY_80199438(SyShogun* this) {
             if (this->timer_058 < 67) {
                 this->fwork[0] = 1.0f;
             }
-            if ((this->timer_058 == 60) && (this->swork[19] == 0)) {
+            // COOP: was swork[19] == 0, player 0's shot; any human's counts (decision 0008 4b, #304)
+            if ((this->timer_058 == 60) && CoopScore_HumanShot(this->swork[19])) {
                 BonusText_Display(this->obj.pos.x, this->obj.pos.y, this->obj.pos.z, 3);
                 gHitCount += 4;
+                CoopScore_CreditShot(this->swork[19], 4); // COOP: the shooter's own count, display (#252, #304)
             }
             if (this->timer_058 == 50) {
                 AUDIO_PLAY_SFX(NA_SE_EN_MS_EXPLOSION_S, this->sfxSource, 4);
@@ -603,7 +606,7 @@ void SectorY_80199438(SyShogun* this) {
         }
 
         if ((gCsFrameCount == 120) && (this->swork[36] == 0) && (this->index == 0)) {
-            if (this->swork[19] == 0) {
+            if (CoopScore_HumanShot(this->swork[19])) { // COOP: was swork[19] == 0 (decision 0008 4b, #304)
                 Boss_AwardBonus(this);
             }
 

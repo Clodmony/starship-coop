@@ -24,19 +24,19 @@ pattern without reading the code, so treat it as a guess.
 
 ## Summary
 
-1702 sites in 419 functions in 46 files.
+1693 sites in 418 functions in 46 files.
 A function whose sites have more than one verdict counts once per verdict in the functions column.
 
 | verdict | sites | functions | `gPlayer[0]` | `gPlayer->` | `gPlayer arg` | `gMainController` | `gCamCount` | `shooter` |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| sim | 713 | 163 | 709 | 1 | 1 | 0 | 0 | 2 |
+| sim | 700 | 161 | 696 | 1 | 1 | 0 | 0 | 2 |
 | view | 217 | 84 | 151 | 0 | 0 | 43 | 3 | 20 |
 | input | 13 | 9 | 0 | 0 | 0 | 8 | 0 | 5 |
 | flow | 510 | 104 | 468 | 0 | 3 | 3 | 0 | 36 |
 | setup | 53 | 34 | 1 | 0 | 1 | 0 | 51 | 0 |
-| ok | 196 | 85 | 14 | 2 | 16 | 87 | 8 | 69 |
+| ok | 200 | 86 | 18 | 2 | 16 | 87 | 8 | 69 |
 
-Basis per site: read 405, site 852, name 445.
+Basis per site: read 405, site 852, name 436.
 
 ## Sites
 
@@ -404,11 +404,11 @@ Basis per site: read 405, site 852, name 445.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Venom1_Ve1TempleEntrance_Update` | 314:P0 | sim | site | Venom 1 enemies and boss move relative to player 0 |
-| `Venom1_Ve1Generator_Update` | 696:P0 | sim | site | Venom 1 enemies and boss move relative to player 0 |
-| `Venom1_Ve1Golemech_Update` | 1762:P0, 1766:P0, 1785:P0, 1786:P0, 1828:P0, 1842:P0, 1865:P0, 2150:P0, 2151:P0, 2193:P0, 2400:P0, 2432:P0, 2463:P0 | sim | site | Venom 1 enemies and boss move relative to player 0 |
-| `Venom1_80198414` | 2525:P0, 2527:P0, 2528:P0, 2532:P0 | flow | read | saves player 0 shields and wings before the Venom 1 to Venom 2 switch |
-| `Venom1_Ve1Golemech_Dying` | 2536:P0, 2537:P0 | sim | site | Venom 1 enemies and boss move relative to player 0 |
+| `Venom1_Ve1TempleEntrance_Update` | 328:P0 | sim | site | Venom 1 enemies and boss move relative to player 0 |
+| `Venom1_Ve1Generator_Update` | 710:P0 | sim | site | Venom 1 enemies and boss move relative to player 0 |
+| `Venom1_Ve1Golemech_Update` | 1776:P0, 1780:P0, 1799:P0, 1800:P0, 1842:P0, 1856:P0, 1879:P0, 2164:P0, 2165:P0, 2207:P0, 2414:P0, 2446:P0, 2477:P0 | sim | site | Venom 1 enemies and boss move relative to player 0 |
+| `Venom1_80198414` | 2539:P0, 2541:P0, 2542:P0, 2546:P0 | flow | read | saves player 0 shields and wings before the Venom 1 to Venom 2 switch |
+| `Venom1_Ve1Golemech_Dying` | 2550:P0, 2551:P0 | sim | site | Venom 1 enemies and boss move relative to player 0 |
 
 ### `src/overlays/ovl_i2/fox_me.c`
 
@@ -462,15 +462,15 @@ Basis per site: read 405, site 852, name 445.
 | `Aquas_AqPearl_Update` | 2526:SH | ok | site | DMG_SRC_2 before Actor_Despawn: no player gets the kill |
 | `Aquas_AqBacoon_Update` | 2696:P0, 3016:P0, 3018:P0, 3021:P0, 3022:P0, 3023:P0, 3024:P0, 3138:P0, 3139:P0, 3140:P0, 3141:P0 | flow | read | its head and eyes turn to its kept human, picked again at a new state (#220, aim.h); left: the start by z, player 0's boost lock and camera pull in its roar, level complete |
 | `Aquas_AqSculpin_Update` | 3925:P0, 3926:P0, 3946:P0, 3947:P0, 3964:P0, 3966:P0, 3973:P0, 3974:P0, 3975:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqAnglerFish_Update` | 4306:P0, 4364:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqSpindlyFish_Update` | 4440:P0, 4441:P0, 4442:P0, 4452:P0, 4453:P0, 4454:P0, 4461:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqGaroa_Update` | 4714:P0, 4716:P0, 4736:P0, 4821:P0, 4822:P0, 4823:P0, 4855:P0, 4856:P0, 4857:P0, 4894:P0, 4895:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqSquid_Update` | 5194:P0, 5195:P0, 5196:P0, 5197:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqSeaweed_Update` | 5395:P0, 5396:P0, 5397:P0, 5409:P0, 5410:P0, 5411:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqCoral_Update` | 5572:P0, 5573:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_AqFishGroup_Update` | 6456:P0, 6471:P0, 6472:P0, 6473:P0, 6479:P0, 6480:P0, 6481:P0, 6497:P0, 6498:P0, 6499:P0, 6530:P0, 6531:P0, 6532:P0, 6538:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Aquas_CsAqFishGroup_Update` | 6636:P0 | flow | name | cutscene fish |
-| `Aquas_AqOyster_Update` | 6702:P0, 6723:P0, 6725:P0, 6726:P0, 6727:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqAnglerFish_Update` | 4309:P0, 4367:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqSpindlyFish_Update` | 4443:P0, 4444:P0, 4445:P0, 4455:P0, 4456:P0, 4457:P0, 4464:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqGaroa_Update` | 4717:P0, 4719:P0, 4739:P0, 4824:P0, 4825:P0, 4826:P0, 4858:P0, 4859:P0, 4860:P0, 4897:P0, 4898:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqSquid_Update` | 5197:P0, 5198:P0, 5199:P0, 5200:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqSeaweed_Update` | 5398:P0, 5399:P0, 5400:P0, 5412:P0, 5413:P0, 5414:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqCoral_Update` | 5575:P0, 5576:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_AqFishGroup_Update` | 6459:P0, 6474:P0, 6475:P0, 6476:P0, 6482:P0, 6483:P0, 6484:P0, 6500:P0, 6501:P0, 6502:P0, 6533:P0, 6534:P0, 6535:P0, 6541:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Aquas_CsAqFishGroup_Update` | 6639:P0 | flow | name | cutscene fish |
+| `Aquas_AqOyster_Update` | 6705:P0, 6726:P0, 6728:P0, 6729:P0, 6730:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 
 ### `src/overlays/ovl_i3/fox_so.c`
 
@@ -576,45 +576,44 @@ Basis per site: read 405, site 852, name 445.
 | `Macbeth_8019A87C` | 716:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 | `Macbeth_MaLocomotive_Update` | 960:P0, 1055:P0, 1056:P0, 1057:P0, 1061:P0, 1062:P0, 1102:P0 | sim | site | train; sets player 0 to LEVEL_COMPLETE |
 | `Macbeth_8019D048` | 1171:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_MaTrainCar7_Update` | 1672:P0, 1673:P0, 1674:P0, 1677:P0 | sim | read | the blast of car 7 tests player 0, CoopHits_MacbethCarBlast does the other tanks (#280); left: the screen goes red when player 0 is in it (view) |
+| `Macbeth_MaTrainCar7_Update` | 1672:P0, 1673:P0, 1674:P0, 1677:P0 | ok | read | the blast of car 7 tests player 0, CoopHits_MacbethCarBlast does the other tanks (#280); the fill it writes stays one fade for the session, each client draws it red when its own tank is in the blast (CoopView_FillColor, #303) |
 | `Macbeth_MaTrainCar7_Update` | 1684:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Macbeth_8019F164` | 1734:P0, 1735:P0, 1736:P0, 1810:P0, 1811:P0, 1812:P0, 1813:P0, 1814:P0, 1815:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_MaSwitchTrack_Update` | 2239:P0, 2245:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_Train_Draw` | 2349:P0, 2350:P0, 2351:P0, 2355:P0, 2356:P0, 2368:P0, 2518:P0, 2534:P0, 2551:P0 | view | name | drawing by player 0 |
-| `Macbeth_TrainTrack_Draw` | 2629:P0, 2630:P0, 2638:P0, 2639:P0 | view | name | drawing by player 0 |
-| `Macbeth_IndicatorSign_Draw` | 2746:P0 | view | name | drawing by player 0 |
-| `Macbeth_MaTrainStopBlock_Update` | 2812:MC, 2813:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Macbeth_MaRailroadSwitch_Update` | 3132:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_MaBoulder_Update` | 3248:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_MaRailwaySignal_Update` | 3352:P0, 3373:P0, 3415:P0, 3416:P0, 3420:P0, 3421:P0 | sim | site | sets player 0 to LEVEL_COMPLETE |
-| `Macbeth_Effect378_Update` | 3552:P0, 3566:P0, 3567:P0, 3568:P0, 3578:P0, 3579:P0, 3580:P0, 3582:P0 | sim | read | a turret's shot: tests, is deflected by and knocks back player 0, CoopEffects_MacbethShotHit does the other tanks (#280); left: gone 2000 behind player 0 (the path) |
-| `Macbeth_Effect380_Update` | 3614:P0, 3626:P0, 3627:P0, 3628:P0, 3630:P0, 3632:P0, 3634:P0, 3636:P0 | sim | read | state-16 beam: tests and knocks back player 0, CoopEffects_MacbethBeamHit does the other tanks (#272); left: gone 2000 behind player 0 (the path) |
-| `Macbeth_Effect380_Update` | 3629:PA | ok | read | Player_ApplyDamage for player 0; CoopEffects_MacbethBeamHit right after it does the other tanks (#272) |
-| `Macbeth_MaHorizontalLockBar_Update` | 3668:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_MaVerticalLockBar_Update` | 3694:P0, 3697:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_MaBarrier_Update` | 3722:P0, 3737:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_MaProximityLight_Draw` | 3787:P0 | view | name | drawing by player 0 |
-| `Macbeth_MaFallingBoulder_Update` | 3806:P0, 3812:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_801A6984` | 3863:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_801A6C78` | 3944:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_801A6FB4` | 4002:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_801A74C4` | 4075:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_Actor207_Update` | 4356:P0, 4436:P0, 4438:P0, 4440:P0, 4441:P0, 4463:P0, 4500:P0, 4513:P0, 4858:P0, 4922:P0, 4944:P0, 4947:P0, 5042:P0, 5043:P0, 5046:P0, 5059:P0, 5078:P0, 5085:P0, 5088:P0, 5089:P0, 5139:P0, 5169:P0, 5219:P0, 5273:P0 | flow | read | the train's end goes to, faces and swoops on its kept human, picked again at a new state (#220, aim.h); left: the ram at the end of the track (states 18, 19) and its kill of player 0, which ends the try (no refill then, CoopPlayers_RefillFox, the owner's choice of 2026-11-12), its z on the path, damage only while player 0 is 200 behind, the attack start on player 0's state, level complete |
-| `Macbeth_Actor207_Update` | 5122:MC, 5123:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Macbeth_Actor207_Draw` | 5469:P0, 5470:P0, 5471:P0, 5475:P0, 5476:P0 | view | name | drawing by player 0 |
-| `Macbeth_EffectClouds_Setup` | 5695:P0, 5696:P0, 5697:P0 | view | name | clouds around player 0 |
-| `Macbeth_801AD144` | 5799:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_MaBombDrop_Update` | 5857:P0, 5907:P0, 5908:P0, 5909:P0, 5910:P0, 5911:P0 | sim | read | the fire tests player 0, CoopHits_MacbethBombFire does the other tanks (#272); left: gone 500 behind player 0 (the path) |
-| `Macbeth_MaBombDrop_Update` | 5890:MC, 5891:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Macbeth_MaSpear_Update` | 5984:P0, 6010:P0, 6013:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_MaSpear_Update` | 6026:MC, 6027:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Macbeth_MaShockBox_Update` | 6266:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_801AF27C` | 6374:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_801AF44C` | 6416:P0, 6417:P0, 6418:P0, 6420:P0, 6421:P0, 6422:P0 | flow | site | cutscene actor placed at player 0 |
-| `Macbeth_801AF628` | 6458:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_801B28BC` | 7288:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Macbeth_LevelComplete1_TeamSetup` | 7491:P0 | flow | name | level complete team |
-| `Macbeth_801B3718` | 7534:P0, 7535:P0, 7536:P0, 7538:P0, 7539:P0, 7540:P0 | flow | site | cutscene actor placed at player 0 |
+| `Macbeth_MaSwitchTrack_Update` | 2240:P0, 2246:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_Train_Draw` | 2350:P0, 2351:P0, 2352:P0, 2356:P0, 2357:P0, 2369:P0, 2519:P0, 2535:P0, 2552:P0 | view | name | drawing by player 0 |
+| `Macbeth_TrainTrack_Draw` | 2630:P0, 2631:P0, 2639:P0, 2640:P0 | view | name | drawing by player 0 |
+| `Macbeth_IndicatorSign_Draw` | 2747:P0 | view | name | drawing by player 0 |
+| `Macbeth_MaTrainStopBlock_Update` | 2813:MC, 2814:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Macbeth_MaRailroadSwitch_Update` | 3133:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_MaBoulder_Update` | 3249:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_MaRailwaySignal_Update` | 3353:P0, 3374:P0, 3416:P0, 3417:P0, 3421:P0, 3422:P0 | sim | site | sets player 0 to LEVEL_COMPLETE |
+| `Macbeth_Effect378_Update` | 3553:P0, 3567:P0, 3568:P0, 3569:P0, 3579:P0, 3580:P0, 3581:P0, 3583:P0 | sim | read | a turret's shot: tests, is deflected by and knocks back player 0, CoopEffects_MacbethShotHit does the other tanks (#280); left: gone 2000 behind player 0 (the path) |
+| `Macbeth_Effect380_Update` | 3615:P0, 3627:P0, 3628:P0, 3629:P0, 3631:P0, 3633:P0, 3635:P0, 3637:P0 | sim | read | state-16 beam: tests and knocks back player 0, CoopEffects_MacbethBeamHit does the other tanks (#272); left: gone 2000 behind player 0 (the path) |
+| `Macbeth_Effect380_Update` | 3630:PA | ok | read | Player_ApplyDamage for player 0; CoopEffects_MacbethBeamHit right after it does the other tanks (#272) |
+| `Macbeth_MaHorizontalLockBar_Update` | 3669:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_MaVerticalLockBar_Update` | 3695:P0, 3698:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_MaBarrier_Update` | 3723:P0, 3738:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_MaProximityLight_Draw` | 3788:P0 | view | name | drawing by player 0 |
+| `Macbeth_MaFallingBoulder_Update` | 3807:P0, 3813:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_801A6984` | 3864:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_801A6C78` | 3945:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_801A6FB4` | 4003:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_801A74C4` | 4076:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_Actor207_Update` | 4357:P0, 4437:P0, 4439:P0, 4441:P0, 4442:P0, 4464:P0, 4501:P0, 4514:P0, 4859:P0, 4923:P0, 4945:P0, 4948:P0, 5043:P0, 5044:P0, 5047:P0, 5060:P0, 5079:P0, 5086:P0, 5089:P0, 5090:P0, 5140:P0, 5170:P0, 5220:P0, 5274:P0 | flow | read | the train's end goes to, faces and swoops on its kept human, picked again at a new state (#220, aim.h); left: the ram at the end of the track (states 18, 19) and its kill of player 0, which ends the try (no refill then, CoopPlayers_RefillFox, the owner's choice of 2026-11-12), its z on the path, damage only while player 0 is 200 behind, the attack start on player 0's state, level complete |
+| `Macbeth_Actor207_Update` | 5123:MC, 5124:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Macbeth_Actor207_Draw` | 5470:P0, 5471:P0, 5472:P0, 5476:P0, 5477:P0 | view | name | drawing by player 0 |
+| `Macbeth_EffectClouds_Setup` | 5696:P0, 5697:P0, 5698:P0 | view | name | clouds around player 0 |
+| `Macbeth_801AD144` | 5800:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_MaBombDrop_Update` | 5858:P0, 5908:P0, 5909:P0, 5910:P0, 5911:P0, 5912:P0 | sim | read | the fire tests player 0, CoopHits_MacbethBombFire does the other tanks (#272); left: gone 500 behind player 0 (the path) |
+| `Macbeth_MaBombDrop_Update` | 5891:MC, 5892:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Macbeth_MaSpear_Update` | 5985:P0, 6011:P0, 6014:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_MaSpear_Update` | 6027:MC, 6028:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Macbeth_MaShockBox_Update` | 6267:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_801AF27C` | 6375:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_801AF44C` | 6417:P0, 6418:P0, 6419:P0, 6421:P0, 6422:P0, 6423:P0 | flow | site | cutscene actor placed at player 0 |
+| `Macbeth_801AF628` | 6459:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_801B28BC` | 7289:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Macbeth_LevelComplete1_TeamSetup` | 7492:P0 | flow | name | level complete team |
+| `Macbeth_801B3718` | 7535:P0, 7536:P0, 7537:P0, 7539:P0, 7540:P0, 7541:P0 | flow | site | cutscene actor placed at player 0 |
 
 ### `src/overlays/ovl_i5/fox_ti.c`
 
@@ -656,40 +655,40 @@ Basis per site: read 405, site 852, name 445.
 | `Andross_80189214` | 612:P0, 622:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 | `Andross_AndBossTimer_Update` | 643:P0, 644:P0 | flow | name | boss timer on player 0 |
 | `Andross_AndJamesTrigger_Update` | 672:P0, 674:P0, 675:P0, 676:P0, 683:P0, 684:P0 | flow | site | James appears when player 0 is near |
-| `Andross_AndExplosion_Update` | 726:P0, 727:P0, 748:P0, 749:P0, 750:P0, 751:P0, 753:P0, 754:P0, 756:P0, 760:P0 | flow | read | escape explosions follow and kill player 0: the escape is a cutscene (WP-19, #17), not changed in #136 |
-| `Andross_AndBrain_Update` | 859:P0, 864:P0, 865:P0, 867:P0, 872:P0, 1001:P0, 1026:P0, 1027:P0, 1028:P0, 1030:P0, 1031:P0, 1032:P0, 1034:P0, 1041:P0, 1075:P0, 1097:P0, 1098:P0, 1099:P0, 1100:P0, 1101:P0, 1102:P0, 1103:P0, 1104:P0, 1105:P0, 1106:P0, 1107:P0, 1108:P0, 1109:P0, 1114:P0, 1145:P0, 1146:P0, 1151:P0, 1153:P0, 1154:P0, 1181:P0, 1182:P0, 1202:P0, 1204:P0 | flow | read | chases its kept target, catches the nearest flying human in reach, one at a time (#213, owner's choice A); left: player 0 to START_360, its camera as the brain dies, the escape start, faces player 0's camera (camYaw is draw state) |
-| `Andross_AndBrain_Update` | 905:MC, 1068:MC, 1141:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Andross_AndBrain_Update` | 1115:PA | flow | site | Camera_Update360 for player 0 as the brain dies: level complete is one player's (WP-16) |
-| `Andross_AndBrain_Draw` | 1350:P0 | view | name | drawing by player 0 |
-| `Andross_8018C390` | 1457:MC | input | site | any button on gMainController shortens player 0's spit-out timer, a co-op player's own pad its own (#213); only player 0 writes gPathProgress in the mouth |
-| `Andross_Effect396_Update` | 1629:P0, 1641:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Andross_8018D0D8` | 1710:P0, 1711:P0, 1712:P0, 1713:P0 | ok | read | tests player 0, CoopHits_AndrossReach does the others (#136) |
-| `Andross_8018D2B0` | 1766:P0, 1767:P0 | sim | site | sets player 0 state |
-| `Andross_AndAndross_Update` | 1952:P0, 2675:P0, 2676:P0, 2677:P0, 2962:P0, 2982:P0 | flow | read | eyes, punches and slaps follow its kept target; the inhale pulls every flying human and swallows the first in the mouth, the chew follows that player (#213, owner's choice A); left: z keeps to player 0's path otherwise, camera roll, debris around player 0's camera |
-| `Andross_AndAndross_Update` | 2671:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `Andross_AndDoor_Update` | 3699:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `Andross_801939A0` | 3828:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Andross_AndExplosion_Update` | 726:P0, 727:P0, 748:P0, 749:P0, 750:P0, 751:P0, 753:P0, 754:P0, 756:P0, 761:P0 | flow | read | escape explosions follow and kill player 0: the escape is a cutscene (WP-19, #17), not changed in #136 |
+| `Andross_AndBrain_Update` | 860:P0, 865:P0, 866:P0, 868:P0, 873:P0, 1002:P0, 1027:P0, 1028:P0, 1029:P0, 1031:P0, 1032:P0, 1033:P0, 1035:P0, 1042:P0, 1076:P0, 1098:P0, 1099:P0, 1100:P0, 1101:P0, 1102:P0, 1103:P0, 1104:P0, 1105:P0, 1106:P0, 1107:P0, 1108:P0, 1109:P0, 1110:P0, 1115:P0, 1146:P0, 1147:P0, 1152:P0, 1154:P0, 1155:P0, 1182:P0, 1183:P0, 1203:P0, 1205:P0 | flow | read | chases its kept target, catches the nearest flying human in reach, one at a time (#213, owner's choice A); left: player 0 to START_360, its camera as the brain dies, the escape start, faces player 0's camera (camYaw is draw state) |
+| `Andross_AndBrain_Update` | 906:MC, 1069:MC, 1142:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Andross_AndBrain_Update` | 1116:PA | flow | site | Camera_Update360 for player 0 as the brain dies: level complete is one player's (WP-16) |
+| `Andross_AndBrain_Draw` | 1351:P0 | view | name | drawing by player 0 |
+| `Andross_8018C390` | 1458:MC | input | site | any button on gMainController shortens player 0's spit-out timer, a co-op player's own pad its own (#213); only player 0 writes gPathProgress in the mouth |
+| `Andross_Effect396_Update` | 1630:P0, 1642:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Andross_8018D0D8` | 1711:P0, 1712:P0, 1713:P0, 1714:P0 | ok | read | tests player 0, CoopHits_AndrossReach does the others (#136) |
+| `Andross_8018D2B0` | 1767:P0, 1768:P0 | sim | site | sets player 0 state |
+| `Andross_AndAndross_Update` | 1953:P0, 2676:P0, 2677:P0, 2678:P0, 2963:P0, 2983:P0 | flow | read | eyes, punches and slaps follow its kept target; the inhale pulls every flying human and swallows the first in the mouth, the chew follows that player (#213, owner's choice A); left: z keeps to player 0's path otherwise, camera roll, debris around player 0's camera |
+| `Andross_AndAndross_Update` | 2672:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `Andross_AndDoor_Update` | 3700:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `Andross_801939A0` | 3829:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
 
 ### `src/overlays/ovl_i6/fox_sy.c`
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `SectorY_80197B30` | 41:P0, 42:P0, 43:P0, 45:P0, 47:P0, 48:P0, 49:P0, 51:P0, 52:P0, 53:P0 | flow | site | actor copies player 0 position, speed and rotation (cutscene double) |
-| `SectorY_SyShogun_Init` | 88:P0, 119:P0, 120:P0, 121:P0 | sim | site | boss; sets player 0 to START_360 |
-| `SectorY_80198F5C` | 449:P0, 451:P0, 452:P0, 453:P0, 454:P0, 455:P0, 456:P0, 458:P0, 459:P0, 461:P0, 487:P0, 489:P0, 491:P0, 492:P0 | sim | site | boss; sets player 0 state and camera |
-| `SectorY_80199438` | 574:MC, 575:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `SectorY_80199438` | 592:P0, 593:P0, 594:P0, 595:P0, 596:P0, 597:P0, 643:P0, 644:P0, 645:P0 | sim | site | boss cutscene; moves player 0 camera |
-| `SectorY_8019AEEC` | 1027:P0, 1028:P0, 1029:P0, 1030:P0, 1031:P0, 1032:P0, 1033:P0, 1048:P0, 1050:P0, 1062:P0, 1064:P0, 1065:P0, 1110:P0, 1111:P0, 1112:P0 | flow | site | cutscene moves player 0 camera |
-| `SectorY_8019BC14` | 1283:P0, 1284:P0, 1285:P0, 1287:P0, 1288:P0, 1289:P0, 1296:P0, 1297:P0, 1298:P0 | ok | read | shoots at its target's lead by moving player 0 there for Effect_EnemyLaser, the other humans with it (CoopAim_PointShot, #220) |
-| `SectorY_SyShogun_Update` | 1432:P0, 1749:P0, 1751:P0 | flow | read | a new move picks the nearest human again; its target, dash and dodges follow its kept human (#220, aim.h); left: the fight waits for player 0's cut to all-range, the HUD arrow flags on player 0 |
-| `SectorY_SyShogun_Draw` | 1979:P0, 1980:P0, 1981:P0 | view | name | drawing by player 0 |
-| `SectorY_8019EB80` | 2119:P0, 2120:P0, 2121:P0, 2125:P0, 2126:P0, 2127:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `SectorY_LevelComplete` | 2177:P0 | flow | name | level complete |
-| `SectorY_8019FF00` | 2532:P0, 2533:P0, 2535:P0, 2556:P0, 2557:P0, 2572:P0, 2573:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `SectorY_801A06A4` | 2669:P0, 2670:P0, 2671:P0, 2673:P0, 2674:P0, 2675:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
-| `SectorY_801A0AC0` | 2992:MC, 3392:MC, 3393:MC | view | site | rumble on gMainController (controller index used as player index) |
-| `SectorY_801A0AC0` | 3259:P0, 3263:P0, 3268:P0, 3415:P0 | flow | site | cutscene moves player 0 to the centre |
-| `SectorY_SyRobot_Update` | 3699:P0, 3701:P0, 3702:P0, 3704:P0, 3705:P0, 3706:P0, 3707:P0, 3711:P0, 3712:P0, 3713:P0 | sim | read | spreads its shot around the human Effect_EnemyLaser aims at, the nearest, by moving player 0 and the other humans to the spread point (CoopAim_PointShot, #273); it turns its head and gun to that human (#281) |
+| `SectorY_80197B30` | 42:P0, 43:P0, 44:P0, 46:P0, 48:P0, 49:P0, 50:P0, 52:P0, 53:P0, 54:P0 | flow | site | actor copies player 0 position, speed and rotation (cutscene double) |
+| `SectorY_SyShogun_Init` | 89:P0, 120:P0, 121:P0, 122:P0 | sim | site | boss; sets player 0 to START_360 |
+| `SectorY_80198F5C` | 450:P0, 452:P0, 453:P0, 454:P0, 455:P0, 456:P0, 457:P0, 459:P0, 460:P0, 462:P0, 488:P0, 490:P0, 492:P0, 493:P0 | sim | site | boss; sets player 0 state and camera |
+| `SectorY_80199438` | 577:MC, 578:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `SectorY_80199438` | 595:P0, 596:P0, 597:P0, 598:P0, 599:P0, 600:P0, 646:P0, 647:P0, 648:P0 | sim | site | boss cutscene; moves player 0 camera |
+| `SectorY_8019AEEC` | 1030:P0, 1031:P0, 1032:P0, 1033:P0, 1034:P0, 1035:P0, 1036:P0, 1051:P0, 1053:P0, 1065:P0, 1067:P0, 1068:P0, 1113:P0, 1114:P0, 1115:P0 | flow | site | cutscene moves player 0 camera |
+| `SectorY_8019BC14` | 1286:P0, 1287:P0, 1288:P0, 1290:P0, 1291:P0, 1292:P0, 1299:P0, 1300:P0, 1301:P0 | ok | read | shoots at its target's lead by moving player 0 there for Effect_EnemyLaser, the other humans with it (CoopAim_PointShot, #220) |
+| `SectorY_SyShogun_Update` | 1435:P0, 1752:P0, 1754:P0 | flow | read | a new move picks the nearest human again; its target, dash and dodges follow its kept human (#220, aim.h); left: the fight waits for player 0's cut to all-range, the HUD arrow flags on player 0 |
+| `SectorY_SyShogun_Draw` | 1982:P0, 1983:P0, 1984:P0 | view | name | drawing by player 0 |
+| `SectorY_8019EB80` | 2122:P0, 2123:P0, 2124:P0, 2128:P0, 2129:P0, 2130:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `SectorY_LevelComplete` | 2180:P0 | flow | name | level complete |
+| `SectorY_8019FF00` | 2535:P0, 2536:P0, 2538:P0, 2559:P0, 2560:P0, 2575:P0, 2576:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `SectorY_801A06A4` | 2672:P0, 2673:P0, 2674:P0, 2676:P0, 2677:P0, 2678:P0 | sim | name | level enemies, bosses and hazards move to, aim at, hit or check distance to player 0 |
+| `SectorY_801A0AC0` | 2995:MC, 3395:MC, 3396:MC | view | site | rumble on gMainController (controller index used as player index) |
+| `SectorY_801A0AC0` | 3262:P0, 3266:P0, 3271:P0, 3418:P0 | flow | site | cutscene moves player 0 to the centre |
+| `SectorY_SyRobot_Update` | 3702:P0, 3704:P0, 3705:P0, 3707:P0, 3708:P0, 3709:P0, 3710:P0, 3714:P0, 3715:P0, 3716:P0 | sim | read | spreads its shot around the human Effect_EnemyLaser aims at, the nearest, by moving player 0 and the other humans to the spread point (CoopAim_PointShot, #273); it turns its head and gun to that human (#281) |
 
 ### `src/overlays/ovl_i6/fox_turret.c`
 

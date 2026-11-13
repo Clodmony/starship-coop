@@ -246,8 +246,8 @@ static void CoopMaBombProbe_TakeOut(const MaBombCase* c) {
         }
     }
     if (c->kind == MABOMB_KIND_BLAST) {
-        // The car's later states fade its flash and shake; the probe's car does not reach them.
-        gFillScreenAlpha = 0;
+        // The car's later states count its shake down; the probe's car does not reach them. Its flash fades by itself
+        // (Play_UpdateFillScreen, 16 a frame), as in play, and the view trace shows it (#303).
         gCameraShake = 0;
     }
     if (c->roll) {

@@ -281,7 +281,7 @@ src/overlays/ovl_i6/fox_andross.c	Andross_8018D2B0	sim	site	sets player 0 state
 src/overlays/ovl_i4/fox_bo.c	Bolse_8018E05C	sim	read	base's beam: tests player 0, CoopHits_BolseBeam does the others (#136)
 src/overlays/ovl_i6/fox_andross.c	Andross_8018D0D8	ok	read	tests player 0, CoopHits_AndrossReach does the others (#136)
 src/overlays/ovl_i6/fox_andross.c	Andross_AndExplosion_Update	flow	read	escape explosions follow and kill player 0: the escape is a cutscene (WP-19, #17), not changed in #136
-src/overlays/ovl_i5/fox_ma.c	Macbeth_MaTrainCar7_Update	sim	read	the blast of car 7 tests player 0, CoopHits_MacbethCarBlast does the other tanks (#280); left: the screen goes red when player 0 is in it (view)
+src/overlays/ovl_i5/fox_ma.c	Macbeth_MaTrainCar7_Update	ok	read	the blast of car 7 tests player 0, CoopHits_MacbethCarBlast does the other tanks (#280); the fill it writes stays one fade for the session, each client draws it red when its own tank is in the blast (CoopView_FillColor, #303)
 src/overlays/ovl_i5/fox_ma.c	Macbeth_Effect378_Update	sim	read	a turret's shot: tests, is deflected by and knocks back player 0, CoopEffects_MacbethShotHit does the other tanks (#280); left: gone 2000 behind player 0 (the path)
 src/overlays/ovl_i5/fox_ma.c	Macbeth_Effect380_Update	sim	read	state-16 beam: tests and knocks back player 0, CoopEffects_MacbethBeamHit does the other tanks (#272); left: gone 2000 behind player 0 (the path)
 src/overlays/ovl_i5/fox_ma.c	Macbeth_MaBombDrop_Update	sim	read	the fire tests player 0, CoopHits_MacbethBombFire does the other tanks (#272); left: gone 500 behind player 0 (the path)

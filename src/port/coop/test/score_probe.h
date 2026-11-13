@@ -1,9 +1,9 @@
 #pragma once
 
-// State pokes for the tests of #210: who scores a kill, where a life goes, the wing-broken level event and the
-// Saucerer, for tools/coop/lockstep_test.py (`kill`, `lives`, `wing`, `saucerer`). Each poke is made on the same frame
-// on every game of a session, from simulated state only, so the games stay one game; the test then compares their
-// hashes.
+// State pokes for the tests of #210 and #304: who scores a kill, where a life goes, the wing-broken level event, the
+// Saucerer and Sector Y's Shoguns, for tools/coop/lockstep_test.py (`kill`, `lives`, `wing`, `saucerer`). Each poke is
+// made on the same frame on every game of a session, from simulated state only, so the games stay one game; the test
+// then compares their hashes.
 //
 // Off unless both are set when the game starts:
 //   SF64_COOP_SCORE_PROBE=<kind>:<frame>[:<player>]   on lockstep frame <frame> (a game outside lockstep counts
@@ -34,6 +34,14 @@
 //   results   on <frame> the level clear status screen is turned on, as a level's cutscene does (#252), and 30 frames
 //             after the results hold is over turned off again. `results frame=N on=1|0` for both, and
 //             `results frame=N holding=H ready=a,b` whenever the hold or who has pressed A changes
+//   shogun    Sector Y (#304): from <frame> on, while player 0 and player 1 fly, each Shogun in turn gets health 1 and
+//             a single laser inside its first hitbox: the first small one (gBosses[1]) from <player>, the second
+//             (gBosses[2]) from Falco (NPC_SHOT_ID + AI360_FALCO), the last one (gBosses[0]) from <player>. The
+//             game's own code does the rest: PlayerShot_CollisionCheck writes the shot's source to swork[19], and
+//             the Shogun pays its bonus by that. `shot ...` for each laser, `down frame=N boss=B source=S hits=H
+//             own=a,b` when the Shogun's health is 0, then for 150 frames `bonus frame=N boss=B source=S
+//             hits=<before>,<after> own=a,b` on every change of gHitCount or of the two players' own hits
+//             (gPlayerScores), and `watched frame=N boss=B hits=H` at the end
 // With neither set the game runs unchanged.
 
 #ifdef __cplusplus

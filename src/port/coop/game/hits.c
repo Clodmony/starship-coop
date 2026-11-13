@@ -2,6 +2,7 @@
 
 #include "global.h"
 #include "port/coop/game/players.h"
+#include "port/coop/game/view.h"
 
 // The player at `i` (1 and up) if a hit can reach it, else NULL.
 static Player* CoopHits_Target(s32 i) {
@@ -120,19 +121,25 @@ void CoopHits_MacbethBombFire(Actor* bomb) {
 }
 
 void CoopHits_MacbethCarBlast(Actor* car) {
+    s32 inBlast = 0;
     s32 i;
 
     if (!CoopPlayers_IsCoop()) {
         return;
     }
-    for (i = 1; i < CoopPlayers_Count(); i++) {
-        Player* p = CoopHits_Target(i);
+    // From player 0 on, for the red of the screen (#303); the damage of player 0 is upstream's, with this same box.
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        Player* p = (i == 0) ? &gPlayer[0] : CoopHits_Target(i);
 
         if ((p != NULL) && (fabsf(p->trueZpos - car->obj.pos.z) < 200.0f) &&
             (fabsf(p->pos.y - car->obj.pos.y) < 300.0f) && (fabsf(p->pos.x - car->obj.pos.x) < 800.0f)) {
-            Player_ApplyDamage(p, 0, 60);
+            inBlast |= 1 << i;
+            if (i != 0) {
+                Player_ApplyDamage(p, 0, 60);
+            }
         }
     }
+    CoopView_MacbethBlast(inBlast);
 }
 
 void CoopHits_AndrossExplosion(Actor* explosion) {

@@ -1244,6 +1244,161 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-13, #302, #303, #304: Macbeth's turrets and car 7's flash, Sector Y's Shogun bonus
+
+Read and run on `issue/302-303-304-macbeth-shogun` (from `issue/combined-test-6` `684b6568`). Identity: ROM US 1.0,
+Linux, GCC, Debug, OpenGL on a software renderer, no window, two game clients in lockstep over loopback, the machine
+shared with two other workers. Line numbers are this branch's.
+
+**#302, the turret of a train car (`Macbeth_8019F164`, `src/overlays/ovl_i5/fox_ma.c:1722`)**
+
+Observed (code):
+
+- Only `Macbeth_MaTrainCar6_Update` calls it (`:1956`), in the car's state 0 while its turret is on (`iwork[1]`).
+- The turret has a salvo of three shots, counted in `iwork[4]`: step 0 waits, steps 1 to 8 fire and recoil (shots
+  at the steps 0 to 1, 3 to 4 and 6 to 7), and the end of step 8 sets `timer_0BC` to 50 to 150 frames and goes back
+  to step 0 (`:1804-1894`).
+- It reads the player in step 0 only: the two target angles (`fwork[4]`, `fwork[3]`) move a tenth of the way to the
+  player's direction, 2 degrees a frame at most (`:1753-1781`; the block also runs for a falling boulder, which it
+  then fires at), and the first shot needs the player in the window: 300 to 3000 beside the car in x (any x for the
+  train's last car, `D_i5_801BE310 == iwork[5]`) and 200 to 5000 behind it (`trueZpos` greater than the car's),
+  with `timer_0BC` 0 and the car's health not 0 (`:1811-1815`). In the steps 1 to 8 the target angles stand still.
+- Upstream every one of the nine reads was `gPlayer[0]`.
+
+Observed (run, `lockstep_test.py --only ma_turret` on the base's game code with this branch's test code, 4500 frames,
+the two tanks swaying against each other, player 1 boosting 30 of every 150 frames):
+
+- The two tanks hold the same z but for a boost: a boost puts player 1 up to 179 ahead and the tank falls back to
+  player 0's z within about 60 frames. So who is the nearer to a car is decided by x, and changes often: on 5216
+  waiting frames of three turrets the nearest human changed 70 times from one frame to the next.
+- With player 1 the nearer, 235 yaw steps went to player 0's direction and 0 to player 1's; 11 salvos, none with
+  player 1 alone in the window, 2 with player 0 alone.
+
+Derived:
+
+- A kept target is needed. A waiting turret turns for 50 to 150 frames at 2 degrees a frame before it may fire, and
+  its shots fly where the barrel points (`sp54` is `fwork[1]`, `fwork[2]`), not at the player. With the nearest human
+  asked on every frame the pick would change about once per wait in this run, and each change turns the barrel away
+  from the tank it was nearly on; the two tanks can be on the two sides of the car, up to 180 degrees apart.
+- A kept target alone would hold the turret: it never ends its wait while its human is out of the window, and only
+  the end of a salvo would let it pick again. So the kept human is dropped while the turret waits and that human is
+  not in the window, and the nearest is picked again, on every frame until one is in the window.
+
+Built: `CoopAim_MacbethTurret` (`src/port/coop/game/aim.c`), which returns the car's kept human
+(`CoopAim_ActorTarget`, the actor's slot, already in the state hash) and makes the drop described above;
+`Macbeth_8019F164` reads `aimed` in place of `gPlayer[0]` and forgets the kept human at the end of a salvo. The rule is
+#193's and #220's: the nearest human is aimed at, and the turret fires while that human is in the window it had for
+player 0. It does not pick the nearest human among those in the window: a tank on the track right behind the car
+(nearer than 300 in x) is not fired at, as upstream, and while it is the nearest the turret holds its fire for a tank
+beside the track too (86 ready frames with player 1 alone in the window and no shot, in the run on this branch).
+This first rule was replaced the same evening, see "the rule changed" below.
+
+Observed (the same scenario on this branch): with player 1 the nearer 284 yaw steps go to player 1's direction and 58
+to player 0's; with player 0 the nearer 117 to player 0's and 49 to player 1's (the kept human is not always the
+nearer); 11 salvos, 3 with player 1 alone in the window, 0 with nobody in it; no ready turret held its fire while
+the nearest human was in its window; same hash on 4500 frames.
+
+**#302, the rule changed the same evening (the owner, 2026-11-13: "Fire at the nearest human in the window")**
+
+What is written above under "Built" was the first rule: the nearest human of all, and fire while that one is in the
+window. Its cost, observed in the run above and again on that code with a sharper count: a ready turret did not fire
+on 76 frames while a human was well inside its window, 68 of them with player 1 alone in it, because the other tank,
+on the track and nearer than 300 in x, was the nearer one; and with one human alone in the window 151 yaw steps went
+to the other's direction, 11 to its own.
+
+Built (`CoopAim_MacbethTurret`, `src/port/coop/game/aim.c`; `fox_ma.c` is unchanged but for one comment):
+
+- While the turret waits, it keeps its human as long as that one is in the window.
+- A kept human that is not in the window is replaced by the nearest of the humans in the window (the distance and
+  the tie as `CoopAim_Nearest` has them; the window is upstream's test for player 0, the last car's any x included).
+- With nobody in the window it turns to the nearest human of all, picked again on every frame, and does not fire: as
+  before the change.
+- In a salvo (steps 1 to 8) nothing is asked; the end of a salvo forgets the kept human, as before.
+
+How the kept target and the new rule fit: the rule says whom a turret may pick (a human in the window, the nearest
+of them); the kept target says when it picks (when it has nobody, when its human left the window, after a salvo). So
+a ready turret always has a human in the window if there is one, and fires on that frame; and with two humans in the
+window it stays on the one it has, and does not swing to the other when that one gets a little nearer. The nearest
+human still changed 72 times between two waiting frames in the run on the new code.
+
+Observed (`lockstep_test.py --only ma_turret` on the new code): ready with a human in the window and no shot on 0
+frames; with one human alone in the window 149 yaw steps to that one's direction (131 of them player 1's) and 0 to
+the other's; with nobody in it 73 to the nearer one's and 0 to the other's; with both in it 149 to player 0's and 158
+to player 1's; 12 salvos, 3 with player 1 alone in the window, 0 with nobody in it; same hash on 4500 frames. The
+counts leave out a player within 40 of an edge of the window, as the trace sees the car after its frame.
+
+Not shown: a turret that changes from one human to another because the first left the window in the middle of a wait,
+as a case of its own (it is in the counts, not singled out); three or four players.
+
+**#303, the flash of train car 7 (`Macbeth_MaTrainCar7_Update`, state 1, `fox_ma.c:1669-1679`)**
+
+Observed (code):
+
+- The blast writes the fill white with alpha 255, and red when player 0 is in the box (`:1669-1676`). Nothing in
+  Macbeth changes the fill after that; `Play_UpdateFillScreen` (`src/engine/fox_play.c:826`) takes 16 off the alpha
+  every frame toward `gFillScreenAlphaTarget`, so the flash lasts 15 frames after the blast's.
+- `gFillScreenRed/Green/Blue/Alpha` are not in the state hash (`src/port/coop/sync/state_hash.c` does not name
+  them), and `Game_Update` draws the fill once a frame (`src/engine/fox_game.c:612-622`), after the play update.
+- A hit's own red is drawn apart from the fill since #30 (`CoopView_DrawHitFlash`), from the `dmgEffectTimer` of the
+  player a client looks through.
+
+Built (the owner's answer of 2026-11-13: per client): the fill stays as the game writes it, white, or red when player
+0 is in the blast, the same on every game. `CoopHits_MacbethCarBlast` (`src/port/coop/game/hits.c`), which already
+tests the box for the other tanks, now tests it from player 0 on and gives the view a bit for each player in it
+(`CoopView_MacbethBlast`). `Game_Update` asks `CoopView_FillColor` for the colour right before it draws the fill:
+while that flash fades, red on the client that looks through a player in the blast (`CoopPlayers_ViewIndex`), white
+on the others, with the game's alpha. The flash counts as over when the alpha is 0, the fill's colour is neither
+white nor red, or the alpha rose (another flash).
+
+- Read by the new code: `gFillScreenRed`, `gFillScreenGreen`, `gFillScreenBlue`, `gFillScreenAlpha` (in
+  `Game_Update` and `CoopView_FillColor`), `CoopPlayers_IsCoop`, `CoopPlayers_ViewIndex`, and in the box test each
+  player's `pos.x`, `pos.y`, `trueZpos` and the car's `obj.pos`.
+- Written: three statics of `view.c` (`sBlastOn`, `sBlastMask`, `sBlastAlpha`), the trace's `sDrawnFill`, and three
+  locals of `Game_Update`. No `gFillScreen*`, nothing in the hash, nothing the simulation reads. `sBlastMask` is
+  written by the simulation (the same on every game) and read by the draw alone.
+- Not carried: a game that takes over a session in the middle of a flash (a join or a handover) would draw the
+  game's own colour for the rest of it; `unknown` whether that can happen in a level today.
+
+Observed (`lockstep_test.py --only macbeth_bombs`, whose probe places a car beside one tank; the view trace's new
+`drawn` field is the fill as a client drew it): on this branch 2 blasts on each player, 30 flash frames each: the
+client of the tank in the blast drew red on 30 of 30 and the other client white on 30 of 30, and both games held the
+same fill. On the base's game code a blast on player 1 was white on both clients (0 of 30 red) and a blast on player 0
+red on both.
+
+**#304, the Shogun's bonus (`SectorY_80199438`, `src/overlays/ovl_i6/fox_sy.c:570`, `:609`)**
+
+Observed (code):
+
+- `PlayerShot_CollisionCheck` writes the source of every shot that hits a Shogun to its `swork[19]`
+  (`src/engine/fox_beam.c:1037-1039`): a player's index, or `NPC_SHOT_ID` plus the actor for a computer wingman.
+- A small Shogun (`gBosses[1]`, `[2]`) pays 4 hits 40 frames after it went down (`timer_058` 100 to 60), the last
+  one (`gBosses[0]`) `Boss_AwardBonus` at `gCsFrameCount` 120; both asked `swork[19] == 0`, player 0.
+- How the other kills reach the team's count (decision 0008, "Observed: hit count", and #210): the tests on the
+  shooter became `CoopScore_HumanKill` for an actor's `dmgSource` (`src/engine/fox_enmy.c:1772`,
+  `src/engine/fox_360.c:923`) and `CoopScore_HumanShot` for a shot's `sourceId` (the Saucerer,
+  `fox_beam.c:1011`); a human's own count gets the hits through `CoopScore_CreditKill` / `CoopScore_CreditShot`
+  (#252) where the game knows the shooter, and boss bonuses are the team's alone (`score.h`).
+
+Built: the two tests ask `CoopScore_HumanShot(swork[19])`, and the small Shogun's 4 hits go to the shooter's own
+count with `CoopScore_CreditShot`, as a charged shot's bonus does (`fox_beam.c:2294`); `Boss_AwardBonus` stays the
+team's alone. Co-op off: `CoopScore_HumanShot` is `sourceId == TEAM_ID_FOX`, the old test. One change for player 0
+in a session: its small Shogun now also counts 4 in its own hits (`gPlayerScores[0]`, display, in the hash).
+
+Observed (`lockstep_test.py --only shogun_bonus`, two sessions; the score probe's `shogun` kind sets a Shogun's
+health to 1 and puts one laser of a player, or of Falco, in its first hitbox, the game does the rest): on this branch
+player 1's laser pays the team 4 hits for the first small Shogun (4 in player 1's own count) and 11 for the last,
+exactly as player 0's does in the second session; Falco's laser on the second small one pays 0 in both. On the base's
+game code player 1's two kills pay 0 and 0, player 0's 4 and 11.
+
+Not shown, for all three: a turret's shots or a car's blast in play with a person driving (the scenarios steer by
+rule, and the blast and the Shogun's last hit are placed by probes); three or four players; two PCs; Windows; Release;
+how the red and the white look on a screen (the trace gives the colour handed to the fill, not a picture).
+
+A test finding on the way: a `test_all.py` run that passes deletes the `local/test-*` folders that are new since it
+started and that no `test_all` run noted (`clean_run_folders`, `tools/coop/test_all.py:616-630`), so a
+`lockstep_test.py` started by hand beside it in the same checkout lost its games' folders while they played (their
+working directories read `(deleted)`), and waited for its time-out. One tool at a time per checkout.
+
 ### 2026-11-13, #280, Macbeth's turret shots and the blast of train car 7 hit every tank
 
 Read at `d726f9dd` (`issue/combined-test-6`). The rule is #272's (the entry "2026-11-12, #272" below): a hit test that

@@ -168,7 +168,18 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             a train car's turret and the blast of train car 7, placed on one tank at a time by
             src/port/coop/test/mabomb_probe.h, hit that tank, player 1 as well as player 0, and no other, and a
             turret's shot at a tank in a barrel roll is deflected; on a build without the fixes they hit and are
-            deflected by player 0 only. Hashes and the two probe logs equal.
+            deflected by player 0 only. Hashes and the two probe logs equal. The view traces of the two games then show
+            car 7's flash (#303): the client whose own tank is in the blast draws the fill red, the other white, on
+            every frame of the fade, and both games hold the same fill.
+  ma_turret Macbeth with two Landmasters (#302): the turret of a train car turns to and fires at the nearest of the
+            humans in its window, so a ready turret never holds its fire while a human is in the window; with nobody
+            in it, it turns to the nearest human. Upstream it turned to and fired by player 0 alone. Read from the
+            aim trace's turret lines (the angle steps and who is in the window), which do not ask the aim code. By
+            hand, not in test_all.py.
+  shogun_bonus Sector Y's all-range, two sessions (#304): the score probe's `shogun` kind makes one player's laser the
+            last hit on the first small Shogun and on the last Shogun, and Falco's on the second small one. The team
+            gets the same hits whether the player is player 1 or player 0 (decision 0008, 4b), and nothing for
+            Falco's. By hand, not in test_all.py.
   ve1_pillars Venom 1 with pilots (#276): src/port/coop/test/ve1_pillar_probe.h makes the Golemech raise six pillars
             from the last row of its tables; the sixth, read past the table, stands where the N64 puts it, and the
             hashes and the two probe logs are equal. By hand, not in test_all.py.
@@ -1351,13 +1362,15 @@ def score_rows(path):
     return rows
 
 
-def run_score(args, folder, probe, frames, level=None, jump=None):
+def run_score(args, folder, probe, frames, level=None, jump=None, cvars=None):
     """Both games with SF64_COOP_SCORE_PROBE=probe, steered by `steer` (and L at `jump`). Returns (frames compared, the
-    report rows), after hashes and lockstep logs matched and both games reported alike."""
+    report rows), after hashes and lockstep logs matched and both games reported alike. cvars: more CVars for both."""
     folder.mkdir(parents=True, exist_ok=True)
     feed = folder / "feed.txt"
     write_feed(feed, frames + 16, press(steer, {(jump, 0)}, BUTTON_L) if jump is not None else steer)
     config = {"CVars": {"gDebugJumpToAllRange": 1}} if jump is not None else None
+    if cvars:
+        config = {"CVars": {**(config or {}).get("CVars", {}), **cvars}}
     reports = {name: folder / f"{name}-score.txt" for name in ("host", "client")}
     for path in reports.values():
         if path.exists():
@@ -4851,6 +4864,302 @@ def w8_mabomb_story(rows):
     return story
 
 
+# ---- #303: the red of train car 7's blast is for the client whose own tank is in it ----
+#
+# Upstream the blast turns the screen white, and red when player 0 is in it (Macbeth_MaTrainCar7_Update, state 1). The
+# fill (gFillScreen*) is one fade every game of a session holds alike, so the rule is in what a client draws
+# (CoopView_FillColor, src/port/coop/game/view.c): red on the client whose own tank is in the blast, white on the
+# others, the same alpha. The view trace's `drawn` field is the fill as the client drew it. The probe's blast cases put
+# the car beside one tank; the host looks through player 0 and the client through player 1.
+W10_BLAST_VIEW = "view-trace.txt"  # in each game's run folder
+W10_BLAST_LINE = re.compile(r"frame=(\d+) .* view=(\d+) .* fill=(\S+) .* drawn=(\S+)")
+W10_BLAST_FADE = 15  # frames: the flash is 255 on the blast's frame and fades by 16 a frame (Play_UpdateFillScreen)
+W10_WHITE, W10_RED = (255, 255, 255), (255, 0, 0)
+
+
+def w10_blast_trace(path):
+    """{gGameFrameCount: (view, fill, drawn)} of a view trace; the last line of a frame number wins (a restart)."""
+    found = {}
+    if path.exists():
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            match = W10_BLAST_LINE.match(line)
+            if match:
+                found[int(match.group(1))] = (int(match.group(2)), tuple(int(v) for v in match.group(3).split(",")),
+                                              tuple(int(v) for v in match.group(4).split(",")))
+    return found
+
+
+def w10_blast_views(host, client, rows):
+    """The rule of #303 on every blast case of the probe: its text for the summary."""
+    views = [w10_blast_trace(game.run / W10_BLAST_VIEW) for game in (host, client)]
+    expect(all(views), "no `drawn` field in a view trace: a build without it (#303)")
+    seen = {0: 0, 1: 0}
+    frames = {0: 0, 1: 0}
+    red = {(target, player): 0 for target in (0, 1) for player in (0, 1)}  # frames a client drew the flash red
+    white = dict(red)
+    for row in rows:
+        if row["case"] != "blast" or row["lost"]:
+            continue
+        target = row["target"]
+        expect(row["hit"] == 1 << target, f"the blast on player {target} at frame {row['frame']} hit mask {row['hit']}")
+        seen[target] += 1
+        for frame in range(row["frame"], row["frame"] + W10_BLAST_FADE):
+            for player, view in enumerate(views):
+                expect(frame in view, f"no view trace line of frame {frame} on the client of player {player}")
+                looks, fill, drawn = view[frame]
+                expect(looks == player, f"frame {frame}: the client of player {player} looks through player {looks}")
+                expect(drawn[3] == fill[3] and fill[3] > 0,
+                       f"frame {frame}, blast on player {target}: the client of player {player} drew alpha "
+                       f"{drawn[3]}, the game holds {fill[3]}")
+                red[(target, player)] += drawn[:3] == W10_RED
+                white[(target, player)] += drawn[:3] == W10_WHITE
+            expect(views[0][frame][1] == views[1][frame][1],
+                   f"frame {frame}: the two games hold different fills, {views[0][frame][1]} and {views[1][frame][1]}")
+            frames[target] += 1
+    expect(seen[0] and seen[1], f"blast cases that ran: {seen[0]} on player 0, {seen[1]} on player 1")
+    text = "; ".join(f"{seen[target]} blasts on player {target}, {frames[target]} frames of flash: its own client "
+                     f"drew it red on {red[(target, target)]} and white on {white[(target, target)]}, the client of "
+                     f"player {1 - target} red on {red[(target, 1 - target)]} and white on "
+                     f"{white[(target, 1 - target)]}" for target in (1, 0))
+    expect(all(red[(target, target)] == frames[target] and white[(target, 1 - target)] == frames[target]
+               for target in (0, 1)),
+           f"car 7's flash is not red on the client whose own tank is in the blast and white on the other (#303): "
+           f"{text}")
+    return f"car 7's flash (#303): {text}; the fill the games hold is the same on both"
+
+
+# ---- #302: the turret of a Macbeth train car turns to and fires at the nearest human ----
+#
+# Macbeth_8019F164 (src/overlays/ovl_i5/fox_ma.c) turns the turret to a player while it waits (the step of its salvo,
+# iwork[4], is 0) and fires its first shot when that player is in its window: 300 to 3000 beside the car (any x for the
+# train's last car) and 200 to 5000 behind it. Upstream the player is player 0. The aim trace's `turret` lines
+# (src/port/coop/test/aim_trace.h) give the angles before and after each frame, the angles it would turn to for each
+# player, and who is in the window.
+W10_TURRET_FRAMES = 4500
+W10_TURRET_APART = 5.0  # degrees between the two players' yaws from which a step tells whom it turns to
+W10_TURRET_NEAR = 2.0  # degrees a step's target may be off the player's yaw
+# For "the nearest human is in the window": the trace sees the car after its frame, the turret before the car moved (a
+# car moves along z, up to 30 a frame). So a player this close to an edge of the window is not counted, nor are
+# two players this close in distance (a move of the car along z changes both distances by nearly the same).
+W10_TURRET_EDGE = 40.0
+W10_TURRET_CLOSE = 5.0
+
+
+def w10_turret_script(frame, player):
+    """Macbeth: both tanks sway against each other, as in `vehicles`, without firing: no turret is shot off. Player 1
+    boosts (C-left) for 30 frames of every 150, so it drives ahead of player 0 and is the nearer to the train when
+    the two are about as far from the track."""
+    _, x, y = sway(frame, player)
+    boost = player == 1 and frame >= JOIN_FRAME and frame % 150 < 30
+    return (BUTTON_C_LEFT if boost else 0), x, y
+
+
+def w10_turret_rows(path):
+    """The turret lines of an aim trace: one dict per line."""
+    rows = []
+    if not path.exists():
+        return rows
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not line.startswith("turret "):
+            continue
+        f = dict(kv.split("=", 1) for kv in line.split()[1:])
+        row = {"frame": int(f["frame"]), "slot": int(f["slot"]), "car": int(f["car"]), "last": int(f["last"]),
+               "boulder": int(f["boulder"]), "step": tuple(int(v) for v in f["step"].split(",")),
+               "hp": int(f["hp"]), "wait": int(f["wait"]),
+               "yaw": tuple(float(v) for v in f["yaw"].split(",")),
+               "at": tuple(float(v) for v in f["at"].split(",")), "line": line}
+        for n in (0, 1):
+            w = f[f"w{n}"].split(",")
+            p = f[f"p{n}"].split(",")
+            row[f"w{n}"] = float(w[0])
+            row[f"in{n}"] = int(w[2])
+            row[f"p{n}"] = tuple(float(v) for v in p[:3])
+            row[f"flies{n}"] = int(p[3])
+        row["near"] = min((0, 1), key=lambda n: (math.dist(row[f"p{n}"], row["at"]), n)) if row["flies1"] else 0
+        # well<n>: player n is well inside the window; out<n>: clearly outside it; sure: one of the two is the
+        # nearer by a margin.
+        edge = W10_TURRET_EDGE
+        for n in (0, 1):
+            dx, dz = abs(row[f"p{n}"][0] - row["at"][0]), row[f"p{n}"][2] - row["at"][2]
+            flies = n == 0 or row["flies1"]
+            row[f"well{n}"] = bool(flies and row[f"in{n}"] and 200.0 + edge < dz < 5000.0 - edge
+                                   and (row["last"] or 300.0 + edge < dx < 3000.0 - edge))
+            row[f"out{n}"] = bool(not flies or (not row[f"in{n}"] and (
+                dz < 200.0 - edge or dz > 5000.0 + edge
+                or (not row["last"] and (dx < 300.0 - edge or dx > 3000.0 + edge)))))
+        row["sure"] = (not row["flies1"] or abs(math.dist(row["p0"], row["at"]) - math.dist(row["p1"], row["at"]))
+                       > W10_TURRET_CLOSE)
+        rows.append(row)
+    return rows
+
+
+def w10_angle(a, b):
+    """a - b in degrees, in -180 to 180."""
+    return (a - b + 180.0) % 360.0 - 180.0
+
+
+def w10_turret_story(rows):
+    """Counts over the turret lines: see sc_ma_turret."""
+    count = {"lines": len(rows), "wait": 0, "near1": 0, "none": 0, "fires": 0, "fire_only1": 0, "fire_only0": 0,
+             "fire_both": 0, "fire_none": 0, "flips": 0, "idle": 0, "idle_only1": 0, "idle_only0": 0, "idle_at": [],
+             "one": 0, "one_in": 0, "one_out": 0, "one_in1": 0, "nobody": 0, "nobody_near": 0, "nobody_far": 0,
+             "both": 0, "both_to0": 0, "both_to1": 0}
+    before = {}
+    for row in rows:
+        if row["boulder"] or row["step"][0] != 0:
+            before.pop(row["slot"], None)
+            continue
+        count["wait"] += 1
+        count["near1"] += row["near"]
+        last = before.get(row["slot"])
+        if last is not None and last[0] == row["frame"] - 1 and last[1] != row["near"]:
+            count["flips"] += 1  # the nearest human changed from one waiting frame to the next
+        before[row["slot"]] = (row["frame"], row["near"])
+        if row["step"][1] == 1:
+            count["fires"] += 1
+            key = {(1, 1): "fire_both", (0, 1): "fire_only1", (1, 0): "fire_only0", (0, 0): "fire_none"}
+            count[key[(row["in0"], row["in1"])]] += 1
+        elif row["wait"] == 0 and row["hp"] != 0 and (row["well0"] or row["well1"]):
+            count["idle"] += 1  # ready, a human well inside the window, and no shot
+            count["idle_only1"] += row["well1"] and row["out0"]
+            count["idle_only0"] += row["well0"] and row["out1"]
+            count["idle_at"].append(row["frame"])
+        # Whom the yaw's step goes to: Math_SmoothStepToAngle moves a tenth of the way, 2 degrees at most.
+        step = w10_angle(row["yaw"][1], row["yaw"][0])
+        if abs(w10_angle(row["w0"], row["w1"])) < W10_TURRET_APART or abs(step) < 0.011 or row["yaw"][1] in (
+                120.0, 240.0):
+            continue
+        to = []
+        for n in (0, 1):
+            want = w10_angle(row[f"w{n}"], row["yaw"][0])
+            if abs(step) >= 1.999:
+                to.append(want * step > 0 and abs(want) >= 19.0)
+            else:
+                to.append(abs(want - step * 10.0) < W10_TURRET_NEAR)
+        if to[0] == to[1]:
+            count["none"] += 1
+            continue
+        who = 1 if to[1] else 0
+        # By who is in the window: one human alone, nobody, or both.
+        if (row["well0"] and row["out1"]) or (row["well1"] and row["out0"]):
+            alone = 0 if row["well0"] else 1
+            count["one"] += 1
+            count["one_in" if who == alone else "one_out"] += 1
+            count["one_in1"] += who == alone == 1
+        elif row["out0"] and row["out1"]:
+            if row["sure"]:
+                count["nobody"] += 1
+                count["nobody_near" if who == row["near"] else "nobody_far"] += 1
+        elif row["well0"] and row["well1"]:
+            count["both"] += 1
+            count[f"both_to{who}"] += 1
+    return count
+
+
+def sc_ma_turret(args, folder):
+    """#302: Macbeth with two Landmasters. A train car's turret turns to and fires at the nearest of the humans in its
+    window (the owner's rule of 2026-11-13), and keeps that one while it stays in the window; with nobody in the window
+    it turns to the nearest human. Upstream it turned to and fired by player 0 alone. Read from the aim trace's turret
+    lines, which do not ask the aim code. Hashes and the two traces equal."""
+    traces = {name: folder / f"{name}-aim.txt" for name in ("host", "client")}
+    folder.mkdir(parents=True, exist_ok=True)
+    for path in traces.values():
+        if path.exists():
+            path.unlink()  # the trace appends
+    host, client = run_short(args, folder, script=w10_turret_script, frames=W10_TURRET_FRAMES,
+                             host_env={"SF64_COOP_JOIN_LEVEL": "11", "SF64_COOP_AIM_TRACE": str(traces["host"])},
+                             client_env={"SF64_COOP_AIM_TRACE": str(traces["client"])},
+                             both={"SF64_COOP_TRACE_SHIELDS": "255,255"}, seconds=1800)
+    frames = compare(host, client, W10_TURRET_FRAMES)
+    ours, theirs = w10_turret_rows(traces["host"]), w10_turret_rows(traces["client"])
+    n = min(len(ours), len(theirs))
+    expect(n > 0, "no turret line in the aim trace (a build without the turret line of aim_trace.h writes none, or no "
+                  "turret ran)")
+    expect([r["line"] for r in ours[:n]] == [r["line"] for r in theirs[:n]], "the two games' turret lines differ")
+    count = w10_turret_story(ours[:n])
+    text = (f"{count['lines']} turret frames, {count['wait']} waiting, player 1 the nearer on {count['near1']}; ready "
+            f"with a human in the window and no shot on {count['idle']} frames ({count['idle_only1']} with player 1 "
+            f"alone in it, {count['idle_only0']} with player 0 alone); yaw steps with one human alone in the window: "
+            f"{count['one_in']} to that one's direction ({count['one_in1']} of them player 1's), {count['one_out']} "
+            f"to the other's; with nobody in it: {count['nobody_near']} to the nearer one's, {count['nobody_far']} to "
+            f"the other's; with both in it: {count['both_to0']} to player 0's, {count['both_to1']} to player 1's; "
+            f"{count['none']} steps fit neither or both; {count['fires']} first shots: {count['fire_only1']} with "
+            f"only player 1 in the window, {count['fire_only0']} with only player 0, {count['fire_both']} with both, "
+            f"{count['fire_none']} with neither; the nearest human changed between two waiting frames "
+            f"{count['flips']} times")
+    expect(count["near1"] * 5 > count["wait"] and count["fires"] >= 5 and count["one"] >= 20,
+           f"too little to tell: player 1 is seldom the nearer, the turrets seldom fire, or a human is seldom alone in "
+           f"a window: {text}")
+    expect(count["idle"] == 0,
+           f"a turret that is ready holds its fire while a human is in its window (first on frames "
+           f"{count['idle_at'][:5]}): {text}")
+    expect(count["one_in"] > 9 * count["one_out"] and count["one_in1"] > 0,
+           f"the turrets do not turn to the human that is alone in the window: {text}")
+    expect(count["nobody_near"] > 2 * count["nobody_far"],
+           f"with nobody in the window the turrets do not turn to the nearer human: {text}")
+    expect(count["fire_only1"] > 0 and count["fire_none"] == 0,
+           f"no turret fires with player 1 alone in its window, or one fires with nobody in it: {text}")
+    return f"same hash on {frames} frames; {text}"
+
+
+# ---- #304: a Shogun's bonus goes to the team when any human shoots it down (decision 0008, 4b) ----
+#
+# Sector Y's Shoguns keep the source of the shot that hit them last (swork[19], PlayerShot_CollisionCheck) and pay
+# their bonus by it: 4 hits for a small one, the boss bonus (Boss_AwardBonus) for the last. Upstream the source has to
+# be player 0. The score probe's `shogun` kind (src/port/coop/test/score_probe.h) shoots the first small one and the
+# last one down with a laser of one player and the second small one with a laser of Falco.
+SHOGUN_FROM = JOIN_FRAME + 400  # level frame: the cut to all-range (L at JOIN_FRAME + 100) is over
+SHOGUN_FRAMES = JOIN_FRAME + 100 + 3900
+LEVEL_SECTOR_Y = 5  # include/sf64level.h
+SHOGUN_FALCO = 101  # NPC_SHOT_ID + AI360_FALCO, include/sf64object.h and sf64player.h
+
+
+def shogun_gains(rows):
+    """{boss: (source, hits gained, player 0's own gained, player 1's own gained)} of a `shogun` report."""
+    gains = {}
+    down = {}
+    for kind, row in rows:
+        if kind == "down":
+            down[row["boss"]] = (int(row["source"]), int(row["hits"]), *[int(v) for v in row["own"].split(",")])
+            gains[int(row["boss"])] = (int(row["source"]), 0, 0, 0)
+        if kind == "bonus" and row["boss"] in down:
+            source, hits, own0, own1 = down[row["boss"]]
+            now = [int(v) for v in row["own"].split(",")]
+            gains[int(row["boss"])] = (source, int(row["hits"].split(",")[1]) - hits, now[0] - own0, now[1] - own1)
+    return gains
+
+
+def sc_shogun_bonus(args, folder):
+    """#304: two sessions in Sector Y's all-range. In the first player 1's laser is the last hit on the first small
+    Shogun and on the last Shogun, in the second player 0's: the team gets the same hits in both. Falco's laser on the
+    second small one pays nothing in either."""
+    gains = {}
+    frames = {}
+    for player in (1, 0):
+        frames[player], rows = run_score(args, folder / f"player{player}", f"shogun:{SHOGUN_FROM}:{player}",
+                                         SHOGUN_FRAMES, level=LEVEL_SECTOR_Y, jump=JOIN_FRAME + 100,
+                                         cvars={"gInvincible": 1})
+        fly_rows(rows)
+        gains[player] = shogun_gains(rows)
+        expect(sorted(gains[player]) == [0, 1, 2],
+               f"player {player}'s session: Shoguns shot down: {sorted(gains[player])} of 0, 1, 2; the report: "
+               f"{[(kind, row) for kind, row in rows if kind != 'shot']}")
+        expect([gains[player][boss][0] for boss in (1, 2, 0)] == [player, SHOGUN_FALCO, player],
+               f"player {player}'s session: the Shoguns hold other sources than the lasers': {gains[player]}")
+    text = "; ".join(f"with player {player}'s laser the team gets {gains[player][1][1]} hits for the first small "
+                     f"Shogun (player {player}'s own count {gains[player][1][2 + player]}) and "
+                     f"{gains[player][0][1]} for the last, with Falco's on the second {gains[player][2][1]}"
+                     for player in (1, 0))
+    expect(gains[0][1][1] == 4 and gains[0][0][1] > 0 and gains[0][2][1] == 0,
+           f"player 0, the control, does not get upstream's bonus: {text}")
+    expect(gains[1][2][1] == 0, f"a computer wingman's kill pays: {text}")
+    expect((gains[1][1][1], gains[1][0][1]) == (gains[0][1][1], gains[0][0][1]),
+           f"player 1's kills do not pay the team what player 0's do: {text}")
+    expect(gains[1][1][3] == gains[0][1][2] and gains[1][1][2] == 0 and gains[0][1][3] == 0,
+           f"the small Shogun's hits are not in the shooter's own count as in player 0's: {text}")
+    return f"same hash on {frames[1]} and {frames[0]} frames; {text}"
+
+
 def sc_macbeth_bombs(args, folder):
     """Macbeth with two Landmasters (#272, #280): a bomb's fire, a state-16 beam of the train's end, a turret's shot
     and the blast of train car 7, placed on one tank by src/port/coop/test/mabomb_probe.h, hit that tank, player 1 as
@@ -4859,7 +5168,8 @@ def sc_macbeth_bombs(args, folder):
     hashes and the two probe logs equal on every frame."""
     host, client = run_short(args, folder, script=sway, frames=W8_MABOMB_FRAMES,
                              host_env={"SF64_COOP_JOIN_LEVEL": "11"},
-                             both={"SF64_COOP_MABOMB_PROBE": W8_MABOMB_PROBE, "SF64_COOP_TRACE_SHIELDS": "255,255"},
+                             both={"SF64_COOP_MABOMB_PROBE": W8_MABOMB_PROBE, "SF64_COOP_TRACE_SHIELDS": "255,255",
+                                   "SF64_COOP_VIEW_TRACE": W10_BLAST_VIEW},
                              seconds=1800)
     frames = compare(host, client, W8_MABOMB_FRAMES)
     rows, done = w8_mabomb_rows(host.run / W8_MABOMB_PROBE)
@@ -4889,9 +5199,10 @@ def sc_macbeth_bombs(args, folder):
     expect(others == 0, f"a hazard hit a tank it was not placed on in {others} cases (the tanks were too close)")
     first = sorted({row["first"][row["target"]] for row in rows
                     if not row["lost"] and row["case"] not in W8_MABOMB_DEFLECTS})
+    blast = w10_blast_views(host, client, rows)
     return (f"same hash on {frames} frames; {len(rows)} cases, {lost} lost; player 1 hit {hits(1)}; player 0 hit "
             f"{hits(0)}; no hazard hit the other tank; frames to the hit {first}; last case at frame "
-            f"{rows[-1]['frame']}")
+            f"{rows[-1]['frame']}; {blast}")
 
 
 # ---- #282: what each player gets in Andross' escape, and the rule the owner chose for it (2026-11-13, option A) ----
@@ -5750,6 +6061,8 @@ SCENARIOS = {
     "eels": sc_eels,
     "player_names": sc_player_names,
     "macbeth_bombs": sc_macbeth_bombs,
+    "ma_turret": sc_ma_turret,
+    "shogun_bonus": sc_shogun_bonus,
     "escape_look": sc_escape_look,
 }
 LONG = ("survive_next_level", "survive_gaps_route", "survive_gaps_map", "survive_gaps_map_lost",
@@ -5759,6 +6072,7 @@ LONG = ("survive_next_level", "survive_gaps_route", "survive_gaps_map", "survive
 LONG += ("sy_robot_spread",)  # Sector Y's rails, 9500 frames (#273)
 LONG += ("sy_robot_pose", "granga_spread")  # the same rails; Corneria's Granga, 7700 frames (#281)
 LONG += ("ve1_pillars",)  # Venom 1 to its boss, 13000 frames (#276)
+LONG += ("ma_turret", "shogun_bonus")  # Macbeth's turrets, 4500 frames (#302); two Sector Y sessions (#304)
 LONG += ("escape_look",)  # five sessions in Andross' escape: the explosions hit every human (#282)
 
 
