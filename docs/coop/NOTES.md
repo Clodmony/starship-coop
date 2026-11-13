@@ -1277,6 +1277,63 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-13, #319: no game enters a level inside car 7's flash, so its blast state needs no carrying
+
+Read on `issue/319-blast-joiner` (from `issue/combined-test-6` `8c342fbf`); nothing was run, no code changed. Line
+numbers are this branch's. It answers the `unknown` of the #303 entry below ("Not carried").
+
+Observed (code and docs), how a game gets into a level of a session:
+
+- There is one way in: a level start. A client takes `SESSION_LEVEL_START` (`src/port/coop/session/session.c:1493`),
+  the host owes itself the same event (`Host_Restart`, `session.c:746-761`), and both reach `CoopLevelStart_Enter`
+  through `CoopMenuGame_EnterLevel` (`src/port/coop/ui/menu_game.c:144-148`; the test join driver,
+  `src/port/coop/test/join_driver.c:474`). `CoopLevelStart_Enter` sets `gNextGameState = GSTATE_PLAY`
+  (`src/port/coop/game/level_start.c:386-388`), and `Game_SetGameState` then clears the objects and sets the level up
+  from its start, or from a checkpoint, on that frame (`src/engine/fox_game.c:88-137`).
+- A new player cannot join a level that runs: a hello to a session that has started is refused
+  (`session.c:988-990`, `COOP_SESSION_REFUSE_STARTED`), and so is a `SESSION_REJOIN` of a player nobody is waited for
+  (`session.c:950-952`).
+- A player who comes back (`SESSION_REJOIN`) and every recovery (a lost player, a player who left, a desync) start
+  the level again for every game, from the restart point (`Host_Recovery` and `Host_Restart`, `session.c:746-797`;
+  `docs/coop/PROTOCOL.md`, Recovery, items 3 and 9).
+- No state of a running level is sent: "Not built: coming back inside a level without a restart ..., a state
+  snapshot from the host ..., a new player joining a level that runs" (`docs/coop/PROTOCOL.md:355-357`); "Late join
+  and reconnect need a state transfer, which stays under Later" (`docs/coop/decisions/0002-sync-model.md:247`).
+- "Handover" in this code is `HANDOVER` 0x0080 (`docs/coop/PROTOCOL.md`, Handover; `src/port/coop/sync/handover.c`):
+  the desync report and the co-op log, passed between games when a session closes. It carries no game state and no
+  view state, and no game takes a level over through it.
+- The level start does not carry the fill: `level_start.c` and `state_hash.c` name no `gFillScreen*`.
+  `Game_SetGameState` writes it on the frame of the level start: black (white for Venom 2's second part), alpha 255
+  (`fox_game.c:122-129`), and `Play_Init` writes the same again (`src/engine/fox_play.c:2892-2901`).
+- `Game_Update` draws the fill, through `CoopView_FillColor`, at the end of every frame that runs game logic
+  (`fox_game.c:366`, `:612-622`); the frames a scene change holds (`Game_ChangeScene`, `fox_game.c:139-160`) run no
+  logic and draw nothing. `CoopView_FillColor` drops `sBlastOn` when the fill is neither white nor red
+  (`src/port/coop/game/view.c:277-282`).
+- `sBlastOn`, `sBlastMask` and `sBlastAlpha` are written by a game's own simulation on the blast's frame
+  (`CoopHits_MacbethCarBlast`, `src/port/coop/game/hits.c:123-143`) and by its own draw (`view.c:283-286`).
+
+Derived:
+
+- A game is in a level at frame N only if it simulated that level's frames up to N itself, from a level start. So a
+  game that draws a frame of a flash also ran the blast's frame, and holds the blast state from its own simulation.
+  No game can be in the 15 frames of a flash without it: there is nothing to carry.
+- A level start inside a flash (a recovery) ends the flash on every game: the fill is black with alpha 255 on that
+  frame, the first frame drawn after it drops `sBlastOn`, and the car that blew up is set up again with the level.
+  Every game does the same, the one that came back too.
+- After `SESSION_RECOVER` each game runs the level alone until the level start comes (PROTOCOL.md, Recovery, item
+  5). A blast in that time is that game's own, and its view state follows its own simulation.
+
+Unknown:
+
+- Not run: a recovery that lands in the 15 frames of a flash. The above is read from the code.
+- One corner where stale blast state would outlive a level start: a level start into Venom 2's second part (white
+  fill, alpha 255) on the very frame after a blast, while `sBlastAlpha` is still 255. Then nothing drops `sBlastOn`
+  (`view.c:279-280`: the alpha did not rise, the colour is white), and the client of a player in the blast would draw
+  that fade red. A recovery starts the level the host entered last, so from Macbeth it starts Macbeth; whether any
+  path of a session leads from a frame of Macbeth to Venom 2's second part is `unknown` (a test jump can).
+- When a state snapshot or a join into a running level is built (decision 0002, option C), the three statics have to
+  travel with it or be derived (`gFillScreenAlpha` and the fill's colour are the game's; the mask is not).
+
 ### 2026-11-13, #302, #303, #304: Macbeth's turrets and car 7's flash, Sector Y's Shogun bonus
 
 Read and run on `issue/302-303-304-macbeth-shogun` (from `issue/combined-test-6` `684b6568`). Identity: ROM US 1.0,
