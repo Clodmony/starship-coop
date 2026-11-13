@@ -9,6 +9,27 @@ Private notes (your paths, your PC, your logs) go in `local/`, not here.
 
 ## Build and run
 
+### 2026-11-13, #308 (correction): a tool's tree is looked up only once the tool has stopped
+
+Found by the coordinator in the full gate of the combined test build 6 (`test_all.py --mixed`, Linux, GCC, Debug, 57 of
+58 steps ok, load up to 64): the `checks` step failed once, in `replay_test_test.py`'s `tool-limit`, "the tool's game still
+runs". The same case passed alone, 12 of 12, and 12 of 12 beside 60 busy loops; and in the 10 steps run on the tree
+before it.
+
+- **Observed:** `wait_tool` (`tools/coop/replay_test.py`) sent SIGSTOP to a tool that had run out of time and looked at
+  `/proc` for its children straight away. A SIGSTOP only takes effect when the process next runs. A script that forks as
+  fast as it can, stopped that way 200 times, was not yet in state `T` at the look on 5 of 200 tries, with the machine
+  quiet (a probe, not kept).
+- **Derived:** a tool that is in the middle of a fork when the signal is sent finishes the fork first. Its child then
+  exists after the look, is not in the list, and survives the kill of the tool: what the failed run showed (the game
+  of the stuck tool, still running). Under the gate's load the window is longer. Not shown on the failed run itself
+  (its folders were deleted by the run).
+- **Fix:** `wait_stopped` waits (at most 10 s) until the tool is in state `T`, `t` or `Z`, then the children are looked up:
+  a stopped process starts no more. `replay_test_test.py stop-wait` stops a forking process 20 times and fails when
+  `wait_stopped` returns with it not stopped.
+- **Unknown:** how often the old code lost a game in a real run: the limit is 600 s, so only a hung tool at the end
+  of that time met it; no such run is known.
+
 ### 2026-11-13, #306 and #309, the menu test's wait on a session that ended, and the two recoveries of `level_start_bad_wifi`
 
 Identity: base `684b6568` (the combined test build 6), branch `issue/306-309-session-tools`, Linux, GCC 16.2, Debug, no

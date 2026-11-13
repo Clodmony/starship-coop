@@ -285,6 +285,20 @@ def descendants(pid):
     return found
 
 
+def wait_stopped(pid, seconds=10.0):
+    """Wait until pid has stopped (state T after a SIGSTOP), at most `seconds`. A process that was about to start a
+    child when the signal was sent starts it first; under load that can be after the caller's look at /proc."""
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        try:
+            state = Path(f"/proc/{pid}/stat").read_text().rpartition(")")[2].split()[0]
+        except OSError:
+            return
+        if state in ("T", "t", "Z"):
+            return
+        time.sleep(0.01)
+
+
 def wait_tool(tool, limit, began):
     """Wait for a tool this test started, until limit seconds after began (time.monotonic()). Returns (exit code,
     failures). A tool still running then is stopped, and every process it started with it, by their PIDs, so that none
@@ -297,6 +311,7 @@ def wait_tool(tool, limit, began):
     below = []
     if sys.platform.startswith("linux"):
         tool.send_signal(signal.SIGSTOP)
+        wait_stopped(tool.pid)  # the signal only takes effect when the tool next runs: it may be in the middle of a fork
         below = descendants(tool.pid)
         for pid, born in below:
             kill_same(pid, born)  # Only processes this test's tool started.

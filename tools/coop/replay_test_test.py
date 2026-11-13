@@ -16,6 +16,8 @@ before its handler is in, LATE seconds after it started, and draws (writes READY
                 signal and fail, not wait out the hang.
   tool-limit    a tool that does not end, with a game of its own: the tool's wait ends TOOL_LIMIT seconds after it
                 started, and the tool and its game are gone.
+  stop-wait     wait_stopped, which tool-limit relies on to see every child of the tool: it returns only once the
+                process is stopped, also for one that forks as fast as it can when the signal comes.
 The limits are short here (TOOL_LIMIT counts from the tool's start, so person's scenarios get a longer one than
 tool-limit), and every hang is longer: a run that waits one out, as the tool did before, fails on the
 time it took, whatever the timing of the machine. Exit code 0 when every scenario holds, 1 otherwise; check.py runs it.
@@ -24,6 +26,7 @@ Its folders are deleted when every scenario holds and kept for reading when one 
 import argparse
 import os
 import signal
+import subprocess
 import sys
 import textwrap
 import time
@@ -198,7 +201,33 @@ def check_tool_limit(stand, benches):
     return failures
 
 
-SCENARIOS = {"late-handler": check_late_handler, "stop-limit": check_stop_limit, "tool-limit": check_tool_limit}
+def check_stop_wait(stand, benches):
+    """A process that forks all the time is stopped when wait_stopped returns, so a look at its children after that
+    sees every one it will ever have (#308; the race that made tool-limit fail once in a gate under load)."""
+    forker = stand.folder / "forker.py"
+    forker.write_text("import os, sys\nwhile True:\n    pid = os.fork()\n    if pid == 0:\n        os._exit(0)\n"
+                      "    os.waitpid(pid, 0)\n", encoding="utf-8")
+    proc = subprocess.Popen([sys.executable, "-I", str(forker)])
+    failures = []
+    try:
+        time.sleep(0.2)
+        for _ in range(20):
+            proc.send_signal(signal.SIGSTOP)
+            replay_test.wait_stopped(proc.pid)
+            state = Path(f"/proc/{proc.pid}/stat").read_text().rpartition(")")[2].split()[0]
+            if state != "T":
+                failures.append(f"wait_stopped returned with the process in state {state}")
+                break
+            proc.send_signal(signal.SIGCONT)
+            time.sleep(0.01)
+    finally:
+        proc.kill()
+        proc.wait()
+    return failures
+
+
+SCENARIOS = {"late-handler": check_late_handler, "stop-limit": check_stop_limit, "tool-limit": check_tool_limit,
+             "stop-wait": check_stop_wait}
 
 
 def main():
