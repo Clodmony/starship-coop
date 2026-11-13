@@ -9,6 +9,55 @@ Private notes (your paths, your PC, your logs) go in `local/`, not here.
 
 ## Build and run
 
+### 2026-11-13, #290, the full pipeline from 41m37s to 23m26s: what held the clock and what was done about it
+
+Identity: ROM US 1.0, Linux, GCC 16.2, Debug, OpenGL on a software renderer, no window, silent, a machine with 16 logical
+CPUs and no other load, `test_all.py` at normal priority with its default 4 game lanes. Trees: `4d1846dd` (the branch of
+PR #288, the baseline), `c9708b74` and `c918d90d` (branch `issue/290-lockstep-jobs`, on the combined test build 6).
+`coop-off` did not run in any of them (no `--base-exe`).
+
+Observed:
+
+- The baseline, all 52 steps that can run: 41m37s. The one-at-a-time lane (serial) held 45.0 minutes of steps and ended
+  at minute 41.6; the 4 game lanes held 83.7 minutes of steps and ended at minute 24.6. From minute 24.6 to 41.6 the PC ran
+  one step at a time at 10 to 20 % load. Longest steps: `rates-rails` 20.8 min, `rates-all-range` 16.8, `lockstep` 14.2,
+  `determinism` 12.1, `builds` 11.8, `exit-test` 6.2. The 7 mutation suites took 11.0 minutes, the last 10.9 of the serial
+  lane (`session-mutants` 3.5, `net-mutants` 4.8, `net-mutants-asan` 1.8, the rest under 1).
+- `lockstep_test.py --jobs 4` (new): all 52 scenarios pass in 288 s against 14 min one at a time. Run folders cannot
+  collide (`run_folder.py`), the scenarios use free ports and no global state.
+- `mutation_tree.py make` (new): a second checkout of HEAD with the tracked changes applied, the submodules linked and a
+  build folder configured with `build.py --configure-only`, in 29 s; `lockstep_mutants.py`, `desync_mutants.py` and
+  `steam_mutants.py` caught 22 of 22, 25 of 25 and 38 of 38 breaks in it. `test_all.py` runs the 7 suites there as a lane
+  of their own (`--mutants-in-tree` keeps the old way, and it is the way on Windows).
+- With those two: 24m32s, 52 of 53 steps ok; the serial lane ended at minute 20.9, the mutation lane at 13.7, the game
+  lanes at 24.5. The one failure was `results_hole` (#286): two clients started back to back took the host's seats in
+  either order. `session()` starts the next client when the previous one has joined now: 10 of 10 pass (about 4 in 10
+  failed before).
+- `hash_check.py rates --section rails --jobs 5` alone (all 5 rates at once, 3 at a time before): PASS in 10m31s, the 5
+  rates equal on 10500 frames. In `test_all.py` with that: 23m26s, 53 of 53 steps ok. There `rates-rails` took 17.6 min and
+  `rates-all-range` 13.8, the machine was 81 % busy (median of a reading every 10 s) and 99 % at most, load average up to 54.
+- In the baseline `menu` failed once (`game_leave`: the host did not start the level again in time). A 5-minute build of
+  another tree ran at the same time; `menu_test.py --game` alone passes 9 of 9, its scenarios 3 to 4 times faster.
+
+Derived:
+
+- The serial lane was the clock, not the game lanes: adding lanes had changed 42 to 40 minutes in #287's gate.
+- Now the PC is the limit. The 5 rates games ran as 17.6 minutes inside the pipeline and 10.5 alone, and the whole run
+  saved 1 minute from the change that took 10 minutes off `rates-rails` alone. More lanes or more jobs would only overload
+  it, and the wall-clock scenarios (`slow`, `frozen`, `stall`, `left`, `menu`'s `game_leave`) fail from overload.
+- What is left is less work per game: the steps that only count frames could run on a Release build (about 3 times less
+  CPU per game; #287), the two `rates` steps play 10 real-time games, `builds` plays 3, `determinism` many.
+
+Guess:
+
+- A full run on Release for the frame-counting steps would end near 17 minutes. Not run.
+
+Unknown:
+
+- How often the timing scenarios fail at 99 % load: 2 full runs with no such failure, and one `menu` failure in the baseline
+  with a build running. Windows and macOS (no symbolic links in the mutation checkout on Windows, untested). A full
+  run with `coop-off`.
+
 ### 2026-11-13, #287, two Release games that did not finish: the client's level start came in its first 21 frames
 
 Identity: ROM US 1.0, base `07c03c1f`, branch `issue/287-release-sessions`. The final verify ran on a tree that differs from
