@@ -9,6 +9,86 @@ Private notes (your paths, your PC, your logs) go in `local/`, not here.
 
 ## Build and run
 
+### 2026-11-13, #307, #315 and #317, test tools: level 4 off `views --pilot`'s default list, `hash_check.py`'s run folders, a tool started by hand beside `test_all.py`
+
+Run on `issue/307-315-317-run-folders` (from `issue/combined-test-6` `8c342fbf`). Identity: ROM US 1.0, Linux, GCC 16,
+Debug, OpenGL on a software renderer, no window, the machine shared with three other workers (a slot in front of every
+run). No game code changed.
+
+**#307, level 4** (the owner's decision of 2026-11-13: drop it from the default list, as level 15 was; no audio heap
+reset for it):
+
+- Observed (code): no menu offers level 4 (`sStartLevels`, `src/port/coop/ui/menu_game.c:42-56`, leaves out
+  `LEVEL_UNK_4` and `LEVEL_UNK_15`); the level select mod reaches it (`src/mods/levelselect.c:125`). Neither
+  `Map_LevelStart_AudioSpecSetup` (`src/overlays/ovl_menu/fox_map.c:4027`) nor `Play_InitLevel`
+  (`src/engine/fox_play.c:2638-2655`) has a case for it, so it starts without the audio heap reset that starts the voice
+  player over, and two clients differ from its first frame (this day's #232 entry: `voiceClock`).
+- Level 15 left the list as a `PILOT_NO_END` entry (`3f4761c6`): listed as not covered, with the reason. Level 4 is now
+  listed the same way (`PILOT_NOT_DEFAULT`, `tools/coop/hash_check.py`), but `--level level-4` still flies it, so the
+  difference can still be shown. `hash_check_test.py` (new, no game) runs `cmd_views` with the pilot's game replaced.
+- Observed (run): the default list, one level per slot (`hash_check.py views --pilot --level <name>` by hand; Corneria
+  and Meteo from this checkout, the rest from a second checkout of the branch): 17 of the 18 levels equal on every frame
+  to the end, downs 0,0, replay frames (level complete at): Corneria 7445 (5645), Meteo 17583 (15783), Sector X 11884
+  (10084), Sector Z 5428 (3628), Fortuna 9056 (7256), Aquas 8165 (6365), Solar 10451 (8651), Venom 1 12057 (11478),
+  Titania 10058 (8258), Macbeth 12186 (10386), Venom 2 10906 (10282), Katina 14620 (12820), Sector Y 8662 (6862), Zoness
+  12200 (10400, `gInfiniteBombs`), Venom (Andross) 13643 (13131, `gInfiniteBombs`), Bolse 18101 (16301), Area 6 22978
+  (21178). Each pass ended `hash: deleted the 4 run folders of this pass under local/` (#315). `venom-2-andross`: `pilot
+  cannot finish (frame cap); equal on the 60014 frames flown`, the last boss line `frame=49140 boss 0 id=320 state=2
+  health=100`, so `hash: FAIL` for that level: no hash difference, but no level complete within `PILOT_LEVEL_FRAMES`.
+  This day's #181 entry has both outcomes for that entry on one build (60014 frames at the cap once, to the end in 37303
+  once).
+- Unknown: why the pilot finishes `venom-2-andross` in one run and not in another; no game code changed on this branch.
+  Not rerun (the time for runs was over).
+
+**#315, `hash_check.py`'s run folders:**
+
+- Observed (code): `run`, `probe`, `views`, `slots`, `builds`, `rates`, `base` and `start` made their folders with
+  `make_run_folder` (`section_setup`, `view_pilot` and the rest) and deleted none; `draw` alone deleted them (#308). Now
+  `main()` wraps every subcommand but `diff` in `OwnedFolders`: a pass by hand deletes what it noted, the games' folders
+  too, and prints how many; a failure keeps them; under a run that notes them (`test_all.py`, `replay_test.py`) they
+  are left to that run, as before. `--keep-folders` (new) keeps them after a pass.
+- The Unknown of the issue (does anyone read a passing run's folders by hand): no tool does, by the code (`crash_test.py`
+  and `replay_test.py` start `hash_check.py` under their own `OwnedFolders`, which it leaves them to). A person may, as
+  `views --pilot` prints the pilot's folder; the line at the end of a pass says `--keep-folders` keeps them.
+- Observed (runs): `test_all.py --no-build --only hash-run-1` (the poke found at its frame, `hash: PASS`) and `--only
+  replay-test` (`38/38 scenarios OK`, `rates` and `draw` of `hash_check.py` among them, under `replay_test.py`'s own
+  `OwnedFolders`) pass; under `test_all.py` `hash_check.py` leaves its folders to the run, which deletes them.
+- `check.py` still leaves an empty `local/test-net/` and `local/test-session/`: not removed. Derived (code):
+  `make_run_folder` makes the parent, then the run folder in it (`run_folder.py`); a parent removed between the two by
+  a cleanup makes the second `mkdir` fail with `FileNotFoundError`, which it does not retry. A `net_test.py` that a
+  `test_all.py` lane starts at the same time as `check.py`'s `run_folder_test.py` can be in that gap.
+
+**#317, a tool started by hand beside a `test_all.py` run:**
+
+- Observed (code): `clean_run_folders` deleted every `local/test-*` folder that was new since the run started, unless
+  another `test_all` run noted it or was running. A tool started by hand writes no note, so its folders went.
+- By the code the same held for `hash_check.py`, `view_check.py` (both `make_run_folder` with no note) and `campaign.py`
+  (its own folder named by hand, `test-campaign-<stamp>`; its games' folders through `replay.py`'s `make_run_dir`).
+- Fix, the smaller of the two the issue offers: a tool started by hand leaves a mark. `make_run_folder` notes a folder
+  in `local/test-hand/` (`HAND`, `run_folder.py`) when no run above it set `OWNED_ENV`, and `OwnedFolders` started by
+  hand adds `HAND` to what the tools it starts note into. `clean_run_folders` leaves a folder noted there, never deletes
+  `HAND`, and drops the notes whose folder is gone. The other way, deleting only the folders the run noted itself,
+  would have kept after every passing run what steps that name their own folders leave (`menu_test.py`'s
+  `local/test-menu/`, `steam_test.py`'s, `wingman_check.py`'s). `campaign.py` now makes its folder through
+  `make_run_folder`, so it gets the mark too. A crashed tool of the run is still noted in the run's `owned/` and
+  deleted; two runs in one checkout keep #283's rule (`test_all_test.py` `beside`, `by-hand`).
+- Observed (run, a second checkout of the branch, through `slot`): `test_all.py --no-build --only package` started
+  first, `lockstep_test.py --only macbeth_bombs` by hand once the run's folder was there; its folders came 0.1 s later,
+  the run still running. On the old cleanup (the branch's #307 commit) the run passed 4 s later and deleted
+  `test-lockstep-<stamp>` and `test-replay-lockstep-host-<stamp>`; both games' working directories read `(deleted)`, the
+  games went on writing their logs into the deleted files, and `lockstep_test.py` had no result after 88 s (the scenario
+  takes 23 s). With the mark but `lockstep_test.py` still naming its own folder (a first version of the fix): the games'
+  folders stayed and the scenario passed in 23 s, but `test-lockstep-<stamp>` went. With both: both stayed, `1/1
+  scenarios passed`. The same with `hash_check.py run` by hand: on the old cleanup the run deleted its four folders
+  while it ran (it still printed `PASS`, having read its games' logs just before); with the fix (and `--keep-folders`,
+  so that its own deletion after the pass does not hide the result) all four stayed.
+- Derived: nothing in `lockstep_test.py` notices that its games' folders are gone; the games do not stop or fail, so
+  the tool waits until its own limit (what the issue saw for nine minutes).
+- Unknown: a folder made in the moment between its `mkdir` and its note (`make_run_folder`) by a tool started by hand
+  is deleted by a cleanup that runs in that moment; not seen. Tools that name their own folder get no note (a follow-up).
+  `view_check.py` and `campaign.py` were not run beside a `test_all.py` run; their folders go through the same
+  `make_run_folder`.
+
 ### 2026-11-13, the owner's three decisions on the open items of the wave 9 hand-offs
 
 Answered by the owner in a dialog on 2026-11-13 (night), each as the recommendation of the hand-off it comes from.
