@@ -51,10 +51,12 @@ LEVELS = {
 # The map's paths (sPaths, src/overlays/ovl_menu/fox_map.c:455-480): blue is Corneria to Bolse and Venom 1, red is
 # Corneria to Area 6 and Venom 2; both end with Andross. `owner` is the route played by hand on 2026-11-09 (issue #2).
 # `all` is blue, then what red and the other paths add, and Andross' second part, where only Venom 2 leads (#275).
+# After Venom 2 the game plays Andross' second part, not the face (W8_ANDPILOT_THROUGH below), so red and owner end
+# with `venom-2-andross`, which flies Venom 2 and goes on through the game's jump (#283).
 ROUTES = {
     "blue": ("corneria", "meteo", "fortuna", "sector-x", "titania", "bolse", "venom-1", "venom-andross"),
-    "red": ("corneria", "sector-y", "aquas", "zoness", "sector-z", "area-6", "venom-2", "venom-andross"),
-    "owner": ("corneria", "meteo", "fortuna", "solar", "macbeth", "area-6", "venom-2", "venom-andross"),
+    "red": ("corneria", "sector-y", "aquas", "zoness", "sector-z", "area-6", "venom-2-andross"),
+    "owner": ("corneria", "meteo", "fortuna", "solar", "macbeth", "area-6", "venom-2-andross"),
     "all": ("corneria", "meteo", "fortuna", "sector-x", "titania", "bolse", "venom-1", "venom-andross", "sector-y",
             "aquas", "zoness", "sector-z", "area-6", "venom-2", "katina", "solar", "macbeth", "venom-2-andross"),
 }
