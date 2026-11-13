@@ -11,6 +11,8 @@
 //   SF64_COOP_JOIN_CLIENTS=<n>       host: try to start once this many clients have joined (default 1)
 //   SF64_COOP_JOIN_LEVEL=<n>         host: the LevelId to start (default 0, Corneria)
 //   SF64_COOP_JOIN_PHASE=<n>         host: its gLevelPhase (default 0; 1 is Andross' second part, #267)
+//   SF64_COOP_JOIN_CHECKPOINT=<n>    host: the level begins at the all-range checkpoint n, as the game's own restart
+//                                    there after a death does (#282): with level 9 and phase 1, 1 is Andross' escape
 //   SF64_COOP_JOIN_START_FRAME=<n>   host: not before this frame, counted as in the state hash log
 //   SF64_COOP_JOIN_CONNECT_FRAME=<n> host or client: open the session not before this frame, counted the same way, so
 //                                    that a game's title frames before the join do not depend on its speed (#287)

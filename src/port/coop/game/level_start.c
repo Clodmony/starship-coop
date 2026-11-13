@@ -207,6 +207,20 @@ bool CoopLevelStart_AtCheckpoint(CoopLevelStart* out) {
     return true;
 }
 
+void CoopLevelStart_SetAllRangeCheckpoint(CoopLevelStart* out, int32_t checkpoint) {
+    size_t r;
+    s32 n = CHECKPOINT_FLAG + 1;
+
+    out->values[CHECKPOINT_FLAG] = 1;
+    for (r = 0; r < ARRAY_COUNT(sCheckpointRows); r++) {
+        if (sCheckpointRows[r].data == (void*) &gAllRangeCheckpoint) {
+            out->values[n] = checkpoint;
+            return;
+        }
+        n += sCheckpointRows[r].count;
+    }
+}
+
 // A level start that begins at a checkpoint: its checkpoint values wait here from CoopLevelStart_Enter to the next
 // frame, as entering the level clears the checkpoint.
 static int32_t sCheckpointPending[CHECKPOINT_VALUES];
