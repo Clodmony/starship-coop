@@ -11,8 +11,9 @@ real processes over UDP.
 No ROM and no game data are needed; identities are given on the command line of the test program. Prints one line
 per scenario and a RESULT line, keeps every log in local/test-session/<stamp>/, exits 0 only when everything passed.
 Whether the scenarios can fail at all is checked by session_mutants.py. When level_start_bad_wifi fails, its line goes
-on with what the relay dropped per player and what the host and each client saw (#309; session_test_test.py checks
-that, check.py runs it).
+on with what the relay dropped per player and what the host and each client saw (#309). A client may see the host
+start the level again after another client left; check_level counts such a restart only after a recover for a player
+the host saw leave with `closed` (#314). session_test_test.py checks both without a build; check.py runs it.
 """
 import argparse
 import json
@@ -21,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import time
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -31,7 +33,7 @@ from run_folder import make_run_folder  # noqa: E402
 
 # Bits of CoopIdentityDiff, src/port/coop/session/identity.h.
 DIFF_BUILD, DIFF_ROM, DIFF_CVARS, DIFF_PLATFORM = 1, 2, 4, 8
-END_REFUSED = 1  # COOP_SESSION_END_REFUSED
+END_REFUSED, END_CLOSED = 1, 2  # COOP_SESSION_END_REFUSED, COOP_SESSION_END_CLOSED
 EAGER = 3  # game messages each side pushes past the session in a refused handshake
 REFUSE_STARTED = 1 << 9  # COOP_SESSION_REFUSE_STARTED
 LEVEL, PHASE = 5, 1  # what the bots start: TEST_PHASE in coop_session_test.c
@@ -274,20 +276,43 @@ def level_party(run, picks, via=None, seed=SEED, client_args=()):
 
 
 def check_level(h, clients):
-    """Every side saw one level start, and the same one: the level, the values, the save and the host's last roster."""
+    """Every side saw the host's level start, the same one: the level, the values, the save and the host's last roster.
+    The host starts the level again for whoever stays when a client goes (Host_Left, session.c; the session survives),
+    so a client that stays longer than another may see that too. A client's further level starts count only when each
+    follows a recover for a player the host saw leave with `closed` (#314, the owner's rule of 2026-11-13)."""
     start = h["level_start"]
     expect(start is not None, f"the host never started: {h['events']}")
     expect(start["level"] == LEVEL and start["phase"] == PHASE, f"level {start['level']} phase {start['phase']}")
     expect(start["values"] == level_values(), "the host's values are not the ones the bot gave it")
     expect(start["save"] == level_save(), "the host's save is not the one the bot gave it")
     expect(start["roster"][:len(clients) + 1] == h["roster"][:len(clients) + 1], f"host started from {start['roster']}")
-    # The host starts the level again for whoever stays when a client goes (the session survives), so it may see more.
     expect(len(events(h, "level_start")) >= 1, f"{h['role']}: {h['events']}")
-    for side in clients:
-        expect(len(events(side, "level_start")) == 1, f"{side['role']}: {side['events']}")
+    # The host's peer n is player n + 1, and a recover names the player who left by that number.
+    closed = Counter(e["peer"] + 1 for e in events(h, "left") if e["end"] == END_CLOSED)
     for n, c in enumerate(clients):
+        check_restarts(n, c, closed)
+        # The first level start a client sees is the host's: the bot keeps the first one it saw.
         expect(c["level_start"] == start, f"client {n} started from {c['level_start']}, host from {start}")
     return " ".join(name for name in start["roster"] if name)
+
+
+def check_restarts(n, c, closed):
+    """Client n's level starts: the first, then one more for each recover since the last start that names a player
+    the host saw leave with `closed`. Each such leave excuses one restart, so one leave seen twice does not count
+    twice; a recover for a player who timed out or never left excuses none."""
+    unused = Counter(closed)
+    starts = recovers = 0
+    for e in c["events"]:
+        if e["type"] == "recover" and unused[e["player"]] > 0:
+            unused[e["player"]] -= 1
+            recovers += 1
+        elif e["type"] == "level_start":
+            expect(starts == 0 or recovers > 0,
+                   f"client {n}: its level start {starts + 1} follows no recover for a player the host saw leave "
+                   f"(closed: players {sorted(closed.elements())}): {c['events']}")
+            starts += 1
+            recovers = 0
+    expect(starts >= 1, f"client {n} saw no level start: {c['events']}")
 
 
 # ---- Scenarios. Each returns the text for its summary line. ----
