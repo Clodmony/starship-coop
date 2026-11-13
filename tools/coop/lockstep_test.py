@@ -105,7 +105,8 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   vehicles  Titania, Aquas and Macbeth, the Landmaster and Blue Marine levels: same hash, both drive where co-op has opened.
   vehicle_end a vehicle level to its end: pilots drive it live, one on each client, with gInvincible on both, through
             the boss to level complete. Same hash on every frame. By hand, not in test_all.py. All three took 23
-            minutes with other tests running, Titania alone about 8 (level complete at frame 36223, limit 42000, #266).
+            minutes with other tests running when Titania's limit was 42000; it is 14000 now (level complete at about
+            9399 since #271, #276).
   rates     the plain run at real time, with the two clients at different gInterpolationFPS.
   desync_sim src/port/coop/sync/desync.c alone, in a virtual network (tools/coop/desynctest), WP-23.
   desync    a bit flipped on one client, on rails and in all-range: both games name that frame, the players and the
@@ -2547,12 +2548,13 @@ def sc_eels(args, folder):
 # level complete at frame 29169 in the first run, Macbeth at 9523, Aquas at 7240 (the join is close to its boss), so
 # there is room for a slower fight. Titania's moved (#266): level complete came at 43591 on a later build, and at 36223
 # on `coop` at 33bd5fe6 (this scenario and campaign.py alike; NOTES.md, "the campaign run"), past the 34000 frames it
-# had been given. Why it moves is a guess (Goras follows the tank lined up with it, #220). Its limit is now 42000, about
-# 16 % above the latest run as 34000 was above the first, so a fight as long as the 43591 one fails here.
+# had been given. Why it moves is a guess (Goras follows the tank lined up with it, #220). With the pilot's fix of #271
+# (Goras' hitboxes read right, NOTES.md 2026-11-12) it completes at about 9399, so its limit is 14000 again, as the
+# others' (#276): a run plays every frame of its limit, and Titania took 261 s with 14000 on 2026-11-13.
 # Macbeth's boss kills player 0 outright when the train reaches the end of its track first (Macbeth_Actor207_Update,
 # state 18-19), and with gInvincible that tank is never downed: it climbs on and the game crashes later. A slower pilot
 # fails there.
-VEHICLE_END_LEVELS = (("Macbeth", 11, 14000), ("Titania", 12, 42000), ("Aquas", 13, 14000))
+VEHICLE_END_LEVELS = (("Macbeth", 11, 14000), ("Titania", 12, 14000), ("Aquas", 13, 14000))
 
 
 def sc_vehicle_end(args, folder):
