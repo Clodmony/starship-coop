@@ -4797,6 +4797,17 @@ def survive_gaps_map_check(games):
     return survive_compare(games, 2, SURVIVE_FRAMES), survive_gaps_route_change(run1[0], run1[1])
 
 
+def trace_entry_jumps(game):
+    """#276: the player trace (SF64_COOP_TRACE) writes players only from Play_Init on, which sets the frame count to 0.
+    Entering a level, gPlayer points for a few frames (PLAY_STANDBY) into memory Game_SetGameState freed
+    (src/engine/fox_game.c:95-118); a line written then shows as a jump of the frame count that is not to 0. Returns
+    those jumps as (frame, next frame); a pause repeats a frame."""
+    frames = [int(line.split()[0].split("=")[1]) for line in
+              (game.run / "trace.txt").read_text(encoding="utf-8", errors="replace").splitlines()
+              if line.startswith("frame=")]
+    return [(a, b) for a, b in zip(frames, frames[1:]) if b not in (a, a + 1, 0)]
+
+
 def sc_survive_gaps_map(args, folder):
     """#267 item 2: the games part while the map is up. Pilots fly Corneria to the map; SURVIVE_GAPS_ON_MAP frames into
     it a bit is flipped on the client (the hash's own target, the last actor slot, which the map hashes too). Decision
@@ -4820,6 +4831,9 @@ def sc_survive_gaps_map(args, folder):
     # #276: the place is the map, not the level flown before it, whose number the map still holds
     expect(f"out of step at frame {poke} of the map:" in parted, f"the text does not name the map: `{said}`")
     frames, changed = survive_gaps_map_check(games)
+    for game in games:  # Corneria entered again from the map
+        jumps = trace_entry_jumps(game)
+        expect(not jumps, f"{game.name}: the player trace wrote lines while the level was entered: {jumps[:3]}")
     line = survive_first_difference(games, poke)  # one report each: none in the level that started again
     return (f"bit flipped {SURVIVE_GAPS_ON_MAP} frames into the map (frame {poke}): `{said}`; both games took level "
             f"start 2 for Corneria, the session's own, began it with the route it began with (the map had changed "
