@@ -38,11 +38,11 @@ views plays one replay twice per section, with SF64_COOP_TEST_LOCAL_INDEX 0 and 
   simulation state. --level flies other Arwing levels instead (VIEW_LEVELS, or all) and --cvar NAME=VALUE sets a CVar (#129).
   --pilot flies each level to its end first, boss included, with a pilot that reads game state, and the two clients play
   what it flew (PILOT_LEVELS, #181).
-slots plays a level with 1 player and with --players and compares how many effect slots are in use: co-op frees
-  nothing for leaving the view, so a kind of effect that only that frees would pile up (#129). Fails when what co-op
-  holds more than single player at its quietest (the floor of each third of the samples) grows by more than SLOTS_LEAK
-  from the first third to the last (#284): a leak never gives its slots back, a burst or a set that ends by itself
-  does. --rule-test checks that rule on made-up samples, with no game.
+slots plays a level with 1 player and with --players and compares the effect slots in use: co-op frees nothing for
+  leaving the view, so a kind of effect that only that frees would pile up (#129). Fails when the effects that have
+  lived 900 frames or more (the hash log's "# ages" lines) grow in co-op against single player by more than SLOTS_LEAK
+  from the first third of the samples to the last, at the floor of each third (#284): an effect nothing ends grows
+  old, a burst or a set that is renewed does not. --rule-test checks that rule on made-up samples, with no game.
 builds plays one replay on two runs of a Release build and one of a Debug build of the same commit (point 3 of decision
   0002): the two Release runs must be equal on every frame, and so must Debug against Release. Input by rule, as for
   views. Give each build as its own --debug and --release: a build folder holds one build type.
@@ -475,13 +475,20 @@ def read_views(path):
 
 
 def read_slots(path):
-    """The "# slots" lines of a log: [(frame, {array: (used, capacity)})]."""
-    rows = []
+    """The "# slots" lines of a log: [(frame, {array: (used, capacity)})]. A build of #284 on also writes "# ages"
+    lines: their count of old effects is "old", as (old, the effect slots)."""
+    rows, ages = [], {}
     for line in Path(path).read_text(encoding="utf-8", errors="replace").splitlines():
         if line.startswith("# slots "):
             parts = line.split()
             counts = {kv.split("=")[0]: tuple(int(n) for n in kv.split("=")[1].split("/")) for kv in parts[3:]}  # radio=n
             rows.append((int(parts[2].split("=")[1]), counts))
+        elif line.startswith("# ages "):
+            fields = dict(kv.split("=", 1) for kv in line.split()[2:])
+            ages[int(fields["frame"])] = int(fields["old"])
+    for frame, counts in rows:
+        if frame in ages and "effects" in counts:
+            counts["old"] = (ages[frame], counts["effects"][1])
     return rows
 
 
@@ -595,23 +602,27 @@ def view_compare(label, replay, frames, config, start, exe, args, level=None):
     return failures
 
 
-# `slots`: whether a level piles up effect slots in co-op that single player does not (#129, #284). The samples from
-# SLOTS_FROM on, in thirds; in each third the floor of each run (the fewest slots in use: what the level holds even at
-# its quietest), and co-op's floor less single player's. A leak never gives its slots back, so that difference grows
-# from the first third to the last. A burst does not reach the floor, and a set that ends by itself, or that has not
-# begun on one sample of the third, leaves it where it was: Fortuna's burning base (FoBase_BurnEffects) holds 47 to 68
-# slots from frame 6900 and is gone before 10000. The rule before #284, a median over the limit, failed Fortuna at
-# --frames 9000 by one slot on that set; a low quantile in place of the fewest would fail it at --frames 10000, where
-# the set fills all but a few samples of the last third.
+# `slots`: whether a level piles up effect slots in co-op that single player does not (#129, #284). What piles up is an
+# effect that nothing ends, so the rule counts old effects: the hash log's "# ages" line (src/port/coop/sync/
+# state_hash.c) gives how many effects have lived 900 frames or more. The samples from SLOTS_FROM on are cut in thirds,
+# and in each third the floor of each run (the fewest old effects on a sample); co-op's floor less single player's
+# grows from the first third to the last by what co-op holds and never gives back. Bursts, Fortuna's burning base
+# (FoBase_BurnEffects, 47 to 68 slots from frame 6900, gone before 10000) and the smoke a damaged Arwing trails
+# (Effect389, Player_DamageEffects, src/engine/fox_play.c:237-289: each puff ends within about 14 frames) hold many
+# slots and none of them grows old. Two rules failed on those before: a median of the slots in use over the limit failed
+# Fortuna at --frames 9000 (16 against 15), and the same floor on the slots in use failed Corneria's 2400 frames (the
+# second player's smoke from frame 1900 on, 0 to 18).
 SLOTS_FROM = 300
-SLOTS_LEAK = 15  # the most co-op's extra floor may grow from the first third to the last
+SLOTS_LEAK = 15  # the most co-op's floor of old effects may grow from the first third to the last
+SLOTS_OLD = 900  # EFFECT_OLD_FRAMES in state_hash.c
 
 
-def slots_growth(single, coop, name="effects"):
+def slots_growth(single, coop, name):
     """For two runs' "# slots" rows: ([co-op's floor less single player's, per third], growth from the first third to
-    the last), on the frames from SLOTS_FROM that both sampled; None when there are fewer than 6 of them."""
-    one = {frame: counts[name][0] for frame, counts in single if frame >= SLOTS_FROM}
-    more = {frame: counts[name][0] for frame, counts in coop if frame >= SLOTS_FROM}
+    the last) of counts[name], the floor being the fewest in a third, on the frames from SLOTS_FROM that both sampled;
+    None when there are fewer than 6 of them."""
+    one = {frame: counts[name][0] for frame, counts in single if frame >= SLOTS_FROM and name in counts}
+    more = {frame: counts[name][0] for frame, counts in coop if frame >= SLOTS_FROM and name in counts}
     frames = sorted(set(one) & set(more))
     if len(frames) < 6:
         return None
@@ -623,39 +634,52 @@ def slots_growth(single, coop, name="effects"):
 
 def slots_problem(name, players, single, coop):
     """The failure of `slots` for one level, or None; prints what it compared."""
-    growth = slots_growth(single, coop)
-    if growth is None:
+    if not all("old" in counts for _, counts in single + coop):
+        return f"{name}: no \"# ages\" lines in the hash logs: a build from before #284"
+    slots, old = slots_growth(single, coop, "effects"), slots_growth(single, coop, "old")
+    if old is None:
         return f"{name}: too few samples to compare"
-    extra, grew = growth
-    print(f"hash: {name}: {players} players hold {', '.join(map(str, extra))} effect slots more than 1 at the floor of "
-          f"each third, grown by {grew} (at most {SLOTS_LEAK})")
+    extra, grew = old
+    print(f"hash: {name}: {players} players hold {', '.join(map(str, extra))} old effects ({SLOTS_OLD} frames or more) "
+          f"more than 1 at the floor of each third, grown by {grew} (at most {SLOTS_LEAK}); all effects in use, the "
+          f"same way: {', '.join(map(str, slots[0]))}")
     if grew > SLOTS_LEAK:
-        return (f"{name}: what {players} players hold more than 1 at its quietest grew by {grew} effect slots from the "
-                f"first third of the level to the last ({extra[0]} to {extra[2]}, at most {SLOTS_LEAK} more): something "
-                f"is not freed")
+        return (f"{name}: {players} players hold {grew} more effects that live {SLOTS_OLD} frames or more than 1 does, "
+                f"from the first third of the level to the last ({extra[0]} to {extra[2]}, at most {SLOTS_LEAK} more): "
+                f"something is not freed")
     return None
 
 
 def slots_rule_test():
-    """`slots --rule-test`: the rule on made-up samples every 100 frames to 9000, as a run of `slots` takes them (#284).
-    Returns a list of failures."""
-    def rows(used, end=9000):
-        return [(frame, {"effects": (used(frame), 100)}) for frame in range(0, end + 1, 100)]
+    """`slots --rule-test`: the rule on made-up samples every 100 frames, as a run of `slots` takes them (#284). An
+    effect counts as old SLOTS_OLD frames after its birth. Returns a list of failures."""
+    def rows(used, old=lambda f: 0, end=9000):
+        return [(f, {"effects": (used(f), 100), "old": (old(f), 100)}) for f in range(0, end + 1, 100)]
 
-    quiet = rows(lambda f: 5 + (40 if f % 1000 == 0 else 0))  # single player, with a burst now and then
-    burn = rows(lambda f: 5 + 55 * (6900 <= f < 9800) + 80 * (9800 <= f < 10000), 10000)  # Fortuna's, #246
+    def leaked(f, every, cap=100):  # leaked effects at frame f that are old by then, one born every `every` frames
+        return min(cap, max(0, (f - SLOTS_OLD) // every))
+
+    quiet = lambda f: 5 + (40 if f % 1000 == 0 else 0)  # single player, with a burst now and then
     cases = [
-        ("a set from frame 6900 to the end, as Fortuna's burn at --frames 9000", rows(lambda f: 5 + 55 * (f >= 6900)), True),
-        ("a set over all but 3 samples of the last third, as Fortuna's burn at --frames 10000", burn, True),
+        ("a renewed set from frame 6900 to the end, as Fortuna's burn at --frames 9000",
+         rows(lambda f: 5 + 55 * (f >= 6900)), True),
+        ("a renewed set over all but 3 samples of the last third, as Fortuna's burn at --frames 10000",
+         rows(lambda f: 5 + 55 * (6900 <= f < 9800) + 80 * (9800 <= f < 10000), end=10000), True),
+        ("a renewed set from frame 1900 on, as the second player's smoke in Corneria's 2400 frames",
+         rows(lambda f: 5 + 18 * (f >= 1900), end=2400), True),
         ("a burst to 100 slots for one sample", rows(lambda f: 100 if f == 8100 else 7), True),
-        ("as many as single player, plus 20 all along", rows(lambda f: 25 + (40 if f % 1000 == 0 else 0)), True),
-        ("a leak of a slot every 300 frames", rows(lambda f: 5 + f // 300), False),
-        ("a leak of a slot every 100 frames, full from frame 9500 on", rows(lambda f: min(100, 5 + f // 100)), False),
-        ("a leak that fills the array by frame 3000", rows(lambda f: min(100, 5 + f // 30)), False),
+        ("20 more slots than single player all along, renewed", rows(lambda f: 25 + (40 if f % 1000 == 0 else 0)), True),
+        ("10 old effects in both runs from frame 1000 on", rows(quiet, lambda f: 10 * (f >= 1000)), True),
+        ("a leak of an effect every 300 frames", rows(lambda f: 5 + f // 300, lambda f: leaked(f, 300)), False),
+        ("a leak of an effect every 100 frames, the array full from frame 9500 on",
+         rows(lambda f: min(100, 5 + f // 100), lambda f: leaked(f, 100, 95)), False),
+        ("a leak that fills the array by frame 3000", rows(lambda f: min(100, 5 + f // 30), lambda f: leaked(f, 30, 95)),
+         False),
     ]
     failures = []
     for label, coop, passes in cases:
-        single = quiet if coop[-1][0] == quiet[-1][0] else rows(lambda f: 5, coop[-1][0])
+        end = coop[-1][0]
+        single = rows(quiet, lambda f: 10 * (f >= 1000) if "in both" in label else 0, end=end)
         problem = slots_problem("rule-test", 2, single, coop)
         if (problem is None) != passes:
             failures.append(f"{label}: {'failed' if problem else 'passed'}, want {'pass' if passes else 'fail'}")
