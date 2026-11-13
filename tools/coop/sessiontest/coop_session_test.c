@@ -15,7 +15,8 @@
 //       the next one after each refusal. With --players a client stays until the first N players all hold a
 //       character, and the JSON has that roster. --pick-delay-ms waits that long before each pick. --start-level has
 //       the host try to start that level on every loop once --start-with clients (default: all of them) have joined,
-//       and count the tries that fail. --wait-level has a client stay until a level has started.
+//       and count the tries that fail. --wait-level has a client stay until a level has started. The JSON has the
+//       side's own UDP port, so a test can tell which client's packets a relay dropped (#309).
 //
 // Identity options: --build TEXT --platform TEXT --rom HEX (repeat for several archives) --cvar NAME=VALUE (repeat).
 // Defaults: build "test-build", this machine's platform, ROM US 1.0, every CVar at its default.
@@ -5113,8 +5114,10 @@ static int Bot_Main(const BotOptions* o) {
     if (f == NULL) {
         return 2;
     }
-    fprintf(f, "{\"role\": \"%s\", \"finished\": %s, \"received\": %u, \"ignored\": %u, \"rosters\": %u, \"roster\": [",
-            isHost ? "host" : "client", finished ? "true" : "false", (unsigned) received,
+    fprintf(f,
+            "{\"role\": \"%s\", \"port\": %u, \"finished\": %s, \"received\": %u, \"ignored\": %u, \"rosters\": "
+            "%u, \"roster\": [",
+            isHost ? "host" : "client", (unsigned) CoopNetSdl_Port(t), finished ? "true" : "false", (unsigned) received,
             (unsigned) CoopSession_Ignored(s), (unsigned) rosters);
     for (i = 0; isComplete && i < COOP_SESSION_PLAYERS; i++) {
         fprintf(f, "%s\"%s\"", i ? ", " : "", CoopSession_CharacterName(complete.character[i]));

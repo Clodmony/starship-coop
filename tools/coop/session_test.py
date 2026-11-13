@@ -10,9 +10,12 @@ real processes over UDP.
 
 No ROM and no game data are needed; identities are given on the command line of the test program. Prints one line
 per scenario and a RESULT line, keeps every log in local/test-session/<stamp>/, exits 0 only when everything passed.
-Whether the scenarios can fail at all is checked by session_mutants.py.
+Whether the scenarios can fail at all is checked by session_mutants.py. When level_start_bad_wifi fails, its line goes
+on with what the relay dropped per player and what the host and each client saw (#309; session_test_test.py checks
+that, check.py runs it).
 """
 import argparse
+import json
 import platform
 import shutil
 import subprocess
@@ -34,6 +37,9 @@ REFUSE_STARTED = 1 << 9  # COOP_SESSION_REFUSE_STARTED
 LEVEL, PHASE = 5, 1  # what the bots start: TEST_PHASE in coop_session_test.c
 LEVEL_VALUES = 182  # COOP_LEVEL_START_VALUES
 WINDOWS, LINUX = "Windows x86-64 MSVC 1944", "Linux x86-64 GCC 13.2"  # two platforms, as CoopIdentity_Platform writes
+# CoopSessionEnd, src/port/coop/session/session.h, as a failure names them.
+END_NAMES = ["none", "refused", "closed", "timeout", "host full", "protocol", "no handshake", "bad message",
+             "no recovery", "other session"]
 
 
 def pair(run, host_args=(), client_args=(), via=None, seconds=60, seed=SEED):
@@ -59,6 +65,7 @@ def damaged_runs(run, play, tries=8):
     returns the results and then the relay's info."""
     for n in range(tries):
         sub = Run(run.exe, run.folder / f"try{n}")
+        run.try_folder = sub.folder  # what damage_report reads if this try fails
         try:
             *results, info = play(sub, SEED + n)
             stats = chaos.stats(info)
@@ -70,6 +77,93 @@ def damaged_runs(run, play, tries=8):
             run.tries = n + 1
             return
     raise Fail(f"the relay dropped nothing in {tries} runs, so this pass would prove nothing")
+
+
+def end_name(code):
+    return END_NAMES[code] if 0 <= code < len(END_NAMES) else f"end {code}"
+
+
+def brief(e, host):
+    """One event of a bot's result, short: who left and why, and what a recovery said."""
+    if e["type"] == "joined":
+        return f"joined player {e['player'] + 1}" if host else f"joined as player {e['player'] + 1}"
+    if e["type"] == "left":  # the host's peer n holds slot n + 1, which the texts call player n + 2
+        return f"player {e['peer'] + 2} left ({end_name(e['end'])})" if host else f"left ({end_name(e['end'])})"
+    if e["type"] == "ended":
+        return f"ended ({end_name(e['end'])})"
+    if e["type"] == "recover":
+        return f'recover "{e["text"]}"'
+    return e["type"]
+
+
+def relay_drops(folder):
+    """From the relay's packet log (tools/coop/chaos/relay.py): {client port: {way: [seen, [times of drops in ms]]}}
+    and the log's header."""
+    path = folder / "packets.jsonl"
+    peers, header = {}, {}
+    if not path.exists():
+        return peers, None
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue  # the relay was stopped in the middle of a line
+        if "format" in row:
+            header = row
+        if "dir" not in row or "peer" not in row:
+            continue
+        way = peers.setdefault(int(row["peer"].rsplit(":", 1)[1]), {"c2s": [0, []], "s2c": [0, []]})[row["dir"]]
+        way[0] += 1
+        if row["verdict"] == "drop":
+            way[1].append(row["t"])
+    return peers, header
+
+
+def damage_report(folder):
+    """What a failed run through the relay leaves to read (#309): the relay's drops per player, way and time, what the
+    host saw of every player who left and of each recovery it started, and each client's own events. From the files
+    of the run, so it works after its processes ended."""
+    def load(path):
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+
+    host = load(folder / "host.json")
+    clients = [c for c in (load(path) for path in sorted(folder.glob("client*.json"))) if c]
+    player_of = {}
+    for c in clients:
+        joined_as = events(c, "joined")
+        if "port" in c and joined_as:
+            player_of[c["port"]] = joined_as[0]["player"] + 1
+    peers, header = relay_drops(folder)
+    lines = []
+    if header is None:
+        lines.append(f"no relay packet log in {folder.name}")
+    else:
+        seen = sum(way[0] for peer in peers.values() for way in peer.values())
+        lost = sum(len(way[1]) for peer in peers.values() for way in peer.values())
+        lines.append(f"relay dropped {lost} of {seen} ({header.get('profile')}, seed {header.get('seed')}, "
+                     f"{folder.name})")
+        for port in sorted(peers, key=lambda p: (player_of.get(p, 99), p)):
+            who = f"player {player_of[port]}" if port in player_of else f"port {port}"
+            ways = []
+            for way, name in (("c2s", "to the host"), ("s2c", "from the host")):
+                count, times = peers[port][way]
+                at = f" at {', '.join(f'{t:.0f} ms' for t in times)}" if times else ""
+                ways.append(f"{name} {len(times)} of {count}{at}")
+            dropped = any(peers[port][way][1] for way in ("c2s", "s2c"))
+            lines.append(f"  {who}, relay {'dropped' if dropped else 'dropped nothing'}: {'; '.join(ways)}")
+    if host is None:
+        lines.append("no host.json")
+    else:
+        lines.append("  host saw: " + ", ".join(brief(e, True) for e in host["events"] if e["type"] != "pick_refused"))
+    for c in clients:
+        joined_as = events(c, "joined")
+        who = f"player {joined_as[0]['player'] + 1}" if joined_as else f"a client on port {c.get('port')}"
+        lines.append(f"  {who} saw: " + ", ".join(brief(e, False) for e in c["events"]) +
+                     ("" if c["finished"] else " (did not finish)"))
+    return "\n".join(lines)
 
 
 def damaged_pair(run, host_args, client_args, via):
@@ -296,9 +390,12 @@ def sc_level_start(run, args):
 def sc_level_start_bad_wifi(run, args):
     def play(sub, seed):
         return level_party(sub, [WISHES] * 3, "bad_wifi", seed)
-    for h, clients in damaged_runs(run, play):
-        check_party(h, clients, TAKEN)
-        detail = check_level(h, clients)
+    try:
+        for h, clients in damaged_runs(run, play):
+            check_party(h, clients, TAKEN)
+            detail = check_level(h, clients)
+    except Fail as e:  # failed once in a gate with two recoveries, and its line said neither why nor where (#309)
+        raise Fail(f"{e}\n{damage_report(run.try_folder)}") from None
     return f"{detail} (relay dropped {run.lost}, try {run.tries})"
 
 
