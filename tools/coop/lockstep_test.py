@@ -4816,9 +4816,11 @@ def sc_survive_gaps_map(args, folder):
                f"{game.name}: recover {recover}")
     expect(len(join_test.said(host.report(), "recover")) == 1, f"host: {join_test.said(host.report(), 'recover')}")
     parted = next(line for _, _, line in host.report() if line.startswith("parted"))
+    said = parted.split("text=", 1)[1].split(" A report", 1)[0][:160]
+    # #276: the place is the map, not the level flown before it, whose number the map still holds
+    expect(f"out of step at frame {poke} of the map:" in parted, f"the text does not name the map: `{said}`")
     frames, changed = survive_gaps_map_check(games)
     line = survive_first_difference(games, poke)  # one report each: none in the level that started again
-    said = parted.split("text=", 1)[1].split(" A report", 1)[0][:160]
     return (f"bit flipped {SURVIVE_GAPS_ON_MAP} frames into the map (frame {poke}): `{said}`; both games took level "
             f"start 2 for Corneria, the session's own, began it with the route it began with (the map had changed "
             f"{changed}) and hash alike on its first {frames} frames; `{line}`")
