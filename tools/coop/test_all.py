@@ -29,9 +29,10 @@ what it started, and counts as failed. When all steps pass, the run folders they
 keeps them); a failure keeps them for reading.
 
 A build that is not Debug leaves out what only Debug can do: OPTIMISED below, printed at the end of a run. --mixed
-leaves nothing out: it builds Debug and Release and plays every step that starts the game on the Release build, which
-needs about 3 times less CPU per game, except the ones that need Debug's symbols (OPTIMISED), builds and coop-off. The
-unit tests, the loopback tools, their AddressSanitizer runs and the mutation suites run as always.
+leaves nothing out: it builds Debug and Release (the checks only in Debug's build) and plays every step that
+starts the game on the Release build, which needs about 3 times less CPU per game, except the ones that need Debug's
+symbols (OPTIMISED), builds and coop-off. The unit tests, the loopback tools, their AddressSanitizer runs and the
+mutation suites run as always.
 
 Two steps need a second build, and without one they do not run: coop-off plays co-op off on this build and the build
 before your change, which is --base-exe or a build of --base-ref that the run makes itself (the base gets copies of
@@ -518,13 +519,23 @@ def print_list():
         print(f"{step.name}: {step.lane}, {' '.join(step.command)}" + (", Linux only" if step.linux else ""))
 
 
-def run_build(run, args, config=None):
-    """Build args.config, or with config the other one of --mixed, in its own folder."""
-    config = config or args.config
-    folder = args.build_dir if config == args.config or IS_WINDOWS else ROOT / FOLDERS[config]
-    command = [*wrap_of("build", args), sys.executable, "-u", str(TOOLS / "build.py"), "--quiet", "--config", config,
-               "--build-dir", str(folder)]
-    return run.run("build" if config == args.config else f"build-{config.lower()}", command)
+def build_commands(args):
+    """The build step: (name, command) for each build, one after the other. --mixed builds Release after Debug, without
+    the repository checks: check.py does not depend on the config, and Debug's build ran it. After a change to the
+    co-op sources the step took 93 s with check.py twice and takes 65 s so; the two builds at the same time with half
+    the jobs each took 62 s, not worth running them beside each other (#290)."""
+    commands = []
+    for config in [args.config, *(["Release"] if args.mixed else [])]:
+        folder = args.build_dir if config == args.config or IS_WINDOWS else ROOT / FOLDERS[config]
+        command = [*wrap_of("build", args), sys.executable, "-u", str(TOOLS / "build.py"), "--quiet", "--config", config,
+                   "--build-dir", str(folder), *([] if config == args.config else ["--no-check"])]
+        commands.append(("build" if config == args.config else f"build-{config.lower()}", command))
+    return commands
+
+
+def run_builds(run, args):
+    """True when every build of the build step passed; it stops at the first that fails."""
+    return all(run.run(name, command) for name, command in build_commands(args))
 
 
 def run_programs(run, args, targets):
@@ -542,6 +553,9 @@ def run_programs(run, args, targets):
 def print_plan(args, chosen):
     """--dry-run: what would run, in which lane, and what would not."""
     lanes, missing = make_plan(args, chosen)
+    if not args.no_build:
+        for name, command in build_commands(args):
+            print(f"build: {name}: {shlex.join(str(part) for part in command)}")
     targets = program_targets(chosen)
     if targets:
         print(f"programs: cmake --build {args.build_dir} --config {args.config} --target {' '.join(targets)}")
@@ -593,9 +607,7 @@ def main():
     run.write(f"tree {head}, {args.config}{' and Release (mixed)' if args.mixed else ''}, {args.lanes} lanes, "
               f"load {load}, started {time.strftime('%H:%M:%S')}")
 
-    built = args.no_build or args.plan or run_build(run, args)
-    if built and args.mixed and not (args.no_build or args.plan):
-        built = run_build(run, args, "Release")
+    built = args.no_build or args.plan or run_builds(run, args)
     lanes, missing = make_plan(args, chosen) if built else ({}, [])
     if built and not args.plan and not usable_game(run, args):
         built = False

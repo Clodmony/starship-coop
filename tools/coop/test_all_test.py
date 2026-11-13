@@ -300,6 +300,15 @@ def scenario_dry_run_mixed(bench):
     for name in ("wingman", "exit-test", "version", "net"):
         want("build-release" not in plan[name][1], f"{name} plays on Release: {plan[name][1]!r}")
     want("build-release" in plan["builds"][1] and "build-cmake" in plan["builds"][1], "builds does not take both")
+    # Debug's build, then Release's without the repository checks: they ran in Debug's (#290)
+    builds = [line.split(": ", 2)[1:] for line in output.splitlines() if line.startswith("build: ")]
+    want([name for name, _ in builds] == ["build", "build-release"], f"--mixed builds: {builds!r}")
+    want(builds[0][1].endswith("--build-dir " + str(bench.repo / "build-cmake")) and
+         builds[1][1].endswith("--build-dir " + str(release) + " --no-check"), f"--mixed runs check.py twice: {builds!r}")
+    output, _ = dry_run(bench)
+    builds = [line for line in output.splitlines() if line.startswith("build: ")]
+    want(len(builds) == 1 and builds[0].endswith(" --config Debug --build-dir " + str(bench.repo / "build-cmake")),
+         f"Debug alone builds otherwise: {builds!r}")
     done = subprocess.run([sys.executable, str(bench.repo / "tools" / "coop" / "test_all.py"), "--dry-run", "--mixed",
                            "--config", "Release"], cwd=bench.repo, env=ENV, capture_output=True, text=True, timeout=60)
     want(done.returncode == 2 and "use it with --config Debug" in done.stderr, f"--mixed --config Release: {done.stderr!r}")
