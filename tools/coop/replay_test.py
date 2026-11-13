@@ -16,8 +16,10 @@ Every tool starts with SHIP_HOME set to a decoy folder, never the value from you
 can only write into the decoy. That fails the scenario, and so does a run folder the game did not write its config
 into. The decoy holds sf64.o2r, as a real install does: without it the game exits at once and writes nothing
 (src/port/Engine.cpp:78), which would hide the bug. On Linux the game runs without a window and off the GPU. Everything
-lands under local/test-*: the folders are deleted when all scenarios hold and kept for reading when one fails. On
-another system the scenarios that need Linux are skipped, and the run says which (#166).
+lands under local/test-*: the folders are deleted when all scenarios hold and kept for reading when one fails, those
+of the tools it starts too, as many fail on purpose and keep theirs (#308). On another system the scenarios that need
+Linux are skipped, and the run says which (#166). A tool still running TOOL_LIMIT seconds after it started fails its
+scenario, and is stopped with every process it started, its games too (#308).
 
 The leak-* scenarios start a tool with the variables an earlier test can leave in a shell (#70). Each one shows when it
 reaches the game: a file in the decoy, a test switch line in the game's log, or a hash_check.py run that fails because
@@ -30,8 +32,10 @@ real time for determinism.py without its speed variant and for replay.py --speed
 (Linux) start a tool from a shell without any SDL driver, as one typed by hand, and read the driver from each running
 game's environment: a test game must be silent and have no window. A game that is not gets SIGKILL on sight, before it
 opens a sound device. person starts replay.py record without --frames, the one run a person plays: that game must be
-left in real time, and this test then stops it. rates-real and rates-at-speed run hash_check.py rates, whose guard
-counts the draws a game really made: it must hold at real time and fail at speed, where no game interpolates.
+left in real time, and this test then stops it with SIGTERM once it draws, after its stop handler is in, and with
+SIGKILL when it still runs STOP_LIMIT seconds later (#308; tools/coop/replay_test_test.py tests these waits).
+rates-real and rates-at-speed run hash_check.py rates, whose guard counts the draws a game really made: it must hold at
+real time and fail at speed, where no game interpolates.
 
 A game that does not draw logs so, and every scenario checks that against its tool (#147). The *-no-draw scenarios
 start a tool that needs pixels or interpolation with COOP_TOOLS_TAKE_DRAWING in its shell, so its games do not get them:
@@ -58,6 +62,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import replay as replay_tool  # noqa: E402
+from run_folder import OwnedFolders, make_run_folder  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 ARCHIVE = "sf64.o2r"  # the one file a decoy starts with
@@ -71,6 +76,14 @@ RUN_FOLDER = re.compile(r"test-(?:replay|trace)-[a-z0-9-]*?\d{8}-\d{6}(?:-\d+)?"
 QUIET = {"SDL_AUDIODRIVER": "dummy", "SDL_VIDEODRIVER": "offscreen", "LIBGL_ALWAYS_SOFTWARE": "1",
          "GALLIUM_DRIVER": "llvmpipe"}  # what game_env gives a test game on Linux
 TEST_SPEED = replay_tool.TEST_SPEED
+# person: a game writes its config early in its start (InitConfiguration, src/port/Engine.cpp:146) and puts in the stop
+# handler of a test run later (CoopStopSignal_Init, src/port/Engine.cpp:316); a SIGTERM in between meets upstream's
+# handler, which hangs in exit() for good (#71, #308). ImGui writes READY_FILE 5 s after the game starts to draw, long
+# after that, as exit_test.py waits for it.
+READY_FILE = "imgui.ini"
+READY_LIMIT = int(TIMEOUT)  # seconds until person's game must draw
+STOP_LIMIT = 15  # seconds for person's game to end after SIGTERM: what stop_game in replay.py gives a game
+TOOL_LIMIT = 600  # seconds for one tool: five of its TIMEOUTs per game, more than three games one after the other take
 
 RATES = ["hash_check.py", "rates", "--rates", "30,60", "--section", "rails", "--players", "1", "--frames", str(FRAMES),
          "--timeout", TIMEOUT]  # a replay of its own, by rule; the file does not come into it
@@ -179,8 +192,7 @@ class Bench:
     """The test's own folder under local/, and every run folder the tools made."""
 
     def __init__(self, exe):
-        self.folder = ROOT / "local" / f"test-replaytools-{time.strftime('%Y%m%d-%H%M%S')}-{os.getpid()}"
-        self.folder.mkdir(parents=True)
+        self.folder = make_run_folder(ROOT / "local", "test-replaytools-")
         self.exe = replay_tool.find_exe(exe)
         self.archive = replay_tool.find_data(self.exe, ARCHIVE)
         if self.archive is None:
@@ -208,12 +220,14 @@ class Bench:
         log = self.folder / f"{tag}.log"
         failures = []
         with log.open("w", encoding="utf-8") as out:
+            began = time.monotonic()
             proc = subprocess.Popen([sys.executable, "-u", str(ROOT / "tools" / "coop" / command[0]), *command[1:],
                                      "--exe", str(self.exe)],
                                     cwd=ROOT, env=env, stdout=out, stderr=subprocess.STDOUT)
             if watch is not None:
                 failures += watch(proc)
-            code = proc.wait()
+            code, more = wait_tool(proc, TOOL_LIMIT, began)
+            failures += more
         output = log.read_text(encoding="utf-8", errors="replace")
 
         wrote = sorted(p.name for p in decoy.iterdir() if p.name != ARCHIVE)
@@ -233,6 +247,63 @@ class Bench:
             # Only folders this test made: they sit directly in local/ and are named test-*.
             if folder.parent == ROOT / "local" and folder.name.startswith("test-"):
                 shutil.rmtree(folder, ignore_errors=True)
+
+
+def started(pid):
+    """When process pid started (field 22 of /proc/<pid>/stat), which tells it from a later process with its number;
+    None when it has ended, a zombie too, which has ended and waits for its parent."""
+    try:
+        fields = Path(f"/proc/{pid}/stat").read_text().rpartition(")")[2].split()
+    except OSError:
+        return None
+    return None if fields[0] == "Z" else fields[19]
+
+
+def kill_same(pid, born):
+    """SIGKILL pid if it is still the process that started at born: only a process this test started."""
+    if born is not None and started(pid) == born:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
+def descendants(pid):
+    """Every process below pid, as (pid, when it started)."""
+    children = {}
+    for entry in filter(str.isdigit, os.listdir("/proc")):
+        try:
+            fields = Path(f"/proc/{entry}/stat").read_text().rpartition(")")[2].split()
+            children.setdefault(int(fields[1]), []).append((int(entry), fields[19]))
+        except (OSError, ValueError, IndexError):
+            pass  # it ended while we looked
+    found, todo = [], [pid]
+    while todo:
+        for child in children.get(todo.pop(), []):
+            found.append(child)
+            todo.append(child[0])
+    return found
+
+
+def wait_tool(tool, limit, began):
+    """Wait for a tool this test started, until limit seconds after began (time.monotonic()). Returns (exit code,
+    failures). A tool still running then is stopped, and every process it started with it, by their PIDs, so that none
+    of its games is left running (#308). On Linux the tool is held with SIGSTOP while they are looked up, so it starts
+    no new one; elsewhere only the tool is stopped."""
+    try:
+        return tool.wait(timeout=max(0.0, began + limit - time.monotonic())), []
+    except subprocess.TimeoutExpired:
+        pass
+    below = []
+    if sys.platform.startswith("linux"):
+        tool.send_signal(signal.SIGSTOP)
+        below = descendants(tool.pid)
+        for pid, born in below:
+            kill_same(pid, born)  # Only processes this test's tool started.
+    tool.kill()
+    tool.wait()
+    return tool.returncode, [f"tool still running after {limit}s: stopped it"
+                             + (f" and the {len(below)} process(es) it started" if below else "")]
 
 
 def record(bench, name, extra=()):
@@ -341,24 +412,47 @@ def watch_quiet(bench):
 
 
 def watch_person(bench):
-    """Returns the check of person: the game runs in real time. Nobody is there to close it, so this stops it once it
-    has written its config, which the run folder check wants to see."""
+    """Returns the check of person: the game runs in real time. Nobody is there to close it, so this stops it with
+    SIGTERM, as the close of its window would, once it draws (READY_FILE): not as soon as it has written its config,
+    which comes before its stop handler is in (#308)."""
     def watch(tool):
-        end = time.monotonic() + int(TIMEOUT)
+        end = time.monotonic() + READY_LIMIT
         while tool.poll() is None and time.monotonic() < end:
             games = games_of(tool, bench.exe)
             if games:
                 pid, env = next(iter(games.items()))
-                while tool.poll() is None and time.monotonic() < end:
-                    if Path(f"/proc/{pid}/cwd/starship.cfg.json").exists():
-                        break
-                    time.sleep(0.1)
-                os.kill(pid, signal.SIGTERM)  # Only the game this test's tool started.
                 speed = env.get("SF64_COOP_TEST_SPEED")
-                return [f"a game a person plays runs at speed {speed}"] if speed is not None else []
+                failures = [f"a game a person plays runs at speed {speed}"] if speed is not None else []
+                return failures + stop_person(pid, end)
             time.sleep(0.02)
         return ["no game seen"]
     return watch
+
+
+def stop_person(pid, end):
+    """Stop person's game, pid, with SIGTERM once it draws. A game that has not drawn at end (monotonic) or still runs
+    STOP_LIMIT seconds after the signal gets SIGKILL, and fails. Returns failures."""
+    born = started(pid)
+    try:
+        run = Path(os.readlink(f"/proc/{pid}/cwd"))
+    except OSError:
+        return ["game ended before it drew"]
+    while not (run / READY_FILE).exists():
+        if started(pid) != born:
+            return ["game ended before it drew"]
+        if time.monotonic() > end:
+            kill_same(pid, born)
+            return [f"game did not draw within {READY_LIMIT}s: stopped with SIGKILL"]
+        time.sleep(0.1)
+    if started(pid) == born:
+        os.kill(pid, signal.SIGTERM)  # Only the game this test's tool started.
+    limit = time.monotonic() + STOP_LIMIT
+    while started(pid) == born:
+        if time.monotonic() > limit:
+            kill_same(pid, born)
+            return [f"game still running {STOP_LIMIT}s after SIGTERM: stopped with SIGKILL"]
+        time.sleep(0.1)
+    return []
 
 
 def check(bench, name, scenario, files):
@@ -440,10 +534,12 @@ def main():
         return 0
 
     start = time.monotonic()
+    owned = OwnedFolders(ROOT / "local")  # the bench, and the run folders of every tool it starts (#308)
     bench = Bench(args.exe)
     print(f"replay_test: recording {FRAMES} frames with nobody playing, in {bench.folder}", flush=True)
     files = make_replays(bench)
     if files is None:
+        owned.close()
         print("replay_test: FAIL")
         return 1
 
@@ -467,8 +563,10 @@ def main():
     print(f"replay_test: {len(chosen) - failed}/{len(chosen)} scenarios OK, {time.monotonic() - start:.0f}s")
     if failed:
         print(f"replay_test: logs and run folders kept: {bench.folder}")
+        owned.close()
     else:
         bench.clean()
+        owned.delete()
     print("replay_test: FAIL" if failed else "replay_test: PASS")
     return 1 if failed else 0
 

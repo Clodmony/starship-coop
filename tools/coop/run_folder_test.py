@@ -15,10 +15,17 @@ a killed run left behind, and check.py must not write. Without cmake it is skipp
 
 The out-* scenarios are the other side: --out names a folder that runs may share, and it stays as it is.
 
+owned and clean-crash are about the end of a run (#308). owned has a process note what the tools it starts make
+(OwnedFolders): a folder two tools down is noted, at both levels, and delete() removes it. clean-crash runs
+crash_test.py as test_all.py runs a step, with OWNED_ENV set, and every folder noted there must be gone when it passes:
+the folders of the stand-in's runs too, which the tools it starts make.
+
 No build, no ROM, a few seconds; check.py runs it. Exit code 0 when every scenario holds, 1 otherwise. Folders are named
 after the stopped clock and deleted when all scenarios hold, and kept for reading when one fails.
 """
 import argparse
+import os
+import re
 import shutil
 import subprocess
 import sys
@@ -32,6 +39,9 @@ LOCAL = ROOT / "local"
 RUNS = 4  # at once in a scenario
 THREADS = 4  # per process in helper
 GATHER = 0.5  # seconds for helper's processes to start before they are let go
+
+sys.path.insert(0, str(TOOLS))
+from run_folder import OWNED_ENV  # noqa: E402
 
 # As mutants.py starts a test script, with -I: the tool has to find its own imports.
 TOOL = """
@@ -181,6 +191,74 @@ def check_out_mutants(bench, name):
     return check_out(bench, out, bench.made(folder))
 
 
+def check_owned(bench, name):
+    """A folder that a tool two levels down makes is noted by OwnedFolders and by the run above it; delete() removes
+    it, and close() hands OWNED_ENV back as it was."""
+    from run_folder import OwnedFolders, make_run_folder  # here: the scenarios before it need neither
+
+    outer = bench.folder / f"{name}-outer"
+    saved = os.environ.get(OWNED_ENV)
+    os.environ[OWNED_ENV] = str(outer)
+    try:
+        owned = OwnedFolders(LOCAL)
+        prefix = f"test-{bench.stamp}-{name}-"
+        child = ("import subprocess, sys\n"
+                 f"sys.path.insert(0, {str(TOOLS)!r})\n"
+                 "from pathlib import Path\n"
+                 "from run_folder import make_run_folder\n"
+                 f"make_run_folder(Path({str(LOCAL)!r}), {prefix + 'deep-'!r})\n")
+        parent = ("import subprocess, sys\n"
+                  f"sys.path.insert(0, {str(TOOLS)!r})\n"
+                  "from pathlib import Path\n"
+                  "from run_folder import make_run_folder\n"
+                  f"make_run_folder(Path({str(LOCAL)!r}), {prefix + 'top-'!r})\n"
+                  f"subprocess.run([sys.executable, '-I', '-c', {child!r}], check=True)\n")
+        subprocess.run([sys.executable, "-I", "-c", parent], check=True, cwd=ROOT)
+        own = make_run_folder(LOCAL, prefix + "self-")
+        made = owned.made()
+        failures = []
+        want = {f"{prefix}top-", f"{prefix}deep-", f"{prefix}self-"}
+        got = {re.sub(r"\d{8}-\d{6}(-\d+)?$", "", path.name) for path in made if path.name.startswith(prefix)}
+        if got != want:
+            failures.append(f"noted {sorted(got)}, want {sorted(want)}")
+        noted_above = {note.name for note in outer.glob("*")}
+        if not {path.name for path in made} <= noted_above:
+            failures.append("the run above did not note them too")
+        owned.delete()
+        left = [path.name for path in [*made, own] if path.exists()]
+        if left:
+            failures.append(f"delete() left {', '.join(left)}")
+        if owned.notes.exists():
+            failures.append("delete() left the notes")
+        if os.environ.get(OWNED_ENV) != str(outer):
+            failures.append(f"OWNED_ENV is {os.environ.get(OWNED_ENV)!r} after close(), want the run above's")
+        return failures
+    finally:
+        if saved is None:
+            os.environ.pop(OWNED_ENV, None)
+        else:
+            os.environ[OWNED_ENV] = saved
+
+
+def clean_scenario(command):
+    """A tool run as a step of test_all.py: with OWNED_ENV set. It must pass, and leave none of the folders noted."""
+    def check(bench, name):
+        notes = bench.folder / f"{name}-notes"
+        with open(bench.folder / f"{name}.log", "w", encoding="utf-8") as out:
+            code = subprocess.run([sys.executable, "-I", str(TOOLS / command[0]), *command[1:]], cwd=ROOT,
+                                  env={**os.environ, OWNED_ENV: str(notes)}, stdout=out, stderr=subprocess.STDOUT,
+                                  timeout=300).returncode
+        noted = sorted(note.name for note in notes.glob("*"))
+        left = [name for name in noted if (LOCAL / name).exists()]
+        failures = [] if code == 0 else [f"{command[0]} failed, exit code {code}"]
+        if not noted:
+            failures.append(f"{command[0]} noted no folder: nothing to look at")
+        if left:
+            failures.append(f"{command[0]} left {len(left)} of the {len(noted)} folders it noted: {', '.join(left)}")
+        return failures
+    return check
+
+
 SCENARIOS = {
     "helper": check_helper,
     "replay": tool_scenario(lambda b: ["replay.py", "play", b.replay, "--exe", b.exe], LOCAL, "test-replay-play-"),
@@ -197,6 +275,8 @@ SCENARIOS = {
     "out-net": out_scenario("net_test.py", LOCAL / "test-net"),
     "out-session": out_scenario("session_test.py", LOCAL / "test-session"),
     "out-mutants": check_out_mutants,
+    "owned": check_owned,
+    "clean-crash": clean_scenario(["crash_test.py", "--only", "play-crash,hash-crash,trace-stays,record-stays"]),
 }
 SKIPPED = {
     "exit": None if sys.platform.startswith("linux") else "exit_test.py is Linux only",

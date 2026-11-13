@@ -75,6 +75,55 @@ Unknown:
   process not being run for a while under the gate's load. The report now prints the relay's drops per player and
   time and the end of each leave the host saw, so the next failure says which. 58 runs beside the load and 47 in #309
   without it did not show it again: the rate under the gate's own load is `unknown`.
+### 2026-11-13, #308 and #305, test tools: a stop signal before the stop handler, run folders left in `local/`, `lockstep` on Release at no frame limit
+
+Run on `issue/308-305-test-tools` (from `issue/combined-test-6` `684b6568`). Identity: ROM US 1.0, Linux, GCC 16,
+Release, OpenGL on a software renderer, no window, the machine shared with two other workers (a slot in front of every
+run, `slot -x` alone for each `lockstep` run).
+
+Observed:
+
+- The start of a game (`main`, `src/port/Game.cpp:45-52`): `GameEngine::Create` (`src/port/Engine.cpp:314`) builds the
+  engine, whose constructor writes the config (`InitConfiguration`, `src/port/Engine.cpp:146`) and starts libultraship
+  (`:189`); then `CoopStopSignal_Init` (`src/port/Engine.cpp:316`) puts in the stop handler of a test run. Only after
+  `Create` returns does the loop draw frames (`src/port/Game.cpp:50-52`), and ImGui writes `imgui.ini`
+  (`libultraship/src/window/gui/Gui.cpp:137-139`) from those frames.
+- `replay_test.py`'s `person` sent SIGTERM as soon as `starship.cfg.json` was there, so between the two; #308 saw a game
+  hang there once in 15 runs. An earlier Release `test_all.py` run (2026-11-09) stopped `replay-test` at the step's
+  limit of 60 minutes with `level-full: ok` as its last line, the scenario printed before `person`; its logs are gone.
+- A stand-in for the game (`tools/coop/replay_test_test.py`) that writes its config at once, hangs for 15 s on a SIGTERM
+  before its handler is in (after 1 s) and draws after that: the old `person` hung it and waited the hang out (17 s),
+  and a tool that does not end was waited for 15 s with its game left running. Now `person` waits for `imgui.ini`,
+  gives the game 15 s after the signal and a tool 600 s from its start, and stops what is still running by its PID: 3 s,
+  6 s and 3 s with the test's short limits.
+- Folders left in `local/` by runs that passed. `check.py`: 14 (`crash_test.py`'s bench and the run folders the tools
+  made for its stand-in) and the empty `test-net` and `test-session`; now only the two empty ones. `replay_test.py
+  --only exit-no-draw,builds-no-draw,level-full,version-no-draw,rates-real,draw-off-on`: 7 (the folders of the tools
+  that fail on purpose, and of `hash_check.py`'s own runs, whose names its `RUN_FOLDER` does not match); now 0.
+  `hash_check.py draw --section rails --start level --players 1 --frames 120`: 3; now 0.
+- `lockstep_test.py --jobs 4` on Release with `COOP_TOOLS_MEETING_SPEED=max`, three runs: 51, 51 and 50 of 52, each in
+  2m35s. `save_own` passed 3 of 3. `log` failed 3 of 3 ("player 1's own log has only 31 lines", the rule wants 40,
+  `tools/coop/lockstep_test.py:4357`). `laser_wing1` failed once (run 3): its games played on past the 2100 frames the
+  scenario compares before the tool stopped them (last `lasers` row at frames 2708, 2728 and 2764 in the three runs),
+  and in run 3 Fox's wing health went 60 to 40 at frame 2764; the scenario reads the last row
+  (`sc_laser_wing1`, `tools/coop/lockstep_test.py:1283`), whatever its frame. `laser_wing1` alone, 8 more runs: 8 of 8.
+
+Derived:
+
+- A SIGTERM before `src/port/Engine.cpp:316` meets upstream's handler, which calls `exit()` and hangs in the audio
+  destructor (2026-11-06, #71). `imgui.ini` comes after the handler on every start, as only drawn frames write it.
+- At no frame limit a check that reads a game's output past the frames it compares depends on how long the tool takes
+  to stop the game: `log` (lines on the clock) and `laser_wing1` (rows past frame 2100) do.
+
+Guess:
+
+- #308's hang and the 60-minute `replay-test` of 2026-11-09 were that SIGTERM.
+
+Unknown:
+
+- The rate of the hang (#308: 1 in 15 under load); it cannot be made to happen on demand, so the fix is shown with the
+  stand-in only.
+- Whether other `lockstep` scenarios read rows past their frames (only `laser_wing1` failed here).
 
 ### 2026-11-13, #283, #284 and #121, leftovers of the tools: two test_all runs in one checkout, the pilot twice a frame, `slots` and old effects, Macbeth's lone tank
 

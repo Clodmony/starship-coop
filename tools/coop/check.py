@@ -92,7 +92,8 @@ def main():
             failures.append("tools/coop/script_reader.py --past-end --check failed:\n  "
                             + "\n  ".join((past.stdout + past.stderr).strip().splitlines()))
 
-    # 7. Run folders: each test tool gets a folder of its own, however close together runs start.
+    # 7. Run folders: each test tool gets a folder of its own, however close together runs start, and crash_test.py,
+    # which runs after every build, leaves none of them when it passes (#308).
     folders = subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "coop" / "run_folder_test.py")],
                              cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
     if folders.returncode != 0:
@@ -127,6 +128,12 @@ def main():
         if units.returncode != 0:
             failures.append(f"tools/coop/{name} failed:\n  "
                             + "\n  ".join((units.stdout + units.stderr).strip().splitlines()))
+    # 8e. replay_test.py: person stops its game only once the stop handler is in, and no wait of it is without a limit
+    # (#308; a stand-in for the game, no build, no ROM, about 12 s).
+    waits = run_tool("replay_test_test.py")
+    if waits.returncode != 0:
+        failures.append("tools/coop/replay_test_test.py failed:\n  "
+                        + "\n  ".join((waits.stdout + waits.stderr).strip().splitlines()))
 
     # 9. Build folders: libultraship's archives belong to one build folder, or a second config shares them.
     cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
