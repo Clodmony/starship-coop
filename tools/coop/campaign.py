@@ -181,7 +181,8 @@ def fly_level(args, folder, name):
                 lines, at = lines_from(host.sync_log, at)
                 for line in lines:
                     parts = line.split()
-                    if len(parts) >= 3:
+                    # "# run 2": the session started the level again after a desync (#181 saw one in level 4)
+                    if len(parts) >= 3 and not line.startswith("#"):
                         frames = int(parts[0]) + 1
                 lines, hash_at = lines_from(host.run / "state-hash.txt", hash_at)
                 for line in lines:

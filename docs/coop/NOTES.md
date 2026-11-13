@@ -6121,6 +6121,61 @@ player 0 loses 100.
 
 ## Determinism
 
+### 2026-11-13, #232, the pilot boxes: Goras' dying sites by Titania's end; level 4 keeps the voice clock
+
+Identity: ROM US 1.0, branch `issue/181-coverage` on `issue/combined-test-6` (`d726f9dd`), Linux, GCC, Debug, OpenGL on a
+software renderer, no window; the game code is the base's but for this branch's test code.
+
+**Observed: Goras' 8 dying sites**
+
+- Code: Titania's level complete is set in one place, `Titania_TiGoras_Dying` once its `timer_050` is 0 with player 0
+  active (`src/overlays/ovl_i5/fox_ti.c:5659-5662`); Goras goes dying with that timer at 280 (`fox_ti.c:4796-4800`),
+  and the function's 8 signed draws run at its first frame (`work_044` 0, `:5538`, `:5541`) and at timers 140 (`:5631`,
+  `:5634`), 120 (`:5599`, `:5602`) and 100 (`:5567`, `:5570`). With `gDebugLevelComplete` off no other code sets it in
+  Titania (`Boss_CompleteLevel` is called from Corneria and Zoness only; `ItemPathChange_Update` only in Meteo and
+  Sector X). So any run that reaches Titania's level complete has run all 8 (#209's gdb count of 2026-11-10 saw each).
+- `python tools/coop/lockstep_test.py --only vehicle_end --levels titania`: ok, same hash on 42000 frames, level
+  complete at 9399, player 1 drove on 35237 (396 s). #232's box had it fail at 34000 frames; #266 raised the limit to
+  42000 for a level complete at 36223, and on this build it comes at 9399. The scenario now says the dying function ran.
+- `python tools/coop/hash_check.py views --pilot --level titania`: equal on every frame to the end, 10058 frames, level
+  complete at replay frame 8258 (Goras' parts all down by game frame 7680, state 13 at 7920).
+- `python tools/coop/campaign.py --levels titania` (two real clients, the host at the high audio sample count and
+  the client at the low one and 6 frames of boot ahead, #181): equal on every frame to the end, 11401 frames, level
+  complete at level frame 9399.
+
+**Observed: level 4** (`LEVEL_UNK_4`, which no menu of the game or the lobby offers, `menu_game.c:42-56`)
+
+- `python tools/coop/hash_check.py views --pilot --level level-4`: index 0 and 1 differ at replay frame 10, the first
+  frame in level 4, region `globals`, and so do the pilot's game and index 0 (#181's run of 2026-11-10 had them equal on
+  24014 frames). With `--audio same` too (600 frames): the same three-way difference at frame 10.
+- Two real clients (a scratch script giving `campaign.py` a `level-4` entry): both games wrote a desync report at the
+  session's frame 0 in level 4; `desync_report.py diff`: `globals: voiceClock differs in 4 of 12 bytes, first at +2`:
+  the voice sequence player's tempo at 5760 on both, its tempo accumulator 6810 on the host and 6000 on the client
+  (`CoopVoiceClock`, `src/port/coop/sync/voice_clock.h`). The session started the level again (`# run 2` in the
+  lockstep log), and `campaign.py` stopped on that line with a traceback (`int('#')`); it reads past it now, and the
+  same run again gives `level-4: hash difference: the hash logs differ at level frame 0: globals (... voiceClock differs
+  in 4 of 12 bytes ...)`: the host at 6810 again, the client at 7740 (6000 the first time).
+- Code: the voice player starts over only at an audio heap reset (#230). A level gets one from the map
+  (`Map_LevelStart_AudioSpecSetup`, `src/overlays/ovl_menu/fox_map.c:4027`, a case per campaign level) or from
+  `Play_InitLevel` (`src/engine/fox_play.c:2638-2655`: Training and the Venom levels). Neither has a case for level 4.
+- The pads: both players are active Arwings on rails for the whole level (trace: state 3, form 0, mode 0), the pilot
+  runs (an aim line every 60 frames in its log), and the pads the trace reads stay 0 and the ships keep their x and y
+  (0 and 244, 343 and 423). Why its pads do not reach the game there: unknown.
+
+**Derived**
+
+- #232's Goras box is done: runs that reach Titania's level complete, which every one above does on this build, run
+  the 8 sites, and the two clients stay equal through them.
+- Level 4 keeps the voice player of what ran before it, which two clients reach at different times; since #230 hashes
+  that player's clock, two clients differ from the level's first frame. No player can start level 4 from a menu; only
+  the test switch or the level select mod (`src/mods/levelselect.c`) reaches it.
+
+**Unknown**
+
+- Training (no level complete) and level 15 (crashes on entry, with co-op off too) are as #181 left them.
+- A campaign chained through the map: #267's `survive_gaps_route` (`5f92e0fc`) runs Corneria, the map, Meteo, the map
+  and Fortuna in one session; a whole route in one session is not built. Two PCs: not run.
+
 ### 2026-11-13, #284 item 2, the burst at Granga's death fills the effect array with one player too
 
 Identity: ROM US 1.0, branch `issue/181-coverage` on `issue/combined-test-6` (`d726f9dd`) with this branch's

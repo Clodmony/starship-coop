@@ -2552,6 +2552,9 @@ def sc_eels(args, folder):
 # Macbeth's boss kills player 0 outright when the train reaches the end of its track first (Macbeth_Actor207_Update,
 # state 18-19), and with gInvincible that tank is never downed: it climbs on and the game crashes later. A slower pilot
 # fails there.
+# Titania's level complete comes only from Goras' dying function, once its timer has run down from 280 to 0
+# (Titania_TiGoras_Dying, src/overlays/ovl_i5/fox_ti.c:4800 and :5659-5662): a run that reaches it ran that function's 8
+# signed draws (#209), at its first frame and at timers 140, 120 and 100 (#232).
 VEHICLE_END_LEVELS = (("Macbeth", 11, 14000), ("Titania", 12, 42000), ("Aquas", 13, 14000))
 
 
@@ -2582,7 +2585,8 @@ def sc_vehicle_end(args, folder):
         expect(complete is not None, f"{name}: player 0 never reached level complete in {frames} frames")
         active, _, joined = vehicle_story(client)
         expect(joined > frames // 2, f"{name}: player 1 drove on only {joined} of {frames} frames")
-        texts.append(f"{name} {compared} frames, level complete at {complete}, player 1 drove on {joined}")
+        goras = " (Goras' dying function ran to its end)" if level == 12 else ""
+        texts.append(f"{name} {compared} frames, level complete at {complete}{goras}, player 1 drove on {joined}")
     expect(texts, "no level chosen")
     return "same hash; " + "; ".join(texts)
 
