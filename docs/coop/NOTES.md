@@ -1175,11 +1175,44 @@ Built: `CoopAim_MacbethTurret` (`src/port/coop/game/aim.c`), which returns the c
 player 0. It does not pick the nearest human among those in the window: a tank on the track right behind the car
 (nearer than 300 in x) is not fired at, as upstream, and while it is the nearest the turret holds its fire for a tank
 beside the track too (86 ready frames with player 1 alone in the window and no shot, in the run on this branch).
+This first rule was replaced the same evening, see "the rule changed" below.
 
 Observed (the same scenario on this branch): with player 1 the nearer 284 yaw steps go to player 1's direction and 58
 to player 0's; with player 0 the nearer 117 to player 0's and 49 to player 1's (the kept human is not always the
 nearer); 11 salvos, 3 with player 1 alone in the window, 0 with nobody in it; no ready turret held its fire while
 the nearest human was in its window; same hash on 4500 frames.
+
+**#302, the rule changed the same evening (the owner, 2026-11-13: "Fire at the nearest human in the window")**
+
+What is written above under "Built" was the first rule: the nearest human of all, and fire while that one is in the
+window. Its cost, observed in the run above and again on that code with a sharper count: a ready turret did not fire
+on 76 frames while a human was well inside its window, 68 of them with player 1 alone in it, because the other tank,
+on the track and nearer than 300 in x, was the nearer one; and with one human alone in the window 151 yaw steps went
+to the other's direction, 11 to its own.
+
+Built (`CoopAim_MacbethTurret`, `src/port/coop/game/aim.c`; `fox_ma.c` is unchanged but for one comment):
+
+- While the turret waits, it keeps its human as long as that one is in the window.
+- A kept human that is not in the window is replaced by the nearest of the humans in the window (the distance and
+  the tie as `CoopAim_Nearest` has them; the window is upstream's test for player 0, the last car's any x included).
+- With nobody in the window it turns to the nearest human of all, picked again on every frame, and does not fire: as
+  before the change.
+- In a salvo (steps 1 to 8) nothing is asked; the end of a salvo forgets the kept human, as before.
+
+How the kept target and the new rule fit: the rule says whom a turret may pick (a human in the window, the nearest
+of them); the kept target says when it picks (when it has nobody, when its human left the window, after a salvo). So
+a ready turret always has a human in the window if there is one, and fires on that frame; and with two humans in the
+window it stays on the one it has, and does not swing to the other when that one gets a little nearer. The nearest
+human still changed 72 times between two waiting frames in the run on the new code.
+
+Observed (`lockstep_test.py --only ma_turret` on the new code): ready with a human in the window and no shot on 0
+frames; with one human alone in the window 149 yaw steps to that one's direction (131 of them player 1's) and 0 to
+the other's; with nobody in it 73 to the nearer one's and 0 to the other's; with both in it 149 to player 0's and 158
+to player 1's; 12 salvos, 3 with player 1 alone in the window, 0 with nobody in it; same hash on 4500 frames. The
+counts leave out a player within 40 of an edge of the window, as the trace sees the car after its frame.
+
+Not shown: a turret that changes from one human to another because the first left the window in the middle of a wait,
+as a case of its own (it is in the counts, not singled out); three or four players.
 
 **#303, the flash of train car 7 (`Macbeth_MaTrainCar7_Update`, state 1, `fox_ma.c:1669-1679`)**
 

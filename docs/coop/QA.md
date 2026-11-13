@@ -267,6 +267,22 @@ Newest first. One block per run that matters (a milestone, a release, a QA level
 
 ```
 date:       2026-11-13
+commit:     issue/302-303-304-macbeth-shogun, C sources as built 2d65e62d (#302's rule change: the nearest human in
+            the window); red: the commit before it, e9dea93a (the first rule's code with the new test)
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 game clients on one PC, UDP over
+            loopback, through the join driver; test runs of other branches on the PC at the same time
+what ran:   python tools/coop/lockstep_test.py --no-build --only ma_turret (on 2d65e62d, and with --exe <build of
+            e9dea93a>); python tools/coop/test_all.py --no-build --lanes 2 --base-exe <build of 684b6568> --only
+            lockstep,checks, then --only hash-run-1,hash-run-2,replay-test,coop-off; python tools/coop/hash_check.py
+            base --base <build of 684b6568> --level macbeth --frames 4000; one tool at a time in the checkout
+result:     automated. A ready turret of a Macbeth train car holds its fire on 0 frames while a human is well inside
+            its window (76 on the first rule's code, 68 of them with player 1 alone in it); with one human alone in
+            the window 149 yaw steps go to that one's direction and 0 to the other's (11 and 151); with nobody in it
+            73 to the nearer one's, 0 to the other's; 3 of 12 salvos start with player 1 alone in the window. Hashes
+            equal on 4500 frames. lockstep 52 of 52 scenarios (aim and macbeth_bombs among them), checks, hash-run-1
+            and -2, replay-test pass; co-op off equal to the build of 684b6568 on Corneria (5800 frames) and in
+            Macbeth (5684 frames). Not run: three or four players, two PCs, Windows, Release, a person driving.
+date:       2026-11-13
 commit:     issue/302-303-304-macbeth-shogun, C sources as built 48cd67cd (later commits docs and the checks of one
             scenario), on issue/combined-test-6 684b6568; red build: the game code of 684b6568 with this branch's
             test code (b2beb6fa)
