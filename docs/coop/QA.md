@@ -256,6 +256,24 @@ Newest first. One block per run that matters (a milestone, a release, a QA level
 
 ```
 date:       2026-11-13
+commit:     issue/282-escape-look, C sources as built 5722fd4f (1775a400 adds docs), on issue/combined-test-6 d726f9dd
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 game clients per session on one PC,
+            UDP over loopback, through the join driver
+what ran:   python tools/coop/lockstep_test.py --only escape_look (on this branch, and on a build of d726f9dd's C code);
+            campaign.py --levels venom-2-andross; test_all.py --no-build --only checks,join; --only
+            replay-test,exit-test,hash-run-2; --only lockstep,coop-off --base-exe <build of d726f9dd's C code>
+result:     automated, as an observation (#282, no rule changed). Five sessions start at Andross' escape
+            (SF64_COOP_JOIN_CHECKPOINT) and stay equal on every frame: an explosion or the exit's trigger 450 from
+            player 1 for 60 updates leaves it untouched and ends nothing; the explosion on player 0 takes it down and
+            kills it with gInvincible on or off; James' route stays over 3000 from every explosion in all three mazes
+            (NOTES.md, 2026-11-13, #282). On the base the scenario fails "no escape". Venom 2 into Andross equal on all
+            37267 frames to the ending. Steps ok: checks, join, replay-test, exit-test, hash-run-2, lockstep (52/52),
+            coop-off (equal to the base on all 5800 frames). Not run: Windows and MSVC, Release, two PCs, three or four
+            players, a person flying into an explosion.
+```
+
+```
+date:       2026-11-13
 commit:     issue/combined-test-6 (PR #285) with #288, #291 and #292 merged in: the C sources are those of 7e4385cc (#288
             changed the test join driver; #291 and #292 changed test tools and docs only); the runs are of 0b9dc392, the
             merged tree has the docs commit 3ceacfac after it, on 07c03c1f (coop)
