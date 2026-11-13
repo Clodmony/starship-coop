@@ -54,9 +54,7 @@ rates plays one replay at several values of gInterpolationFPS, which no handshak
 draw plays one replay with and without SF64_COOP_TEST_NO_DRAW, per section and start (#147): the draw code runs in both
   and the renderer only gets its work in one, so the hash must not change. The run with the switch must log 0 draws and
   the other run more, or the two would be the same run. Input by rule, as for views, from all three starts unless
-  --start names one: the switch sits under every tool, on whichever start that tool plays. Run by hand, it deletes its
-  folders under local/ when it passes and keeps them when it fails (#308); started by a run that notes its folders
-  (test_all.py, replay_test.py, OWNED_ENV in run_folder.py), it leaves them to that run, which reads or deletes them.
+  --start names one: the switch sits under every tool, on whichever start that tool plays.
 base plays input by rule through the menus, with co-op off, on this build and on --base, the build before a change: the
   two must be equal on every frame, which is what co-op off means. --base can be a build without any of the switches
   here, so it plays nothing that needs one. --level NAME (#283) starts both games in that level instead, through its
@@ -72,6 +70,11 @@ the level. The two starts in the level must be equal from their first frame to t
 from the menus in every region from level frame 1 on. With --players 1 region scenery360 is left out, and the tool says
 how often it differed: see cmd_start. It also says if START_SEEDS in replay.py no longer are those seeds; that is not a
 failure, as then only the tools' flights change. What the hash cannot see is in docs/coop/NOTES.md.
+
+Run folders: every subcommand but diff, run by hand, deletes the folders it made under local/ when it passes, those of
+the games it started too, and keeps them when it fails (#308, #315); --keep-folders keeps them after a pass too, for
+reading what a pass looked like (views --pilot prints its pilot's folder). Started by a run that notes its folders
+(test_all.py, replay_test.py, OWNED_ENV in run_folder.py), it leaves them to that run, which reads or deletes them.
 
 Exit code 0 on PASS (or no difference for diff), 1 otherwise.
 """
@@ -1310,7 +1313,10 @@ def cmd_start(args):
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
-    r = sub.add_parser("run", help="play a replay three times and check the hashes")
+    folders = argparse.ArgumentParser(add_help=False)
+    folders.add_argument("--keep-folders", action="store_true",
+                         help="keep the run folders under local/ of a pass by hand too (#315)")
+    r = sub.add_parser("run", parents=[folders], help="play a replay three times and check the hashes")
     r.add_argument("file", nargs="?", help="replay file (from tools/coop/replay.py record; default: input by rule)")
     r.add_argument("--players", type=int, default=1, help="players, through gCoopDebugPlayerCount (default 1)")
     r.add_argument("--exe", help="Starship executable (default: newest build found)")
@@ -1321,14 +1327,14 @@ def main():
     d = sub.add_parser("diff", help="compare two hash logs")
     d.add_argument("a")
     d.add_argument("b")
-    b = sub.add_parser("probe", help="play once and check what the hash can and cannot see")
+    b = sub.add_parser("probe", parents=[folders], help="play once and check what the hash can and cannot see")
     b.add_argument("file", nargs="?", help="replay file (default: input by rule, into all-range)")
     b.add_argument("--players", type=int, default=2, help="players, through gCoopDebugPlayerCount (default 2)")
     b.add_argument("--period", type=int, default=200, help="frames between probes (default 200)")
     b.add_argument("--exe", help="Starship executable (default: newest build found)")
     b.add_argument("--timeout", type=float, default=900, help="give up after this many seconds")
     b.add_argument("--start", choices=replay_tool.STARTS, default="level", help="input by rule: where the game starts")
-    v = sub.add_parser("views", help="play one replay with local index 0 and 1 and compare the hashes")
+    v = sub.add_parser("views", parents=[folders], help="play one replay with local index 0 and 1 and compare the hashes")
     v.add_argument("--section", choices=[*VIEW_SECTIONS, "both"], default="both", help="default: both")
     v.add_argument("--level", metavar="NAME[,NAME]", help=f"fly these levels instead of Corneria's sections, or all: "
                    f"{', '.join(VIEW_LEVELS)} (#129)")
@@ -1348,7 +1354,7 @@ def main():
                    f"by default {PILOT_FRAMES})")
     v.add_argument("--exe", help="Starship executable (default: newest build found)")
     v.add_argument("--timeout", type=float, default=1800, help="per run: give up after this many seconds")
-    c = sub.add_parser("slots", help="play a level with 1 player and with several and compare the effect slots in use")
+    c = sub.add_parser("slots", parents=[folders], help="play a level with 1 player and with several and compare the effect slots in use")
     c.add_argument("--level", default="katina,fortuna,corneria", metavar="NAME[,NAME]",
                    help=f"levels, or all: {', '.join(VIEW_LEVELS)} (default katina,fortuna,corneria)")
     c.add_argument("--players", type=int, default=2, help="players, through gCoopDebugPlayerCount (default 2)")
@@ -1356,7 +1362,7 @@ def main():
     c.add_argument("--rule-test", action="store_true", help="check the rule on made-up samples, with no game (#284)")
     c.add_argument("--exe", help="Starship executable (default: newest build found)")
     c.add_argument("--timeout", type=float, default=1800, help="per run: give up after this many seconds")
-    u = sub.add_parser("builds", help="play one replay on two Release runs and a Debug run and compare the hashes")
+    u = sub.add_parser("builds", parents=[folders], help="play one replay on two Release runs and a Debug run and compare the hashes")
     u.add_argument("--debug", help="Starship executable of the Debug build")
     u.add_argument("--release", help="Starship executable of the Release build of the same commit")
     u.add_argument("--exe", help="for replay_test.py: one build as both, where the check of the draws is what it reads")
@@ -1364,7 +1370,7 @@ def main():
     u.add_argument("--players", type=int, default=2, help="players, through gCoopDebugPlayerCount (default 2)")
     u.add_argument("--frames", type=int, help="replay length (default: what the section needs)")
     u.add_argument("--timeout", type=float, default=1800, help="per run: give up after this many seconds")
-    t = sub.add_parser("rates", help="play one replay at several frame rates and compare the hashes")
+    t = sub.add_parser("rates", parents=[folders], help="play one replay at several frame rates and compare the hashes")
     t.add_argument("--rates", default="30,60,120,144,360",
                    help="gInterpolationFPS values, the first is the one to match (default: 30,60,120,144,360)")
     t.add_argument("--section", choices=[*VIEW_SECTIONS, "both"], default="both", help="default: both")
@@ -1374,21 +1380,21 @@ def main():
     t.add_argument("--speed", help="anything but real time must fail this check (default: real time)")
     t.add_argument("--exe", help="Starship executable (default: newest build found)")
     t.add_argument("--timeout", type=float, default=3600, help="per run: give up after this many seconds")
-    w = sub.add_parser("draw", help="play one replay with and without drawing and compare the hashes")
+    w = sub.add_parser("draw", parents=[folders], help="play one replay with and without drawing and compare the hashes")
     w.add_argument("--section", choices=[*VIEW_SECTIONS, "both"], default="both", help="default: both")
     w.add_argument("--start", choices=[*replay_tool.STARTS, "all"], default="all", help="default: all")
     w.add_argument("--players", type=int, default=2, help="players, through gCoopDebugPlayerCount (default 2)")
     w.add_argument("--frames", type=int, help="replay length (default: what the section needs)")
     w.add_argument("--exe", help="Starship executable (default: newest build found)")
     w.add_argument("--timeout", type=float, default=1800, help="per run: give up after this many seconds")
-    e = sub.add_parser("base", help="play input by rule on the build before a change and this one, and compare")
+    e = sub.add_parser("base", parents=[folders], help="play input by rule on the build before a change and this one, and compare")
     e.add_argument("--base", required=True, help="Starship executable of the build before the change")
     e.add_argument("--level", metavar="NAME", help="start both games in this level instead of coming through the menus "
                    "(#283): " + ", ".join(BASE_LEVELS))
     e.add_argument("--frames", type=int, help=f"frames from when player 0 flies (default {GENERATED_END})")
     e.add_argument("--exe", help="Starship executable (default: newest build found)")
     e.add_argument("--timeout", type=float, default=1800, help="per run: give up after this many seconds")
-    s = sub.add_parser("start", help="what a start in the level leaves different from coming through the menus")
+    s = sub.add_parser("start", parents=[folders], help="what a start in the level leaves different from coming through the menus")
     s.add_argument("--players", type=int, default=2, help="players, through gCoopDebugPlayerCount (default 2)")
     s.add_argument("--frames", type=int, help=f"frames from when player 0 flies (default {GENERATED_END})")
     s.add_argument("--exe", help="Starship executable (default: newest build found)")
@@ -1398,12 +1404,15 @@ def main():
         p.error("builds needs --debug and --release")
     commands = {"run": cmd_run, "diff": cmd_diff, "probe": cmd_probe, "views": cmd_views, "slots": cmd_slots, "builds": cmd_builds,
                 "rates": cmd_rates, "draw": cmd_draw, "base": cmd_base, "start": cmd_start}
-    if args.cmd != "draw":
-        return commands[args.cmd](args)
-    owned = OwnedFolders(replay_tool.ROOT / "local")  # see draw at the top of this file (#308)
+    if args.cmd == "diff":
+        return cmd_diff(args)  # makes no folder
+    owned = OwnedFolders(replay_tool.ROOT / "local")  # see "Run folders" at the top of this file (#308, #315)
     code = commands[args.cmd](args)
-    if code == 0 and not owned.outer:
+    if code == 0 and not owned.outer and not args.keep_folders:
+        made = owned.made()
         owned.delete()
+        if made:
+            print(f"hash: deleted the {len(made)} run folders of this pass under local/ (--keep-folders keeps them)")
     else:
         owned.close()
     return code

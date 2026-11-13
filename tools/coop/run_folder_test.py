@@ -18,7 +18,10 @@ The out-* scenarios are the other side: --out names a folder that runs may share
 owned and clean-crash are about the end of a run (#308). owned has a process note what the tools it starts make
 (OwnedFolders): a folder two tools down is noted, at both levels, and delete() removes it. clean-crash runs
 crash_test.py as test_all.py runs a step, with OWNED_ENV set, and every folder noted there must be gone when it passes:
-the folders of the stand-in's runs too, which the tools it starts make.
+the folders of the stand-in's runs too, which the tools it starts make. hash-run to hash-start run hash_check.py by hand,
+one per subcommand, with its function replaced by a stand-in (HASH) that makes a run folder and starts a tool that makes
+one, and passes: neither may be left (#315). hash-keep: a failed run, --keep-folders, and a run under another that
+notes its folders keep both.
 
 No build, no ROM, a few seconds; check.py runs it. Exit code 0 when every scenario holds, 1 otherwise. Folders are named
 after the stopped clock and deleted when all scenarios hold, and kept for reading when one fails.
@@ -68,6 +71,30 @@ for worker in workers:
 for worker in workers:
     worker.join()
 """
+
+# hash_check.py with the function of one subcommand replaced (#315): the stand-in makes a run folder in local, as the
+# subcommand does, and one more through a tool it starts, as replay.py's games, and passes or fails. What is left after
+# main() returns is what the subcommand would leave.
+HASH = """
+import subprocess, sys
+from pathlib import Path
+tools, local, prefix, cmd, code, *rest = sys.argv[1:]
+sys.path.insert(0, tools)
+import hash_check
+from run_folder import make_run_folder
+CHILD = ("import sys; sys.path.insert(0, sys.argv[1]); from pathlib import Path; "
+         "from run_folder import make_run_folder; make_run_folder(Path(sys.argv[2]), sys.argv[3])")
+def stand_in(args):
+    make_run_folder(Path(local), prefix + "own-")
+    subprocess.run([sys.executable, "-I", "-c", CHILD, tools, local, prefix + "game-"], check=True)
+    return int(code)
+setattr(hash_check, "cmd_" + cmd, stand_in)
+sys.argv = ["hash_check.py", cmd, *rest]
+sys.exit(hash_check.main())
+"""
+# What each subcommand of hash_check.py needs on its command line to get to its function; diff makes no folder.
+HASH_ARGS = {"run": [], "probe": [], "views": [], "slots": [], "builds": ["--exe", "no-game"], "rates": [],
+             "draw": [], "base": ["--base", "no-game"], "start": []}
 
 # mutants.py on a table of its own: FOLDER and LOCK in the test's folder, a source nothing else reads.
 MUTANTS = """
@@ -259,6 +286,47 @@ def clean_scenario(command):
     return check
 
 
+def run_hash(bench, name, cmd, code, *args, outer=None):
+    """hash_check.py cmd, its function replaced by HASH's stand-in that ends with code, by hand (no OWNED_ENV) or under
+    a run that notes into outer. Returns (exit code, the folders it left in local)."""
+    number = len(list(bench.folder.glob(f"{name}-*.log")))  # each run of a scenario its own prefix and log
+    prefix = f"test-{bench.stamp}-{number}-"
+    env = {key: value for key, value in os.environ.items() if key != OWNED_ENV}
+    if outer is not None:
+        env[OWNED_ENV] = str(outer)
+    with open(bench.folder / f"{name}-{number}.log", "w", encoding="utf-8") as out:
+        got = subprocess.run([sys.executable, "-I", "-c", HASH, TOOLS, LOCAL, prefix, cmd, str(code),
+                              *HASH_ARGS[cmd], *args], cwd=ROOT, env=env, stdout=out, stderr=subprocess.STDOUT,
+                             timeout=60).returncode
+    return got, sorted(path.name for path in LOCAL.glob(f"{prefix}*"))
+
+
+def hash_scenario(cmd):
+    """A pass by hand deletes what the subcommand made, the folders of the tools it started too (#315)."""
+    def check(bench, name):
+        code, left = run_hash(bench, name, cmd, 0)
+        failures = [] if code == 0 else [f"hash_check.py {cmd} exited {code} on a pass"]
+        return failures + ([f"a pass by hand left {', '.join(left)}"] if left else [])
+    return check
+
+
+def check_hash_keep(bench, name):
+    """What hash_check.py keeps (#315): every folder of a failed run, of a run with --keep-folders, and of a run under
+    a run that notes its folders (test_all.py, replay_test.py), which reads or deletes them itself."""
+    failures = []
+    outer = bench.folder / f"{name}-outer"
+    for why, code, args, above in (("a failed run", 1, [], None), ("--keep-folders", 0, ["--keep-folders"], None),
+                                   ("a run under another", 0, [], outer)):
+        got, left = run_hash(bench, name, "run", code, *args, outer=above)
+        if got != code:
+            failures.append(f"{why}: exit code {got}, want {code}")
+        if len(left) != 2:
+            failures.append(f"{why} left {left}, want its own folder and its tool's")
+        if above is not None and not {*left} <= {note.name for note in outer.glob("*")}:
+            failures.append(f"{why}: the run above did not note {left}")
+    return failures
+
+
 SCENARIOS = {
     "helper": check_helper,
     "replay": tool_scenario(lambda b: ["replay.py", "play", b.replay, "--exe", b.exe], LOCAL, "test-replay-play-"),
@@ -277,6 +345,8 @@ SCENARIOS = {
     "out-mutants": check_out_mutants,
     "owned": check_owned,
     "clean-crash": clean_scenario(["crash_test.py", "--only", "play-crash,hash-crash,trace-stays,record-stays"]),
+    **{f"hash-{cmd}": hash_scenario(cmd) for cmd in HASH_ARGS},
+    "hash-keep": check_hash_keep,
 }
 SKIPPED = {
     "exit": None if sys.platform.startswith("linux") else "exit_test.py is Linux only",
