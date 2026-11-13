@@ -209,6 +209,7 @@ src/overlays/ovl_i1/fox_co.c	Corneria_SetupClouds	view	name	clouds around player
 src/overlays/ovl_i1/fox_co.c	Corneria_SpawnClouds	view	name	clouds around player 0 camera
 src/overlays/ovl_i1/fox_co.c	Corneria_CoGranga_Update	flow	read	walks at, turns its guns to and stops on a somersault of its kept target (#220, aim.h); left: the fight waits for player 0's cut to all-range, the HUD arrow flags on player 0
 src/overlays/ovl_i1/fox_co.c	Corneria_CoGranga_1UpCheck	flow	read	the 1-up for a loop under the Granga: player 0's hit timer, place and loop, the item in front of player 0; a trigger, left on player 0 (#220)
+src/overlays/ovl_i1/fox_co.c	Corneria_CoGranga_Attack	sim	read	the plasma spread is around the human Effect_EnemyLaser aims at, the nearest, by moving player 0 and the other humans to the spread point (CoopAim_PointShot, #281); upstream's own lines again but for the pick
 src/overlays/ovl_i1/fox_co.c	Corneria_CoCarrier_Init	flow	read	starts 2000 ahead of player 0 on the path (#220)
 src/overlays/ovl_i1/fox_co.c	Corneria_CoCarrier_Update	flow	read	its z keeps to the path (player 0's camera on rails), its beams and missiles aim at the nearest human (#193); left: the beam's start by z, player 0's shadow, level complete (#220)
 src/overlays/ovl_i2/fox_me.c	Meteo_LevelStart_SetupTeam	flow	name	intro team around player 0
@@ -280,8 +281,8 @@ src/overlays/ovl_i6/fox_andross.c	Andross_8018D2B0	sim	site	sets player 0 state
 src/overlays/ovl_i4/fox_bo.c	Bolse_8018E05C	sim	read	base's beam: tests player 0, CoopHits_BolseBeam does the others (#136)
 src/overlays/ovl_i6/fox_andross.c	Andross_8018D0D8	ok	read	tests player 0, CoopHits_AndrossReach does the others (#136)
 src/overlays/ovl_i6/fox_andross.c	Andross_AndExplosion_Update	flow	read	escape explosions follow and kill player 0: the escape is a cutscene (WP-19, #17), not changed in #136
-src/overlays/ovl_i5/fox_ma.c	Macbeth_MaTrainCar7_Update	sim	read	blast hits player 0 only; right for now: Macbeth is a Landmaster level, co-op players stay parked (WP-18, #136)
-src/overlays/ovl_i5/fox_ma.c	Macbeth_Effect378_Update	sim	read	shot hits player 0 only; right for now: Landmaster level, co-op players parked (WP-18, #136)
+src/overlays/ovl_i5/fox_ma.c	Macbeth_MaTrainCar7_Update	sim	read	the blast of car 7 tests player 0, CoopHits_MacbethCarBlast does the other tanks (#280); left: the screen goes red when player 0 is in it (view)
+src/overlays/ovl_i5/fox_ma.c	Macbeth_Effect378_Update	sim	read	a turret's shot: tests, is deflected by and knocks back player 0, CoopEffects_MacbethShotHit does the other tanks (#280); left: gone 2000 behind player 0 (the path)
 src/overlays/ovl_i5/fox_ma.c	Macbeth_Effect380_Update	sim	read	state-16 beam: tests and knocks back player 0, CoopEffects_MacbethBeamHit does the other tanks (#272); left: gone 2000 behind player 0 (the path)
 src/overlays/ovl_i5/fox_ma.c	Macbeth_MaBombDrop_Update	sim	read	the fire tests player 0, CoopHits_MacbethBombFire does the other tanks (#272); left: gone 500 behind player 0 (the path)
 src/overlays/ovl_i6/fox_sy.c	SectorY_SyShogun_Init	sim	site	boss; sets player 0 to START_360
@@ -289,7 +290,7 @@ src/overlays/ovl_i6/fox_sy.c	SectorY_80198F5C	sim	site	boss; sets player 0 state
 src/overlays/ovl_i6/fox_sy.c	SectorY_80199438	sim	site	boss cutscene; moves player 0 camera
 src/overlays/ovl_i6/fox_sy.c	SectorY_8019BC14	ok	read	shoots at its target's lead by moving player 0 there for Effect_EnemyLaser, the other humans with it (CoopAim_PointShot, #220)
 src/overlays/ovl_i6/fox_sy.c	SectorY_SyShogun_Update	flow	read	a new move picks the nearest human again; its target, dash and dodges follow its kept human (#220, aim.h); left: the fight waits for player 0's cut to all-range, the HUD arrow flags on player 0
-src/overlays/ovl_i6/fox_sy.c	SectorY_SyRobot_Update	sim	read	spreads its shot around the human Effect_EnemyLaser aims at, the nearest, by moving player 0 and the other humans to the spread point (CoopAim_PointShot, #273); left: it turns its head and gun, where the shot starts, to player 0
+src/overlays/ovl_i6/fox_sy.c	SectorY_SyRobot_Update	sim	read	spreads its shot around the human Effect_EnemyLaser aims at, the nearest, by moving player 0 and the other humans to the spread point (CoopAim_PointShot, #273); it turns its head and gun to that human (#281)
 #
 # --- who fired: dmgSource and sourceId (#86, NOTES.md). flow rows name the work package that owns the rule
 include/sf64object.h	<file scope>@shooter	ok	read	the dmgSource field
