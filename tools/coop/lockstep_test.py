@@ -4,6 +4,7 @@
     python tools/coop/lockstep_test.py                     # sim, then every game scenario but the long ones
     python tools/coop/lockstep_test.py --only sim          # no game, no ROM
     python tools/coop/lockstep_test.py --only steer,pause
+    python tools/coop/lockstep_test.py --jobs 4            # four scenarios at a time, after sim and desync_sim (#290)
     python tools/coop/lockstep_test.py --only full         # all of Corneria, about 10 minutes
     python tools/coop/lockstep_test.py --list
     python tools/coop/lockstep_test.py --only release,rates,audio,menu --feed <lockstep log of full> --release-exe <Starship>
@@ -190,7 +191,7 @@ import struct
 import subprocess
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -5166,12 +5167,32 @@ LONG = ("survive_next_level", "survive_gaps_route", "survive_gaps_map", "survive
 LONG += ("sy_robot_spread",)  # Sector Y's rails, 9500 frames (#273)
 
 
+# Seconds a scenario took on Debug at a limit of 8 (2026-11-13, #290). Only the order of a pool of --jobs depends on it:
+# the long ones start first, so the pool does not end on one of them.
+SCENARIO_SECONDS = {"host_left": 67, "left": 32, "delay": 31, "results_hole": 19, "slow": 14, "stall": 14, "frozen": 14,
+                    "lag": 13}
+# They build and run the test programs of the build folder, which two of them must not do at once.
+RUN_ALONE = ("sim", "desync_sim")
+
+
+def run_scenario(name, args, root):
+    """(passed, the line to print) for one scenario."""
+    started = time.monotonic()
+    try:
+        detail = SCENARIOS[name](args, root / name)
+        return True, f"ok      {name}: {detail} ({time.monotonic() - started:.0f} s)"
+    except (Fail, join_test.Fail) as failure:
+        return False, f"FAILED  {name}: {failure} ({time.monotonic() - started:.0f} s)"
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--exe", help="Starship executable (default: newest build found)")
     ap.add_argument("--release-exe", help="for `release`: a Release build of the same commit")
     ap.add_argument("--only", help="scenarios, comma-separated")
     ap.add_argument("--list", action="store_true")
+    ap.add_argument("--jobs", type=int, default=1,
+                    help="scenarios at the same time (default 1); sim and desync_sim go first, alone (#290)")
     ap.add_argument("--no-build", action="store_true", help="do not build coop_lockstep_test")
     ap.add_argument("--build-dir", help="where to find coop_lockstep_test (default: build-cmake)")
     ap.add_argument("--config", default="Debug", help="for a build with several configurations")
@@ -5202,14 +5223,28 @@ def main():
             sys.exit(f"lockstep: no scenario {name}")
     root = Path(args.out).resolve() if args.out else replay_tool.ROOT / "local" / f"test-lockstep-{time.strftime('%Y%m%d-%H%M%S')}"
     passed = 0
-    for name in names:
-        started = time.monotonic()
-        try:
-            detail = SCENARIOS[name](args, root / name)
-            passed += 1
-            print(f"ok      {name}: {detail} ({time.monotonic() - started:.0f} s)", flush=True)
-        except (Fail, join_test.Fail) as failure:
-            print(f"FAILED  {name}: {failure} ({time.monotonic() - started:.0f} s)", flush=True)
+    if args.jobs <= 1:
+        for name in names:
+            ok, line = run_scenario(name, args, root)
+            passed += ok
+            print(line, flush=True)
+    else:
+        # Each scenario has a folder of its own under root, games with their own SHIP_HOME and run folders
+        # (run_folder.py takes none twice), and a port of the system's choosing, so they can run side by side.
+        for name in [n for n in names if n in RUN_ALONE]:
+            ok, line = run_scenario(name, args, root)
+            passed += ok
+            print(line, flush=True)
+        rest = sorted((n for n in names if n not in RUN_ALONE), key=lambda n: -SCENARIO_SECONDS.get(n, 0))
+        with ThreadPoolExecutor(max_workers=args.jobs) as pool:
+            futures = {pool.submit(run_scenario, name, args, root): name for name in rest}
+            for future in as_completed(futures):
+                try:
+                    ok, line = future.result()
+                except Exception as error:  # a scenario that broke in some other way than a failed check
+                    ok, line = False, f"FAILED  {futures[future]}: {type(error).__name__}: {error}"
+                passed += ok
+                print(line, flush=True)
     print(f"RESULT: {passed}/{len(names)} scenarios passed")
     print(f"logs: {root}")
     return 0 if passed == len(names) else 1

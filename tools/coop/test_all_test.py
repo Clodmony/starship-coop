@@ -28,7 +28,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 TOOLS = ROOT / "tools" / "coop"
-COPIED = ("test_all.py", "replay.py", "run_folder.py")
+COPIED = ("test_all.py", "replay.py", "run_folder.py", "mutation_tree.py")
 MAX_SUMMARY_LINES = 6  # printed by a run of a few failures: this is what a person reads
 HELD = 3  # seconds a slow step stays, more than a scenario needs to look at it
 ENV = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
@@ -207,6 +207,36 @@ def scenario_lanes(bench):
     want(most_at_once({"serial", "game"}) == 3, "the serial lane did not run beside the game lanes")
 
 
+def scenario_mutants_beside(bench):
+    """The mutation suites are a lane of their own (#290): one at a time, and beside the serial and the game lanes."""
+    times = bench.work / "times"
+    times.mkdir()
+    names = [("serial-0", "serial"), ("game-0", "game"), ("mutants-setup", "mutants"), ("mut-1", "mutants"),
+             ("mut-2", "mutants")]
+    plan = [step(name, lane, TIMED, times / f"{name}.txt", lane) for name, lane in names]
+    code, output = bench.run(plan, "--lanes", 1)
+    want_result(code, output, 0, "PASS, 6/6 steps ok")
+    lines = [(times / f"{name}.txt").read_text(encoding="utf-8").split() for name, _ in names]
+    want(all(len(fields) == 3 for fields in lines), f"a step did not note its times: {lines!r}")
+    spans = {lane: [(float(a), float(b)) for ln, a, b in lines if ln == lane] for lane in ("serial", "game", "mutants")}
+    mutants = sorted(spans["mutants"])
+    want(len(mutants) == 3, f"{len(mutants)} mutation steps noted their times")
+    want(all(mutants[i][1] <= mutants[i + 1][0] for i in range(2)), "two mutation steps ran at once")
+    want(mutants[0][0] < spans["serial"][0][1] and mutants[0][0] < spans["game"][0][1],
+         "the mutation lane did not start beside the serial and the game lanes")
+
+
+def scenario_mutants_setup_fails(bench):
+    """When the second checkout cannot be made, the mutation steps fail one by one and say why."""
+    plan = [step("mutants-setup", "mutants", BAD), step("net-mutants", "mutants", OK),
+            step("session-mutants", "mutants", OK), step("fine", "game", OK)]
+    code, output = bench.run(plan)
+    want_result(code, output, 1, "FAILED, 2/5 steps ok")
+    for name in ("mutants-setup", "net-mutants", "session-mutants"):
+        want(re.search(rf"^FAILED {name} ", output, re.MULTILINE), f"{name} not named: {output!r}")
+    want("mutants-setup failed" in output, f"no reason given: {output!r}")
+
+
 def scenario_timeout(bench):
     pid_file = bench.work / "child.txt"
     plan = [step("stuck", "game", PARENT, pid_file), step("fine", "game", OK)]
@@ -265,6 +295,8 @@ SCENARIOS = {
     "not-run": scenario_not_run,
     "failed-not-run": scenario_failed_not_run,
     "lanes": scenario_lanes,
+    "mutants-beside": scenario_mutants_beside,
+    "mutants-setup-fails": scenario_mutants_setup_fails,
     "timeout": scenario_timeout,
     "stop": scenario_stop,
     "stop-mutants": scenario_stop_mutants,

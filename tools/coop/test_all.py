@@ -58,9 +58,11 @@ LOCAL = ROOT / "local"
 IS_LINUX = platform.system() == "Linux"
 IS_WINDOWS = platform.system() == "Windows"
 GAME_LANES = 4  # 2, 3, 4 and 5 took 7m53s, 5m36s, 4m56s and 5m41s: see docs/coop/NOTES.md (#147)
+LOCKSTEP_JOBS = 4  # scenarios of the lockstep step at a time: 14 min one after the other, 4m48s with 4 (#290)
 STEP_TIMEOUT = 3600  # seconds; all of rates took 2500 at load 43, so it is two steps now
 STOP_WAIT = 15  # seconds a stopped step has before it is killed
-SERIAL, GAME = "serial", "game"
+SERIAL, GAME, MUTANTS = "serial", "game", "mutants"
+MUT_TREE = LOCAL / "mutation-tree"  # the second checkout of the mutation suites (mutation_tree.py, #290)
 FOLDERS = {"Debug": "build-cmake", "Release": "build-release", "RelWithDebInfo": "build-relwithdebinfo"}
 CONFIG_PAIR = {"Debug": "Release", "Release": "Debug"}
 
@@ -78,8 +80,9 @@ Step = namedtuple("Step", "name lane command takes wrap linux", defaults=(None, 
 
 
 def all_steps():
-    """Every step, in the order its lane takes them. The mutation checks stay last in the serial lane: while one runs a
-    source file holds a break, which check.py would read, and the tree is dirty, which version_test.py would show."""
+    """Every step, in the order its lane takes them. The mutation checks break a source file while they run, which
+    check.py would read and version_test.py would show as a dirty tree, so they run in a second checkout beside the
+    other lanes (mutation_tree.py, #290); with --mutants-in-tree they come last in the serial lane."""
     steps = [
         Step("checks", SERIAL, ["check.py"]),
         Step("package", SERIAL, ["package_test.py"]),
@@ -93,20 +96,20 @@ def all_steps():
         Step("menu", SERIAL, ["menu_test.py", "--game"], "both", "game"),
         Step("input", SERIAL, ["input_test.py"], "both", "game"),
         Step("join", SERIAL, ["join_test.py"], "exe", "game"),
-        Step("lockstep", SERIAL, ["lockstep_test.py"], "both", "game"),
+        Step("lockstep", SERIAL, ["lockstep_test.py", "--jobs", str(LOCKSTEP_JOBS)], "both", "game"),
         Step("lockstep-full", SERIAL, ["lockstep_test.py", "--only", "full"], "both", "game"),
         Step("version", SERIAL, ["version_test.py"], "exe", "game", True),
         Step("net-asan", SERIAL, ["net_test.py", "--asan"], "build", "net", True),
         Step("session-asan", SERIAL, ["session_test.py", "--asan"], "build", "net", True),
         Step("steam-asan", SERIAL, ["steam_test.py", "--asan"], "build", "net", True),
         Step("menu-asan", SERIAL, ["menu_test.py", "--asan"], "build", "net", True),
-        Step("session-mutants", SERIAL, ["session_mutants.py"], "build", "net"),
-        Step("session-mutants-asan", SERIAL, ["session_mutants.py", "--asan"], "build", "net", True),
-        Step("net-mutants", SERIAL, ["net_mutants.py"], "build", "net"),
-        Step("net-mutants-asan", SERIAL, ["net_mutants.py", "--asan"], "build", "net", True),
-        Step("lockstep-mutants", SERIAL, ["lockstep_mutants.py"], "build", "net"),
-        Step("desync-mutants", SERIAL, ["desync_mutants.py"], "build", "net"),
-        Step("steam-mutants", SERIAL, ["steam_mutants.py"], "build", "net"),
+        Step("session-mutants", MUTANTS, ["session_mutants.py"], "build", "net"),
+        Step("session-mutants-asan", MUTANTS, ["session_mutants.py", "--asan"], "build", "net", True),
+        Step("net-mutants", MUTANTS, ["net_mutants.py"], "build", "net"),
+        Step("net-mutants-asan", MUTANTS, ["net_mutants.py", "--asan"], "build", "net", True),
+        Step("lockstep-mutants", MUTANTS, ["lockstep_mutants.py"], "build", "net"),
+        Step("desync-mutants", MUTANTS, ["desync_mutants.py"], "build", "net"),
+        Step("steam-mutants", MUTANTS, ["steam_mutants.py"], "build", "net"),
     ]
     # Longest first, so no lane is left with a long one at the end. exit-test goes last all the same: it waits on the
     # clock, so it costs no time there, and under load a game can hang in the crash handler (docs/coop/NOTES.md).
@@ -171,14 +174,16 @@ def read_id(folder):
     return header.read_text(encoding="utf-8") if header.exists() else None
 
 
-def command_of(step, args, exe, other):
-    """What to run for a step, or (None, why it cannot run). takes says which of the builds a tool gets, and how."""
+def command_of(step, args, exe, other, root=ROOT):
+    """What to run for a step, or (None, why it cannot run). takes says which of the builds a tool gets, and how. root
+    is the checkout the tool is run from: the mutation suites run from their own (MUT_TREE)."""
     tool = OPTIMISED[step.name][0] if args.config != "Debug" and step.name in OPTIMISED else step.command
-    command = [sys.executable, "-u", str(TOOLS / tool[0]), *tool[1:]]
+    command = [sys.executable, "-u", str(root / "tools" / "coop" / tool[0]), *tool[1:]]
+    build_dir = args.build_dir if root == ROOT else root / FOLDERS[args.config]
     if step.takes in ("exe", "both"):
         command += ["--exe", str(exe)]
     if step.takes in ("build", "both"):
-        command += ["--build-dir", str(args.build_dir), "--config", args.config]
+        command += ["--build-dir", str(build_dir), "--config", args.config]
     if step.takes == "base":
         if args.base_exe is None:
             return None, "no --base-exe"
@@ -216,12 +221,13 @@ class Run:
         if hasattr(os, "getloadavg"):
             self.top_load = max(self.top_load, os.getloadavg()[0])
 
-    def run(self, name, command):
-        """Run one step in a process group of its own. Returns True if it passed."""
+    def run(self, name, command, cwd=None):
+        """Run one step in a process group of its own, in cwd (this checkout by default). True if it passed."""
         log = self.folder / f"{name}.log"
         started = time.monotonic()
         with open(log, "wb") as out:
-            proc = subprocess.Popen(command, cwd=ROOT, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
+            proc = subprocess.Popen(command, cwd=cwd or ROOT, stdin=subprocess.DEVNULL, stdout=out,
+                                    stderr=subprocess.STDOUT,
                                     env=step_env(), start_new_session=not IS_WINDOWS)
             with self.lock:
                 self.running[name] = proc
@@ -293,21 +299,38 @@ def lane(run, steps):
     """One worker of a lane: take steps until none are left."""
     while not run.stopping.is_set():
         try:
-            name, command = steps.get_nowait()
+            name, command, *where = steps.get_nowait()
         except queue.Empty:
             return
-        run.run(name, command)
+        run.run(name, command, *where)
 
 
-def run_steps(run, serial, game, lanes):
-    """serial and game are lists of (name, command)."""
+def mutants_lane(run, steps):
+    """The mutation suites, one after the other in their own checkout. When making that checkout fails, the rest fail
+    with it, each saying why."""
+    while not run.stopping.is_set():
+        try:
+            name, command, *where = steps.get_nowait()
+        except queue.Empty:
+            return
+        if not run.run(name, command, *where) and name == "mutants-setup":
+            while True:
+                try:
+                    name = steps.get_nowait()[0]
+                except queue.Empty:
+                    return
+                run.finish(name, False, 0, "no mutation tree", "mutants-setup failed")
+
+
+def run_steps(run, serial, game, lanes, mutants=()):
+    """serial, game and mutants are lists of (name, command) or (name, command, folder to run in)."""
     workers = []
-    queues = (serial, 1), (game, lanes)
-    for steps, count in queues:
+    queues = (serial, 1, lane), (game, lanes, lane), (mutants, 1, mutants_lane)
+    for steps, count, work in queues:
         waiting = queue.Queue()
         for step in steps:
             waiting.put(step)
-        workers += [threading.Thread(target=lane, args=(run, waiting), daemon=True) for _ in range(count)]
+        workers += [threading.Thread(target=work, args=(run, waiting), daemon=True) for _ in range(count if steps else 0)]
     for worker in workers:
         worker.start()
     for worker in workers:
@@ -343,22 +366,30 @@ def chosen_steps(args):
 
 
 def make_plan(args, chosen):
-    """Returns (serial steps, game steps, steps that cannot run as (name, why))."""
+    """Returns (serial steps, game steps, mutation steps, steps that cannot run as (name, why))."""
     if args.plan:
         plan = load_plan(args.plan)
         pick = lambda lane_name: [(s["name"], s["command"]) for s in plan if s["lane"] == lane_name]  # noqa: E731
-        return pick(SERIAL), pick(GAME), [(s["name"], s["why"]) for s in plan if s["lane"] == "none"]
+        return pick(SERIAL), pick(GAME), pick(MUTANTS), [(s["name"], s["why"]) for s in plan if s["lane"] == "none"]
 
     other, args.other_why = other_build(args)
     exe = game_exe(args)
-    serial, game, missing = [], [], []
+    beside = not (args.mutants_in_tree or IS_WINDOWS)  # a second checkout needs symbolic links
+    serial, game, mutants, missing = [], [], [], []
     for step in chosen:
-        command, why = command_of(step, args, exe, other)
+        in_tree = step.lane == MUTANTS and beside
+        command, why = command_of(step, args, exe, other, MUT_TREE if in_tree else ROOT)
         if command is None:
             missing.append((step.name, why))
+        elif in_tree:
+            mutants.append((step.name, command, MUT_TREE))
         else:
-            (serial if step.lane == SERIAL else game).append((step.name, command))
-    return serial, game, missing
+            (game if step.lane == GAME else serial).append((step.name, command))
+    if mutants:
+        setup = [sys.executable, "-u", str(TOOLS / "mutation_tree.py"), "make", "--path", str(MUT_TREE), "--config",
+                 args.config, "--build-dir", FOLDERS[args.config]]
+        mutants.insert(0, ("mutants-setup", setup, ROOT))
+    return serial, game, mutants, missing
 
 
 def parse_args():
@@ -378,6 +409,9 @@ def parse_args():
     p.add_argument("--game-wrap", help="command in front of each step that starts games (see the top of this file)")
     p.add_argument("--net-wrap", help="command in front of each loopback test and mutation check")
     p.add_argument("--build-wrap", help="command in front of the build")
+    p.add_argument("--mutants-in-tree", action="store_true",
+                   help="run the mutation suites last in the serial lane of this checkout, not beside the rest in a "
+                        "second one")
     p.add_argument("--plan", help=argparse.SUPPRESS)
     args = p.parse_args()
     folder = "build/x64" if IS_WINDOWS else FOLDERS[args.config]
@@ -436,11 +470,16 @@ def main():
     run.write(f"tree {head}, {args.config}, {args.lanes} lanes, load {load}, started {time.strftime('%H:%M:%S')}")
 
     built = args.no_build or args.plan or run_build(run, args)
-    serial, game, missing = make_plan(args, chosen) if built else ([], [], [])
+    serial, game, mutants, missing = make_plan(args, chosen) if built else ([], [], [], [])
     if built and not args.plan and not usable_game(run, args):
         built = False
     if built:
-        run_steps(run, serial, game, args.lanes)
+        try:
+            run_steps(run, serial, game, args.lanes, mutants)
+        finally:
+            if mutants:
+                subprocess.run([sys.executable, str(TOOLS / "mutation_tree.py"), "remove", "--path", str(MUT_TREE)],
+                               cwd=ROOT, capture_output=True)
         same = tree == tracked_changes()
         run.finish("tree", same, 0, "changed", "no tracked file changed" if same else "a tracked file changed")
 

@@ -36,6 +36,8 @@ def parse_args():
     p.add_argument("--jobs", type=int, help="parallel build jobs (default: all cores)")
     p.add_argument("--assets", action="store_true", help="also build the ExtractAssets and GeneratePortO2R targets")
     p.add_argument("--no-check", action="store_true", help="skip tools/coop/check.py")
+    p.add_argument("--configure-only", action="store_true",
+                   help="stop after the configure step: the build folder can then build single targets (#290)")
     p.add_argument("--quiet", action="store_true", help="write tool output to the log file, print a summary only")
     p.add_argument("-D", dest="defines", action="append", default=[], metavar="VAR=VALUE",
                    help="extra CMake cache entry, repeatable (for example -D CMAKE_C_COMPILER_LAUNCHER=ccache)")
@@ -126,6 +128,14 @@ def main():
     configure += [f"-D{d}" for d in args.defines]
     # Always configure: the source list is a GLOB_RECURSE, so new files only build after a configure.
     steps.append(("configure", configure))
+
+    if args.configure_only:
+        for step, cmd in steps:
+            code, tail = runner.run(cmd, step)
+            if code != 0:
+                return fail(step, tail)
+        print(f"\nbuild: OK (configured only, {args.config}, {elapsed()}) -> {build_dir}")
+        return 0
 
     build = ["cmake", "--build", str(build_dir), "--config", args.config, "--parallel"]
     if args.jobs:
