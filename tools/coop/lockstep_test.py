@@ -3540,7 +3540,10 @@ def sc_lag(args, folder):
 def sc_delay(args, folder):
     runs = []
     for delay in ("1", "6"):
-        host, client = run_short(args, folder / delay, both={"SF64_COOP_TEST_INPUT_DELAY": delay})
+        # Two sessions are compared here, and the level start carries gRadioMsgId as the host's title screen left it,
+        # which is not the same in every run (#289, src/port/coop/test/switches.h): 0 for both.
+        host, client = run_short(args, folder / delay, both={"SF64_COOP_TEST_INPUT_DELAY": delay,
+                                                             "SF64_COOP_TEST_START_NO_TITLE_RADIO": "1"})
         compare(host, client, SHORT_FRAMES)
         runs.append(host)
     names, _, one = runs[0].rows()

@@ -202,6 +202,10 @@ def game_env(run, person_plays=False):
             env.setdefault("LP_NUM_THREADS", RENDER_THREADS)
         env["SF64_COOP_TEST_SPEED"] = TEST_SPEED
         env["SF64_COOP_TEST_NO_DRAW"] = NO_DRAW
+    if os.environ.get("COOP_TOOLS_AUDIO_TRACE"):  # src/port/coop/test/audio_trace.h, for #289: one line per game frame
+        env["SF64_COOP_AUDIO_TRACE"] = str(Path(run) / "audio-trace.txt")
+    if os.environ.get("COOP_TOOLS_AUDIO_RESET_RUNS_ON"):  # the control for #289: the audio reset as upstream has it
+        env["SF64_COOP_TEST_AUDIO_RESET_RUNS_ON"] = "1"
     return env
 
 

@@ -8,6 +8,7 @@
 #include "score_probe.h"
 #include "smoke_trace.h"
 #include "mabomb_probe.h"
+#include "audio_trace.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -16,6 +17,7 @@
 #include <libultra/gbi.h>
 #include <libultraship/luslog.h>
 
+#include "port/coop/game/level_start.h"
 #include "port/coop/game/players.h"
 #include "port/coop/sync/lockstep_game.h"
 #include "port/hooks/Events.h"
@@ -28,6 +30,9 @@ extern unsigned short samples_low;
 // The frames the game has ticked since boot (src/sys/sys_main.c). It is not simulation state: two clients of one
 // session started their games at different times, so they do not share it.
 extern uint32_t gSysFrameCount;
+
+// The id of the radio line last set up (src/engine/fox_radio.c); the title screen's radio leaves 10, 20, ... in it.
+extern int32_t gRadioMsgId;
 
 // SF64_COOP_TEST_SPEED=max: the limiter then waits under a microsecond a frame, which is no limit, and at 60 frames a
 // second the rate still fits an int.
@@ -79,6 +84,13 @@ void CoopTestSwitches_StartSeeds(int* values) {
     char* at = (char*) seeds;
     int i;
 
+    if (CoopTestSwitches_IsSet(getenv("SF64_COOP_TEST_START_NO_TITLE_RADIO"))) {
+        int radio = CoopLevelStart_ValueIndex(&gRadioMsgId);
+
+        if (radio >= 0) {
+            values[radio] = 0;
+        }
+    }
     if (!CoopTestSwitches_IsSet(seeds)) {
         return;
     }
@@ -160,11 +172,17 @@ void CoopTestSwitches_Init(void) {
         LUSLOG_INFO("coop: test switch: the lead passes to a survivor at pool 0 (spike #183)%s", "");
     }
 
+    if (CoopTestSwitches_IsSet(getenv("SF64_COOP_TEST_AUDIO_RESET_RUNS_ON"))) {
+        CoopLevelStart_SetResetRunsOn(true);
+        LUSLOG_INFO("coop: test switch: a level start does not play the sound ahead (#289)%s", "");
+    }
+
     CoopTeamTrace_Init(); // no-op unless SF64_COOP_TEAM_* is set (#89)
     CoopAimTrace_Init();  // no-op unless SF64_COOP_AIM_TRACE is set (#193)
     CoopBossTrace_Init(); // no-op unless SF64_COOP_BOSS_TRACE is set (#213)
     CoopScoreProbe_Init(); // no-op unless SF64_COOP_SCORE_PROBE is set (#210)
     CoopSmokeTrace_Init(); // no-op unless SF64_COOP_SMOKE_TRACE is set
     CoopMaBombProbe_Init(); // no-op unless SF64_COOP_MABOMB_PROBE is set (#272)
+    CoopAudioTrace_Init(); // no-op unless SF64_COOP_AUDIO_TRACE is set (#289)
     CoopTestStart_Init(); // no-op unless SF64_COOP_TEST_START_LEVEL is set (#148)
 }
