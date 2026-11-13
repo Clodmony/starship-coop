@@ -9,6 +9,65 @@ Private notes (your paths, your PC, your logs) go in `local/`, not here.
 
 ## Build and run
 
+### 2026-11-13, #290 (second part), the serial lane was the clock: Release, five lanes, `--mixed`, 18m04s
+
+Identity: ROM US 1.0, Linux, GCC 16.2, Debug (`-g -ffast-math -DDEBUG`) and Release (`-O3 -ffast-math -DNDEBUG`), OpenGL on
+a software renderer, no window, silent, a machine with 16 logical CPUs and no other load, `test_all.py` at normal
+priority with its default 4 game lanes, one run of each kind unless a count is given. Trees: `90594a98` (the combined test
+build 6 with PR #291) for the measurements, `47723983` and `0b9dc392` (branch `issue/290-release-steps`) for the runs of
+the change. `coop-off` did not run in any of them (no `--base-exe`).
+
+Observed:
+
+- Whole runs of `90594a98`, `--no-build`: Debug 23m47s, Release 20m07s (Release leaves out what only Debug can do:
+  `wingman` alive, down, sitout and `exit-test` fault-main, fault-stuck). Step seconds, Debug to Release: `rates-rails`
+  1065 to 755, `rates-all-range` 837 to 589, `determinism` 727 to 617, `builds` 694 to 681, `exit-test` 372 to 287, `draw` 249
+  to 171, `full-level` 173 to 77, `lowhealth-allrange` 86 to 26, `views` 34 to 13, `rails-4` 32 to 11; the ones at the frame
+  cap or on the clock hardly change: `lockstep` 313 to 292, `join` 175 to 170, `menu` 169 to 150, `replay-test` 79 to 79.
+- Step minutes per lane, Debug then Release: the one-at-a-time lane 21.8 and 20.1, the mutation lane 14.4 and 14.1, the four
+  game lanes 78.5 and 56.6 together (19.6 and 14.2 each). On Release the whole run (20.1 minutes) is the length of the
+  one-at-a-time lane: it was the clock, the game lanes were not.
+- `menu` failed in both runs, on `game_leave`: "The host did not start the level again in time, so the session is over."
+  (`session.c:441`, `COOP_SESSION_RECOVER_MS`, 40000 ms). It started at minute 4, beside `session-mutants` and four busy
+  game lanes. `menu_test.py --game --only game_leave` alone: ok in 16 s and 17 s (2 of 2). Beside 40 processes that only
+  loop (load average up to 58): ok in 18 s three times, and failed once with the same message after 65 s. The serial
+  steps and the mutation lane without the game lanes (`checks` to `menu`, 5m00s): ok, `menu` 91 s.
+- Two `test_all.py` at once on Release, one with the steps that start no game and the mutation suites, one with every step
+  that starts the game (`--only` lists, `--no-build`): 23 of 23 in 14m41s and 31 of 31 in 17m28s, 17m30s for both, `menu`
+  ok (94 s, the first step of the second).
+- The change, Debug build and default lanes (`47723983`): 55 of 55 steps ok, 24m46s, `rates-rails` 18m12s.
+- `--mixed`, first rule (only the game lane on Release; `menu`, `input`, `join`, `lockstep` on Debug): 56 of 56 steps ok,
+  21m59s. Every game step ended by minute 16.9; `exit-test`, queued last, started at 15.8 and ended at 22.0.
+- `--mixed`, second rule (every step that starts the game on Release except `wingman`, `exit-test`, `builds`; `exit-test`
+  fifth in the game queue; `0b9dc392`): 56 of 56 steps ok, 18m04s in both of two runs. The first minute and a half is
+  the two builds (47 s Debug and 45 s Release in the first of the runs of the change). Last step per lane in the first of
+  the two, minutes after the first step: mutation lane 15.4, `serial` 14.0, `pure` 10.3, game lanes 18.1, of which
+  `exit-test` (started at 11.9, 369 s) is the last and the rest ends by 16.8. `menu` ok in all four runs of the change.
+
+Derived:
+
+- On Debug the machine is the limit: running the one-at-a-time lane's steps beside the others did not shorten the run
+  (24m46s against 23m47s, one run each). The five lanes pay when Release takes the CPU off the game steps; then they all
+  come to 14 to 15 minutes and what is left is `exit-test` as the tail (about a minute) and the build step (1.5 minutes).
+- Release for the game steps alone saves 3m40s (20m07s) of the 23m47s; the rest of the 5m43s comes from not having a
+  one-at-a-time lane: 18m04s needs both.
+- `game_leave` is a race of the host's level restart against a wall-clock timer, and a loaded machine can lose it: 2 of 2
+  in full runs, 1 of 4 beside 40 loops, 0 of 2 alone, 0 of 4 in the runs of the change.
+
+Guess:
+
+- `menu` passing 4 of 4 comes from its start at minute 1.5 and not minute 4, before the long game steps and the mutation
+  suite are all running. Not shown; 4 runs are not a rate.
+- `exit-test` started at the very beginning would end the run about a minute sooner (the other steps end at 16.8, it at
+  18.1) and would run while the machine is busiest, where a game can hang in the crash handler (#158). Not tried.
+
+Unknown:
+
+- How often `menu` fails now: 4 passes in 4 runs after 2 failures in 2 before. Windows and macOS (the second checkout and
+  the lanes are untested there; `--mutants-in-tree` and Windows keep the old single lane). A full run with `coop-off`.
+  Whether `lockstep` and `menu` on Release lose a fault that only Debug shows: `builds` plays one replay on both and the
+  hashes are equal, nothing more.
+
 ### 2026-11-13, #290, the full pipeline from 41m37s to 23m26s: what held the clock and what was done about it
 
 Identity: ROM US 1.0, Linux, GCC 16.2, Debug, OpenGL on a software renderer, no window, silent, a machine with 16 logical
@@ -50,12 +109,14 @@ Derived:
 
 Guess:
 
-- A full run on Release for the frame-counting steps would end near 17 minutes. Not run.
+- A full run on Release for the frame-counting steps would end near 17 minutes. Not run. [wrong, see the entry above:
+  a whole run on Release took 20m07s, and the serial lane, not the game lanes, was the clock]
 
 Unknown:
 
 - How often the timing scenarios fail at 99 % load: 2 full runs with no such failure, and one `menu` failure in the baseline
-  with a build running. Windows and macOS (no symbolic links in the mutation checkout on Windows, untested). A full
+  with a build running. [wrong, see the entry above: `menu`'s `game_leave` failed in 2 of 2 full runs of the same tree
+  later that day, with no other build running] Windows and macOS (no symbolic links in the mutation checkout on Windows, untested). A full
   run with `coop-off`.
 
 ### 2026-11-13, #287, two Release games that did not finish: the client's level start came in its first 21 frames

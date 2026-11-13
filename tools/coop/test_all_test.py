@@ -190,21 +190,115 @@ def scenario_lanes(bench):
     want_result(code, output, 0, "PASS, 10/10 steps ok")
     lines = [(times / f"{name}.txt").read_text(encoding="utf-8").split() for name, _ in names]
     want(all(len(fields) == 3 for fields in lines), f"a step did not note its times: {lines!r}")
+    want(most_at_once(lines, {"serial"}) == 1, f"{most_at_once(lines, {'serial'})} serial steps ran at once")
+    want(most_at_once(lines, {"game"}) == 2, f"{most_at_once(lines, {'game'})} game steps ran at once in 2 lanes")
+    want(most_at_once(lines, {"serial", "game"}) == 3, "the serial lane did not run beside the game lanes")
 
-    def most_at_once(lanes):
-        points = []
-        for lane, start, end in lines:
-            if lane in lanes:
-                points += [(float(start), 1), (float(end), -1)]
-        running = peak = 0
-        for _, change in sorted(points, key=lambda p: (p[0], p[1])):
-            running += change
-            peak = max(peak, running)
-        return peak
 
-    want(most_at_once({"serial"}) == 1, f"{most_at_once({'serial'})} serial steps ran at once")
-    want(most_at_once({"game"}) == 2, f"{most_at_once({'game'})} game steps ran at once in 2 lanes")
-    want(most_at_once({"serial", "game"}) == 3, "the serial lane did not run beside the game lanes")
+def most_at_once(lines, lanes):
+    """The most steps of these lanes that were running at one moment; lines are (lane, start, end) as TIMED notes them."""
+    points = []
+    for lane, start, end in lines:
+        if lane in lanes:
+            points += [(float(start), 1), (float(end), -1)]
+    running = peak = 0
+    for _, change in sorted(points, key=lambda p: (p[0], p[1])):
+        running += change
+        peak = max(peak, running)
+    return peak
+
+
+def scenario_pure_beside(bench):
+    """The pure lane (checks and tools that start no game) is one at a time, and beside the serial, the game and the
+    mutation lanes (#290)."""
+    times = bench.work / "times"
+    times.mkdir()
+    names = [(f"pure-{i}", "pure") for i in range(3)] + [(f"serial-{i}", "serial") for i in range(2)] + \
+            [(f"game-{i}", "game") for i in range(2)] + [("mutants-setup", "mutants"), ("mut-1", "mutants")]
+    plan = [step(name, lane, TIMED, times / f"{name}.txt", lane) for name, lane in names]
+    code, output = bench.run(plan, "--lanes", 2)
+    want_result(code, output, 0, "PASS, 10/10 steps ok")
+    lines = [(times / f"{name}.txt").read_text(encoding="utf-8").split() for name, _ in names]
+    want(all(len(fields) == 3 for fields in lines), f"a step did not note its times: {lines!r}")
+    want(most_at_once(lines, {"pure"}) == 1, f"{most_at_once(lines, {'pure'})} pure steps ran at once")
+    want(most_at_once(lines, {"serial"}) == 1, f"{most_at_once(lines, {'serial'})} serial steps ran at once")
+    every = {"pure", "serial", "game", "mutants"}
+    want(most_at_once(lines, every) == 5, f"{most_at_once(lines, every)} steps at once, want 1 + 1 + 2 + 1 in the 4 lanes")
+
+
+def dry_run(bench, *args):
+    """test_all.py --dry-run in the bench: (its output, {step: (lane, command)})."""
+    done = subprocess.run([sys.executable, str(bench.repo / "tools" / "coop" / "test_all.py"), "--dry-run", *map(str, args)],
+                          cwd=bench.repo, env=ENV, capture_output=True, text=True, timeout=60)
+    want(done.returncode == 0, f"--dry-run {args} exit code {done.returncode}: {done.stdout!r} {done.stderr!r}")
+    plan = {}
+    for line in done.stdout.splitlines():
+        lane, _, rest = line.partition(": ")
+        name, _, command = rest.partition(": ")
+        if lane in ("pure", "serial", "game", "mutants"):
+            plan[name] = (lane, command)
+    return done.stdout, plan
+
+
+def scenario_dry_run(bench):
+    """What each step would run (#290): the lanes, --no-build for the tools whose programs were built once, and the old
+    single lane of --mutants-in-tree."""
+    output, plan = dry_run(bench)
+    for name, lane in (("checks", "pure"), ("net", "pure"), ("menu-asan", "pure"), ("menu", "serial"),
+                       ("lockstep", "serial"), ("join", "serial"), ("rates-rails", "game"),
+                       ("session-mutants", "mutants")):
+        want(plan.get(name, (None,))[0] == lane, f"{name} is in lane {plan.get(name, (None,))[0]}, want {lane}")
+    for name in ("net", "session", "menu", "input", "lockstep", "net-asan"):
+        want("--no-build" in plan[name][1], f"{name} is not given --no-build: {plan[name][1]!r}")
+    for name in ("join", "version", "session-mutants", "net-mutants-asan", "rates-rails"):
+        want("--no-build" not in plan[name][1], f"{name} is given --no-build: {plan[name][1]!r}")
+    programs = [line for line in output.splitlines() if line.startswith("programs: ")]
+    want(len(programs) == 1, f"{len(programs)} lines for the programs: {output!r}")
+    for target in ("coop_net_test", "coop_session_test", "coop_menu_test", "coop_menu_test_asan", "coop_input_test",
+                   "coop_lockstep_test", "coop_desync_test"):
+        want(re.search(rf"\b{target}\b", programs[0]), f"{target} is not built up front: {programs[0]!r}")
+    want("mutation" not in programs[0], "the mutation suites' programs are built up front")
+    game = [name for name, (lane, _) in plan.items() if lane == "game"]
+    # (builds is not planned here: the bench has no Release build)
+    want(game[:4] == ["rates-rails", "rates-all-range", "determinism", "exit-test"] and game[4] == "view-check",
+         f"exit-test does not come right after the longest game steps: {game[:6]}")
+    only_output, only_plan = dry_run(bench, "--only", "rates-rails,join")
+    want(list(only_plan) == ["join", "rates-rails"] and "programs:" not in only_output,
+         f"--only rates-rails,join plans {list(only_plan)}: {only_output!r}")
+
+    _, single = dry_run(bench, "--mutants-in-tree")
+    want({lane for lane, _ in single.values()} == {"serial", "game"}, "--mutants-in-tree has other lanes than serial and game")
+    serial = [name for name, (lane, _) in single.items() if lane == "serial"]
+    want(serial[0] == "checks" and serial[-1] == "steam-mutants" and "mutants-setup" not in single,
+         f"the one lane is {serial}")
+    want(serial.index("menu") < serial.index("net-asan") < serial.index("session-mutants"), f"the one lane is {serial}")
+
+
+def scenario_dry_run_mixed(bench):
+    """--mixed (#290): every step that starts the game plays it on the Release build, except the ones that need Debug,
+    and without a Release build of the same commit those are not run."""
+    output, _ = dry_run(bench, "--mixed")
+    for name in ("rates-rails", "hash-run-1", "replay-test", "menu", "input", "join", "lockstep", "lockstep-full"):
+        want(f"NOT RUN {name}: no Release build" in output, f"{name} is not reported as not run: {output!r}")
+    for name in ("wingman", "exit-test", "net", "version"):  # builds needs it anyway: it plays both
+        want(f"NOT RUN {name}" not in output, f"{name} needs the Release build: {output!r}")
+    release = bench.repo / "build-release"
+    release.mkdir()
+    (release / "Starship").write_text("", encoding="utf-8")  # the folders carry no build id, so they are of one commit
+    _, plan = dry_run(bench, "--mixed")
+    for name in ("rates-rails", "hash-run-1", "replay-test", "full-level", "rails-4", "hash-probe-1", "menu", "input",
+                 "join", "lockstep", "lockstep-full"):
+        want("--exe " in plan[name][1] and f"{release}/Starship" in plan[name][1],
+             f"{name} does not play on Release: {plan[name][1]!r}")
+    for name in ("menu", "input", "lockstep"):  # the test programs of these come from Debug's folder
+        want("--build-dir " + str(bench.repo / "build-cmake") in plan[name][1] and "--config Debug" in plan[name][1],
+             f"{name} does not take Debug's test programs: {plan[name][1]!r}")
+    for name in ("wingman", "exit-test", "version", "net"):
+        want("build-release" not in plan[name][1], f"{name} plays on Release: {plan[name][1]!r}")
+    want("build-release" in plan["builds"][1] and "build-cmake" in plan["builds"][1], "builds does not take both")
+    done = subprocess.run([sys.executable, str(bench.repo / "tools" / "coop" / "test_all.py"), "--dry-run", "--mixed",
+                           "--config", "Release"], cwd=bench.repo, env=ENV, capture_output=True, text=True, timeout=60)
+    want(done.returncode == 2 and "use it with --config Debug" in done.stderr, f"--mixed --config Release: {done.stderr!r}")
 
 
 def scenario_mutants_beside(bench):
@@ -295,6 +389,9 @@ SCENARIOS = {
     "not-run": scenario_not_run,
     "failed-not-run": scenario_failed_not_run,
     "lanes": scenario_lanes,
+    "pure-beside": scenario_pure_beside,
+    "dry-run": scenario_dry_run,
+    "dry-run-mixed": scenario_dry_run_mixed,
     "mutants-beside": scenario_mutants_beside,
     "mutants-setup-fails": scenario_mutants_setup_fails,
     "timeout": scenario_timeout,
@@ -302,8 +399,8 @@ SCENARIOS = {
     "stop-mutants": scenario_stop_mutants,
     "tree": scenario_tree,
 }
-if not sys.platform.startswith("linux"):  # these read /proc, or need a stop signal a process can catch
-    del SCENARIOS["timeout"], SCENARIOS["stop"], SCENARIOS["stop-mutants"]
+if not sys.platform.startswith("linux"):  # these read /proc, or need a stop signal a process can catch, or plan Linux's steps
+    del SCENARIOS["timeout"], SCENARIOS["stop"], SCENARIOS["stop-mutants"], SCENARIOS["dry-run"], SCENARIOS["dry-run-mixed"]
 
 
 def main():

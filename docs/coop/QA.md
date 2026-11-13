@@ -163,6 +163,12 @@ number of clients, transport.
    `join` and `menu` stay at 8: their replays are counted in frames and their ping is on the clock. NOTES.md, 2026-11-13.
    A full `test_all.py` run takes 23m26s since #290 (41m37s before): `lockstep` 4 scenarios at a time, the mutation suites in
    a second checkout beside the rest, the `rates` steps with their 5 games at once. NOTES.md, 2026-11-13, #290.
+   `python tools/coop/test_all.py --mixed` takes 18m04s (two runs, 56 of 56 steps ok, `coop-off` not run, against 23m47s
+   for the same tree on Debug): it builds Debug and Release and plays every step that starts the game on Release, except
+   `wingman`, `exit-test`, `builds` and `coop-off`, and the unit tests and loopback tools run in a lane of their own beside
+   the others. On Debug alone the lanes do not help (24m46s): the machine is the limit there. A full `menu` failed in
+   2 of 2 runs of the old lanes (`game_leave`, a 40 s timer on a loaded machine) and passed in 4 of 4 of these.
+   NOTES.md, 2026-11-13, #290 (second part).
 3. **Two clients on one machine.** Two Starship processes with their own config, save and log folders (never the
    owner's), connected over loopback, both fed replays. `python tools/coop/join_test.py` (WP-24, unattended, exit code
    0 only when everything passed) takes two or three games from the lobby into a level through the scripted flow in
@@ -247,6 +253,23 @@ Running tests must never use or modify the owner's own `starship.cfg.json`, save
 ## Results
 
 Newest first. One block per run that matters (a milestone, a release, a QA level change).
+
+```
+date:       2026-11-13
+commit:     issue/combined-test-6 (PR #285) with #288, #291 and #292 merged in: the C sources are those of 7e4385cc (#288
+            changed the test join driver; #291 and #292 changed test tools and docs only); the runs are of 0b9dc392, the
+            merged tree has the docs commit 3ceacfac after it, on 07c03c1f (coop)
+identity:   ROM US 1.0, Linux, GCC 16.2, Debug and Release, OpenGL on a software renderer, no window; 2 or 3 game clients
+            on one PC, UDP over loopback, normal priority, 4 game lanes
+what ran:   python tools/coop/test_all.py --mixed (builds both configs), twice; the default (Debug) once; --mixed with the
+            first rule of #292 once, on 47723983 (NOTES.md, 2026-11-13, #290 second part)
+result:     automated. --mixed: 56 of 56 steps ok in 18m04s, both runs (builds, determinism, both rates steps, lockstep with
+            results_hole, menu, join, net, session, steam, all seven mutant suites, replay-test, rails-2, rails-4,
+            full-level, views, exit-test and wingman on Debug, and the check that no tracked file changed). Default
+            Debug: 55 of 55 in 24m46s. coop-off was not run (no base build). The gate recorded below (52 of 53, on e8f038c6)
+            is not of this head; these runs are. On 90594a98 with the old lanes menu's game_leave failed in 2 of 2 full runs
+            (#293). Not run: Windows and MSVC, two PCs, a real connection that drops.
+```
 
 ```
 date:       2026-11-12
