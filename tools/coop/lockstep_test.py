@@ -171,10 +171,11 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             deflected by player 0 only. Hashes and the two probe logs equal. The view traces of the two games then show
             car 7's flash (#303): the client whose own tank is in the blast draws the fill red, the other white, on
             every frame of the fade, and both games hold the same fill.
-  ma_turret Macbeth with two Landmasters (#302): the turret of a train car turns to the human nearest to the car and
-            fires its salvo when that one is in its window; upstream it turned to and fired by player 0 alone. Read
-            from the aim trace's turret lines (the angle steps and who is in the window), which do not ask the aim
-            code. By hand, not in test_all.py.
+  ma_turret Macbeth with two Landmasters (#302): the turret of a train car turns to and fires at the nearest of the
+            humans in its window, so a ready turret never holds its fire while a human is in the window; with nobody
+            in it, it turns to the nearest human. Upstream it turned to and fired by player 0 alone. Read from the
+            aim trace's turret lines (the angle steps and who is in the window), which do not ask the aim code. By
+            hand, not in test_all.py.
   shogun_bonus Sector Y's all-range, two sessions (#304): the score probe's `shogun` kind makes one player's laser the
             last hit on the first small Shogun and on the last Shogun, and Falco's on the second small one. The team
             gets the same hits whether the player is player 1 or player 0 (decision 0008, 4b), and nothing for
@@ -4975,15 +4976,19 @@ def w10_turret_rows(path):
             row[f"p{n}"] = tuple(float(v) for v in p[:3])
             row[f"flies{n}"] = int(p[3])
         row["near"] = min((0, 1), key=lambda n: (math.dist(row[f"p{n}"], row["at"]), n)) if row["flies1"] else 0
-        # sure: the nearest human is the nearest by a margin and well inside the window.
-        near = row[f"p{row['near']}"]
-        dx, dz = abs(near[0] - row["at"][0]), near[2] - row["at"][2]
+        # well<n>: player n is well inside the window; out<n>: clearly outside it; sure: one of the two is the
+        # nearer by a margin.
         edge = W10_TURRET_EDGE
-        row["sure"] = (row[f"in{row['near']}"] and 200.0 + edge < dz < 5000.0 - edge
-                       and (row["last"] or 300.0 + edge < dx < 3000.0 - edge)
-                       and (not row["flies1"]
-                            or abs(math.dist(row["p0"], row["at"]) - math.dist(row["p1"], row["at"]))
-                            > W10_TURRET_CLOSE))
+        for n in (0, 1):
+            dx, dz = abs(row[f"p{n}"][0] - row["at"][0]), row[f"p{n}"][2] - row["at"][2]
+            flies = n == 0 or row["flies1"]
+            row[f"well{n}"] = bool(flies and row[f"in{n}"] and 200.0 + edge < dz < 5000.0 - edge
+                                   and (row["last"] or 300.0 + edge < dx < 3000.0 - edge))
+            row[f"out{n}"] = bool(not flies or (not row[f"in{n}"] and (
+                dz < 200.0 - edge or dz > 5000.0 + edge
+                or (not row["last"] and (dx < 300.0 - edge or dx > 3000.0 + edge)))))
+        row["sure"] = (not row["flies1"] or abs(math.dist(row["p0"], row["at"]) - math.dist(row["p1"], row["at"]))
+                       > W10_TURRET_CLOSE)
         rows.append(row)
     return rows
 
@@ -4995,9 +5000,10 @@ def w10_angle(a, b):
 
 def w10_turret_story(rows):
     """Counts over the turret lines: see sc_ma_turret."""
-    count = {"lines": len(rows), "wait": 0, "near1": 0, "to0": 0, "to1": 0, "none": 0, "to0_near1": 0, "to1_near1": 0,
-             "to0_near0": 0, "to1_near0": 0, "fires": 0, "fire_only1": 0, "fire_only0": 0, "fire_both": 0,
-             "fire_none": 0, "could1": 0, "flips": 0, "held": 0, "held1": 0, "held_at": []}
+    count = {"lines": len(rows), "wait": 0, "near1": 0, "none": 0, "fires": 0, "fire_only1": 0, "fire_only0": 0,
+             "fire_both": 0, "fire_none": 0, "flips": 0, "idle": 0, "idle_only1": 0, "idle_only0": 0, "idle_at": [],
+             "one": 0, "one_in": 0, "one_out": 0, "one_in1": 0, "nobody": 0, "nobody_near": 0, "nobody_far": 0,
+             "both": 0, "both_to0": 0, "both_to1": 0}
     before = {}
     for row in rows:
         if row["boulder"] or row["step"][0] != 0:
@@ -5013,13 +5019,11 @@ def w10_turret_story(rows):
             count["fires"] += 1
             key = {(1, 1): "fire_both", (0, 1): "fire_only1", (1, 0): "fire_only0", (0, 0): "fire_none"}
             count[key[(row["in0"], row["in1"])]] += 1
-        elif row["wait"] == 0 and row["hp"] != 0:
-            if row["in1"] and not row["in0"]:
-                count["could1"] += 1  # ready, only player 1 in the window, and no shot
-            if row["sure"]:
-                count["held"] += 1  # ready, the nearest human in the window, and no shot
-                count["held1"] += row["near"]
-                count["held_at"].append(row["frame"])
+        elif row["wait"] == 0 and row["hp"] != 0 and (row["well0"] or row["well1"]):
+            count["idle"] += 1  # ready, a human well inside the window, and no shot
+            count["idle_only1"] += row["well1"] and row["out0"]
+            count["idle_only0"] += row["well0"] and row["out1"]
+            count["idle_at"].append(row["frame"])
         # Whom the yaw's step goes to: Math_SmoothStepToAngle moves a tenth of the way, 2 degrees at most.
         step = w10_angle(row["yaw"][1], row["yaw"][0])
         if abs(w10_angle(row["w0"], row["w1"])) < W10_TURRET_APART or abs(step) < 0.011 or row["yaw"][1] in (
@@ -5036,14 +5040,26 @@ def w10_turret_story(rows):
             count["none"] += 1
             continue
         who = 1 if to[1] else 0
-        count[f"to{who}"] += 1
-        count[f"to{who}_near{row['near']}"] += 1
+        # By who is in the window: one human alone, nobody, or both.
+        if (row["well0"] and row["out1"]) or (row["well1"] and row["out0"]):
+            alone = 0 if row["well0"] else 1
+            count["one"] += 1
+            count["one_in" if who == alone else "one_out"] += 1
+            count["one_in1"] += who == alone == 1
+        elif row["out0"] and row["out1"]:
+            if row["sure"]:
+                count["nobody"] += 1
+                count["nobody_near" if who == row["near"] else "nobody_far"] += 1
+        elif row["well0"] and row["well1"]:
+            count["both"] += 1
+            count[f"both_to{who}"] += 1
     return count
 
 
 def sc_ma_turret(args, folder):
-    """#302: Macbeth with two Landmasters. A train car's turret turns to the human nearest to the car and fires when
-    that one is in its window; upstream it turned to and fired by player 0 alone. Read from the aim trace's turret
+    """#302: Macbeth with two Landmasters. A train car's turret turns to and fires at the nearest of the humans in its
+    window (the owner's rule of 2026-11-13), and keeps that one while it stays in the window; with nobody in the window
+    it turns to the nearest human. Upstream it turned to and fired by player 0 alone. Read from the aim trace's turret
     lines, which do not ask the aim code. Hashes and the two traces equal."""
     traces = {name: folder / f"{name}-aim.txt" for name in ("host", "client")}
     folder.mkdir(parents=True, exist_ok=True)
@@ -5061,26 +5077,26 @@ def sc_ma_turret(args, folder):
                   "turret ran)")
     expect([r["line"] for r in ours[:n]] == [r["line"] for r in theirs[:n]], "the two games' turret lines differ")
     count = w10_turret_story(ours[:n])
-    text = (f"{count['lines']} turret frames, {count['wait']} waiting, player 1 the nearer on {count['near1']}; with "
-            f"player 1 the nearer the yaw steps to player 1's direction on {count['to1_near1']}, to player 0's on "
-            f"{count['to0_near1']}; with player 0 the nearer to player 0's on {count['to0_near0']}, to player 1's on "
-            f"{count['to1_near0']}; {count['none']} steps fit neither or both; {count['fires']} first shots: "
-            f"{count['fire_only1']} with only player 1 in the window, {count['fire_only0']} with only player 0, "
-            f"{count['fire_both']} with both, {count['fire_none']} with neither; ready with only player 1 in the "
-            f"window and no shot on {count['could1']} frames; ready with the nearest human in the window and no shot "
-            f"on {count['held']} frames ({count['held1']} of them with player 1 the nearest); the nearest human "
-            f"changed between two waiting frames {count['flips']} times")
-    expect(count["near1"] * 5 > count["wait"] and count["fires"] >= 5,
-           f"too little to tell: player 1 is seldom the nearer, or the turrets seldom fire: {text}")
-    expect(count["held"] == 0,
-           f"a turret that is ready holds its fire while the nearest human is in its window (first on frames "
-           f"{count['held_at'][:5]}): {text}")
-    # A turret keeps the human it picked while that one is in its window, so some steps go to the one that is no
-    # longer the nearer: most have to go to the nearer.
-    expect(count["to1_near1"] > 2 * count["to0_near1"],
-           f"the turrets turn to player 0 while player 1 is the nearer: {text}")
-    expect(count["to0_near0"] > count["to1_near0"],
-           f"the turrets turn to player 1 while player 0 is the nearer: {text}")
+    text = (f"{count['lines']} turret frames, {count['wait']} waiting, player 1 the nearer on {count['near1']}; ready "
+            f"with a human in the window and no shot on {count['idle']} frames ({count['idle_only1']} with player 1 "
+            f"alone in it, {count['idle_only0']} with player 0 alone); yaw steps with one human alone in the window: "
+            f"{count['one_in']} to that one's direction ({count['one_in1']} of them player 1's), {count['one_out']} "
+            f"to the other's; with nobody in it: {count['nobody_near']} to the nearer one's, {count['nobody_far']} to "
+            f"the other's; with both in it: {count['both_to0']} to player 0's, {count['both_to1']} to player 1's; "
+            f"{count['none']} steps fit neither or both; {count['fires']} first shots: {count['fire_only1']} with "
+            f"only player 1 in the window, {count['fire_only0']} with only player 0, {count['fire_both']} with both, "
+            f"{count['fire_none']} with neither; the nearest human changed between two waiting frames "
+            f"{count['flips']} times")
+    expect(count["near1"] * 5 > count["wait"] and count["fires"] >= 5 and count["one"] >= 20,
+           f"too little to tell: player 1 is seldom the nearer, the turrets seldom fire, or a human is seldom alone in "
+           f"a window: {text}")
+    expect(count["idle"] == 0,
+           f"a turret that is ready holds its fire while a human is in its window (first on frames "
+           f"{count['idle_at'][:5]}): {text}")
+    expect(count["one_in"] > 9 * count["one_out"] and count["one_in1"] > 0,
+           f"the turrets do not turn to the human that is alone in the window: {text}")
+    expect(count["nobody_near"] > 2 * count["nobody_far"],
+           f"with nobody in the window the turrets do not turn to the nearer human: {text}")
     expect(count["fire_only1"] > 0 and count["fire_none"] == 0,
            f"no turret fires with player 1 alone in its window, or one fires with nobody in it: {text}")
     return f"same hash on {frames} frames; {text}"
