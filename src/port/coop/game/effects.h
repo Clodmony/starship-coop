@@ -35,6 +35,11 @@ void CoopEffects_BeamHit(struct Effect* effect);
 // tank, player 0 first. A beam the update's cull has taken out is gone for them.
 void CoopEffects_MacbethBeamHit(struct Effect* effect);
 
+// The test of a shot of a Macbeth train car's turret (Macbeth_Effect378_Update), for the players after player 0
+// (#280): a barrel roll deflects it, a hit uses it up, player 0 first. A tank has no barrel roll (only
+// Player_UpdateArwingRoll raises barrelRollAlpha), so in play the deflect is as out of reach as it is for player 0.
+void CoopEffects_MacbethShotHit(struct Effect* effect);
+
 #ifdef __cplusplus
 }
 #endif

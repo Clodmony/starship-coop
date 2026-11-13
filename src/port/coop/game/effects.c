@@ -133,3 +133,36 @@ void CoopEffects_MacbethBeamHit(Effect* effect) {
         Object_Kill(&effect->obj, effect->sfxSource);
     }
 }
+
+void CoopEffects_MacbethShotHit(Effect* effect) {
+    s32 i;
+
+    if (!CoopPlayers_IsCoop()) {
+        return;
+    }
+    for (i = 0; (i < CoopPlayers_Count()) && (effect->obj.status != OBJ_FREE); i++) {
+        Player* p = &gPlayer[i];
+
+        if (!CoopEffects_CanHit(i, 0) || !(fabsf(p->trueZpos - effect->obj.pos.z) < 50.0f) ||
+            !(fabsf(p->pos.x - effect->obj.pos.x) < 30.0f) || !(fabsf(p->pos.y - effect->obj.pos.y) < 30.0f)) {
+            continue;
+        }
+        if ((p->barrelRollAlpha != 0) || (p->meteoWarpTimer != 0)) {
+            // This shot's own deflect, not CoopEffects_Deflect: along whatever gCalcMatrix holds, with no random
+            // draw and no deflect counted, as Macbeth_Effect378_Update does it for player 0.
+            Vec3f src = { 0.0f, 0.0f, 100.0f };
+            Vec3f dest;
+
+            Matrix_MultVec3f(gCalcMatrix, &src, &dest);
+            effect->vel.x = dest.x;
+            effect->vel.y = dest.y;
+            effect->vel.z = dest.z;
+            AUDIO_PLAY_SFX(NA_SE_ROLLING_REFLECT, effect->sfxSource, 4);
+        }
+        if ((p->barrelRollAlpha == 0) && (p->mercyTimer == 0)) {
+            Player_ApplyDamage(p, 0, effect->info.damage);
+            p->knockback.x = (effect->vel.x < 0.0f) ? -20.0f : 20.0f;
+            Object_Kill(&effect->obj, effect->sfxSource);
+        }
+    }
+}
