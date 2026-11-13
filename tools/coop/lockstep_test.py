@@ -1253,8 +1253,10 @@ LASER_AT = 1900  # feed frame a laser item appears in front of player 1 (sc_lase
 
 
 def run_item(args, folder, spec):
-    """Both games with SF64_COOP_LOCKSTEP_ITEM=spec. Returns (frames, [per game: placed, rows]) where a row is the dict of
-    a `lasers` line with strength, wings and states as lists of ints, after hashes and lockstep logs matched."""
+    """Both games with SF64_COOP_LOCKSTEP_ITEM=spec. Returns (frames, [per game: rows, drops]) where a row is the dict of
+    a `lasers` line with strength, wings and states as lists of ints, after hashes and lockstep logs matched. Only the
+    lines of the frames compared count: the games play on after their `done` until the tool stops them, and how far
+    they get depends on the clock, at no frame limit some 600 frames (#316)."""
     host, client = run_short(args, folder, both={"SF64_COOP_LOCKSTEP_ITEM": spec}, frames=LASER_AT + 200)
     frames = compare(host, client, LASER_AT + 200)
     games = []
@@ -1265,8 +1267,9 @@ def run_item(args, folder, spec):
         for row in join_test.said(report, "lasers"):
             rows.append({key: ([int(v) for v in row[key].split(",")] if key != "frame" else int(row[key]))
                          for key in ("frame", "strength", "wings", "states")})
-        expect(rows, f"{game.name}: no `lasers` line")
-        games.append((rows, join_test.said(report, "drop")))
+        rows = [row for row in rows if row["frame"] < frames]
+        expect(rows, f"{game.name}: no `lasers` line in the {frames} frames compared")
+        games.append((rows, [drop for drop in join_test.said(report, "drop") if int(drop["frame"]) < frames]))
     expect(games[0][0][1:] == games[1][0][1:] or games[0][0][-1] == games[1][0][-1],
            f"the two games saw different pickups: {games[0][0]} / {games[1][0]}")
     return frames, games
@@ -4353,6 +4356,56 @@ def check_private(game, files):
         expect("~/" in text or "~\\" in text, f"{game.name}'s log of player {player} never shows the home folder as ~")
 
 
+# What a co-op log holds after a run of so many lockstep frames, whatever the speed (#316). Some lines come on the
+# game's clock, not on its frames: the transport's counters every 5 s (LOG_NET_MS, session.c), every player's state
+# every second (STATE_LINE_MS, log_game.c), the lockstep's summary every 10 s and a frame held 200 ms or more
+# (lockstep_game.c). At no frame limit a Release game plays SHORT_FRAMES in about 2 s and its log has no `net` line;
+# at a limit of 8 it has more `state` lines. So the count and the categories go by the lines that come on frames, and
+# a line on the clock is wanted only where the log's own clock says one was due.
+LOG_CLOCK_CATEGORIES = ("net", "state")
+LOG_CLOCK_LOCKSTEP = re.compile(r"frames held for \d+ ms so far|^frame \d+ held \d+ ms for player")
+LOG_CHECKED_FRAMES = 300  # a desync line `frame N: M frames compared with a peer` every 300 frames (desync_game.c)
+LOG_NET_SECONDS = 5  # LOG_NET_MS: from a peer's join on, a `net` line at least this often
+LOG_STATE_SECONDS = 1  # STATE_LINE_MS: in a level, a `state` line at least this often
+# The lines on frames up to frame SHORT_FRAMES in either player's own log (#316, Release at no limit): log opened,
+# hosting or joining, the other game's build, the roster twice, level start, save and the sine (the host's game state
+# init -> title, the client's request for its character), title -> play, desync check on, lockstep started, the desync
+# lines of frames 300 to 2700 and the three player lines of frame 1674. The floor was 40 lines of any kind before, which
+# a run at a limit of 8 reached with the clock's lines and one at no limit did not (31).
+LOG_FRAME_LINES = 25
+
+
+def on_clock(line):
+    """A co-op log line written on the game's clock, not on its frames (see LOG_CLOCK_CATEGORIES)."""
+    return line.category in LOG_CLOCK_CATEGORIES or (line.category == "lockstep"
+                                                     and LOG_CLOCK_LOCKSTEP.search(line.text) is not None)
+
+
+def check_log_frames(lines, player, frames):
+    """What player's own log must hold after a run of `frames` lockstep frames, at any speed (#316). Returns the number
+    of its lines that come on frames, up to `frames`."""
+    framed = [line for line in lines if not on_clock(line) and (line.frame is None or line.frame <= frames)]
+    expect(len(framed) >= LOG_FRAME_LINES, f"player {player}'s own log has only {len(framed)} lines that come on "
+                                           f"frames up to frame {frames}, want {LOG_FRAME_LINES}")
+    checked = {int(match.group(1)) for match in (re.match(r"frame (\d+): \d+ frames compared with a peer", line.text)
+                                                 for line in lines if line.category == "desync") if match}
+    due = [frame for frame in range(LOG_CHECKED_FRAMES, frames, LOG_CHECKED_FRAMES) if frame not in checked]
+    expect(not due, f"player {player}'s log lacks the desync line of frame {due[:3]}")
+    want = {"session", "lockstep", "desync", "game", "player", "log"}
+    categories = {line.category for line in framed}
+    expect(want <= categories, f"player {player}'s log lacks {sorted(want - categories)}")
+    # The clock's lines, where the log's own times say one was due.
+    last = lines[-1].time
+    joined = next((line.time for line in lines if line.category == "session"
+                   and re.search(r"\bjoined\b", line.text)), None)
+    started = next((line.time for line in lines if line.text.startswith("lockstep started")), None)
+    for category, since, seconds in (("net", joined, LOG_NET_SECONDS), ("state", started, LOG_STATE_SECONDS)):
+        if since is not None and (last - since).total_seconds() >= seconds + 1:
+            expect(any(line.category == category for line in lines),
+                   f"player {player}'s log has no `{category}` line in {(last - since).total_seconds():.1f} s")
+    return len(framed)
+
+
 def sc_log(args, folder):
     """Every folder holds every player's log, the received copy is the sender's own, the hash stays equal with the
     streaming on, and the merge tool orders them."""
@@ -4364,18 +4417,17 @@ def sc_log(args, folder):
                f"{game.name} holds logs of players {sorted(files[game], key=lambda p: p or 0)}, want 1 and 2")
         check_private(game, files[game])
     received = 0
+    framed = []
     for own_game, other_game, player in ((host, client, 1), (client, host, 2)):
-        own = [line.format() for line in coop_log.read_lines(files[own_game][player], player)]
+        own_lines = coop_log.read_lines(files[own_game][player], player)
+        own = [line.format() for line in own_lines]
         got = [line.format() for line in coop_log.read_lines(files[other_game][player], player)]
-        expect(len(own) >= 40, f"player {player}'s own log has only {len(own)} lines")
+        framed.append(check_log_frames(own_lines, player, SHORT_FRAMES))
         missing = [line for line in got if line not in own]
         expect(not missing, f"{other_game.name} holds a line of player {player} that player never wrote: "
                             f"{missing[0] if missing else ''}")
         expect(got == [line for line in own if line in set(got)], f"player {player}'s lines arrived out of order")
         expect(len(got) >= 0.8 * len(own), f"{other_game.name} got {len(got)} of player {player}'s {len(own)} lines")
-        categories = {line.category for line in coop_log.read_lines(files[own_game][player], player)}
-        want = {"session", "net", "lockstep", "desync", "game", "state", "log"}
-        expect(want <= categories, f"player {player}'s log lacks {sorted(want - categories)}")
         texts = "\n".join(own)
         # The session's sine (decision 0011, #186) is on before the level.
         for phrase in ("lockstep started at frame 0", "level start: level 0", "desync check on", "log closed",
@@ -4393,7 +4445,8 @@ def sc_log(args, folder):
                            str(client.run), "--category", "session,desync"], capture_output=True, text=True)
     expect(done.returncode == 0 and "level start" in done.stdout, f"coop_log.py merge failed: {done.stdout[-300:]}")
     return (f"same hash on {frames} frames with streaming on; both folders hold both logs, {received} lines received, "
-            f"{len(merged)} in the merged timeline of session {session}; nothing personal in them")
+            f"{len(merged)} in the merged timeline of session {session}; {framed[0]} and {framed[1]} lines on frames "
+            f"up to frame {SHORT_FRAMES}; nothing personal in them")
 
 
 NAMES_TYPED_258 = ("Captain Fox", "sam.ok!")  # what the host and the client type
