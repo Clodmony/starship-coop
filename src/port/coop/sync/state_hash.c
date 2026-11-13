@@ -30,6 +30,7 @@
 
 #include "state_hash.h"
 
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -767,6 +768,54 @@ static void Probe(void) {
 static s32 sRadioPrev = 0;
 static s32 sRadioChanges = 0;
 
+// Test only: the frame each effect slot's object was set up, for the "# ages" line (#284). An effect that nothing ends
+// grows old; a burst, or a set that an effect keeps renewing (smoke, fire), does not, however many slots it holds.
+#define EFFECT_OLD_FRAMES 900 // an effect this many frames old (30 seconds of play) counts as old
+static u32 sEffectBorn[ARRAY_COUNT(gEffects)];
+static s32 sEffectId[ARRAY_COUNT(gEffects)]; // the id the slot held when last looked at, -1 while free
+
+static void CoopStateHash_OnObjectInit(ObjectInitEvent* event) {
+    ptrdiff_t k;
+
+    if (event->type != OBJECT_TYPE_EFFECT) {
+        return;
+    }
+    k = (Effect*) event->object - gEffects;
+    if ((k >= 0) && (k < (ptrdiff_t) ARRAY_COUNT(gEffects))) {
+        sEffectBorn[k] = sFrame;
+        sEffectId[k] = gEffects[k].obj.id;
+    }
+}
+
+// Every frame of a level: a free slot forgets its object, and an object the slot was not seen to set up (an effect set
+// up straight into OBJ_ACTIVE, or another id) is born now. *old gets how many are EFFECT_OLD_FRAMES old or more,
+// *oldestId and *oldestAge the id and age of the oldest.
+static void Effects_Age(s32* old, s32* oldestId, u32* oldestAge) {
+    s32 k;
+
+    *old = 0;
+    *oldestId = -1;
+    *oldestAge = 0;
+    for (k = 0; k < ARRAY_COUNT(gEffects); k++) {
+        u32 age;
+
+        if (gEffects[k].obj.status == OBJ_FREE) {
+            sEffectId[k] = -1;
+            continue;
+        }
+        if (sEffectId[k] != gEffects[k].obj.id) {
+            sEffectId[k] = gEffects[k].obj.id;
+            sEffectBorn[k] = sFrame;
+        }
+        age = sFrame - sEffectBorn[k];
+        *old += age >= EFFECT_OLD_FRAMES;
+        if (age > *oldestAge) {
+            *oldestAge = age;
+            *oldestId = gEffects[k].obj.id;
+        }
+    }
+}
+
 // Slots of an object array that are not free. Every object type starts with an Obj, whose status is its first byte.
 static s32 CountUsed(const void* array, size_t size, size_t count) {
     s32 used = 0;
@@ -835,6 +884,16 @@ static void CoopStateHash_OnGamePreUpdate(IEvent* event) {
     if (gGameState == GSTATE_PLAY) {
         sRadioChanges += (gRadioState != sRadioPrev);
         sRadioPrev = gRadioState;
+    }
+    if (gGameState == GSTATE_PLAY) {
+        s32 old;
+        s32 oldestId;
+        u32 oldestAge;
+
+        Effects_Age(&old, &oldestId, &oldestAge);
+        if ((sFrame % VIEW_LOG_PERIOD) == 0) {
+            fprintf(sLog, "# ages frame=%u old=%d oldest=%d:%u\n", sFrame, old, oldestId, oldestAge);
+        }
     }
     if ((gGameState == GSTATE_PLAY) && ((sFrame % sSlotsPeriod) == 0)) {
         fprintf(sLog, "# slots frame=%u effects=%d/%d actors=%d/%d shots=%d/%d items=%d/%d radio=%d\n", sFrame,
@@ -965,7 +1024,11 @@ void CoopStateHash_Init(void) {
     }
     fputc('\n', sLog);
 
+    for (i = 0; i < ARRAY_COUNT(sEffectId); i++) {
+        sEffectId[i] = -1;
+    }
     REGISTER_LISTENER(GamePreUpdateEvent, CoopStateHash_OnGamePreUpdate, EVENT_PRIORITY_NORMAL);
+    REGISTER_LISTENER(ObjectInitEvent, CoopStateHash_OnObjectInit, EVENT_PRIORITY_NORMAL); // the "# ages" line
     atexit(CoopStateHash_OnExit);
 #ifdef HASH_CRASH_END
     sLogFd = fileno(sLog);

@@ -12,6 +12,7 @@
     python tools/coop/hash_check.py rates --exe b/Starship             # unattended; prints PASS or FAIL
     python tools/coop/hash_check.py draw                               # unattended; prints PASS or FAIL
     python tools/coop/hash_check.py base --base a/Starship             # unattended; prints PASS or FAIL
+    python tools/coop/hash_check.py base --base a/Starship --level macbeth --frames 3000   # co-op off in Macbeth
     python tools/coop/hash_check.py start --players 2                  # unattended; prints PASS or FAIL
 
 Input by rule starts where replay.py's Start says. run and views play it past Corneria's intro, probe through it, as a
@@ -38,9 +39,11 @@ views plays one replay twice per section, with SF64_COOP_TEST_LOCAL_INDEX 0 and 
   --pilot flies each level to its end first, boss included, with a pilot that reads game state, and the two clients play
   what it flew (PILOT_LEVELS, #181); venom-2-andross flies on through the game's jump into Andross' brain and escape
   (PILOT_THROUGH).
-slots plays a level with 1 player and with --players and compares how many effect slots are in use (the median over
-  the samples after the start): co-op frees nothing for leaving the view, so a kind of effect that only that frees
-  stays for the whole level (#129). Fails when co-op holds more than SLOTS_LEAK more.
+slots plays a level with 1 player and with --players and compares the effect slots in use: co-op frees nothing for
+  leaving the view, so a kind of effect that only that frees would pile up (#129). Fails when co-op holds more effects
+  that have lived 900 frames or more (the hash log's "# ages" lines) than single player, at its most, by more than
+  SLOTS_LEAK (#284): an effect nothing ends grows old, a burst or a set that is renewed does not. --rule-test checks
+  that rule on made-up samples, with no game.
 builds plays one replay on two runs of a Release build and one of a Debug build of the same commit (point 3 of decision
   0002): the two Release runs must be equal on every frame, and so must Debug against Release. Input by rule, as for
   views. Give each build as its own --debug and --release: a build folder holds one build type.
@@ -54,7 +57,9 @@ draw plays one replay with and without SF64_COOP_TEST_NO_DRAW, per section and s
   --start names one: the switch sits under every tool, on whichever start that tool plays.
 base plays input by rule through the menus, with co-op off, on this build and on --base, the build before a change: the
   two must be equal on every frame, which is what co-op off means. --base can be a build without any of the switches
-  here, so it plays nothing that needs one.
+  here, so it plays nothing that needs one. --level NAME (#283) starts both games in that level instead, through its
+  intro (SF64_COOP_TEST_START_LEVEL, src/port/coop/test/start_level.h, which --base must know), so co-op off can be
+  checked outside Corneria, the vehicle levels too; --frames sets how long, counted from when player 0 flies.
 
 builds and rates run in real time: at test speed a game frame is drawn once, so no game would interpolate, and
 interpolation is what they are there to see (#141, #137). So they ask for drawing too, and each game must log what it
@@ -471,13 +476,20 @@ def read_views(path):
 
 
 def read_slots(path):
-    """The "# slots" lines of a log: [(frame, {array: (used, capacity)})]."""
-    rows = []
+    """The "# slots" lines of a log: [(frame, {array: (used, capacity)})]. A build of #284 on also writes "# ages"
+    lines: their count of old effects is "old", as (old, the effect slots)."""
+    rows, ages = [], {}
     for line in Path(path).read_text(encoding="utf-8", errors="replace").splitlines():
         if line.startswith("# slots "):
             parts = line.split()
             counts = {kv.split("=")[0]: tuple(int(n) for n in kv.split("=")[1].split("/")) for kv in parts[3:]}  # radio=n
             rows.append((int(parts[2].split("=")[1]), counts))
+        elif line.startswith("# ages "):
+            fields = dict(kv.split("=", 1) for kv in line.split()[2:])
+            ages[int(fields["frame"])] = int(fields["old"])
+    for frame, counts in rows:
+        if frame in ages and "effects" in counts:
+            counts["old"] = (ages[frame], counts["effects"][1])
     return rows
 
 
@@ -593,17 +605,80 @@ def view_compare(label, replay, frames, config, start, exe, args, level=None):
     return failures
 
 
-# `slots`: how many effect slots a level holds in co-op more than in single player (#129). A median over the samples after
-# the start, so a burst of explosions does not count, and a leak that holds slots for the whole level does.
+# `slots`: whether a level piles up effect slots in co-op that single player does not (#129, #284). What piles up is an
+# effect that nothing ends, so the rule counts old effects: the hash log's "# ages" line (src/port/coop/sync/
+# state_hash.c) gives how many effects have lived SLOTS_OLD frames or more. Bursts, Fortuna's burning base
+# (FoBase_BurnEffects, 47 to 68 slots from frame 6900, gone before 10000) and the smoke a damaged Arwing trails
+# (Effect389, Player_DamageEffects, src/engine/fox_play.c:237-289: each puff ends within about 14 frames) hold many
+# slots and none of them grows old. It fails when co-op holds more old effects than single player at its most, by more
+# than SLOTS_LEAK, on the samples from SLOTS_FROM on. Three rules failed before: a median of the slots in use over the
+# limit failed Fortuna at --frames 9000 (16 against 15); the growth of the fewest slots in use from the first third to
+# the last failed Corneria's 2400 frames on the second player's smoke (0 to 18); and the growth of the fewest old
+# effects missed a mutant whose smoke never ends, as Corneria's cut to all-range clears the effects and the last third
+# began without old ones (0, 51, 0).
 SLOTS_FROM = 300
-SLOTS_LEAK = 15
+SLOTS_LEAK = 15  # the most old effects co-op may hold more than single player
+SLOTS_OLD = 900  # EFFECT_OLD_FRAMES in state_hash.c
 
 
-def median_used(rows, name):
-    import statistics
+def slots_most(rows, name):
+    """The most of counts[name] on the samples from SLOTS_FROM on, or None when there are none."""
+    return max((counts[name][0] for frame, counts in rows if frame >= SLOTS_FROM and name in counts), default=None)
 
-    used = [counts[name][0] for frame, counts in rows if frame >= SLOTS_FROM]
-    return statistics.median(used) if used else None
+
+def slots_problem(name, players, single, coop):
+    """The failure of `slots` for one level, or None; prints what it compared."""
+    if not all("old" in counts for _, counts in single + coop):
+        return f"{name}: no \"# ages\" lines in the hash logs: a build from before #284"
+    one, more = slots_most(single, "old"), slots_most(coop, "old")
+    if one is None or more is None:
+        return f"{name}: too few samples to compare"
+    print(f"hash: {name}: at most {more} old effects ({SLOTS_OLD} frames or more) with {players} players, {one} with 1 "
+          f"(at most {SLOTS_LEAK} more); at most {slots_most(coop, 'effects')} and {slots_most(single, 'effects')} "
+          f"effects in use")
+    if more - one > SLOTS_LEAK:
+        return (f"{name}: {players} players held {more} effects that had lived {SLOTS_OLD} frames or more, 1 player "
+                f"{one} (at most {SLOTS_LEAK} more): something is not freed")
+    return None
+
+
+def slots_rule_test():
+    """`slots --rule-test`: the rule on made-up samples every 100 frames, as a run of `slots` takes them (#284). An
+    effect counts as old SLOTS_OLD frames after its birth. Returns a list of failures."""
+    def rows(used, old=lambda f: 0, end=9000):
+        return [(f, {"effects": (used(f), 100), "old": (old(f), 100)}) for f in range(0, end + 1, 100)]
+
+    def leaked(f, every, cap=100, since=0):  # leaked effects that are old at frame f, one born every `every` frames
+        return min(cap, max(0, (f - since - SLOTS_OLD) // every))
+
+    quiet = lambda f: 5 + (40 if f % 1000 == 0 else 0)  # single player, with a burst now and then
+    cases = [
+        ("a renewed set from frame 6900 to the end, as Fortuna's burn at --frames 9000",
+         rows(lambda f: 5 + 55 * (f >= 6900)), True),
+        ("a renewed set over all but 3 samples of the last third, as Fortuna's burn at --frames 10000",
+         rows(lambda f: 5 + 55 * (6900 <= f < 9800) + 80 * (9800 <= f < 10000), end=10000), True),
+        ("a renewed set from frame 1900 on, as the second player's smoke in Corneria's 2400 frames",
+         rows(lambda f: 5 + 18 * (f >= 1900), end=2400), True),
+        ("a burst to 100 slots for one sample", rows(lambda f: 100 if f == 8100 else 7), True),
+        ("20 more slots than single player all along, renewed", rows(lambda f: 25 + (40 if f % 1000 == 0 else 0)), True),
+        ("10 old effects in both runs from frame 1000 on", rows(quiet, lambda f: 10 * (f >= 1000)), True),
+        ("a leak of an effect every 300 frames", rows(lambda f: 5 + f // 300, lambda f: leaked(f, 300)), False),
+        ("a leak of an effect every 100 frames, the array full from frame 9500 on",
+         rows(lambda f: min(100, 5 + f // 100), lambda f: leaked(f, 100, 95)), False),
+        ("a leak that fills the array by frame 3000", rows(lambda f: min(100, 5 + f // 30), lambda f: leaked(f, 30, 95)),
+         False),
+        ("a leak from frame 1100 that a level cut at 3400 clears, as the mutant of Corneria's smoke",
+         rows(lambda f: 5 + 60 * (1100 <= f < 3400),
+              lambda f: leaked(f, 4, 95, 1100) if f < 3400 else leaked(f, 4, 95, 3400), end=6000), False),
+    ]
+    failures = []
+    for label, coop, passes in cases:
+        end = coop[-1][0]
+        single = rows(quiet, lambda f: 10 * (f >= 1000) if "in both" in label else 0, end=end)
+        problem = slots_problem("rule-test", 2, single, coop)
+        if (problem is None) != passes:
+            failures.append(f"{label}: {'failed' if problem else 'passed'}, want {'pass' if passes else 'fail'}")
+    return failures
 
 
 def slots_level(name, exe, args):
@@ -627,17 +702,21 @@ def slots_level(name, exe, args):
             continue
         slots = read_slots(values["log"])
         print(f"hash: {name}: {n} player(s) slots in use: {describe_slots(slots)}")
-        series.append(median_used(slots, "effects"))
+        series.append(slots)
     if len(series) == 2:
-        single, coop = series
-        print(f"hash: {name}: median effects in use {single} with 1 player, {coop} with {args.players}")
-        if coop - single > SLOTS_LEAK:
-            failures.append(f"{name}: {args.players} players hold {coop - single} more effect slots than 1 (median "
-                            f"{coop} against {single}, at most {SLOTS_LEAK} more): something is not freed")
+        problem = slots_problem(name, args.players, *series)
+        if problem:
+            failures.append(problem)
     return failures
 
 
 def cmd_slots(args):
+    if args.rule_test:
+        failures = slots_rule_test()
+        for f in failures:
+            print(f"FAIL: {f}")
+        print("hash: FAIL" if failures else "hash: PASS")
+        return 1 if failures else 0
     exe = replay_tool.find_exe(args.exe)
     names = list(VIEW_LEVELS) if args.level == "all" else args.level.split(",")
     unknown = [name for name in names if name not in VIEW_LEVELS]
@@ -1075,11 +1154,42 @@ def cmd_draw(args):
     return 1 if failures else 0
 
 
+# Levels `base --level` starts in (#283): every LevelId with a level, the vehicle levels too.
+BASE_LEVELS = {**VIEW_LEVELS, "macbeth": 11, "titania": 12, "aquas": 13, "level-4": 4}
+
+
+def base_level_start(name):
+    """Where `base --level` starts both games: straight in the level, through its intro (as LEVEL does in Corneria, a
+    level's intro is simulation too). The frame numbers are Corneria's; a level that takes player 0 later only shifts
+    the input by rule."""
+    level = replay_tool.LEVEL
+    return replay_tool.Start(f"level-{name}", BASE_LEVELS[name], False, level.level, level.active, level.seeds)
+
+
+def base_level_problem(tag, rows, level, frames):
+    """A game of `base --level` must have flown in its level, or a base build that does not know the start would only
+    show the menus on both sides (or crash in another place). Returns a failure or None."""
+    flown = sum(1 for row in rows if row[1] == replay_tool.GS_PLAY and row[2] == level)
+    print(f"hash: base: {tag} flew {flown} frames in level {level}")
+    return None if flown >= frames // 2 else f"{tag} flew only {flown} of {frames} frames in level {level}"
+
+
 def cmd_base(args):
     exe, base = replay_tool.find_exe(args.exe), replay_tool.find_exe(args.base)
-    # Through the menus: the base build may be older than the switch of a start in the level, and would say so.
-    args.file, args.players, args.start = None, 1, replay_tool.MENUS.name
-    replay, config, start = test_setup(args)
+    flight = args.frames or GENERATED_END
+    if args.level:
+        if args.level not in BASE_LEVELS:
+            sys.exit(f"hash: no level {args.level}; the choices are {', '.join(BASE_LEVELS)}")
+        start = base_level_start(args.level)
+        replay = make_run_folder(replay_tool.ROOT / "local", f"test-hash-base-{args.level}-") / "input.sfcr"
+        write_generated_replay(replay, frames=start.frame(flight), start=start)
+        config = {"CVars": {"gDebugJumpToAllRange": 1}}  # what test_setup gives input by rule
+    else:
+        # Through the menus: the base build may be older than the switch of a start in the level, and would say so.
+        args.file, args.players, args.start = None, 1, replay_tool.MENUS.name
+        replay, config, start = test_setup(args)
+        if args.frames:
+            write_generated_replay(replay, frames=start.frame(flight), start=start)
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         jobs = [pool.submit(play, replay, build, args.timeout, f"base-{tag}", config=config, start=start)
@@ -1088,7 +1198,10 @@ def cmd_base(args):
 
     failures = [f"{tag} did not play through: {run[0].get('result') if run[0] else 'no report'}"
                 for tag, run in (("the base build", before), ("this build", after)) if not played_through(run[0])]
-    failures += compare_runs("co-op off", "the base build and this one", before, after, start.frame(GENERATED_END))
+    if args.level:
+        failures += [problem for tag, run in (("the base build", before), ("this build", after)) if run[2] is not None
+                     for problem in [base_level_problem(tag, run[2], start.level_id, flight)] if problem]
+    failures += compare_runs("co-op off", "the base build and this one", before, after, start.frame(flight))
     for f in failures:
         print(f"FAIL: {f}")
     print("hash: FAIL" if failures else "hash: PASS")
@@ -1226,6 +1339,7 @@ def main():
                    help=f"levels, or all: {', '.join(VIEW_LEVELS)} (default katina,fortuna,corneria)")
     c.add_argument("--players", type=int, default=2, help="players, through gCoopDebugPlayerCount (default 2)")
     c.add_argument("--frames", type=int, help=f"replay length (default {VIEW_LEVEL_FRAMES} past when player 0 flies)")
+    c.add_argument("--rule-test", action="store_true", help="check the rule on made-up samples, with no game (#284)")
     c.add_argument("--exe", help="Starship executable (default: newest build found)")
     c.add_argument("--timeout", type=float, default=1800, help="per run: give up after this many seconds")
     u = sub.add_parser("builds", help="play one replay on two Release runs and a Debug run and compare the hashes")
@@ -1255,6 +1369,9 @@ def main():
     w.add_argument("--timeout", type=float, default=1800, help="per run: give up after this many seconds")
     e = sub.add_parser("base", help="play input by rule on the build before a change and this one, and compare")
     e.add_argument("--base", required=True, help="Starship executable of the build before the change")
+    e.add_argument("--level", metavar="NAME", help="start both games in this level instead of coming through the menus "
+                   "(#283): " + ", ".join(BASE_LEVELS))
+    e.add_argument("--frames", type=int, help=f"frames from when player 0 flies (default {GENERATED_END})")
     e.add_argument("--exe", help="Starship executable (default: newest build found)")
     e.add_argument("--timeout", type=float, default=1800, help="per run: give up after this many seconds")
     s = sub.add_parser("start", help="what a start in the level leaves different from coming through the menus")
