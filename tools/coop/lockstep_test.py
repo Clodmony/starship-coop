@@ -361,6 +361,14 @@ def session(args, folder, host_env=None, client_env=None, both=None, config=None
         if saves and saves.get(f"client{n}") is not None:
             put_save(saves[f"client{n}"], games[-1].run)
         games[-1].start(client_config if client_config is not None else config)
+        if n < clients - 1:
+            # The host seats the clients in the order their joins arrive, so the next one starts when this one is in:
+            # two started back to back took the seats in either order (#286).
+            deadline = time.monotonic() + 120
+            while not join_test.said(games[-1].report(), "joined"):
+                if games[-1].proc.poll() is not None or time.monotonic() >= deadline:
+                    break
+                time.sleep(0.1)
     return tuple(games)
 
 
