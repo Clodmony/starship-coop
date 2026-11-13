@@ -836,6 +836,78 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-13, #282, the explosions of Andross' escape hit every human (the owner's choice A)
+
+Run on `issue/282-escape-hits` (`b251f40b`, on `issue/282-escape-look` `aeae394e`), ROM US 1.0, Linux, GCC, Debug,
+OpenGL on a software renderer, no window, one PC; two game clients per session over loopback through the join driver,
+lockstep, a pilot on each client. The entry below this one is the look before the rule; its table is what the base
+does. The owner chose on 2026-11-13: question 1 option A (the explosions hit every human, the exit's trigger stays
+player 0's), question 2 option A (`gInvincible` and the explosion stay as upstream).
+
+Observed (code, this branch):
+
+- `CoopHits_AndrossExplosion` (`src/port/coop/game/hits.c`) is called once per explosion update, after player 0's
+  test (`src/overlays/ovl_i6/fox_andross.c:759`, the one `// COOP:` line). For each player after player 0 that is not
+  parked and is flying or in a U-turn, within 500 of the explosion in x and in z (`trueZpos`), it does player 0's
+  writes (`fox_andross.c:751-756`): shields 0, both wing healths 0, `Player_ApplyDamage` left and right with 60,
+  `radioDamageTimer` 200. It does not set the explosion's timer and does not call `Cutscene_KillPlayer`.
+- It returns at once outside a co-op session (`CoopPlayers_IsCoop`), as the other functions of `hits.c` do.
+- Neither upstream's block nor the function reads `gInvincible`; `Player_ApplyDamage` does and makes the damage of the
+  two hits 0 (`src/engine/fox_play.c:981-983`).
+- The down: on the hit player's next update the all-range test `shields <= 0 && radioDamageTimer != 0`
+  (`fox_play.c:5797`) calls `Player_Down`, which for a player after player 0 in co-op only marks its slot down and
+  starts the return counter at 150 (`CoopPlayers_OnPlayerDown`, `CoopPlayers_SetDown`,
+  `src/port/coop/game/players.c`); the return spends the life (`CoopPlayers_ReturnFromDown`).
+
+Observed (runs; `python tools/coop/lockstep_test.py --only escape_look`, 170 s, `RESULT: 1/1`; "frame" is the level
+frame; the probe's cases in this order, each for 60 updates of its object; the two games of every session equal on
+every frame, 7060 to 7080 compared, and their probe logs equal):
+
+| case | gInvincible | player 0 | player 1 | lives (pool) |
+|---|---|---|---|---|
+| `miss1`: explosion 550 from player 1, frames 272-331 | 1 and 0 | 773-784 from it: nothing | 550 from it on all 60 updates: shields 255, no hit | 2, unchanged |
+| `blast1`: explosion 450 from player 1, from frame 362 | 1 | 530 or more from it: shields 255, no hit, flies on (state 3 throughout) | frame 362: shields 255 to 0, `hitTimer` 20, `dmgType` 0; 363: down, parked; 513: back beside player 0, shields 255 | 2 during the case; 2 to 1 at frame 513 |
+| the same | 0 | 511 or more from it: the same | the same frames; `dmgType` 60 | the same |
+| `exit1`: trigger 450 from player 1, frames 514-573 | 1 and 0 | 516-701 from it: nothing | 450 from it: nothing, no level complete | 1, unchanged |
+| `blast0`: explosion 450 from player 0, from frame 604 | 1 and 0 | shields 255 to 0, hit, down, then state 6 (upstream) | 528 or more from it: shields 255, no hit; parked from 605 as player 0 is down | 1 to 0 |
+| after `blast0` | 1 and 0 | the escape starts again at its checkpoint | joins again at the level start, shields 255 | 0 |
+| James' route to the exit (after the cases, and alone in each maze) | 1 and 0 | exit at 2218 or 2254, as before | parked from the next frame, as before | unchanged |
+
+- In `blast1` the object waited 3000 away for 3 or 4 of its 60 updates (`off`): player 0 flew past the parked player 1
+  and no side kept it 510 out. The hit came on the first update in place.
+- The base (`bb6cc7e0`: this scenario and the probe's `miss` case on `aeae394e`'s game code) fails the scenario in
+  both sessions with cases: "blast1: an explosion in reach of player 1 did not take it down (#282 option A): hit mask
+  0, down mask 0, its shields 255>255>255, states active"; the three route sessions pass there.
+- James' route is untouched: nearest of the level's own explosions per player 3330 / 3332, 3061 / 3061, 3230 / 3231 in
+  the three mazes, 0 frames under 500, the numbers of the entry below. The full path,
+  `campaign.py --levels venom-2-andross`: `1/1 levels equal on every frame to the end`, 37361 frames compared, level
+  complete at level frame 25439 (as #275 and the entry below), downs 0, 0; pilot logs: no `close` line, nearest
+  explosion on the 60-frame lines 3645.
+- Co-op off: `hash_check.py base` against a build of `aeae394e`: "the base build and this one equal on all 5800
+  frames"; `test_all.py --no-build --only coop-off --base-exe <that build>`: `RESULT: PASS, 2/2 steps ok`.
+
+Derived:
+
+- A second human is now in the same danger as player 0 in the escape, cheat or not, and pays what any player after
+  player 0 pays for going down: 150 frames out and a life of the pool at its return (decision 0007 rule 4). It is not
+  killed for good and does not restart the level; only player 0's death does that.
+- `gInvincible` does not save player 1 from an explosion, as it does not save player 0: the shields write is direct for
+  both. The helpers of #136 and #272 only call `Player_ApplyDamage`, so there the cheat protects every player alike;
+  here it protects nobody, alike. That keeps question 2's answer (leave the cheat as upstream) true for every player.
+- At pool 0 a player 1 caught in an explosion stays out until player 0's next level start (0007 rule 5): the escape
+  then goes on with player 0 alone.
+
+Guesses:
+
+- A player 1 caught during a U-turn goes down when the U-turn ends, as the down test sits in the flying state's update
+  (`fox_play.c:5797`); player 0 in that case is killed by the explosion's timer first. Read, not run.
+
+Unknown:
+
+- Three or four players: the loop covers them, only two were run.
+- A person flying into one of the level's own explosions (the probe places one; the same update does the test).
+- How the hit looks and sounds on player 1's screen: no window in these runs.
+
 ### 2026-11-13, #282, Andross' escape with two players: what player 1 gets from the explosions and the exit (observation)
 
 Run on `issue/282-escape-look` (`5722fd4f`, from `issue/combined-test-6` `d726f9dd`), ROM US 1.0, Linux, GCC, Debug,
@@ -2092,7 +2164,7 @@ player 0 through a local `Player* player = &gPlayer[0]` on 41 more lines the aud
 | `Andross_80189214` | 2 P0 (+12 alias) | sets player 0 and its camera up for the rails | flow: left |
 | `Andross_AndBossTimer_Update` | 2 P0 | the fight's timer starts when player 0 is within 1000 | trigger: left |
 | `Andross_AndJamesTrigger_Update` | 6 P0 (+9 alias) | James' radio and the hard route's end when player 0 reaches him | trigger and flow: left |
-| `Andross_AndExplosion_Update` | 10 P0 | escape explosions: smoke near player 0, they kill player 0 within 500 | damage in the escape (WP-19): left, as the spec says |
+| `Andross_AndExplosion_Update` | 10 P0 | escape explosions: smoke near player 0, they kill player 0 within 500 | damage in the escape (WP-19): left, as the spec says; since #282 (2026-11-13, the owner's choice A) `CoopHits_AndrossExplosion` repeats the hit for the players after player 0, the kill and the smoke stay player 0's |
 | `Andross_AndBrain_Update` | 55 P0, 3 MC, 1 PA | `:815-817` the catch when player 0 is in a 300 box; `:848`, `:853-856`, `:861` the brain's start puts player 0 into all-range; `:890-920` the catch drags, slows and drains player 0; `:940-942` state 3 chases player 0; `:987-1101` the brain's death moves player 0's camera and starts the escape; `:1131-1168` escape smoke around player 0; `:1188-1190` it turns its face to player 0's `camYaw`; MC rumble | catch and chase: changed; flow, view: left |
 | `Andross_AndBrain_Draw` | 1 P0 | draw | view |
 | `Andross_8018C390` | 1 MC | the mouth cutscene: `:1426` writes `gPathProgress` from the swallowed player; any button on `gMainController` shortens the spit-out timer | flow and input: changed for D |

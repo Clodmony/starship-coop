@@ -256,6 +256,26 @@ Newest first. One block per run that matters (a milestone, a release, a QA level
 
 ```
 date:       2026-11-13
+commit:     issue/282-escape-hits b251f40b (bb6cc7e0 the red test), on issue/282-escape-look aeae394e
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 game clients per session on one PC,
+            UDP over loopback, through the join driver
+what ran:   python tools/coop/lockstep_test.py --only escape_look (on bb6cc7e0, red, and on b251f40b); --only aim;
+            campaign.py --levels venom-2-andross; hash_check.py base --base <build of aeae394e>; test_all.py --no-build
+            --only coop-off --base-exe <build of aeae394e>; check.py
+result:     automated. #282, the owner's choice A: the explosions of Andross' escape hit every human. An explosion 450
+            from player 1 (player 0 at least 510 away) sets its shields to 0 with a hit, takes it down on the next
+            frame and it comes back beside player 0 150 frames later with 255 shields for a life of the pool, while
+            player 0 flies on untouched; 550 away nobody is hurt; the exit's trigger does nothing for player 1; an
+            explosion on player 0 leaves player 1 unhurt; the same with gInvincible on. Both games equal on every
+            frame of all five sessions (7060 to 7080 frames). On the red commit the scenario fails: "an explosion in
+            reach of player 1 did not take it down". aim ok (4000 frames). Venom 2 into Andross equal on all 37361
+            frames to the ending, level complete at level frame 25439, downs 0, 0. Co-op off equal to the base on all
+            5800 frames. Not run: Windows and MSVC, Release, two PCs, three or four players, a person flying into an
+            explosion, the rest of test_all.py (the coordinator's gate runs it on the merged tree).
+```
+
+```
+date:       2026-11-13
 commit:     issue/282-escape-look, C sources as built 5722fd4f (1775a400 adds docs), on issue/combined-test-6 d726f9dd
 identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 game clients per session on one PC,
             UDP over loopback, through the join driver
