@@ -1,7 +1,6 @@
 # 0015: A session's level start plays the sound ahead until no audio reset is running
 
-- Status: Proposed (built and scripted-tested in the pull request that brings this record; the owner reads and accepts
-  the rule there)
+- Status: Accepted (2026-11-13, by the owner; built and scripted-tested in the pull request that brought this record)
 - Date: 2026-11-13
 - Issues: #289, #293
 - Changes: nothing in an accepted record. Adds to how a session enters a level (`CoopLevelStart_Enter`, PROTOCOL.md

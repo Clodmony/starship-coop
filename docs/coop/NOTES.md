@@ -9,6 +9,18 @@ Private notes (your paths, your PC, your logs) go in `local/`, not here.
 
 ## Build and run
 
+### 2026-11-13, the owner's three decisions on the open items of the wave 9 hand-offs
+
+Answered by the owner in a dialog on 2026-11-13 (night), each as the recommendation of the hand-off it comes from.
+
+- **`Rand_ZeroOne` (`src/sys/sys_math.c:27`) stays as it is** (#145, #232, #297; the item (d) entries of 2026-11-12 and
+  decision 0002's re-seed item). The second `sRandSeed2` is not changed to `sRandSeed3` for co-op off on Linux and Switch,
+  so single player re-seeds from the clock exactly when it did. Whether to offer the fix to upstream stays with #262.
+- **Zeros behind a sample are good enough** (#297): the loader's spare 8 bytes after a 9k + 1 sample stay zero; the
+  N64's bytes there are not looked for.
+- **Decision 0015 is accepted** (#289, #299): a session's level start plays the sound ahead until no audio reset is
+  running; option 2 (hold the level start back) is not wanted. Its status line and the index of the records say so.
+
 ### 2026-11-13, #308 (correction): a tool's tree is looked up only once the tool has stopped
 
 Found by the coordinator in the full gate of the combined test build 6 (`test_all.py --mixed`, Linux, GCC, Debug, 57 of
