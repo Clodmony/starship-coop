@@ -161,6 +161,8 @@ number of clients, transport.
    until then, as it plays 1100 frames a second and more. `COOP_TOOLS_MEETING_SPEED=max` runs the `lockstep` step on
    Release in 5m49s against 13m57s (46 of 48 scenarios; `save_own` is intermittent there and `log` is on the clock).
    `join` and `menu` stay at 8: their replays are counted in frames and their ping is on the clock. NOTES.md, 2026-11-13.
+   A full `test_all.py` run takes 23m26s since #290 (41m37s before): `lockstep` 4 scenarios at a time, the mutation suites in
+   a second checkout beside the rest, the `rates` steps with their 5 games at once. NOTES.md, 2026-11-13, #290.
 3. **Two clients on one machine.** Two Starship processes with their own config, save and log folders (never the
    owner's), connected over loopback, both fed replays. `python tools/coop/join_test.py` (WP-24, unattended, exit code
    0 only when everything passed) takes two or three games from the lobby into a level through the scripted flow in
