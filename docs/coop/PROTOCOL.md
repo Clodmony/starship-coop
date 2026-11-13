@@ -206,7 +206,9 @@ in `src/port/coop/session/session.c`; what the values are is in `src/port/coop/g
 4. The host sends `SESSION_SAVE`, then `SESSION_LEVEL_START`, to every client that joined, on the next poll, and tries
    again on the next one while the window is full; the level start never goes ahead of the save. Its own game hears
    of it on that poll too. Each game then enters the level from the message, the host's as well, so no game goes by
-   its own history.
+   its own history. Entering resets the audio heap, and before that each game plays its sound ahead on that frame
+   until no audio reset is running, so the voice player comes back the same number of frames later on every game
+   (decision 0015, proposed).
 5. The save: see "Session's save" below. Start in a level's intro reads the save (`normalClear` of the level,
    `src/engine/fox_play.c`, #191), and every game holds the host's from here on, so any player's Start skips an intro
    the host has cleared, in every level of the session. Until version 7 a cleared flag at the end of this message

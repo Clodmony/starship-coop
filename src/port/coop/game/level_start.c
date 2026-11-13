@@ -6,8 +6,10 @@
 #include <string.h>
 
 #include "global.h"
+#include "sf64audio_provisional.h"
 #include "port/coop/game/score.h"
 #include "port/coop/log/coop_log.h"
+#include "port/coop/test/audio_trace.h"
 
 // src/sys/sys_math.c
 extern s32 sRandSeed1;
@@ -22,6 +24,12 @@ void Map_LevelStart_AudioSpecSetup(LevelId level);
 
 // src/audio/audio_general.c: the audio spec the game last asked for
 extern u8 sAudioSpecId;
+// The game thread's side of an audio reset and its audio update (src/audio/audio_general.c), the sound thread's
+// update (src/audio/audio_thread.c) and the samples it renders per update (src/port/Engine.cpp).
+extern u8 sAudioResetStatus;
+extern unsigned short samples_low;
+void Audio_Update(void);
+void AudioThread_CreateNextAudioBuffer(s16* samples, u32 num_samples);
 
 // src/engine/fox_tank.c: the Landmaster's state outside the Player struct
 extern u8 D_800C9F00;
@@ -284,6 +292,76 @@ static void LevelStart_ClearSetupValues(void) {
     memset(D_MA_801BE250, 0, sizeof(D_MA_801BE250));
 }
 
+int32_t CoopLevelStart_ValueIndex(const void* var) {
+    size_t r;
+    int32_t n = 0;
+
+    for (r = 0; r < ARRAY_COUNT(sRows); r++) {
+        if (sRows[r].data == var) {
+            return n;
+        }
+        n += sRows[r].count;
+    }
+    return -1;
+}
+
+// Test only: SF64_COOP_TEST_AUDIO_RESET_RUNS_ON.
+static bool sResetRunsOn = false;
+
+void CoopLevelStart_SetResetRunsOn(bool runsOn) {
+    sResetRunsOn = runsOn;
+}
+
+// The frames of sound that a level start plays ahead once no audio reset is running, and the most it plays in all: a
+// reset takes 5 steps with 24 updates of fading between them (AudioHeap_ResetStep, src/audio/audio_heap.c), two
+// updates a frame.
+#define SETTLE_FRAMES 16
+#define SETTLE_FRAMES_MAX 96
+
+// The sound is played ahead here, on the frame of a level start, until no audio reset is running and SETTLE_FRAMES
+// more have passed: the game's audio update and the sound thread's updates, as a frame runs them, with what they
+// render dropped.
+//
+// Why: the level's own reset, asked for below, has to take the same number of frames on every game, as the voice
+// player comes back at its end and the state hash holds its clock (#230). It does not when the sound is busy:
+//  - The game hands the sound thread a new reset only when the running one is done (Audio_Update processes no
+//    sequence command before Audio_HandleReset says ready, src/audio/audio_general.c), so the level's reset begins
+//    when the old one ends, a number of frames after this call that follows how far the old one had got.
+//  - A reset that ended a frame or two ago still has commands on their way to the sound thread, and the voice player
+//    then comes back one frame later than on a game where it ended earlier.
+// Two games are not at the same point of that. A level that starts again after a player left or the games parted
+// follows the level start before it by a few frames, each game by its own count, and a first level start can come
+// during the reset of the title screen. The games then parted at level frame 0 or soon after (#289, #293). Upstream
+// has the idea for some spec changes (AUDIORESET_BLOCK in Audio_HandleReset), which the port turned off.
+//
+// The sound thread itself is idle meanwhile: it works between StartAudioFrame and EndAudioFrame (push_frame,
+// src/port/Game.cpp), and a level start comes from a session tick, before the game's update or while a frame waits
+// for input.
+static void LevelStart_SettleAudio(void) {
+    static s16 sDropped[1024 * MAX_NUM_AUDIO_CHANNELS];
+    s32 updates = (gVIsPerFrame > 0) ? gVIsPerFrame : 1; // as GameEngine::HandleAudioThread, src/port/Engine.cpp
+    s32 frames = 0;
+    s32 quiet = 0;
+    s32 i;
+
+    if (sResetRunsOn) {
+        return;
+    }
+    while ((quiet < SETTLE_FRAMES) && (frames < SETTLE_FRAMES_MAX)) {
+        Audio_Update();
+        for (i = 0; i < updates; i++) {
+            AudioThread_CreateNextAudioBuffer(sDropped, samples_low);
+        }
+        quiet = ((sAudioResetStatus == AUDIORESET_READY) && (gAudioResetStep == 0)) ? quiet + 1 : 0;
+        frames++;
+    }
+    if (frames > SETTLE_FRAMES) {
+        CoopLog_Write(COOP_LOG_SESSION, false,
+                      "level start: an audio reset was running, %d frames of sound played ahead%s", (int) frames,
+                      (quiet < SETTLE_FRAMES) ? ", and it is still running" : "");
+    }
+}
+
 void CoopLevelStart_Enter(const CoopLevelStart* start) {
     size_t r;
     s32 i;
@@ -314,6 +392,8 @@ void CoopLevelStart_Enter(const CoopLevelStart* start) {
     // or from Macbeth, for example: both use AUDIOSPEC_MA. After the reset the voice player starts over a fixed number
     // of frames after this call. A game that is in the level's scene already gets to Play_Init 2 frames sooner
     // (Game_ChangeScene loads no scene), so it is in step with the others only if they come from that scene too.
+    CoopAudioTrace_Enter(start->level, start->run); // no-op unless SF64_COOP_AUDIO_TRACE is set (#289)
+    LevelStart_SettleAudio();
     sAudioSpecId = AUDIOSPEC_24;
     Map_LevelStart_AudioSpecSetup((LevelId) start->level);
 }

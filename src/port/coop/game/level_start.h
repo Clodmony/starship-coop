@@ -73,7 +73,19 @@ void CoopLevelStart_AfterEntry(void);
 // GamePreUpdateEvent listener or anywhere else outside Game_Update, so that nothing runs between the values and the
 // level. The players of the roster stay in the level until CoopPlayers_SetRoster(NULL). The audio heap is reset on the
 // way in, also when the level's audio spec is the one loaded, so every game's sound thread starts over there (#230).
+// Before that the sound is played ahead on this frame until no audio reset is running and 16 frames more have passed:
+// the game takes a new reset up only when the running one is done, and one that just ended still has commands on
+// their way, so the voice player would come back a number of frames after the level start that follows what the
+// sound was doing, which differs between two games (#289).
 void CoopLevelStart_Enter(const CoopLevelStart* start);
+
+// Where a level start holds the first value of the game variable at `var` (one of the table in level_start.c), -1 if
+// it holds none. For the test switches, which set a value by its variable and not by a place that moves.
+int32_t CoopLevelStart_ValueIndex(const void* var);
+
+// Test only, SF64_COOP_TEST_AUDIO_RESET_RUNS_ON (src/port/coop/test/switches.h): CoopLevelStart_Enter does not play
+// the sound ahead, so a run can show what that is there for (#289).
+void CoopLevelStart_SetResetRunsOn(bool runsOn);
 
 #ifdef __cplusplus
 }
