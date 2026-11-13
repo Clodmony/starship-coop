@@ -37,6 +37,13 @@ void CoopHits_MacbethBombFire(struct Actor* bomb);
 // screen stays player 0's: it is a fade every game of a session shows alike.
 void CoopHits_MacbethCarBlast(struct Actor* car);
 
+// The test of an explosion of Andross' escape (Andross_AndExplosion_Update), for the players after player 0 (#282, the
+// owner's choice A): a flying player within 500 of it in x and z gets shields 0, both wings 0 and the two hits, as
+// player 0 does, whatever gInvincible says, as for player 0. It then goes down as any player after player 0 does
+// (decision 0007 rule 4: back beside player 0 after 150 frames for a life of the pool). The kill cutscene and the
+// restart stay player 0's.
+void CoopHits_AndrossExplosion(struct Actor* explosion);
+
 #ifdef __cplusplus
 }
 #endif

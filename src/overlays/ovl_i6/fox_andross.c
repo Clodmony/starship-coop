@@ -756,6 +756,7 @@ void Andross_AndExplosion_Update(AndExplosion* this) {
             gPlayer[0].radioDamageTimer = 200;
         }
     }
+    CoopHits_AndrossExplosion(this); // COOP: the same test for the other players, without the kill cutscene (#282)
     if (this->timer_0BC == 1) {
         Cutscene_KillPlayer(&gPlayer[0]);
     }

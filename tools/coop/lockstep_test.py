@@ -172,10 +172,12 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   ve1_pillars Venom 1 with pilots (#276): src/port/coop/test/ve1_pillar_probe.h makes the Golemech raise six pillars
             from the last row of its tables; the sixth, read past the table, stands where the N64 puts it, and the
             hashes and the two probe logs are equal. By hand, not in test_all.py.
-  escape_look an observation for the owner (#282): sessions start at Andross' escape (SF64_COOP_JOIN_CHECKPOINT), and
-            src/port/coop/test/escape_probe.h puts an explosion or the exit's trigger in reach of player 1 (player 0
-            out of it), then an explosion on player 0, with gInvincible and without; then James' route alone in each
-            of the three mazes. Checks that the cases ran and the ones on player 0 acted; reports what player 1 got.
+  escape_look Andross' escape (#282, option A): sessions start at it (SF64_COOP_JOIN_CHECKPOINT), and
+            src/port/coop/test/escape_probe.h puts an explosion just out of player 1's reach (nobody hurt), one in its
+            reach (player 1 goes down, comes back 150 frames later for a life of the pool; player 0 flies on), the
+            exit's trigger in its reach (nothing: the exit is player 0's), then an explosion on player 0 (down, the
+            level starts again; player 1 unhurt), with gInvincible and without, the same; then James' route alone in
+            each of the three mazes. On a build without CoopHits_AndrossExplosion the explosion leaves player 1 alone.
             By hand, not in test_all.py: about 3 minutes.
   log     the co-op log (#172): each game's folder holds its own log and the other player's, streamed during the
             session; the hash stays equal with streaming on; nothing personal is in the files; coop_log.py merges them.
@@ -4892,7 +4894,7 @@ def sc_macbeth_bombs(args, folder):
             f"{rows[-1]['frame']}")
 
 
-# ---- #282: what each player gets in Andross' escape (an observation; the rule is the owner's) ----
+# ---- #282: what each player gets in Andross' escape, and the rule the owner chose for it (2026-11-13, option A) ----
 #
 # In the escape after the brain (src/overlays/ovl_i6/fox_andross.c) an explosion within 500 of player 0 in x and z sets
 # its shields to 0 and kills it 10 frames later whatever gInvincible says (Andross_AndExplosion_Update), and the exit's
@@ -4901,9 +4903,27 @@ def sc_macbeth_bombs(args, folder):
 # own restart there, Andross_801961AC), the pilots fly James' route (src/port/coop/test/pilot_andross.c), and
 # src/port/coop/test/escape_probe.h puts an explosion or a trigger in reach of one player while every other player is
 # out of it. The scenario checks the measurement (the cases ran, the cases on player 0 acted, both games equal) and
-# reports what player 1 got; it asserts no rule for player 1, as none is decided.
+# the rule the owner chose on 2026-11-13 (#282, option A): the explosions hit every human, the exit stays player 0's.
+#
+# The rule for player 1 (CoopHits_AndrossExplosion, src/port/coop/game/hits.c), checked by w9_escape_rule:
+#   miss1   an explosion 550 from player 1 and at least 510 from player 0: nobody is hit, no shields or lives change.
+#   blast1  an explosion 450 from player 1, player 0 at least 510 away: player 1 gets the hit, shields 0, and goes down
+#           (decision 0007 rule 4); player 0 is untouched and flies on; the life is spent when player 1 comes back
+#           beside player 0, W9_ESCAPE_RETURN frames after it went down, with full shields.
+#   exit1   the trigger 450 from player 1: no level complete, the exit is player 0's.
+#   blast0  an explosion 450 from player 0, player 1 away: player 0 goes down and the level starts again (upstream);
+#           player 1 gets no hit and loses no shields.
+# gInvincible changes none of this, and that is meant: upstream writes player 0's shields to 0 itself, whatever the
+# cheat says (the cheat only makes the damage of the two hits 0, Player_ApplyDamage), and the owner left that as it is
+# (#282 question 2). The helper repeats upstream's writes for the other players, as the helpers of #136 and #272 repeat
+# their tests (those go through Player_ApplyDamage alone, so the cheat makes their damage 0 for every player alike;
+# this one writes the shields first, for every player alike). So with the cheat on player 1 goes down in an explosion
+# exactly as player 0 does: one danger for every human, cheat or not.
 W9_ESCAPE_PROBE = "escape.txt"  # in each game's run folder
-W9_ESCAPE_CASES = ("blast1", "exit1", "blast0")  # an explosion on player 1, the trigger on player 1, an explosion on 0
+# An explosion just out of player 1's reach, one on player 1, the trigger on player 1, an explosion on player 0.
+W9_ESCAPE_CASES = ("miss1", "blast1", "exit1", "blast0")
+W9_ESCAPE_RETURN = 150  # COOP_RETURN_FRAMES, src/port/coop/game/players.c: frames from a down to the return
+W9_ESCAPE_FULL = 255  # Play_GetMaxShields without the team's upgrade: what a returning player holds
 W9_ESCAPE_FRAMES = 7000  # lockstep frames: the escape, the cases, a restart at its checkpoint, the flight to the exit
 W9_ESCAPE_KEEP = 510.0  # ESCAPE_KEEP in escape_probe.c: every other player at least this far from a case's object
 W9_ESCAPE_REACH = 500.0  # both objects act under this in x and in z
@@ -4980,7 +5000,8 @@ def w9_escape_case_story(rows, name):
     players = w9_escape_players(v)
     expect(v["lost"] == "0" or v["exit"] == "1", f"case {name} lost its object after {v['updates']} updates")
     for i, (least, _, _, _, _, _) in players.items():
-        expect(i == target or least >= W9_ESCAPE_KEEP, f"case {name}: player {i} came {least:.0f} near the object")
+        expect((i == target and not name.startswith("miss")) or least >= W9_ESCAPE_KEEP,
+               f"case {name}: player {i} came {least:.0f} near the object")
     text = []
     for i, (least, most, before, low, after, states) in sorted(players.items()):
         hit = "hit" if int(v["hit"]) & (1 << i) else "no hit"
@@ -4989,6 +5010,52 @@ def w9_escape_case_story(rows, name):
                     f"{w9_escape_states(states)}")
     return v, (f"{name} (frame {v['frame']}, {v['updates']} updates, {v['off']} away): exit {v['exit']}, lives "
                f"{v['lives']}; " + "; ".join(text))
+
+
+def w9_escape_rule(rows, name, values):
+    """#282 option A for case `name` (the table above W9_ESCAPE_CASES): what the players other than the control got.
+    Returns text for the summary."""
+    players = w9_escape_players(values)
+    hit, down = int(values["hit"]), int(values["down"])
+    before, after = (int(v) for v in values["lives"].split("/"))
+    untouched = lambda i: not (hit | down) & (1 << i) and players[i][2] == players[i][3] == players[i][4]
+    if name == "miss1":
+        expect(hit == 0 and down == 0 and all(untouched(i) for i in players) and before == after,
+               f"{name}: an explosion out of everyone's reach hurt someone: hit {hit}, down {down}, lives "
+               f"{before}/{after}, shields {[players[i][2:5] for i in sorted(players)]}")
+        return "nobody hurt"
+    if name == "exit1":
+        expect(values["exit"] == "0", f"{name}: the trigger ended the level for player 1; the exit is player 0's")
+        return "no exit"
+    if name == "blast0":
+        expect(not hit & 2 and players[1][2] == players[1][3],
+               f"{name}: player 1, out of reach, was hurt: hit {hit}, shields {players[1][2:5]}")
+        return "player 1 unhurt"
+    if name != "blast1":
+        return ""
+    expect(hit & 2 and down & 2 and players[1][3] == 0,
+           f"{name}: an explosion in reach of player 1 did not take it down (#282 option A): hit mask {hit}, down "
+           f"mask {down}, its shields {players[1][2]}>{players[1][3]}>{players[1][4]}, states "
+           f"{w9_escape_states(players[1][5])}")
+    expect(untouched(0) and set(players[0][5].split("-")) <= {"3", "5"},
+           f"{name}: player 0, out of reach, did not fly on untouched: hit {hit}, down {down}, shields "
+           f"{players[0][2:5]}, states {w9_escape_states(players[0][5])}")
+    expect(before == after, f"{name}: the pool went {before} to {after} during the case; the life is spent at the "
+                            "return, not at the crash (decision 0007 rule 4)")
+    mine = [v for k, v, _ in rows if k == "player" and v["player"] == "1" and int(v["frame"]) >= int(values["frame"])
+            and v.get("level") == "9"]
+    went = next((v for v in mine if v["down"] == "1"), None)
+    expect(went is not None, f"{name}: no line says player 1 is down")
+    back = next((v for v in mine if int(v["frame"]) > int(went["frame"]) and v["down"] == "0"), None)
+    expect(back is not None, f"{name}: player 1 never came back after its down at frame {went['frame']}")
+    waited = int(back["frame"]) - int(went["frame"])
+    expect(waited == W9_ESCAPE_RETURN and back["parked"] == "0" and back["state"] == "3"
+           and int(back["shields"]) == W9_ESCAPE_FULL and int(back["lives"]) == before - 1,
+           f"{name}: player 1 came back {waited} frames after its down (want {W9_ESCAPE_RETURN}), parked "
+           f"{back['parked']}, state {back['state']}, shields {back['shields']} (want {W9_ESCAPE_FULL}), lives "
+           f"{back['lives']} (want {before - 1})")
+    return (f"player 1 down at frame {went['frame']}, back at {back['frame']} with shields {back['shields']}, lives "
+            f"{before}>{back['lives']}")
 
 
 def w9_escape_after_exit(rows):
@@ -5013,6 +5080,7 @@ def w9_escape_run(args, folder, name, cases, invincible, seeds):
             expect(int(values["down"]) & 1, f"{case}, the control: player 0 did not go down in the explosion")
         if case.startswith("exit0"):
             expect(values["exit"] == "1", f"{case}, the control: the trigger did not end the level for player 0")
+        text.append(f"{case} rule: {w9_escape_rule(rows, case, values)}")
     exit_row, after = w9_escape_after_exit(rows)
     expect(exit_row is not None, f"{name}: the pilots did not reach the exit in {W9_ESCAPE_FRAMES} frames; escapes "
                                  f"ended: {[(v['frame'], v['why']) for v in ends]}")
@@ -5030,14 +5098,16 @@ def w9_escape_run(args, folder, name, cases, invincible, seeds):
 
 
 def sc_escape_look(args, folder):
-    """#282, an observation: what each player gets in Andross' escape. Sessions start at the escape's checkpoint
-    (SF64_COOP_JOIN_CHECKPOINT); pilots fly James' route; src/port/coop/test/escape_probe.h puts an explosion in reach
-    of player 1 (player 0 out of it), the exit's trigger in reach of player 1, then an explosion in reach of player 0,
-    each for 60 of its updates, with gInvincible and without; then the route alone, once in each maze (--levels picks
-    some of the sessions of W9_ESCAPE_RUNS). Checks: the cases
-    ran with every other player out of reach, the explosion on player 0 took it down (the control), the pilots reached
-    the exit, James' route kept player 0 out of every explosion's reach, hashes and probe logs equal. What player 1
-    got is reported, not checked: the rule is the owner's."""
+    """#282: what each player gets in Andross' escape, and the rule the owner chose (option A): the explosions hit
+    every human, the exit stays player 0's. Sessions start at the escape's checkpoint (SF64_COOP_JOIN_CHECKPOINT);
+    pilots fly James' route; src/port/coop/test/escape_probe.h puts an explosion just out of player 1's reach, one in
+    reach of player 1 (player 0 out of it), the exit's trigger in reach of player 1, then an explosion in reach of
+    player 0, each for 60 of its updates, with gInvincible and without; then the route alone, once in each maze
+    (--levels picks some of the sessions of W9_ESCAPE_RUNS). Checks: the cases ran with every other player out of
+    reach; the rule (w9_escape_rule): nobody hurt out of reach, player 1 in reach goes down, costs a life of the pool
+    at its return 150 frames later, player 0 flies on; the trigger does nothing for player 1; the explosion on player 0
+    takes it down and leaves player 1 unhurt; the same with gInvincible; the pilots reached the exit, James' route
+    kept player 0 out of every explosion's reach, hashes and probe logs equal."""
     lines, failed = [], []
     names = args.levels or [run[0] for run in W9_ESCAPE_RUNS]
     unknown = [name for name in names if name not in [run[0] for run in W9_ESCAPE_RUNS]]
@@ -5689,7 +5759,7 @@ LONG = ("survive_next_level", "survive_gaps_route", "survive_gaps_map", "survive
 LONG += ("sy_robot_spread",)  # Sector Y's rails, 9500 frames (#273)
 LONG += ("sy_robot_pose", "granga_spread")  # the same rails; Corneria's Granga, 7700 frames (#281)
 LONG += ("ve1_pillars",)  # Venom 1 to its boss, 13000 frames (#276)
-LONG += ("escape_look",)  # three sessions in Andross' escape, an observation for the owner (#282)
+LONG += ("escape_look",)  # five sessions in Andross' escape: the explosions hit every human (#282)
 
 
 # Seconds a scenario took on Debug at a limit of 8 (2026-11-13, #290). Only the order of a pool of --jobs depends on it:
