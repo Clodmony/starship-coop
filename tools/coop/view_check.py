@@ -60,6 +60,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import hash_check  # noqa: E402
 import player_trace  # noqa: E402
 import replay as replay_tool  # noqa: E402
+from run_folder import make_run_folder  # noqa: E402
 
 BUTTON_B = 0x4000
 BUTTON_START = 0x1000
@@ -530,7 +531,8 @@ def pokes(section):
 def play_section(section, exe, args):
     """Play one section with each local index. Returns a list of failures."""
     frames, l_at = SECTIONS[section]
-    replay = replay_tool.ROOT / "local" / f"test-view-{section}.sfcr"
+    # A folder of its own, so that two runs at once do not write one file (#121)
+    replay = make_run_folder(replay_tool.ROOT / "local", f"test-view-{section}-") / "input.sfcr"
     player_trace.write_rail_replay(replay, frames, l_at, extra=extra_buttons if section == "rails" else None,
                                    start=START)
     cvars = {"gCoopDebugPlayerCount": 2, "gInvincible": 1}

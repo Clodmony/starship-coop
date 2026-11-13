@@ -104,7 +104,9 @@ static void CoopReplay_TakeCheckpoint(ReplayCheckpoint* cp) {
     cp->level = gCurrentLevel;
     cp->playState = gPlayState;
     cp->playerState = -1;
-    if ((gGameState == GSTATE_PLAY) && (gPlayer != NULL)) {
+    // Not while a level is being entered (PLAY_STANDBY, PLAY_INIT): gPlayer still points into memory that
+    // Game_SetGameState freed (src/engine/fox_game.c:95-118), and a checkpoint entering Meteo held junk (#121, #142).
+    if ((gGameState == GSTATE_PLAY) && (gPlayState >= PLAY_UPDATE) && (gPlayer != NULL)) {
         cp->playerState = gPlayer[0].state;
         cp->pos[0] = gPlayer[0].pos.x;
         cp->pos[1] = gPlayer[0].pos.y;
