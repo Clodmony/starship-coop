@@ -31,7 +31,8 @@ TOOLS = ROOT / "tools" / "coop"
 COPIED = ("test_all.py", "replay.py", "run_folder.py", "mutation_tree.py")
 MAX_SUMMARY_LINES = 6  # printed by a run of a few failures: this is what a person reads
 HELD = 3  # seconds a slow step stays, more than a scenario needs to look at it
-ENV = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+# Not the note of an outer test_all run (run_folder.py, #283): the bench runs are runs of their own.
+ENV = {key: value for key, value in os.environ.items() if not key.startswith("GIT_") and key != "COOP_TEST_ALL_OWNED"}
 
 OK = "print('step output')"
 BAD = "print('it broke'); raise SystemExit(3)"
@@ -71,6 +72,22 @@ import sys, time
 start = time.monotonic()
 time.sleep(0.4)
 open(sys.argv[1], 'w').write(f'{sys.argv[2]} {start} {time.monotonic()}\\n')
+"""
+
+# Makes a run folder in local/ as a test tool does (run_folder.make_run_folder), then waits: it writes the file
+# argv[4] once the folder is there, and ends when the file argv[5] is there (a name of "-" for neither).
+MAKES = """
+import sys, time
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from run_folder import make_run_folder
+folder = make_run_folder(Path(sys.argv[2]), sys.argv[3])
+print(folder.name, flush=True)
+if sys.argv[4] != '-':
+    Path(sys.argv[4]).write_text(folder.name)
+end = time.monotonic() + 30
+while sys.argv[5] != '-' and not Path(sys.argv[5]).exists() and time.monotonic() < end:
+    time.sleep(0.05)
 """
 
 
@@ -383,6 +400,35 @@ def scenario_tree(bench):
     want(re.search(r"^FAILED tree ", output, re.MULTILINE), f"tree not named: {output!r}")
 
 
+def wait_for(path):
+    end = time.monotonic() + 30
+    while time.monotonic() < end and not path.exists():
+        time.sleep(0.05)
+    return path.exists()
+
+
+def scenario_beside(bench):
+    """Two runs in one checkout (#283): the one that ends first deletes the run folders its own steps left in local/,
+    and not the other run's folder or the folders of its steps, which are still in use."""
+    local = bench.repo / "local"
+    tools = bench.repo / "tools" / "coop"
+    a_made, b_made, a_ended = bench.work / "a-made", bench.work / "b-made", bench.work / "a-ended"
+    first = bench.start([step("makes-a", "game", MAKES, tools, local, "test-step-a-", a_made, b_made)])
+    want(wait_for(a_made), "the first run's step made no folder")
+    second = bench.start([step("makes-b", "game", MAKES, tools, local, "test-step-b-", b_made, a_ended)])
+    output = first.communicate(timeout=60)[0]
+    a_ended.write_text("")
+    want_result(first.returncode, output, 0, "PASS, 2/2 steps ok")
+    want(not (local / a_made.read_text()).exists(), "the first run kept the folder its step made")
+    runs = sorted(local.glob("test-all-*"))
+    want(len(runs) == 2, f"run folders after the first run ended: {[p.name for p in runs]}")
+    want((local / b_made.read_text()).exists(), "the first run deleted the folder of the second run's step")
+    output = second.communicate(timeout=60)[0]
+    want_result(second.returncode, output, 0, "PASS, 2/2 steps ok")
+    want(not (local / b_made.read_text()).exists(), "the second run kept the folder its step made")
+    want(len(list(local.glob("test-all-*"))) == 2, "a run deleted a run folder of test_all")
+
+
 SCENARIOS = {
     "pass": scenario_pass,
     "fail": scenario_fail,
@@ -398,6 +444,7 @@ SCENARIOS = {
     "stop": scenario_stop,
     "stop-mutants": scenario_stop_mutants,
     "tree": scenario_tree,
+    "beside": scenario_beside,
 }
 if not sys.platform.startswith("linux"):  # these read /proc, or need a stop signal a process can catch, or plan Linux's steps
     del SCENARIOS["timeout"], SCENARIOS["stop"], SCENARIOS["stop-mutants"], SCENARIOS["dry-run"], SCENARIOS["dry-run-mixed"]

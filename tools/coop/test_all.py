@@ -23,7 +23,7 @@ before #290, and the mutation checks come last in it. Nothing goes to the screen
 <name>.log in a stamped folder local/test-all-<date>-<time>/, and SUMMARY.txt there gets one line per step as it ends.
 At the end it prints the failures, the longest step and one RESULT line. A step that outlives --timeout is stopped, with
 what it started, and counts as failed. When all steps pass, the run folders they left in local/ are deleted (--keep
-keeps them); a failure keeps them for reading.
+keeps them); a failure keeps them for reading. Two runs in one checkout delete only what their own steps made (#283).
 
 A build that is not Debug leaves out what only Debug can do: OPTIMISED below, printed at the end of a run. --mixed
 leaves nothing out: it builds Debug and Release and plays every step that starts the game on the Release build, which
@@ -60,13 +60,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import replay as replay_tool  # noqa: E402
-from run_folder import make_run_folder  # noqa: E402
+from run_folder import OWNED_ENV, make_run_folder  # noqa: E402
 
 ROOT = replay_tool.ROOT
 TOOLS = ROOT / "tools" / "coop"
 LOCAL = ROOT / "local"
 IS_LINUX = platform.system() == "Linux"
 IS_WINDOWS = platform.system() == "Windows"
+RUNNING = "running.lock"  # in a run's folder, locked while the run runs (#283)
+OWNED = "owned"  # in a run's folder, a file for each run folder its steps made (run_folder.py, #283)
 GAME_LANES = 4  # 2, 3, 4 and 5 took 7m53s, 5m36s, 4m56s and 5m41s: see docs/coop/NOTES.md (#147)
 RATES_JOBS = 5  # games at a time in a rates step: all 5 rates at once, 10m31s for rails against 21 minutes at 3 (#290)
 LOCKSTEP_JOBS = 4  # scenarios of the lockstep step at a time: 14 min one after the other, 4m48s with 4 (#290)
@@ -256,7 +258,8 @@ class Run:
         with open(log, "wb") as out:
             proc = subprocess.Popen(command, cwd=cwd or ROOT, stdin=subprocess.DEVNULL, stdout=out,
                                     stderr=subprocess.STDOUT,
-                                    env=step_env(), start_new_session=not IS_WINDOWS)
+                                    env={**step_env(), OWNED_ENV: str(self.folder / OWNED)},
+                                    start_new_session=not IS_WINDOWS)
             with self.lock:
                 self.running[name] = proc
             try:
@@ -534,11 +537,53 @@ def usable_game(run, args):
     return why is None
 
 
+def lock_file(handle):
+    """Takes the lock on an open file without waiting; OSError when another process holds it."""
+    if IS_WINDOWS:
+        import msvcrt
+
+        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def hold_running(folder):
+    """Marks this run as running, for another run's clean_run_folders: a lock on a file of its folder, which the system
+    lets go when the process ends, however it ends. Returns the open file, to keep open until then."""
+    handle = open(folder / RUNNING, "a+b")
+    lock_file(handle)
+    return handle
+
+
+def is_running(folder):
+    """Whether the test_all run of this folder is still running: its lock is held."""
+    if not (folder / RUNNING).exists():
+        return False
+    try:
+        with open(folder / RUNNING, "a+b") as handle:
+            lock_file(handle)  # let go when the file closes
+        return False
+    except OSError:
+        return True
+
+
 def clean_run_folders(before, folder):
-    """Delete what the steps left in local/: folders that are new, named test-*, and not this run's own."""
+    """Delete what the steps left in local/: folders named test-* that are new since this run started, and not a run
+    folder of test_all. Two runs in one checkout (#283): a folder that another run's steps made (in that run's OWNED) is
+    that run's to delete or to keep, and while another run is running, a folder no run noted (a tool that names its own)
+    stays too, as it may be that run's."""
+    others = [path for path in LOCAL.glob("test-all-*") if path != folder and path.is_dir()]
+    theirs = {note.name for other in others for note in (other / OWNED).glob("*")}
+    mine = {note.name for note in (folder / OWNED).glob("*")}
+    running = any(is_running(other) for other in others)
     for path in LOCAL.glob("test-*"):
-        if path.name not in before and path != folder and path.is_dir():
-            shutil.rmtree(path, ignore_errors=True)
+        if path.name in before or path.name.startswith("test-all-") or not path.is_dir():
+            continue
+        if path.name in theirs or (running and path.name not in mine):
+            continue
+        shutil.rmtree(path, ignore_errors=True)
 
 
 def main():
@@ -552,6 +597,7 @@ def main():
         return print_plan(args, chosen)
     before = {path.name for path in LOCAL.glob("test-*")} if LOCAL.exists() else set()
     folder = make_run_folder(LOCAL, "test-all-")
+    running = hold_running(folder)  # noqa: F841 (held until the process ends)
     run = Run(folder, args.timeout)
     signal.signal(signal.SIGTERM, lambda *_: run.stop_all())
     signal.signal(signal.SIGINT, lambda *_: run.stop_all())
@@ -611,7 +657,7 @@ def main():
     for line in lines:
         print(line)
     run.write("\n".join(lines))
-    if code == 0 and not args.keep and not args.plan:
+    if code == 0 and not args.keep:
         clean_run_folders(before, folder)
     return code
 
