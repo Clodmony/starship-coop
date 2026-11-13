@@ -1730,10 +1730,12 @@ void Macbeth_8019F164(MaTrainCar6* this) {
     Vec3f sp48;
     s16 i;
     s16 sp44 = 0;
+    // COOP: the human it turns to and fires at, was player 0: the nearest, kept through a salvo (#302)
+    Player* aimed = &gPlayer[CoopAim_MacbethTurret(this, D_i5_801BE310 == this->iwork[5])];
 
-    sp6C.x = gPlayer[0].pos.x - this->obj.pos.x + this->fwork[25];
-    sp6C.y = gPlayer[0].pos.y - 25.0f - this->obj.pos.y + this->fwork[8] + 25.0f;
-    sp6C.z = gPlayer[0].trueZpos - 500.0f - this->obj.pos.z;
+    sp6C.x = aimed->pos.x - this->obj.pos.x + this->fwork[25]; // COOP: aimed was gPlayer[0] here and below (#302)
+    sp6C.y = aimed->pos.y - 25.0f - this->obj.pos.y + this->fwork[8] + 25.0f; // COOP: as above
+    sp6C.z = aimed->trueZpos - 500.0f - this->obj.pos.z;                      // COOP: as above
 
     for (i = 0; i < ARRAY_COUNT(gActors); i++) {
         if ((gActors[i].obj.id == OBJ_ACTOR_MA_FALLING_BOULDER) && (gActors[i].obj.status == OBJ_ACTIVE)) {
@@ -1806,13 +1808,11 @@ void Macbeth_8019F164(MaTrainCar6* this) {
                 func_effect_8007EE68(OBJ_EFFECT_378, &sp60, &sp54, &sp48, &D_i5_801BA714, 1.0f);
                 AUDIO_PLAY_SFX(NA_SE_EN_MISSILE_SHOT, this->sfxSource, 4);
                 this->iwork[4]++;
-            } else if ((D_i5_801BE310 == this->iwork[5]) ||
-                       ((gPlayer[0].pos.x - this->obj.pos.x > 300.0f) &&
-                        (gPlayer[0].pos.x - this->obj.pos.x < 3000.0f)) ||
-                       ((gPlayer[0].pos.x - this->obj.pos.x < -300.0f) &&
-                        (gPlayer[0].pos.x - this->obj.pos.x > -3000.0f))) {
-                if ((gPlayer[0].trueZpos - this->obj.pos.z < 5000.0f) &&
-                    (gPlayer[0].trueZpos - this->obj.pos.z > 200.0f) && (this->timer_0BC == 0) && (this->health != 0)) {
+            } else if ((D_i5_801BE310 == this->iwork[5]) || // COOP: aimed was gPlayer[0] in this test (#302)
+                       ((aimed->pos.x - this->obj.pos.x > 300.0f) && (aimed->pos.x - this->obj.pos.x < 3000.0f)) ||
+                       ((aimed->pos.x - this->obj.pos.x < -300.0f) && (aimed->pos.x - this->obj.pos.x > -3000.0f))) {
+                if ((aimed->trueZpos - this->obj.pos.z < 5000.0f) && (aimed->trueZpos - this->obj.pos.z > 200.0f) &&
+                    (this->timer_0BC == 0) && (this->health != 0)) {
                     sp60.x -= 60.0f;
                     func_effect_8007EE68(OBJ_EFFECT_378, &sp60, &sp54, &sp48, &D_i5_801BA714, 1.0f);
                     AUDIO_PLAY_SFX(NA_SE_EN_MISSILE_SHOT, this->sfxSource, 4);
@@ -1886,6 +1886,7 @@ void Macbeth_8019F164(MaTrainCar6* this) {
                     this->timer_0BC = (u32) (RAND_FLOAT(100.0f) + 50.0f);
                 }
                 this->iwork[4] = 0;
+                CoopAim_ForgetActor(this->index); // COOP: the next salvo picks the nearest human again (#302)
             }
             break;
 

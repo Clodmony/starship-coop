@@ -70,6 +70,17 @@ struct Actor;
 // side (Falco, Slippy, Peppy, Katt, Bill), who escort Fox, player 0 as upstream. 0 outside co-op.
 int32_t CoopAim_Chased(const struct Actor* actor);
 
+// ---- Macbeth's turrets (#302) ----
+//
+// The player the turret of train car `car` turns to and fires at (Macbeth_8019F164): the car's kept target, so it
+// follows one human while it waits and turns (2 degrees a frame at most) and does not swing between two humans at
+// about the same distance. While it waits (the step of its salvo, iwork[4], is 0) a kept human that is not in the
+// turret's window (300 to 3000 beside the car, or any x when `lastCar`, the train's last car, and 200 to 5000 behind
+// it: upstream's test for player 0) is dropped and the nearest human picked again, on every frame until one is in
+// the window, so a human that drove out of the window does not hold the turret. The caller forgets the kept target at
+// the end of a salvo (CoopAim_ForgetActor). 0 outside co-op.
+int32_t CoopAim_MacbethTurret(const struct Actor* car, int32_t lastCar);
+
 // ---- Shots at a point (#220) ----
 //
 // Some bosses aim a shot at a point of their own (Sector Y's Shogun: a lead on its target, which can be a wingman) by

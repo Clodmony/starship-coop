@@ -108,6 +108,29 @@ void CoopAim_ForgetActor(int32_t actor) {
     }
 }
 
+int32_t CoopAim_MacbethTurret(const Actor* car, int32_t lastCar) {
+    s32 kept;
+    f32 dx;
+    f32 dz;
+
+    if (!CoopPlayers_IsCoop() || (gPlayer == NULL)) {
+        return 0;
+    }
+    kept = CoopAim_ActorTarget(car->index, car->obj.pos.x, car->obj.pos.y, car->obj.pos.z);
+    if (car->iwork[4] != 0) {
+        return kept; // in a salvo the turret neither turns to a player nor asks its window
+    }
+    // The window of Macbeth_8019F164, in its own order.
+    dx = gPlayer[kept].pos.x - car->obj.pos.x;
+    dz = gPlayer[kept].trueZpos - car->obj.pos.z;
+    if ((lastCar || ((dx > 300.0f) && (dx < 3000.0f)) || ((dx < -300.0f) && (dx > -3000.0f))) && (dz < 5000.0f) &&
+        (dz > 200.0f)) {
+        return kept;
+    }
+    CoopAim_ForgetActor(car->index);
+    return CoopAim_ActorTarget(car->index, car->obj.pos.x, car->obj.pos.y, car->obj.pos.z);
+}
+
 int32_t CoopAim_BrainCatch(float x, float y, float z) {
     s32 best = -1;
     f32 bestDist = 0.0f;
