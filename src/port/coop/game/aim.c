@@ -108,25 +108,49 @@ void CoopAim_ForgetActor(int32_t actor) {
     }
 }
 
+// Nonzero when player `i` is in the window of the turret of `car`: the test of Macbeth_8019F164, in its own order.
+static s32 CoopAim_InTurretWindow(const Actor* car, s32 lastCar, s32 i) {
+    f32 dx = gPlayer[i].pos.x - car->obj.pos.x;
+    f32 dz = gPlayer[i].trueZpos - car->obj.pos.z;
+
+    return (lastCar || ((dx > 300.0f) && (dx < 3000.0f)) || ((dx < -300.0f) && (dx > -3000.0f))) && (dz < 5000.0f) &&
+           (dz > 200.0f);
+}
+
 int32_t CoopAim_MacbethTurret(const Actor* car, int32_t lastCar) {
     s32 kept;
-    f32 dx;
-    f32 dz;
+    s32 best = -1;
+    f32 bestDist = 0.0f;
+    s32 i;
 
-    if (!CoopPlayers_IsCoop() || (gPlayer == NULL)) {
+    if (!CoopPlayers_IsCoop() || (gPlayer == NULL) || (car->index < 0) || (car->index >= AIM_ACTORS)) {
         return 0;
     }
     kept = CoopAim_ActorTarget(car->index, car->obj.pos.x, car->obj.pos.y, car->obj.pos.z);
-    if (car->iwork[4] != 0) {
-        return kept; // in a salvo the turret neither turns to a player nor asks its window
+    if ((car->iwork[4] != 0) || CoopAim_InTurretWindow(car, lastCar, kept)) {
+        return kept; // in a salvo the turret neither turns to a player nor asks its window; else it keeps its human
     }
-    // The window of Macbeth_8019F164, in its own order.
-    dx = gPlayer[kept].pos.x - car->obj.pos.x;
-    dz = gPlayer[kept].trueZpos - car->obj.pos.z;
-    if ((lastCar || ((dx > 300.0f) && (dx < 3000.0f)) || ((dx < -300.0f) && (dx > -3000.0f))) && (dz < 5000.0f) &&
-        (dz > 200.0f)) {
-        return kept;
+    // The nearest of the humans in the window (the owner's rule, #302), as CoopAim_Nearest measures and breaks a tie.
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        const Player* p = &gPlayer[i];
+        f32 dx = p->pos.x - car->obj.pos.x;
+        f32 dy = p->pos.y - car->obj.pos.y;
+        f32 dz = p->trueZpos - car->obj.pos.z;
+        f32 dist = (dx * dx) + (dy * dy) + (dz * dz);
+
+        if (!CoopAim_CanAimAt(i) || !CoopAim_InTurretWindow(car, lastCar, i)) {
+            continue;
+        }
+        if ((best < 0) || (dist < bestDist)) {
+            best = i;
+            bestDist = dist;
+        }
     }
+    if (best >= 0) {
+        sKept[AIM_BOSSES + car->index] = (s8) best;
+        return best;
+    }
+    // Nobody in the window: it turns to the nearest human and holds its fire.
     CoopAim_ForgetActor(car->index);
     return CoopAim_ActorTarget(car->index, car->obj.pos.x, car->obj.pos.y, car->obj.pos.z);
 }

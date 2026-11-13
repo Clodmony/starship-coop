@@ -1730,7 +1730,7 @@ void Macbeth_8019F164(MaTrainCar6* this) {
     Vec3f sp48;
     s16 i;
     s16 sp44 = 0;
-    // COOP: the human it turns to and fires at, was player 0: the nearest, kept through a salvo (#302)
+    // COOP: the human it turns to and fires at, was player 0: the nearest of those in its window, kept (#302)
     Player* aimed = &gPlayer[CoopAim_MacbethTurret(this, D_i5_801BE310 == this->iwork[5])];
 
     sp6C.x = aimed->pos.x - this->obj.pos.x + this->fwork[25]; // COOP: aimed was gPlayer[0] here and below (#302)
