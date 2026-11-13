@@ -15,7 +15,8 @@ Identity: ROM US 1.0, base `d726f9dd` (the combined test build 6), Linux, GCC 16
 Release (`-O3 -ffast-math -DNDEBUG`), OpenGL on a software renderer, no window, silent, games over loopback on one PC,
 up to three test runs of other work at the same time unless a line says "under load" (then: beside 40 processes that
 only loop, nothing else running). The runs played a tree with this branch and the session clock change of #293
-(`ea62180e`) together; this branch alone was built but not played (see the pull request). "Cap" is
+(`ea62180e`) together. This branch's code alone (the session code of the base) played one series at the end: `save_own`
+and `delay` 10 of 10 on Debug at cap 16, `game_leave` under load 5 of 5 with no parting. "Cap" is
 `SF64_COOP_TEST_SPEED` (`COOP_TOOLS_MEETING_SPEED`). The trace is `SF64_COOP_AUDIO_TRACE`
 (`src/port/coop/test/audio_trace.h`, new; `COOP_TOOLS_AUDIO_TRACE=1` turns it on for every game a tool starts): one line
 per game frame with `gAudioResetStep`, `sAudioResetStatus`, the voice player's `enabled` and the two audio spec ids, and a
