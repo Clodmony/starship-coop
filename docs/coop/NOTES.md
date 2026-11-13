@@ -9,6 +9,103 @@ Private notes (your paths, your PC, your logs) go in `local/`, not here.
 
 ## Build and run
 
+### 2026-11-13, #289, the voice player at level frame 0: a level start during an audio reset, and a radio id from the title
+
+Identity: ROM US 1.0, base `d726f9dd` (the combined test build 6), Linux, GCC 16.2, Debug (`-g -ffast-math -DDEBUG`) and
+Release (`-O3 -ffast-math -DNDEBUG`), OpenGL on a software renderer, no window, silent, games over loopback on one PC,
+up to three test runs of other work at the same time unless a line says "under load" (then: beside 40 processes that
+only loop, nothing else running). The runs played a tree with this branch and the session clock change of #293
+(`ea62180e`) together; this branch alone was built but not played (see the pull request). "Cap" is
+`SF64_COOP_TEST_SPEED` (`COOP_TOOLS_MEETING_SPEED`). The trace is `SF64_COOP_AUDIO_TRACE`
+(`src/port/coop/test/audio_trace.h`, new; `COOP_TOOLS_AUDIO_TRACE=1` turns it on for every game a tool starts): one line
+per game frame with `gAudioResetStep`, `sAudioResetStatus`, the voice player's `enabled` and the two audio spec ids, and a
+line when a session's level start comes. "Control" is the same build with `SF64_COOP_TEST_AUDIO_RESET_RUNS_ON=1`
+(`COOP_TOOLS_AUDIO_RESET_RUNS_ON=1`), which turns the change off.
+
+Reported (#289): `voicePlayerRunning` differs between host and client at level frame 0 in some runs at a high frame
+limit: `save_own` on Release at no limit 3 of 6, `delay` on Debug at cap 16 2 of 5.
+
+Observed, the audio reset:
+
+- A quiet game (no reset running) that gets a level start: the frame of the level start hands the sound thread the
+  reset, and per game frame `gAudioResetStep` reads 4, then 3 for 9 frames, 2, 2, 1, 0; the voice player is enabled 16
+  frames after the level start, on lockstep frame 11. So in the four hosts of `delay` that were read (Debug, cap 16).
+- The game side holds a new reset back while one runs: `Audio_Update` processes sequence commands, the spec change
+  among them, only when `Audio_HandleReset` returns ready (`src/audio/audio_general.c:2839-2850`), and
+  `Audio_HandleReset` says ready when the sound thread's reset is complete (`:1212-1229`). In the trace the spec ids
+  read `24/0` (asked for, not yet taken) until the old reset's step is 0, then the new reset starts at step 4.
+- So a level start during a reset begins its own reset when the old one ends. `game_leave` under load (#293), a
+  failing run, control: the restart found the reset of the first level start at step 2 on the host and at step 3 on
+  player 3; the voice player was enabled 3 frames after the restart on the host and 7 frames after it on player 3.
+  A passing run: step 1 on both.
+- `save_own`, Release at no limit, control: failed 3 of 10 (`desync_report.py diff` of the reports of the second
+  parting: `region globals has different chunks`). In those 3, and in none of the other 7, the client got the
+  restart with `sAudioResetStatus` 1 (step 1 or 0: the reset of the first level start not yet taken back by the
+  game) and the host with the reset done. The restart came 13 to 19 frames after the first level start in the runs
+  read, and a reset takes about 16.
+- A first attempt, restarting the sound thread's steps when a reset is asked for during one
+  (`AudioThread_ResetAudioHeap`), changed nothing: 6 of 10 `game_leave` runs under load failed. The request never
+  reaches the thread during a reset, as the line above says.
+- A second attempt, running the sound thread's updates on the frame of the level start until the reset is done:
+  `game_leave` under load passed 5 of 5, but 2 of the 5 parted once (at frame 12 in the one read). There both games
+  got the restart with no reset running, 10 lockstep frames after the first level start on the host and 13 on
+  player 3, and the voice player was enabled on lockstep frame 14 on the host and 13 on player 3. A reset that just
+  ended still shifts the next one by a frame; which command is late was not traced.
+- The change: `CoopLevelStart_Enter` plays the sound ahead on its frame (`Audio_Update` and the sound thread's
+  updates, rendered into a buffer that is dropped) until no reset is running and 16 more frames have passed
+  (`LevelStart_SettleAudio`, `src/port/coop/game/level_start.c`). With it: `game_leave` under load 10 of 10, no parting
+  in any of them (before: 7 of 10 failed; with the session clock change of #293 alone 3 of 10 failed and 4 of 10
+  parted). The co-op log of a game that was in a reset says so: `level start: an audio reset was running, 17 frames
+  of sound played ahead` (17 to 21 in the runs).
+- `save_own` with the change: Release at no limit 10 of 10 (control 7 of 10), Debug at cap 16 10 of 10 (control 10
+  of 10). One of the 10 Release runs with the change had the client in a reset at the restart, as the control's
+  three failures had, and passed.
+
+Observed, `delay`:
+
+- `delay` on Debug at cap 16 failed 1 of 10 with that change and 3 of 10 as control, each time with `delay 1 and
+  delay 6 fly differently: level frame 0: globals`; on Release at no limit 0 of 10 and 0 of 10.
+- In the failing pair the audio trace of the two hosts is the same line for line from the level start on (steps,
+  status, voice player on lockstep frame 11); their `globals` hash differs from level frame 0 on.
+- The hosts' frame 0 dumps of the `save_own` sessions, compared across runs (`desync_report.py diff` of one run's
+  host report with another run's): the one chunk that differs is `gRadioMsgId`. At cap 16 it was 0 in 14 runs and 60
+  in 6; at no limit 10 in 20 of 20.
+- `gRadioMsgId` is one of the values a level start carries from the host (`LEVEL_START_TABLE`,
+  `src/port/coop/game/level_start.c`), and the title screen's radio sets it to 10, 20, ... as its lines go by
+  (`Title_Radio_PlayMessage`, `src/overlays/ovl_menu/fox_title.c:3654`). The host starts on its frame 600
+  (`START_FRAME`, `tools/coop/lockstep_test.py`); the boot logo before the title waits 1000 ms of the clock
+  (NOTES.md, #287), about 480 frames at cap 16, so frame 600 is a different moment of the title in different runs.
+- With `SF64_COOP_TEST_START_NO_TITLE_RADIO=1` on both games of `delay` (new, `src/port/coop/test/switches.h`: the
+  host's level start carries 0) and the audio change: `delay` 10 of 10 on Debug at cap 16 and 10 of 10 on Release at no
+  limit; `save_own` 10 of 10 on both in the same runs.
+
+Derived:
+
+- #289 is two things. The voice player's flag is the audio reset: a level start that comes during a reset, or right
+  after one, gets its own reset a few frames late, by an amount that differs between the games. It needs no high
+  frame limit, only a level start within about 15 frames of another one; a high limit makes the first level start of
+  a test come that close to a restart (`save_own`), and load does it for `game_leave`.
+- `delay` never was the voice player in these runs: it compares two sessions, and they carried different radio ids
+  from the title. Both games of one session get the host's value, so no session parts on it. It is a property of the
+  scenario at a cap where the logo's second ends near frame 600.
+- The answer to the issue's question "can lockstep frame 0 of a session part on it": yes, on the restart of
+  decision 0014 (seen: `game_leave`, `save_own`), where it ended the session when it happened twice in a row.
+
+Guess:
+
+- What is late after a reset that just ended: the commands `Audio_RestartSeqPlayers` queues (the voice and effects
+  sequences start, three `AUDIOCMD_GLOBAL_STOP_AUDIOCMDS`), which the sound thread works off one batch per update
+  (`AudioThread_ProcessCmds`, `src/audio/audio_thread.c`).
+
+Unknown:
+
+- Whether 16 frames are enough in every case: one frame was seen to matter, nothing longer was; a slow tail (the
+  effects player's 90 frame fade-in) is not excluded by a proof.
+- A level start while the map or a cutscene plays music; Windows, MSVC, a second PC; a real session at 30 frames a
+  second.
+- Whether a level reads `gRadioMsgId` before the first radio line sets it, that is whether the title's leftover
+  changes anything in a level beyond the hash.
+
 ### 2026-11-13, #290 (second part), the serial lane was the clock: Release, five lanes, `--mixed`, 18m04s
 
 Identity: ROM US 1.0, Linux, GCC 16.2, Debug (`-g -ffast-math -DDEBUG`) and Release (`-O3 -ffast-math -DNDEBUG`), OpenGL on

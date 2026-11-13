@@ -160,6 +160,9 @@ number of clients, transport.
    the host at level frame 4 to 9 (22 of 23 runs; from frame 22 on 0 of 50), which a Release build at no frame limit did
    until then, as it plays 1100 frames a second and more. `COOP_TOOLS_MEETING_SPEED=max` runs the `lockstep` step on
    Release in 5m49s against 13m57s (46 of 48 scenarios; `save_own` is intermittent there and `log` is on the clock).
+   `save_own` was the audio reset of a level start (#289, decision 0015) and passes 10 of 10 there since; a control run
+   turns that off with `COOP_TOOLS_AUDIO_RESET_RUNS_ON=1`, and `COOP_TOOLS_AUDIO_TRACE=1` makes every test game write
+   `audio-trace.txt` in its folder (`src/port/coop/test/audio_trace.h`). NOTES.md, 2026-11-13, #289.
    `join` and `menu` stay at 8: their replays are counted in frames and their ping is on the clock. NOTES.md, 2026-11-13.
    A full `test_all.py` run takes 23m26s since #290 (41m37s before): `lockstep` 4 scenarios at a time, the mutation suites in
    a second checkout beside the rest, the `rates` steps with their 5 games at once. NOTES.md, 2026-11-13, #290.
