@@ -9,6 +9,67 @@ Private notes (your paths, your PC, your logs) go in `local/`, not here.
 
 ## Build and run
 
+### 2026-11-13, #293, `game_leave` on a loaded machine: no 40 s race, a parting at level frame 0 and a clock that ran backwards
+
+Identity: ROM US 1.0, base `d726f9dd` (the combined test build 6), branch `issue/293-menu-race`, Linux, GCC 16.2, Debug,
+OpenGL on a software renderer, no window, silent, three games over loopback on one PC at frame cap 8. "Under load" is
+`menu_test.py --game --only game_leave --no-build` beside 40 processes that only loop (`python3 -c "while True: pass"`)
+on a Linux machine with no other work on it, load average 9 to 84 while the runs went. The runs
+after the fix played a build of `ea62180e` with the audio trace of #289 compiled in and switched on
+(`SF64_COOP_AUDIO_TRACE`, `src/port/coop/test/audio_trace.h`, not part of this branch; it only reads).
+
+Reported (#293): `game_leave` fails on a loaded machine with "The host did not start the level again in time, so the
+session is over.", read as the host's restart losing against the client's 40 s timer (`COOP_SESSION_RECOVER_MS`).
+
+Observed:
+
+- Before the change, under load: 7 of 10 runs failed, each after 64 to 65 s with that text on player 3 (`b`).
+- In all 7 the co-op logs of the kept game folders show the same order, within one second of the first level start:
+  the host's restart for the two who stay goes out 10 ms after player 2 left (`level start: ... run 2`); both games
+  then report `desync at frame 0 ... differ in globals`; the host sends a second restart (`run 3`) within 1 ms; and
+  player 3 logs `recover (reason 3)` and `session ended: The host did not start the level again in time` with the
+  same millisecond stamp as its own desync line. No client waited 40 s, and no restart was late.
+- `desync_report.py diff` of the two frame 0 reports, for the three failures of the first five runs: it names
+  `voiceClock` in two and says the chunk lists differ in one (`voicePlayerRunning`): the defect of #289.
+- The 60 s of a failing run are the test's wait for a Leave button on a game that is in no session any more.
+- A client's desync is complete inside its session tick: `CoopMenu_Tick` polls with the time it was given
+  (`src/port/coop/ui/menu.c:371`), a message of that poll reaches `CoopSyncGame_Receive`, which checks the desync
+  (`src/port/coop/sync/lockstep_game.c:389`) and calls `Link_Recover`, which reads the clock again
+  (`src/port/coop/ui/menu_game.c:106-115`) and hands that later time to `CoopSession_Recover`. The wait began at the
+  later time, the tick polled on with its older one, and `nowMs - s->awaitSince >= COOP_SESSION_RECOVER_MS`
+  (`src/port/coop/session/session.c:1442`) is true for a difference of -1 ms, as both are unsigned. Writing the report
+  takes milliseconds, so the two times differ whenever the desync is found on a message.
+- New checks in `coop_session_test` (`client_recover`, `host_recover_calls`): a wait that begins 3 ms after the tick's
+  time and is then polled with the tick's time. Before the change the host's case failed (`a slot kept after the
+  tick's own time was given up at once`; the program stops at its first failure, so the client's case did not run).
+- After the change (`Session_Clock`, `session.c:156`), under the same load: 3 of 10 failed, none with the old text.
+  In the 10 runs player 3 parted at level frame 0 or 1 of the restart in 4: once it was started again and went on
+  (pass), three times the second restart parted as well and the session ended as the protocol says ("The level
+  started again and the games parted again at once", `SYNC_QUICK_PARTS`). 6 runs had no parting.
+- The audio trace of a failing and a passing run of those 10: when player 2 leaves, the audio reset of the level
+  start a few frames before is still running. The restart found it at step 2 on the host (its lockstep frame 7) and at
+  step 3 on player 3 (frame 4) in the failing run, and at step 1 on both (frame 8) in the passing one. The voice
+  player then came back 3 frames after the restart on the host and 7 frames after it on player 3.
+
+Derived:
+
+- The 40 s timer never ran. Two defects met: the games part at level frame 0 when a level start comes during an audio
+  reset that has got to different steps on the two games (#289), and the client's wait was measured from a time
+  before its own start. The first is what load changes: how many frames each game flies between the first level start
+  and the leave. The second turned a parting that the session recovers from into the end of the session, with a text
+  that named the wrong cause.
+- The same wrap was open on the host: `CoopSession_Kick` from a stall sets `away[slot].since` from a later clock in
+  the same way, and the 15 s kept for a dropped player would have been over at once. Not seen in a game run.
+- The session survives one parting after the change, not two in a row; `game_leave` still fails when the restart of
+  the restart parts too. That rate is #289's.
+
+Unknown:
+
+- Whether a real session hits it: a player has to leave within the audio reset of a level start (about 15 frames at
+  30 frames a second), or the games have to part there. A desync found on a message later in a level ended a
+  client's session the same way before the change, whatever the audio did; not searched for in old reports.
+- Windows, MSVC, a second PC.
+
 ### 2026-11-13, #290 (second part), the serial lane was the clock: Release, five lanes, `--mixed`, 18m04s
 
 Identity: ROM US 1.0, Linux, GCC 16.2, Debug (`-g -ffast-math -DDEBUG`) and Release (`-O3 -ffast-math -DNDEBUG`), OpenGL on
