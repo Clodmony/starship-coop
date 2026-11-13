@@ -38,7 +38,7 @@ views plays one replay twice per section, with SF64_COOP_TEST_LOCAL_INDEX 0 and 
   simulation state. --level flies other Arwing levels instead (VIEW_LEVELS, or all) and --cvar NAME=VALUE sets a CVar (#129).
   --pilot flies each level to its end first, boss included, with a pilot that reads game state, and the two clients play
   what it flew (PILOT_LEVELS, #181); venom-2-andross flies on through the game's jump into Andross' brain and escape
-  (PILOT_THROUGH).
+  (PILOT_THROUGH). Level 4 flies only when --level names it (PILOT_NOT_DEFAULT, #307).
 slots plays a level with 1 player and with --players and compares the effect slots in use: co-op frees nothing for
   leaving the view, so a kind of effect that only that frees would pile up (#129). Fails when co-op holds more effects
   that have lived 900 frames or more (the hash log's "# ages" lines) than single player, at its most, by more than
@@ -736,7 +736,7 @@ def cmd_slots(args):
 # `views --pilot` (#181): a pilot that reads game state (src/port/coop/test/pilot.h, pilot_aim.h) flies each level to
 # its end in one game, and the two clients of `views` then play what it flew. The levels it flies: every campaign level
 # that ends, the vehicle levels too, and level 4 (LEVEL_UNK_4, an unused variant of Area 6 with its own level script,
-# src/engine/fox_enmy2.c), which no menu offers. Training has no level complete (ItemPathChange_Update,
+# src/engine/fox_enmy2.c), which no menu offers, only when --level names it (PILOT_NOT_DEFAULT, #307). Training has no level complete (ItemPathChange_Update,
 # src/engine/fox_enmy.c, only starts its all-range again), and level 15 (LEVEL_UNK_15) has no environment
 # (D_800D2F98, src/engine/fox_play.c): the game crashes in Play_InitEnvironment, with co-op off too (NOTES.md, #181).
 PILOT_LEVELS = {**{name: level for name, level in VIEW_LEVELS.items() if name != "training"},
@@ -754,6 +754,13 @@ PILOT_NOT_AN_END = {"venom-2-andross": {9}}
 PILOT_NO_END = {"training": "no level complete: its path change starts the all-range again (src/engine/fox_enmy.c)",
                 "level-15": "no level: its environment is NULL (src/engine/fox_play.c), and the game crashes in "
                             "Play_InitEnvironment, with co-op off too"}
+# Levels the default list leaves out, as it does level 15, but that --level still flies (the owner's decision of
+# 2026-11-13, #307). Level 4 starts without an audio heap reset, which alone starts the voice player over (#230): the
+# map's Map_LevelStart_AudioSpecSetup (src/overlays/ovl_menu/fox_map.c:4027) and Play_InitLevel
+# (src/engine/fox_play.c:2638-2655) have no case for it. So two clients differ from its first frame in the voice clock
+# (NOTES.md, #232), and no menu offers the level (src/port/coop/ui/menu_game.c:42-56).
+PILOT_NOT_DEFAULT = {"level-4": "no menu offers it, and two clients differ from its first frame, as it starts without "
+                                "an audio heap reset (#307); --level level-4 flies it"}
 PILOT_FRAMES = 24000  # most frames of a pilot's flight; Corneria took 11200 to the map, Sector X 11529 to level complete
 # Goras took to 29169 in #16's run with a pilot on each of two clients, and was at half its health after 40000 frames
 # of one pilot flying both; Sector Y's last Shogun had 20 health left at 24000, the Gorgon 660 of 780.
@@ -984,13 +991,17 @@ def cmd_views(args):
     exe = replay_tool.find_exe(args.exe)
     failures = []
     if args.pilot:
-        names = [*PILOT_LEVELS, *PILOT_NO_END] if args.level in (None, "all") else args.level.split(",")
+        default = args.level in (None, "all")
+        names = [*PILOT_LEVELS, *PILOT_NO_END] if default else args.level.split(",")
         unknown = [name for name in names if name not in PILOT_LEVELS and name not in PILOT_NO_END]
         if unknown:
             sys.exit(f"hash: no level {', '.join(unknown)}; the choices are {', '.join(PILOT_LEVELS)}")
         rows = []
         for name in names:
-            found, row = view_pilot(name, exe, args)
+            if default and name in PILOT_NOT_DEFAULT:
+                found, row = [], (name, f"not covered by default: {PILOT_NOT_DEFAULT[name]}", 0, None, "-")
+            else:
+                found, row = view_pilot(name, exe, args)
             failures += found
             rows.append(row)
             print(f"hash: views --pilot: {name}: {row[1]}, {row[2]} frames, level complete at {row[3]}, "
@@ -1329,7 +1340,8 @@ def main():
                    "same: the client's own choice (#129)")
     v.add_argument("--players", type=int, default=2, help="players, through gCoopDebugPlayerCount (default 2)")
     v.add_argument("--pilot", action="store_true", help="a pilot flies each --level to its end, boss included, and "
-                   f"the two clients play what it flew (default level: all of {', '.join(PILOT_LEVELS)}; #181)")
+                   "the two clients play what it flew (default level: all of "
+                   f"{', '.join(name for name in PILOT_LEVELS if name not in PILOT_NOT_DEFAULT)}; #181, #307)")
     v.add_argument("--mortal", action="store_true", help="with --pilot: without gInvincible, so a player can go down")
     v.add_argument("--frames", type=int, help="replay length (default: what the section needs, or "
                    f"{VIEW_LEVEL_FRAMES} past when player 0 flies for a level; with --pilot the most frames it flies, "

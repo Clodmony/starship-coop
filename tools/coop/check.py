@@ -119,6 +119,11 @@ def main():
     if slots.returncode != 0:
         failures.append("tools/coop/hash_check.py slots --rule-test failed:\n  "
                         + "\n  ".join((slots.stdout + slots.stderr).strip().splitlines()))
+    # views --pilot flies the levels of its default list and lists the others as not covered: level 4 too (#307).
+    pilot = run_tool("hash_check_test.py")
+    if pilot.returncode != 0:
+        failures.append("tools/coop/hash_check_test.py failed:\n  "
+                        + "\n  ".join((pilot.stdout + pilot.stderr).strip().splitlines()))
     # 8d. menu_test.py: each scenario with games keeps their logs in a folder of its own (#293), a wait stops when the
     # game's session ended (#306); session_test.py: a failed level start through the relay says what the relay dropped
     # and what the host saw (#309). No build, no game.

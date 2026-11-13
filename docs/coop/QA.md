@@ -74,8 +74,9 @@ number of clients, transport.
    through the rest of each level: the boss and the end. Per level, one game with 2 players and `gInvincible` starts past
    the intro, and a pilot that reads game state (`src/port/coop/test/pilot.h`, `pilot_aim.h`) flies every player to level
    complete and on to the map or whatever comes next, and writes a replay; the two clients then play it and must `PASS`
-   every checkpoint, hash alike on every frame and equal the pilot's game. Every campaign level, the vehicle levels and
-   level 4 by default, or `--level`; `--mortal` leaves `gInvincible` off. The summary gives per level the result, the
+   every checkpoint, hash alike on every frame and equal the pilot's game. Every campaign level and the vehicle levels
+   by default, or `--level`; level 4 only when `--level level-4` names it, as no menu offers it and two clients differ
+   from its first frame (#307); `--mortal` leaves `gInvincible` off. The summary gives per level the result, the
    frames, the frame of level complete and the downs per player; a level the pilot does not finish says so, with the
    frames that were compared, and so does one that ends without its boss's death (`FAILED_ENDS`: Katina's base hit by
    the Saucerer's laser). `venom-2-andross` flies Venom 2 on into Andross' second part, the brain and the escape (#181).
