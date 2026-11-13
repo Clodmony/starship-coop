@@ -76,9 +76,6 @@ W7ASAN_KNOWN = {
         "gPlayerShots[-1].obj.status while no torpedo is out, and-ed with a test that is false then",
     ("asan", "heap-buffer-overflow", "Macbeth_Texture_Scroll"):
         "two rows read past the texture are overwritten by the saved rows in the same call",
-    ("ubsan", "bounds", "aADPCMdecImpl"):
-        "sanitizer builds only: their clamp of a sample's last load (audio_synthesis.c, __SANITIZE_ADDRESS__) leaves "
-        "old bytes in the last frame, whose header then names a table past the 8; sound only",
     ("ubsan", "bounds", "Venom1_Ve1Golemech_Update"):
         "pillar 6 of a row of 5 is the next row's first, inside the table; past the last row AddressSanitizer reports",
     ("ubsan", "bounds", "Area6_A6Gorgon_Draw"):

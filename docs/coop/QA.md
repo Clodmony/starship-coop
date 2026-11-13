@@ -421,6 +421,25 @@ result:     automated. Andross' second part, after Venom 2 (the face, the brain,
 ```
 
 ```
+date:       2026-11-13
+commit:     issue/145-stray-reads: 8000bb37 (Aquas) and e9e130f1 (audio) on d726f9dd (issue/combined-test-6)
+identity:   ROM US 1.0 (the archives shared for the run), Linux, GCC 16.2.1, Debug, plain and with AddressSanitizer
+            and UBSan (build-asan), OpenGL on a software renderer, no window; one game per run, no session; the
+            sweep with 2 players by gCoopDebugPlayerCount, three games at a time on a PC other runs shared
+what ran:   python tools/coop/w7asan_sweep.py baseline and sweep (17 levels in nine pieces, 206785 frames) on the
+            sanitizer build of the fix, baseline and Aquas on that of the base; hash_check.py base; a pilot flight
+            of Aquas on the base build and on the fix, compared with hash_check.py diff; test_all.py --no-build
+            --only determinism and --only hash-run-1,hash-run-2,replay-test
+result:     QA level none (one game per run). Before: UBSan's bounds report in aADPCMdecImpl in every run (the
+            sanitizer clamp of audio_synthesis.c), a float cast at fox_aq.c:4254 in Aquas, and, the clamp taken
+            out, a heap read past a sample in aLoadBufferImpl. After: w7asan: PASS, 17 of 17 levels to level
+            complete, 0 reports that fail the run (7, 9 and 24 known or listed), none of the three. Co-op off equal
+            to the build of d726f9dd on 5800 frames; Aquas equal on 9424 frames; determinism 2/2, the hash and
+            replay steps 4/4. Not run: Windows, MSVC, ARM, Release, two clients, the full test_all.py.
+            docs/coop/NOTES.md, 2026-11-13, #145, #232, #276.
+```
+
+```
 date:       2026-11-12
 commit:     issue/262-stray-reads: the sweep on the game code of wave7-base (07c03c1f), the runs after the fixes on
             a7e3f2c2

@@ -1076,15 +1076,10 @@ Acmd* AudioSynth_ProcessNote(s32 noteIndex, NoteSubEu* noteSub, NoteSynthesisSta
                     samplesToLoadAddr = (u8*) (sampleDmaStart + sampleDataOffset + sampleAddr);
                     sampleDataChunkAlignPad = ((uintptr_t) samplesToLoadAddr) % SAMPLES_PER_FRAME;
 
-#if __SANITIZE_ADDRESS__
-                    // COOP: moved here from before this branch, where it read the address of the last load, or one
-                    // never set, and crashed aLoadBufferImpl (#145). Builds without AddressSanitizer do not have it.
-                    uintptr_t actualAddrLoaded = samplesToLoadAddr - sampleDataChunkAlignPad;
-                    uintptr_t offset = actualAddrLoaded - (uintptr_t) sampleAddr;
-                    if (offset + aligned > bookSample->size) {
-                        aligned -= (offset + aligned - bookSample->size);
-                    }
-#endif
+                    // COOP: upstream's clamp for AddressSanitizer builds (`#if __SANITIZE_ADDRESS__`) stood here. It
+                    // cut a sample's last load to whole 16-byte blocks below the sample's end, so such a build decoded
+                    // the sample's last frame from old bytes (#276). The load may pass the end now, in every build:
+                    // the sample has zeroed spare bytes there (SAMPLE_LOAD_SLACK, SampleFactory.cpp) (#145).
                     aLoadBuffer(aList++, OS_K0_TO_PHYSICAL(samplesToLoadAddr - sampleDataChunkAlignPad), addr, aligned);
                 } else {
                     numSamplesToDecode = 0;

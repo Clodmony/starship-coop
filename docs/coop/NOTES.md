@@ -1694,8 +1694,6 @@ Unknown:
 
 - Windows (MSVC) and ARM (`sse2neon.h`): not built. The scalar version (no SSE2) indexes no such table.
 
-### 2026-11-10, #145, the stray reads and writes of #141: four of upstream's, and the build folders
-
 ### 2026-11-10, #243, an idle player gets shot and knocked about: the nearest-human aim, not a drift
 
 Identity: ROM US 1.0, base `f3eadf7a` (`issue/combined-test-4`), Linux, GCC, Debug, OpenGL in software, no window.
@@ -1744,6 +1742,8 @@ Unknown:
 - Whether an idle player that is hit often enough is pushed out of the way for good on other levels: this run is
   Corneria's rails only.
 
+### 2026-11-10, #145, the stray reads and writes of #141: four of upstream's, and the build folders
+
 Identity: ROM US 1.0, on `80ff9be6` (the combined test branch 2), Linux, GCC, Debug, OpenGL on a software renderer, no
 window. Disassembly of the base build `80ff9be6`.
 
@@ -1761,7 +1761,8 @@ Observed:
 - (c) `AudioSynth_ProcessNote` (`src/audio/audio_synthesis.c`) loads `ALIGN16(nFramesToDecode * frameSize + 16)` bytes
   from the first frame it decodes, aligned down to 16 bytes; the decoders (`aADPCMdecImpl`, `aS8DecImpl`, `src/audio/mixer.c`) take
   `ROUND_UP_32(nbytes)` of output, that is `nFramesToDecode` frames. So the bytes past a sample's end that #141's ASan
-  run saw read are never decoded. `aLoadBufferImpl` copies `ROUND_DOWN_16(nbytes)`, so clamping the load to the sample's
+  run saw read are never decoded
+  [wrong for samples of 9k + 1 bytes, see 2026-11-13, #145]. `aLoadBufferImpl` copies `ROUND_DOWN_16(nbytes)`, so clamping the load to the sample's
   end can cut bytes that are decoded. The `#if __SANITIZE_ADDRESS__` clamp before it used `samplesToLoadAddr` and
   `sampleDataChunkAlignPad` before this pass sets them: the last pass's values, or unset ones on the first pass. That
   is the crash in `aLoadBufferImpl` #141 worked around with `-U__SANITIZE_ADDRESS__`.
@@ -1789,7 +1790,8 @@ Derived:
 - (a) A 4-byte write onto a 1-byte object is safe here only because padding follows. Defined `s32` now, as the header
   and the N64 have it: the same values, and every read and write is the object's own.
 - (b) The read past the table changes nothing a player sees; it now stops at the table's end.
-- (c) The over-read of a sample's end is in the N64's 16-byte load and changes no sound. Bounding it would take an
+- (c) The over-read of a sample's end is in the N64's 16-byte load and changes no sound
+  [wrong for samples of 9k + 1 bytes, see 2026-11-13, #145]. Bounding it would take an
   exact-size load in `mixer.c` (every `aLoadBuffer` caller) or padded sample buffers in the sample importer, so it is
   left. The ASan-only clamp now runs after this pass's address is known. It still cuts the last load of a sample to a
   multiple of 16 below its end, so an ASan build may decode the last frame of a sample from older bytes; builds without
@@ -6272,6 +6274,151 @@ player 0 loses 100.
 
 ## Determinism
 
+### 2026-11-13, #145, #232, #276: the ADPCM loader decodes bytes from behind some samples; the anglerfish's light; Titania's boulder site
+
+Identity: `sf64.o2r` and `starship.o2r` as shared for this run (ROM US 1.0; this worker did not read the ROM), base
+`d726f9dd` (`issue/combined-test-6`), the fixes `8000bb37` (Aquas) and `e9e130f1` (audio) on branch
+`issue/145-stray-reads`. Linux, GCC 16.2.1, Debug, plain and with AddressSanitizer and UBSan (`w7asan_sweep.py build`),
+OpenGL on a software renderer, no window, silent (`SDL_AUDIODRIVER=dummy`: the audio engine runs, nothing is played).
+One game per run, no session. Not run: Windows, MSVC, ARM, Release, a session. Nothing here says anything about
+MSVC's layout.
+
+What was already fixed when this started (checked against the code of `d726f9dd`):
+
+- #145 `D_ctx_8017782C` (`bool` against `s32`), `fox_map.c`'s read past `D_menu_801B6934`, and the crash of the
+  `__SANITIZE_ADDRESS__` block in `aLoadBufferImpl`: `bd2121f2` (PR #222).
+- #145 `build.py --build-dir`: `1fb07a70` (#147), checked again by #222.
+- #232 `mixer.c:299`, the 8-byte load from `lower_2bit`: `b1f1cff1` (PR #245). The Goras sites, the F1 label and the
+  `TWO_PC_TEST.md` line: PR #245.
+- Six places of the sweep: `a7e3f2c2` (PR #271).
+
+**Observed: the loader** (`AudioSynth_ProcessNote`, `src/audio/audio_synthesis.c:1069-1083`; decoders in
+`src/audio/mixer.c`)
+
+- A throw-away build (never committed; the patch is described here) counted, at the load of `:1083`, how far the load
+  and the frames to decode reach past `sampleAddr + bookSample->size`, and hashed in `aADPCMdecImpl` and `aS8DecImpl`
+  every byte the decoder reads (`nbytes / 32` frames of 9 or 16 bytes) and every sample it writes, one line every 1000
+  calls. Stderr was kept by `w7asan_sweep.py`'s wrapper (`--exe <that build>`).
+- The base, through the menus into Corneria (`w7asan_sweep.py baseline`, plain build): `loads=406000 past=781
+  maxpast=34 needpast=17 before=0 short=7`. So 781 of 406000 loads read past their sample, by at most 34 bytes; in
+  17 of them **frames that are decoded** lay past the sample's end; no load began before its sample; in 7 the sample
+  had fewer than 16 bytes left at the load's start.
+- All 17 campaign levels with the pilot (`sweep`, the plain build with the fix and the counters, 206785 frames,
+  about 25.0 million loads, counted to the last full 2000 of each level): about 83400 loads read past their sample, by
+  at most 38 bytes; 5512 of them decoded past it, **always by exactly 8 bytes**, always `CODEC_ADPCM`, on 229
+  different sample sizes, every one of them 9k + 1 with a loop end of 16k + 1 and loop count 0 (for example size
+  10036, `loop->end` 17841; size 10, end 17). 25 of the 229 sizes are a multiple of 16 (74 of the 5512 loads), and 87
+  more are less than 8 bytes below one.
+- So such a sample has 16k + 1 samples, and its data ends after the header byte of frame k: the 8 data bytes of that
+  frame are not in it. The decoder reads them from behind the sample; the note takes one of the 16 samples they give,
+  the first, which the decoder makes from the high half of the first missing byte (`aADPCMdecImpl`, `mixer.c:306-360`).
+- Sample buffers are `new uint8_t[size]` of their own (`src/port/resource/importers/audio/SampleFactory.cpp:29`,
+  `:224` of the base), so "behind the sample" was the heap: 8 bytes that depend on the allocator.
+- Two runs of the base gave the same decode hashes on all 406 common lines (same heap bytes in two runs of one build).
+  The base against the fix: equal on lines 1000 to 33000, different from line 34000, in what is read and in what is
+  written; the base's first load with frames past the end is between loads 32000 and 34000. The sanitizer build
+  without the clamp and without the spare bytes differs from the base at the same line.
+- The sanitizer build of the base (`#if __SANITIZE_ADDRESS__` clamp in): no AddressSanitizer report, and UBSan's
+  `mixer.c:309: index 13 out of bounds for type 'int16_t [8][2][8]'` in the baseline (`index 10` in Aquas): the known
+  report of every sweep. The clamp taken out, nothing else changed: `heap-buffer-overflow READ 1 in aLoadBufferImpl
+  (mixer.c:152), 0 bytes after 17496-byte region`, and no bounds report. With 32 spare bytes: the same report `0 bytes
+  after 70926-byte region` (70894 + 32, and 70894 is 9k + 1: the 31 bytes of the block load and the 8 of the frame are
+  39). With 64: none (below).
+
+**Derived: the loader**
+
+- The entries of 2026-11-10 (#145 (c)) and 2026-11-11 said the bytes past a sample's end are never decoded. That holds
+  for the block load (16 bytes more than the frames need, from an address rounded down to 16: up to 31 bytes), and is
+  wrong for samples whose data ends inside their last frame: there 8 stray bytes were decoded, in every build.
+  Both entries are marked.
+- A clamp of the load, as #232 and #276 proposed, cannot be right for those samples: the bytes are missing, not
+  superfluous. A clamp of the frames to decode would drop a sample the N64 plays. So the fix is on the other side:
+  the two importers of samples the engine decodes itself allocate `SAMPLE_LOAD_SLACK` (64) zeroed bytes more. 39 is
+  the most a load can pass the end (31 + 8); 64 is the next power of two.
+- With the spare bytes upstream's sanitizer clamp has no purpose and is removed; a sanitizer build now decodes what
+  every build decodes, so the `aADPCMdecImpl` entry left `W7ASAN_KNOWN`: the report would now fail a sweep.
+- What changes with co-op off: nothing in the game's state (below), and in sound the one sample per such frame that
+  was decoded from 8 heap bytes is now decoded from 8 zero bytes. No byte inside a sample changed.
+
+**Guess**
+
+- On the N64 those 8 bytes are what follows the sample in the ROM's sample bank. If the bank pads each sample to 16
+  bytes with zeros, then zeros are what the console decodes for the 117 sizes with 8 or more bytes of padding, zeros
+  and then the next sample's first bytes for the 87 with less, and the next sample's bytes for the 25 with none. Not
+  checked against the ROM.
+
+**Observed: the anglerfish** (`Aquas_AqAnglerFish_Update`, `src/overlays/ovl_i3/fox_aq.c:4254`)
+
+- The base's sanitizer build in Aquas: `fox_aq.c:4254: runtime error: -1.02647 is outside the range of representable
+  values of type 'long unsigned int'`. `iwork` is `uintptr_t iwork[25]` (`include/sf64object.h:286`).
+- The base's code for the line (`gdb`, `disassemble /s`): `cvttss2si %xmm0,%rax` for a value below 2^63, stored
+  whole: a negative float becomes 2^64 minus its whole part. The next line's `iwork[12] < 30.0f` is then false.
+- With `(s32)`: no report in Aquas (the sweep below). The same pilot flight of Aquas on the base build and on the
+  fix, plain builds, 2 players, no session: `hash: no difference on the 9424 common frames: state, level, total and
+  12 regions`, level complete at 6365 in both.
+
+**Derived: the anglerfish**
+
+- `(s32)` of a float inside s32's range is defined, and s32 to `uintptr_t` is defined (modulo 2^64): the value x86-64
+  made by its instruction is now what C asks of every processor. It is not the N64's value: there `iwork` is s32, the
+  test is true and the light becomes 30. That would change co-op off on x86-64 and is not done.
+
+**Observed: Titania's boulders** (`Titania_TiBoulder_Spawn2`, `src/overlays/ovl_i5/fox_ti.c:480-486`)
+
+- `python tools/coop/w7asan_sweep.py sweep --levels titania --exe <plain build>/Starship --gdb
+  tools/coop/w9_boulder.gdb`: `trace boulder-break: 3 lines`, `trace boulder-piece: 12 lines`; level complete at
+  8258. Three boulders of full size were shot to pieces without a ring (level frames 5090, 5204, 5360), each one
+  calling `Titania_TiBoulder_Spawn` four times with three draws in three arguments.
+
+**Derived: Titania's boulders**
+
+- The site is hit in a normal flight, 12 calls in this one. Whether it can part two compilers is still the question
+  of 2026-11-11: GCC draws right to left there; MSVC's order at this form is not measured. Not changed: there is no
+  failing run to show here, and it is one of the 232 sites of that class.
+
+**Unknown**
+
+- MSVC, ARM, Release: nothing was built or run. `(s32)` on ARM is read from the C standard, not run.
+- The bytes the N64 decodes behind a sample of 9k + 1 bytes.
+- Custom audio (`CODEC_S16`, mp3, wav, ogg): its load can pass the end by up to 32 bytes
+  (`audio_synthesis.c:1057-1061`, read, not run); those buffers are not padded here.
+
+**Observed: after the fixes**
+
+- `python tools/coop/w7asan_sweep.py baseline --exe <the fix's sanitizer build>`: `5871 frames`, `0 AddressSanitizer,
+  0 UBSan bounds, 16 other UBSan`, `w7asan: PASS` (the base: 0, 1, 16).
+- `python tools/coop/w7asan_sweep.py sweep`, all 17 levels in nine pieces, three games at a time on a PC other runs
+  shared, then `table` over the merged summaries: `17 runs, distinct reports: 7 AddressSanitizer, 9 UBSan bounds, 24
+  other UBSan; 0 of them fail the run, the rest is known or only listed; without level complete: none`, `w7asan:
+  PASS`, 206785 frames. No report in `aADPCMdecImpl` or `aLoadBufferImpl`, none at `fox_aq.c:4254`; no new place.
+  What is left is (b) and (c) of 2026-11-12. Area 6's game ran into the tool's 700 s limit after its flight was
+  recorded (level complete at 21178, 22978 frames flown).
+
+| Level | Frames flown | Level complete at | Complete | Why it stopped | ASan | UBSan bounds | UBSan other | Of those known |
+|---|---|---|---|---|---|---|---|---|
+| corneria | 7825 | 6025 | yes | past level complete | 0 | 0 | 16 | 0 |
+| meteo | 17583 | 15783 | yes | past level complete | 0 | 0 | 17 | 0 |
+| fortuna | 9056 | 7256 | yes | past level complete | 0 | 0 | 17 | 0 |
+| sector-x | 11884 | 10084 | yes | left the level | 0 | 0 | 18 | 0 |
+| titania | 10058 | 8258 | yes | past level complete | 0 | 0 | 17 | 0 |
+| bolse | 18101 | 16301 | yes | left the level | 0 | 0 | 16 | 0 |
+| venom-1 | 12057 | 11478 | yes | left the level | 0 | 7 | 19 | 7 |
+| venom-andross | 13643 | 13131 | yes | left the level | 0 | 0 | 19 | 0 |
+| sector-y | 8662 | 6862 | yes | past level complete | 0 | 0 | 17 | 0 |
+| aquas | 8165 | 6365 | yes | left the level | 5 | 1 | 17 | 6 |
+| zoness | 12200 | 10400 | yes | left the level | 0 | 0 | 20 | 0 |
+| sector-z | 5428 | 3628 | yes | past level complete | 0 | 0 | 16 | 0 |
+| area-6 | 22978 | 21178 | yes | timeout after 700 s at frame 3446 | 0 | 1 | 19 | 1 |
+| venom-2 | 10906 | 10282 | yes | left the level | 0 | 0 | 17 | 0 |
+| katina | 15823 | 14023 | yes | past level complete | 0 | 0 | 17 | 0 |
+| solar | 10451 | 8651 | yes | past level complete | 0 | 0 | 16 | 0 |
+| macbeth | 11965 | 10165 | yes | left the level | 2 | 0 | 17 | 2 |
+
+- Co-op off: `python tools/coop/hash_check.py base --base <the build of d726f9dd>`: `co-op off: the base build and this
+  one equal on all 5800 frames`, `hash: PASS`.
+- `python tools/coop/test_all.py --no-build --only determinism`: `RESULT: PASS, 2/2 steps ok, 8m05s`;
+  `--only hash-run-1,hash-run-2,replay-test`: `RESULT: PASS, 4/4 steps ok, 1m17s`. `python tools/coop/check.py`: `co-op checks: ALL OK`.
+
 ### 2026-11-12, the sanitizer sweep (#262, #145, #232): every campaign level under AddressSanitizer and UBSan
 
 Identity: ROM US 1.0 (SHA-1 d8b1088520f7c5f81433292a9258c1184afa1457), branch `issue/262-stray-reads` on `wave7-base`
@@ -6646,7 +6793,8 @@ Observed:
   2026-11-09, #199). The boulders run in Titania (`Titania_TiBoulder_Update`, `:516`); the Titania runs of this branch
   were equal between two GCC clients.
 - The ADPCM loader's over-read (#145 (c), `src/audio/audio_synthesis.c:1088`, #145's `:1086`): read again, nothing new; #145's entry
-  holds (the N64's 16-byte load reads past a sample's end and decodes nothing from those bytes; bounding it means an
+  holds (the N64's 16-byte load reads past a sample's end and decodes nothing from those bytes
+  [wrong for samples of 9k + 1 bytes, see 2026-11-13, #145]; bounding it means an
   exact-size load in `mixer.c` or padded sample buffers).
 - GLEW on Linux (#1, #232): `libultraship/src/graphic/Fast3D/backends/gfx_opengl.h` and `gfx_sdl2.cpp` include
   `GL/glew.h` only under `_MSC_VER`, `FOR_WINDOWS` or `__APPLE__`; Linux takes `SDL2/SDL_opengl.h`.
@@ -6658,7 +6806,8 @@ Derived:
 
 - No game change is proven for these four: Fortuna's set ends by itself (a run of `slots` that stops inside the burn,
   as 9000 frames does, can fail on it; 12000 passes on the limit); the boulder arguments take the order the
-  other measured call sites take on both compilers; the over-read decodes nothing; GLEW is not used on Linux.
+  other measured call sites take on both compilers; the over-read decodes nothing
+  [wrong for samples of 9k + 1 bytes, see 2026-11-13, #145]; GLEW is not used on Linux.
 
 Unknown:
 
