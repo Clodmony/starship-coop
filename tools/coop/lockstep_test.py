@@ -4937,8 +4937,11 @@ def w10_blast_views(host, client, rows):
 W10_TURRET_FRAMES = 4500
 W10_TURRET_APART = 5.0  # degrees between the two players' yaws from which a step tells whom it turns to
 W10_TURRET_NEAR = 2.0  # degrees a step's target may be off the player's yaw
-W10_TURRET_EDGE = 40.0  # a player this close to an edge of the window, or the two this close in distance, is not
-#                         counted: the trace sees the car after its frame, the turret before the car moved
+# For "the nearest human is in the window": the trace sees the car after its frame, the turret before the car moved (a
+# car moves along z, up to 30 a frame). So a player this close to an edge of the window is not counted, nor are
+# two players this close in distance (a move of the car along z changes both distances by nearly the same).
+W10_TURRET_EDGE = 40.0
+W10_TURRET_CLOSE = 5.0
 
 
 def w10_turret_script(frame, player):
@@ -4979,7 +4982,8 @@ def w10_turret_rows(path):
         row["sure"] = (row[f"in{row['near']}"] and 200.0 + edge < dz < 5000.0 - edge
                        and (row["last"] or 300.0 + edge < dx < 3000.0 - edge)
                        and (not row["flies1"]
-                            or abs(math.dist(row["p0"], row["at"]) - math.dist(row["p1"], row["at"])) > edge))
+                            or abs(math.dist(row["p0"], row["at"]) - math.dist(row["p1"], row["at"]))
+                            > W10_TURRET_CLOSE))
         rows.append(row)
     return rows
 
@@ -5071,10 +5075,14 @@ def sc_ma_turret(args, folder):
     expect(count["held"] == 0,
            f"a turret that is ready holds its fire while the nearest human is in its window (first on frames "
            f"{count['held_at'][:5]}): {text}")
+    # A turret keeps the human it picked while that one is in its window, so some steps go to the one that is no
+    # longer the nearer: most have to go to the nearer.
     expect(count["to1_near1"] > 2 * count["to0_near1"],
            f"the turrets turn to player 0 while player 1 is the nearer: {text}")
-    expect(count["to0_near0"] > 2 * count["to1_near0"],
+    expect(count["to0_near0"] > count["to1_near0"],
            f"the turrets turn to player 1 while player 0 is the nearer: {text}")
+    expect(count["fire_only1"] > 0 and count["fire_none"] == 0,
+           f"no turret fires with player 1 alone in its window, or one fires with nobody in it: {text}")
     return f"same hash on {frames} frames; {text}"
 
 

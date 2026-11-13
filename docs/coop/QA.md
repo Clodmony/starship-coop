@@ -267,6 +267,26 @@ Newest first. One block per run that matters (a milestone, a release, a QA level
 
 ```
 date:       2026-11-13
+commit:     issue/302-303-304-macbeth-shogun, C sources as built 48cd67cd (later commits docs and the checks of one
+            scenario), on issue/combined-test-6 684b6568; red build: the game code of 684b6568 with this branch's
+            test code (b2beb6fa)
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 game clients on one PC, UDP over
+            loopback, through the join driver; test runs of other branches on the PC at the same time
+what ran:   python tools/coop/lockstep_test.py --no-build --only ma_turret, --only macbeth_bombs, --only shogun_bonus,
+            one at a time, on this branch and with --exe <red build>; python tools/coop/test_all.py --no-build --only
+            <steps> --lanes 2 --base-exe <build of 684b6568> for hash-run-1,hash-run-2; coop-off,view-check;
+            replay-test; lockstep; check.py and sp_audit.py --check
+result:     automated. Macbeth's turrets (#302): with player 1 the nearer to a train car, 284 yaw steps of its turret
+            go to player 1's direction and 58 to player 0's (0 and 235 on the red build); 3 of 11 salvos start with
+            player 1 alone in the window (0 of 11). Car 7's flash (#303): a blast on player 1 is red on player 1's
+            client and white on player 0's on 30 of 30 frames, a blast on player 0 the other way round, the fill
+            the games hold equal (red build: white on both for player 1, red on both for player 0). Sector Y (#304):
+            player 1's laser as the last hit pays the team 4 hits for a small Shogun and 11 for the last, as player
+            0's does; Falco's pays 0 (red build: 0 and 0 for player 1). Hashes equal on every frame of every run;
+            co-op off equal to the build of 684b6568 on Corneria; the steps: see the PR. Not run: Macbeth and Sector
+            Y with one player against the base, a blast or a Shogun's last hit that a player makes in play (probes
+            place them), three or four players, two PCs, Windows, Release, a person playing, a picture of the flash.
+date:       2026-11-13
 commit:     issue/280-281-hazards-aim, C sources as built 15ebf002 (later commits docs only), on issue/combined-test-6
             d726f9dd; red build: the game code of d726f9dd with this branch's test code (0fd87a2f)
 identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 game clients on one PC, UDP over
