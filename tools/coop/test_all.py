@@ -70,6 +70,7 @@ IS_WINDOWS = platform.system() == "Windows"
 GAME_LANES = 4  # 2, 3, 4 and 5 took 7m53s, 5m36s, 4m56s and 5m41s: see docs/coop/NOTES.md (#147)
 RATES_JOBS = 5  # games at a time in a rates step: all 5 rates at once, 10m31s for rails against 21 minutes at 3 (#290)
 LOCKSTEP_JOBS = 4  # scenarios of the lockstep step at a time: 14 min one after the other, 4m48s with 4 (#290)
+EXIT_JOBS = 4  # games of the exit-test step at a time: 376 s one after the other, 103 s with 4, 56 s with 8 (#290)
 STEP_TIMEOUT = 3600  # seconds; all of rates took 2500 at load 43, so it is two steps now
 STOP_WAIT = 15  # seconds a stopped step has before it is killed
 PURE, SERIAL, GAME, MUTANTS = "pure", "serial", "game", "mutants"
@@ -82,7 +83,8 @@ CONFIG_PAIR = {"Debug": "Release", "Release": "Debug"}
 # message_released_too_early here until #158: the fake's poison of a released message was a memset before free, which
 # -O2 drops.)
 OPTIMISED = {
-    "exit-test": (["exit_test.py", "--skip", "fault-main,fault-stuck"], "exit-test fault-main, fault-stuck"),
+    "exit-test": (["exit_test.py", "--jobs", str(EXIT_JOBS), "--skip", "fault-main,fault-stuck"],
+                  "exit-test fault-main, fault-stuck"),
     "wingman": (["wingman_check.py", "run", "chain"], "wingman alive, down, sitout"),
 }
 
@@ -134,17 +136,17 @@ def all_steps():
         Step("desync-mutants", MUTANTS, ["desync_mutants.py"], "build", "net"),
         Step("steam-mutants", MUTANTS, ["steam_mutants.py"], "build", "net"),
     ]
-    # Longest first, so no lane is left with a long one at the end. exit-test (6 minutes, mostly waiting on the clock)
-    # comes right after the four longest, when the load drops: it used to be last, and with the serial lane no longer
-    # the clock it ended the run alone, 5 of 22 minutes (#290). Under load a game can hang in its crash handler
-    # (docs/coop/NOTES.md), so it does not go first.
+    # Longest first, so no lane is left with a long one at the end. exit-test (6 minutes one game at a time, mostly
+    # waiting on the clock; under 2 with EXIT_JOBS) comes right after the four longest, when the load drops: it used to
+    # be last, and with the serial lane no longer the clock it ended the run alone, 5 of 22 minutes (#290). Under load a
+    # game can hang in its crash handler (docs/coop/NOTES.md), so it does not go first.
     game = [
         ("rates-rails", ["hash_check.py", "rates", "--section", "rails", "--jobs", str(RATES_JOBS)], "exe", False),
         ("rates-all-range", ["hash_check.py", "rates", "--section", "all-range", "--jobs", str(RATES_JOBS)], "exe",
          False),
         ("builds", ["hash_check.py", "builds"], "other", False),
         ("determinism", ["determinism.py"], "exe", False),
-        ("exit-test", ["exit_test.py"], "exe", True),
+        ("exit-test", ["exit_test.py", "--jobs", str(EXIT_JOBS)], "exe", True),
         ("view-check", ["view_check.py"], "exe", False),
         ("solar-heat", ["solar_check.py"], "exe", False),
         ("wingman", ["wingman_check.py", "all"], "exe", True),

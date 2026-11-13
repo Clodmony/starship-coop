@@ -3,6 +3,7 @@
 
     python tools/coop/exit_test.py                       # unattended; prints PASS or FAIL
     python tools/coop/exit_test.py --only record,play --repeat 10
+    python tools/coop/exit_test.py --jobs 4                # 4 games at a time
     python tools/coop/exit_test.py --list
 
 Each run starts one game in its own folder, waits until it draws frames, sends the signal at a random moment and gives
@@ -45,6 +46,7 @@ import subprocess
 import sys
 import time
 from collections import namedtuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -336,6 +338,7 @@ def main():
     p.add_argument("--only", help="comma-separated scenarios (default: all)")
     p.add_argument("--skip", default="", help="comma-separated scenarios to leave out")
     p.add_argument("--repeat", type=int, default=3, help="games per scenario (default: 3)")
+    p.add_argument("--jobs", type=int, default=1, help="games at a time, each in its own folder (default: 1)")
     p.add_argument("--exe", help="Starship executable (default: newest build found)")
     p.add_argument("--list", action="store_true", help="print the scenarios and stop")
     args = p.parse_args()
@@ -365,15 +368,23 @@ def main():
     failed = 0
     alarmed = 0
     slowest = 0.0
-    for name in chosen:
-        for number in range(args.repeat):
-            elapsed, line, failures, run = run_once(exe, folder, name, SCENARIOS[name], number)
+    # Each game has a folder of its own and this script only waits on them, so --jobs games can run at a time; a line
+    # is printed when its game is done.
+    pool = ThreadPoolExecutor(max_workers=max(1, args.jobs))
+    try:
+        games = {pool.submit(run_once, exe, folder, name, SCENARIOS[name], number): (name, number)
+                 for name in chosen for number in range(args.repeat)}
+        for game in as_completed(games):
+            name, number = games[game]
+            elapsed, line, failures, run = game.result()
             runs.append(run)
             failed += bool(failures)
             alarmed += line.endswith("report by the alarm") and SCENARIOS[name].fault is None
             slowest = max(slowest, elapsed or 0.0)
             print(f"exit_test: {name} {number + 1}: {'FAIL' if failures else 'OK'}, {line}"
                   + "".join(f"\n  {f}" for f in failures), flush=True)
+    finally:
+        pool.shutdown(cancel_futures=True)
 
     total = len(chosen) * args.repeat
     print(f"exit_test: {total - failed}/{total} runs OK, slowest exit {slowest:.2f}s, {time.monotonic() - start:.0f}s"

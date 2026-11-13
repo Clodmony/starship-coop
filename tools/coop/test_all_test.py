@@ -262,6 +262,7 @@ def scenario_dry_run(bench):
     # (builds is not planned here: the bench has no Release build)
     want(game[:4] == ["rates-rails", "rates-all-range", "determinism", "exit-test"] and game[4] == "view-check",
          f"exit-test does not come right after the longest game steps: {game[:6]}")
+    want("exit_test.py --jobs 4" in plan["exit-test"][1], f"exit-test plays one game at a time: {plan['exit-test'][1]!r}")
     only_output, only_plan = dry_run(bench, "--only", "rates-rails,join")
     want(list(only_plan) == ["join", "rates-rails"] and "programs:" not in only_output,
          f"--only rates-rails,join plans {list(only_plan)}: {only_output!r}")
