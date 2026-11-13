@@ -13,7 +13,8 @@ owner can accept them one by one (V1, T1, S1 below). Read at `797c678b`; nothing
 
 **This record assumes lockstep.** Decision 0002 is still Proposed, and its two-machine half (#2) is open. Everything
 below assumes its option A: every client runs the whole simulation and only inputs travel. "If 0002 goes another way"
-under Consequences says what changes.
+under Consequences says what changes. Update 2026-11-13: 0002 is Accepted as option A, deterministic lockstep
+(2026-11-07), so that section does not apply.
 
 Titania, Macbeth and Aquas have not been run in this project, with one player or with two. WP-02 covered Corneria only
 (NOTES.md, 2026-11-04, #2).
