@@ -10,12 +10,14 @@ real processes over UDP.
 
 No ROM and no game data are needed; identities are given on the command line of the test program. Prints one line
 per scenario and a RESULT line, keeps every log in local/test-session/<stamp>/, exits 0 only when everything passed.
-Whether the scenarios can fail at all is checked by session_mutants.py. When level_start_bad_wifi fails, its line goes
-on with what the relay dropped per player and what the host and each client saw (#309). A client may see the host
-start the level again after another client left; check_level counts such a restart only after a recover for a player
-the host saw leave with `closed` (#314). session_test_test.py checks both without a build; check.py runs it.
+Whether the scenarios can fail at all is checked by session_mutants.py. When a scenario through the relay fails
+(match_bad_wifi, refuse_hell, taken_bad_wifi, level_start_bad_wifi), its line goes on with what the relay dropped per
+player and what the host and each client saw (#309, #314). A client may see the host start the level again after
+another client left; check_level counts such a restart only after a recover for a player the host saw leave with
+`closed` (#314). session_test_test.py checks both without a build; check.py runs it.
 """
 import argparse
+import functools
 import json
 import platform
 import shutil
@@ -166,6 +168,22 @@ def damage_report(folder):
         lines.append(f"  {who} saw: " + ", ".join(brief(e, False) for e in c["events"]) +
                      ("" if c["finished"] else " (did not finish)"))
     return "\n".join(lines)
+
+
+def reported(scenario):
+    """A scenario through the relay whose check fails goes on with what its failed try left (#309, #314): the relay's
+    drops per player, way and time, what the host saw (each leave with its end, each recovery's text) and each
+    client's own events."""
+    @functools.wraps(scenario)
+    def run_reported(run, args):
+        try:
+            return scenario(run, args)
+        except Fail as e:
+            folder = getattr(run, "try_folder", None)  # set by damaged_runs for the try that is running
+            if folder is None:
+                raise
+            raise Fail(f"{e}\n{damage_report(folder)}") from None
+    return run_reported
 
 
 def damaged_pair(run, host_args, client_args, via):
@@ -360,10 +378,12 @@ def sc_platform_build(run, args):
                    DIFF_BUILD | DIFF_PLATFORM, f"Different platforms: host {WINDOWS}, joining player {LINUX}")
 
 
+@reported
 def sc_refuse_hell(run, args):
     return refused(run, [], ["--cvar", "gInvincible=1"], DIFF_CVARS, '"Invincible"', via="hell")
 
 
+@reported
 def sc_match_bad_wifi(run, args):
     return joined(run, via="bad_wifi")
 
@@ -400,6 +420,7 @@ def sc_taken(run, args):
     return f"{check_party(h, clients, TAKEN)}, {TAKEN} picks refused"
 
 
+@reported
 def sc_taken_bad_wifi(run, args):
     for h, clients in damaged_runs(run, lambda sub, seed: party(sub, [WISHES] * 3, "bad_wifi", seed=seed)):
         detail = check_party(h, clients, TAKEN)
@@ -412,15 +433,13 @@ def sc_level_start(run, args):
     return f"{check_level(h, clients)} on level {LEVEL}, {TAKEN} picks refused"
 
 
+@reported  # failed once in a gate with two recoveries, and its line said neither why nor where (#309)
 def sc_level_start_bad_wifi(run, args):
     def play(sub, seed):
         return level_party(sub, [WISHES] * 3, "bad_wifi", seed)
-    try:
-        for h, clients in damaged_runs(run, play):
-            check_party(h, clients, TAKEN)
-            detail = check_level(h, clients)
-    except Fail as e:  # failed once in a gate with two recoveries, and its line said neither why nor where (#309)
-        raise Fail(f"{e}\n{damage_report(run.try_folder)}") from None
+    for h, clients in damaged_runs(run, play):
+        check_party(h, clients, TAKEN)
+        detail = check_level(h, clients)
     return f"{detail} (relay dropped {run.lost}, try {run.tries})"
 
 

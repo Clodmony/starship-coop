@@ -6,9 +6,9 @@
   closed their sessions while player 3 was still there, so player 3 saw two recoveries and three level starts) passes;
   a restart nobody left for, a recover for a player who timed out or never left, one leave counted twice, and a first
   level start that is not the host's fail.
-- The report of a failed relay scenario (#309): when `level_start_bad_wifi` fails, its line goes on with what the
-  relay dropped, per player and direction and when, what the host saw (who left, why, every recovery it started) and
-  each client's events. The bots' result files and the
+- The report of a failed relay scenario (#309, #314): when `level_start_bad_wifi`, `match_bad_wifi`, `refuse_hell` or
+  `taken_bad_wifi` fails, its line goes on with what the relay dropped, per player and direction and when, what the
+  host saw (who left, why, every recovery it started) and each client's events. The bots' result files and the
   relay's packet log are written by the test, as the real ones would be; no process starts.
 
 No build, no game, no ROM; check.py runs it. Exit code 0 when every check holds.
@@ -227,6 +227,32 @@ def main():
     # Which client failed: each client's events, by player.
     check(any(line.lstrip().startswith("player 3 saw") and line.count("level_start") == 3 for line in lines),
           f"player 3's own events are missing: {text!r}")
+
+    # ---- the same report for the other relay scenarios (#314) ----
+    h = {"role": "host", "port": HOST_PORT, "finished": True, "received": 1, "ignored": 0, "rosters": 0, "roster": [],
+         "start_refused": 0, "level_start": None,
+         "events": [event("joined", 0, 1), event("left", 0, end=CLOSED, text="The other side closed the connection.")]}
+    one = {"role": "client", "port": CLIENTS[0][0], "finished": True, "received": 0, "ignored": 0, "rosters": 0,
+           "roster": [], "start_refused": 0, "level_start": None, "events": [event("joined", 0, 1)]}
+    taken = level_clients()
+    taken[2]["roster"] = ["Fox", "Falco", "Peppy", "Slippy"]  # a client with another roster than the host's
+    cases = {"match_bad_wifi": (h, [one]),  # joined, but no game message came through
+             "refuse_hell": (h, [one]),  # joined although it should have been refused
+             "taken_bad_wifi": (host_result(), taken)}
+    for name, (host_side, clients) in cases.items():
+        with tempfile.TemporaryDirectory() as tmp:
+            text = scenario_failure(Path(tmp), name, host_side, clients)
+        check(text is not None, f"{name} passed on a failing check")
+        text = text or ""
+        lines = text.splitlines()
+        check(len(lines) > 1 and lines[1].startswith("relay dropped"),
+              f"{name}: the failure does not go on with the relay's drops: {text!r}")
+        check(any(line.lstrip().startswith("player 2, relay dropped:") and "310 ms" in line for line in lines),
+              f"{name}: player 2's drops are missing: {text!r}")
+        check(any(line.lstrip().startswith("host saw: joined player 2") and "left (closed)" in line for line in lines),
+              f"{name}: what the host saw is missing: {text!r}")
+        check(any(line.lstrip().startswith("player 2 saw: joined as player 2") for line in lines),
+              f"{name}: the client's own events are missing: {text!r}")
 
     if failures:
         print("session_test_test: FAILED\n  " + "\n  ".join(failures))
