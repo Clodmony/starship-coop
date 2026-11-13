@@ -113,6 +113,13 @@ def main():
         failures.append("tools/coop/coop_log_test.py failed:\n  "
                         + "\n  ".join((logs.stdout + logs.stderr).strip().splitlines()))
 
+    # 8c. menu_test.py: each scenario with games keeps their logs in a folder of its own (#293; no build, no game).
+    menus = subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "coop" / "menu_test_test.py")],
+                           cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
+    if menus.returncode != 0:
+        failures.append("tools/coop/menu_test_test.py failed:\n  "
+                        + "\n  ".join((menus.stdout + menus.stderr).strip().splitlines()))
+
     # 9. Build folders: libultraship's archives belong to one build folder, or a second config shares them.
     cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
     if "add_subdirectory(libultraship ${CMAKE_CURRENT_BINARY_DIR}/libultraship)" not in cmake:
