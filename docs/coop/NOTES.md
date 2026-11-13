@@ -9,6 +9,100 @@ Private notes (your paths, your PC, your logs) go in `local/`, not here.
 
 ## Build and run
 
+### 2026-11-13, #287, two Release games that did not finish: the client's level start came in its first 21 frames
+
+Identity: ROM US 1.0, base `07c03c1f`, branch `issue/287-release-sessions`. The final verify ran on a tree that differs from
+the last commit in one line, the floor of lines in `log` (25 there, 40 in the commit; `log` alone was rerun on Debug and
+passed). Linux, GCC 16.2, Debug (`-g -ffast-math -DDEBUG`) and
+Release (`-O3 -ffast-math -DNDEBUG`), OpenGL on a software renderer, no window, silent, test games draw nothing, two
+games over loopback on one PC, idle priority, 2 lanes, load 3 to 10. Times include startup. "Cap" is
+`SF64_COOP_TEST_SPEED` (`replay.MEETING_SPEED`, 8 by default; `COOP_TOOLS_MEETING_SPEED=<n|max>` sets another one).
+
+Reported (#287): `macbeth_bombs` on a Release build at cap 64 did not finish in 5 minutes, two games at about 110 % CPU
+each; the cause was unknown.
+
+Observed:
+
+- It is not a hang. `steer` (2700 frames) on the base tree, the client joining on its first frame:
+
+  | build | cap | result | client's frame at the level start |
+  |---|---|---|---|
+  | Release | 8 | ok, 16 s | 290 |
+  | Release | 16 | done in 8 s, then the #148 guard fails (17 title frames); the pair had parted at level frame 0 | 20 |
+  | Release | 32 | done in 6 s, guard fails; no parting | 4 |
+  | Release | 64 | no `done`, stopped by hand after 100 s; parted at level frame 9 | 6 |
+  | Release | max | no `done` in 4 of 4 runs (3 of them stopped at 90 s); parted at level frame 4 to 6 | 8 to 11 |
+  | Debug | 8 | ok, 16 s | 271 |
+  | Debug | 64 | ok, 9 s | 50 |
+
+  After the parting the games start the level again, part again within 300 frames, and the session is over
+  (`lockstep_game.c`, `SYNC_QUICK_PARTS`); both games play on alone, spinning, and the scenario waits for a `done`
+  that cannot come.
+- In the 5 desync reports that were written, the one differing chunk of the one differing region (`globals`) is
+  `voicePlayerRunning`: 0 on the host, 1 on the client, at lockstep frame 0 and at the parting. (The sixth parting, cap 16,
+  wrote no report.)
+- Release, no limit, `COOP_TOOLS_CLIENT_JOIN_FRAME=<n>` (the client opens its session on its own frame n,
+  `SF64_COOP_JOIN_CONNECT_FRAME`), the client's frame at the level start in brackets: n = 0 (8 to 10) parted 5 of 5; 6
+  (12 to 14) 5 of 5; 12 (20, 21) 5 of 5; 16 (21 to 24) 1 of 5, the one at 21; 20 (24 to 27) 0 of 5; 24 (29 to 32) 0 of 5.
+  With n = 30, 60, 100, 200 and 400 (35 to 406): 0 of 25. With n = 700 at cap 64 and at no limit: 0 of 8, 4 to 5 s each.
+  All runs of this table: a client at 21 frames or fewer parted in 22 of 23, at 22 or more in 0 of 50. The one that
+  did not part is the cap 32 run above, at frame 4.
+- The new scenario `unlimited` (`lockstep_test.py`, the flight of `steer` at no limit): on Release before the change 2 of 2
+  runs ended with `no done from host, client0 after 120 s`; on Debug 1 of 1 passed (9 s). With the client on its frame
+  100 (`replay.CLIENT_JOIN_FRAME`): Release 3 of 3, 4 s each, and Debug 9 s.
+- `macbeth_bombs` and `sy_robot_spread` of the combined test build 6 (`0670f3b8` with these commits on it), Release:
+  `macbeth_bombs` at cap 64 with the old join did not finish in 150 s (stopped), the case of the issue; with the new join
+  it is ok at cap 64 in 6 s and at no limit in 6 s (4500 frames equal, all 12 probe cases), and at cap 8 in 23 s, as long as
+  #287 measured on Debug. `sy_robot_spread` (9500 frames): ok at no limit in 10 s, at cap 8 in 44 s.
+- The steps on this branch, Debug at cap 8 (final verify, `349b1fcb`): `checks` 26 s, `replay-test` 78 s, `menu` 91 s,
+  `join` 169 s, `exit-test` 371 s, `hash-run-2` 5 s, `lockstep` 13m57s; PASS 8 of 8 in 18m44s.
+- The same, Release at no limit (`COOP_TOOLS_MEETING_SPEED=max`), `lockstep` alone: 46 of 48 in 5m49s. Failed: `save_own`
+  (`desync_report.py diff` cannot name the chunk, as the frame 0 dumps also differ in `voicePlayerRunning`) and `log` (a
+  run of 4 s has 31 lines, and no `net` line, which comes on the clock). On the commit before, with `join` and `menu`:
+  `join` 2 of 5 (`control`, `unpicked` and `taken` failed: their replays are counted in frames and a Release game plays
+  them in under 2 s, before the client has joined), `menu` 8 of 9 (`game`: no ping measured in 60 s), `lockstep` 45 of
+  48 (`reset`, `save_own`, `log`). `reset` passes since the title switch below.
+- `save_own` and `delay` are intermittent. `save_own`: Release no limit failed 3 of 6, Debug at 8 0 of 5, Debug at 16 0 of 5.
+  `delay` (level frame 0 of two runs compared, region `globals`): Debug at 16 failed 2 of 5, Release no limit 0 of 6,
+  Debug at 8 0 of 5.
+- Debug at cap 16 on the commit before the last (`8e413115`): `menu` 83 s, `join` 142 s, `lockstep` 9m49s, which is 30 %
+  less than at 8, with `delay` and `log` (39 lines) failed.
+- The boot logo waits 1000 ms of the clock (state `GSTATE_LOGO_WAIT`, 104): 240 frames on Debug at cap 8, 1750 on Release
+  at no limit (the client of `reset`, frames 658 to 2409). So a frame count cannot say that a client is back at the
+  title.
+
+Derived:
+
+- Release is not the problem, speed is, through how many frames a client has played when the host's level start
+  comes. The host starts as soon as the client has joined, the client joined on its first frame, and a Release game at no
+  limit plays 1100 frames a second and more, so its boot to the level takes 4 to 20 frames. Below 22 the two parted
+  (22 of 23), from 22 on never (0 of 50). At cap 8 the client is at 270 to 290.
+- A client that waits for its own frame 100 before it opens its session has the same frames at the level start however
+  fast it runs. The cost is 100 frames, 0.1 s on Release. The limit of 8 is unchanged.
+- What Release buys, with the join in frames and no limit: `steer` 4 s against 16 s at cap 8 (on Release as well as on
+  Debug); `macbeth_bombs` 6 s against 23 s; `sy_robot_spread` 10 s against 44 s; the `lockstep` step 5m49s against
+  13m57s. At cap 8 a Release build gains nothing: the cap is what the sessions wait for.
+- Steps that count frames of their own and cannot run at no limit: `join` (replays in frames), `menu`'s `game` (the ping is on the clock), `log`
+  (lines on the clock), `rates-*` (real time on purpose), and the logo wait in `reset` needed a game state.
+
+Guess:
+
+- The client's level start arrived while the audio reset of its own boot was still running. A level start asks for an audio
+  heap reset (`CoopLevelStart_Enter`), and the sound thread restarts the steps only when none is running
+  (`if (gAudioResetStep == 0) gAudioResetStep = 5;`, `src/audio/audio_thread.c:56-60`), so a request that comes in
+  the middle of the boot's reset ends with it, about 30 audio updates after boot (`AudioHeap_ResetStep`,
+  `src/audio/audio_heap.c:561`; the voice player starts at update 31, 2026-11-10 #230 above). That reads as a voice
+  player that restarts early on the client (flag 1 on the client, 0 on the host in 5 of 5 reports) and fits a cut-off
+  near 21 frames. Not shown by a run that logs `gAudioResetStep`.
+
+Unknown:
+
+- Whether a real client can have its level start in its first 21 frames: the lobby needs the menus, which take far more
+  frames by hand; a client that connects on its own at launch would.
+- Why the `save_own` and `delay` flags differ at level frame 0 in one run of a few, at a high speed and never at 8 (so
+  far); the client's frame is not the reason (it was 105 in `save_own`).
+- Windows, MSVC, a second PC.
+
 ### 2026-11-10, the pause bar of a human-flown wingman with the shield upgrade drew a full bar
 
 Identity: ROM US 1.0, branch from `ed61d6fd` (the test branch of 2026-11-10), Linux, GCC, Debug, two games over

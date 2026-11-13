@@ -19,6 +19,9 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   sim       src/port/coop/sync/lockstep.c alone, in a virtual network with loss, lag, reordering and duplicates, for two to
             four players (tools/coop/locksteptest).
   steer     each client flies its own player. Hashes equal, each game looks through its own player.
+  unlimited the flight of steer with no frame limit on either game (#287): the games run as fast as they can, and
+            the client's frames before it joins are the same however fast that is. Hashes equal. On a Release
+            build a client that joined in its first frames left the host at level frame 4 to 9 (voice player).
   aim       enemies aim at the nearest human (#193): on Corneria's rails some enemy shots or missiles fly at player 1,
             the two games log the same ones (src/port/coop/test/aim_trace.h), and the hashes stay equal.
   return    a player 2-4 who goes down comes back (decision 0007 rule 4, #14): player 1 is forced down on Corneria's
@@ -350,7 +353,9 @@ def session(args, folder, host_env=None, client_env=None, both=None, config=None
     games = [host]
     for n, pick in zip(range(clients), ("falco", "slippy", "peppy")):
         games.append(Client(args, folder, f"client{n}", {**env, "SF64_COOP_JOIN_CONNECT": f"127.0.0.1:{port}",
-                                                         "SF64_COOP_JOIN_PICKS": pick, **(client_env or {}),
+                                                         "SF64_COOP_JOIN_PICKS": pick,
+                                                         "SF64_COOP_JOIN_CONNECT_FRAME": str(replay_tool.CLIENT_JOIN_FRAME),
+                                                         **(client_env or {}),
                                                          **((client_envs or [{}] * clients)[n])}, replay_frames))
         if saves and saves.get(f"client{n}") is not None:
             put_save(saves[f"client{n}"], games[-1].run)
@@ -536,6 +541,18 @@ def sc_steer(args, folder):
     moved = flown(client)
     expect(moved[0] > 500 and moved[1] > 500, f"a player did not fly: moved {moved}")
     return f"same hash on {frames} frames, moved {moved[0]:.0f} and {moved[1]:.0f}; {played(host)}, {played(client)}"
+
+
+def sc_unlimited(args, folder):
+    """steer with no frame limit (#287). A Release game plays 1100 frames a second and more, so a client that joins as
+    soon as it can has played a few title frames when the host's level start arrives, and the two part at level frame 4
+    to 9 (the voice player of the sound thread, NOTES.md #287). With a limit of 8 the client had played 290. The session
+    ends, both games play on alone and no `done` comes: this waits two minutes, a run takes seconds."""
+    host, client = run_short(args, folder, both={"SF64_COOP_TEST_SPEED": "max"}, seconds=120)
+    frames = compare(host, client, SHORT_FRAMES)
+    moved = flown(client)
+    expect(moved[0] > 500 and moved[1] > 500, f"a player did not fly: moved {moved}")
+    return f"no frame limit: same hash on {frames} frames, moved {moved[0]:.0f} and {moved[1]:.0f}; {played(host)}"
 
 
 AIM_LINE = re.compile(r"(shot|missile) level=(\d+) frame=(\d+) .*player=(-?\d+)$")
@@ -3432,8 +3449,13 @@ RESET_FRAMES = 900
 def sc_reset(args, folder):
     """A client that played a level alone in the same process, with damage, then reset to the title: what that level
     left must not part the games at the session's level start (#187)."""
+    # The client joins once it is back at the title after its own flight: from its frame RESET_FLY_FRAMES + 100 on, with
+    # 100 title frames in a row. The host's frame count says nothing about that when the games run fast, as the host is
+    # thousands of frames on while the client boots, and neither does its own: the boot logo waits 1000 ms of the clock,
+    # 240 frames on Debug at a limit of 8 and 1750 with no limit (#287).
     client_env = {"SF64_COOP_TEST_START_LEVEL": "0", "SF64_COOP_TEST_START_SKIP_INTRO": "1",
-                  "SF64_COOP_TEST_START_TITLE_FRAMES": "40", "SF64_COOP_TEST_START_RESET": str(RESET_FLY_FRAMES)}
+                  "SF64_COOP_TEST_START_TITLE_FRAMES": "40", "SF64_COOP_TEST_START_RESET": str(RESET_FLY_FRAMES),
+                  "SF64_COOP_JOIN_CONNECT_FRAME": str(RESET_FLY_FRAMES + 100), "SF64_COOP_JOIN_CONNECT_TITLE": "100"}
     host, client = run_short(args, folder, frames=RESET_FRAMES,
                              host_env={"SF64_COOP_JOIN_START_FRAME": str(RESET_START_FRAME)}, client_env=client_env)
     _, rows = hash_check.read_log(client.run / "state-hash.txt")
@@ -5057,6 +5079,7 @@ SCENARIOS = {
     "sim": sc_sim,
     "desync_sim": sc_desync_sim,
     "steer": sc_steer,
+    "unlimited": sc_unlimited,
     "aim": sc_aim,
     "boost": sc_boost,
     "return": sc_return,

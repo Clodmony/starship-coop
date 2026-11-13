@@ -155,6 +155,12 @@ number of clients, transport.
    each of those fails without.
    `python tools/coop/test_all.py` (#147, unattended) runs every test here in lanes, on a Debug build or with
    `--config Release` on a Release build in a folder of its own. Exit code 0 only when every step ran and passed.
+   Two games that meet over sockets play at 8 times real time (`replay.MEETING_SPEED`), and a client opens its session on
+   its own frame 100 (`replay.CLIENT_JOIN_FRAME`, #287): a client whose level start comes in its first 21 frames parts from
+   the host at level frame 4 to 9 (22 of 23 runs; from frame 22 on 0 of 50), which a Release build at no frame limit did
+   until then, as it plays 1100 frames a second and more. `COOP_TOOLS_MEETING_SPEED=max` runs the `lockstep` step on
+   Release in 5m49s against 13m57s (46 of 48 scenarios; `save_own` is intermittent there and `log` is on the clock).
+   `join` and `menu` stay at 8: their replays are counted in frames and their ping is on the clock. NOTES.md, 2026-11-13.
 3. **Two clients on one machine.** Two Starship processes with their own config, save and log folders (never the
    owner's), connected over loopback, both fed replays. `python tools/coop/join_test.py` (WP-24, unattended, exit code
    0 only when everything passed) takes two or three games from the lobby into a level through the scripted flow in
