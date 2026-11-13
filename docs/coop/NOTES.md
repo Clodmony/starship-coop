@@ -87,7 +87,7 @@ Unknown:
 ### 2026-11-13, #290 (second part), the serial lane was the clock: Release, five lanes, `--mixed`, 18m04s
 
 Identity: ROM US 1.0, Linux, GCC 16.2, Debug (`-g -ffast-math -DDEBUG`) and Release (`-O3 -ffast-math -DNDEBUG`), OpenGL on
-a software renderer, no window, silent, a machine with 16 logical CPUs and no other load, `test_all.py` at normal
+a software renderer, no window, silent, a Linux machine with no other load, `test_all.py` at normal
 priority with its default 4 game lanes, one run of each kind unless a count is given. Trees: `90594a98` (the combined test
 build 6 with PR #291) for the measurements, `47723983` and `0b9dc392` (branch `issue/290-release-steps`) for the runs of
 the change. `coop-off` did not run in any of them (no `--base-exe`).
