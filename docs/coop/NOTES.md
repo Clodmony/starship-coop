@@ -9,6 +9,66 @@ Private notes (your paths, your PC, your logs) go in `local/`, not here.
 
 ## Build and run
 
+### 2026-11-13, #283, #284 and #121, leftovers of the tools: two test_all runs in one checkout, the pilot twice a frame, `slots` and old effects, Macbeth's lone tank
+
+Run on `issue/276-283-leftovers` (from `issue/combined-test-6` `d726f9dd`). Identity: ROM US 1.0, Linux, GCC, Debug,
+OpenGL on a software renderer, no window, the machine shared with four other workers (the lock in front of every run).
+
+Observed:
+
+- `test_all.py` (#283 item 5): a run that passed deleted every `test-*` folder of `local/` that was new since it
+  started, other runs' `test-all-*` folders and their steps' game folders too. `test_all_test.py --only beside` (two
+  runs in one bench checkout, the first ends while the second runs): before, the second run's `test-all-*` folder was
+  gone; now each run deletes only the folders its own steps made (`run_folder.py` notes them in the run's `owned/`), and
+  a run holds a lock on `running.lock` in its folder while it runs.
+- `CoopPilot_Fly` in a session (#283 item 3): with `SF64_COOP_LOCKSTEP_PILOT` the replay's playback (`replay.c`) and
+  the lockstep driver both call it on every `GamePreUpdate`, as the replay file of `lockstep_test.py` lasts longer than
+  the run. A session's pilot log holds each line twice (`survive_gaps_map`: every aim line of frames 1680, 1740, 1800).
+  Documented in `pilot.h`; not changed, as every pilot scenario was tuned with it.
+- `hash_check.py slots` (#284 item 1). Fortuna at `--frames 9000`, effect slots in use every 100 frames, single player
+  / two players: from frame 6900 on 0 to 48 / 49 to 68 (the base's burn, `FoBase_BurnEffects`; single player holds
+  it only while the base is in view, #246), before it 0 to 27 / 0 to 95, median 0 / 11.
+  Median rule (before): 0 against 16, FAIL by one. A floor rule on the slots in use (the fewest per third, first
+  third against the last): Fortuna 9000 grown by 7, 10000 by 0, but Corneria's default 2400 frames by 18 (FAIL): from
+  frame 1900 the second player trails `Effect389`, the smoke of a damaged Arwing (`Player_DamageEffects`,
+  `src/engine/fox_play.c:237-289`), 10 to 20 puffs at a time, each gone within about 14 frames
+  (`Effect_Effect389_Update`, `src/engine/fox_effect.c:1369`). A count of slots cannot tell a renewed set that sets in
+  late from a leak, so the hash log now writes `# ages frame= old= oldest=` (`state_hash.c`, test only, with
+  `SF64_COOP_HASH_LOG`): the effects that have lived 900 frames or more, counted from each effect's `ObjectInitEvent`.
+  In every `slots` run here no effect got older than 226 frames (ids 345 and 373). Mutants (`Effect_Effect389_Update`
+  without its `Object_Kill`), `--level corneria --frames 6000`: with every player's smoke kept, old effects 0 to frame
+  1500, 25 at 2000, 67 from 3500 (the oldest 2969 frames), then 0 at 5000 and 67 again at 6000: something freed every
+  effect between frames 4500 and 5000, not `Play_Init` (no `# level` line there). So the floor of old effects per third
+  (0, 51, 0) missed it, and the rule takes the most old effects of each run: that mutant then passes, as single player
+  leaks as much (61 against 67) and `slots` compares co-op with it. With only player 1's smoke kept (`unk_4A` 2, a
+  player only co-op has): 67 old effects with two players, 0 with one, FAIL at 6000 frames and at the default 2400.
+  This branch: 0 old effects in every run (corneria 6000, fortuna 9000 and 10000, the default three levels), PASS.
+- Macbeth's single-player tank (#283 item 2): #272 saw the pilot stop at z about -33800 from frame 2700 on, with one
+  player, on `07c03c1f` and its reference build. On `d726f9dd`, the same start (straight in, past the intro) and a pilot
+  flying one player for 6000 frames: with `gInvincible` the tank passes z -33800 at about frame 2030, climbs to y 447
+  between z -34800 and -43800 and drives on to z -92691; without it the tank goes down at frame 2830 at z -45888 and
+  drives on from the checkpoint. On `07c03c1f` (#272's base, built for this) the run with `gInvincible` is the same
+  flight on every frame compared (every 300th, and every 10th from 2650 to 2760: state, x, y, z), z -92691 at 6000.
+
+Derived:
+
+- An effect that nothing ends grows old, whatever else holds slots; bursts, renewed smoke and fire do not. The age is
+  counted from the effect's init (`ObjectInitEvent`), so a slot that a renewed set fills again with the same id is a
+  new effect; an effect set up straight into `OBJ_ACTIVE` in a slot freed on the same frame with the same id would look
+  older than it is (no case known).
+
+Guess:
+
+- #272's run stopped because its replay, not the pilot, drove the tank: its scratch script played a replay through
+  `hash_check.play` with the start variables (its report said `WRONG_START`); the script is not in the repo.
+- What freed every effect of Corneria between frames 4500 and 5000 of the mutant's run is the cut from the rails to
+  all-range (not checked).
+
+Unknown:
+
+- Whether #121's comment from #21 (a game outside the pair reading the host's end text) still happens with the recovery
+  of #267.
+
 ### 2026-11-13, #290 (second part), the serial lane was the clock: Release, five lanes, `--mixed`, 18m04s
 
 Identity: ROM US 1.0, Linux, GCC 16.2, Debug (`-g -ffast-math -DDEBUG`) and Release (`-O3 -ffast-math -DNDEBUG`), OpenGL on
@@ -835,6 +895,60 @@ Unknown:
 - Release config and macOS: not tried in this session.
 
 ## Engine and players
+
+### 2026-11-13, #276, entering a level: `gPlayer` in freed memory for a few frames; Venom 1's pillars past their tables
+
+Read and run on `issue/276-283-leftovers` (from `issue/combined-test-6` `d726f9dd`). Line numbers are this branch's.
+Identity: ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window, two clients over loopback where a
+run is a session.
+
+Observed (code):
+
+- `Game_SetGameState` (`src/engine/fox_game.c:95-118`), on its way into `GSTATE_PLAY`, sets `gPlayState = PLAY_STANDBY`,
+  calls `Memory_FreeAll` and sets `gNextGameStateTimer = 3`; `Play_Main` leaves `PLAY_STANDBY` when that timer is 0
+  (`src/engine/fox_play.c:7194-7197`), and only `Play_Init` sets `gPlayer` again (`MEM_ARRAY_ALLOCATE(gPlayer, ...)`,
+  `fox_play.c:2954`, the one place that sets it). So for at least three frames of `GSTATE_PLAY` `gPlayer` points into
+  memory that is free, and the map (or the level before) has written there. `Play_Init` also sets `gGameFrameCount` to 0
+  (`fox_play.c:2881-2883`).
+- Venom 1's Golemech raises pillars in two attacks (`spB8` 1 and 2, `Venom1_Ve1Golemech_Update`,
+  `src/overlays/ovl_i1/fox_ve1.c`, the `switch (spB8)` at `:2403`) from row `swork[23]` (`RAND_FLOAT(5.0f)`, `:1830`)
+  of `D_i1_80199CD0` and `D_i1_80199B40`, up to `swork[22] + 1` pillars, and `swork[22]` counts to 5
+  (`= swork[21]`, `:1277`; `swork[21]` up to 5, `:1609`). Both tables are five rows of five, so pillar six is the next
+  row's first, and from row 4 it is read past the table. On the N64 (the decomp names each table by its address)
+  `D_i1_80199B40[4][5]` is `D_i1_80199CD0[0][0]`, (-770, 96, 916), and `D_i1_80199CD0[4][5]` is the five `s16` of
+  `D_i1_80199E60` (1, 2, 2, 2, 3) and two bytes before `D_i1_80199E6C`: as big-endian floats x `0x00010002`, y
+  `0x00020002`, z `0x0003....`.
+- In the port's GCC Debug build (`nm -n`): `D_i1_80199B40` at `...9060`, `D_i1_80199CD0` at `...9200`, so 16 bytes
+  between the two tables; `D_i1_80199E60` right behind `D_i1_80199CD0`.
+
+Observed (runs):
+
+- `lockstep_test.py --only survive_gaps_map` on `d726f9dd`: a desync 120 frames into the map after Corneria read
+  `The games went out of step at frame 11560 of Corneria (all-range)` (the level byte on the map is the last level), and
+  each game's player trace (`SF64_COOP_TRACE`) held three lines while Corneria was entered again (frames 123 to 125 on
+  the host, 126 to 128 on the client, after frame 11440 of the old run), with player 0 in state `1147717910`, a float's
+  bits. With this branch: `of the map`, and no such lines.
+- `lockstep_test.py --only ve1_pillars` (a probe, `src/port/coop/test/ve1_pillar_probe.h`, forces the Golemech's count
+  to 5 and its row to 4; pilots, `gInvincible`), on this branch before the tables changed: the Golemech at level frame
+  4825, 39 batches of pillars; every attack from `D_i1_80199B40` raised its sixth pillar at x `00000000` y `00000000`,
+  every attack from `D_i1_80199CD0` its sixth at x `00020001` y `00020002` (the little-endian reading of the same five
+  `s16`). Hashes and the two probe logs equal. With the tables' sixth row: the Golemech at 4825, 40 batches, 18 sixth
+  pillars from `D_i1_80199B40` and 19 from `D_i1_80199CD0`, each at the N64's place, same hash on 13000 frames.
+
+Derived:
+
+- A test tool that reads `gPlayer` in `GSTATE_PLAY` must also wait for `PLAY_UPDATE` (as `log_game.c`'s
+  `Players_Readable` does); the player trace, the replay checkpoint and the team trace now do (#276, #121).
+- On the port the sixth pillar of a `D_i1_80199B40` attack from row 4 stood at the path's middle, (0, 0), where the N64
+  puts it at (-770, 96); the other table's differs only in the bits of two tiny numbers. Which bytes another compiler
+  puts behind the tables is a matter of its layout, so a Windows and a Linux client could have hashed apart there. The
+  tables now have a sixth row with what the N64 reads (`// COOP:`, in every mode, as #262's fixes).
+
+Unknown:
+
+- The two bytes between `D_i1_80199E60` and `D_i1_80199E6C` on the N64 (taken as 0); they make the z of a pillar that
+  is added to the boss's z, so no game can see them.
+- How often a real fight reaches count 5 with row 4 (the sweep's flights did not).
 
 ### 2026-11-12, #273, Sector Y's robots: the spread around the aimed human, and the `iwork[19] < 0` test that is never true
 
