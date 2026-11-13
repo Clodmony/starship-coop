@@ -58,6 +58,7 @@ LOCAL = ROOT / "local"
 IS_LINUX = platform.system() == "Linux"
 IS_WINDOWS = platform.system() == "Windows"
 GAME_LANES = 4  # 2, 3, 4 and 5 took 7m53s, 5m36s, 4m56s and 5m41s: see docs/coop/NOTES.md (#147)
+RATES_JOBS = 5  # games at a time in a rates step: all 5 rates at once, 10m31s for rails against 21 minutes at 3 (#290)
 LOCKSTEP_JOBS = 4  # scenarios of the lockstep step at a time: 14 min one after the other, 4m48s with 4 (#290)
 STEP_TIMEOUT = 3600  # seconds; all of rates took 2500 at load 43, so it is two steps now
 STOP_WAIT = 15  # seconds a stopped step has before it is killed
@@ -114,8 +115,9 @@ def all_steps():
     # Longest first, so no lane is left with a long one at the end. exit-test goes last all the same: it waits on the
     # clock, so it costs no time there, and under load a game can hang in the crash handler (docs/coop/NOTES.md).
     game = [
-        ("rates-rails", ["hash_check.py", "rates", "--section", "rails"], "exe", False),
-        ("rates-all-range", ["hash_check.py", "rates", "--section", "all-range"], "exe", False),
+        ("rates-rails", ["hash_check.py", "rates", "--section", "rails", "--jobs", str(RATES_JOBS)], "exe", False),
+        ("rates-all-range", ["hash_check.py", "rates", "--section", "all-range", "--jobs", str(RATES_JOBS)], "exe",
+         False),
         ("builds", ["hash_check.py", "builds"], "other", False),
         ("determinism", ["determinism.py"], "exe", False),
         ("view-check", ["view_check.py"], "exe", False),
