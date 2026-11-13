@@ -3575,6 +3575,7 @@ void SectorY_SyRobot_Update(SyRobot* this) {
     Vec3f sp50;
     s32 sp4C = 30;
     s32 pad;
+    Player* aimed; // COOP: (#273, #281)
 
     this->iwork[14] = this->eventType - 48;
     this->info.drawType = 2;
@@ -3650,6 +3651,9 @@ void SectorY_SyRobot_Update(SyRobot* this) {
         this->fwork[15] = 0.0f;
     }
 
+    // COOP: the human this robot shoots at and turns to on this frame, picked once (#273, #281)
+    aimed = &gPlayer[CoopAim_Nearest(this->fwork[16], this->fwork[17], this->fwork[18])];
+
     switch (this->work_046) {
         case 0:
             i = this->iwork[17];
@@ -3692,7 +3696,6 @@ void SectorY_SyRobot_Update(SyRobot* this) {
                     // player 0 goes to the spread point at that human's depth, and the other humans that may be aimed
                     // at go there too (CoopAim_PointShot), so the shot flies at the point. Outside co-op the nearest
                     // is player 0 and every line below does what upstream does (#273)
-                    Player* aimed = &gPlayer[CoopAim_Nearest(this->fwork[16], this->fwork[17], this->fwork[18])];
                     f32 trueZ = gPlayer[0].trueZpos; // COOP: (#273)
 
                     sp1E4 = gPlayer[0].pos.x;
@@ -3795,9 +3798,10 @@ void SectorY_SyRobot_Update(SyRobot* this) {
             Matrix_RotateY(gCalcMatrix, -this->obj.rot.y * M_DTOR, MTXF_APPLY);
         }
 
-        sp5C.x = gPlayer[0].pos.x - this->obj.pos.x;
-        sp5C.y = gPlayer[0].pos.y - this->obj.pos.y;
-        sp5C.z = gPlayer[0].pos.z - this->obj.pos.z;
+        // COOP: head and gun turn to the human the shot flies at, the nearest to where it starts; was gPlayer[0] (#281)
+        sp5C.x = aimed->pos.x - this->obj.pos.x;
+        sp5C.y = aimed->pos.y - this->obj.pos.y;
+        sp5C.z = aimed->pos.z - this->obj.pos.z;
 
         Matrix_MultVec3fNoTranslate(gCalcMatrix, &sp5C, &sp50);
 
