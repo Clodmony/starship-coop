@@ -191,11 +191,13 @@ def main():
     clients = level_clients()
     clients[STAYER - 1]["level_start"] = level_start(["Fox", "Falco", "Slippy", "-"])  # it saw only a restart
     text = level_failure(host_result(), clients)
-    check(text is not None and "client 1 started from" in text, f"a first level start not the host's passed: {text}")
+    check(text is not None and "client 1 started from" in text,
+          f"a first level start not the host's did not fail on the start's data: {text}")
     clients = level_clients()
     clients[0]["events"] = [e for e in clients[0]["events"] if e["type"] != "level_start"]
     text = level_failure(host_result(), clients)
-    check(text is not None and "client 0 saw no level start" in text, f"a client without a level start: {text}")
+    check(text is not None and "client 0 saw no level start" in text,
+          f"a client without a level start did not fail on the count: {text}")
 
     # ---- the report of a failed level_start_bad_wifi (#309): a restart nobody left for ----
     with tempfile.TemporaryDirectory() as tmp:
