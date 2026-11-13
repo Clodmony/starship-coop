@@ -226,16 +226,19 @@ def scenario_pure_beside(bench):
     want(most_at_once(lines, every) == 5, f"{most_at_once(lines, every)} steps at once, want 1 + 1 + 2 + 1 in the 4 lanes")
 
 
-def dry_run(bench, *args):
-    """test_all.py --dry-run in the bench: (its output, {step: (lane, command)})."""
+def dry_run(bench, *args, code=0):
+    """test_all.py --dry-run in the bench: (its output, {step: (lane, command)}), or its error output when the exit
+    code wanted is not 0."""
     done = subprocess.run([sys.executable, str(bench.repo / "tools" / "coop" / "test_all.py"), "--dry-run", *map(str, args)],
                           cwd=bench.repo, env=ENV, capture_output=True, text=True, timeout=60)
-    want(done.returncode == 0, f"--dry-run {args} exit code {done.returncode}: {done.stdout!r} {done.stderr!r}")
+    want(done.returncode == code, f"--dry-run {args} exit code {done.returncode}: {done.stdout!r} {done.stderr!r}")
+    if code:
+        return done.stderr, {}
     plan = {}
     for line in done.stdout.splitlines():
         lane, _, rest = line.partition(": ")
         name, _, command = rest.partition(": ")
-        if lane in ("pure", "serial", "game", "mutants"):
+        if lane in ("pure", "serial", "game", "mutants", "base"):
             plan[name] = (lane, command)
     return done.stdout, plan
 
@@ -332,6 +335,69 @@ def scenario_mutants_setup_fails(bench):
     want("mutants-setup failed" in output, f"no reason given: {output!r}")
 
 
+def scenario_dry_run_base(bench):
+    """--base-ref (#290): coop-off gets a build of that commit, made in a lane of its own first; --base-exe keeps the
+    old way, and a ref that names no commit stops the run before it builds."""
+    output, plan = dry_run(bench)
+    want("NOT RUN coop-off: no --base-exe or --base-ref" in output and "base-setup" not in plan, f"no base: {output!r}")
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=bench.repo, env=ENV, capture_output=True, text=True).stdout
+    _, plan = dry_run(bench, "--base-ref", "HEAD")
+    tree = bench.repo / "local" / "base-tree"
+    lanes = [lane for lane, _ in plan.values()]
+    want(list(plan).index("base-setup") + 1 == list(plan).index("coop-off") and lanes.count("base") == 2,
+         f"the base lane is not base-setup then coop-off: {plan!r}")
+    setup = plan["base-setup"][1]
+    for part in ("mutation_tree.py make", f"--path {tree}", f"--ref {head.strip()}", "--build", "--jobs "):
+        want(part in setup, f"base-setup lacks {part!r}: {setup!r}")
+    want(f"--base {tree}/build-cmake/Starship" in plan["coop-off"][1], f"coop-off plays another base: {plan['coop-off']!r}")
+    _, plan = dry_run(bench, "--base-exe", "base/Starship")
+    want(plan["coop-off"][0] == "game" and "base-setup" not in plan, f"--base-exe: {plan.get('coop-off')!r}")
+    error, _ = dry_run(bench, "--base-ref", "no-such-ref", code=2)
+    want("no such commit" in error, f"--base-ref no-such-ref: {error!r}")
+    error, _ = dry_run(bench, "--base-ref", "HEAD", "--base-exe", "base/Starship", code=2)
+    want("not both" in error, f"--base-ref with --base-exe: {error!r}")
+
+
+def base_setup(bench):
+    """A made-up base-setup step: a real worktree where test_all.py --base-ref puts its checkout of the base."""
+    tree = bench.repo / "local" / "base-tree"
+    program = "import subprocess, sys; subprocess.run(['git', 'worktree', 'add', '-q', '--detach', sys.argv[1], 'HEAD'], check=True)"
+    return tree, step("base-setup", "base", program, tree)
+
+
+def worktrees(bench):
+    done = subprocess.run(["git", "worktree", "list", "--porcelain"], cwd=bench.repo, env=ENV, capture_output=True, text=True)
+    return [line for line in done.stdout.splitlines() if line.startswith("worktree ")]
+
+
+def scenario_base_tree(bench):
+    """The checkout of --base-ref goes at the end of the run, and when it cannot be built, coop-off fails and says why."""
+    tree, setup = base_setup(bench)
+    code, output = bench.run([setup, step("coop-off", "base", f"import os; assert os.path.isdir({str(tree)!r})"),
+                              step("fine", "game", OK)])
+    want_result(code, output, 0, "PASS, 4/4 steps ok")
+    want(not tree.exists() and len(worktrees(bench)) == 1, f"the base tree is left: {worktrees(bench)!r}")
+    code, output = bench.run([step("base-setup", "base", BAD), step("coop-off", "base", OK)])
+    want_result(code, output, 1, "FAILED, 1/3 steps ok")
+    want(re.search(r"^FAILED coop-off \(0s\): base-setup failed$", output, re.MULTILINE), f"no reason: {output!r}")
+
+
+def scenario_stop_base(bench):
+    """A run stopped while coop-off plays on the base removes the base's checkout, and what the step started."""
+    tree, setup = base_setup(bench)
+    pid_file = bench.work / "child.txt"
+    proc = bench.start([setup, step("coop-off", "base", PARENT, pid_file)])
+    end = time.monotonic() + 10
+    while time.monotonic() < end and not (pid_file.exists() and pid_file.read_text()):
+        time.sleep(0.05)
+    want(tree.is_dir(), "the base tree was not made")
+    proc.send_signal(signal.SIGTERM)
+    output = proc.communicate(timeout=60)[0]
+    want_result(proc.returncode, output, 1, "FAILED")
+    want(wait_gone(int(pid_file.read_text())), "what coop-off started is still running")
+    want(not tree.exists() and len(worktrees(bench)) == 1, f"the stop left the base tree: {worktrees(bench)!r}")
+
+
 def scenario_timeout(bench):
     pid_file = bench.work / "child.txt"
     plan = [step("stuck", "game", PARENT, pid_file), step("fine", "game", OK)]
@@ -395,6 +461,9 @@ SCENARIOS = {
     "dry-run-mixed": scenario_dry_run_mixed,
     "mutants-beside": scenario_mutants_beside,
     "mutants-setup-fails": scenario_mutants_setup_fails,
+    "dry-run-base": scenario_dry_run_base,
+    "base-tree": scenario_base_tree,
+    "stop-base": scenario_stop_base,
     "timeout": scenario_timeout,
     "stop": scenario_stop,
     "stop-mutants": scenario_stop_mutants,
@@ -402,6 +471,7 @@ SCENARIOS = {
 }
 if not sys.platform.startswith("linux"):  # these read /proc, or need a stop signal a process can catch, or plan Linux's steps
     del SCENARIOS["timeout"], SCENARIOS["stop"], SCENARIOS["stop-mutants"], SCENARIOS["dry-run"], SCENARIOS["dry-run-mixed"]
+    del SCENARIOS["dry-run-base"], SCENARIOS["stop-base"]
 
 
 def main():
