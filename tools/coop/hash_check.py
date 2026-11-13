@@ -12,6 +12,7 @@
     python tools/coop/hash_check.py rates --exe b/Starship             # unattended; prints PASS or FAIL
     python tools/coop/hash_check.py draw                               # unattended; prints PASS or FAIL
     python tools/coop/hash_check.py base --base a/Starship             # unattended; prints PASS or FAIL
+    python tools/coop/hash_check.py base --base a/Starship --level macbeth --frames 3000   # co-op off in Macbeth
     python tools/coop/hash_check.py start --players 2                  # unattended; prints PASS or FAIL
 
 Input by rule starts where replay.py's Start says. run and views play it past Corneria's intro, probe through it, as a
@@ -55,7 +56,9 @@ draw plays one replay with and without SF64_COOP_TEST_NO_DRAW, per section and s
   --start names one: the switch sits under every tool, on whichever start that tool plays.
 base plays input by rule through the menus, with co-op off, on this build and on --base, the build before a change: the
   two must be equal on every frame, which is what co-op off means. --base can be a build without any of the switches
-  here, so it plays nothing that needs one.
+  here, so it plays nothing that needs one. --level NAME (#283) starts both games in that level instead, through its
+  intro (SF64_COOP_TEST_START_LEVEL, src/port/coop/test/start_level.h, which --base must know), so co-op off can be
+  checked outside Corneria, the vehicle levels too; --frames sets how long, counted from when player 0 flies.
 
 builds and rates run in real time: at test speed a game frame is drawn once, so no game would interpolate, and
 interpolation is what they are there to see (#141, #137). So they ask for drawing too, and each game must log what it
@@ -1082,11 +1085,42 @@ def cmd_draw(args):
     return 1 if failures else 0
 
 
+# Levels `base --level` starts in (#283): every LevelId with a level, the vehicle levels too.
+BASE_LEVELS = {**VIEW_LEVELS, "macbeth": 11, "titania": 12, "aquas": 13, "level-4": 4}
+
+
+def base_level_start(name):
+    """Where `base --level` starts both games: straight in the level, through its intro (as LEVEL does in Corneria, a
+    level's intro is simulation too). The frame numbers are Corneria's; a level that takes player 0 later only shifts
+    the input by rule."""
+    level = replay_tool.LEVEL
+    return replay_tool.Start(f"level-{name}", BASE_LEVELS[name], False, level.level, level.active, level.seeds)
+
+
+def base_level_problem(tag, rows, level, frames):
+    """A game of `base --level` must have flown in its level, or a base build that does not know the start would only
+    show the menus on both sides (or crash in another place). Returns a failure or None."""
+    flown = sum(1 for row in rows if row[1] == replay_tool.GS_PLAY and row[2] == level)
+    print(f"hash: base: {tag} flew {flown} frames in level {level}")
+    return None if flown >= frames // 2 else f"{tag} flew only {flown} of {frames} frames in level {level}"
+
+
 def cmd_base(args):
     exe, base = replay_tool.find_exe(args.exe), replay_tool.find_exe(args.base)
-    # Through the menus: the base build may be older than the switch of a start in the level, and would say so.
-    args.file, args.players, args.start = None, 1, replay_tool.MENUS.name
-    replay, config, start = test_setup(args)
+    flight = args.frames or GENERATED_END
+    if args.level:
+        if args.level not in BASE_LEVELS:
+            sys.exit(f"hash: no level {args.level}; the choices are {', '.join(BASE_LEVELS)}")
+        start = base_level_start(args.level)
+        replay = make_run_folder(replay_tool.ROOT / "local", f"test-hash-base-{args.level}-") / "input.sfcr"
+        write_generated_replay(replay, frames=start.frame(flight), start=start)
+        config = {"CVars": {"gDebugJumpToAllRange": 1}}  # what test_setup gives input by rule
+    else:
+        # Through the menus: the base build may be older than the switch of a start in the level, and would say so.
+        args.file, args.players, args.start = None, 1, replay_tool.MENUS.name
+        replay, config, start = test_setup(args)
+        if args.frames:
+            write_generated_replay(replay, frames=start.frame(flight), start=start)
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         jobs = [pool.submit(play, replay, build, args.timeout, f"base-{tag}", config=config, start=start)
@@ -1095,7 +1129,10 @@ def cmd_base(args):
 
     failures = [f"{tag} did not play through: {run[0].get('result') if run[0] else 'no report'}"
                 for tag, run in (("the base build", before), ("this build", after)) if not played_through(run[0])]
-    failures += compare_runs("co-op off", "the base build and this one", before, after, start.frame(GENERATED_END))
+    if args.level:
+        failures += [problem for tag, run in (("the base build", before), ("this build", after)) if run[2] is not None
+                     for problem in [base_level_problem(tag, run[2], start.level_id, flight)] if problem]
+    failures += compare_runs("co-op off", "the base build and this one", before, after, start.frame(flight))
     for f in failures:
         print(f"FAIL: {f}")
     print("hash: FAIL" if failures else "hash: PASS")
@@ -1263,6 +1300,9 @@ def main():
     w.add_argument("--timeout", type=float, default=1800, help="per run: give up after this many seconds")
     e = sub.add_parser("base", help="play input by rule on the build before a change and this one, and compare")
     e.add_argument("--base", required=True, help="Starship executable of the build before the change")
+    e.add_argument("--level", metavar="NAME", help="start both games in this level instead of coming through the menus "
+                   "(#283): " + ", ".join(BASE_LEVELS))
+    e.add_argument("--frames", type=int, help=f"frames from when player 0 flies (default {GENERATED_END})")
     e.add_argument("--exe", help="Starship executable (default: newest build found)")
     e.add_argument("--timeout", type=float, default=1800, help="per run: give up after this many seconds")
     s = sub.add_parser("start", help="what a start in the level leaves different from coming through the menus")
