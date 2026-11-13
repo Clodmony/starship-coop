@@ -122,6 +122,7 @@ static u32 sFrame = 0;
 static s64 sPokeFrame = -1;
 static s32 sPokePlayer = -1;
 static s64 sProbePeriod = 0;
+static u32 sSlotsPeriod = VIEW_LOG_PERIOD; // SF64_COOP_HASH_SLOTS_EVERY: frames between two "# slots" lines (#284)
 
 static void Fnv(uint64_t* h, const void* data, size_t size) {
     const u8* p = (const u8*) data;
@@ -811,7 +812,7 @@ static void CoopStateHash_OnGamePreUpdate(IEvent* event) {
     // in co-op any more (#96), so tools/coop/hash_check.py views reads this to see whether any array piles up or fills
     // (#129). With co-op off too, to have single player to compare with.
     // Which effects hold the slots: id:count for every effect id in use (Effect.obj.id).
-    if ((gGameState == GSTATE_PLAY) && ((sFrame % VIEW_LOG_PERIOD) == 0)) {
+    if ((gGameState == GSTATE_PLAY) && ((sFrame % sSlotsPeriod) == 0)) {
         s32 counts[512] = { 0 };
         s32 k;
 
@@ -835,7 +836,7 @@ static void CoopStateHash_OnGamePreUpdate(IEvent* event) {
         sRadioChanges += (gRadioState != sRadioPrev);
         sRadioPrev = gRadioState;
     }
-    if ((gGameState == GSTATE_PLAY) && ((sFrame % VIEW_LOG_PERIOD) == 0)) {
+    if ((gGameState == GSTATE_PLAY) && ((sFrame % sSlotsPeriod) == 0)) {
         fprintf(sLog, "# slots frame=%u effects=%d/%d actors=%d/%d shots=%d/%d items=%d/%d radio=%d\n", sFrame,
                 CountUsed(gEffects, sizeof(gEffects[0]), ARRAY_COUNT(gEffects)), (s32) ARRAY_COUNT(gEffects),
                 CountUsed(gActors, sizeof(gActors[0]), ARRAY_COUNT(gActors)), (s32) ARRAY_COUNT(gActors),
@@ -934,6 +935,7 @@ void CoopStateHash_Init(void) {
     const char* poke = getenv("SF64_COOP_HASH_POKE");
     const char* pokePlayer = getenv("SF64_COOP_HASH_POKE_PLAYER");
     const char* probe = getenv("SF64_COOP_HASH_PROBE");
+    const char* slots = getenv("SF64_COOP_HASH_SLOTS_EVERY");
     s32 i;
 
     if ((logPath == NULL) || (logPath[0] == '\0')) {
@@ -951,6 +953,9 @@ void CoopStateHash_Init(void) {
     }
     if ((probe != NULL) && (probe[0] != '\0')) {
         sProbePeriod = strtoll(probe, NULL, 10);
+    }
+    if ((slots != NULL) && (strtol(slots, NULL, 10) > 0)) {
+        sSlotsPeriod = (u32) strtol(slots, NULL, 10);
     }
 
     fprintf(sLog, "# starship-coop state hash v1 (src/port/coop/sync/state_hash.c)\n");

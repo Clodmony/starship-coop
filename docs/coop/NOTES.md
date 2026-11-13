@@ -6121,6 +6121,52 @@ player 0 loses 100.
 
 ## Determinism
 
+### 2026-11-13, #284 item 2, the burst at Granga's death fills the effect array with one player too
+
+Identity: ROM US 1.0, branch `issue/181-coverage` on `issue/combined-test-6` (`d726f9dd`) with this branch's
+`SF64_COOP_HASH_SLOTS_EVERY` (`src/port/coop/sync/state_hash.h`), Linux, GCC, Debug, OpenGL on a software renderer, no
+window, one game per run. `full_level.py`: through the menus into Corneria, a pilot (`src/port/coop/test/pilot.h`)
+flies every player to the map, no cheat; with `--players 1` no `gCoopDebugPlayerCount` is set, so co-op is off.
+
+Observed:
+
+- #246's sample (`lockstep_test.py --only full`, the host at frame 8100: 339 × 47, 357 × 46, 100 of 100) is one of
+  the "# effects" lines a game writes every 100 frames. On this build `python tools/coop/full_level.py` (2 players)
+  wrote 66 at frame 11100 and 36 at 11200 (357 × 32): its samples fell on both sides of the burst. So the game takes
+  `SF64_COOP_HASH_SLOTS_EVERY=<n>` now (those lines every n frames), and `full_level.py --slots-every N` passes it to
+  the pilot's game and prints the sample with the most effects in use.
+- `python tools/coop/full_level.py --players 2 --slots-every 1`: PASS, 13335 frames, no down, level complete at
+  frame 11040, map at 13275. `python tools/coop/full_level.py --players 1 --frames 30000 --slots-every 1`: PASS, 28048
+  frames; player 0 went down twice (frames 12296 and 18515, no `gInvincible`), level complete at 26653, map at 27988.
+  (With the default 16000 frames the one-player pilot had not finished.)
+- The burst, taken as the first frame on which 357 (`OBJ_EFFECT_357`, debris) grows by 30 or more: 110 frames after
+  level complete with 2 players (frame 11150), 100 with 1 (frame 26753). There 2 players hold 339 × 46, 357 × 46, 386
+  × 5, 348, 383 and 384 (100 of 100), 1 player 339 × 48, 357 × 45, 348, 383, 384 and 389 (97).
+- Effects in use frame by frame, from 12 frames before the burst to 12 after it: 2 players 97 98 95 99 97 97 96 97 97
+  96 94 100, burst 100, then 100 100 98 98 96 96 99 99 99 97 97 96; 1 player 99 100 96 95 99 99 97 95 97 99 93 92,
+  burst 97, then 98 97 95 100 99 100 99 98 99 97 95 90. From 120 before to 15 after the burst the array is full on 8
+  frames with 2 players (33, 31, 30, 21 and 1 before, the burst, 1 and 2 after) and on 4 with 1 player (27 and 11
+  before, 4 and 6 after). Before the burst the fire smoke 339 alone climbs to 96 (2 players) and 85 (1 player); 80
+  frames after it one effect is left (383), in both.
+- The 1-player game was full at frame 12322 as well, at player 0's own death (339 × 59, 342 × 17, 341 × 11, 373 × 6,
+  343 × 4, 386 × 2, 387).
+- Code: Granga's explode state (`src/overlays/ovl_i1/fox_co.c:994-1032`) on `timer_050` 10 frees effect slots 0 to 49,
+  spawns `Effect_Effect383_Spawn`, a fire smoke and a ground mark (348, `func_enmy_80062B60`, from slot 0 up), and asks
+  100 times for debris (`func_effect_80079618`, `src/engine/fox_effect.c:691-700`), each in the highest free slot from
+  50 down: at most 51 are placed, the other asks find no slot. Slots 51 to 99 keep what was there.
+
+Derived:
+
+- The burst is the death explosion's own, not co-op's: with co-op off the array holds 92 to 100 in the same 25 frames
+  and is full on 4 of them; with two players a few slots more at most (the two flights differ, so frame against frame
+  says no more than that). Nothing to fix: a spawn that finds no free slot is skipped, in single player as in co-op.
+- A sample every 100 frames cannot tell whether an array was full in a burst; `--slots-every 1` can.
+
+Unknown:
+
+- Which spawner makes the fire smoke (339) of the 40 frames before the burst: not traced.
+- #246's lockstep run itself was not repeated; `full_level.py` flies the same level with the same pilot in one game.
+
 ### 2026-11-12, the sanitizer sweep (#262, #145, #232): every campaign level under AddressSanitizer and UBSan
 
 Identity: ROM US 1.0 (SHA-1 d8b1088520f7c5f81433292a9258c1184afa1457), branch `issue/262-stray-reads` on `wave7-base`
