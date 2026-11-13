@@ -9,6 +9,73 @@ Private notes (your paths, your PC, your logs) go in `local/`, not here.
 
 ## Build and run
 
+### 2026-11-13, #306 and #309, the menu test's wait on a session that ended, and the two recoveries of `level_start_bad_wifi`
+
+Identity: base `684b6568` (the combined test build 6), branch `issue/306-309-session-tools`, Linux, GCC 16.2, Debug, no
+ROM for the session tool; the menu tool's games on ROM US 1.0, OpenGL on a software renderer, no window, silent.
+
+**#306, `menu_test.py`.** Observed: `Game.wait` (`tools/coop/menu_test.py`) stopped only at the game's exit or at the
+end of its time, so a game whose session had ended was waited on for `STEP_SECONDS` (60 s) for a widget that a game in
+no session does not show. Where the scenarios end a session (grep of `click("leave")` and of the waits after it):
+
+- by the game's own Leave click: 7 clicks in `game`, `game_platform`, `game_leave` and `game_names`;
+- by another game's action: 3, in `game` (player 3 when the host leaves), `game_leave` (the host when player 3 leaves,
+  "Player 3 left, so the session is over") and `game_names` (player 2 when the host leaves);
+- a refused join (`game`, the game with another CVar) never shows a session status ("Connecting to ..." until
+  "Not in a session.").
+
+Of the 3 ends by another game, 2 are followed by a wait for "Not in a session." itself; 1, `game_leave`'s host, by a
+wait for the message. That message and the end come from one call (`CoopMenu_Fail`, `src/port/coop/ui/menu.c:307`),
+so they are in the same block of the menu driver, and the wait holds at that look. No scenario relies on a session
+ending during a wait for anything else. All 3 now say the end is expected (`Game.session_ends()`).
+
+In real games (a script outside the repo, through the menu tool's `Game`): a host and a client, the host's game stopped
+without a word, then a wait on the client for the host's `start-level` widget. With `684b6568`'s `menu_test.py` the
+wait failed after 60.1 s ("no widget start-level ... after 60 s"); with this one after 10.0 s, which is the menu's own
+connection time-out (`COOP_MENU_TIMEOUT_MS`, `src/port/coop/ui/menu.h`), with "the session ended while waiting for
+widget start-level" and the last 12 lines of `coop-log-<session>-player2.txt`, the last being `session ended: The
+connection timed out` and the log's close.
+
+**#309, `session_test.py`, `level_start_bad_wifi`.** Observed:
+
+- The scenario's bots leave as soon as they are done: a client once it joined, the roster is complete, it saw the level
+  start and nothing of its own is unacknowledged (the end of the client's loop in
+  `tools/coop/sessiontest/coop_session_test.c`). A host whose client leaves during a level starts the level again for
+  whoever is still there (`Host_Left`, `src/port/coop/session/session.c:718-743`).
+- A passing run, read with the new report: the host saw `player 3 left (closed)`, a recovery, a level start,
+  `player 4 left (closed)`, a recovery, a level start, `player 2 left (closed)`. No client saw a recovery: each had
+  stopped reading before the restart reached it. `check_level` allows the host more level starts and wants exactly one
+  per client.
+- The gate's failure (#309): player 3 saw `recover "Player 4 left. ..."`, then `recover "Player 2 left. ..."`, and
+  three level starts, the whole scenario in 1.2 s.
+- The bots' connection time-out is 5000 ms (`timeoutMs` 0, `src/port/coop/net/transport.h:51`); without a session id
+  a timed-out player also reads "left" (`Host_Left`: `away` needs `s->id != 0`).
+- With real bots and the real relay, client 1 stopped (SIGSTOP) for 1 s from the moment the host's log shows its level
+  start, then let go on: 3 of 3 runs failed with the gate's shape. The stopped client (player 3 twice, player 2 once,
+  by the order of joining) saw `recover "Player N left. ..."` twice, for the two others' `closed` leaves, and three
+  level starts; in 2 of the 3 the relay had dropped none of its datagrams. The report printed all of it.
+- The count, the whole `session` step again and again beside the gate's kind of load (`test_all.py --no-build --lanes 4
+  --only session-mutants,net-mutants,rates-rails,exit-test,replay-test,determinism,lowhealth-rails,rails-2` on the
+  Debug build: the session mutation suite in its own checkout and four game lanes, 16 games in one look at it), in
+  holds of the machine of at most 10 minutes: 2 holds of 29 runs each, 58 runs: 58 passed, 0 failed (every run 17/17
+  scenarios, 14 to 15 s a run, the same as with no load). The load ran through each hold: `session-mutants` to its
+  end in both ("all 438 breaks caught"), the game lanes and `net-mutants` until the hold stopped them.
+
+Derived:
+
+- In the gate's failure players 4 and 2 closed their sessions: a lost connection takes 5 s to be noticed, and the
+  scenario took 1.2 s. So player 3 was still in its loop at least one relay hop after both had finished. That is the
+  race of the test: whether a client sees the host's restart depends on how long it stays after the others leave, and
+  the check counts the restart against it. The stopped client shows that staying alone is enough for the gate's shape;
+  it does not show why player 3 stayed in the gate.
+
+Unknown:
+
+- Why player 3 stayed: a message of its own the relay dropped (a client stays while anything is unacknowledged), or its
+  process not being run for a while under the gate's load. The report now prints the relay's drops per player and
+  time and the end of each leave the host saw, so the next failure says which. 58 runs beside the load and 47 in #309
+  without it did not show it again: the rate under the gate's own load is `unknown`.
+
 ### 2026-11-13, #283, #284 and #121, leftovers of the tools: two test_all runs in one checkout, the pilot twice a frame, `slots` and old effects, Macbeth's lone tank
 
 Run on `issue/276-283-leftovers` (from `issue/combined-test-6` `d726f9dd`). Identity: ROM US 1.0, Linux, GCC, Debug,
