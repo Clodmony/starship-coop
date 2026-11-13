@@ -33,8 +33,9 @@ struct Actor;
 void CoopHits_MacbethBombFire(struct Actor* bomb);
 
 // The test of the blast of Macbeth's train car 7 (Macbeth_MaTrainCar7_Update, state 1, the one frame it blows up), for
-// the players after player 0 (#280): a box around the car, with no mercy timer, as for player 0. The red of the
-// screen stays player 0's: it is a fade every game of a session shows alike.
+// the players after player 0 (#280): a box around the car, with no mercy timer, as for player 0. It also tells the
+// view which players, player 0 included, are in the box: the red of the screen is for their clients
+// (CoopView_MacbethBlast, #303).
 void CoopHits_MacbethCarBlast(struct Actor* car);
 
 // The test of an explosion of Andross' escape (Andross_AndExplosion_Update), for the players after player 0 (#282, the

@@ -610,9 +610,15 @@ void Game_Update(void) {
         Wipe_Draw(WIPE_CIRCULAR, gCircleWipeFrame);
 
         if (!partialFill) {
+            // COOP: the colour this client draws the fill in; the game's own outside co-op (#303)
+            s32 coopFillRed = gFillScreenRed;
+            s32 coopFillGreen = gFillScreenGreen;
+            s32 coopFillBlue = gFillScreenBlue;
+
+            CoopView_FillColor(&coopFillRed, &coopFillGreen, &coopFillBlue); // COOP
             Graphics_FillRectangle(&gMasterDisp, OTRGetRectDimensionFromLeftEdge(0), 0,
-                                   OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH), SCREEN_HEIGHT, gFillScreenRed,
-                                   gFillScreenGreen, gFillScreenBlue, gFillScreenAlpha);
+                                   OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH), SCREEN_HEIGHT, coopFillRed,
+                                   coopFillGreen, coopFillBlue, gFillScreenAlpha); // COOP: was gFillScreenRed, ..
         }
         CoopView_DrawHitFlash(); // COOP: a hit shows on the client of the player hit (#30)
         Audio_dummy_80016A50();

@@ -258,12 +258,39 @@ void CoopView_DrawnFill(int32_t* rgba) {
     }
 }
 
-void CoopView_DrawHitFlash(void) {
-    // Game_Update has just drawn the fill with these.
-    sDrawnFill[0] = gFillScreenRed;
-    sDrawnFill[1] = gFillScreenGreen;
-    sDrawnFill[2] = gFillScreenBlue;
+// The flash of Macbeth's train car 7 (#303): view state, written by the simulation and by the draw, read by the draw
+// alone. Not in the state hash: it is the same on every game of a session, and nothing in the simulation reads it.
+static s32 sBlastOn;    // the fill is that flash
+static s32 sBlastMask;  // bit i: player i was in the blast
+static s32 sBlastAlpha; // the fill's alpha when it was last drawn
+
+void CoopView_MacbethBlast(int32_t inBlast) {
+    if (!CoopPlayers_IsCoop()) {
+        return;
+    }
+    sBlastOn = 1;
+    sBlastMask = inBlast;
+    sBlastAlpha = 255;
+}
+
+void CoopView_FillColor(int32_t* red, int32_t* green, int32_t* blue) {
+    s32 blastColor = (*red == 255) && (*green == *blue) && ((*green == 255) || (*green == 0));
+
+    if (sBlastOn &&
+        (!CoopPlayers_IsCoop() || (gFillScreenAlpha <= 0) || (gFillScreenAlpha > sBlastAlpha) || !blastColor)) {
+        sBlastOn = 0;
+    }
+    if (sBlastOn) {
+        sBlastAlpha = gFillScreenAlpha;
+        *green = *blue = ((sBlastMask >> CoopPlayers_ViewIndex()) & 1) ? 0 : 255;
+    }
+    sDrawnFill[0] = *red;
+    sDrawnFill[1] = *green;
+    sDrawnFill[2] = *blue;
     sDrawnFill[3] = gFillScreenAlpha;
+}
+
+void CoopView_DrawHitFlash(void) {
     Graphics_FillRectangle(&gMasterDisp, OTRGetRectDimensionFromLeftEdge(0), 0,
                            OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH), SCREEN_HEIGHT, 255, 0, 0,
                            CoopView_HitFlashAlpha());

@@ -52,6 +52,18 @@ void CoopView_ToDrawnCamera(const Vec3f* pos, float* sfxSrc);
 // client shares: Game_Update calls this after the screen fill.
 void CoopView_DrawHitFlash(void);
 
+// The flash of Macbeth's train car 7 (#303, the owner's answer of 2026-11-13: per client). Upstream the blast turns the
+// fill white, and red when player 0 is in it (Macbeth_MaTrainCar7_Update, state 1). The fill is one fade every game
+// of a session holds alike and stays as the game writes it; what differs is the colour a client draws it in: red on
+// the client whose own player (the one it looks through) is in the blast, white on the others, with the game's alpha.
+// MacbethBlast is called by the simulation on the blast's frame with a bit for each player in the blast; it writes
+// only what FillColor reads. FillColor is called by Game_Update with the fill's colour right before it draws the
+// fill, and changes it while that flash fades: until the fill's alpha is 0, its colour is no longer the blast's
+// white or red, or its alpha rises again (another flash). Nothing the simulation reads is written, and outside co-op
+// neither does anything.
+void CoopView_MacbethBlast(int32_t inBlast);
+void CoopView_FillColor(int32_t* red, int32_t* green, int32_t* blue);
+
 // A bar with the shields of every other player, over its Arwing, and above the bar its name (#257, #258, names.h). See
 // takes each player while gGfxMatrix holds the camera drawn, Draw comes after that matrix is popped, as
 // Display_ActorMarks does. A client marks every other player that flies in front of its camera, Fox included, never the
