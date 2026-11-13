@@ -78,6 +78,8 @@ float CoopView_DrawnRotY(const struct Object* obj, int32_t facade, int32_t* flip
 // Test only, for src/port/coop/test/view_trace.c. The alpha of the red of a hit on this client's screen, and the shield
 // bar drawn on player `index` this frame, as a fraction, negative for none.
 int32_t CoopView_HitFlashAlpha(void);
+// The full screen fill as this client drew it on this frame: red, green, blue, alpha (#303).
+void CoopView_DrawnFill(int32_t* rgba);
 float CoopView_ShieldBar(int32_t index);
 // Nonzero when player `index`'s name was drawn this frame; what it says is CoopNames_Label.
 int32_t CoopView_TagShown(int32_t index);

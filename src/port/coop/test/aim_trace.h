@@ -34,6 +34,17 @@
 //     the way to its target (Math_SmoothStepToAngle), so before and after give the target the game used, and the w
 //     fields say whose it was. start and the p fields are as in the syrobot line: the nearest to start is the one the
 //     robot's shot flies at.
+//   turret level=<...> frame=<...> slot=<gActors index> car=<iwork[5]> last=<0|1> boulder=<0|1> step=<before>,<after>
+//          hp=<health> wait=<timer_0BC> yaw=<before>,<after> pitch=<before>,<after> at=<x>,<y>,<z>
+//          w0=<yaw>,<pitch>,<in window> w1=... p0=<x>,<y>,<z>,<flies> p1=...
+//     after each frame in which the turret of a Macbeth train car runs (Macbeth_8019F164, #302). step is the step of
+//     its salvo (iwork[4]) before and after the car's update: it turns to a player, and asks whether to fire, in step
+//     0 only, and 0 to 1 is its first shot. last is 1 for the train's last car, which fires whatever the player's x
+//     is; boulder is 1 while it turns to a falling boulder and fires at that. yaw and pitch are the angles it turns
+//     to (fwork[4], fwork[3]) before and after the update, at is the car. w<n> is the yaw and pitch it would turn to
+//     for player n, computed here with the game's own sum from the car as it is after the frame, and 1 when player n
+//     is in the window the turret fires in (300 to 3000 beside the car, or any x for the last car, and 200 to 5000
+//     behind it). The p fields are as in the syrobot line.
 //
 // gGameFrameCount restarts with each level; in a session it is the same on every game, so the files of two games of
 // one session must be equal.

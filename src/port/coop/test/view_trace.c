@@ -68,7 +68,8 @@ static void CoopViewTrace_Poke(ViewPoke* poke) {
             Player_ApplyDamage(player, 0, (s32) poke->value);
             break;
         case VIEW_POKE_DOWN:
-            // What Player_Update wants before it calls Player_Down; gInvincible keeps the timer from being set by a hit.
+            // What Player_Update wants before it calls Player_Down; gInvincible keeps the timer from being set by a
+            // hit.
             player->shields = 0;
             player->radioDamageTimer = (s32) poke->value;
             break;
@@ -131,6 +132,7 @@ static void CoopViewTrace_WriteTags(void) {
 }
 
 static void CoopViewTrace_OnGamePostUpdate(IEvent* event) {
+    int32_t drawn[4];
     s32 bars = 0;
     s32 i;
 
@@ -146,6 +148,8 @@ static void CoopViewTrace_OnGamePostUpdate(IEvent* event) {
     fprintf(sFile, " shield=%.4f bombs=%d cockpit=%d fill=%d,%d,%d,%d flash=%d", D_801617AC, sHudBombCount,
             sDrawCockpit, gFillScreenRed, gFillScreenGreen, gFillScreenBlue, gFillScreenAlpha,
             CoopView_HitFlashAlpha());
+    CoopView_DrawnFill(drawn);
+    fprintf(sFile, " drawn=%d,%d,%d,%d", (int) drawn[0], (int) drawn[1], (int) drawn[2], (int) drawn[3]);
     fputs(" bars=", sFile);
     for (i = 0; i < CoopPlayers_Count(); i++) {
         if (CoopView_ShieldBar(i) >= 0.0f) {

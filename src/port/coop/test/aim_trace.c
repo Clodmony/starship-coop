@@ -23,6 +23,13 @@ static s32 sMissileTarget[ARRAY_COUNT(gActors)]; // the player each actor slot s
 static f32 sSyPoseBefore[ARRAY_COUNT(gActors)][COOP_AIM_TRACE_POSE]; // before the robot's update of this frame
 static s8 sSyPoseHave[ARRAY_COUNT(gActors)];
 
+// The turret of a Macbeth train car (#302): its target yaw and pitch (fwork[4], fwork[3]) and the step of its salvo
+// (iwork[4]) before the car's update of this frame.
+static f32 sTurretBefore[ARRAY_COUNT(gActors)][2];
+static s32 sTurretStep[ARRAY_COUNT(gActors)];
+static s8 sTurretHave[ARRAY_COUNT(gActors)];
+extern s16 D_i5_801BE310; // src/overlays/ovl_i5/fox_ma.c: the number (iwork[5]) of the train's last car
+
 static s32 CoopAimTrace_InLevel(void) {
     return (gGameState == GSTATE_PLAY) && (gPlayer != NULL) && CoopPlayers_IsCoop();
 }
@@ -222,10 +229,78 @@ static void CoopAimTrace_OnObjectInit(IEvent* event) {
     CoopAimTrace_PlasmaShot(effect);
 }
 
-// A Sector Y robot's pose before its update, for the sypose line.
+// Nonzero for a train car whose turret runs on this frame (Macbeth_MaTrainCar6_Update, state 0, iwork[1] != 0).
+static s32 CoopAimTrace_IsTurret(const Actor* actor) {
+    return (gCurrentLevel == LEVEL_MACBETH) && (actor->obj.status == OBJ_ACTIVE) &&
+           (actor->obj.id == OBJ_ACTOR_MA_TRAIN_CAR_6) && (actor->state == 0) && (actor->iwork[1] != 0);
+}
+
+// Nonzero when Macbeth_8019F164 turns the turret to a boulder on this frame, not to a player: its own test.
+static s32 CoopAimTrace_TurretBoulder(const Actor* car) {
+    s32 i;
+
+    for (i = 0; i < ARRAY_COUNT(gActors); i++) {
+        if ((gActors[i].obj.id == OBJ_ACTOR_MA_FALLING_BOULDER) && (gActors[i].obj.status == OBJ_ACTIVE)) {
+            return (car->obj.pos.z < (gActors[i].obj.pos.z + 3000.0f)) &&
+                   ((gActors[i].obj.pos.z - car->obj.pos.z) < 5000.0f);
+        }
+    }
+    return 0;
+}
+
+// The `turret` line of a Macbeth train car's turret (#302), as the header says.
+static void CoopAimTrace_Turret(s32 slot) {
+    const Actor* car = &gActors[slot];
+    s32 last = D_i5_801BE310 == car->iwork[5];
+    s32 n;
+
+    fprintf(sTraceFile, "turret level=%d frame=%d slot=%d car=%d last=%d boulder=%d step=%d,%d hp=%d wait=%d",
+            (int) gCurrentLevel, (int) gGameFrameCount, (int) slot, (int) car->iwork[5], (int) last,
+            (int) CoopAimTrace_TurretBoulder(car), (int) sTurretStep[slot], (int) car->iwork[4], (int) car->health,
+            (int) car->timer_0BC);
+    fprintf(sTraceFile, " yaw=%.4f,%.4f pitch=%.4f,%.4f at=%.1f,%.1f,%.1f", sTurretBefore[slot][0], car->fwork[4],
+            sTurretBefore[slot][1], car->fwork[3], car->obj.pos.x, car->obj.pos.y, car->obj.pos.z);
+    for (n = 0; n < CoopPlayers_Count(); n++) {
+        const Player* p = &gPlayer[n];
+        f32 dx = p->pos.x - car->obj.pos.x;
+        f32 dz = p->trueZpos - car->obj.pos.z;
+        Matrix mtx;
+        Vec3f src;
+        Vec3f dest;
+        f32 yaw;
+        f32 pitch;
+
+        // Macbeth_8019F164's own sum, from the car as it is after the frame.
+        src.x = p->pos.x - car->obj.pos.x + car->fwork[25];
+        src.y = p->pos.y - 25.0f - car->obj.pos.y + car->fwork[8] + 25.0f;
+        src.z = p->trueZpos - 500.0f - car->obj.pos.z;
+        Matrix_RotateZ(&mtx, -car->obj.rot.z * M_DTOR, MTXF_NEW);
+        Matrix_RotateX(&mtx, -(car->obj.rot.x + car->fwork[29]) * M_DTOR, MTXF_APPLY);
+        Matrix_RotateY(&mtx, -(car->obj.rot.y + car->fwork[26]) * M_DTOR, MTXF_APPLY);
+        Matrix_MultVec3f(&mtx, &src, &dest);
+        dest.y -= 610.0f;
+        yaw = Math_RadToDeg(Math_Atan2F(dest.x, dest.z));
+        pitch = Math_RadToDeg(-Math_Atan2F(dest.y, sqrtf(SQ(dest.x) + SQ(dest.z))));
+        // w: where the turret would turn to for this player; then 1 when the player is in the turret's window.
+        fprintf(sTraceFile, " w%d=%.3f,%.3f,%d", (int) n, yaw, pitch,
+                (int) ((last || ((dx > 300.0f) && (dx < 3000.0f)) || ((dx < -300.0f) && (dx > -3000.0f))) &&
+                       (dz < 5000.0f) && (dz > 200.0f)));
+    }
+    CoopAimTrace_Players();
+}
+
+// A Sector Y robot's pose and a Macbeth turret's angles before their update, for the sypose and turret lines.
 static void CoopAimTrace_OnObjectUpdate(ObjectUpdateEvent* event) {
     const Actor* actor = (const Actor*) event->object;
 
+    if ((event->type == OBJECT_TYPE_ACTOR) && (actor != NULL) && CoopAimTrace_InLevel() &&
+        CoopAimTrace_IsTurret(actor)) {
+        sTurretBefore[actor - gActors][0] = actor->fwork[4];
+        sTurretBefore[actor - gActors][1] = actor->fwork[3];
+        sTurretStep[actor - gActors] = actor->iwork[4];
+        sTurretHave[actor - gActors] = 1;
+        return;
+    }
     if ((event->type != OBJECT_TYPE_ACTOR) || (actor == NULL) || !CoopAimTrace_InLevel() ||
         (gCurrentLevel != LEVEL_SECTOR_Y) || !CoopAimTrace_IsSyRobot(actor)) {
         return;
@@ -256,6 +331,7 @@ static void CoopAimTrace_OnGamePostUpdate(IEvent* event) {
         for (i = 0; i < ARRAY_COUNT(gActors); i++) {
             sMissileTarget[i] = -1;
             sSyPoseHave[i] = 0;
+            sTurretHave[i] = 0;
         }
         return;
     }
@@ -269,6 +345,11 @@ static void CoopAimTrace_OnGamePostUpdate(IEvent* event) {
             CoopAimTrace_SyRobotPose(i);
         }
         sSyPoseHave[i] = 0;
+        // The car's update may have ended its state 0 (the turret is shot off); then its turret did not run.
+        if (sTurretHave[i] && CoopAimTrace_IsTurret(actor)) {
+            CoopAimTrace_Turret(i);
+        }
+        sTurretHave[i] = 0;
 
         if ((actor->obj.status == OBJ_ACTIVE) &&
             ((actor->obj.id == OBJ_ACTOR_MISSILE_SEEK_TEAM) || (actor->obj.id == OBJ_ACTOR_MISSILE_SEEK_PLAYER))) {

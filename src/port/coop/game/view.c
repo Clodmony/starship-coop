@@ -247,7 +247,23 @@ int32_t CoopView_HitFlashAlpha(void) {
                : 0;
 }
 
+// The full screen fill as Game_Update drew it on this client, for the view trace: red, green, blue, alpha.
+static s32 sDrawnFill[4];
+
+void CoopView_DrawnFill(int32_t* rgba) {
+    s32 i;
+
+    for (i = 0; i < 4; i++) {
+        rgba[i] = sDrawnFill[i];
+    }
+}
+
 void CoopView_DrawHitFlash(void) {
+    // Game_Update has just drawn the fill with these.
+    sDrawnFill[0] = gFillScreenRed;
+    sDrawnFill[1] = gFillScreenGreen;
+    sDrawnFill[2] = gFillScreenBlue;
+    sDrawnFill[3] = gFillScreenAlpha;
     Graphics_FillRectangle(&gMasterDisp, OTRGetRectDimensionFromLeftEdge(0), 0,
                            OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH), SCREEN_HEIGHT, 255, 0, 0,
                            CoopView_HitFlashAlpha());

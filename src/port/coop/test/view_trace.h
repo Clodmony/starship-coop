@@ -10,6 +10,8 @@
 //   shield=<fraction> bombs=<n>         what the HUD holds for its shield gauge and bomb counter
 //   cockpit=<0|1>                       the cockpit glass is drawn
 //   fill=<r>,<g>,<b>,<a> flash=<a>      the full screen fill, and the red of a hit on this client's own player
+//   drawn=<r>,<g>,<b>,<a>               the full screen fill as this client drew it on this frame (#303): fill is
+//                                       what the game holds after the frame, the same on every client
 //   bars=<player>:<fraction>,...        shield bars drawn on other players, - for none
 //   tags=<player>:<name>,...            the name drawn over other players (#257, #258), - for none; a space in a name
 //   is
