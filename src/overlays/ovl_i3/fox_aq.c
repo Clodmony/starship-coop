@@ -4251,7 +4251,10 @@ void Aquas_AqAnglerFish_Update(AqAnglerFish* this) {
     this->fwork[6] = (this->obj.pos.y * 0.003f) + 0.8f;
     this->fwork[7] = (this->obj.pos.y * 0.001f) + 0.8f;
 
-    this->iwork[12] = (this->obj.pos.y * -0.24f) + 150.0f;
+    // COOP: (s32) added. iwork is unsigned in the port (s32 on the N64), and a negative float to an unsigned integer
+    // is what the processor makes of it: x86-64 wraps it, ARM gives 0, and the value is in the state hash. Through
+    // s32 every platform wraps it as x86-64 did, so nothing changes there (#276).
+    this->iwork[12] = (s32) ((this->obj.pos.y * -0.24f) + 150.0f);
     if (this->iwork[12] < 30.0f) {
         this->iwork[12] = 30;
     }
