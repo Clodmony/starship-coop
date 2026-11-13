@@ -448,25 +448,29 @@ void Corneria_CoGranga_Attack(CoGranga* this) {
 
         case GRANGA_ATTACK_PLASMA:
             if (this->swork[GRANGA_GUN_DMG_IND] != DMG_DESTROYED) {
-                // COOP: the spread is on the player Effect_EnemyLaser aims at, the nearest human (#193); was gPlayer[0]
-                // here and below (#220)
+                // COOP: the spread is around the human Effect_EnemyLaser aims at, the nearest (#193, #220): player 0
+                // goes to the spread point and the other humans that may be aimed at go there too
+                // (CoopAim_PointShot), so the shot flies at the point even where the point is nearer to another
+                // human. Outside co-op the nearest is player 0 and every line does what upstream does (#281)
                 Player* aimed = &gPlayer[CoopAim_Nearest(sCoGrangaWork[GRANGA_WORK_12], sCoGrangaWork[GRANGA_WORK_13],
                                                          sCoGrangaWork[GRANGA_WORK_14])];
 
-                savedPlayerPos.x = aimed->pos.x;
-                savedPlayerPos.y = aimed->pos.y;
-                savedPlayerPos.z = aimed->trueZpos;
+                savedPlayerPos.x = gPlayer[0].pos.x;
+                savedPlayerPos.y = gPlayer[0].pos.y;
+                savedPlayerPos.z = gPlayer[0].trueZpos;
 
-                aimed->pos.x += RAND_FLOAT_CENTERED(300.0f);
-                aimed->pos.y += RAND_FLOAT_CENTERED(300.0f);
-                aimed->trueZpos += RAND_FLOAT_CENTERED(300.0f);
+                gPlayer[0].pos.x = aimed->pos.x + RAND_FLOAT_CENTERED(300.0f);       // COOP: was gPlayer[0] +=
+                gPlayer[0].pos.y = aimed->pos.y + RAND_FLOAT_CENTERED(300.0f);       // COOP: was gPlayer[0] +=
+                gPlayer[0].trueZpos = aimed->trueZpos + RAND_FLOAT_CENTERED(300.0f); // COOP: was gPlayer[0] +=
+                CoopAim_PointShot(gPlayer[0].pos.x, gPlayer[0].pos.y, gPlayer[0].trueZpos); // COOP: (#281)
 
                 Effect_EnemyLaser(OBJ_EFFECT_376, sCoGrangaWork[GRANGA_WORK_12], sCoGrangaWork[GRANGA_WORK_13],
                                   sCoGrangaWork[GRANGA_WORK_14], 60.0f);
+                CoopAim_PointShotEnd(); // COOP: (#281)
 
-                aimed->pos.x = savedPlayerPos.x;
-                aimed->pos.y = savedPlayerPos.y;
-                aimed->trueZpos = savedPlayerPos.z;
+                gPlayer[0].pos.x = savedPlayerPos.x;
+                gPlayer[0].pos.y = savedPlayerPos.y;
+                gPlayer[0].trueZpos = savedPlayerPos.z;
             }
             this->swork[GRANGA_ATTACK_STATE] = GRANGA_ATTACK_IDLE;
             break;
