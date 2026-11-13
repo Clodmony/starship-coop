@@ -23,10 +23,19 @@ void Macbeth_MaBombDrop_Setup(MaBombDrop* this, f32 xPos, f32 yPos, f32 zPos, f3
 // The damage the probe gives its hazard: no other object of the level deals it, so dmgType names the hazard.
 #define MABOMB_MARK_BOMB 33
 #define MABOMB_MARK_BEAM 23
+#define MABOMB_MARK_SHOT 27
+#define MABOMB_MARK_BLAST 60 // the blast's own damage, a constant in Macbeth_MaTrainCar7_Update; nothing else deals it
+
+#define MABOMB_SHOT_UP 20.0f      // a shot this far over the tank's place is in its box (30) and over the ground
+#define MABOMB_BLAST_SIDE 700.0f  // the car's x from the target: inside the blast's 800
+#define MABOMB_BLAST_CLEAR 850.0f // and at least this far from every other tank
+#define MABOMB_NO_CAR 100         // a car number (iwork[5]) past the train's, so the blast cuts no car off
 
 typedef enum MaBombKind {
     MABOMB_KIND_BOMB,
     MABOMB_KIND_BEAM,
+    MABOMB_KIND_SHOT,
+    MABOMB_KIND_BLAST,
 } MaBombKind;
 
 typedef struct MaBombCase {
@@ -34,12 +43,16 @@ typedef struct MaBombCase {
     MaBombKind kind;
     s32 window; // frames from the hazard's first update in which the target has to be hit
     s32 mark;
+    s32 roll; // the target is in a barrel roll (barrelRollAlpha) while the hazard updates
 } MaBombCase;
 
 // Keep the names in step with W8_MABOMB_CASES in tools/coop/lockstep_test.py.
 static const MaBombCase sMaBombCases[] = {
-    { "bomb", MABOMB_KIND_BOMB, 30, MABOMB_MARK_BOMB }, // the fire burns about 38 frames
-    { "beam", MABOMB_KIND_BEAM, 4, MABOMB_MARK_BEAM },
+    { "bomb", MABOMB_KIND_BOMB, 30, MABOMB_MARK_BOMB, 0 }, // the fire burns about 38 frames
+    { "beam", MABOMB_KIND_BEAM, 4, MABOMB_MARK_BEAM, 0 },
+    { "shot", MABOMB_KIND_SHOT, 4, MABOMB_MARK_SHOT, 0 },
+    { "roll", MABOMB_KIND_SHOT, 4, MABOMB_MARK_SHOT, 1 },
+    { "blast", MABOMB_KIND_BLAST, 1, MABOMB_MARK_BLAST, 0 }, // the car tests once, on the frame it blows up
 };
 
 typedef enum MaBombStage {
@@ -57,10 +70,12 @@ static s32 sMaBombTarget = 0;
 static s32 sMaBombCount = 0;
 static s32 sMaBombNext = 0;
 static s32 sMaBombLastFrame = -1;
-static Actor* sMaBombBomb = NULL;
-static Effect* sMaBombBeam = NULL;
-static s32 sMaBombUpdated = 0; // the hazard had an update on this frame
-static s32 sMaBombFrames = 0;  // updates of the hazard so far
+static Actor* sMaBombBomb = NULL;  // the actor of a bomb or blast case
+static Effect* sMaBombBeam = NULL; // the effect of a beam, shot or roll case
+static s32 sMaBombDeflected = 0;   // the shot of a shot or roll case got a velocity: a deflect
+static f32 sMaBombSide = 0.0f;     // a blast's car is this far across the track from its target
+static s32 sMaBombUpdated = 0;     // the hazard had an update on this frame
+static s32 sMaBombFrames = 0;      // updates of the hazard so far
 static s32 sMaBombHit = 0;
 static s32 sMaBombFirst[COOP_PLAYERS_MAX];
 static f32 sMaBombGap = 0.0f;
@@ -90,8 +105,9 @@ static s32 CoopMaBombProbe_Step(s32 i, Vec3f* step) {
 }
 
 // Nonzero when the target is far enough across the track from every other tank, in front of player 0's camera (an
-// effect behind it is culled, Effect_Move) and driving.
-static s32 CoopMaBombProbe_CanPlace(s32 target) {
+// effect behind it is culled, Effect_Move) and driving. For a blast, whose box is 800 wide, also when the car can stand
+// beside the target with every other tank out of the blast.
+static s32 CoopMaBombProbe_CanPlace(MaBombKind kind, s32 target) {
     const Player* t = &gPlayer[target];
     Vec3f step;
     s32 i;
@@ -111,6 +127,15 @@ static s32 CoopMaBombProbe_CanPlace(s32 target) {
         }
         if (gap < sMaBombGap) {
             sMaBombGap = gap;
+            // A blast's car goes to the side of the target that is away from the nearest other tank.
+            sMaBombSide = (gPlayer[i].pos.x < t->pos.x) ? MABOMB_BLAST_SIDE : -MABOMB_BLAST_SIDE;
+        }
+    }
+    if (kind == MABOMB_KIND_BLAST) {
+        for (i = 0; i < CoopPlayers_Count(); i++) {
+            if ((i != target) && (fabsf(gPlayer[i].pos.x - (t->pos.x + sMaBombSide)) < MABOMB_BLAST_CLEAR)) {
+                return 0;
+            }
         }
     }
     return 1;
@@ -131,7 +156,7 @@ static void CoopMaBombProbe_ClearHits(void) {
 static s32 CoopMaBombProbe_FreeSlot(MaBombKind kind) {
     s32 i;
 
-    if (kind == MABOMB_KIND_BOMB) {
+    if ((kind == MABOMB_KIND_BOMB) || (kind == MABOMB_KIND_BLAST)) {
         for (i = ARRAY_COUNT(gActors) - 1; (i >= 0) && (gActors[i].obj.status != OBJ_FREE); i--) {}
     } else {
         for (i = ARRAY_COUNT(gEffects) - 1; (i >= 0) && (gEffects[i].obj.status != OBJ_FREE); i--) {}
@@ -154,6 +179,7 @@ static s32 CoopMaBombProbe_Place(const MaBombCase* c, s32 target) {
     sMaBombHit = 0;
     sMaBombFrames = 0;
     sMaBombUpdated = 0;
+    sMaBombDeflected = 0;
     for (i = 0; i < COOP_PLAYERS_MAX; i++) {
         sMaBombFirst[i] = -1;
     }
@@ -164,17 +190,31 @@ static s32 CoopMaBombProbe_Place(const MaBombCase* c, s32 target) {
         Macbeth_MaBombDrop_Setup(sMaBombBomb, t->pos.x + (MABOMB_LEAD * step.x), t->pos.y + MABOMB_FALL_Y,
                                  t->trueZpos + (MABOMB_LEAD * step.z) - MABOMB_FALL_Z, MABOMB_EXPLODE, -10.0f, 5.0f);
         sMaBombBomb->info.damage = c->mark;
+    } else if (c->kind == MABOMB_KIND_BLAST) {
+        // A car in the state it blows up in (state 1; its load is gone by then, iwork[13] 2), beside the target's next
+        // place: actors update after the players. Not set up as a car of the train (Macbeth_Train_Init counts those).
+        sMaBombBomb = &gActors[slot];
+        Actor_Initialize(sMaBombBomb);
+        sMaBombBomb->obj.status = OBJ_ACTIVE;
+        sMaBombBomb->obj.id = OBJ_ACTOR_MA_TRAIN_CAR_7;
+        Object_SetInfo(&sMaBombBomb->info, sMaBombBomb->obj.id);
+        sMaBombBomb->obj.pos.x = t->pos.x + step.x + sMaBombSide;
+        sMaBombBomb->obj.pos.y = t->pos.y + step.y;
+        sMaBombBomb->obj.pos.z = t->trueZpos + step.z;
+        sMaBombBomb->state = 1;
+        sMaBombBomb->iwork[5] = MABOMB_NO_CAR;
+        sMaBombBomb->iwork[13] = 2;
     } else {
         // At rest on the target's next place: players move before effects.
         sMaBombBeam = &gEffects[slot];
         Effect_Initialize(sMaBombBeam);
         sMaBombBeam->obj.status = OBJ_ACTIVE;
-        sMaBombBeam->obj.id = OBJ_EFFECT_380;
+        sMaBombBeam->obj.id = (c->kind == MABOMB_KIND_BEAM) ? OBJ_EFFECT_380 : OBJ_EFFECT_378;
         Object_SetInfo(&sMaBombBeam->info, sMaBombBeam->obj.id);
         sMaBombBeam->obj.pos.x = t->pos.x + step.x;
-        sMaBombBeam->obj.pos.y = t->pos.y + step.y;
+        sMaBombBeam->obj.pos.y = t->pos.y + step.y + ((c->kind == MABOMB_KIND_SHOT) ? MABOMB_SHOT_UP : 0.0f);
         sMaBombBeam->obj.pos.z = t->trueZpos + step.z;
-        sMaBombBeam->scale2 = 5.0f; // the left gun's, Macbeth_Actor207_Update state 16
+        sMaBombBeam->scale2 = (c->kind == MABOMB_KIND_BEAM) ? 5.0f : 1.0f; // the left gun's, state 16; a turret's
         sMaBombBeam->info.damage = c->mark;
     }
     return 0;
@@ -186,16 +226,29 @@ static s32 CoopMaBombProbe_HazardAlive(const MaBombCase* c) {
         return (sMaBombBomb != NULL) && (sMaBombBomb->obj.status != OBJ_FREE) &&
                (sMaBombBomb->obj.id == OBJ_ACTOR_MA_BOMBDROP);
     }
-    return (sMaBombBeam != NULL) && (sMaBombBeam->obj.status != OBJ_FREE) && (sMaBombBeam->obj.id == OBJ_EFFECT_380);
+    if (c->kind == MABOMB_KIND_BLAST) {
+        return (sMaBombBomb != NULL) && (sMaBombBomb->obj.status != OBJ_FREE) &&
+               (sMaBombBomb->obj.id == OBJ_ACTOR_MA_TRAIN_CAR_7);
+    }
+    return (sMaBombBeam != NULL) && (sMaBombBeam->obj.status != OBJ_FREE) &&
+           (sMaBombBeam->obj.id == ((c->kind == MABOMB_KIND_BEAM) ? OBJ_EFFECT_380 : OBJ_EFFECT_378));
 }
 
 static void CoopMaBombProbe_TakeOut(const MaBombCase* c) {
     if (CoopMaBombProbe_HazardAlive(c)) {
-        if (c->kind == MABOMB_KIND_BOMB) {
+        if ((c->kind == MABOMB_KIND_BOMB) || (c->kind == MABOMB_KIND_BLAST)) {
             Object_Kill(&sMaBombBomb->obj, sMaBombBomb->sfxSource);
         } else {
             Object_Kill(&sMaBombBeam->obj, sMaBombBeam->sfxSource);
         }
+    }
+    if (c->kind == MABOMB_KIND_BLAST) {
+        // The car's later states fade its flash and shake; the probe's car does not reach them.
+        gFillScreenAlpha = 0;
+        gCameraShake = 0;
+    }
+    if (c->roll) {
+        gPlayer[sMaBombTarget].barrelRollAlpha = 0;
     }
     sMaBombBomb = NULL;
     sMaBombBeam = NULL;
@@ -216,8 +269,12 @@ static void CoopMaBombProbe_OnObjectUpdate(ObjectUpdateEvent* event) {
     }
     if (c->kind == MABOMB_KIND_BOMB) {
         sMaBombBomb->info.damage = c->mark;
-    } else {
+    } else if (c->kind != MABOMB_KIND_BLAST) {
         sMaBombBeam->info.damage = c->mark;
+    }
+    if (c->roll) {
+        // A tank never has it (only Player_UpdateArwingRoll raises it): forced, to reach the shot's deflect.
+        gPlayer[sMaBombTarget].barrelRollAlpha = 180;
     }
     sMaBombUpdated = 1;
 }
@@ -230,7 +287,7 @@ static void CoopMaBombProbe_Report(const MaBombCase* c, s32 lost) {
     for (i = 0; i < CoopPlayers_Count(); i++) {
         fprintf(sMaBombFile, "%s%d", (i != 0) ? "," : "", (int) sMaBombFirst[i]);
     }
-    fprintf(sMaBombFile, " lost=%d dx=%.0f\n", (int) lost, sMaBombGap);
+    fprintf(sMaBombFile, " lost=%d dx=%.0f defl=%d\n", (int) lost, sMaBombGap, (int) sMaBombDeflected);
     fflush(sMaBombFile); // tests may kill the game on a timeout
 }
 
@@ -270,7 +327,12 @@ static void CoopMaBombProbe_Watch(const MaBombCase* c) {
         sMaBombUpdated = 0;
     }
     alive = CoopMaBombProbe_HazardAlive(c);
-    if (!(sMaBombHit & (1 << sMaBombTarget)) && (sMaBombFrames < c->window) && alive) {
+    // The probe's shot is placed at rest, and nothing but a deflect gives it a velocity.
+    if (alive && (c->kind == MABOMB_KIND_SHOT) &&
+        ((sMaBombBeam->vel.x != 0.0f) || (sMaBombBeam->vel.y != 0.0f) || (sMaBombBeam->vel.z != 0.0f))) {
+        sMaBombDeflected = 1;
+    }
+    if (!(sMaBombHit & (1 << sMaBombTarget)) && !sMaBombDeflected && (sMaBombFrames < c->window) && alive) {
         return;
     }
     lost = !alive && !(sMaBombHit & (1 << sMaBombTarget)) && (sMaBombFrames < c->window);
@@ -318,7 +380,7 @@ static void CoopMaBombProbe_OnGamePostUpdate(IEvent* event) {
 
         case MABOMB_STAGE_WAIT_NEXT:
             if (((s32) gGameFrameCount >= sMaBombNext) && CoopMaBombProbe_EveryTankDrives() &&
-                CoopMaBombProbe_CanPlace(sMaBombTarget) && !CoopMaBombProbe_Place(c, sMaBombTarget)) {
+                CoopMaBombProbe_CanPlace(c->kind, sMaBombTarget) && !CoopMaBombProbe_Place(c, sMaBombTarget)) {
                 sMaBombStage = MABOMB_STAGE_RUNNING;
             }
             break;
