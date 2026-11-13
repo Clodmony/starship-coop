@@ -37,9 +37,11 @@ views plays one replay twice per section, with SF64_COOP_TEST_LOCAL_INDEX 0 and 
   simulation state. --level flies other Arwing levels instead (VIEW_LEVELS, or all) and --cvar NAME=VALUE sets a CVar (#129).
   --pilot flies each level to its end first, boss included, with a pilot that reads game state, and the two clients play
   what it flew (PILOT_LEVELS, #181).
-slots plays a level with 1 player and with --players and compares how many effect slots are in use (the median over
-  the samples after the start): co-op frees nothing for leaving the view, so a kind of effect that only that frees
-  stays for the whole level (#129). Fails when co-op holds more than SLOTS_LEAK more.
+slots plays a level with 1 player and with --players and compares how many effect slots are in use: co-op frees
+  nothing for leaving the view, so a kind of effect that only that frees would pile up (#129). Fails when what co-op
+  holds more than single player at its quietest (the floor of each third of the samples) grows by more than SLOTS_LEAK
+  from the first third to the last (#284): a leak never gives its slots back, a burst or a set that ends by itself
+  does. --rule-test checks that rule on made-up samples, with no game.
 builds plays one replay on two runs of a Release build and one of a Debug build of the same commit (point 3 of decision
   0002): the two Release runs must be equal on every frame, and so must Debug against Release. Input by rule, as for
   views. Give each build as its own --debug and --release: a build folder holds one build type.
@@ -590,17 +592,71 @@ def view_compare(label, replay, frames, config, start, exe, args, level=None):
     return failures
 
 
-# `slots`: how many effect slots a level holds in co-op more than in single player (#129). A median over the samples after
-# the start, so a burst of explosions does not count, and a leak that holds slots for the whole level does.
+# `slots`: whether a level piles up effect slots in co-op that single player does not (#129, #284). The samples from
+# SLOTS_FROM on, in thirds; in each third the floor of each run (the fewest slots in use: what the level holds even at
+# its quietest), and co-op's floor less single player's. A leak never gives its slots back, so that difference grows
+# from the first third to the last. A burst does not reach the floor, and a set that ends by itself, or that has not
+# begun on one sample of the third, leaves it where it was: Fortuna's burning base (FoBase_BurnEffects) holds 47 to 68
+# slots from frame 6900 and is gone before 10000. The rule before #284, a median over the limit, failed Fortuna at
+# --frames 9000 by one slot on that set; a low quantile in place of the fewest would fail it at --frames 10000, where
+# the set fills all but a few samples of the last third.
 SLOTS_FROM = 300
-SLOTS_LEAK = 15
+SLOTS_LEAK = 15  # the most co-op's extra floor may grow from the first third to the last
 
 
-def median_used(rows, name):
-    import statistics
+def slots_growth(single, coop, name="effects"):
+    """For two runs' "# slots" rows: ([co-op's floor less single player's, per third], growth from the first third to
+    the last), on the frames from SLOTS_FROM that both sampled; None when there are fewer than 6 of them."""
+    one = {frame: counts[name][0] for frame, counts in single if frame >= SLOTS_FROM}
+    more = {frame: counts[name][0] for frame, counts in coop if frame >= SLOTS_FROM}
+    frames = sorted(set(one) & set(more))
+    if len(frames) < 6:
+        return None
+    n = len(frames)
+    thirds = (frames[:n // 3], frames[n // 3:2 * n // 3], frames[2 * n // 3:])
+    extra = [min(more[f] for f in third) - min(one[f] for f in third) for third in thirds]
+    return extra, extra[2] - extra[0]
 
-    used = [counts[name][0] for frame, counts in rows if frame >= SLOTS_FROM]
-    return statistics.median(used) if used else None
+
+def slots_problem(name, players, single, coop):
+    """The failure of `slots` for one level, or None; prints what it compared."""
+    growth = slots_growth(single, coop)
+    if growth is None:
+        return f"{name}: too few samples to compare"
+    extra, grew = growth
+    print(f"hash: {name}: {players} players hold {', '.join(map(str, extra))} effect slots more than 1 at the floor of "
+          f"each third, grown by {grew} (at most {SLOTS_LEAK})")
+    if grew > SLOTS_LEAK:
+        return (f"{name}: what {players} players hold more than 1 at its quietest grew by {grew} effect slots from the "
+                f"first third of the level to the last ({extra[0]} to {extra[2]}, at most {SLOTS_LEAK} more): something "
+                f"is not freed")
+    return None
+
+
+def slots_rule_test():
+    """`slots --rule-test`: the rule on made-up samples every 100 frames to 9000, as a run of `slots` takes them (#284).
+    Returns a list of failures."""
+    def rows(used, end=9000):
+        return [(frame, {"effects": (used(frame), 100)}) for frame in range(0, end + 1, 100)]
+
+    quiet = rows(lambda f: 5 + (40 if f % 1000 == 0 else 0))  # single player, with a burst now and then
+    burn = rows(lambda f: 5 + 55 * (6900 <= f < 9800) + 80 * (9800 <= f < 10000), 10000)  # Fortuna's, #246
+    cases = [
+        ("a set from frame 6900 to the end, as Fortuna's burn at --frames 9000", rows(lambda f: 5 + 55 * (f >= 6900)), True),
+        ("a set over all but 3 samples of the last third, as Fortuna's burn at --frames 10000", burn, True),
+        ("a burst to 100 slots for one sample", rows(lambda f: 100 if f == 8100 else 7), True),
+        ("as many as single player, plus 20 all along", rows(lambda f: 25 + (40 if f % 1000 == 0 else 0)), True),
+        ("a leak of a slot every 300 frames", rows(lambda f: 5 + f // 300), False),
+        ("a leak of a slot every 100 frames, full from frame 9500 on", rows(lambda f: min(100, 5 + f // 100)), False),
+        ("a leak that fills the array by frame 3000", rows(lambda f: min(100, 5 + f // 30)), False),
+    ]
+    failures = []
+    for label, coop, passes in cases:
+        single = quiet if coop[-1][0] == quiet[-1][0] else rows(lambda f: 5, coop[-1][0])
+        problem = slots_problem("rule-test", 2, single, coop)
+        if (problem is None) != passes:
+            failures.append(f"{label}: {'failed' if problem else 'passed'}, want {'pass' if passes else 'fail'}")
+    return failures
 
 
 def slots_level(name, exe, args):
@@ -624,17 +680,21 @@ def slots_level(name, exe, args):
             continue
         slots = read_slots(values["log"])
         print(f"hash: {name}: {n} player(s) slots in use: {describe_slots(slots)}")
-        series.append(median_used(slots, "effects"))
+        series.append(slots)
     if len(series) == 2:
-        single, coop = series
-        print(f"hash: {name}: median effects in use {single} with 1 player, {coop} with {args.players}")
-        if coop - single > SLOTS_LEAK:
-            failures.append(f"{name}: {args.players} players hold {coop - single} more effect slots than 1 (median "
-                            f"{coop} against {single}, at most {SLOTS_LEAK} more): something is not freed")
+        problem = slots_problem(name, args.players, *series)
+        if problem:
+            failures.append(problem)
     return failures
 
 
 def cmd_slots(args):
+    if args.rule_test:
+        failures = slots_rule_test()
+        for f in failures:
+            print(f"FAIL: {f}")
+        print("hash: FAIL" if failures else "hash: PASS")
+        return 1 if failures else 0
     exe = replay_tool.find_exe(args.exe)
     names = list(VIEW_LEVELS) if args.level == "all" else args.level.split(",")
     unknown = [name for name in names if name not in VIEW_LEVELS]
@@ -1173,6 +1233,7 @@ def main():
                    help=f"levels, or all: {', '.join(VIEW_LEVELS)} (default katina,fortuna,corneria)")
     c.add_argument("--players", type=int, default=2, help="players, through gCoopDebugPlayerCount (default 2)")
     c.add_argument("--frames", type=int, help=f"replay length (default {VIEW_LEVEL_FRAMES} past when player 0 flies)")
+    c.add_argument("--rule-test", action="store_true", help="check the rule on made-up samples, with no game (#284)")
     c.add_argument("--exe", help="Starship executable (default: newest build found)")
     c.add_argument("--timeout", type=float, default=1800, help="per run: give up after this many seconds")
     u = sub.add_parser("builds", help="play one replay on two Release runs and a Debug run and compare the hashes")

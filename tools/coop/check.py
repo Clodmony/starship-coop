@@ -113,6 +113,12 @@ def main():
         failures.append("tools/coop/coop_log_test.py failed:\n  "
                         + "\n  ".join((logs.stdout + logs.stderr).strip().splitlines()))
 
+    # 8c. hash_check.py slots: its rule tells a leak from a burst or a set that ends by itself (#284, no game).
+    slots = run_tool("hash_check.py", "slots", "--rule-test")
+    if slots.returncode != 0:
+        failures.append("tools/coop/hash_check.py slots --rule-test failed:\n  "
+                        + "\n  ".join((slots.stdout + slots.stderr).strip().splitlines()))
+
     # 9. Build folders: libultraship's archives belong to one build folder, or a second config shares them.
     cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
     if "add_subdirectory(libultraship ${CMAKE_CURRENT_BINARY_DIR}/libultraship)" not in cmake:
