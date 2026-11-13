@@ -28,6 +28,8 @@
 //
 //   blast<i>  an explosion (OBJ_ACTOR_AND_EXPLOSION, Andross_AndExplosion_Update) in reach of player i
 //   exit<i>   the exit's trigger (OBJ_ACTOR_AND_JAMES_TRIGGER, Andross_AndJamesTrigger_Update) in reach of player i
+//   miss<i>   an explosion 550 from player i, just outside its reach, and at least 510 from every other player: the
+//             control for blast<i>, nobody is in reach (#282, the hit rule)
 //
 // for 60 of its updates; then it is taken out. Each frame of a case:
 //

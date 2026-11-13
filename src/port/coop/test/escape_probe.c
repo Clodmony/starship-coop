@@ -18,6 +18,7 @@
 #define ESCAPE_WINDOW 60      // updates of the case's object
 #define ESCAPE_REACH 500.0f   // both objects act under this in x and in z (Andross_AndExplosion_Update, _Trigger_)
 #define ESCAPE_PIN 450.0f     // the target's distance from the object, on one axis
+#define ESCAPE_MISS 550.0f    // the same for a miss case: the target just outside the object's reach
 #define ESCAPE_KEEP 510.0f    // every other player at least this far from the object, in the objects' own measure
 #define ESCAPE_AWAY 3000.0f   // where the object waits while no place keeps the others out
 #define ESCAPE_CASES_MAX 8
@@ -26,6 +27,7 @@
 typedef enum EscapeKind {
     ESCAPE_KIND_BLAST,
     ESCAPE_KIND_EXIT,
+    ESCAPE_KIND_MISS, // an explosion, as ESCAPE_KIND_BLAST, placed ESCAPE_MISS from its target
 } EscapeKind;
 
 typedef struct EscapeCase {
@@ -105,13 +107,12 @@ static bool CoopEscapeProbe_ObjectAlive(void) {
     EscapeKind kind = sEscCases[sEscCase].kind;
 
     return (sEscObject != NULL) && (sEscObject->obj.status != OBJ_FREE) &&
-           (sEscObject->obj.id ==
-            ((kind == ESCAPE_KIND_BLAST) ? OBJ_ACTOR_AND_EXPLOSION : OBJ_ACTOR_AND_JAMES_TRIGGER));
+           (sEscObject->obj.id == ((kind == ESCAPE_KIND_EXIT) ? OBJ_ACTOR_AND_JAMES_TRIGGER : OBJ_ACTOR_AND_EXPLOSION));
 }
 
-// The object's place for this update: ESCAPE_PIN from the target on the side that keeps the other players farthest
-// out, or ESCAPE_AWAY from it when no side keeps them ESCAPE_KEEP away. Returns whether it is in place.
-static bool CoopEscapeProbe_Pin(Actor* object, s32 target) {
+// The object's place for this update: `pin` from the target on the side that keeps the other players farthest out, or
+// ESCAPE_AWAY from it when no side keeps them ESCAPE_KEEP away. Returns whether it is in place.
+static bool CoopEscapeProbe_Pin(Actor* object, s32 target, f32 pin) {
     static const f32 sides[4][2] = { { 1.0f, 0.0f }, { -1.0f, 0.0f }, { 0.0f, 1.0f }, { 0.0f, -1.0f } };
     const Player* t = &gPlayer[target];
     f32 bestGap = -1.0f;
@@ -120,7 +121,7 @@ static bool CoopEscapeProbe_Pin(Actor* object, s32 target) {
     s32 i;
 
     for (side = 0; side < 4; side++) {
-        Vec3f at = { t->pos.x + sides[side][0] * ESCAPE_PIN, t->pos.y, t->trueZpos + sides[side][1] * ESCAPE_PIN };
+        Vec3f at = { t->pos.x + sides[side][0] * pin, t->pos.y, t->trueZpos + sides[side][1] * pin };
         f32 gap = 1e30f;
 
         for (i = 0; i < CoopPlayers_Count(); i++) {
@@ -134,8 +135,8 @@ static bool CoopEscapeProbe_Pin(Actor* object, s32 target) {
         }
     }
     if (bestGap >= ESCAPE_KEEP) {
-        object->obj.pos.x = t->pos.x + sides[best][0] * ESCAPE_PIN;
-        object->obj.pos.z = t->trueZpos + sides[best][1] * ESCAPE_PIN;
+        object->obj.pos.x = t->pos.x + sides[best][0] * pin;
+        object->obj.pos.z = t->trueZpos + sides[best][1] * pin;
     } else {
         object->obj.pos.x = t->pos.x + sides[best][0] * ESCAPE_AWAY;
         object->obj.pos.z = t->trueZpos + sides[best][1] * ESCAPE_AWAY;
@@ -153,7 +154,8 @@ static void CoopEscapeProbe_OnObjectUpdate(ObjectUpdateEvent* event) {
         (event->object != sEscObject) || !CoopEscapeProbe_ObjectAlive()) {
         return;
     }
-    if (!CoopEscapeProbe_Pin(sEscObject, sEscCases[sEscCase].target)) {
+    if (!CoopEscapeProbe_Pin(sEscObject, sEscCases[sEscCase].target,
+                             (sEscCases[sEscCase].kind == ESCAPE_KIND_MISS) ? ESCAPE_MISS : ESCAPE_PIN)) {
         sEscOff++;
     }
     sEscUpdated = 1;
@@ -196,7 +198,7 @@ static void CoopEscapeProbe_Begin(void) {
     s32 i;
 
     sEscObject = CoopEscapeProbe_Spawn(
-        (c->kind == ESCAPE_KIND_BLAST) ? OBJ_ACTOR_AND_EXPLOSION : OBJ_ACTOR_AND_JAMES_TRIGGER, c->target);
+        (c->kind == ESCAPE_KIND_EXIT) ? OBJ_ACTOR_AND_JAMES_TRIGGER : OBJ_ACTOR_AND_EXPLOSION, c->target);
     if (sEscObject == NULL) {
         return;
     }
@@ -453,12 +455,17 @@ static void CoopEscapeProbe_ReadCases(const char* text) {
     while ((at != NULL) && (*at != '\0') && (sEscCaseCount < ESCAPE_CASES_MAX)) {
         EscapeCase* c = &sEscCases[sEscCaseCount];
         size_t len = strcspn(at, ",");
-        size_t word = (strncmp(at, "blast", 5) == 0) ? 5 : (strncmp(at, "exit", 4) == 0) ? 4 : 0;
+        EscapeKind kind = (strncmp(at, "blast", 5) == 0)  ? ESCAPE_KIND_BLAST
+                          : (strncmp(at, "miss", 4) == 0) ? ESCAPE_KIND_MISS
+                                                          : ESCAPE_KIND_EXIT;
+        size_t word = (kind == ESCAPE_KIND_BLAST)                                     ? 5
+                      : ((kind == ESCAPE_KIND_MISS) || (strncmp(at, "exit", 4) == 0)) ? 4
+                                                                                      : 0;
 
         if ((word > 0) && (len > word) && (len < sizeof(c->name))) {
             memcpy(c->name, at, len);
             c->name[len] = '\0';
-            c->kind = (word == 5) ? ESCAPE_KIND_BLAST : ESCAPE_KIND_EXIT;
+            c->kind = kind;
             c->target = atoi(at + word);
             if ((c->target >= 0) && (c->target < COOP_PLAYERS_MAX)) {
                 sEscCaseCount++;
