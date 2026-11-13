@@ -256,6 +256,29 @@ Newest first. One block per run that matters (a milestone, a release, a QA level
 
 ```
 date:       2026-11-13
+commit:     issue/280-281-hazards-aim, C sources as built 15ebf002 (later commits docs only), on issue/combined-test-6
+            d726f9dd; red build: the game code of d726f9dd with this branch's test code (0fd87a2f)
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 game clients on one PC, UDP over
+            loopback, through the join driver; up to 3 test runs of other branches on the PC at the same time
+what ran:   python tools/coop/lockstep_test.py --no-build --jobs 2 --only macbeth_bombs,sy_robot_pose,granga_spread,
+            sy_robot_spread,aim (this branch); --only macbeth_bombs,sy_robot_pose,granga_spread --exe <red build>;
+            python tools/coop/test_all.py --no-build --only coop-off,hash-run-1,hash-run-2,rails-2 --base-exe <build
+            of d726f9dd>; check.py and sp_audit.py --check (in build.py)
+result:     automated. Macbeth (#280): a turret's shot and the blast of train car 7, placed on one tank at a time by
+            the probe, hit player 1 2 of 2 times each, and a forced barrel roll of player 1 deflects the shot 2 of 2
+            (0 of 2 each on the red build); player 0 2 of 2 on both builds; the bomb and beam cases of #272 2 of 2;
+            never the other tank. Sector Y (#281): with player 1 the nearer, 587 angle steps of a robot's head and gun
+            go to player 1's direction and 5 to player 0's (0 and 556 on the red build). Corneria (#281): 116 plasma
+            shots of the Granga, none straight at a human, all within the spread of the nearest (7 straight at the
+            human the spread did not move on the red build). Hashes equal on every frame of every run; sy_robot_spread
+            and aim unchanged; co-op off equal to the build of d726f9dd on Corneria (5 of 5 steps). Not run: Macbeth,
+            Sector Y and the Granga fight with one player against the base, a turret's own shot or a car a player
+            blows up hitting player 1, the robot's body yaw, three or four players, two PCs, Windows, Release, a
+            person playing.
+```
+
+```
+date:       2026-11-13
 commit:     issue/combined-test-6 (PR #285) with #288, #291 and #292 merged in: the C sources are those of 7e4385cc (#288
             changed the test join driver; #291 and #292 changed test tools and docs only); the runs are of 0b9dc392, the
             merged tree has the docs commit 3ceacfac after it, on 07c03c1f (coop)

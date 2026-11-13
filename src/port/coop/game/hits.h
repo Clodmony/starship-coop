@@ -32,6 +32,11 @@ struct Actor;
 // player 0, so every tank in it is hit.
 void CoopHits_MacbethBombFire(struct Actor* bomb);
 
+// The test of the blast of Macbeth's train car 7 (Macbeth_MaTrainCar7_Update, state 1, the one frame it blows up), for
+// the players after player 0 (#280): a box around the car, with no mercy timer, as for player 0. The red of the
+// screen stays player 0's: it is a fade every game of a session shows alike.
+void CoopHits_MacbethCarBlast(struct Actor* car);
+
 #ifdef __cplusplus
 }
 #endif

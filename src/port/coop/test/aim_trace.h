@@ -21,6 +21,19 @@
 //     player is pos.x, pos.y, trueZpos and 1 when an enemy may aim at it (player 0 always; another one while it is not
 //     parked and active or in a U-turn, as src/port/coop/game/aim.c counts them). From these a test finds where the
 //     shot crosses each player's depth, which is where the robot aimed it.
+//   plasma level=<...> frame=<...> start=<x>,<y>,<z> dir=<x>,<y>,<z> p0=<x>,<y>,<z>,<flies> p1=...
+//     after the shot line of an OBJ_EFFECT_376 in Corneria, a shot of the Granga's gun (#281), with the fields of the
+//     syrobot line: the Granga spreads these shots around the human it aims at.
+//   sypose level=<...> frame=<...> slot=<gActors index> body=<0|1> before=<5 angles> after=<5 angles>
+//          start=<fwork[16..18]> w0=<yaw>,<pitch> w1=... p0=<x>,<y>,<z>,<flies> p1=...
+//     after each frame in which a Sector Y robot turns its head and gun to a player (work_046 1 or 2) (#281). The 5
+//     angles are fwork[20] and [21] (the head's pitch and yaw), fwork[28] and [29] (the gun's yaw and pitch) and
+//     obj.rot.y, before and after the robot's update of this frame; body is 1 when it turns its body, not its head
+//     (iwork[17] != 0). w<n> is the yaw and pitch SectorY_SyRobot_Update would turn to for player n, computed here
+//     with the game's own sum from the robot as it is after the frame. The update steps each angle a fixed part of
+//     the way to its target (Math_SmoothStepToAngle), so before and after give the target the game used, and the w
+//     fields say whose it was. start and the p fields are as in the syrobot line: the nearest to start is the one the
+//     robot's shot flies at.
 //
 // gGameFrameCount restarts with each level; in a session it is the same on every game, so the files of two games of
 // one session must be equal.

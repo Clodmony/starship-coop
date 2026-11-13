@@ -118,3 +118,19 @@ void CoopHits_MacbethBombFire(Actor* bomb) {
         }
     }
 }
+
+void CoopHits_MacbethCarBlast(Actor* car) {
+    s32 i;
+
+    if (!CoopPlayers_IsCoop()) {
+        return;
+    }
+    for (i = 1; i < CoopPlayers_Count(); i++) {
+        Player* p = CoopHits_Target(i);
+
+        if ((p != NULL) && (fabsf(p->trueZpos - car->obj.pos.z) < 200.0f) &&
+            (fabsf(p->pos.y - car->obj.pos.y) < 300.0f) && (fabsf(p->pos.x - car->obj.pos.x) < 800.0f)) {
+            Player_ApplyDamage(p, 0, 60);
+        }
+    }
+}

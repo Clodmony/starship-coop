@@ -836,6 +836,157 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-13, #280, Macbeth's turret shots and the blast of train car 7 hit every tank
+
+Read at `d726f9dd` (`issue/combined-test-6`). The rule is #272's (the entry "2026-11-12, #272" below): a hit test that
+looks at player 0 alone gets a co-op test beside it for the other players; an aim or a chase goes to the nearest
+human; the path and the view stay player 0's. Line numbers are this branch's.
+
+Observed (code), every `gPlayer[0]` and `gMainController` (MC) site of the two functions, as `sp_audit.py` lists them:
+
+| function | lines | what they do | class | verdict |
+|---|---|---|---|---|
+| `Macbeth_MaTrainCar7_Update` (`src/overlays/ovl_i5/fox_ma.c:1655`), state 1: the one frame the car blows up, after its load is destroyed (`Macbeth_8019EBF8` sets state 1, `:1650`) | `:1672-1674` (6 sites) | the blast's box around the car: `trueZpos` within 200, y within 300, x within 800 | hit | the same box for the other tanks, `CoopHits_MacbethCarBlast` (`:1679`) |
+| | `:1675-1676` (no site) | the screen's white flash turns red when player 0 is in the box | view | left: `gFillScreen*` is one fade for every game of the session (`src/port/coop/game/view.h:51`) |
+| | `:1677` | `Player_ApplyDamage(&gPlayer[0], 0, 60)`, with no mercy timer test | hit | every tank in the box, once: the state lasts one frame |
+| | `:1684` (MC) | rumble | view | left |
+| `Macbeth_Effect378_Update` (`:3546`), a shot of the turret on a train car (`Macbeth_8019F164`, `:1722`, fires them) | `:3552` | the shot is gone 2000 behind player 0 | path | left |
+| | `:3566-3567` (3 sites) | its box: `trueZpos` within 50, x and y within 30 | hit | the same box for the other tanks, `CoopEffects_MacbethShotHit` (`:3587`) |
+| | `:3568` (2 sites) | in a barrel roll (`barrelRollAlpha`) or Meteo's warp (`meteoWarpTimer`) the shot is deflected: its velocity becomes `gCalcMatrix` times (0, 0, 100), whatever the matrix holds then, with no random draw | hit | the same for the tank in the box |
+| | `:3578-3582` (5 sites) | not rolling and `mercyTimer` 0: damage (`info.damage`, 20, `src/engine/fox_edata_info.c:497`), knockback 20 in x signed by the shot's x velocity, and the shot is used up | hit | the tank hit; one shot hits one tank, player 0 first |
+
+Nothing in the two functions aims, chases or draws for a player. No site is on the path but the shot's cull.
+
+- A tank never has `barrelRollAlpha`: only `Player_UpdateArwingRoll` raises it (`src/engine/fox_play.c:5046-5049`),
+  `Player_UpdateTankRoll` (`:5056`) does not write it, and `meteoWarpTimer` is set by Meteo's warp gate alone
+  (`src/engine/fox_enmy.c:2456`). So in Macbeth the deflect cannot happen for player 0 either; the co-op test repeats
+  it so that the two stay one rule.
+- Where a shot goes is its spawner's: `Macbeth_8019F164` turns the turret to player 0 (`:1734-1736`) and fires while
+  player 0 is 300 to 3000 beside the car and 200 to 5000 ahead of it (`:1810-1816`). Not changed here (see Left).
+
+Built:
+
+- `CoopEffects_MacbethShotHit` (`src/port/coop/game/effects.c`) and `CoopHits_MacbethCarBlast` (`hits.c`), each right
+  after the upstream test, for the players after player 0, a parked player left out. The shot's stops at a shot that
+  is used up or culled; its deflect is the shot's own (not `CoopEffects_Deflect`, which draws a random direction and
+  counts a deflect, as enemy lasers do for player 0 and this shot does not). Two `// COOP:` call lines in `fox_ma.c`;
+  the two includes of #272 serve. Co-op off: both return at once.
+- Tests only: `SF64_COOP_MABOMB_PROBE` (`src/port/coop/test/mabomb_probe.h`) got three cases: `shot` (an Effect378
+  at rest on one tank's next place, 20 over it), `roll` (the same while the probe holds that tank's `barrelRollAlpha`
+  at 180, which play cannot do) and `blast` (a train car 7 in state 1, 700 across the track from the tank on the side
+  away from the others, who are at least 850 from it; the probe takes the car out after its one test, with its flash
+  and shake). A case that cannot start writes a `mabomb wait` line every 100 frames.
+
+Observed (runs), two real games in lockstep over loopback, one PC, US 1.0, Linux, GCC, Debug, OpenGL on a software
+renderer, no window, `SF64_COOP_TRACE_SHIELDS=255,255`:
+
+- `lockstep_test.py --only macbeth_bombs` on this branch (C sources of `15ebf002`): `same hash on 4500 frames; 20
+  cases, 0 lost; player 1 hit under a bomb's fire on 2 of 2, in a beam on 2 of 2, by a turret's shot on 2 of 2, (its
+  roll deflects the shot) on 2 of 2, in a car's blast on 2 of 2; player 0 hit` the same `; no hazard hit the other
+  tank; frames to the hit [0, 1]; last case at frame 1914`.
+- The same on the red build (the game code of `d726f9dd` with this branch's test code, `0fd87a2f`): `FAILED
+  macbeth_bombs: player 1 is not hit: under a bomb's fire on 2 of 2, in a beam on 2 of 2, by a turret's shot on 0 of
+  2, (its roll deflects the shot) on 0 of 2, in a car's blast on 0 of 2; player 0, the control:` 2 of 2 each. Hashes
+  and probe logs equal there too.
+- Without a pilot both tanks stop at z about -33800, about 2700 frames in (the `mabomb wait` lines: `players=3:622:
+  -33859,3:540:-33859` at frame 6253 and the same z 200 frames later), and are seldom 250 apart there. With three
+  rounds of the five cases the last four did not start on the fix build (26 of 30 ran, each as wanted; a hit moves
+  player 1, so the cases fall on other frames than on the red build, where all 30 ran by frame 2808). The probe now
+  runs two rounds, over by frame 1914 on the fix build.
+- Co-op off: `test_all.py --no-build --only coop-off,hash-run-1,hash-run-2,rails-2 --base-exe <build of d726f9dd>`
+  `PASS, 5/5`. `coop-off` plays Corneria; Macbeth with one player was not played (no repo tool does it; #272's entry
+  did it with a scratch script and did not reach the train's end either). There both new functions return at their
+  first line.
+
+Derived:
+
+- A second tank drove through a turret's shot and through the blast of car 7 unhurt; now it is hurt as player 0 is.
+  A blast hurts every tank in its box, a shot the first one it meets.
+- Deterministic: the co-op tests read simulation state only, in player order, and draw no random number.
+
+Left (not this issue's two functions; proposed as a follow-up):
+
+- The turret that fires these shots (`Macbeth_8019F164`) aims at player 0 and fires by player 0's place (aim, by the
+  rule of #193 the nearest human's). Its row in the audit is still a guess by name.
+- The red of the blast shows when player 0 is in it, not when the tank this client drives is (view).
+
+Unknown:
+
+- A shot that a turret fires, or a car that a player blows up, hitting player 1 in play: the probe places both.
+- Whether car 7 is in the level's object list and how often its load is shot: not read here.
+- How it reads to two people driving; nobody played it. Windows, two PCs, three or four players, Release.
+
+### 2026-11-13, #281, Sector Y's robot faces the human it shoots at, and the Granga's spread cannot flip the pick
+
+Read at `d726f9dd`. Line numbers are this branch's.
+
+Observed (code):
+
+- `SectorY_SyRobot_Update` (`src/overlays/ovl_i6/fox_sy.c:3566`), in its states 1 and 2 (`work_046`), builds a
+  direction from the robot to a player (`:3802-3804`, `pos.x`, `pos.y`, `pos.z`), turns it into the robot's own frame
+  and takes a yaw and a pitch from it (`:3806-3809`). Four angles step to them with `Math_SmoothStepToAngle`
+  (`src/engine/fox_std_lib.c:525`): the head's yaw `fwork[21]` and pitch `fwork[20]` by a tenth of the difference, at
+  most 2 degrees a frame, the gun's `fwork[28]` and `fwork[29]` by a fifth, at most 5; with `iwork[17] != 0` the body
+  (`obj.rot.y`) turns in place of the head. Upstream the player is player 0; the shot, 15 frames before the state
+  ends (`timer_0BE == 15`), has flown at the nearest human since #193 and #273.
+- A step under its cap gives the target the game used: `before + step / scale`. That is what the test reads.
+- The Granga's plasma (`Corneria_CoGranga_Attack`, `src/overlays/ovl_i1/fox_co.c:449-474`): upstream moves player 0
+  by three draws of `RAND_FLOAT_CENTERED(300.0f)` (x, y, `trueZpos`), calls `Effect_EnemyLaser(OBJ_EFFECT_376)` from
+  the gun (`sCoGrangaWork[GRANGA_WORK_12..14]`) and moves player 0 back. #220 moved the nearest human in place of
+  player 0. `Effect_EnemyLaser` then picks the nearest again (`src/engine/fox_effect.c:2666`), with that human moved:
+  when the move makes another human the nearer, the shot flies straight at that one.
+
+Built:
+
+- The robot: one pick per frame, `CoopAim_Nearest` from where its shot starts (`fwork[16..18]`), before its state
+  runs (`fox_sy.c:3655`); the spread of #273 and the pose both read it. Three changed lines for the pose.
+- The Granga: the way of #273 and of the Shogun (#220). Player 0 goes to the aimed human's place plus the three draws
+  and `CoopAim_PointShot` moves the other humans that may be aimed at to the same point, so the nearest is player 0
+  by the tie rule and the shot flies at the point; `CoopAim_PointShotEnd` and the saved values put everyone back. The
+  save, the three draws and the restore are upstream's lines again, on `gPlayer[0]`; the fork's change is the pick and
+  the two calls. Outside co-op the nearest is player 0 and each line computes what upstream does.
+- Tests only: the aim trace (`src/port/coop/test/aim_trace.h`) writes a `sypose` line per robot and frame in states 1
+  and 2 (the five angles before and after the robot's update, and per player the yaw and pitch the game's own sum
+  gives for that player) and a `plasma` line per shot of the Granga's gun (start, direction, players).
+
+Observed (runs), two real games in lockstep over loopback, one PC, `gInvincible` on both, US 1.0, Linux, GCC, Debug,
+OpenGL on a software renderer, no window:
+
+- `lockstep_test.py --only sy_robot_pose` (the flight of `sy_robot_spread`: player 0 at the top left, player 1 near
+  the middle), on this branch (C sources of `15ebf002`): `same hash on 9500 frames; 405 frames of robots aiming (about
+  13 robots); with player 1 the nearer, 587 angle steps go to player 1's direction, 5 to player 0's, 0 to neither;
+  with player 0 the nearer, 101 to player 0's, 0 to player 1's, 0 to neither`. On the red build (the game code of
+  `d726f9dd` with this branch's test code): `FAILED sy_robot_pose: the robots turn head and gun to player 0 while
+  player 1 is the nearer ... 0 angle steps go to player 1's direction, 556 to player 0's`.
+- `lockstep_test.py --only granga_spread` (both players fly the same circle side by side over the Granga, 7700
+  frames), on this branch: `same hash on 7700 frames; 116 plasma shots; 50 with player 1 the nearer, they pass it at
+  27 to 224 (mean 116); 66 with player 0 the nearer, they pass it at 11 to 207 (mean 114)`. On the red build: `FAILED
+  granga_spread: 7 of 116 spread shots fly straight at a human (frame 3830: at player 0 (0.0), the nearest was player
+  1; ...); 7 shots are not around the nearest human, more than 260 off (frame 3830 passes player 1, the nearest, at
+  573; ...)`. Both builds fire 116 shots.
+- On this branch, unchanged: `sy_robot_spread` `same hash on 9500 frames; 23 robot shots: 10 plain, all within 0.00
+  of the nearest human; 13 spread ..., 11 around player 1 ... root mean square 90`; `aim` `same hash on 4000 frames;
+  14 shots or missiles at player 1, 8 at player 0, 60 at nobody`. The spread's numbers differ from #273's run (root
+  mean square 100, on another base); why was not looked into.
+- The robot's body yaw (`obj.rot.y`, with `iwork[17] != 0`, 367 of the 405 frames) is not in the test: on the base
+  117 of its 291 steps fit neither player's direction (a first run counted them). What else moves it on those frames
+  is `unknown`.
+- Co-op off: the gate of the #280 entry above (Corneria's rails). The Granga's plasma and Sector Y's robots with one
+  player were not played against the base; the changed lines were read: with the pick 0 they are upstream's sums.
+
+Derived:
+
+- The robot now shows its gun on the tank or ship it shoots at. The 5 steps to player 0's direction with player 1
+  the nearer are frames on which the trace, after the frame, and the game, before the robot's update, see another
+  nearest human (a guess; they are 5 of 592).
+- On the base the flip went both ways: of the 7 shots that flew straight at a human, 5 had player 1 the nearer and
+  flew at player 0, 2 the other way round.
+
+Unknown:
+
+- Whether either read wrong to two humans by hand; nobody played it.
+- Three or four players, Windows, two PCs, Release.
+
 ### 2026-11-12, #273, Sector Y's robots: the spread around the aimed human, and the `iwork[19] < 0` test that is never true
 
 Read and run on `issue/273-sy-robot-spread` (from `coop` `07c03c1f`). Line numbers are this branch's. Level script

@@ -147,6 +147,14 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             shot's start and direction: a plain one flies at the nearest human, a spread one at a point at most 150
             from it in x and y, and those with player 1 the nearer are spread around it. Hashes equal on all 9500
             frames. By hand, not in test_all.py: about a minute.
+  sy_robot_pose the same flight (#281): a robot that aims turns its head and gun to the human its shot flies at, the
+            nearest. The aim trace's sypose lines give each angle before and after a frame, so the target the game
+            turned it to, and each player's direction: with player 1 the nearer the target is player 1's. Upstream it
+            is player 0's always. By hand.
+  granga_spread Corneria's Granga (#281): both players fly the same circle side by side over it, so each is the nearer
+            to its gun at times. The aim trace's plasma lines give each shot's line: it passes within the spread of the
+            human nearest to its start, and no shot flies straight at a human (a spread that made the other human the
+            nearer did, before). By hand.
   eels    Aquas' boss fight with both marines firing, so the eels of the Bacoon's pods (actor 255) are shot and
             explode piece by piece. src/port/coop/test/smoke_trace.h names every smoke puff: each puff of an eel has to
             lie in the fight, not at a position read from outside the eel's history (the desync of a real Windows and
@@ -155,9 +163,11 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             the session cleans them to CAPTAIN and SAM.OK!, the host shares both, and by the level start each game
             holds both. Each game marks the other player's ship with its name (CAPTAIN on the client, SAM.OK! on the
             host) and never its own, and the hashes are equal on every frame.
-  macbeth_bombs Macbeth with two Landmasters (#272): a bomb's fire and a state-16 beam of the train's end, placed on
-            one tank at a time by src/port/coop/test/mabomb_probe.h, hit that tank, player 1 as well as player 0, and
-            no other; on a build without the fix they hit player 0 only. Hashes and the two probe logs equal.
+  macbeth_bombs Macbeth with two Landmasters (#272, #280): a bomb's fire, a state-16 beam of the train's end, a shot of
+            a train car's turret and the blast of train car 7, placed on one tank at a time by
+            src/port/coop/test/mabomb_probe.h, hit that tank, player 1 as well as player 0, and no other, and a
+            turret's shot at a tank in a barrel roll is deflected; on a build without the fixes they hit and are
+            deflected by player 0 only. Hashes and the two probe logs equal.
   log     the co-op log (#172): each game's folder holds its own log and the other player's, streamed during the
             session; the hash stays equal with streaming on; nothing personal is in the files; coop_log.py merges them.
   survive_gaps_route #267: Corneria parts and starts again, pilots fly it to the map and into the next level, which
@@ -2322,11 +2332,9 @@ def w8_syrobot_spread_text(misses):
             f"(mean {sum(ys) / len(ys):.0f}), root mean square {rms:.0f}")
 
 
-def sc_sy_robot_spread(args, folder):
-    """#273: Sector Y's robots spread a shot around the human it aims at. On the rails player 0 holds the top left and
-    player 1 flies in the middle, near the robots that spread. Each robot shot is read from the aim trace's syrobot
-    lines: a plain one flies at the nearest human, a spread one at a point at most W8_SYROBOT_BOUND from it in x and y,
-    and the spread shots at player 1 are spread: none straight at it, root mean square at least a fifth of the bound."""
+def w8_syrobot_run(args, folder):
+    """Sector Y's rails as w8_syrobot_script flies them, with the aim trace on both games (gInvincible). Returns (the
+    frames compared, the host's trace, the client's)."""
     folder.mkdir(parents=True, exist_ok=True)
     feed = folder / "feed.txt"
     write_feed(feed, W8_SYROBOT_FRAMES + 16, w8_syrobot_script)
@@ -2343,8 +2351,16 @@ def sc_sy_robot_spread(args, folder):
     finally:
         host.close()
         client.close()
-    frames = compare(host, client, W8_SYROBOT_FRAMES)
-    ours, theirs = w8_syrobot_rows(traces["host"]), w8_syrobot_rows(traces["client"])
+    return compare(host, client, W8_SYROBOT_FRAMES), traces["host"], traces["client"]
+
+
+def sc_sy_robot_spread(args, folder):
+    """#273: Sector Y's robots spread a shot around the human it aims at. On the rails player 0 holds the top left and
+    player 1 flies in the middle, near the robots that spread. Each robot shot is read from the aim trace's syrobot
+    lines: a plain one flies at the nearest human, a spread one at a point at most W8_SYROBOT_BOUND from it in x and y,
+    and the spread shots at player 1 are spread: none straight at it, root mean square at least a fifth of the bound."""
+    frames, host_trace, client_trace = w8_syrobot_run(args, folder)
+    ours, theirs = w8_syrobot_rows(host_trace), w8_syrobot_rows(client_trace)
     # A game runs on a little past `done`: the lines both traces hold are compared, the checks read the plan's frames.
     n = min(len(ours), len(theirs))
     for a, b in zip(ours[:n], theirs[:n]):
@@ -2354,6 +2370,225 @@ def sc_sy_robot_spread(args, folder):
     problems, text = w8_syrobot_story(rows)
     expect(not problems, f"{'; '.join(problems)}. {text}")
     return f"same hash on {frames} frames; {text}"
+
+
+# ---- sy_robot_pose (#281, item 1) ----
+# While a Sector Y robot aims (SectorY_SyRobot_Update, work_046 1 or 2) it turns its head and gun to a player. Each
+# angle goes a fixed part of the way to its target per frame (Math_SmoothStepToAngle: `scale` of the difference, at most
+# `most`), so the angle before and after a frame gives the target the game used: before + step / scale while the step is
+# under the cap, else only the side it lies on. The aim trace's sypose line holds both and, per player, the yaw and
+# pitch the robot would turn to for that player (aim_trace.h). Upstream the target is player 0's, whoever the shot
+# flies at.
+W9_SYPOSE_LINE = re.compile(r"sypose level=(\d+) frame=(\d+) slot=(\d+) body=(\d) before=(\S+) after=(\S+) "
+                            r"start=(\S+)((?: w\d=\S+)+)((?: p\d=\S+)+)$")
+# name, index into the line's 5 angles, the part of w<n> it turns to (0 yaw, 1 pitch), scale, cap, when it applies
+# (body 0: the robot turns its head; None: also when it turns its body). The body's own yaw (obj.rot.y, the fifth
+# angle) is left out: it does not step to one target, 117 of its 291 steps in a run of the base fit neither player.
+W9_SYPOSE_ANGLES = (("head pitch", 0, 1, 0.1, 2.0, None), ("head yaw", 1, 0, 0.1, 2.0, 0),
+                    ("gun pitch", 3, 1, 0.2, 5.0, None))
+W9_SYPOSE_APART = 5.0  # degrees between the two players' targets for an angle, or the angle cannot tell them apart
+W9_SYPOSE_MIN = 100  # angle steps that tell, with player 1 the nearer; fewer is too few
+W9_SYPOSE_SHARE = 0.9
+
+
+def w9_turn(angle):
+    """An angle difference in (-180, 180]."""
+    return (angle + 180.0) % 360.0 - 180.0
+
+
+def w9_sypose_rows(path):
+    """The sypose lines of an aim trace: one dict per robot and frame."""
+    rows = []
+    if not path.exists():
+        return rows
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        match = W9_SYPOSE_LINE.match(line)
+        if not match:
+            continue
+        wants = {int(part.split("=")[0][1:]): [float(v) for v in part.split("=")[1].split(",")]
+                 for part in match.group(8).split()}
+        players = {}
+        for part in match.group(9).split():
+            key, value = part.split("=")
+            values = value.split(",")
+            players[int(key[1:])] = ([float(v) for v in values[:3]], values[3] == "1")
+        rows.append({"level": int(match.group(1)), "frame": int(match.group(2)), "slot": int(match.group(3)),
+                     "body": int(match.group(4)), "before": [float(v) for v in match.group(5).split(",")],
+                     "after": [float(v) for v in match.group(6).split(",")],
+                     "start": [float(v) for v in match.group(7).split(",")], "wants": wants, "players": players,
+                     "line": line})
+    return rows
+
+
+def w9_sypose_votes(row):
+    """For each angle of W9_SYPOSE_ANGLES that can tell the two players apart on this frame: the player whose target
+    the robot turned it to (0 or 1), or None for neither."""
+    votes = []
+    for _, index, part, scale, most, body in W9_SYPOSE_ANGLES:
+        if body is not None and body != row["body"]:
+            continue
+        want = [row["wants"][i][part] for i in (0, 1)]
+        if abs(w9_turn(want[1] - want[0])) < W9_SYPOSE_APART:
+            continue
+        before = row["before"][index]
+        step = w9_turn(row["after"][index] - before)
+        if abs(step) < most - 0.01:
+            off = [abs(w9_turn(before + step / scale - w)) for w in want]
+            near = 0 if off[0] <= off[1] else 1
+            votes.append(near if off[near] < W9_SYPOSE_APART / 2 else None)
+        else:
+            side = [w9_turn(w - before) * step > 0 for w in want]
+            if side[0] != side[1]:
+                votes.append(0 if side[0] else 1)
+    return votes
+
+
+def sc_sy_robot_pose(args, folder):
+    """#281: a Sector Y robot turns its head and gun to the human its shot flies at, the nearest. The flight of
+    sy_robot_spread; from the aim trace's sypose lines, the target of each angle step that can tell the two players
+    apart: with player 1 the nearer it is player 1's, with player 0 the nearer player 0's. Upstream it is player 0's
+    always."""
+    frames, host_trace, client_trace = w8_syrobot_run(args, folder)
+    ours, theirs = w9_sypose_rows(host_trace), w9_sypose_rows(client_trace)
+    n = min(len(ours), len(theirs))
+    for a, b in zip(ours[:n], theirs[:n]):
+        expect(a["line"] == b["line"], f"the robot pose lines differ: host `{a['line']}`, client `{b['line']}`")
+    rows = [row for row in ours[:n] if row["level"] == W8_SYROBOT_LEVEL and row["frame"] <= W8_SYROBOT_FRAMES]
+    expect(rows, "no robot pose in the trace (a build without the sypose line of aim_trace.h writes none)")
+    count = {nearest: {0: 0, 1: 0, None: 0} for nearest in (0, 1)}
+    for row in rows:
+        nearest = w8_syrobot_nearest(row)
+        for vote in w9_sypose_votes(row):
+            count[nearest][vote] += 1
+    robots = len({(row["slot"], row["frame"] // 200) for row in rows})
+    text = (f"{len(rows)} frames of robots aiming (about {robots} robots); with player 1 the nearer, "
+            f"{count[1][1]} angle steps go to player 1's direction, {count[1][0]} to player 0's, {count[1][None]} to "
+            f"neither; with player 0 the nearer, {count[0][0]} to player 0's, {count[0][1]} to player 1's, "
+            f"{count[0][None]} to neither")
+    told = count[1][0] + count[1][1] + count[1][None]
+    expect(told >= W9_SYPOSE_MIN, f"too few angle steps tell the players apart with player 1 the nearer. {text}")
+    expect(count[1][1] >= W9_SYPOSE_SHARE * told,
+           f"the robots turn head and gun to player 0 while player 1 is the nearer, the one they shoot at. {text}")
+    told = count[0][0] + count[0][1] + count[0][None]
+    expect(count[0][0] >= W9_SYPOSE_SHARE * told, f"the robots do not turn to player 0 when it is the nearer. {text}")
+    return f"same hash on {frames} frames; {text}"
+
+
+# ---- granga_spread (#281, item 2) ----
+# The Granga's gun spreads its plasma shot (Corneria_CoGranga_HandleAttacks, GRANGA_ATTACK_PLASMA,
+# src/overlays/ovl_i1/fox_co.c): the point it aims at is the aimed human moved by RAND_FLOAT_CENTERED(300.0f) in x, y
+# and z, each by -150 up to just under 150. The aim trace's plasma line gives the shot's start, its direction and the
+# players; the shot is a straight line, and how near that line passes a player says whom it was aimed at.
+W9_PLASMA_LEVEL = 0  # LEVEL_CORNERIA
+W9_PLASMA_FRAMES = JOIN_FRAME + 100 + 5900
+W9_PLASMA_BOUND = 150.0 * math.sqrt(3.0)  # the farthest the spread point is from the aimed human
+W9_PLASMA_STRAIGHT = 2.0  # a line that passes a player this near was aimed at that player itself
+W9_PLASMA_MIN = 6  # plasma shots, and those with player 1 the nearer; fewer is too few to tell
+W9_PLASMA_LINE = re.compile(r"plasma level=(\d+) frame=(\d+) start=(\S+) dir=(\S+)((?: p\d=\S+)+)$")
+W9_PLASMA_TURN = JOIN_FRAME + 476  # GRANGA_CIRCLE: flying straight, the players pass the Granga's start about here
+
+
+def w9_plasma_script(frame, player):
+    """Corneria: player 0 presses L (gDebugJumpToAllRange) at JOIN_FRAME + 100; then both players fly the same input,
+    straight into the middle of the Granga's ground and in a circle there, side by side as they joined. So the two are
+    about as far from the Granga's gun, each the nearer at times, and a spread that moves one of them can make the
+    other the nearer."""
+    if frame == JOIN_FRAME + 100 and player == 0:
+        return BUTTON_L, 0, 0
+    return (0, 70, 0) if frame >= W9_PLASMA_TURN else (0, 0, 0)
+
+
+def w9_plasma_rows(path):
+    rows = []
+    if not path.exists():
+        return rows
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        match = W9_PLASMA_LINE.match(line)
+        if not match:
+            continue
+        players = {}
+        for part in match.group(5).split():
+            key, value = part.split("=")
+            values = value.split(",")
+            players[int(key[1:])] = ([float(v) for v in values[:3]], values[3] == "1")
+        rows.append({"level": int(match.group(1)), "frame": int(match.group(2)),
+                     "start": [float(v) for v in match.group(3).split(",")],
+                     "dir": [float(v) for v in match.group(4).split(",")], "players": players, "line": line})
+    return rows
+
+
+def w9_plasma_pass(row, player):
+    """How near the shot's line passes `player`."""
+    to = [a - b for a, b in zip(row["players"][player][0], row["start"])]
+    length = math.sqrt(sum(d * d for d in row["dir"]))
+    along = sum(a * d for a, d in zip(to, row["dir"])) / length
+    return math.sqrt(max(sum(a * a for a in to) - along * along, 0.0))
+
+
+def sc_granga_spread(args, folder):
+    """#281: the Granga's plasma spread lands around the human the shot aims at, the nearest to its gun, also when the
+    spread point lies nearer to another human. Both players fly the same circle side by side over the Granga, so each
+    is the nearer at times. From the aim trace's plasma lines: every shot's line passes within the spread
+    (W9_PLASMA_BOUND) of the human nearest to its start, and no shot flies straight at a human: a shot that does was
+    aimed at a human the spread did not move."""
+    folder.mkdir(parents=True, exist_ok=True)
+    feed = folder / "feed.txt"
+    write_feed(feed, W9_PLASMA_FRAMES + 16, w9_plasma_script)
+    traces = {game: folder / f"{game}-aim.txt" for game in ("host", "client")}
+    for path in traces.values():
+        if path.exists():
+            path.unlink()  # the trace appends
+    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(W9_PLASMA_FRAMES)}
+    host, client = session(args, folder, {"SF64_COOP_JOIN_LEVEL": str(W9_PLASMA_LEVEL),
+                                          "SF64_COOP_AIM_TRACE": str(traces["host"])},
+                           {"SF64_COOP_AIM_TRACE": str(traces["client"])}, env,
+                           config={"CVars": {"gInvincible": 1, "gDebugJumpToAllRange": 1}})
+    try:
+        wait_for([host, client], "done", 1200)
+    finally:
+        host.close()
+        client.close()
+    frames = compare(host, client, W9_PLASMA_FRAMES)
+    ours, theirs = w9_plasma_rows(traces["host"]), w9_plasma_rows(traces["client"])
+    n = min(len(ours), len(theirs))
+    for a, b in zip(ours[:n], theirs[:n]):
+        expect(a["line"] == b["line"], f"the plasma lines differ: host `{a['line']}`, client `{b['line']}`")
+    rows = [row for row in ours[:n] if row["level"] == W9_PLASMA_LEVEL and row["frame"] <= W9_PLASMA_FRAMES]
+    expect(rows, "no plasma shot in the trace (a build without the plasma line of aim_trace.h writes none, or the "
+                 "Granga did not fire its gun)")
+    problems, text = w9_plasma_story(rows)
+    expect(not problems, f"{'; '.join(problems)}. {text}")
+    return f"same hash on {frames} frames; {text}"
+
+
+def w9_plasma_story(rows):
+    """The checks of granga_spread on its plasma shots: (the problems found, the summary)."""
+    at = {0: [], 1: []}
+    off, straight = [], []
+    for row in rows:
+        aimed = w8_syrobot_nearest(row)
+        passes = {i: w9_plasma_pass(row, i) for i in sorted(row["players"])}
+        at.setdefault(aimed, []).append(passes[aimed])
+        for i, near in passes.items():
+            if near <= W9_PLASMA_STRAIGHT:
+                straight.append(f"frame {row['frame']}: at player {i} ({near:.1f}), the nearest was player {aimed}")
+        if passes[aimed] > W9_PLASMA_BOUND + W9_PLASMA_STRAIGHT:
+            off.append(f"frame {row['frame']} passes player {aimed}, the nearest, at {passes[aimed]:.0f}")
+
+    def spread(values):
+        return f"{min(values):.0f} to {max(values):.0f} (mean {sum(values) / len(values):.0f})" if values else "none"
+
+    text = (f"{len(rows)} plasma shots; {len(at[1])} with player 1 the nearer, they pass it at {spread(at[1])}; "
+            f"{len(at[0])} with player 0 the nearer, they pass it at {spread(at[0])}")
+    problems = []
+    if straight:
+        problems.append(f"{len(straight)} of {len(rows)} spread shots fly straight at a human ({'; '.join(straight)})")
+    if off:
+        problems.append(f"{len(off)} shots are not around the nearest human, more than {W9_PLASMA_BOUND:.0f} off "
+                        f"({'; '.join(off)})")
+    if len(rows) < W9_PLASMA_MIN or len(at[1]) < W9_PLASMA_MIN:
+        problems.append("too few plasma shots, or too few with player 1 the nearer, to tell")
+    return problems, text
 
 
 def w8_syrobot_story(rows):
@@ -4477,19 +4712,26 @@ def sc_survive_next_level(args, folder):
             f"hash alike on its first {frames} frames; `{line}`")
 
 
-# ---- #272: Macbeth's bomb fire and state-16 beams hit every tank (lane macbeth-bombs) ----
+# ---- #272, #280: Macbeth's bomb fire, state-16 beams, turret shots and car blast hit every tank (lane macbeth-bombs) ----
 #
-# src/port/coop/test/mabomb_probe.h places a bomb of the train's end, or a beam of its state 16, where one tank will be,
-# while every other tank is at least 250 across the track, and logs whom the hazard's own update hit. Each kind runs for
-# each tank in turn, W8_MABOMB_ROUNDS times. Upstream both tests look at player 0 only (Macbeth_MaBombDrop_Update,
-# Macbeth_Effect380_Update in src/overlays/ovl_i5/fox_ma.c), so on a build without the fix of #272 a hazard on player 1
+# src/port/coop/test/mabomb_probe.h places a hazard where one tank will be, while every other tank is at least 250
+# across the track (850 from a blast's car), and logs whom the hazard's own update hit: a bomb of the train's end, a
+# beam of its state 16 (#272), a shot of a train car's turret, the same shot at a tank in a barrel roll, and the blast
+# of train car 7 (#280). Each kind runs for each tank in turn, W8_MABOMB_ROUNDS times. Upstream all four tests look at
+# player 0 only (Macbeth_MaBombDrop_Update, Macbeth_Effect380_Update, Macbeth_Effect378_Update and
+# Macbeth_MaTrainCar7_Update in src/overlays/ovl_i5/fox_ma.c), so on a build without the fixes a hazard on player 1
 # hits nobody, while the cases on player 0 hit it on every build: they show the probe reaches its target.
-W8_MABOMB_FRAMES = 4500  # level frames: the tanks part from JOIN_FRAME on (sway), 12 cases fit well after that
-W8_MABOMB_CASES = ("bomb", "beam")  # sMaBombCases in src/port/coop/test/mabomb_probe.c
-W8_MABOMB_WORDS = {"bomb": "under a bomb's fire", "beam": "in a beam"}
-W8_MABOMB_ROUNDS = 3  # MABOMB_ROUNDS there
+W8_MABOMB_FRAMES = 4500  # level frames: the tanks part from JOIN_FRAME on (sway), 20 cases fit well after that
+W8_MABOMB_CASES = ("bomb", "beam", "shot", "roll", "blast")  # sMaBombCases in src/port/coop/test/mabomb_probe.c
+W8_MABOMB_WORDS = {"bomb": "under a bomb's fire", "beam": "in a beam", "shot": "by a turret's shot",
+                   "roll": "(its roll deflects the shot)", "blast": "in a car's blast"}
+W8_MABOMB_DEFLECTS = ("roll",)  # cases whose target is not hit: the shot is deflected
+# MABOMB_ROUNDS there. Not 3: without a pilot the tanks stop about 2700 frames in (z about -33800) and are seldom 250
+# apart there, so the last cases of a third round did not start on a build where a hit moves player 1 (26 of 30 ran).
+W8_MABOMB_ROUNDS = 2
 W8_MABOMB_PROBE = "mabomb.txt"  # in each game's run folder
-W8_MABOMB_LINE = re.compile(r"mabomb frame=(\d+) case=(\w+) target=(\d+) hit=(\d+) first=(\S+) lost=(\d) dx=(\S+)")
+W8_MABOMB_LINE = re.compile(r"mabomb frame=(\d+) case=(\w+) target=(\d+) hit=(\d+) first=(\S+) lost=(\d) dx=(\S+)"
+                            r"(?: defl=(\d))?")
 
 
 def w8_mabomb_rows(path):
@@ -4502,14 +4744,16 @@ def w8_mabomb_rows(path):
         if match:
             rows.append({"frame": int(match.group(1)), "case": match.group(2), "target": int(match.group(3)),
                          "hit": int(match.group(4)), "first": [int(v) for v in match.group(5).split(",")],
-                         "lost": match.group(6) == "1", "dx": float(match.group(7))})
+                         "lost": match.group(6) == "1", "dx": float(match.group(7)),
+                         "deflected": match.group(8) == "1"})
         elif line.startswith("mabomb done"):
             done = True
     return rows, done
 
 
 def w8_mabomb_story(rows):
-    """(case, target) -> [cases that ran to their end, of those the ones that hit the target, the ones that hit another
+    """(case, target) -> [cases that ran to their end, of those the ones that did to the target what the case is for
+    (hit it; for a case of W8_MABOMB_DEFLECTS: the shot was deflected and hit nobody), the ones that hit another
     tank]. A lost case (the hazard gone early, as at a restart) does not count."""
     story = {(case, target): [0, 0, 0] for case in W8_MABOMB_CASES for target in (0, 1)}
     for row in rows:
@@ -4517,16 +4761,20 @@ def w8_mabomb_story(rows):
         if row["lost"]:
             continue
         counts[0] += 1
-        counts[1] += bool(row["hit"] & (1 << row["target"]))
+        if row["case"] in W8_MABOMB_DEFLECTS:
+            counts[1] += row["deflected"] and not row["hit"]
+        else:
+            counts[1] += bool(row["hit"] & (1 << row["target"]))
         counts[2] += bool(row["hit"] & ~(1 << row["target"]))
     return story
 
 
 def sc_macbeth_bombs(args, folder):
-    """Macbeth with two Landmasters (#272): a bomb's fire and a state-16 beam of the train's end, placed on one tank by
-    src/port/coop/test/mabomb_probe.h, hit that tank, player 1 as well as player 0, and no other. Both games sway as in
-    `vehicles`, with their shields held (SF64_COOP_TRACE_SHIELDS) so that nobody goes down between cases; hashes and the
-    two probe logs equal on every frame."""
+    """Macbeth with two Landmasters (#272, #280): a bomb's fire, a state-16 beam of the train's end, a turret's shot
+    and the blast of train car 7, placed on one tank by src/port/coop/test/mabomb_probe.h, hit that tank, player 1 as
+    well as player 0, and no other; a turret's shot at a tank in a barrel roll is deflected and hits nobody. Both games
+    sway as in `vehicles`, with their shields held (SF64_COOP_TRACE_SHIELDS) so that nobody goes down between cases;
+    hashes and the two probe logs equal on every frame."""
     host, client = run_short(args, folder, script=sway, frames=W8_MABOMB_FRAMES,
                              host_env={"SF64_COOP_JOIN_LEVEL": "11"},
                              both={"SF64_COOP_MABOMB_PROBE": W8_MABOMB_PROBE, "SF64_COOP_TRACE_SHIELDS": "255,255"},
@@ -4537,7 +4785,10 @@ def sc_macbeth_bombs(args, folder):
                  "never parted by 250")
     expect((rows, done) == w8_mabomb_rows(client.run / W8_MABOMB_PROBE), "the two games' probe logs differ")
     wanted = len(W8_MABOMB_CASES) * 2 * W8_MABOMB_ROUNDS
-    expect(done, f"the probe ran {len(rows)} of {wanted} cases in {frames} frames")
+    waits = [line for line in (host.run / W8_MABOMB_PROBE).read_text(encoding="utf-8").splitlines()
+             if line.startswith("mabomb wait")]
+    expect(done, f"the probe ran {len(rows)} of {wanted} cases in {frames} frames; the last one waited: "
+                 f"`{waits[-1] if waits else 'no wait line'}`")
     story = w8_mabomb_story(rows)
     lost = sum(row["lost"] for row in rows)
     for (case, target), (ran, _, _) in sorted(story.items()):
@@ -4554,9 +4805,11 @@ def sc_macbeth_bombs(args, folder):
            f"player 1 is not hit: {hits(1)}; player 0, the control: {hits(0)}")
     others = sum(counts[2] for counts in story.values())
     expect(others == 0, f"a hazard hit a tank it was not placed on in {others} cases (the tanks were too close)")
-    first = sorted({row["first"][row["target"]] for row in rows if not row["lost"]})
+    first = sorted({row["first"][row["target"]] for row in rows
+                    if not row["lost"] and row["case"] not in W8_MABOMB_DEFLECTS})
     return (f"same hash on {frames} frames; {len(rows)} cases, {lost} lost; player 1 hit {hits(1)}; player 0 hit "
-            f"{hits(0)}; no hazard hit the other tank; frames to the hit {first}")
+            f"{hits(0)}; no hazard hit the other tank; frames to the hit {first}; last case at frame "
+            f"{rows[-1]['frame']}")
 
 
 # ---- #267: the session survives beyond its first level and its first three players (survive_gaps_*) ----
@@ -5163,6 +5416,8 @@ SCENARIOS = {
     "bosses": sc_bosses,
     "other_bosses": sc_other_bosses,
     "sy_robot_spread": sc_sy_robot_spread,
+    "sy_robot_pose": sc_sy_robot_pose,
+    "granga_spread": sc_granga_spread,
     "w7macbeth_ram": sc_w7macbeth_ram,
     "eels": sc_eels,
     "player_names": sc_player_names,
@@ -5173,6 +5428,7 @@ LONG = ("survive_next_level", "survive_gaps_route", "survive_gaps_map", "survive
         "map_saves", "map_saves_host_full", "map_saves_equal", "audio", "release", "rates", "vehicles", "vehicle_end", "bosses", "other_bosses",
         "eels", "w7macbeth_ram")
 LONG += ("sy_robot_spread",)  # Sector Y's rails, 9500 frames (#273)
+LONG += ("sy_robot_pose", "granga_spread")  # the same rails; Corneria's Granga, 7700 frames (#281)
 
 
 # Seconds a scenario took on Debug at a limit of 8 (2026-11-13, #290). Only the order of a pool of --jobs depends on it:
