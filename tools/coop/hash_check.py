@@ -54,7 +54,9 @@ rates plays one replay at several values of gInterpolationFPS, which no handshak
 draw plays one replay with and without SF64_COOP_TEST_NO_DRAW, per section and start (#147): the draw code runs in both
   and the renderer only gets its work in one, so the hash must not change. The run with the switch must log 0 draws and
   the other run more, or the two would be the same run. Input by rule, as for views, from all three starts unless
-  --start names one: the switch sits under every tool, on whichever start that tool plays.
+  --start names one: the switch sits under every tool, on whichever start that tool plays. Run by hand, it deletes its
+  folders under local/ when it passes and keeps them when it fails (#308); started by a run that notes its folders
+  (test_all.py, replay_test.py, OWNED_ENV in run_folder.py), it leaves them to that run, which reads or deletes them.
 base plays input by rule through the menus, with co-op off, on this build and on --base, the build before a change: the
   two must be equal on every frame, which is what co-op off means. --base can be a build without any of the switches
   here, so it plays nothing that needs one. --level NAME (#283) starts both games in that level instead, through its
@@ -85,7 +87,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import replay as replay_tool  # noqa: E402
-from run_folder import make_run_folder  # noqa: E402
+from run_folder import OwnedFolders, make_run_folder  # noqa: E402
 
 
 # Buttons as OSContPad.button holds them.
@@ -1384,7 +1386,15 @@ def main():
         p.error("builds needs --debug and --release")
     commands = {"run": cmd_run, "diff": cmd_diff, "probe": cmd_probe, "views": cmd_views, "slots": cmd_slots, "builds": cmd_builds,
                 "rates": cmd_rates, "draw": cmd_draw, "base": cmd_base, "start": cmd_start}
-    return commands[args.cmd](args)
+    if args.cmd != "draw":
+        return commands[args.cmd](args)
+    owned = OwnedFolders(replay_tool.ROOT / "local")  # see draw at the top of this file (#308)
+    code = commands[args.cmd](args)
+    if code == 0 and not owned.outer:
+        owned.delete()
+    else:
+        owned.close()
+    return code
 
 
 if __name__ == "__main__":

@@ -92,7 +92,8 @@ def main():
             failures.append("tools/coop/script_reader.py --past-end --check failed:\n  "
                             + "\n  ".join((past.stdout + past.stderr).strip().splitlines()))
 
-    # 7. Run folders: each test tool gets a folder of its own, however close together runs start.
+    # 7. Run folders: each test tool gets a folder of its own, however close together runs start, and crash_test.py,
+    # which runs after every build, leaves none of them when it passes (#308).
     folders = subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "coop" / "run_folder_test.py")],
                              cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
     if folders.returncode != 0:
