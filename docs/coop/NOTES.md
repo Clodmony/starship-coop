@@ -4767,8 +4767,7 @@ Observed:
   still fail on their own: a site with no row, a row that matches no site, a bad verdict or basis.
 - **Hand edits and conflict markers.** Comparing verdicts alone would not close this: a marker in the summary touches no
   verdict. The lines outside the rows close it. A hand edit of a row, the header or a summary count, and markers outside
-  the rows, each exit 1 (`hand-edit-*`, `conflict-markers-*`). On the real list: `changed text: listed '<<<<<<< HEAD'`.
-- **What `--check` still ignores.** Line numbers, and the order of rows and of sites in a row that follows from them. So a
+  the rows, each exit 1 (`hand-edit-*`, `conflict-markers-*`). On the real list: `changed text: listed '- **What `--check` still ignores.** Line numbers, and the order of rows and of sites in a row that follows from them. So a
   wrong line number typed by hand passes with the note (`hand-edit-line-numbers`). A site that replaces another of the
   same pattern in the same function passes without one (`known-gap-swap`).
 - **Two branches that each accept a site can still leave `coop` red.** Two green branches, one new `sim` site of
@@ -6418,6 +6417,213 @@ What was already fixed when this started (checked against the code of `d726f9dd`
   one equal on all 5800 frames`, `hash: PASS`.
 - `python tools/coop/test_all.py --no-build --only determinism`: `RESULT: PASS, 2/2 steps ok, 8m05s`;
   `--only hash-run-1,hash-run-2,replay-test`: `RESULT: PASS, 4/4 steps ok, 1m17s`. `python tools/coop/check.py`: `co-op checks: ALL OK`.
+### 2026-11-13, #181, two views through the later parts on this build: Katina's Saucerer, Andross' brain, every level
+
+Identity: ROM US 1.0, branch `issue/181-coverage` on `issue/combined-test-6` (`d726f9dd`), Linux, GCC, Debug, OpenGL on a
+software renderer, no window. The game code is the base's but for this branch's test code: `pilot_aim.c` (the two Katina
+entries below) and `state_hash.c` (`SF64_COOP_HASH_SLOTS_EVERY`, #284). The builds along the way differed from the last
+one only in those Katina entries, which act on Katina's two bosses alone. `views --pilot`: per level one game with 2
+players and `gInvincible`, started past its intro; the pilot flies both, then two games play its replay with local index
+0 and 1, the second 6 frames ahead since boot, the two at the high and low audio sample counts (#129), and both must
+equal the pilot's game. `campaign.py`: two real clients over loopback in lockstep, a pilot on each, each looking through
+its own player.
+
+**What was there already** (the tracker and the code): `views --pilot` (`3f4761c6` to `33e6ddaf`) flew every campaign
+level, the vehicle levels and level 4 to their end, and the pilot finished the five it could not (`2de6770c`,
+`303890d2`; the campaign run of 2026-11-11). Two later parts were in no two-view run, both found here:
+
+- Katina ended with the Saucerer's laser on the base (player 0 in level complete with csState 100,
+  `src/overlays/ovl_i4/fox_ka.c:1224-1225`), an end the game goes on from as from the other, which the tool took as "to
+  the end"; the Saucerer's defeat (csState 0, `MISSION_ACCOMPLISHED`, `fox_ka.c:1404-1414`) was in no run. A Katina
+  flight of the sanitizer sweep (2026-11-12, its own build) shows why: 396 of the pilot's 424 boss aims went to boss
+  slot 0, `OBJ_BOSS_KA_FLBASE` at the origin, the team's own base (`fox_ka.c:2378-2384`), 28 to the Saucerer.
+- Andross' second part (his face on rails, the brain, the escape) comes only after Venom 2 (#275). No `views` entry
+  reached it; `campaign.py`'s `venom-2-andross` did, with two clients that differ in camera and boot, not in audio.
+
+**Observed: Katina, red then green**
+
+- The rule (`hash_check.py`'s `FAILED_ENDS`, read by `views --pilot` and `campaign.py`): a level complete that is
+  Katina's laser end fails, with the frames compared. Red, this branch's tools on a build with the base's
+  `pilot_aim.c`: `python tools/coop/hash_check.py views --pilot --level katina --exe <that build>`:
+  `FAIL: katina: the level ended without its boss's death: Katina's base hit by the Saucerer's laser, so its defeat
+  is not in the flight`, equal on the 15823 frames flown, level complete at 14023: the numbers of #181's run of
+  2026-11-10.
+- A first change, the Saucerer's boxes in the pilot's table and the base left alone: the Saucerer stayed in standby
+  (state 0) for all 24014 frames, the pilot flying at it. Its state 0 waits for `gHitCount >= 10` or
+  `gAllRangeEventTimer > 3840` and then for `D_edisplay_801615D0.y < 0` (`fox_ka.c:890-892`): the boss seen from the
+  camera, its `.y` "in view" (`src/engine/fox_edisplay.c:1340`, `:1414`), which stays player 0's in co-op (#96). It
+  comes in only while player 0 is not looking at it.
+- With the Saucerer left alone before its fight (states 0 to 5), green: `views --pilot --level katina` equal on every
+  frame to the end, 14620 frames, level complete at 12820. In the pilot's log the Saucerer is in state 1 by game frame
+  3300 and in its fight (state 6) by 5160, its core comes down by its timer (the hatches stay at 60, 100, 100, 100),
+  is at 20 in state 12 at 12720 and at 0 in state 20 (`SAUCERER_DEFEAT`) at 12780; player 0 is in level complete with
+  csState 0 at level frame 12807.
+- Two real clients (`campaign.py --levels katina`): equal on the 16957 frames flown, but the level ended without its
+  boss's death (the laser): the core was at 80 of 400 when it fired. The pilots in lockstep do not get it down in time.
+
+**Observed: `views --pilot` on this build** (`--level a,b,...`, one group per run)
+
+| Level | Result | Replay frames | Level complete at | Downs |
+|---|---|---|---|---|
+| Corneria | equal on every frame to the end | 7445 | 5645 | 0, 0 |
+| Meteo | equal on every frame to the end | 17583 | 15783 | 0, 0 |
+| Sector X | equal on every frame to the end | 11884 | 10084 | 0, 0 |
+| Solar | equal on every frame to the end | 10451 | 8651 | 0, 0 |
+| Titania | equal on every frame to the end | 10058 | 8258 | 0, 0 |
+| Macbeth | equal on every frame to the end | 11965 | 10165 | 0, 0 |
+| Aquas | equal on every frame to the end | 8165 | 6365 | 0, 0 |
+| Sector Y | equal on every frame to the end | 8662 | 6862 | 0, 0 |
+| Zoness | equal on every frame to the end (`gInfiniteBombs`) | 12200 | 10400 | 0, 0 |
+| Bolse | equal on every frame to the end | 18101 | 16301 | 0, 0 |
+| Area 6 | equal on every frame to the end | 22978 | 21178 | 0, 0 |
+| Venom (Andross) | equal on every frame to the end (`gInfiniteBombs`) | 13643 | 13131 | 0, 0 |
+| Katina | equal on every frame to the end, the Saucerer's defeat | 14620 | 12820 | 0, 0 |
+| Fortuna | equal on every frame to the end | 9056 | 7256 | 0, 0 |
+| Sector Z | equal on every frame to the end | 5428 | 3628 | 0, 0 |
+| Venom 2 | equal on every frame to the end | 10906 | 10282 | 0, 0 |
+| Venom 1 | equal on every frame to the end | 12057 | 11478 | 0, 0 |
+| Venom 2 into Andross' second part (`venom-2-andross`, new) | pilot cannot finish: equal on all 60014 frames flown (the frame cap), Venom 2's end and the jump into Andross included; his face's second hand stayed at 140 of 200 from game frame 2460 on | 60014 | - | 0, 0 |
+| Level 4 | hash difference at its first frame, `globals`: the voice clock (this day's #232 entry) | 24014 | - | 0, 0 |
+
+**Observed: two real clients with the views' differences** (`campaign.py`, which now gives the host the high and the
+client the low audio sample count and the client 6 frames of boot ahead by default, `--audio`, `--skew`; the games' logs
+say `audio samples per update high 560, low 560` on the host and `high 528, low 528` and `gSysFrameCount starts 6
+ahead` on the client)
+
+| Level | Result | Frames compared | Level complete at level frame | Downs |
+|---|---|---|---|---|
+| Venom 2 into Andross' second part (`venom-2-andross`) | equal on every frame to the end (`gInfiniteBombs`): the face, the brain and the escape to the trigger | 37303 | 25439 | 0, 0 |
+| Titania | equal on every frame to the end | 11401 | 9399 | 0, 0 |
+| Sector Y | equal on every frame to the end | 10583 | 8057 | 0, 0 |
+| Zoness | equal on every frame to the end (`gInfiniteBombs`) | 11919 | 9653 | 0, 0 |
+| Katina | equal on the frames flown, the level ended without its boss's death (above) | 16957 | 14487 | 0, 0 |
+| Macbeth | equal on every frame to the end | 12031 | 9925 | 0, 0 |
+| Bolse | equal on every frame to the end | 29204 | 27147 | 0, 0 |
+| Area 6 | equal on every frame to the end | 16840 | 14756 | 0, 0 |
+| Aquas | not to the end: each of four runs (two with the new differences, one with `--audio same --skew 0`, one with `--skew 0`) had played 7082 to 7211 frames, in the Bacoon fight, when its 600 s ran out | - | - | - |
+
+Aquas in lockstep plays about 12 frames a second (the games kept writing to the end of each run; both stood on the
+same frame), against 200 for Bolse (29204 frames in 146 s) and 78 for the one-game pilot flight of Aquas (10267 frames
+in 132 s, Sector Y 320). Why: unknown. So a campaign run of Aquas takes about 12 minutes, more than a hold of the
+shared machine may; #28's route of 2026-11-11 had it equal to the end (8808 frames).
+
+**Derived**
+
+- Every campaign level's boss and end, Katina's Saucerer and Andross' brain and escape included, is now compared
+  between two clients with different cameras, boot times and audio sample counts: in one game per run for all but
+  Andross' second part (`views --pilot`), with two real clients for that part and the levels in the second table.
+- A level complete is not always the boss's end. The tools now say so for Katina, by player 0's csState. Fortuna
+  ends in mission complete with Star Wolf still flying (`src/overlays/ovl_i4/fox_fo.c:210-222`) and Sector Z with the
+  Great Fox hit (`src/overlays/ovl_i4/fox_sz.c:1559-1565`); their csState does not tell those ends apart, so the tools
+  do not check them, and which end each run above took is not logged (unknown). Macbeth's mission complete is its
+  boss's death (`src/overlays/ovl_i5/fox_ma.c:1045-1058`).
+
+**Unknown**
+
+- Why the one-game pilot does not get Andross' second hand down in phase 1 (the lockstep pilots do), and why the
+  lockstep pilots get less of the Saucerer's core than the one-game pilot: not looked into.
+- `--mortal`, Windows, two PCs: not run.
+
+### 2026-11-13, #232, the pilot boxes: Goras' dying sites by Titania's end; level 4 keeps the voice clock
+
+Identity: ROM US 1.0, branch `issue/181-coverage` on `issue/combined-test-6` (`d726f9dd`), Linux, GCC, Debug, OpenGL on a
+software renderer, no window; the game code is the base's but for this branch's test code.
+
+**Observed: Goras' 8 dying sites**
+
+- Code: Titania's level complete is set in one place, `Titania_TiGoras_Dying` once its `timer_050` is 0 with player 0
+  active (`src/overlays/ovl_i5/fox_ti.c:5659-5662`); Goras goes dying with that timer at 280 (`fox_ti.c:4796-4800`),
+  and the function's 8 signed draws run at its first frame (`work_044` 0, `:5538`, `:5541`) and at timers 140 (`:5631`,
+  `:5634`), 120 (`:5599`, `:5602`) and 100 (`:5567`, `:5570`). With `gDebugLevelComplete` off no other code sets it in
+  Titania (`Boss_CompleteLevel` is called from Corneria and Zoness only; `ItemPathChange_Update` only in Meteo and
+  Sector X). So any run that reaches Titania's level complete has run all 8 (#209's gdb count of 2026-11-10 saw each).
+- `python tools/coop/lockstep_test.py --only vehicle_end --levels titania`: ok, same hash on 42000 frames, level
+  complete at 9399, player 1 drove on 35237 (396 s). #232's box had it fail at 34000 frames; #266 raised the limit to
+  42000 for a level complete at 36223, and on this build it comes at 9399. The scenario now says the dying function ran.
+- `python tools/coop/hash_check.py views --pilot --level titania`: equal on every frame to the end, 10058 frames, level
+  complete at replay frame 8258 (Goras' parts all down by game frame 7680, state 13 at 7920).
+- `python tools/coop/campaign.py --levels titania` (two real clients, the host at the high audio sample count and
+  the client at the low one and 6 frames of boot ahead, #181): equal on every frame to the end, 11401 frames, level
+  complete at level frame 9399.
+
+**Observed: level 4** (`LEVEL_UNK_4`, which no menu of the game or the lobby offers, `menu_game.c:42-56`)
+
+- `python tools/coop/hash_check.py views --pilot --level level-4`: index 0 and 1 differ at replay frame 10, the first
+  frame in level 4, region `globals`, and so do the pilot's game and index 0 (#181's run of 2026-11-10 had them equal on
+  24014 frames). With `--audio same` too (600 frames): the same three-way difference at frame 10.
+- Two real clients (a scratch script giving `campaign.py` a `level-4` entry): both games wrote a desync report at the
+  session's frame 0 in level 4; `desync_report.py diff`: `globals: voiceClock differs in 4 of 12 bytes, first at +2`:
+  the voice sequence player's tempo at 5760 on both, its tempo accumulator 6810 on the host and 6000 on the client
+  (`CoopVoiceClock`, `src/port/coop/sync/voice_clock.h`). The session started the level again (`# run 2` in the
+  lockstep log), and `campaign.py` stopped on that line with a traceback (`int('#')`); it reads past it now, and the
+  same run again gives `level-4: hash difference: the hash logs differ at level frame 0: globals (... voiceClock differs
+  in 4 of 12 bytes ...)`: the host at 6810 again, the client at 7740 (6000 the first time).
+- Code: the voice player starts over only at an audio heap reset (#230). A level gets one from the map
+  (`Map_LevelStart_AudioSpecSetup`, `src/overlays/ovl_menu/fox_map.c:4027`, a case per campaign level) or from
+  `Play_InitLevel` (`src/engine/fox_play.c:2638-2655`: Training and the Venom levels). Neither has a case for level 4.
+- The pads: both players are active Arwings on rails for the whole level (trace: state 3, form 0, mode 0), the pilot
+  runs (an aim line every 60 frames in its log), and the pads the trace reads stay 0 and the ships keep their x and y
+  (0 and 244, 343 and 423). Why its pads do not reach the game there: unknown.
+
+**Derived**
+
+- #232's Goras box is done: runs that reach Titania's level complete, which every one above does on this build, run
+  the 8 sites, and the two clients stay equal through them.
+- Level 4 keeps the voice player of what ran before it, which two clients reach at different times; since #230 hashes
+  that player's clock, two clients differ from the level's first frame. No player can start level 4 from a menu; only
+  the test switch or the level select mod (`src/mods/levelselect.c`) reaches it.
+
+**Unknown**
+
+- Training (no level complete) and level 15 (crashes on entry, with co-op off too) are as #181 left them.
+- A campaign chained through the map: #267's `survive_gaps_route` (`5f92e0fc`) runs Corneria, the map, Meteo, the map
+  and Fortuna in one session; a whole route in one session is not built. Two PCs: not run.
+
+### 2026-11-13, #284 item 2, the burst at Granga's death fills the effect array with one player too
+
+Identity: ROM US 1.0, branch `issue/181-coverage` on `issue/combined-test-6` (`d726f9dd`) with this branch's
+`SF64_COOP_HASH_SLOTS_EVERY` (`src/port/coop/sync/state_hash.h`), Linux, GCC, Debug, OpenGL on a software renderer, no
+window, one game per run. `full_level.py`: through the menus into Corneria, a pilot (`src/port/coop/test/pilot.h`)
+flies every player to the map, no cheat; with `--players 1` no `gCoopDebugPlayerCount` is set, so co-op is off.
+
+Observed:
+
+- #246's sample (`lockstep_test.py --only full`, the host at frame 8100: 339 × 47, 357 × 46, 100 of 100) is one of
+  the "# effects" lines a game writes every 100 frames. On this build `python tools/coop/full_level.py` (2 players)
+  wrote 66 at frame 11100 and 36 at 11200 (357 × 32): its samples fell on both sides of the burst. So the game takes
+  `SF64_COOP_HASH_SLOTS_EVERY=<n>` now (those lines every n frames), and `full_level.py --slots-every N` passes it to
+  the pilot's game and prints the sample with the most effects in use.
+- `python tools/coop/full_level.py --players 2 --slots-every 1`: PASS, 13335 frames, no down, level complete at
+  frame 11040, map at 13275. `python tools/coop/full_level.py --players 1 --frames 30000 --slots-every 1`: PASS, 28048
+  frames; player 0 went down twice (frames 12296 and 18515, no `gInvincible`), level complete at 26653, map at 27988.
+  (With the default 16000 frames the one-player pilot had not finished.)
+- The burst, taken as the first frame on which 357 (`OBJ_EFFECT_357`, debris) grows by 30 or more: 110 frames after
+  level complete with 2 players (frame 11150), 100 with 1 (frame 26753). There 2 players hold 339 × 46, 357 × 46, 386
+  × 5, 348, 383 and 384 (100 of 100), 1 player 339 × 48, 357 × 45, 348, 383, 384 and 389 (97).
+- Effects in use frame by frame, from 12 frames before the burst to 12 after it: 2 players 97 98 95 99 97 97 96 97 97
+  96 94 100, burst 100, then 100 100 98 98 96 96 99 99 99 97 97 96; 1 player 99 100 96 95 99 99 97 95 97 99 93 92,
+  burst 97, then 98 97 95 100 99 100 99 98 99 97 95 90. From 120 before to 15 after the burst the array is full on 8
+  frames with 2 players (33, 31, 30, 21 and 1 before, the burst, 1 and 2 after) and on 4 with 1 player (27 and 11
+  before, 4 and 6 after). Before the burst the fire smoke 339 alone climbs to 96 (2 players) and 85 (1 player); 80
+  frames after it one effect is left (383), in both.
+- The 1-player game was full at frame 12322 as well, at player 0's own death (339 × 59, 342 × 17, 341 × 11, 373 × 6,
+  343 × 4, 386 × 2, 387).
+- Code: Granga's explode state (`src/overlays/ovl_i1/fox_co.c:994-1032`) on `timer_050` 10 frees effect slots 0 to 49,
+  spawns `Effect_Effect383_Spawn`, a fire smoke and a ground mark (348, `func_enmy_80062B60`, from slot 0 up), and asks
+  100 times for debris (`func_effect_80079618`, `src/engine/fox_effect.c:691-700`), each in the highest free slot from
+  50 down: at most 51 are placed, the other asks find no slot. Slots 51 to 99 keep what was there.
+
+Derived:
+
+- The burst is the death explosion's own, not co-op's: with co-op off the array holds 92 to 100 in the same 25 frames
+  and is full on 4 of them; with two players a few slots more at most (the two flights differ, so frame against frame
+  says no more than that). Nothing to fix: a spawn that finds no free slot is skipped, in single player as in co-op.
+- A sample every 100 frames cannot tell whether an array was full in a burst; `--slots-every 1` can.
+
+Unknown:
+
+- Which spawner makes the fire smoke (339) of the 40 frames before the burst: not traced.
+- #246's lockstep run itself was not repeated; `full_level.py` flies the same level with the same pilot in one game.
 
 ### 2026-11-12, the sanitizer sweep (#262, #145, #232): every campaign level under AddressSanitizer and UBSan
 

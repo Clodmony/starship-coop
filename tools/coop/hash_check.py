@@ -36,7 +36,8 @@ views plays one replay twice per section, with SF64_COOP_TEST_LOCAL_INDEX 0 and 
   client with index 1 has also ticked VIEW_SYS_FRAME_SKEW more frames since boot (--skew), as gSysFrameCount is not
   simulation state. --level flies other Arwing levels instead (VIEW_LEVELS, or all) and --cvar NAME=VALUE sets a CVar (#129).
   --pilot flies each level to its end first, boss included, with a pilot that reads game state, and the two clients play
-  what it flew (PILOT_LEVELS, #181).
+  what it flew (PILOT_LEVELS, #181); venom-2-andross flies on through the game's jump into Andross' brain and escape
+  (PILOT_THROUGH).
 slots plays a level with 1 player and with --players and compares how many effect slots are in use (the median over
   the samples after the start): co-op frees nothing for leaving the view, so a kind of effect that only that frees
   stays for the whole level (#129). Fails when co-op holds more than SLOTS_LEAK more.
@@ -574,11 +575,13 @@ def view_compare(label, replay, frames, config, start, exe, args, level=None):
     if min(len(a_rows), len(b_rows)) < frames:
         failures.append(f"{label}: hash logs shorter than the replay ({len(a_rows)}, {len(b_rows)} < {frames} frames)")
     if level is not None:
+        levels = level if isinstance(level, tuple) else (level,)
+        where = " and ".join(str(n) for n in levels)
         for index, rows in ((0, a_rows), (1, b_rows)):
-            flown = sum(1 for row in rows if row[1] == replay_tool.GS_PLAY and row[2] == level)
-            print(f"hash: {label}: index {index} flew {flown} frames in level {level}")
+            flown = sum(1 for row in rows if row[1] == replay_tool.GS_PLAY and row[2] in levels)
+            print(f"hash: {label}: index {index} flew {flown} frames in level {where}")
             if flown < frames // 2:
-                failures.append(f"{label}: index {index} flew only {flown} of {frames} frames in level {level}")
+                failures.append(f"{label}: index {index} flew only {flown} of {frames} frames in level {where}")
     for index, values in ((0, a_values), (1, b_values)):
         print(f"hash: {label}: index {index} slots in use: {describe_slots(read_slots(values['log']))}")
     failures += check_views_differ(label, a_values, b_values)
@@ -656,21 +659,49 @@ def cmd_slots(args):
 # src/engine/fox_enmy.c, only starts its all-range again), and level 15 (LEVEL_UNK_15) has no environment
 # (D_800D2F98, src/engine/fox_play.c): the game crashes in Play_InitEnvironment, with co-op off too (NOTES.md, #181).
 PILOT_LEVELS = {**{name: level for name, level in VIEW_LEVELS.items() if name != "training"},
-                "macbeth": 11, "titania": 12, "aquas": 13, "level-4": 4}
+                "macbeth": 11, "titania": 12, "aquas": 13, "level-4": 4, "venom-2-andross": 19}
+# Flights on through the game's own jump into another level (as campaign.py's W8_ANDPILOT_THROUGH, #275): name -> the
+# LevelId whose end the flight waits for. Andross' second part, his face on rails, the brain in all-range and the escape
+# after it, comes only after Venom 2: its clear (gLeveLClearStatus, src/overlays/ovl_i6/fox_ve2.c:123) sends the game
+# into Andross with gLevelPhase 1 (fox_ve2.c:442-446). `venom-andross` starts in phase 0: the face, and after it the
+# short escape of the other route; `venom-2` stops 60 frames into Andross. So no other entry has the brain (#181).
+PILOT_THROUGH = {"venom-2-andross": 9}
+# Levels whose level complete is not the end of a flight through a jump: Andross' escape begins as one, 240 frames with
+# csState 100 (fox_andross.c:1106-1108); it ends at the trigger at the maze's exit, which sets level complete in Venom
+# 2's id (fox_andross.c:683-690), and the ending follows (campaign.py's W8_ANDPILOT_NOT_AN_END).
+PILOT_NOT_AN_END = {"venom-2-andross": {9}}
 PILOT_NO_END = {"training": "no level complete: its path change starts the all-range again (src/engine/fox_enmy.c)",
                 "level-15": "no level: its environment is NULL (src/engine/fox_play.c), and the game crashes in "
                             "Play_InitEnvironment, with co-op off too"}
 PILOT_FRAMES = 24000  # most frames of a pilot's flight; Corneria took 11200 to the map, Sector X 11529 to level complete
 # Goras took to 29169 in #16's run with a pilot on each of two clients, and was at half its health after 40000 frames
 # of one pilot flying both; Sector Y's last Shogun had 20 health left at 24000, the Gorgon 660 of 780.
-PILOT_LEVEL_FRAMES = {"titania": 70000, "sector-y": 36000, "area-6": 60000, "bolse": 40000}
+PILOT_LEVEL_FRAMES = {"titania": 70000, "sector-y": 36000, "area-6": 60000, "bolse": 40000,
+                      "venom-2-andross": 60000}  # #275's campaign run: 37249 lockstep frames to the ending
 # Levels the pilot flies with gInfiniteBombs, as campaign.py's BOMBS (owner's choice of 2026-11-11): their bosses need
 # bombs, and the port's cheat keeps player 0 at 9 (src/port/mods/PortEnhancements.c).
-PILOT_BOMBS = {"zoness", "venom-andross"}
+PILOT_BOMBS = {"zoness", "venom-andross", "venom-2-andross"}
 PILOT_TAIL = 60  # frames kept after the game leaves the level: the map, the next level or an ending
 PILOT_END_TAIL = 1800  # or this many after level complete, whichever comes first: some endings run long
 PILOT_CUT_MARGIN = 300  # the pilot's game runs this much past the cut, so that nothing it buffered is missing
 LEVEL_COMPLETE = 7  # PLAYERSTATE_LEVEL_COMPLETE
+# Level completes that end a level without its boss's death, as (LevelId, csState of player 0): Katina's base hit by
+# the Saucerer's laser (src/overlays/ovl_i4/fox_ka.c:1224-1225, SAUCERER_CS_ROTATE), where the Saucerer's defeat sets
+# csState 0 (fox_ka.c:1412-1414, MISSION_ACCOMPLISHED). The game goes on from both; a flight that ends at the first
+# compared the level but not the boss, and counted as "to the end" until #181 found the pilot shooting at the team's
+# own base. (Fortuna with Star Wolf flying, fox_fo.c:210-222, and Sector Z with the Great Fox hit, fox_sz.c:1559-1565,
+# end in mission complete too; their csState does not tell them apart, so they are not here.)
+FAILED_ENDS = {(16, 100): "Katina's base hit by the Saucerer's laser, so its defeat is not in the flight"}
+
+
+def failed_end(trace):
+    """What FAILED_ENDS says of the first level complete in a trace (src/port/coop/test/player_trace.h), or None."""
+    import player_trace  # here, as player_trace imports this file
+
+    for row in player_trace.parse(trace):
+        if row.players and row.players[0].state == LEVEL_COMPLETE:
+            return FAILED_ENDS.get((row.level, row.players[0].cs))
+    return None
 
 
 class GrowingFile:
@@ -701,8 +732,11 @@ def pilot_flight(name, exe, args, work, config, start):
     import time
 
     level = PILOT_LEVELS[name]
+    target = PILOT_THROUGH.get(name, level)
+    not_an_end = PILOT_NOT_AN_END.get(name, set())
     cap = args.frames or start.frame(PILOT_LEVEL_FRAMES.get(name, PILOT_FRAMES))
     complete_level = None
+    reached = target == level  # a flight through a jump counts a level complete only once in the level it waits for
     rule = work / "rule.sfcr"
     write_generated_replay(rule, frames=cap, l_at=None, start=start)
     run = replay_tool.make_run_dir(exe, f"play-views-pilot-{name}")
@@ -736,8 +770,14 @@ def pilot_flight(name, exe, args, work, config, start):
             # earlier than the real one. The exact frames come from the replay's checkpoints below.
             for line in trace.lines():
                 fields = dict(kv.split("=", 1) for kv in line.split() if "=" in kv)
+                p0 = fields["p0"].split(",") if "p0" in fields else []
+                # Once player 0 is out of the level complete that led there: the trace names the new level's id while
+                # the old one ends (campaign.py).
+                if not reached and fields.get("level") == str(target) and p0 and p0[0] != str(LEVEL_COMPLETE):
+                    reached = True
                 # Any level: Venom 1 ends in Venom 2's id, as the game sets it at the exit (fox_andross.c).
-                if complete is None and "p0" in fields and fields["p0"].split(",")[0] == str(LEVEL_COMPLETE):
+                if (complete is None and reached and p0 and p0[0] == str(LEVEL_COMPLETE) and
+                        int(fields.get("level", -1)) not in not_an_end):
                     complete = frames
                     complete_level = fields.get("level")
             end = min(left + PILOT_TAIL if left is not None else cap,
@@ -754,11 +794,15 @@ def pilot_flight(name, exe, args, work, config, start):
     size = struct.unpack_from("<I", flown.read_bytes(), 12)[0] if flown.exists() else 0
     whole = replay_tool.replay_frame_count(flown)
     complete = left = None
+    reached = target == level
     if size:
         import full_level  # here, as full_level imports this file
 
         for frame, game_state, at, state in full_level.read_checkpoints(flown):
-            if complete is None and game_state == replay_tool.GS_PLAY and state == LEVEL_COMPLETE:
+            if not reached and game_state == replay_tool.GS_PLAY and at == target and state != LEVEL_COMPLETE:
+                reached = True
+            if (complete is None and reached and game_state == replay_tool.GS_PLAY and state == LEVEL_COMPLETE and
+                    at not in not_an_end):
                 complete = frame
                 complete_level = at
             elif complete is not None and (game_state != replay_tool.GS_PLAY or at != complete_level):
@@ -779,7 +823,8 @@ def pilot_players(trace, level, players):
     """Per player from a pilot's trace: (frames flown, times down, lowest shields)."""
     import player_trace  # here, as player_trace imports this file
 
-    rows = [r for r in player_trace.parse(trace) if r.level == level]
+    levels = level if isinstance(level, tuple) else (level,)
+    rows = [r for r in player_trace.parse(trace) if r.level in levels]
     stories = []
     for i in range(players):
         slots = [r.players[i] for r in rows if len(r.players) > i]
@@ -813,11 +858,12 @@ def view_pilot(name, exe, args):
     replay, frames, complete, why, pilot_log = pilot_flight(name, exe, args, work, config, start)
     if replay is None or frames < 100:
         return [f"{name}: the pilot flew nothing ({why})"], (name, f"no flight: {why}", frames, complete, "-")
-    stories = pilot_players(work / "trace.txt", level, args.players)
+    levels = (level, PILOT_THROUGH[name]) if name in PILOT_THROUGH else level
+    stories = pilot_players(work / "trace.txt", levels, args.players)
     downs = ",".join(str(down) for _, down, _ in stories)
     for i, (flown, down, lowest) in enumerate(stories):
         print(f"hash: {name}: player {i} flew {flown} level frames, went down {down} times, lowest shields {lowest}")
-    failures = view_compare(name, replay, frames, config, start, exe, args, level=level)
+    failures = view_compare(name, replay, frames, config, start, exe, args, level=levels)
     for index in (0, 1):
         tag = f"view-{name}-{index}"
         report = sorted((replay_tool.ROOT / "local").glob(f"test-replay-play-{tag}-*/replay-report.txt"))
@@ -825,6 +871,9 @@ def view_pilot(name, exe, args):
         if not values or values.get("result") != "PASS":
             failures.append(f"{name}: index {index} played the pilot's replay with "
                             f"{values.get('result') if values else 'no report'}, not PASS")
+    failed = failed_end(work / "trace.txt") if complete is not None else None
+    if failed:
+        failures.append(f"{name}: the level ended without its boss's death: {failed}")
     names, pilot_rows = read_log(pilot_log)
     _, a_rows = read_log(sorted((replay_tool.ROOT / "local").glob(f"test-replay-play-view-{name}-0-*"))[-1] /
                          "state-hash.txt")
@@ -833,7 +882,9 @@ def view_pilot(name, exe, args):
         failures.append(f"{name}: the pilot's game and index 0 differ: {describe(names, diff)}")
     else:
         print(f"hash: {name}: the pilot's game and index 0 equal on all {frames} frames")
-    if failures:
+    if failed and len(failures) == 1:
+        result = f"equal on the {frames} frames flown, but the level ended without its boss's death: {failed}"
+    elif failures:
         result = "hash difference: " + "; ".join(failures)
     elif complete is None:
         result = f"pilot cannot finish ({why}); equal on the {frames} frames flown; {last_boss_line(work)}"
@@ -841,6 +892,8 @@ def view_pilot(name, exe, args):
         result = "equal on every frame to the end"
     if name in PILOT_BOMBS:
         result += " (gInfiniteBombs on)"
+    if name in PILOT_THROUGH:
+        result += f" (through the game's jump into level {PILOT_THROUGH[name]})"
     if complete is None:
         failures.append(f"{name}: no level complete in {frames} frames ({why})")
     return failures, (name, result, frames, complete, downs)

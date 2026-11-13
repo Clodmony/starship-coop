@@ -22,9 +22,11 @@ and the escape, which only that way leads to (W8_ANDPILOT_THROUGH); `venom-andro
 
 A level passes when both games stay equal on every frame, hash log and input log (lockstep_test.compare: every region,
 no desync report), from the first frame in the level to the map or ending after it, and player 0 reached level
-complete. The cameras differ: each game looks through its own player. A level the pilot cannot finish within its frame
-cap is reported as that, with the frames that were compared; a game over (the team out of lives) ends the level's run
-at once and is reported as that (#275).
+complete. The cameras differ: each game looks through its own player. And as the two clients of `hash_check.py views`
+differ (#129, #181), the host renders the high audio sample count per update and the client the low one (--audio), and
+the client's frames since boot are VIEW_SYS_FRAME_SKEW ahead (--skew): two PCs differ in both, and a radio line follows
+the sound thread. A level the pilot cannot finish within its frame cap is reported as that, with the frames that were
+compared; a game over (the team out of lives) ends the level's run at once and is reported as that (#275).
 
 The games run at the speed of games that meet over sockets (replay.MEETING_SPEED), silent and without a window. A whole
 route takes hours. Exit code 0 when every level passed.
@@ -37,6 +39,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hash_check  # noqa: E402
 import join_test  # noqa: E402
 import lockstep_test  # noqa: E402
 import player_trace  # noqa: E402
@@ -159,13 +162,20 @@ def fly_level(args, folder, name):
         row["through"] = target
     if args.seeds:
         row["seeds"] = args.seeds
+    row["audio"], row["skew"] = args.audio, args.skew
     began = time.monotonic()
     held = lock(args.lock)
     try:
         host_env = {"SF64_COOP_JOIN_LEVEL": str(level)}
         if args.seeds:
             host_env["SF64_COOP_TEST_START_SEEDS"] = args.seeds  # the level start's RNG, not lockstep_test.SEEDS
-        host, client = lockstep_test.session(args, folder, host_env, None, env, config=config,
+        client_env = {}
+        if args.audio != "same":  # src/port/coop/test/switches.h, as hash_check.py's client_env
+            host_env["SF64_COOP_TEST_AUDIO_SAMPLES"] = "high"
+            client_env["SF64_COOP_TEST_AUDIO_SAMPLES"] = "low"
+        if args.skew:
+            client_env["SF64_COOP_TEST_SYS_FRAME_OFFSET"] = str(args.skew)
+        host, client = lockstep_test.session(args, folder, host_env, client_env or None, env, config=config,
                                              replay_frames=cap + 20000)
         # Frames of the host's hash log (from boot, with game state and level on every row) for the end, lockstep
         # frames for the cap. The level complete may come in another level's id: Venom 1 sets Venom 2's at its exit
@@ -181,7 +191,8 @@ def fly_level(args, folder, name):
                 lines, at = lines_from(host.sync_log, at)
                 for line in lines:
                     parts = line.split()
-                    if len(parts) >= 3:
+                    # "# run 2": the session started the level again after a desync (#181 saw one in level 4)
+                    if len(parts) >= 3 and not line.startswith("#"):
                         frames = int(parts[0]) + 1
                 lines, hash_at = lines_from(host.run / "state-hash.txt", hash_at)
                 for line in lines:
@@ -251,8 +262,15 @@ def fly_level(args, folder, name):
         row["players"] = []
         row["trace_error"] = str(error)
     row["complete"] = row.get("complete_level_frame") is not None
+    failed = hash_check.failed_end(host.run / "trace.txt") if row["complete"] else None
+    if failed:
+        row["complete"] = False  # the level ended, its boss did not (#181)
+        row["failed_end"] = failed
     if not row["equal"]:
         row["result"] = f"hash difference: {row['difference']}" + (f" ({row['desync']})" if row.get("desync") else "")
+    elif failed:
+        row["result"] = (f"equal on the {row['frames']} frames flown, but the level ended without its boss's death: "
+                         f"{failed}")
     elif not row["complete"]:
         row["result"] = f"pilot cannot finish ({why}); equal on the {row['frames']} frames flown"
     else:
@@ -282,6 +300,12 @@ def main():
     p.add_argument("--seeds", help="six numbers a,b,c,d,e,f the host's level starts from (default "
                    "lockstep_test.SEEDS): another flight, for a level that draws at random, as Andross' escape draws "
                    "one of three mazes (#275)")
+    p.add_argument("--audio", choices=("split", "same"), default="split",
+                   help="split: the host renders the high audio sample count per update, the client the low one "
+                        "(default); same: each its own choice (#181, as hash_check.py views)")
+    p.add_argument("--skew", type=int, default=hash_check.VIEW_SYS_FRAME_SKEW,
+                   help=f"frames since boot the client is ahead of a boot like the host's (default "
+                        f"{hash_check.VIEW_SYS_FRAME_SKEW}; 0 for none)")
     p.add_argument("--exe", help="Starship executable (default: newest build found)")
     p.add_argument("--out", help="folder for the logs (default: a new one under local/)")
     args = p.parse_args()
@@ -300,7 +324,7 @@ def main():
     root = Path(args.out).resolve() if args.out else replay_tool.ROOT / "local" / f"test-campaign-{time.strftime('%Y%m%d-%H%M%S')}"
     root.mkdir(parents=True, exist_ok=True)
     print(f"campaign: {len(names)} levels: {', '.join(names)}; gInvincible {'off' if args.mortal else 'on'}; "
-          f"exe {args.exe}; logs {root}", flush=True)
+          f"audio {args.audio}, client skew {args.skew}; exe {args.exe}; logs {root}", flush=True)
     rows = []
     for name in names:
         try:

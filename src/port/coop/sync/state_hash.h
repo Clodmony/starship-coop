@@ -10,6 +10,8 @@
 //   SF64_COOP_HASH_PROBE=<n>      test only: every n frames, change single values one at a time, hash, change them
 //                                 back and log which regions noticed, as "# probe" lines. Needs no second run and
 //                                 leaves the game as it was (needs SF64_COOP_HASH_LOG)
+//   SF64_COOP_HASH_SLOTS_EVERY=<n> test only: the "# effects" and "# slots" lines every n frames instead of every 100,
+//                                 to see a burst that lasts fewer frames than that (#284; needs SF64_COOP_HASH_LOG)
 // With none set, no listener is registered and the game runs unchanged.
 //
 // Frames are counted the same way as the input replay (src/port/coop/test/replay.c): frame 0 is the first frame in

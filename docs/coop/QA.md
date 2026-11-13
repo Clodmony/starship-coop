@@ -77,8 +77,11 @@ number of clients, transport.
    every checkpoint, hash alike on every frame and equal the pilot's game. Every campaign level, the vehicle levels and
    level 4 by default, or `--level`; `--mortal` leaves `gInvincible` off. The summary gives per level the result, the
    frames, the frame of level complete and the downs per player; a level the pilot does not finish says so, with the
-   frames that were compared. Like `views` this is one game per run, so it says nothing about two clients over a
-   network: that is `lockstep_test.py`.
+   frames that were compared, and so does one that ends without its boss's death (`FAILED_ENDS`: Katina's base hit by
+   the Saucerer's laser). `venom-2-andross` flies Venom 2 on into Andross' second part, the brain and the escape (#181).
+   Like `views` this is one game per run, so it says nothing about two clients over a network: that is
+   `lockstep_test.py`, and `campaign.py`, whose two clients also run at the high and low audio sample counts and 6
+   frames of boot apart (#181).
    `python tools/coop/hash_check.py builds --debug <exe> --release <exe>` (unattended, exit code 0 on `PASS`) plays the
    same two sections on two Release runs and a Debug run of one commit, and all three must hash alike on every frame.
    `python tools/coop/hash_check.py rates --exe <exe>` (unattended, exit code 0 on `PASS`) does the same across
@@ -275,6 +278,22 @@ result:     automated. Macbeth (#280): a turret's shot and the blast of train ca
             Sector Y and the Granga fight with one player against the base, a turret's own shot or a car a player
             blows up hitting player 1, the robot's body yaw, three or four players, two PCs, Windows, Release, a
             person playing.
+commit:     issue/181-coverage (#181, #232, #284) on issue/combined-test-6 d726f9dd; the game code is the base's but
+            for test code (pilot_aim.c's Katina entries, SF64_COOP_HASH_SLOTS_EVERY)
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; views --pilot one game per run
+            (local index 0 and 1, 6 frames of boot apart, high and low audio sample counts), campaign.py and
+            lockstep_test.py two real clients over loopback in lockstep, a pilot on each, the same differences
+what ran:   hash_check.py views --pilot on every level (groups per run); campaign.py --levels venom-2-andross,
+            titania, sector-y, zoness, macbeth, bolse, area-6, katina (aquas: not within a hold); lockstep_test.py --only vehicle_end --levels
+            titania; full_level.py --players 1 and 2 --slots-every 1
+result:     automated. views --pilot equal on every frame to the end on all 17 campaign levels, Katina now through the
+            Saucerer's defeat (its laser end fails the tools now: red on the base's pilot, green with the new one);
+            venom-2-andross equal on the 60014 frames flown (the one-game pilot does not finish it). Two real clients
+            with the audio and boot differences: venom-2-andross to the ending (37303 frames, the brain and the
+            escape), Titania, Sector Y, Zoness, Macbeth, Bolse, Area 6 equal to the end; Katina equal but ended at the
+            laser. vehicle_end Titania ok (level complete at 9399: Goras' 8 dying sites run). Level 4 differs from its
+            first frame (voice clock, no audio heap reset; no menu reaches it). The burst at Granga's death fills the
+            effect array with co-op off too. Not run: --mortal, Windows, two PCs, test_all.py.
 ```
 
 ```
