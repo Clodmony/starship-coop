@@ -238,6 +238,7 @@ import make_save  # noqa: E402
 import menu_test  # noqa: E402
 import player_trace  # noqa: E402
 import replay as replay_tool  # noqa: E402
+from run_folder import make_run_folder  # noqa: E402
 import view_check  # noqa: E402
 
 IS_LINUX = platform.system() == "Linux"
@@ -6131,7 +6132,9 @@ def main():
     for name in names:
         if name not in SCENARIOS:
             sys.exit(f"lockstep: no scenario {name}")
-    root = Path(args.out).resolve() if args.out else replay_tool.ROOT / "local" / f"test-lockstep-{time.strftime('%Y%m%d-%H%M%S')}"
+    # make_run_folder notes the folder, in run_folder.py's HAND when run by hand, so that a test_all.py run beside it
+    # leaves it (#317), as it leaves the games' folders
+    root = Path(args.out).resolve() if args.out else make_run_folder(replay_tool.ROOT / "local", "test-lockstep-")
     passed = 0
     if args.jobs <= 1:
         for name in names:

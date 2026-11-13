@@ -9,6 +9,9 @@ from pathlib import Path
 # there, so that the run deletes the folders its own steps made and no other run's (#283). A tool that deletes what the
 # tools it starts made (OwnedFolders, #308) adds a folder of its own, after an os.pathsep: a folder is noted in each.
 OWNED_ENV = "COOP_TEST_ALL_OWNED"
+# A tool started by hand has no run above it to note its folders: they are noted here instead (#317), so that a
+# test_all.py run in the same checkout, which deletes the folders that are new since it started, leaves them.
+HAND = Path(__file__).resolve().parents[2] / "local" / "test-hand"
 
 
 def make_run_folder(parent, prefix=""):
@@ -28,9 +31,10 @@ def make_run_folder(parent, prefix=""):
 
 
 def note_owner(run):
-    """Notes run as made by a step of the test_all.py run, or by the tool with OwnedFolders, that set OWNED_ENV, if one
-    did. A note that cannot be written only means the folder is not deleted while another run is running."""
-    for owned in filter(None, os.environ.get(OWNED_ENV, "").split(os.pathsep)):
+    """Notes run as made by a step of the test_all.py run, or by the tool with OwnedFolders, that set OWNED_ENV, or in
+    HAND when none did: a tool started by hand. A note that cannot be written only means the folder is not deleted while
+    another run is running, or, in HAND, that a test_all.py run beside it may delete it."""
+    for owned in list(filter(None, os.environ.get(OWNED_ENV, "").split(os.pathsep))) or [str(HAND)]:
         try:
             Path(owned).mkdir(parents=True, exist_ok=True)
             (Path(owned) / run.name).touch()
@@ -50,7 +54,10 @@ class OwnedFolders:
         self.outer = os.environ.get(OWNED_ENV, "")
         # made before this adds itself: noted by the run above, if there is one, which deletes it if this cannot
         self.notes = make_run_folder(self.local, "test-owned-")
-        os.environ[OWNED_ENV] = os.pathsep.join(filter(None, [self.outer, str(self.notes)]))
+        # started by hand: what it and its tools make is noted in HAND too, as note_owner does for a tool by hand (#317)
+        os.environ[OWNED_ENV] = os.pathsep.join([self.outer or str(HAND), str(self.notes)])
+        # noted in HAND: started by hand, or below a tool that was; its notes there go with what it deletes
+        self.by_hand = not self.outer or str(HAND) in self.outer.split(os.pathsep)
 
     def made(self):
         """The folders noted so far that are still there. Only folders directly in local and named test-*: a tool
@@ -62,6 +69,8 @@ class OwnedFolders:
         """Delete every folder noted, then the notes."""
         for folder in self.made():
             shutil.rmtree(folder, ignore_errors=True)
+            if self.by_hand:
+                (HAND / folder.name).unlink(missing_ok=True)
         self.close()
 
     def close(self):
@@ -71,3 +80,5 @@ class OwnedFolders:
         else:
             os.environ.pop(OWNED_ENV, None)
         shutil.rmtree(self.notes, ignore_errors=True)
+        if self.by_hand:
+            (HAND / self.notes.name).unlink(missing_ok=True)

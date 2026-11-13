@@ -90,6 +90,17 @@ while sys.argv[5] != '-' and not Path(sys.argv[5]).exists() and time.monotonic()
     time.sleep(0.05)
 """
 
+# A step whose tool crashes once it made its run folder (os._exit: no cleanup of its own); the step itself passes.
+CRASHES = """
+import subprocess, sys
+from pathlib import Path
+child = ("import os, sys; sys.path.insert(0, sys.argv[1]); from pathlib import Path; "
+         "from run_folder import make_run_folder; Path(sys.argv[4]).write_text(make_run_folder(Path(sys.argv[2]), "
+         "sys.argv[3]).name); os._exit(3)")
+code = subprocess.run([sys.executable, '-c', child, *sys.argv[1:5]]).returncode
+print('the tool crashed with exit code', code)
+"""
+
 
 class Failed(Exception):
     pass
@@ -505,6 +516,27 @@ def scenario_beside(bench):
     want(len(list(local.glob("test-all-*"))) == 2, "a run deleted a run folder of test_all")
 
 
+def scenario_by_hand(bench):
+    """A tool started by hand beside a run in one checkout (#317): the folders it makes after the run started are not
+    the run's steps', and a run that passes leaves them. What the run's own steps left goes, the folder of a tool a step
+    started that crashed too."""
+    local = bench.repo / "local"
+    tools = bench.repo / "tools" / "coop"
+    step_made, hand_made, crashed, go = (bench.work / name for name in ("step-made", "hand-made", "crashed", "go"))
+    run = bench.start([step("makes", "game", MAKES, tools, local, "test-step-", step_made, go),
+                       step("crashes", "game", CRASHES, tools, local, "test-crashed-", crashed)])
+    want(wait_for(step_made), "the run's step made no folder")
+    # as a person starts a tool: from the checkout, with no run above it (ENV has no OWNED_ENV)
+    subprocess.run([sys.executable, "-c", MAKES, tools, local, "test-by-hand-", hand_made, "-"], cwd=bench.repo,
+                   env=ENV, check=True, timeout=60, capture_output=True)
+    go.write_text("")
+    output = run.communicate(timeout=60)[0]
+    want_result(run.returncode, output, 0, "PASS, 3/3 steps ok")
+    want(not (local / step_made.read_text()).exists(), "the run kept the folder its step made")
+    want(not (local / crashed.read_text()).exists(), "the run kept the folder of a tool of its step that crashed")
+    want((local / hand_made.read_text()).exists(), "the run deleted the folder of a tool started by hand beside it")
+
+
 SCENARIOS = {
     "pass": scenario_pass,
     "fail": scenario_fail,
@@ -524,6 +556,7 @@ SCENARIOS = {
     "stop-mutants": scenario_stop_mutants,
     "tree": scenario_tree,
     "beside": scenario_beside,
+    "by-hand": scenario_by_hand,
 }
 if not sys.platform.startswith("linux"):  # these read /proc, or need a stop signal a process can catch, or plan Linux's steps
     del SCENARIOS["timeout"], SCENARIOS["stop"], SCENARIOS["stop-mutants"], SCENARIOS["dry-run"], SCENARIOS["dry-run-mixed"]

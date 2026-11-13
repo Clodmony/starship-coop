@@ -26,7 +26,8 @@ before #290, and the mutation checks come last in it. Nothing goes to the screen
 <name>.log in a stamped folder local/test-all-<date>-<time>/, and SUMMARY.txt there gets one line per step as it ends.
 At the end it prints the failures, the longest step and one RESULT line. A step that outlives --timeout is stopped, with
 what it started, and counts as failed. When all steps pass, the run folders they left in local/ are deleted (--keep
-keeps them); a failure keeps them for reading. Two runs in one checkout delete only what their own steps made (#283).
+keeps them); a failure keeps them for reading. Two runs in one checkout delete only what their own steps made (#283),
+and a run leaves the folders of a tool started by hand beside it (run_folder.py's HAND, #317).
 
 A build that is not Debug leaves out what only Debug can do: OPTIMISED below, printed at the end of a run. --mixed
 leaves nothing out: it builds Debug and Release (the checks only in Debug's build) and plays every step that
@@ -65,7 +66,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import replay as replay_tool  # noqa: E402
-from run_folder import OWNED_ENV, make_run_folder  # noqa: E402
+from run_folder import HAND, OWNED_ENV, make_run_folder  # noqa: E402
 
 ROOT = replay_tool.ROOT
 TOOLS = ROOT / "tools" / "coop"
@@ -617,17 +618,21 @@ def clean_run_folders(before, folder):
     """Delete what the steps left in local/: folders named test-* that are new since this run started, and not a run
     folder of test_all. Two runs in one checkout (#283): a folder that another run's steps made (in that run's OWNED) is
     that run's to delete or to keep, and while another run is running, a folder no run noted (a tool that names its own)
-    stays too, as it may be that run's."""
+    stays too, as it may be that run's. A folder that a tool started by hand made (noted in HAND, run_folder.py) is that
+    person's (#317); the notes of folders that are gone are deleted."""
     others = [path for path in LOCAL.glob("test-all-*") if path != folder and path.is_dir()]
     theirs = {note.name for other in others for note in (other / OWNED).glob("*")}
     mine = {note.name for note in (folder / OWNED).glob("*")}
     running = any(is_running(other) for other in others)
     for path in LOCAL.glob("test-*"):
-        if path.name in before or path.name.startswith("test-all-") or not path.is_dir():
+        if path.name in before or path.name.startswith("test-all-") or not path.is_dir() or path == HAND:
             continue
-        if path.name in theirs or (running and path.name not in mine):
+        if path.name in theirs or (running and path.name not in mine) or (HAND / path.name).exists():
             continue
         shutil.rmtree(path, ignore_errors=True)
+    for note in HAND.glob("*"):  # a note is written after its folder, so one whose folder is missing is done with
+        if not (LOCAL / note.name).is_dir():
+            note.unlink(missing_ok=True)
 
 
 def main():

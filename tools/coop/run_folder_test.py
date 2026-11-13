@@ -21,7 +21,8 @@ crash_test.py as test_all.py runs a step, with OWNED_ENV set, and every folder n
 the folders of the stand-in's runs too, which the tools it starts make. hash-run to hash-start run hash_check.py by hand,
 one per subcommand, with its function replaced by a stand-in (HASH) that makes a run folder and starts a tool that makes
 one, and passes: neither may be left (#315). hash-keep: a failed run, --keep-folders, and a run under another that
-notes its folders keep both.
+notes its folders keep both. hand: OwnedFolders by hand, and one under it, note in HAND and take their notes away
+again (#317).
 
 No build, no ROM, a few seconds; check.py runs it. Exit code 0 when every scenario holds, 1 otherwise. Folders are named
 after the stopped clock and deleted when all scenarios hold, and kept for reading when one fails.
@@ -44,7 +45,7 @@ THREADS = 4  # per process in helper
 GATHER = 0.5  # seconds for helper's processes to start before they are let go
 
 sys.path.insert(0, str(TOOLS))
-from run_folder import OWNED_ENV  # noqa: E402
+from run_folder import HAND, OWNED_ENV  # noqa: E402
 
 # As mutants.py starts a test script, with -I: the tool has to find its own imports.
 TOOL = """
@@ -149,6 +150,8 @@ class Bench:
             for path in parent.glob(f"{pattern}{self.key}*"):
                 shutil.rmtree(path, ignore_errors=True)
         shutil.rmtree(self.folder, ignore_errors=True)
+        for note in HAND.glob(f"*{self.key}*"):  # run by hand, the tools noted their folders there (#317)
+            note.unlink(missing_ok=True)
 
 
 def count_folders(found, want):
@@ -267,6 +270,28 @@ def check_owned(bench, name):
             os.environ[OWNED_ENV] = saved
 
 
+def check_hand(bench, name):
+    """By hand (#317): what an OwnedFolders with no run above it and an OwnedFolders under that one make is noted in
+    HAND, and the notes go with the folders when they are deleted."""
+    from run_folder import OwnedFolders, make_run_folder  # here: the scenarios before it need neither
+
+    saved = os.environ.pop(OWNED_ENV, None)
+    try:
+        outer = OwnedFolders(LOCAL)
+        inner = OwnedFolders(LOCAL)  # as a tool that the first one starts
+        own = make_run_folder(LOCAL, f"test-{bench.stamp}-")
+        made = (outer.notes, inner.notes, own)
+        noted = {note.name for note in HAND.glob("*")}
+        failures = [f"not noted in HAND: {path.name}" for path in made if path.name not in noted]
+        inner.close()
+        outer.delete()
+        failures += [f"a note left in HAND: {path.name}" for path in made if (HAND / path.name).exists()]
+        return failures + ([f"delete() left {own.name}"] if own.exists() else [])
+    finally:
+        if saved is not None:
+            os.environ[OWNED_ENV] = saved
+
+
 def clean_scenario(command):
     """A tool run as a step of test_all.py: with OWNED_ENV set. It must pass, and leave none of the folders noted."""
     def check(bench, name):
@@ -347,6 +372,7 @@ SCENARIOS = {
     "clean-crash": clean_scenario(["crash_test.py", "--only", "play-crash,hash-crash,trace-stays,record-stays"]),
     **{f"hash-{cmd}": hash_scenario(cmd) for cmd in HASH_ARGS},
     "hash-keep": check_hash_keep,
+    "hand": check_hand,
 }
 SKIPPED = {
     "exit": None if sys.platform.startswith("linux") else "exit_test.py is Linux only",
