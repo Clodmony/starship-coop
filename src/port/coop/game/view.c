@@ -1,5 +1,6 @@
 #include "view.h"
 
+#include <math.h>
 #include <string.h>
 
 #include "global.h"
@@ -78,6 +79,11 @@ static Vtx sDigitGlyphVtx[] = {
 };
 
 static bool sTagShown[COOP_PLAYERS_MAX];
+// Where each name was drawn this frame on a 320x240 screen, shadow included: left, top, right, bottom (#332, test
+// only).
+static f32 sTagBox[COOP_PLAYERS_MAX][4];
+// The same for each shield bar (#332, test only).
+static f32 sBarBox[COOP_PLAYERS_MAX][4];
 
 // The eye and target Display_Update works out for `player`. It has one more case, for a level complete cutscene in
 // all-range (Display_CsLevelCompleteHandleCamera), which keeps state of its own and is left out: there the plain camera
@@ -373,11 +379,30 @@ static void CoopView_SmallText(const char* text, f32 x, f32 y) {
     }
 }
 
+// A point of the plane of the name (or of the bar), in its units, on a 320x240 screen through the projection of
+// Lib_InitPerspective.
+static void CoopView_TagCorner(f32 x, f32 y, f32* screenX, f32* screenY) {
+    Vec3f src = { x, y, 0.0f };
+    Vec3f eye;
+    f32 cot = 1.0f / tanf(gFovY * M_DTOR / 2.0f);
+
+    Matrix_MultVec3f(gGfxMatrix, &src, &eye);
+    if (eye.z > -1.0f) {
+        eye.z = -1.0f;
+    }
+    *screenX = (SCREEN_WIDTH / 2) * (1.0f + eye.x * cot * ((f32) SCREEN_HEIGHT / SCREEN_WIDTH) / -eye.z);
+    *screenY = (SCREEN_HEIGHT / 2) * (1.0f - eye.y * cot / -eye.z);
+}
+
 // Player i's name, centred on x 0 from y 0 up, with a dark copy one texel down and right behind it so it reads on sky
 // and ground alike. The owner chose the name alone as the mark, no letter (#257).
 static void CoopView_DrawTag(s32 i) {
     const char* name = CoopNames_Label(i);
     f32 x = -Graphics_GetSmallTextWidth((char*) name) * NAME_TEXEL / 2.0f;
+
+    // #332: the box the trace reports, shadow included
+    CoopView_TagCorner(x, NAME_SMALL_H * NAME_TEXEL, &sTagBox[i][0], &sTagBox[i][1]);
+    CoopView_TagCorner(-x + NAME_TEXEL, -NAME_TEXEL, &sTagBox[i][2], &sTagBox[i][3]);
 
     RCP_SetupDL(&gMasterDisp, SETUPDL_62);
     gDPSetTextureFilter(gMasterDisp++, G_TF_POINT);
@@ -420,6 +445,8 @@ void CoopView_DrawShieldBars(void) {
         Matrix_Push(&gGfxMatrix);
         Matrix_Translate(gGfxMatrix, -BAR_HALF_WIDTH, BAR_ABOVE, 0.0f, MTXF_APPLY);
         gDPSetPrimColor(gMasterDisp++, 0x00, 0x00, 0, 0, 0, 160);
+        CoopView_TagCorner(0.0f, 26.0f, &sBarBox[i][0], &sBarBox[i][1]); // #332: for the trace
+        CoopView_TagCorner(240.0f, 0.0f, &sBarBox[i][2], &sBarBox[i][3]);
         CoopView_DrawBar(1.0f);
         if (shields < 0.25f) {
             gDPSetPrimColor(gMasterDisp++, 0x00, 0x00, 255, 40, 0, 255);
@@ -446,6 +473,19 @@ void CoopView_DrawShieldBars(void) {
 
 int32_t CoopView_TagShown(int32_t index) {
     return (index >= 0) && (index < COOP_PLAYERS_MAX) && sTagShown[index];
+}
+
+int32_t CoopView_TagBox(int32_t index, float* box, float* bar) {
+    s32 i;
+
+    if (!CoopView_TagShown(index)) {
+        return 0;
+    }
+    for (i = 0; i < 4; i++) {
+        box[i] = sTagBox[index][i];
+        bar[i] = sBarBox[index][i];
+    }
+    return 1;
 }
 
 float CoopView_ShieldBar(int32_t index) {

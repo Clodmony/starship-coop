@@ -95,6 +95,10 @@ void CoopView_DrawnFill(int32_t* rgba);
 float CoopView_ShieldBar(int32_t index);
 // Nonzero when player `index`'s name was drawn this frame; what it says is CoopNames_Label.
 int32_t CoopView_TagShown(int32_t index);
+// Where player `index`'s name (shadow included) and its shield bar were drawn this frame, on a 320x240 screen (the
+// N64's, which a 4:3 window scales; a wider window adds room at the sides): left, top, right, bottom each. Nonzero when
+// they were drawn (#332).
+int32_t CoopView_TagBox(int32_t index, float* box, float* bar);
 // The last heat alarm settings of this frame, nonzero if any were set; clears them.
 int32_t CoopView_HeatAlarmSet(int32_t* shields, int32_t* heightParam);
 // How many billboards were drawn facing this client's own eye in place of player 0's since the last call; billboards:
