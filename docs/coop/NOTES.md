@@ -312,6 +312,27 @@ Answered by the owner in a dialog on 2026-11-13 (night), each as the recommendat
 - **Decision 0015 is accepted** (#289, #299): a session's level start plays the sound ahead until no audio reset is
   running; option 2 (hold the level start back) is not wanted. Its status line and the index of the records say so.
 
+### 2026-11-14, #308 (second correction): `tool-limit` looked at a killed game once, at once
+
+The correction below (`wait_stopped`) did not remove the flake of `replay_test_test.py`'s `tool-limit`, "the tool's game
+still runs": it failed again in `check.py` run beside other work, and 2 of about 26 runs of the test alone in a loop under
+load (a Linux machine, Debug, no game: the test uses stand-in programs).
+
+- **Observed (instrumented run, kept in the coordinator's scratch only):** at the failing look the game's `/proc` state
+  was `R`, and a second later the process was gone.
+- **Derived:** `tool-limit`, `stop-limit` and `late-handler` look at the game's process right after the tool or `person`
+  sent it SIGKILL or SIGTERM. A signal is delivered at once but the process ends when it next runs; under load that is
+  after the look. The state `R` at the look says the process had not ended yet, not that the kill failed. The earlier
+  cause (a fork in progress after SIGSTOP) is real too, but it is not what failed here.
+- **Fix:** `still_running(pid)` in `replay_test_test.py` polls (at most 5 s) until the process is gone; the three looks
+  use it. The case `dying` has a process end 0.5 s after its SIGTERM: `running` right after the signal says it runs,
+  `still_running` says it does not (red with the old look, green with the wait). `replay_test.py` itself
+  is unchanged.
+- **Result:** the whole test 60 times in a loop under load (load average about 9 to 10): 60 passes, 0 failures. Before
+  the change the same loop failed 2 of about 26 times. 60 of 60 is evidence, not proof: at the earlier rate of 1 in 13
+  the chance of 60 passes is about 1 in 100, at 1 in 24 about 1 in 12.
+- **Unknown:** whether other tools of `tools/coop/` look at a signalled process at once (not searched).
+
 ### 2026-11-13, #308 (correction): a tool's tree is looked up only once the tool has stopped
 
 Found by the coordinator in the full gate of the combined test build 6 (`test_all.py --mixed`, Linux, GCC, Debug, 57 of
