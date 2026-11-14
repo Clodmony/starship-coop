@@ -67,6 +67,115 @@ Unknown:
 - Whether a client can miss the host's first start and see only a restart: told today only by the start's roster, as
   the bot's JSON has no run number (follow-up of #314).
 
+### 2026-11-13, #318, `ma_turret` and `shogun_bonus` join the default `lockstep` step; the other `LONG` scenarios
+
+The owner's rule (2026-11-13): both go into the default step when the extra time on the pipeline is under 90 s, measured
+on the `--mixed` pipeline's `lockstep` lane (`test_all.py --dry-run --mixed`: `lockstep_test.py --jobs 4` on the Release
+build at the limit of 8, `--build-dir build-cmake --config Debug`; the folder of the test programs does not change the
+time). Same identity as the #316 entry below; each pair of runs (without, with) in one hold of the machine (`slot -x`),
+"with" from a checkout where the two are out of `LONG` and in `SCENARIO_SECONDS` (57 and 23 s), so they start first.
+
+Observed:
+
+- At the limit of 8 on Release: without them 290 and 291 s (52 of 52 both times); with them 311 and 311 s (54 of 54 both times). In those runs `ma_turret` took 23 s and
+  `shogun_bonus` 56 s of play. `survive_gaps_four` passed in all four runs. A third pair was not run (the shared slots needed
+  their turn).
+- At no limit on Release (the lane of #305 and #316): without them 154, 155, 155, 155, 155 and 156 s (the six green
+  runs of #316); with them 173, 170 and 172 s, `ma_turret` 7 s and `shogun_bonus` 17 s. With them `survive_gaps_four`
+  failed 3 of 3 (the parting at frame 1698 of the #316 entry, twice in each run), against 1 of 6 without.
+
+Derived:
+
+- The step grows by about 20 s at the limit of 8 and about 17 s at no limit, under the rule's 90 s, so the two are in the
+  default run now (`LONG` and the docstring; `SCENARIO_SECONDS` starts them first). The step is in the serial lane, so
+  the pipeline grows by at most that much.
+- At no limit the two in the pool make `survive_gaps_four`'s parting the rule, not the exception: the Release lane at no
+  limit has to wait for that desync whatever #318 does.
+
+The other `LONG` scenarios, not moved (play times from the docs, none measured here; "in" means under 90 s alone, which
+the rule would still have to measure on the lane):
+
+| scenario | play time (source) | 90 s rule |
+|---|---|---|
+| `survive_next_level` | about a minute (tools README) | in by its time |
+| `survive_gaps_route` | about 3 minutes (tools README) | out |
+| `survive_gaps_map`, `survive_gaps_map_lost`, `survive_gaps_venom_jump` | unknown | unknown |
+| `survive_gaps_checkpoints` | about 20 minutes without `--levels` (tools README) | out |
+| `fox_refill_levels` | about 10 s a level, 15 levels (tools README) | out |
+| `fox_refill_long` | about 45 s a level, 16 levels (tools README) | out |
+| `fox_lead_swap`, `fox_lead_swap_all_range` | unknown; an experiment, not a rule (docstring) | out |
+| `full` | about 5 minutes (tools README) | out |
+| `scenes`, `allrange`, `allrange_down`, `allrange_others`, `allrange_down_others`, `teambar` | unknown | unknown |
+| `map_saves`, `map_saves_host_full`, `map_saves_equal` | about 15 minutes each (docstring) | out |
+| `audio`, `release`, `rates` | need `--feed` with the log of `full` (and `release` a `--release-exe`) | out |
+| `vehicles` | 83 and 88 s (two runs, NOTES.md, the vehicle levels' entries) | in by its time, at the edge |
+| `vehicle_end` | Titania alone 261 s (tools README) | out |
+| `bosses` | about 2 minutes, 102 s once (tools README, NOTES.md) | out |
+| `other_bosses` | about 5 minutes (docstring) | out |
+| `eels` | about a minute (tools README) | in by its time |
+| `w7macbeth_ram` | about 3 minutes (tools README) | out |
+| `sy_robot_spread` | 44 s at the limit of 8, 10 s at no limit, Release (#287 above) | in by its time |
+| `sy_robot_pose`, `granga_spread` | unknown | unknown |
+| `ve1_pillars` | about a minute (tools README) | in by its time |
+| `escape_look` | about 3 minutes (tools README) | out |
+
+### 2026-11-13, #316, `log` and the item scenarios count frames; a desync in `survive_gaps_four` at no frame limit
+
+Run on `issue/316-318-lockstep-frames` (from `issue/combined-test-6` `8c342fbf`). Identity: ROM US 1.0, Linux, GCC 16.2,
+Release (`-O3`) and Debug, OpenGL on a software renderer, no window, silent, two to four games over loopback on one PC,
+the machine shared with three other workers. The step's command, as in #305: `lockstep_test.py --jobs 4 --exe
+build-release/Starship --build-dir build-release --config Release --no-build` with `COOP_TOOLS_MEETING_SPEED=max`, each
+run alone on the machine (`slot -x`). Red on the tools of `8c342fbf` (a second checkout), green on `7c20b4bd`; the game
+build is the same.
+
+Observed:
+
+- Red, three runs, 155 s each: 50, 49 and 51 of 52. `log` failed 3 of 3 (`player 1's own log has only 31 lines`),
+  `laser_wing1` 1 of 3 and `crate` 2 of 3, both with `the two games saw different pickups`: their `lasers` rows went on
+  past the 2100 frames compared, to frames 2688 to 2728, and the host's and the client's ended at different frames
+  (`crate`, run 1: host to 2708, client to 2728). #305 saw `laser_wing1` fail on Fox's wings at frame 2764; `crate` is
+  a third scenario of `run_item` on the clock.
+- A `log` run at no limit (red run 1), each player's own log: 30 lines, 25 of them on frames up to frame 2700 (log
+  opened, hosting or joining, the other game's build, the roster twice, level start, save, the sine, the host's
+  `init -> title` or the client's request for Falco, `title -> play`, desync check on, lockstep started, the desync
+  lines of frames 300 to 2700, the three player lines of frame 1674); the rest on the clock: 4 `state` lines (one a
+  second, `STATE_LINE_MS`, `src/port/coop/log/log_game.c:23`) and a desync line past frame 2700; no `net` line, which
+  comes every 5 s (`LOG_NET_MS`, `src/port/coop/session/session.c:1526`); the level took 2.2 s by the log's own times.
+  Also on the clock: the lockstep's summary every 10 s and a frame held 200 ms or more
+  (`src/port/coop/sync/lockstep_game.c:39-40`).
+- Green, six runs of the step, 154 to 156 s each: 52, 52, 52, 52, 52 of 52 and once 51 (`survive_gaps_four`, below).
+  `log`, `laser`, `laser_wing0`, `laser_wing1`, `repair`, `crate` passed 36 of 36; `log` counted 25 and 25 lines on
+  frames in each run.
+- The same six on Debug at the limit of 8 (`--jobs 4 --only log,laser,laser_wing0,laser_wing1,repair,crate`, the
+  default speed): 6 of 6 in 30 s. `log` counted 25 and 25 lines on frames again, of 58 in each player's log (28
+  `state`, 3 `net`); the logs ran 14 s after the join by their own times, so both clock checks were made and held.
+- `lockstep_mutants.py` (Debug), with `lockstep_test.py` of `8c342fbf` and of `7c20b4bd`: all 22 breaks caught both
+  times. Its breaks are of `lockstep.c` and all name `sim`, which #316 does not touch.
+- The new checks on recorded games (red run 1's logs, red run 2's reports, no game started): `log` passes on both
+  players' logs and fails with a desync line gone, with the player lines gone or written as game lines, with four
+  session lines gone, and with the log 7 s longer by its own clock and no `net` or no `state` line. The five item
+  scenarios pass on red run 2's games (`laser_wing1` and `crate` failed there); with the frames compared cut to 1901,
+  before the pickup, each fails (`player 1's wings were not repaired`, `the crate dropped nothing`, ...); read without
+  a cut, as before, `laser_wing1` and `crate` fail as in the run.
+- `survive_gaps_four`, green run 1 (60 s): after the first player was lost, the level that started again for three
+  parted at its frame 1698: `The games went out of step at frame 1698 of Corneria (rails): player 1's game and player
+  3's game differ in players`, and the level started a third time with the same three, so the host saw four level
+  starts, not three. `desync_report.py diff` of players 1 and 3: `gPlayer[2] differs in 77 of 1264 bytes, first at +44:
+  0 vs -2.2` (`unk_02C`, `include/sf64player.h:180`). It passed in the three red runs, in the other five green runs and
+  in #305's three: 1 of 12 runs at no limit on Release.
+
+Derived:
+
+- What a run of N lockstep frames must write is the same at any speed; the count of lines is not. Each of the two
+  checks now reads only what the frames decide, and a line on the clock only where the log's own times say it was due
+  (a `net` line 6 s after the join, a `state` line 2 s after the lockstep started).
+- The step at no limit on Release takes 2m35s, as in #305, against 13m57s one scenario at a time and 4m48s with 4 on
+  Debug at a limit of 8 (#287, #290).
+
+Unknown:
+
+- Why `gPlayer[2]` parted in `survive_gaps_four`'s second run, and whether it happens at a limit of 8 too.
+
 ### 2026-11-13, the owner's three decisions on the open items of the wave 9 hand-offs
 
 Answered by the owner in a dialog on 2026-11-13 (night), each as the recommendation of the hand-off it comes from.
