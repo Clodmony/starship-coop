@@ -32,7 +32,13 @@
 // (all on one line) where hit has bit i set when the hazard hit player i, first is the frames from the hazard's first
 // update to player i's hit (-1 for none), lost is 1 when the hazard was gone before the target was hit and before
 // its window ended (a level restart, a cull), and defl is 1 when a shot got a velocity (a deflect; that ends the case
-// too). A blast's mark is its own damage, 60. While a case cannot start, every 100 frames:
+// too). A blast's mark is its own damage, 60. For each update of a case's hazard (#329):
+//
+//   mabomb t=<update> frame=<...> case=<...> target=<player> at=<the hazard's x,y,z> state=<its state>
+//   p=<the target's x,y,trueZpos,state,hitTimer>
+//
+// after the frame, so that a case that hit nobody shows how far the hazard was from its target. While a case cannot
+// start, every 100 frames:
 //
 //   mabomb wait frame=<...> case=<...> target=<player> drives=<every tank drives> jump=<the target did not drive on
 //   this frame> front=<the target is in front of player 0's camera> slot=<free slot of the hazard's array, -1 for

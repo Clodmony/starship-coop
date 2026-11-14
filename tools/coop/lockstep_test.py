@@ -211,6 +211,13 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   pool_start decision 0007 rule 1 (#14): sessions of two, three and four games; the team's pool of lives, gLifeCount[0],
             is 2 plus 1 for each player after the first (3, 4, 5) from the first frame player 0 flies, the same in
             every game, and the games are equal on every frame.
+  <rule>_three, <rule>_four  #329: a scenario that checks one rule, with three and with four games: aim,
+            macbeth_bombs, ma_turret, sy_robot_spread, granga_spread and escape_look. Every game's hashes and traces
+            are the host's, and the checks read every player of the session: a shot or missile at each player; every
+            hazard of Macbeth on each tank in turn, that tank hit and no other, the flash red on its own client; a
+            turret's steps to each player when the rule names it; a spread shot around each player when it is the
+            nearest; an explosion in reach of each player after the second. The default run has aim_four,
+            macbeth_bombs_four and ma_turret_four; the others are by name.
 
 Every scenario that compares two games also checks that neither wrote a desync report (WP-23).
 
@@ -521,19 +528,67 @@ def played(game):
 
 
 def run_short(args, folder, script=sway, frames=SHORT_FRAMES, host_env=None, client_env=None, both=None, seconds=900,
-              saves=None):
-    """Both games fed by script, to frame `frames`. Returns the two, stopped. saves: see session()."""
+              saves=None, players=2, client_envs=None, config=None):
+    """Every game fed by script, to frame `frames`. Returns them, stopped: two, or `players` of them (#329). saves,
+    client_envs and config: see session()."""
     folder.mkdir(parents=True, exist_ok=True)
     feed = folder / "feed.txt"
     write_feed(feed, frames + 16, script)
     env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(frames), **(both or {})}
-    host, client = session(args, folder, host_env, client_env, env, saves=saves)
+    games = session(args, folder, host_env, client_env, env, saves=saves, clients=players - 1, client_envs=client_envs,
+                    config=config)
     try:
-        wait_for([host, client], "done", seconds)
+        wait_for(list(games), "done", seconds, "" if players == 2 else f"with {players} players")
     finally:
-        host.close()
-        client.close()
-    return host, client
+        for game in games:
+            game.close()
+    return games
+
+
+# ---- #329: the scenarios that check one rule each take a player count ----
+#
+# A rule scenario has a `players` parameter, 2 unless a row of SCENARIOS says otherwise (`aim_three`, `aim_four`, ...:
+# with_players). With more than two the session has that many games (session(clients=players - 1)), the hashes and
+# traces of every game are compared with the host's, and the checks read every player of the trace, not p0 and p1.
+
+def with_players(scenario, players):
+    """`scenario` with `players` games, as a row of SCENARIOS."""
+    def run(args, folder):
+        return scenario(args, folder, players=players)
+    run.__doc__ = f"{scenario.__name__} with {players} players (#329)."
+    return run
+
+
+def compare_all(games, frames=None):
+    """compare() of the host with every other game: the least number of frames compared."""
+    return min(compare(games[0], other, frames) for other in games[1:])
+
+
+def same_trace(games, rows_of, what):
+    """The rows of every game's trace, as far as both hold them, are the host's: a game can run a little past `done`
+    before it is stopped, so the shorter trace has to start the longer one. Returns the host's rows that every game
+    holds."""
+    ours = rows_of(games[0])
+    n = len(ours)
+    for other in games[1:]:
+        theirs = rows_of(other)
+        n = min(n, len(theirs))
+        for a, b in zip(ours, theirs):
+            expect(a == b, f"the {what} differ: {games[0].name} `{a}`, {other.name} `{b}`")
+    return ours[:n]
+
+
+def sway_apart(players):
+    """sway for `players` players: each steers the same wave a part of its period later, so that every pair of them
+    is far apart across the path at times and each is the nearest to something. With 2 it is sway but for rounding."""
+    def script(frame, player):
+        if frame < JOIN_FRAME:
+            return 0, 0, 0
+        x = int(60 * math.sin(frame * 0.05 + 2 * math.pi * (player % players) / players))
+        y = int(30 * math.sin(frame * 0.03 + player))
+        button = BUTTON_A if frame % (7 + 2 * player) == 0 else 0
+        return button, x, y
+    return script
 
 
 # ---- Scenarios. Each returns the text for its summary line. ----
@@ -605,6 +660,18 @@ def sc_unlimited(args, folder):
     return f"no frame limit: same hash on {frames} frames, moved {moved[0]:.0f} and {moved[1]:.0f}; {played(host)}"
 
 
+def apart_in_turn(players, period=150):
+    """For `players` Landmasters (#329): for `period` frames at a time one tank steers to the left edge of the track
+    and every other to the right, each tank in its turn, so that each is far across the track from all the others for
+    a part of every round. sway and sway_apart do not part three or four tanks by 250 (macbeth_bombs_three placed 11
+    of its 30 cases with sway_apart)."""
+    def script(frame, player):
+        if frame < JOIN_FRAME:
+            return 0, 0, 0
+        return 0, (-60 if (frame // period) % players == player else 60), 0
+    return script
+
+
 AIM_LINE = re.compile(r"(shot|missile) level=(\d+) frame=(\d+) .*player=(-?\d+)$")
 
 
@@ -619,26 +686,33 @@ def aim_rows(path):
     return rows
 
 
-def sc_aim(args, folder):
-    """Enemies aim at the nearest human (#193). The trace watches the shots and does not ask the aim code, so a build
-    with every enemy aiming at player 0 fails here."""
-    traces = {name: folder / f"{name}-aim.txt" for name in ("host", "client")}
+def aim_traces(folder, players):
+    """{game name: its aim trace} for a session of `players` games, the old files removed (the trace appends), and the
+    env of each client that names its own."""
+    folder.mkdir(parents=True, exist_ok=True)
+    traces = {name: folder / f"{name}-aim.txt" for name in ["host"] + [f"client{n}" for n in range(players - 1)]}
     for path in traces.values():
         if path.exists():
-            path.unlink()  # the trace appends
-    host, client = run_short(args, folder, frames=AIM_FRAMES,
-                             host_env={"SF64_COOP_AIM_TRACE": str(traces["host"])},
-                             client_env={"SF64_COOP_AIM_TRACE": str(traces["client"])})
-    frames = compare(host, client, AIM_FRAMES)
-    ours, theirs = aim_rows(traces["host"]), aim_rows(traces["client"])
-    # A game can run a little past `done` before it is stopped, so the shorter trace has to start the longer one.
-    n = min(len(ours), len(theirs))
-    for a, b in zip(ours[:n], theirs[:n]):
-        expect(a == b, f"the aim traces differ: host `{a[4]}`, client `{b[4]}`")
-    at = {player: sum(1 for row in ours if row[3] == player) for player in (-1, 0, 1)}
-    expect(at[1] > 0, f"no enemy shot or missile flew at player 1: {at[0]} at player 0, {at[-1]} at nobody")
-    return (f"same hash on {frames} frames; {at[1]} shots or missiles at player 1, {at[0]} at player 0, "
-            f"{at[-1]} at nobody; {n} trace lines alike")
+            path.unlink()
+    return traces, [{"SF64_COOP_AIM_TRACE": str(traces[f"client{n}"])} for n in range(players - 1)]
+
+
+def sc_aim(args, folder, players=2):
+    """Enemies aim at the nearest human (#193). The trace watches the shots and does not ask the aim code, so a build
+    with every enemy aiming at player 0 fails here. With more than two players (#329) each steers apart from the
+    others (sway_apart) and some shot or missile has to fly at each of them."""
+    traces, client_envs = aim_traces(folder, players)
+    games = run_short(args, folder, script=sway if players == 2 else sway_apart(players), frames=AIM_FRAMES,
+                      host_env={"SF64_COOP_AIM_TRACE": str(traces["host"])}, client_envs=client_envs, players=players)
+    frames = compare_all(games, AIM_FRAMES)
+    ours = aim_rows(traces["host"])
+    n = len(same_trace(games, lambda game: [row[4] for row in aim_rows(traces[game.name])], "aim traces"))
+    at = {player: sum(1 for row in ours if row[3] == player) for player in (-1, *range(players))}
+    text = ", ".join(f"{at[player]} at player {player}" for player in range(players - 1, -1, -1))
+    missed = [player for player in range(1, players) if at[player] == 0]
+    expect(not missed, f"no enemy shot or missile flew at player {', '.join(str(p) for p in missed)}: {text}, "
+                       f"{at[-1]} at nobody")
+    return f"same hash on {frames} frames; shots or missiles: {text}, {at[-1]} at nobody; {n} trace lines alike"
 
 
 def boost_of_player_1(frame, player):
@@ -2313,6 +2387,22 @@ def w8_syrobot_script(frame, player):
     return 0, -70, -60
 
 
+W8_SYROBOT_UP = (5500, 7500)  # frames in which the players between the first and the last climb (#329)
+
+
+def w8_syrobot_script_many(players):
+    """w8_syrobot_script for more than two players (#329). The players after the first fly where they joined, and in
+    that flight the robots of level script 67 (level frames 6500 to 6700) have them all in one place, low on the right
+    (x 1100, a tie that goes to player 1), so the last player was never the nearest to a spread shot
+    (sy_robot_spread_four: 10 around player 1, 2 around player 2, none around player 3). So the players between the
+    first and the last climb for W8_SYROBOT_UP and leave the last one the nearest to those robots."""
+    def script(frame, player):
+        if 0 < player < players - 1:
+            return (0, 0, -60) if W8_SYROBOT_UP[0] <= frame < W8_SYROBOT_UP[1] else (0, 0, 0)
+        return w8_syrobot_script(frame, player)
+    return script
+
+
 def w8_syrobot_rows(path):
     """The syrobot lines of an aim trace (src/port/coop/test/aim_trace.h): one dict per robot shot."""
     rows = []
@@ -2368,42 +2458,30 @@ def w8_syrobot_spread_text(misses):
             f"(mean {sum(ys) / len(ys):.0f}), root mean square {rms:.0f}")
 
 
-def w8_syrobot_run(args, folder):
-    """Sector Y's rails as w8_syrobot_script flies them, with the aim trace on both games (gInvincible). Returns (the
-    frames compared, the host's trace, the client's)."""
-    folder.mkdir(parents=True, exist_ok=True)
-    feed = folder / "feed.txt"
-    write_feed(feed, W8_SYROBOT_FRAMES + 16, w8_syrobot_script)
-    traces = {game: folder / f"{game}-aim.txt" for game in ("host", "client")}
-    for path in traces.values():
-        if path.exists():
-            path.unlink()  # the trace appends
-    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(W8_SYROBOT_FRAMES)}
-    host, client = session(args, folder, {"SF64_COOP_JOIN_LEVEL": str(W8_SYROBOT_LEVEL),
-                                          "SF64_COOP_AIM_TRACE": str(traces["host"])},
-                           {"SF64_COOP_AIM_TRACE": str(traces["client"])}, env, config={"CVars": {"gInvincible": 1}})
-    try:
-        wait_for([host, client], "done", 1200)
-    finally:
-        host.close()
-        client.close()
-    return compare(host, client, W8_SYROBOT_FRAMES), traces["host"], traces["client"]
+def w8_syrobot_run(args, folder, rows_of, what, players=2):
+    """Sector Y's rails as w8_syrobot_script flies them, with the aim trace on every game (gInvincible). Returns (the
+    frames compared, the rows rows_of(path) reads from the host's trace that every game's trace holds alike)."""
+    traces, client_envs = aim_traces(folder, players)
+    games = run_short(args, folder, script=w8_syrobot_script if players == 2 else w8_syrobot_script_many(players),
+                      frames=W8_SYROBOT_FRAMES,
+                      host_env={"SF64_COOP_JOIN_LEVEL": str(W8_SYROBOT_LEVEL),
+                                "SF64_COOP_AIM_TRACE": str(traces["host"])},
+                      client_envs=client_envs, config={"CVars": {"gInvincible": 1}}, seconds=1200, players=players)
+    frames = compare_all(games, W8_SYROBOT_FRAMES)
+    # A game runs on a little past `done`: the lines every trace holds are compared, the checks read the plan's frames.
+    n = len(same_trace(games, lambda game: [row["line"] for row in rows_of(traces[game.name])], what))
+    return frames, rows_of(traces["host"])[:n]
 
 
-def sc_sy_robot_spread(args, folder):
+def sc_sy_robot_spread(args, folder, players=2):
     """#273: Sector Y's robots spread a shot around the human it aims at. On the rails player 0 holds the top left and
     player 1 flies in the middle, near the robots that spread. Each robot shot is read from the aim trace's syrobot
     lines: a plain one flies at the nearest human, a spread one at a point at most W8_SYROBOT_BOUND from it in x and y,
     and the spread shots at player 1 are spread: none straight at it, root mean square at least a fifth of the bound."""
-    frames, host_trace, client_trace = w8_syrobot_run(args, folder)
-    ours, theirs = w8_syrobot_rows(host_trace), w8_syrobot_rows(client_trace)
-    # A game runs on a little past `done`: the lines both traces hold are compared, the checks read the plan's frames.
-    n = min(len(ours), len(theirs))
-    for a, b in zip(ours[:n], theirs[:n]):
-        expect(a["line"] == b["line"], f"the robot shot lines differ: host `{a['line']}`, client `{b['line']}`")
-    rows = [row for row in ours[:n] if row["level"] == W8_SYROBOT_LEVEL and row["frame"] <= W8_SYROBOT_FRAMES]
+    frames, ours = w8_syrobot_run(args, folder, w8_syrobot_rows, "robot shot lines", players)
+    rows = [row for row in ours if row["level"] == W8_SYROBOT_LEVEL and row["frame"] <= W8_SYROBOT_FRAMES]
     expect(rows, "no robot shot in the trace (a build without the syrobot line of aim_trace.h writes none)")
-    problems, text = w8_syrobot_story(rows)
+    problems, text = w8_syrobot_story(rows, players)
     expect(not problems, f"{'; '.join(problems)}. {text}")
     return f"same hash on {frames} frames; {text}"
 
@@ -2484,12 +2562,8 @@ def sc_sy_robot_pose(args, folder):
     sy_robot_spread; from the aim trace's sypose lines, the target of each angle step that can tell the two players
     apart: with player 1 the nearer it is player 1's, with player 0 the nearer player 0's. Upstream it is player 0's
     always."""
-    frames, host_trace, client_trace = w8_syrobot_run(args, folder)
-    ours, theirs = w9_sypose_rows(host_trace), w9_sypose_rows(client_trace)
-    n = min(len(ours), len(theirs))
-    for a, b in zip(ours[:n], theirs[:n]):
-        expect(a["line"] == b["line"], f"the robot pose lines differ: host `{a['line']}`, client `{b['line']}`")
-    rows = [row for row in ours[:n] if row["level"] == W8_SYROBOT_LEVEL and row["frame"] <= W8_SYROBOT_FRAMES]
+    frames, ours = w8_syrobot_run(args, folder, w9_sypose_rows, "robot pose lines")
+    rows = [row for row in ours if row["level"] == W8_SYROBOT_LEVEL and row["frame"] <= W8_SYROBOT_FRAMES]
     expect(rows, "no robot pose in the trace (a build without the sypose line of aim_trace.h writes none)")
     count = {nearest: {0: 0, 1: 0, None: 0} for nearest in (0, 1)}
     for row in rows:
@@ -2561,44 +2635,33 @@ def w9_plasma_pass(row, player):
     return math.sqrt(max(sum(a * a for a in to) - along * along, 0.0))
 
 
-def sc_granga_spread(args, folder):
+def sc_granga_spread(args, folder, players=2):
     """#281: the Granga's plasma spread lands around the human the shot aims at, the nearest to its gun, also when the
     spread point lies nearer to another human. Both players fly the same circle side by side over the Granga, so each
     is the nearer at times. From the aim trace's plasma lines: every shot's line passes within the spread
     (W9_PLASMA_BOUND) of the human nearest to its start, and no shot flies straight at a human: a shot that does was
     aimed at a human the spread did not move."""
-    folder.mkdir(parents=True, exist_ok=True)
-    feed = folder / "feed.txt"
-    write_feed(feed, W9_PLASMA_FRAMES + 16, w9_plasma_script)
-    traces = {game: folder / f"{game}-aim.txt" for game in ("host", "client")}
-    for path in traces.values():
-        if path.exists():
-            path.unlink()  # the trace appends
-    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(W9_PLASMA_FRAMES)}
-    host, client = session(args, folder, {"SF64_COOP_JOIN_LEVEL": str(W9_PLASMA_LEVEL),
-                                          "SF64_COOP_AIM_TRACE": str(traces["host"])},
-                           {"SF64_COOP_AIM_TRACE": str(traces["client"])}, env,
-                           config={"CVars": {"gInvincible": 1, "gDebugJumpToAllRange": 1}})
-    try:
-        wait_for([host, client], "done", 1200)
-    finally:
-        host.close()
-        client.close()
-    frames = compare(host, client, W9_PLASMA_FRAMES)
-    ours, theirs = w9_plasma_rows(traces["host"]), w9_plasma_rows(traces["client"])
-    n = min(len(ours), len(theirs))
-    for a, b in zip(ours[:n], theirs[:n]):
-        expect(a["line"] == b["line"], f"the plasma lines differ: host `{a['line']}`, client `{b['line']}`")
-    rows = [row for row in ours[:n] if row["level"] == W9_PLASMA_LEVEL and row["frame"] <= W9_PLASMA_FRAMES]
+    traces, client_envs = aim_traces(folder, players)
+    games = run_short(args, folder, script=w9_plasma_script, frames=W9_PLASMA_FRAMES,
+                      host_env={"SF64_COOP_JOIN_LEVEL": str(W9_PLASMA_LEVEL),
+                                "SF64_COOP_AIM_TRACE": str(traces["host"])},
+                      client_envs=client_envs, config={"CVars": {"gInvincible": 1, "gDebugJumpToAllRange": 1}},
+                      seconds=1200, players=players)
+    frames = compare_all(games, W9_PLASMA_FRAMES)
+    n = len(same_trace(games, lambda game: [row["line"] for row in w9_plasma_rows(traces[game.name])],
+                       "plasma lines"))
+    rows = [row for row in w9_plasma_rows(traces["host"])[:n]
+            if row["level"] == W9_PLASMA_LEVEL and row["frame"] <= W9_PLASMA_FRAMES]
     expect(rows, "no plasma shot in the trace (a build without the plasma line of aim_trace.h writes none, or the "
                  "Granga did not fire its gun)")
-    problems, text = w9_plasma_story(rows)
+    problems, text = w9_plasma_story(rows, players)
     expect(not problems, f"{'; '.join(problems)}. {text}")
     return f"same hash on {frames} frames; {text}"
 
 
-def w9_plasma_story(rows):
-    """The checks of granga_spread on its plasma shots: (the problems found, the summary)."""
+def w9_plasma_story(rows, players=2):
+    """The checks of granga_spread on its plasma shots: (the problems found, the summary). With more than two players
+    the count asked of player 1's shots is asked of the shots at the players after the first, taken together."""
     at = {0: [], 1: []}
     off, straight = [], []
     for row in rows:
@@ -2614,21 +2677,35 @@ def w9_plasma_story(rows):
     def spread(values):
         return f"{min(values):.0f} to {max(values):.0f} (mean {sum(values) / len(values):.0f})" if values else "none"
 
-    text = (f"{len(rows)} plasma shots; {len(at[1])} with player 1 the nearer, they pass it at {spread(at[1])}; "
-            f"{len(at[0])} with player 0 the nearer, they pass it at {spread(at[0])}")
+    text = f"{len(rows)} plasma shots; " + "; ".join(
+        f"{len(at.get(player, []))} with player {player} the nearer, they pass it at {spread(at.get(player, []))}"
+        for player in (1, 0, *range(2, players)))
     problems = []
+    others = spread_others(at, players, problems, "plasma shot")
     if straight:
         problems.append(f"{len(straight)} of {len(rows)} spread shots fly straight at a human ({'; '.join(straight)})")
     if off:
         problems.append(f"{len(off)} shots are not around the nearest human, more than {W9_PLASMA_BOUND:.0f} off "
                         f"({'; '.join(off)})")
-    if len(rows) < W9_PLASMA_MIN or len(at[1]) < W9_PLASMA_MIN:
-        problems.append("too few plasma shots, or too few with player 1 the nearer, to tell")
+    if len(rows) < W9_PLASMA_MIN or len(others) < W9_PLASMA_MIN:
+        problems.append("too few plasma shots, or too few with "
+                        + ("player 1" if players == 2 else "a player after the first") + " the nearer, to tell")
     return problems, text
 
 
-def w8_syrobot_story(rows):
-    """The checks of sy_robot_spread on its robot shots: (the problems found, the summary)."""
+def spread_others(at, players, problems, what):
+    """For a spread story with more than two players (#329): the shots around every player after the first, as one
+    list, and a problem for each such player no shot was around (the run says nothing about it). With two players the
+    list is player 1's."""
+    for player in range(2, players):
+        if not at.get(player):
+            problems.append(f"no {what} with player {player} the nearest: the run says nothing about it")
+    return [m for player in range(1, players) for m in at.get(player, [])]
+
+
+def w8_syrobot_story(rows, players=2):
+    """The checks of sy_robot_spread on its robot shots: (the problems found, the summary). With more than two players
+    what is asked of player 1's shots is asked of the shots around every player after the first, taken together."""
     plain = [row for row in rows if row["spread"] == 0]
     spread = [row for row in rows if row["spread"] != 0]
     worst = 0.0
@@ -2654,23 +2731,25 @@ def w8_syrobot_story(rows):
     by_command = {value: sum(1 for row in spread if row["spread"] == value)
                   for value in sorted({row["spread"] for row in spread})}
     text = (f"{len(rows)} robot shots: {len(plain)} plain, all within {worst:.2f} of the nearest human; {len(spread)} "
-            f"spread (iwork[19] {', '.join(f'{k}: {v}' for k, v in by_command.items()) or 'none'}), {len(at[1])} "
-            f"around player 1, the nearer: {w8_syrobot_spread_text(at[1])}; {len(at[0])} around player 0, the nearer: "
-            f"{w8_syrobot_spread_text(at[0])}")
+            f"spread (iwork[19] {', '.join(f'{k}: {v}' for k, v in by_command.items()) or 'none'}), "
+            + "; ".join(f"{len(at.get(player, []))} around player {player}, the nearer: "
+                        f"{w8_syrobot_spread_text(at.get(player, []))}" for player in (1, 0, *range(2, players))))
     problems = []
+    others = spread_others(at, players, problems, "spread shot")
+    whom = "player 1" if players == 2 else "the players after the first"
     if wide:
         problems.append(f"{len(wide)} plain shots miss the nearest human ({'; '.join(wide)})")
     if off:
         problems.append(f"{len(off)} of {len(spread)} spread shots are not around the nearest human, more than "
                         f"{W8_SYROBOT_BOUND:.0f} off in x or y ({'; '.join(off)})")
-    if len(at[1]) < W8_SYROBOT_MIN_AT_1:
-        problems.append(f"too few spread shots around player 1 to tell, {len(at[1])}")
-    straight = sum(1 for m in at[1] if abs(m[0]) <= W8_SYROBOT_TOLERANCE and abs(m[1]) <= W8_SYROBOT_TOLERANCE)
+    if len(others) < W8_SYROBOT_MIN_AT_1:
+        problems.append(f"too few spread shots around {whom} to tell, {len(others)}")
+    straight = sum(1 for m in others if abs(m[0]) <= W8_SYROBOT_TOLERANCE and abs(m[1]) <= W8_SYROBOT_TOLERANCE)
     if straight:
-        problems.append(f"{straight} of the {len(at[1])} spread shots with player 1 the nearer fly straight at it")
-    if at[1] and math.sqrt(sum(m[0] ** 2 + m[1] ** 2 for m in at[1]) / (2 * len(at[1]))) < W8_SYROBOT_BOUND / 5:
-        problems.append("the spread around player 1 is too small")
-    every = at[0] + at[1]
+        problems.append(f"{straight} of the {len(others)} spread shots with {whom} the nearer fly straight at it")
+    if others and math.sqrt(sum(m[0] ** 2 + m[1] ** 2 for m in others) / (2 * len(others))) < W8_SYROBOT_BOUND / 5:
+        problems.append(f"the spread around {whom} is too small")
+    every = at[0] + others
     if every and any(abs(sum(m[axis] for m in every) / len(every)) >= W8_SYROBOT_BOUND / 2 for axis in (0, 1)):
         problems.append("the spread is not centred on the human aimed at")
     return problems, text
@@ -4930,36 +5009,58 @@ W8_MABOMB_DEFLECTS = ("roll",)  # cases whose target is not hit: the shot is def
 # MABOMB_ROUNDS there. Not 3: without a pilot the tanks stop about 2700 frames in (z about -33800) and are seldom 250
 # apart there, so the last cases of a third round did not start on a build where a hit moves player 1 (26 of 30 ran).
 W8_MABOMB_ROUNDS = 2
+W8_MABOMB_UPDATE = re.compile(r"mabomb t=\d+ frame=\d+ case=\w+ target=\d+ at=(\S+) state=-?\d+ p=(\S+)")
 W8_MABOMB_PROBE = "mabomb.txt"  # in each game's run folder
+W8_MABOMB_MORE = 2500  # level frames more for each player after the second (#329)
 W8_MABOMB_LINE = re.compile(r"mabomb frame=(\d+) case=(\w+) target=(\d+) hit=(\d+) first=(\S+) lost=(\d) dx=(\S+)"
                             r"(?: defl=(\d))?")
 
 
+def w8_mabomb_off(case, target, hit, updates):
+    """Whether a bomb case never had its target in the fire's box (#329): the probe drops a bomb where its target
+    will be three frames on if it drives on as it does, and a tank that bumps into something (the whole team is thrown
+    back along the track) or drives under a wall the bomb bursts on is not there. `updates` are the case's `t=` lines
+    as (the bomb's x, y, z, the target's x, y, z); the box is the fire's own (Macbeth_MaBombDrop_Update,
+    src/overlays/ovl_i5/fox_ma.c, and CoopHits_MacbethBombFire, src/port/coop/game/hits.c): under 80 in x, under 40
+    in z, the tank no more than 5 below the bomb. Its upper edge (35 times the fire's scale) is not asked, so a case
+    counts as on its target rather too often. A build without the `t=` lines gives no updates and no case is off."""
+    if case != "bomb" or hit & (1 << target) or not updates:
+        return False
+    return not any(abs(px - x) < 80.0 and abs(pz - z) < 40.0 and py - y > -5.0 for x, y, z, px, py, pz in updates)
+
+
 def w8_mabomb_rows(path):
-    """The probe's case lines as dicts, and whether it wrote its last line."""
-    rows, done = [], False
+    """The probe's case lines as dicts, and whether it wrote its last line. row["off"]: w8_mabomb_off."""
+    rows, done, updates = [], False, []
     if not path.exists():
         return rows, done
     for line in path.read_text(encoding="utf-8").splitlines():
         match = W8_MABOMB_LINE.match(line)
+        update = W8_MABOMB_UPDATE.match(line)
         if match:
             rows.append({"frame": int(match.group(1)), "case": match.group(2), "target": int(match.group(3)),
                          "hit": int(match.group(4)), "first": [int(v) for v in match.group(5).split(",")],
                          "lost": match.group(6) == "1", "dx": float(match.group(7)),
                          "deflected": match.group(8) == "1"})
+            rows[-1]["off"] = w8_mabomb_off(rows[-1]["case"], rows[-1]["target"], rows[-1]["hit"], updates)
+            updates = []
+        elif update:
+            updates.append(tuple(float(v) for v in update.group(1).split(",")[:3])
+                           + tuple(float(v) for v in update.group(2).split(",")[:3]))
         elif line.startswith("mabomb done"):
             done = True
     return rows, done
 
 
-def w8_mabomb_story(rows):
+def w8_mabomb_story(rows, players=2):
     """(case, target) -> [cases that ran to their end, of those the ones that did to the target what the case is for
     (hit it; for a case of W8_MABOMB_DEFLECTS: the shot was deflected and hit nobody), the ones that hit another
-    tank]. A lost case (the hazard gone early, as at a restart) does not count."""
-    story = {(case, target): [0, 0, 0] for case in W8_MABOMB_CASES for target in (0, 1)}
+    tank]. A lost case (the hazard gone early, as at a restart) does not count, nor does a bomb that was never on its
+    target (w8_mabomb_off)."""
+    story = {(case, target): [0, 0, 0] for case in W8_MABOMB_CASES for target in range(players)}
     for row in rows:
         counts = story.setdefault((row["case"], row["target"]), [0, 0, 0])
-        if row["lost"]:
+        if row["lost"] or row.get("off"):
             continue
         counts[0] += 1
         if row["case"] in W8_MABOMB_DEFLECTS:
@@ -4995,13 +5096,15 @@ def w10_blast_trace(path):
     return found
 
 
-def w10_blast_views(host, client, rows):
-    """The rule of #303 on every blast case of the probe: its text for the summary."""
-    views = [w10_blast_trace(game.run / W10_BLAST_VIEW) for game in (host, client)]
+def w10_blast_views(games, rows):
+    """The rule of #303 on every blast case of the probe: its text for the summary. games[n] is the client of player n
+    (the host seats the clients in the order they join, session())."""
+    players = range(len(games))
+    views = [w10_blast_trace(game.run / W10_BLAST_VIEW) for game in games]
     expect(all(views), "no `drawn` field in a view trace: a build without it (#303)")
-    seen = {0: 0, 1: 0}
-    frames = {0: 0, 1: 0}
-    red = {(target, player): 0 for target in (0, 1) for player in (0, 1)}  # frames a client drew the flash red
+    seen = {target: 0 for target in players}
+    frames = dict(seen)
+    red = {(target, player): 0 for target in players for player in players}  # frames a client drew the flash red
     white = dict(red)
     for row in rows:
         if row["case"] != "blast" or row["lost"]:
@@ -5019,19 +5122,26 @@ def w10_blast_views(host, client, rows):
                        f"{drawn[3]}, the game holds {fill[3]}")
                 red[(target, player)] += drawn[:3] == W10_RED
                 white[(target, player)] += drawn[:3] == W10_WHITE
-            expect(views[0][frame][1] == views[1][frame][1],
-                   f"frame {frame}: the two games hold different fills, {views[0][frame][1]} and {views[1][frame][1]}")
+            fills = [view[frame][1] for view in views]
+            expect(all(fill == fills[0] for fill in fills),
+                   f"frame {frame}: the games hold different fills, {' and '.join(str(fill) for fill in fills)}")
             frames[target] += 1
-    expect(seen[0] and seen[1], f"blast cases that ran: {seen[0]} on player 0, {seen[1]} on player 1")
+    expect(all(seen.values()), "blast cases that ran: "
+           + ", ".join(f"{seen[target]} on player {target}" for target in players))
+
+    def others(target):
+        return "; ".join(f"the client of player {player} red on {red[(target, player)]} and white on "
+                         f"{white[(target, player)]}" for player in players if player != target)
+
     text = "; ".join(f"{seen[target]} blasts on player {target}, {frames[target]} frames of flash: its own client "
-                     f"drew it red on {red[(target, target)]} and white on {white[(target, target)]}, the client of "
-                     f"player {1 - target} red on {red[(target, 1 - target)]} and white on "
-                     f"{white[(target, 1 - target)]}" for target in (1, 0))
-    expect(all(red[(target, target)] == frames[target] and white[(target, 1 - target)] == frames[target]
-               for target in (0, 1)),
-           f"car 7's flash is not red on the client whose own tank is in the blast and white on the other (#303): "
+                     f"drew it red on {red[(target, target)]} and white on {white[(target, target)]}, "
+                     f"{others(target)}" for target in reversed(players))
+    expect(all(red[(target, player)] == (frames[target] if player == target else 0)
+               and white[(target, player)] == (0 if player == target else frames[target])
+               for target in players for player in players),
+           f"car 7's flash is not red on the client whose own tank is in the blast and white on the others (#303): "
            f"{text}")
-    return f"car 7's flash (#303): {text}; the fill the games hold is the same on both"
+    return f"car 7's flash (#303): {text}; the fill the games hold is the same on {'both' if len(games) == 2 else 'all'}"
 
 
 # ---- #302: the turret of a Macbeth train car turns to and fires at the nearest human ----
@@ -5061,7 +5171,7 @@ def w10_turret_script(frame, player):
 
 
 def w10_turret_rows(path):
-    """The turret lines of an aim trace: one dict per line."""
+    """The turret lines of an aim trace: one dict per line. row["players"] is the players the line holds (#329)."""
     rows = []
     if not path.exists():
         return rows
@@ -5074,27 +5184,29 @@ def w10_turret_rows(path):
                "hp": int(f["hp"]), "wait": int(f["wait"]),
                "yaw": tuple(float(v) for v in f["yaw"].split(",")),
                "at": tuple(float(v) for v in f["at"].split(",")), "line": line}
-        for n in (0, 1):
+        players = row["players"] = sorted(int(key[1:]) for key in f if re.fullmatch(r"p\d", key))
+        for n in players:
             w = f[f"w{n}"].split(",")
             p = f[f"p{n}"].split(",")
             row[f"w{n}"] = float(w[0])
             row[f"in{n}"] = int(w[2])
             row[f"p{n}"] = tuple(float(v) for v in p[:3])
-            row[f"flies{n}"] = int(p[3])
-        row["near"] = min((0, 1), key=lambda n: (math.dist(row[f"p{n}"], row["at"]), n)) if row["flies1"] else 0
-        # well<n>: player n is well inside the window; out<n>: clearly outside it; sure: one of the two is the
-        # nearer by a margin.
+            row[f"flies{n}"] = int(p[3])  # player 0's is 1 always (CoopAimTrace_Players)
+        flying = [n for n in players if n == 0 or row[f"flies{n}"]]
+        far = {n: math.dist(row[f"p{n}"], row["at"]) for n in flying}
+        row["near"] = min(flying, key=lambda n: (far[n], n))
+        # well<n>: player n is well inside the window; out<n>: clearly outside it; sure: one player is the nearest by
+        # a margin.
         edge = W10_TURRET_EDGE
-        for n in (0, 1):
+        for n in players:
             dx, dz = abs(row[f"p{n}"][0] - row["at"][0]), row[f"p{n}"][2] - row["at"][2]
-            flies = n == 0 or row["flies1"]
+            flies = n in flying
             row[f"well{n}"] = bool(flies and row[f"in{n}"] and 200.0 + edge < dz < 5000.0 - edge
                                    and (row["last"] or 300.0 + edge < dx < 3000.0 - edge))
             row[f"out{n}"] = bool(not flies or (not row[f"in{n}"] and (
                 dz < 200.0 - edge or dz > 5000.0 + edge
                 or (not row["last"] and (dx < 300.0 - edge or dx > 3000.0 + edge)))))
-        row["sure"] = (not row["flies1"] or abs(math.dist(row["p0"], row["at"]) - math.dist(row["p1"], row["at"]))
-                       > W10_TURRET_CLOSE)
+        row["sure"] = all(far[n] - far[row["near"]] > W10_TURRET_CLOSE for n in flying if n != row["near"])
         rows.append(row)
     return rows
 
@@ -5104,108 +5216,203 @@ def w10_angle(a, b):
     return (a - b + 180.0) % 360.0 - 180.0
 
 
-def w10_turret_story(rows):
-    """Counts over the turret lines: see sc_ma_turret."""
-    count = {"lines": len(rows), "wait": 0, "near1": 0, "none": 0, "fires": 0, "fire_only1": 0, "fire_only0": 0,
-             "fire_both": 0, "fire_none": 0, "flips": 0, "idle": 0, "idle_only1": 0, "idle_only0": 0, "idle_at": [],
-             "one": 0, "one_in": 0, "one_out": 0, "one_in1": 0, "nobody": 0, "nobody_near": 0, "nobody_far": 0,
-             "both": 0, "both_to0": 0, "both_to1": 0}
+def w10_turret_story(rows, players=2):
+    """Counts over the turret lines: see sc_ma_turret. A count per player is a list; with two players the words of
+    the two-player text (near1, fire_only1, both_to0, ...) are its entries."""
+    each = lambda: [0] * players
+    count = {"lines": len(rows), "wait": 0, "near": each(), "none": 0, "fires": 0, "fire_only": each(),
+             "fire_several": 0, "fire_none": 0, "flips": 0, "idle": 0, "idle_only": each(), "idle_at": [],
+             "one": 0, "one_in": 0, "one_out": 0, "one_in_of": each(), "one_out_of": each(), "nobody": 0,
+             "nobody_near": 0, "nobody_far": 0, "nobody_near_of": each(), "nobody_far_of": each(), "several": 0,
+             "several_to": each(), "several_out": 0, "fire_at": each(), "fire_at_out": 0}
     before = {}
     for row in rows:
         if row["boulder"] or row["step"][0] != 0:
             before.pop(row["slot"], None)
             continue
+        expect(row["players"] == list(range(players)),
+               f"a turret line holds players {row['players']}, the session has {players}: `{row['line']}`")
         count["wait"] += 1
-        count["near1"] += row["near"]
+        count["near"][row["near"]] += 1
         last = before.get(row["slot"])
         if last is not None and last[0] == row["frame"] - 1 and last[1] != row["near"]:
             count["flips"] += 1  # the nearest human changed from one waiting frame to the next
         before[row["slot"]] = (row["frame"], row["near"])
+        well = [n for n in range(players) if row[f"well{n}"]]
+        out = [n for n in range(players) if row[f"out{n}"]]
+        inside = [n for n in range(players) if row[f"in{n}"]]
         if row["step"][1] == 1:
             count["fires"] += 1
-            key = {(1, 1): "fire_both", (0, 1): "fire_only1", (1, 0): "fire_only0", (0, 0): "fire_none"}
-            count[key[(row["in0"], row["in1"])]] += 1
-        elif row["wait"] == 0 and row["hp"] != 0 and (row["well0"] or row["well1"]):
+            if len(inside) == 1:
+                count["fire_only"][inside[0]] += 1
+            else:
+                count["fire_several" if inside else "fire_none"] += 1
+            # Whom the gun is on at its first shot: the player whose yaw it holds, when that tells (#329).
+            off = [abs(w10_angle(row[f"w{n}"], row["yaw"][1])) for n in range(players)]
+            on = min(range(players), key=lambda n: off[n])
+            if off[on] < W10_TURRET_APART / 2 and all(off[n] >= W10_TURRET_APART for n in range(players) if n != on):
+                count["fire_at"][on] += 1
+                count["fire_at_out"] += not row[f"in{on}"]
+        elif row["wait"] == 0 and row["hp"] != 0 and well:
             count["idle"] += 1  # ready, a human well inside the window, and no shot
-            count["idle_only1"] += row["well1"] and row["out0"]
-            count["idle_only0"] += row["well0"] and row["out1"]
+            if len(well) == 1 and len(out) == players - 1:
+                count["idle_only"][well[0]] += 1
             count["idle_at"].append(row["frame"])
-        # Whom the yaw's step goes to: Math_SmoothStepToAngle moves a tenth of the way, 2 degrees at most.
+        # Whom the yaw's step goes to: Math_SmoothStepToAngle moves a tenth of the way, 2 degrees at most. A player
+        # tells when its yaw is W10_TURRET_APART from every other player's.
         step = w10_angle(row["yaw"][1], row["yaw"][0])
-        if abs(w10_angle(row["w0"], row["w1"])) < W10_TURRET_APART or abs(step) < 0.011 or row["yaw"][1] in (
-                120.0, 240.0):
+        apart = [n for n in range(players)
+                 if all(abs(w10_angle(row[f"w{n}"], row[f"w{m}"])) >= W10_TURRET_APART
+                        for m in range(players) if m != n)]
+        if not apart or abs(step) < 0.011 or row["yaw"][1] in (120.0, 240.0):
             continue
         to = []
-        for n in (0, 1):
+        for n in range(players):
             want = w10_angle(row[f"w{n}"], row["yaw"][0])
             if abs(step) >= 1.999:
                 to.append(want * step > 0 and abs(want) >= 19.0)
             else:
                 to.append(abs(want - step * 10.0) < W10_TURRET_NEAR)
-        if to[0] == to[1]:
+        if all(to) or not any(to):
             count["none"] += 1
             continue
-        who = 1 if to[1] else 0
-        # By who is in the window: one human alone, nobody, or both.
-        if (row["well0"] and row["out1"]) or (row["well1"] and row["out0"]):
-            alone = 0 if row["well0"] else 1
-            count["one"] += 1
-            count["one_in" if who == alone else "one_out"] += 1
-            count["one_in1"] += who == alone == 1
-        elif row["out0"] and row["out1"]:
-            if row["sure"]:
-                count["nobody"] += 1
-                count["nobody_near" if who == row["near"] else "nobody_far"] += 1
-        elif row["well0"] and row["well1"]:
-            count["both"] += 1
-            count[f"both_to{who}"] += 1
+        # By who is in the window: one human alone, nobody, or several. `who` is the human the rule names; the step
+        # goes to it when it fits that one alone, to another when it does not fit it.
+        if len(well) == 1 and len(out) == players - 1:
+            who, kind = well[0], "one"
+        elif len(out) == players:
+            who, kind = row["near"], "nobody"
+            if not row["sure"]:
+                continue
+        elif len(well) >= 2 and len(well) + len(out) == players:
+            fits = [n for n in range(players) if to[n]]
+            if len(fits) == 1 and fits[0] in apart:
+                count["several"] += 1
+                count["several_to"][fits[0]] += 1
+                count["several_out"] += fits[0] in out  # to a human outside the window while others are in it
+            continue
+        else:
+            continue
+        if who not in apart or (to[who] and sum(to) > 1):
+            continue
+        count[kind] += 1
+        if kind == "one":
+            count["one_in" if to[who] else "one_out"] += 1
+            count["one_in_of" if to[who] else "one_out_of"][who] += 1
+        else:
+            count["nobody_near" if to[who] else "nobody_far"] += 1
+            count["nobody_near_of" if to[who] else "nobody_far_of"][who] += 1
     return count
 
 
-def sc_ma_turret(args, folder):
-    """#302: Macbeth with two Landmasters. A train car's turret turns to and fires at the nearest of the humans in its
-    window (the owner's rule of 2026-11-13), and keeps that one while it stays in the window; with nobody in the window
-    it turns to the nearest human. Upstream it turned to and fired by player 0 alone. Read from the aim trace's turret
-    lines, which do not ask the aim code. Hashes and the two traces equal."""
-    traces = {name: folder / f"{name}-aim.txt" for name in ("host", "client")}
-    folder.mkdir(parents=True, exist_ok=True)
-    for path in traces.values():
-        if path.exists():
-            path.unlink()  # the trace appends
-    host, client = run_short(args, folder, script=w10_turret_script, frames=W10_TURRET_FRAMES,
-                             host_env={"SF64_COOP_JOIN_LEVEL": "11", "SF64_COOP_AIM_TRACE": str(traces["host"])},
-                             client_env={"SF64_COOP_AIM_TRACE": str(traces["client"])},
-                             both={"SF64_COOP_TRACE_SHIELDS": "255,255"}, seconds=1800)
-    frames = compare(host, client, W10_TURRET_FRAMES)
-    ours, theirs = w10_turret_rows(traces["host"]), w10_turret_rows(traces["client"])
-    n = min(len(ours), len(theirs))
-    expect(n > 0, "no turret line in the aim trace (a build without the turret line of aim_trace.h writes none, or no "
-                  "turret ran)")
-    expect([r["line"] for r in ours[:n]] == [r["line"] for r in theirs[:n]], "the two games' turret lines differ")
-    count = w10_turret_story(ours[:n])
-    text = (f"{count['lines']} turret frames, {count['wait']} waiting, player 1 the nearer on {count['near1']}; ready "
-            f"with a human in the window and no shot on {count['idle']} frames ({count['idle_only1']} with player 1 "
-            f"alone in it, {count['idle_only0']} with player 0 alone); yaw steps with one human alone in the window: "
-            f"{count['one_in']} to that one's direction ({count['one_in1']} of them player 1's), {count['one_out']} "
-            f"to the other's; with nobody in it: {count['nobody_near']} to the nearer one's, {count['nobody_far']} to "
-            f"the other's; with both in it: {count['both_to0']} to player 0's, {count['both_to1']} to player 1's; "
-            f"{count['none']} steps fit neither or both; {count['fires']} first shots: {count['fire_only1']} with "
-            f"only player 1 in the window, {count['fire_only0']} with only player 0, {count['fire_both']} with both, "
-            f"{count['fire_none']} with neither; the nearest human changed between two waiting frames "
-            f"{count['flips']} times")
-    expect(count["near1"] * 5 > count["wait"] and count["fires"] >= 5 and count["one"] >= 20,
+def w10_turret_text(count, players):
+    """The summary of w10_turret_story's counts: with two players the text of #302, with more a count per player."""
+    if players == 2:
+        return (f"{count['lines']} turret frames, {count['wait']} waiting, player 1 the nearer on {count['near'][1]}; "
+                f"ready with a human in the window and no shot on {count['idle']} frames ({count['idle_only'][1]} "
+                f"with player 1 alone in it, {count['idle_only'][0]} with player 0 alone); yaw steps with one human "
+                f"alone in the window: {count['one_in']} to that one's direction ({count['one_in_of'][1]} of them "
+                f"player 1's), {count['one_out']} to the other's; with nobody in it: {count['nobody_near']} to the "
+                f"nearer one's, {count['nobody_far']} to the other's; with both in it: {count['several_to'][0]} to "
+                f"player 0's, {count['several_to'][1]} to player 1's; {count['none']} steps fit neither or both; "
+                f"{count['fires']} first shots: {count['fire_only'][1]} with only player 1 in the window, "
+                f"{count['fire_only'][0]} with only player 0, {count['fire_several']} with both, "
+                f"{count['fire_none']} with neither; the nearest human changed between two waiting frames "
+                f"{count['flips']} times")
+
+    def per(key):
+        return "/".join(str(v) for v in count[key])
+
+    return (f"{count['lines']} turret frames, {count['wait']} waiting; counts for players "
+            f"{'/'.join(str(n) for n in range(players))}: the nearest on {per('near')}; ready with a human in the "
+            f"window and no shot on {count['idle']} frames (alone in it: {per('idle_only')}); yaw steps with one human "
+            f"alone in the window: {count['one_in']} to that one's direction ({per('one_in_of')}), {count['one_out']} "
+            f"to another's ({per('one_out_of')}); with nobody in it: {count['nobody_near']} to the nearest one's "
+            f"({per('nobody_near_of')}), {count['nobody_far']} to another's ({per('nobody_far_of')}); with several in "
+            f"it: to {per('several_to')}, {count['several_out']} of them to one outside it; {count['none']} steps fit "
+            f"nobody or everybody; {count['fires']} first shots: with one human alone in the window "
+            f"{per('fire_only')}, {count['fire_several']} with several, {count['fire_none']} with nobody; the gun on "
+            f"{per('fire_at')} at its first shot, {count['fire_at_out']} of them outside the window; the nearest "
+            f"human changed between two waiting frames {count['flips']} times")
+
+
+def w10_turret_script_apart(players):
+    """w10_turret_script for `players` tanks: they steer apart (apart_in_turn), and each tank after player 0 boosts for
+    30 frames of every 150 * (players - 1), each in its own 150, so each drives ahead of the others at times."""
+    apart = apart_in_turn(players)
+
+    def script(frame, player):
+        _, x, y = apart(frame, player)
+        boost = (player > 0 and frame >= JOIN_FRAME and frame % 150 < 30
+                 and (frame // 150) % (players - 1) == player - 1)
+        return (BUTTON_C_LEFT if boost else 0), x, y
+    return script
+
+
+def w10_turret_check(count, players):
+    """The checks of ma_turret on w10_turret_story's counts; raises Fail. With two players they are those of #302.
+    With more (#329) a tank is seldom alone in a window, so what is asked of player 1 alone there is asked of each
+    player after the first in the cases that name one human: a step to it when it is alone in the window or, with
+    nobody in it, the nearest. No step goes to a human outside the window while others are in it, no gun is on one
+    outside it at its first shot, and some first shot is at a player after the first (alone in the window, or the gun
+    on it); the text names the players no first shot tells of."""
+    text = w10_turret_text(count, players)
+    others = range(1, players)
+    told = count["one"] if players == 2 else count["one"] + count["nobody"]
+    expect(sum(count["near"][n] for n in others) * 5 > count["wait"] and count["fires"] >= 5 and told >= 20,
            f"too little to tell: player 1 is seldom the nearer, the turrets seldom fire, or a human is seldom alone in "
            f"a window: {text}")
     expect(count["idle"] == 0,
            f"a turret that is ready holds its fire while a human is in its window (first on frames "
            f"{count['idle_at'][:5]}): {text}")
-    expect(count["one_in"] > 9 * count["one_out"] and count["one_in1"] > 0,
-           f"the turrets do not turn to the human that is alone in the window: {text}")
+    if players == 2:
+        expect(count["one_in"] > 9 * count["one_out"] and count["one_in_of"][1] > 0,
+               f"the turrets do not turn to the human that is alone in the window: {text}")
+    else:
+        expect(count["one_out"] == 0 or count["one_in"] > 9 * count["one_out"],
+               f"the turrets do not turn to the human that is alone in the window: {text}")
+        expect(count["several"] == 0 or count["several"] > 10 * count["several_out"],
+               f"with several humans in the window the turrets turn to one outside it: {text}")
+        never = [n for n in others if count["one_in_of"][n] + count["nobody_near_of"][n] == 0]
+        expect(not never, f"no turret turned to player {', '.join(str(n) for n in never)} when it was alone in a "
+                          f"window or, with nobody in one, the nearest: the run says nothing about it: {text}")
     expect(count["nobody_near"] > 2 * count["nobody_far"],
            f"with nobody in the window the turrets do not turn to the nearer human: {text}")
-    expect(count["fire_only1"] > 0 and count["fire_none"] == 0,
-           f"no turret fires with player 1 alone in its window, or one fires with nobody in it: {text}")
-    return f"same hash on {frames} frames; {text}"
+    if players == 2:
+        expect(count["fire_only"][1] > 0 and count["fire_none"] == 0,
+               f"no turret fires with player 1 alone in its window, or one fires with nobody in it: {text}")
+    else:
+        expect(count["fire_none"] == 0 and count["fire_at_out"] == 0,
+               f"a turret fires with nobody in its window, or with its gun on a human outside it: {text}")
+        expect(sum(count["fire_only"][n] + count["fire_at"][n] for n in others) > 0,
+               f"no turret fires with a player after the first alone in its window or with its gun on it: {text}")
+        # A run has a dozen first shots, most with several tanks in the window: which players they tell of is in the
+        # text, and not asked of each player.
+        never = [n for n in others if count["fire_only"][n] + count["fire_at"][n] == 0]
+        if never:
+            text += f"; no first shot tells of player {', '.join(str(n) for n in never)}"
+    return text
+
+
+def sc_ma_turret(args, folder, players=2):
+    """#302: Macbeth with two Landmasters. A train car's turret turns to and fires at the nearest of the humans in its
+    window (the owner's rule of 2026-11-13), and keeps that one while it stays in the window; with nobody in the window
+    it turns to the nearest human. Upstream it turned to and fired by player 0 alone. Read from the aim trace's turret
+    lines, which do not ask the aim code. Hashes and the two traces equal. With `players` tanks (#329) every player's
+    w<n> and p<n> of the line is read: each player after the first has to be turned to and fired at when it is alone in
+    a window."""
+    traces, client_envs = aim_traces(folder, players)
+    games = run_short(args, folder, script=w10_turret_script if players == 2 else w10_turret_script_apart(players),
+                      frames=W10_TURRET_FRAMES,
+                      host_env={"SF64_COOP_JOIN_LEVEL": "11", "SF64_COOP_AIM_TRACE": str(traces["host"])},
+                      client_envs=client_envs, both={"SF64_COOP_TRACE_SHIELDS": ",".join(["255"] * players)},
+                      seconds=1800, players=players)
+    frames = compare_all(games, W10_TURRET_FRAMES)
+    ours = w10_turret_rows(traces["host"])
+    n = len(same_trace(games, lambda game: [r["line"] for r in w10_turret_rows(traces[game.name])], "turret lines"))
+    expect(n > 0, "no turret line in the aim trace (a build without the turret line of aim_trace.h writes none, or no "
+                  "turret ran)")
+    return f"same hash on {frames} frames; {w10_turret_check(w10_turret_story(ours[:n], players), players)}"
 
 
 # ---- #304: a Shogun's bonus goes to the team when any human shoots it down (decision 0008, 4b) ----
@@ -5266,32 +5473,39 @@ def sc_shogun_bonus(args, folder):
     return f"same hash on {frames[1]} and {frames[0]} frames; {text}"
 
 
-def sc_macbeth_bombs(args, folder):
+def sc_macbeth_bombs(args, folder, players=2):
     """Macbeth with two Landmasters (#272, #280): a bomb's fire, a state-16 beam of the train's end, a turret's shot
     and the blast of train car 7, placed on one tank by src/port/coop/test/mabomb_probe.h, hit that tank, player 1 as
     well as player 0, and no other; a turret's shot at a tank in a barrel roll is deflected and hits nobody. Both games
     sway as in `vehicles`, with their shields held (SF64_COOP_TRACE_SHIELDS) so that nobody goes down between cases;
-    hashes and the two probe logs equal on every frame."""
-    host, client = run_short(args, folder, script=sway, frames=W8_MABOMB_FRAMES,
-                             host_env={"SF64_COOP_JOIN_LEVEL": "11"},
-                             both={"SF64_COOP_MABOMB_PROBE": W8_MABOMB_PROBE, "SF64_COOP_TRACE_SHIELDS": "255,255",
-                                   "SF64_COOP_VIEW_TRACE": W10_BLAST_VIEW},
-                             seconds=1800)
-    frames = compare(host, client, W8_MABOMB_FRAMES)
+    hashes and the two probe logs equal on every frame. With `players` tanks (#329) the probe takes each of them in
+    turn, they steer apart (apart_in_turn), and every game's hashes and probe log are the host's."""
+    games = run_short(args, folder, script=sway if players == 2 else apart_in_turn(players),
+                      frames=W8_MABOMB_FRAMES + W8_MABOMB_MORE * (players - 2),
+                      host_env={"SF64_COOP_JOIN_LEVEL": "11"},
+                      both={"SF64_COOP_MABOMB_PROBE": W8_MABOMB_PROBE,
+                            "SF64_COOP_TRACE_SHIELDS": ",".join(["255"] * players),
+                            "SF64_COOP_VIEW_TRACE": W10_BLAST_VIEW},
+                      seconds=1800, players=players)
+    host = games[0]
+    frames = compare_all(games, W8_MABOMB_FRAMES + W8_MABOMB_MORE * (players - 2))
     rows, done = w8_mabomb_rows(host.run / W8_MABOMB_PROBE)
     expect(rows, "the probe placed nothing: a build without src/port/coop/test/mabomb_probe.c (#272), or the tanks "
                  "never parted by 250")
-    expect((rows, done) == w8_mabomb_rows(client.run / W8_MABOMB_PROBE), "the two games' probe logs differ")
-    wanted = len(W8_MABOMB_CASES) * 2 * W8_MABOMB_ROUNDS
+    for other in games[1:]:
+        expect((rows, done) == w8_mabomb_rows(other.run / W8_MABOMB_PROBE),
+               f"the probe logs of host and {other.name} differ")
+    wanted = len(W8_MABOMB_CASES) * players * W8_MABOMB_ROUNDS
     waits = [line for line in (host.run / W8_MABOMB_PROBE).read_text(encoding="utf-8").splitlines()
              if line.startswith("mabomb wait")]
     expect(done, f"the probe ran {len(rows)} of {wanted} cases in {frames} frames; the last one waited: "
                  f"`{waits[-1] if waits else 'no wait line'}`")
-    story = w8_mabomb_story(rows)
+    story = w8_mabomb_story(rows, players)
     lost = sum(row["lost"] for row in rows)
+    off = [row for row in rows if row.get("off")]
     for (case, target), (ran, _, _) in sorted(story.items()):
         expect(ran >= W8_MABOMB_ROUNDS - 1, f"{case} on player {target}: only {ran} cases ran to their end "
-                                            f"({lost} lost in all)")
+                                            f"({lost} lost in all, {len(off)} bombs off their target)")
 
     def hits(target):
         return ", ".join(f"{W8_MABOMB_WORDS[case]} on {story[(case, target)][1]} of {story[(case, target)][0]}"
@@ -5299,16 +5513,20 @@ def sc_macbeth_bombs(args, folder):
 
     expect(all(story[(case, 0)][1] == story[(case, 0)][0] for case in W8_MABOMB_CASES),
            f"player 0, the control, is not hit every time: {hits(0)}")
-    expect(all(story[(case, 1)][1] == story[(case, 1)][0] for case in W8_MABOMB_CASES),
-           f"player 1 is not hit: {hits(1)}; player 0, the control: {hits(0)}")
+    for target in range(1, players):
+        expect(all(story[(case, target)][1] == story[(case, target)][0] for case in W8_MABOMB_CASES),
+               f"player {target} is not hit: {hits(target)}; player 0, the control: {hits(0)}")
     others = sum(counts[2] for counts in story.values())
     expect(others == 0, f"a hazard hit a tank it was not placed on in {others} cases (the tanks were too close)")
     first = sorted({row["first"][row["target"]] for row in rows
-                    if not row["lost"] and row["case"] not in W8_MABOMB_DEFLECTS})
-    blast = w10_blast_views(host, client, rows)
-    return (f"same hash on {frames} frames; {len(rows)} cases, {lost} lost; player 1 hit {hits(1)}; player 0 hit "
-            f"{hits(0)}; no hazard hit the other tank; frames to the hit {first}; last case at frame "
-            f"{rows[-1]['frame']}; {blast}")
+                    if not row["lost"] and not row.get("off") and row["case"] not in W8_MABOMB_DEFLECTS})
+    blast = w10_blast_views(games, rows)
+    missed = "" if not off else (f", {len(off)} bombs never had their target in the fire's box (not counted: "
+                                 + ", ".join(f"player {row['target']} at frame {row['frame']}" for row in off) + ")")
+    return (f"same hash on {frames} frames; {len(rows)} cases, {lost} lost{missed}; "
+            + "; ".join(f"player {target} hit {hits(target)}" for target in range(players - 1, -1, -1))
+            + f"; no hazard hit {'the other tank' if players == 2 else 'another tank'}; frames to the hit {first}; "
+            f"last case at frame {rows[-1]['frame']}; {blast}")
 
 
 # ---- #282: what each player gets in Andross' escape, and the rule the owner chose for it (2026-11-13, option A) ----
@@ -5342,6 +5560,7 @@ W9_ESCAPE_CASES = ("miss1", "blast1", "exit1", "blast0")
 W9_ESCAPE_RETURN = 150  # COOP_RETURN_FRAMES, src/port/coop/game/players.c: frames from a down to the return
 W9_ESCAPE_FULL = 255  # Play_GetMaxShields without the team's upgrade: what a returning player holds
 W9_ESCAPE_FRAMES = 7000  # lockstep frames: the escape, the cases, a restart at its checkpoint, the flight to the exit
+W9_ESCAPE_MORE = 1500  # lockstep frames more for each player after the second: three more cases (#329)
 W9_ESCAPE_KEEP = 510.0  # ESCAPE_KEEP in escape_probe.c: every other player at least this far from a case's object
 W9_ESCAPE_REACH = 500.0  # both objects act under this in x and in z
 # (name, cases, gInvincible, start seeds): with the cases, with and without the cheat; then James' route alone, as #275
@@ -5365,7 +5584,7 @@ def w9_escape_rows(path):
     return rows
 
 
-def w9_escape_session(args, folder, cases, invincible, seeds=None):
+def w9_escape_session(args, folder, cases, invincible, seeds=None, players=2):
     """One session from the escape's checkpoint to lockstep frame W9_ESCAPE_FRAMES, from SEEDS or `seeds`. Returns (the
     host's probe rows, frames compared)."""
     folder.mkdir(parents=True, exist_ok=True)
@@ -5373,20 +5592,19 @@ def w9_escape_session(args, folder, cases, invincible, seeds=None):
             "SF64_COOP_LOCKSTEP_END": str(W9_ESCAPE_FRAMES), "SF64_COOP_ESCAPE_PROBE": W9_ESCAPE_PROBE}
     if cases:
         both["SF64_COOP_ESCAPE_CASES"] = ",".join(cases)
-    host, client = session(args, folder, both=both, config={"CVars": {"gInvincible": 1}} if invincible else None,
-                           host_env={"SF64_COOP_JOIN_LEVEL": "9", "SF64_COOP_JOIN_PHASE": "1",
-                                     "SF64_COOP_JOIN_CHECKPOINT": "1",
-                                     **({"SF64_COOP_TEST_START_SEEDS": seeds} if seeds else {})})
+    both["SF64_COOP_LOCKSTEP_END"] = str(W9_ESCAPE_FRAMES + W9_ESCAPE_MORE * (players - 2))
+    games = session(args, folder, both=both, config={"CVars": {"gInvincible": 1}} if invincible else None,
+                    host_env={"SF64_COOP_JOIN_LEVEL": "9", "SF64_COOP_JOIN_PHASE": "1",
+                              "SF64_COOP_JOIN_CHECKPOINT": "1",
+                              **({"SF64_COOP_TEST_START_SEEDS": seeds} if seeds else {})}, clients=players - 1)
     try:
-        wait_for([host, client], "done", args.level_seconds, "in Andross' escape")
+        wait_for(list(games), "done", args.level_seconds, "in Andross' escape")
     finally:
-        host.close()
-        client.close()
-    frames = compare(host, client)
-    ours = w9_escape_rows(host.run / W9_ESCAPE_PROBE)
-    theirs = w9_escape_rows(client.run / W9_ESCAPE_PROBE)
-    n = min(len(ours), len(theirs))
-    expect([r[2] for r in ours[:n]] == [r[2] for r in theirs[:n]], "the two games' probe logs differ")
+        for game in games:
+            game.close()
+    frames = compare_all(games)
+    ours = w9_escape_rows(games[0].run / W9_ESCAPE_PROBE)
+    same_trace(games, lambda game: [r[2] for r in w9_escape_rows(game.run / W9_ESCAPE_PROBE)], "probe logs")
     expect([r for r in ours if r[0] == "start"],
            "no escape: a build without SF64_COOP_JOIN_CHECKPOINT and src/port/coop/test/escape_probe.c (#282), or the "
            f"level never reached it in {W9_ESCAPE_FRAMES} frames")
@@ -5419,6 +5637,11 @@ def w9_escape_case_story(rows, name):
     for i, (least, _, _, _, _, _) in players.items():
         expect((i == target and not name.startswith("miss")) or least >= W9_ESCAPE_KEEP,
                f"case {name}: player {i} came {least:.0f} near the object")
+    # A case whose object never came into its target's reach says nothing (#329): the probe found no place that kept
+    # every other player out, and held the object 3000 away (`off`).
+    expect(name.startswith("miss") or players[target][0] < W9_ESCAPE_REACH,
+           f"case {name} was never in reach of player {target}: its object came {players[target][0]:.0f} near, "
+           f"{v['off']} of {v['updates']} updates away from every player (the others fly too close to it)")
     text = []
     for i, (least, most, before, low, after, states) in sorted(players.items()):
         hit = "hit" if int(v["hit"]) & (1 << i) else "no hit"
@@ -5429,50 +5652,65 @@ def w9_escape_case_story(rows, name):
                f"{v['lives']}; " + "; ".join(text))
 
 
+def w9_escape_cases(players):
+    """The cases for a session of more than two players (#329): the three cases of player 1 on the last player, then
+    the explosion on player 0. The pilots fly James' route in a row, about 225 apart, and the probe needs a place 450
+    from its target and 510 from everyone else: there is one for the player at the end of the row and none for a
+    player inside it (with four players the cases on player 2 waited 3000 away for all 60 updates, `off=60`). So the
+    last player is the one a session can show: player 2 with three games, player 3 with four."""
+    return tuple(f"{kind}{players - 1}" for kind in ("miss", "blast", "exit")) + ("blast0",)
+
+
 def w9_escape_rule(rows, name, values):
-    """#282 option A for case `name` (the table above W9_ESCAPE_CASES): what the players other than the control got.
-    Returns text for the summary."""
+    """#282 option A for case `name` (the table above W9_ESCAPE_CASES; the digit of the name is the player the case
+    is on, #329): what the players other than the control got. Returns text for the summary."""
     players = w9_escape_players(values)
+    kind, target = name[:-1], int(name[-1])
     hit, down = int(values["hit"]), int(values["down"])
     before, after = (int(v) for v in values["lives"].split("/"))
     untouched = lambda i: not (hit | down) & (1 << i) and players[i][2] == players[i][3] == players[i][4]
-    if name == "miss1":
+    rest = [i for i in sorted(players) if i != target]
+    if kind == "miss":
         expect(hit == 0 and down == 0 and all(untouched(i) for i in players) and before == after,
                f"{name}: an explosion out of everyone's reach hurt someone: hit {hit}, down {down}, lives "
                f"{before}/{after}, shields {[players[i][2:5] for i in sorted(players)]}")
         return "nobody hurt"
-    if name == "exit1":
-        expect(values["exit"] == "0", f"{name}: the trigger ended the level for player 1; the exit is player 0's")
+    if kind == "exit" and target != 0:
+        expect(values["exit"] == "0",
+               f"{name}: the trigger ended the level for player {target}; the exit is player 0's")
         return "no exit"
     if name == "blast0":
-        expect(not hit & 2 and players[1][2] == players[1][3],
-               f"{name}: player 1, out of reach, was hurt: hit {hit}, shields {players[1][2:5]}")
-        return "player 1 unhurt"
-    if name != "blast1":
+        hurt = [i for i in rest if hit & (1 << i) or players[i][2] != players[i][3]]
+        expect(not hurt, f"{name}: player {', '.join(str(i) for i in hurt)}, out of reach, was hurt: hit {hit}, "
+                         f"shields {[players[i][2:5] for i in hurt]}")
+        return f"player {', '.join(str(i) for i in rest)} unhurt"
+    if kind != "blast":
         return ""
-    expect(hit & 2 and down & 2 and players[1][3] == 0,
-           f"{name}: an explosion in reach of player 1 did not take it down (#282 option A): hit mask {hit}, down "
-           f"mask {down}, its shields {players[1][2]}>{players[1][3]}>{players[1][4]}, states "
-           f"{w9_escape_states(players[1][5])}")
-    expect(untouched(0) and set(players[0][5].split("-")) <= {"3", "5"},
-           f"{name}: player 0, out of reach, did not fly on untouched: hit {hit}, down {down}, shields "
-           f"{players[0][2:5]}, states {w9_escape_states(players[0][5])}")
+    bit = 1 << target
+    expect(hit & bit and down & bit and players[target][3] == 0,
+           f"{name}: an explosion in reach of player {target} did not take it down (#282 option A): hit mask {hit}, "
+           f"down mask {down}, its shields {players[target][2]}>{players[target][3]}>{players[target][4]}, states "
+           f"{w9_escape_states(players[target][5])}")
+    for i in rest:
+        expect(untouched(i) and set(players[i][5].split("-")) <= {"3", "5"},
+               f"{name}: player {i}, out of reach, did not fly on untouched: hit {hit}, down {down}, shields "
+               f"{players[i][2:5]}, states {w9_escape_states(players[i][5])}")
     expect(before == after, f"{name}: the pool went {before} to {after} during the case; the life is spent at the "
                             "return, not at the crash (decision 0007 rule 4)")
-    mine = [v for k, v, _ in rows if k == "player" and v["player"] == "1" and int(v["frame"]) >= int(values["frame"])
-            and v.get("level") == "9"]
+    mine = [v for k, v, _ in rows if k == "player" and v["player"] == str(target)
+            and int(v["frame"]) >= int(values["frame"]) and v.get("level") == "9"]
     went = next((v for v in mine if v["down"] == "1"), None)
-    expect(went is not None, f"{name}: no line says player 1 is down")
+    expect(went is not None, f"{name}: no line says player {target} is down")
     back = next((v for v in mine if int(v["frame"]) > int(went["frame"]) and v["down"] == "0"), None)
-    expect(back is not None, f"{name}: player 1 never came back after its down at frame {went['frame']}")
+    expect(back is not None, f"{name}: player {target} never came back after its down at frame {went['frame']}")
     waited = int(back["frame"]) - int(went["frame"])
     expect(waited == W9_ESCAPE_RETURN and back["parked"] == "0" and back["state"] == "3"
            and int(back["shields"]) == W9_ESCAPE_FULL and int(back["lives"]) == before - 1,
-           f"{name}: player 1 came back {waited} frames after its down (want {W9_ESCAPE_RETURN}), parked "
+           f"{name}: player {target} came back {waited} frames after its down (want {W9_ESCAPE_RETURN}), parked "
            f"{back['parked']}, state {back['state']}, shields {back['shields']} (want {W9_ESCAPE_FULL}), lives "
            f"{back['lives']} (want {before - 1})")
-    return (f"player 1 down at frame {went['frame']}, back at {back['frame']} with shields {back['shields']}, lives "
-            f"{before}>{back['lives']}")
+    return (f"player {target} down at frame {went['frame']}, back at {back['frame']} with shields {back['shields']}, "
+            f"lives {before}>{back['lives']}")
 
 
 def w9_escape_after_exit(rows):
@@ -5483,9 +5721,11 @@ def w9_escape_after_exit(rows):
     return None, []
 
 
-def w9_escape_run(args, folder, name, cases, invincible, seeds):
+def w9_escape_run(args, folder, name, cases, invincible, seeds, players=2):
     """One of W9_ESCAPE_RUNS: its summary text."""
-    rows, frames = w9_escape_session(args, folder, cases, invincible, seeds)
+    if cases and players > 2:
+        cases = w9_escape_cases(players)
+    rows, frames = w9_escape_session(args, folder, cases, invincible, seeds, players)
     starts = [v for k, v, _ in rows if k == "start"]
     ends = [v for k, v, _ in rows if k == "run_end"]
     text = [f"{name}: equal on {frames} frames, gInvincible {int(invincible)}, escapes started at "
@@ -5514,7 +5754,7 @@ def w9_escape_run(args, folder, name, cases, invincible, seeds):
     return " | ".join(text)
 
 
-def sc_escape_look(args, folder):
+def sc_escape_look(args, folder, players=2):
     """#282: what each player gets in Andross' escape, and the rule the owner chose (option A): the explosions hit
     every human, the exit stays player 0's. Sessions start at the escape's checkpoint (SF64_COOP_JOIN_CHECKPOINT);
     pilots fly James' route; src/port/coop/test/escape_probe.h puts an explosion just out of player 1's reach, one in
@@ -5531,7 +5771,7 @@ def sc_escape_look(args, folder):
     expect(not unknown, f"no session {', '.join(unknown)}; the choices are {', '.join(r[0] for r in W9_ESCAPE_RUNS)}")
     for name, cases, invincible, seeds in [run for run in W9_ESCAPE_RUNS if run[0] in names]:
         try:
-            lines.append(w9_escape_run(args, folder / name, name, cases, invincible, seeds))
+            lines.append(w9_escape_run(args, folder / name, name, cases, invincible, seeds, players))
             print(f"        {lines[-1]}", flush=True)
         except (Fail, join_test.Fail) as failure:
             failed.append(f"{name}: {failure}")
@@ -6231,6 +6471,11 @@ SCENARIOS = {
     "escape_look": sc_escape_look,
     "pool_start": sc_pool_start,
 }
+# #329: the rule scenarios with a third and a fourth player, `<name>_three` and `<name>_four`.
+RULES_WITH_PLAYERS = ("aim", "macbeth_bombs", "ma_turret", "sy_robot_spread", "granga_spread", "escape_look")
+for _name in RULES_WITH_PLAYERS:
+    for _word, _players in (("three", 3), ("four", 4)):
+        SCENARIOS[f"{_name}_{_word}"] = with_players(SCENARIOS[_name], _players)
 LONG = ("survive_next_level", "survive_gaps_route", "survive_gaps_map", "survive_gaps_map_lost",
         "survive_gaps_checkpoints", "survive_gaps_venom_jump", "fox_refill_levels", "fox_refill_long", "fox_lead_swap", "fox_lead_swap_all_range", "full", "scenes", "allrange", "allrange_down", "allrange_others", "allrange_down_others", "teambar",
         "map_saves", "map_saves_host_full", "map_saves_equal", "audio", "release", "rates", "vehicles", "vehicle_end", "bosses", "other_bosses",
@@ -6239,11 +6484,17 @@ LONG += ("sy_robot_spread",)  # Sector Y's rails, 9500 frames (#273)
 LONG += ("sy_robot_pose", "granga_spread")  # the same rails; Corneria's Granga, 7700 frames (#281)
 LONG += ("ve1_pillars",)  # Venom 1 to its boss, 13000 frames (#276)
 LONG += ("escape_look",)  # five sessions in Andross' escape: the explosions hit every human (#282)
+# #329: of the rule scenarios with more players the default run has the four-player ones of the three that are in it
+# with two (aim_four, macbeth_bombs_four, ma_turret_four: a third and a fourth player in one session each, 26, 104 and
+# 49 s with other runs beside them). The three-player ones and those of the long scenarios are by name.
+LONG += tuple(f"{name}_three" for name in RULES_WITH_PLAYERS)
+LONG += tuple(f"{name}_four" for name in RULES_WITH_PLAYERS if name in LONG)
 
 
 # Seconds a scenario took on Debug at a limit of 8 (2026-11-13, #290). Only the order of a pool of --jobs depends on it:
 # the long ones start first, so the pool does not end on one of them.
-SCENARIO_SECONDS = {"host_left": 67, "shogun_bonus": 57, "pool_start": 42, "ma_turret": 23, "left": 32, "delay": 31, "results_hole": 19, "slow": 14, "stall": 14, "frozen": 14,
+SCENARIO_SECONDS = {"macbeth_bombs_four": 104, "host_left": 67, "shogun_bonus": 57, "ma_turret_four": 49,
+                    "pool_start": 42, "aim_four": 26, "ma_turret": 23, "left": 32, "delay": 31, "results_hole": 19, "slow": 14, "stall": 14, "frozen": 14,
                     "lag": 13}
 # They build and run the test programs of the build folder, which two of them must not do at once.
 RUN_ALONE = ("sim", "desync_sim")
