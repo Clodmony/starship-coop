@@ -274,14 +274,16 @@ identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no win
             PC, UDP over loopback, through the join driver
 what ran:   python tools/coop/lockstep_test.py --no-build --jobs 3 --only <name>, <name>_three, <name>_four for aim,
             macbeth_bombs, ma_turret, sy_robot_spread, sy_robot_pose, granga_spread and escape_look (all five
-            sessions of escape_look each); python tools/coop/test_all.py --no-build --only checks,lockstep and
-            --only lockstep-mutants,replay-test,hash-run-1; python tools/coop/lockstep_rules_test.py
+            sessions of escape_look each); python tools/coop/test_all.py --no-build --only
+            checks,lockstep,hash-run-2,coop-off --base-exe <Debug build of ade4c08e> (twice, the first without the
+            last two) and --only lockstep-mutants,replay-test,hash-run-1; python tools/coop/lockstep_rules_test.py
 result:     automated, for the rules of #193, #272, #280, #281, #282, #302 and #303 with a third and a fourth player.
             All 21 scenarios pass, every game of a session equal on every frame (4000 to 10063 frames). Per rule and
-            player: NOTES.md, 2026-11-14, #329. lockstep 59 of 59 scenarios in 6m26s (aim_four, macbeth_bombs_four and
-            ma_turret_four are new in it: 26, 84 and 49 s of 1356 scenario seconds, four at a time), every lockstep
-            break caught, replay-test and hash-run-1 pass, the rule checks' own test passes (rows broken for a third
-            or fourth player fail). Each new scenario was red first for a reason of its own making (the tanks not 250
+            player: NOTES.md, 2026-11-14, #329. lockstep 59 of 59 scenarios in 6m25s and in 6m05s (aim_four,
+            macbeth_bombs_four and ma_turret_four are new in it: 26, 84 and 49 s of 1356 scenario seconds in the first
+            run, 26, 54 and 32 s of 1272 in the second, four at a time: 30 to 45 s of the step), every lockstep
+            break caught, replay-test, hash-run-1, hash-run-2 and coop-off (co-op off hashes as ade4c08e does) pass,
+            the rule checks' own test passes (rows broken for a third or fourth player fail). Each new scenario was red first for a reason of its own making (the tanks not 250
             apart, a probe without a place for its object, a trace that could not tell two players apart), none for
             a rule. Not shown: a turret's first shot at player 2 of four tanks; the escape's explosion for a player
             inside the pilots' row (player 1 of three, players 1 and 2 of four); the boss scenarios and the score
