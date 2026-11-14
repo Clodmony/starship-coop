@@ -9,6 +9,64 @@ Private notes (your paths, your PC, your logs) go in `local/`, not here.
 
 ## Build and run
 
+### 2026-11-13, #314, `level_start_bad_wifi`'s counting rule, and the report for every relay scenario
+
+Identity: base `8c342fbf` (the combined test build 6), branch `issue/314-session-counting`, Linux, GCC 16.2, Debug, no
+ROM (the session tool needs none).
+
+**The rule (the owner's decision of 2026-11-13 on #314).** `check_level` (`tools/coop/session_test.py`) wanted exactly
+one level start per client. Now a client's first level start is the host's (the bot keeps the first one it saw, and it
+must equal the host's first: level, phase, values, save, roster), and each further one counts only when it follows,
+since the last start, a `recover` that names a player the host saw leave with `closed`. Each such leave excuses one
+restart per client. The rule is for the clients; the host's own starts are still "at least one".
+
+Observed:
+
+- A recover names the player who left by slot (`Event_Recover`, `src/port/coop/session/session.c`, `ev->playerIndex`,
+  from `Host_RecoverBegin(s, ..., peer + 1)` in `Host_Left`); the host's `left` event names it by peer (slot - 1), and
+  its `end` is `COOP_SESSION_END_CLOSED` (2) for a session the other side closed (`src/port/coop/session/session.h`).
+- The SIGSTOP reproduction of #309 (client 1's bot stopped for 1 s from the moment the try's `host.log` shows
+  `level_start`, then let go on; real bots, the real relay, `bad_wifi`): with the base's `check_level` 0 of 3 runs
+  passed. Each time the stopped client (player 3 once, player 2 twice) saw `recover "Player N left. ..."` twice, for
+  the two others' `closed` leaves, and three level starts, the gate's shape of #309; in all 3 the relay dropped none
+  of the stopped client's datagrams. With the new rule 3 of 3 passed; in each the stopped client again saw 2
+  recovers and 3 level starts, and the host saw all three leaves as `closed`. A run took 2.1 to 2.3 s, all in try 0.
+- `session_test_test.py` (no build): the gate's shape and two recovers before one restart pass; a restart nobody left
+  for, a second restart after one recover, one leave counted for two restarts, a recover for a player who timed out,
+  a recover for a player who never left, a first level start that is not the host's and a client with no level start
+  fail. On the base's `session_test.py` the gate's shape and the two recovers fail (the red); the negatives fail there
+  too.
+- `session_mutants.py`: all 438 breaks caught (459 break-and-test pairs) on the base, in a clean checkout of
+  `8c342fbf`; all 438 caught (459 pairs) with this change. No break names `level_start_bad_wifi` or
+  `unpicked_holds_start`; the three that name `level_start` (`start_not_kept`, `start_nobody_told`, `client_level_off`)
+  are still caught by it.
+- The whole `session` step (`session_test.py --no-build`, Debug): 8 of 8 runs passed, 17/17 scenarios each; in
+  none did a client of `level_start` or `level_start_bad_wifi` see a recover or a second level start (the rule's new
+  path is used only when a client stays after the others). `level_start_bad_wifi` took 1.0 to 1.3 s a run.
+  `session_test.py --asan`: 17/17.
+
+**The report for every relay scenario.** Observed: only `level_start_bad_wifi` printed the damage report of #309 on a
+failure; `match_bad_wifi`, `refuse_hell` and `taken_bad_wifi` go through the same `damaged_runs` and printed neither.
+One decorator (`reported`) now wraps all four. In the mutation run, the break `taken_not_checked` made
+`taken_bad_wifi` fail with real bots, and its line went on with `relay dropped 2 of 87 (bad_wifi, seed 4242, try0)`,
+the drops of players 2 and 4, what the host saw (three joins, three `closed` leaves) and each client's `ended (bad
+message)`.
+
+Derived:
+
+- The rule lets a client that stays after the others see the host's restarts, which is what the gate's failure of #309
+  and the SIGSTOP runs show. It does not say why player 3 stayed in that gate failure; that stays `unknown` (#309), and
+  the failure itself was never reproduced, so nothing here "fixes" it: the scenario no longer counts that shape
+  against the client.
+- A restart after a leave the host saw as `timeout` is still a failure. The bots' connection time-out is 5000 ms
+  (`src/port/coop/net/transport.h:51`), and a run of the scenario takes about 1.3 s, so such a leave in a run would be
+  a fault worth seeing.
+
+Unknown:
+
+- Whether a client can miss the host's first start and see only a restart: told today only by the start's roster, as
+  the bot's JSON has no run number (follow-up of #314).
+
 ### 2026-11-13, the owner's three decisions on the open items of the wave 9 hand-offs
 
 Answered by the owner in a dialog on 2026-11-13 (night), each as the recommendation of the hand-off it comes from.
