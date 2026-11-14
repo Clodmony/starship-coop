@@ -44,6 +44,7 @@ import join_test  # noqa: E402
 import lockstep_test  # noqa: E402
 import player_trace  # noqa: E402
 import replay as replay_tool  # noqa: E402
+from run_folder import make_run_folder  # noqa: E402
 
 # LevelId, include/sf64level.h; the names of hash_check.py's VIEW_LEVELS.
 LEVELS = {
@@ -323,7 +324,9 @@ def main():
         sys.exit(f"campaign: no level {', '.join(unknown)}; the choices are "
                  f"{', '.join(list(LEVELS) + list(W8_ANDPILOT_THROUGH))}")
     args.exe = replay_tool.find_exe(args.exe)
-    root = Path(args.out).resolve() if args.out else replay_tool.ROOT / "local" / f"test-campaign-{time.strftime('%Y%m%d-%H%M%S')}"
+    # make_run_folder notes the folder, in run_folder.py's HAND when run by hand, so that a test_all.py run beside it
+    # leaves it (#317), as it leaves the games' folders
+    root = Path(args.out).resolve() if args.out else make_run_folder(replay_tool.ROOT / "local", "test-campaign-")
     root.mkdir(parents=True, exist_ok=True)
     print(f"campaign: {len(names)} levels: {', '.join(names)}; gInvincible {'off' if args.mortal else 'on'}; "
           f"audio {args.audio}, client skew {args.skew}; exe {args.exe}; logs {root}", flush=True)
