@@ -212,10 +212,10 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             is 2 plus 1 for each player after the first (3, 4, 5) from the first frame player 0 flies, the same in
             every game, and the games are equal on every frame.
   hud_lives #335: sessions of two and four games on Corneria's rails, and of two with the port's beta boost gauge
-            (which draws the number itself); player 1 goes down and comes back for a life, then player 0 is refilled
-            for another. On every frame each game's HUD draws the pool, gLifeCount[0], as
-            its lives number (the view trace's hudlives), also the games that look through player 1, 2 or 3, whose own
-            slots the pool's changes do not write. The games are equal on every frame.
+            (which draws the number itself, src/port/mods/PortEnhancements.c); player 1 goes down and comes back for
+            a life, then player 0 is refilled for another. On every frame each game's HUD draws the pool,
+            gLifeCount[0], as its lives number (the view trace's hudlives), also the games that look through player
+            1, 2 or 3, whose own slots the pool's changes do not write. The games are equal on every frame.
 
 Every scenario that compares two games also checks that neither wrote a desync report (WP-23).
 

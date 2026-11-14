@@ -277,7 +277,7 @@ static void CoopPlayers_ReturnFromDown(s32 i) {
         D_ctx_80177990[i] = D_ctx_801779A8[i] = gMuzzleFlashScale[i] = gShieldAlpha[i] = 0.0f;
     gLaserStrength[i] = LASERS_SINGLE;
     gBombCount[i] = 3;
-    gLifeCount[i] = gLifeCount[0]; // decides nothing (0007 rule 1); the HUD of this player's client shows it (WP-28)
+    gLifeCount[i] = gLifeCount[0]; // decides nothing and is drawn nowhere: every HUD shows the pool (0007, #335)
 }
 
 // Decision 0007 rule 12: the levels where player 0 is refilled in place (rule 3) instead of going down. A level is

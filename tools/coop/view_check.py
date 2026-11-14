@@ -8,8 +8,9 @@ Plays one replay per section twice, with SF64_COOP_TEST_LOCAL_INDEX 0 and 1: two
 starts straight in Corneria, before its intro (replay.py, Start). Input by rule flies both players (player_trace.py),
 and buttons and pokes give them different numbers, so a client that shows the wrong player shows the wrong number. Each
 game writes a view trace (src/port/coop/test/view_trace.h) and a state hash log. The trace says what the client holds to
-show, not what reached the screen: the HUD numbers without a value of their own (lives, the boost gauge) and the look of
-everything are for a picture, see docs/coop/QA.md.
+show, not what reached the screen: the boost gauge and the look of everything are for a picture, see docs/coop/QA.md.
+The lives number is the one HUD number the trace takes from the draw itself (hudlives, #335); lockstep_test.py's
+hud_lives checks it.
 
 Rules, on the frames they talk about:
 
