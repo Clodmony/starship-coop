@@ -268,6 +268,23 @@ Newest first. One block per run that matters (a milestone, a release, a QA level
 
 ```
 date:       2026-11-14
+commit:     issue/335-hud-lives, on issue/combined-test-6 ade4c08e (the red on the build of 4b035734, the probe
+            without the fix)
+identity:   ROM US 1.0, Linux, GCC, OpenGL on a software renderer, no window; 2 and 4 game clients on one PC, UDP
+            over loopback, through the join driver; Debug
+what ran:   python tools/coop/lockstep_test.py --no-build --only hud_lives (red on 4b035734, green on 145cd696);
+            python tools/coop/test_all.py --no-build --only checks,view-check,coop-off --base-exe <build of
+            ade4c08e> and --only hash-run-1,hash-run-2,replay-test on 145cd696; --only checks,lockstep on 668a48cc
+result:     automated, for the lives number each client's HUD draws (#335). Red: a client looking through player 1,
+            2 or 3 drew its own slot (2 for a pool of 1 with two games; 4 or 5 for a pool of 3 or 4 with four).
+            Green: every game draws the pool on every frame, two and four games, also with the port's beta boost
+            gauge, equal on 2150 frames. lockstep 57 of 57 scenarios, view-check, hash-run-1 and -2, replay-test,
+            the checks and coop-off (co-op off hashes as ade4c08e does) pass. Not run: three clients, Release,
+            Windows, two PCs, split screen, a person looking at the screen.
+```
+
+```
+date:       2026-11-14
 commit:     issue/14-lives-pool-start, on issue/combined-test-6 58b019c1 (the red on 58b019c1's own build)
 identity:   ROM US 1.0, Linux, GCC, OpenGL on a software renderer, no window; 2, 3 and 4 game clients on one PC, UDP
             over loopback, through the join driver; Debug, and Release for the campaign run
