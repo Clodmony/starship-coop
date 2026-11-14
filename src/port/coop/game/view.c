@@ -507,6 +507,8 @@ static void CoopView_DrawTag(s32 i) {
     sTagShown[i] = true;
 }
 
+// #342: every bar is drawn before every name. The bars' and names' display lists clear G_ZBUFFER, so what is drawn
+// later is on top, and a bar of a ship drawn after another ship's name used to cover it.
 void CoopView_DrawShieldBars(void) {
     f32 scale;
     f32 tagScale;
@@ -546,19 +548,30 @@ void CoopView_DrawShieldBars(void) {
         }
         CoopView_DrawBar(shields);
         Matrix_Pop(&gGfxMatrix);
-        // #257, #258: the name above the bar, the size it has far away; #332: lifted clear of a nearer ship's name
+        Matrix_Pop(&gGfxMatrix);
+        FrameInterpolation_RecordCloseChild();
+
+        sBarShown[i] = true;
+        sBarValue[i] = shields;
+    }
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        if (!sBarOn[i] || (sBarView[i].z >= 0.0f)) {
+            continue;
+        }
+        FrameInterpolation_RecordOpenChild("CoopShieldName", i);
+        scale = CoopView_BarScale(i);
+
         Matrix_Push(&gGfxMatrix);
+        Matrix_Translate(gGfxMatrix, sBarView[i].x, sBarView[i].y, sBarView[i].z, MTXF_APPLY);
+        Matrix_Scale(gGfxMatrix, scale * 0.25f, scale * 0.25f, 1.0f, MTXF_APPLY);
+        // #257, #258: the name above the bar, the size it has far away; #332: lifted clear of a nearer ship's name
         lift = sTagLift[i] * -sBarView[i].z / ((SCREEN_HEIGHT / 2) * CoopView_Cot()) / (scale * 0.25f);
         Matrix_Translate(gGfxMatrix, 0.0f, NAME_ABOVE + lift, 0.0f, MTXF_APPLY);
         tagScale = CoopView_NameScale(i);
         Matrix_Scale(gGfxMatrix, tagScale, tagScale, 1.0f, MTXF_APPLY);
         CoopView_DrawTag(i);
         Matrix_Pop(&gGfxMatrix);
-        Matrix_Pop(&gGfxMatrix);
         FrameInterpolation_RecordCloseChild();
-
-        sBarShown[i] = true;
-        sBarValue[i] = shields;
     }
     gSPSetGeometryMode(gMasterDisp++, G_CULL_BACK);
 }
