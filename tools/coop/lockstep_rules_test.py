@@ -21,6 +21,10 @@ second, and the broken rows have to fail:
   player 2, and exit3 that ends the level, fail. w9_escape_case_story: a case whose object never came into its
   target's reach fails as that, not as a broken rule.
 - two: the same checks on two-player rows give the counts of the two-player text.
+- names: bars_over_names_342 (#342) on rows of a view trace's `tagbox`; a bar drawn after the name it lies on is found
+  (the order of a build before #342's fix: each ship's bar and name together), the same boxes with every bar drawn
+  before every name are not, and neither are bars and names that do not meet, a name off the screen, or a trace without
+  the places.
 
 No build, no game, no ROM; check.py runs it. Exit code 0 when every check holds.
 """
@@ -306,12 +310,58 @@ def test_escape():
     check("escape two blast1", text.startswith("player 1 down at frame 110, back at 260"), text)
 
 
+# ---- The bars and the names of the other ships (#342) ----
+
+def tagbox_line(frame, *ships):
+    """A view trace line; each ship is (player, name box, bar box, bar place, name place)."""
+    items = [f"{p}:" + "/".join(f"{v:.1f}" for v in (*name, *bar, 0.0)) + f"/{bar_at}/{name_at}"
+             for p, name, bar, bar_at, name_at in ships]
+    return f"frame={frame} tagbox={','.join(items) or '-'}"
+
+
+def test_names():
+    # Ship 1's bar lies on ship 0's name (the boxes are left/top/right/bottom on the 320x240 screen); each ship's own
+    # bar lies below its name.
+    ship0 = (0, (100.0, 40.0, 140.0, 50.0), (90.0, 52.0, 150.0, 60.0))
+    ship1 = (1, (200.0, 100.0, 240.0, 110.0), (95.0, 44.0, 155.0, 52.0))
+    ship2 = (2, (10.0, 200.0, 50.0, 210.0), (5.0, 212.0, 65.0, 220.0))
+
+    def rows(*ships):
+        return name_rows(tagbox_line(1, *ships))
+
+    def name_rows(line, on_screen_only=False):
+        (frame, boxes), = lt.name_box_rows_332(line, on_screen_only)
+        return boxes
+
+    together = rows((*ship0, 0, 1), (*ship1, 2, 3), (*ship2, 4, 5))  # each ship's bar, then its name
+    check("names on", lt.bars_on_names_342(together) == [(1, 0)], f"{lt.bars_on_names_342(together)}")
+    check("names over", lt.bars_over_names_342(together) == [(1, 0)],
+          f"a bar drawn after the name it lies on was not found: {lt.bars_over_names_342(together)}")
+    apart = rows((*ship0, 2, 3), (*ship1, 0, 4), (*ship2, 1, 5))  # every bar, then every name
+    check("names on, bars first", lt.bars_on_names_342(apart) == [(1, 0)], f"{lt.bars_on_names_342(apart)}")
+    check("names bars first", lt.bars_over_names_342(apart) == [], f"{lt.bars_over_names_342(apart)}")
+    # the same two ships, the lower index drawn second: ship 0's bar lies on nothing, so nothing is covered
+    behind = rows((*ship0, 2, 3), (*ship1, 0, 1))
+    check("names bar before name", lt.bars_over_names_342(behind) == [], f"{lt.bars_over_names_342(behind)}")
+    check("names none", lt.bars_on_names_342(rows((*ship0, 0, 1), (*ship2, 2, 3))) == [], "boxes that do not meet")
+    # a name off the screen is not covered by anything that counts; the bar of that ship, on the screen, is
+    off = (3, (400.0, 40.0, 440.0, 50.0), (96.0, 44.0, 156.0, 52.0))
+    seen = rows((*ship0, 0, 1), (*off, 2, 3))
+    check("names off screen", lt.bars_over_names_342(seen) == [(3, 0)], f"{lt.bars_over_names_342(seen)}")
+    check("names off screen listed", sorted(seen) == [0, 3], f"{sorted(seen)}")
+    on_screen = name_rows(tagbox_line(1, (*ship0, 0, 1), (*off, 2, 3)), True)
+    check("names on screen only", sorted(on_screen) == [0], f"{sorted(on_screen)}")
+    # a trace of a build before #342 has no places: the reader says so, and the scenario refuses it
+    old = name_rows("frame=1 tagbox=0:100.0/40.0/140.0/50.0/90.0/52.0/150.0/60.0/0.0")
+    check("names old trace", old[0][3] is None, f"{old[0]}")
+
+
 def main():
-    for test in (test_mabomb, test_turret, test_spread, test_pose, test_escape):
+    for test in (test_mabomb, test_turret, test_spread, test_pose, test_escape, test_names):
         test()
     for line in FAILED:
         print(f"FAILED  {line}")
-    print("FAIL" if FAILED else "PASS: the rule checks of lockstep_test.py read every player (#329)")
+    print("FAIL" if FAILED else "PASS: the rule checks of lockstep_test.py read every player (#329) and the bars and names of the view (#342)")
     return 1 if FAILED else 0
 
 

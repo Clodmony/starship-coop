@@ -1625,6 +1625,49 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-14, #342: every shield bar is drawn before every name
+
+Read and run on `issue/342-bars-before-names` (from `issue/combined-test-6` `ce17520d`). Identity: ROM US 1.0, Linux,
+GCC, Debug (a Release build only for the `builds` step), OpenGL on a software renderer, no window; four game clients on
+one PC in lockstep over loopback through the join driver, names CAPTAIN, WINGMAN8, SAM and PEPPYOLD in Fortuna.
+
+**Observed (code)**
+
+- `CoopView_DrawShieldBars` (`src/port/coop/game/view.c`) drew each other ship's bar and then its name, ship after ship
+  in player order. The display lists of both clear `G_ZBUFFER` (`SETUPDL_12`, `SETUPDL_62`,
+  `src/engine/fox_rcp_setup.c:174`, `:884`) and their render modes carry no Z compare and no Z update
+  (`G_RM_AA_XLU_SURF`, `G_RM_CLD_SURF`, `libultraship/include/libultraship/libultra/gbi.h:765`, `:831`: `ZMODE_OPA`,
+  no `Z_CMP`, no `Z_UPD`), so of two things on one spot the one drawn later is on top. A ship of a higher player number
+  drew its bar after the name of every ship before it, and covered that name where they met.
+- The view trace's `tagbox` has two more numbers per ship: the place of its bar and the place of its name among what
+  the frame drew of bars and names, the first being 0 (`CoopView_TagBox`, `src/port/coop/test/view_trace.c`). A build
+  before #342 writes none; `names_four` says so and fails.
+
+**Observed (runs)**
+
+- `lockstep_test.py --no-build --only names_four` on the build of `74187b4b` (the trace with the places, the drawing as
+  it was): red, `a bar covers a name (492 times)`, the first on the host at frame 266, ship 2's bar after ship 1's name;
+  a bar lay on a name on 99 (host), 180, 183 and 232 frames of the four games' 1585 or so.
+- The same on the build of `d118f78f` (every bar, then every name): green, no bar after a name it lies on, hashes equal
+  on 1580 frames; a bar lies on a name on the same 99, 180, 183 and 232 frames, the names moved apart on the same
+  frames as before: the boxes did not move, only the order did.
+
+**What changed**
+
+- `CoopView_DrawShieldBars`: two loops, all bars and then all names (frame-interpolation children `CoopShieldBar` and
+  `CoopShieldName` per ship). Display only, gated on co-op; the hash does not see it.
+- `names_four` reads the places and fails a bar drawn after a name whose box it lies on, and a run in which no bar ever
+  lay on a name; `lockstep_rules_test.py` (`test_names`) checks that rule on rows of today's order (each ship's bar,
+  then its name: found), of every bar first (not found), of boxes that do not meet, of a name off the screen and of a
+  trace without places.
+
+**Unknown**
+
+- The pixels were not looked at: the order is the trace's record of what the code put in the display list, and what
+  the Z-less render modes do with it is read in `gbi.h`, not seen on a screen.
+- Bars of bunched ships still lie on each other, names under the HUD's corners and names cut at the screen's edge stay
+  as the owner decided on 2026-11-14 (#332).
+
 ### 2026-11-14, #335: the lives number on the HUD of players 2 to 4 is the pool
 
 Read and run on `issue/335-hud-lives` (from `issue/combined-test-6` `ade4c08e`). Identity: ROM US 1.0, Linux, GCC,
