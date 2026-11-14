@@ -5820,7 +5820,7 @@ W9_ESCAPE_FRAMES = 7000  # lockstep frames: the escape, the cases, a restart at 
 W9_ESCAPE_MORE = 1500  # lockstep frames more for each player after the second: three more cases (#329)
 W9_ESCAPE_KEEP = 510.0  # ESCAPE_KEEP in escape_probe.c: every other player at least this far from a case's object
 # Two flying players nearer than W9_ESCAPE_APART on each axis fly in one another (#345: a returned player 3 flew within
-# 16 of player 0 from frame 560 to the end of the escape, #329); a pass while one falls back to its place is shorter
+# 16 of player 0 from frame 560 to the end of the escape, #329); a pass, as when one brakes out of another, is shorter
 # than W9_ESCAPE_APART_FRAMES.
 W9_ESCAPE_APART = 100.0
 W9_ESCAPE_APART_FRAMES = 60
