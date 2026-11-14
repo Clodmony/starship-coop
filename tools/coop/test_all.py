@@ -161,6 +161,7 @@ def all_steps():
         ("solar-heat", ["solar_check.py"], "exe", False),
         ("wingman", ["wingman_check.py", "all"], "exe", True),
         ("full-level", ["full_level.py"], "exe", False),
+        ("campaign-4", ["campaign.py", "--players", "4", "--levels", "fortuna"], "exe", False),  # 38 s, four clients (#322)
         ("lowhealth-allrange", ["player_trace.py", "lowhealth", "--players", "2", "--section", "all-range"], "exe",
          False),
         ("lowhealth-rails", ["player_trace.py", "lowhealth", "--players", "2"], "exe", False),
