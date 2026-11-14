@@ -1604,6 +1604,61 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-14, #14: the pool of lives starts at 2 plus 1 for each player after the first (decision 0007 rule 1)
+
+Read and run on `issue/14-lives-pool-start` (from `issue/combined-test-6` `58b019c1`). Identity: ROM US 1.0, Linux, GCC,
+OpenGL on a software renderer, no window, two to four game clients on one PC in lockstep over loopback through the join
+driver; Debug, and Release for the campaign run.
+
+**Observed**
+
+- One write decides the pool a session starts with: `gLifeCount[gPlayerNum] = 2` in `Player_Setup`, in the block that
+  runs when `gClearPlayerInfo` is set (`src/engine/fox_play.c:4931`, `:4940`), which clears the flag once the last
+  camera's player is set up (`:4949`). In co-op only player 0 reaches it. It now calls `CoopScore_StartLives()`
+  (`src/port/coop/game/score.c:32`): 2 outside co-op, else 2 plus 1 for every player 1 to 3 of the level whose roster
+  seat is taken (`CoopPlayers_IsOut`, `src/port/coop/game/players.c:745`).
+- `gClearPlayerInfo` and `gLifeCount` both travel in the level start (`src/port/coop/game/level_start.c:66`, `:80`), and
+  the roster with them, so every game enters `Player_Setup` with the host's flag and counts the same seats. The flag is
+  set at `GSTATE_INIT` (`src/engine/fox_game.c:421`): at boot, after a game over and after the ending.
+- The three other writes of 2 are not changed: `src/engine/fox_game.c:425` (`GSTATE_INIT`) and
+  `src/overlays/ovl_menu/fox_option.c:4511`, `:4572` (the game over and ending screens, which go to `GSTATE_INIT`). Each
+  is followed by `gClearPlayerInfo = true`, so `Player_Setup` writes the pool again at the next level, and none of them
+  knows the players: the count is fixed at `Play_Init` (`CoopPlayers_LevelInit`). The map changes nothing at a start: it
+  caps the count at 99, zeroes it at a game over and takes one at a retry (`src/overlays/ovl_menu/fox_map.c:1447`,
+  `:1529`, `:3515`).
+- `lockstep_test.py --only pool_start`, sessions of two, three and four games, Corneria from its start, the pool read
+  from every game's view trace. On `58b019c1`: pool 2 on frame 1674 (the first on which player 0 flies) and on frame
+  2000, slots (2, 2), (2, 2, 2) and (2, 2, 2, 2). On the branch: 3, 4 and 5, every slot the same, all games equal on
+  2000 frames.
+- A restart of the session's first level counts again: `--only survive_gaps_four` (four games, one lost, then a second)
+  printed `run_state` with `lives=5` for run 1, `lives=4` for run 2 (three games) and `lives=3` for run 3 (two).
+- `campaign.py --players 4 --levels aquas --mortal` (Release): game over at frame 7558, equal on the 6945 frames flown;
+  on `8c342fbf` with a pool of 2 it was game over at 5965 after 4946 frames (the entry of #322 below). The host's co-op
+  log: `player 1 refilled in place, pool 4` at level frame 3519, players 2 and 3 back at 3788 (`pool 2`), player 4 back
+  at 4450 (`pool 1`), `player 1 refilled in place, pool 0` at 4491, then player 0 down at pool 0. Level complete was at
+  7180 with `gInvincible` on, so the level is still not finished without it.
+- Rule 2 was already built (#210): the 1-up, the sixth gold ring and the port's copy add to
+  `gLifeCount[CoopScore_LifeSlot(...)]`, slot 0 in co-op (`src/engine/fox_enmy.c:2235`, `:2347`,
+  `src/port/mods/PortEnhancements.c:260`), and the clear screen's bonus names its slot (`src/engine/fox_hud.c:1092`).
+- The HUD of a player 2 to 4 still reads that player's own slot (`src/engine/fox_hud.c:3704`,
+  `gLifeCount[CoopPlayers_HudIndex()]`). The slot is written when the player joins (`players.c:233`, a copy of slot 0)
+  and when it returns (`:280`), not when another player spends or gains a life. Read, not run.
+
+**Derived**
+
+- A level start that is not a new game keeps the pool: `gClearPlayerInfo` is 0 in it, so the write does not run. That
+  holds for the next level of a route, for a restart at a checkpoint, and for a restart of a later level from its start.
+- The map before a session's first level shows 2 (`fox_map.c:5560` reads what `GSTATE_INIT` wrote), the level after it
+  the session's pool.
+- With the debug CVar and no roster (`hash_check.py --players 2`) the pool is 3 as well: the count is
+  `CoopPlayers_Count()` there. `hash-run-2` passes.
+
+**Unknown**
+
+- What the pool should do when the number of players changes between two levels of a route. Today nothing: a player
+  who joins or leaves after the first level adds or takes no life. Rule 1 names the start only.
+- Whether 5 lives are enough for four players: the pilots are not people, and Aquas was flown once.
+
 ### 2026-11-13, #319: no game enters a level inside car 7's flash, so its blast state needs no carrying
 
 Read on `issue/319-blast-joiner` (from `issue/combined-test-6` `8c342fbf`); nothing was run, no code changed. Line

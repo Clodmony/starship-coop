@@ -207,6 +207,9 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   survive_gaps_venom_jump #267: a restart in Venom 2's second part, which Venom 1 jumps into: the restart point a
             jump leaves, flown on into the level after.
   survive_gaps_four #267: four games; one lost, the level starts again for three; a second lost, again for two.
+  pool_start decision 0007 rule 1 (#14): sessions of two, three and four games; the team's pool of lives, gLifeCount[0],
+            is 2 plus 1 for each player after the first (3, 4, 5) from the first frame player 0 flies, the same in
+            every game, and the games are equal on every frame.
 
 Every scenario that compares two games also checks that neither wrote a desync report (WP-23).
 
@@ -6077,6 +6080,64 @@ def sc_survive_gaps_venom_jump(args, folder):
             f"{run2[1]['frame']}): equal on all {frames} frames; `{line}`")
 
 
+
+POOL_START_FRAMES = JOIN_FRAME + 300  # level frames compared: every player flies for 300 of them
+POOL_START_SINGLE = 2  # the original's start, src/engine/fox_play.c (Player_Setup, under gClearPlayerInfo)
+
+
+def sc_pool_start(args, folder):
+    """Decision 0007 rule 1 (#14): the pool of lives a session starts with is 2 plus 1 for each player after the first.
+    One session each of two, three and four games, a level from its start. The pool is read from every game's view
+    trace (gLifeCount[0], src/port/coop/test/view_trace.c) on the first frame player 0 flies, and every game's own
+    slot once that player has joined; the games' hashes, which hold every gLifeCount slot, are equal on every frame."""
+    found, wrong = [], []
+    for clients in (1, 2, 3):
+        players = clients + 1
+        want = POOL_START_SINGLE + clients
+        sub = folder / f"{players}-players"
+        sub.mkdir(parents=True, exist_ok=True)
+        feed = sub / "feed.txt"
+        write_feed(feed, POOL_START_FRAMES + 16, sway)
+        names = ["host"] + [f"client{n}" for n in range(clients)]
+        traces = {name: sub / f"{name}-view.txt" for name in names}
+        for path in traces.values():
+            if path.exists():
+                path.unlink()
+        env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(POOL_START_FRAMES)}
+        games = session(args, sub, both=env, clients=clients, host_env={"SF64_COOP_VIEW_TRACE": str(traces["host"])},
+                        client_envs=[{"SF64_COOP_VIEW_TRACE": str(traces[f"client{n}"])} for n in range(clients)])
+        try:
+            wait_for(list(games), "done", 900, f"with {players} players")
+        finally:
+            for game in games:
+                game.close()
+        seen = []
+        for game in games:
+            rows = [r for r in view_check.read_trace(1, traces[game.name]).rows if r.frame <= POOL_START_FRAMES]
+            expect(rows and all(len(r.players) == players for r in rows),
+                   f"{players} players, {game.name}: the view trace does not hold {players} players on every frame")
+            flies = next((r for r in rows if r.players[0].state == player_trace.ACTIVE), None)
+            expect(flies is not None, f"{players} players, {game.name}: player 0 never flew")
+            last = rows[-1]
+            joined = next((r for r in rows if all(not p.parked for p in r.players)), None)
+            expect(joined is not None, f"{players} players, {game.name}: the players never all flew")
+            seen.append((flies.frame, flies.players[0].lives, last.frame, last.players[0].lives, joined.frame,
+                         tuple(p.lives for p in joined.players)))
+        expect(all(s == seen[0] for s in seen), f"{players} players: the games read different pools: " +
+               "; ".join(f"{g.name} {s}" for g, s in zip(games, seen)))
+        first, pool, end, pool_end, joined_at, slots = seen[0]
+        frames = min(compare(games[0], other, POOL_START_FRAMES) for other in games[1:])
+        # The three sessions all run before a wrong pool fails the scenario, so its line names every count.
+        if (pool, pool_end) != (want, want) or slots != (want,) * players:
+            wrong.append(f"{players} players: pool {pool} on frame {first}, the first on which player 0 flies, and "
+                         f"{pool_end} on frame {end}, slots {slots} on frame {joined_at}, the first on which everyone "
+                         f"flies, in all {players} games; want {want} in each")
+        found.append(f"{players} players: pool {pool} from frame {first} to {end} in all {players} games, equal on "
+                     f"{frames} frames")
+    expect(not wrong, "; ".join(wrong) + " (2 plus 1 for each player after the first)")
+    return "; ".join(found)
+
+
 SCENARIOS = {
     "sim": sc_sim,
     "desync_sim": sc_desync_sim,
@@ -6167,6 +6228,7 @@ SCENARIOS = {
     "ma_turret": sc_ma_turret,
     "shogun_bonus": sc_shogun_bonus,
     "escape_look": sc_escape_look,
+    "pool_start": sc_pool_start,
 }
 LONG = ("survive_next_level", "survive_gaps_route", "survive_gaps_map", "survive_gaps_map_lost",
         "survive_gaps_checkpoints", "survive_gaps_venom_jump", "fox_refill_levels", "fox_refill_long", "fox_lead_swap", "fox_lead_swap_all_range", "full", "scenes", "allrange", "allrange_down", "allrange_others", "allrange_down_others", "teambar",
@@ -6180,7 +6242,7 @@ LONG += ("escape_look",)  # five sessions in Andross' escape: the explosions hit
 
 # Seconds a scenario took on Debug at a limit of 8 (2026-11-13, #290). Only the order of a pool of --jobs depends on it:
 # the long ones start first, so the pool does not end on one of them.
-SCENARIO_SECONDS = {"host_left": 67, "shogun_bonus": 57, "ma_turret": 23, "left": 32, "delay": 31, "results_hole": 19, "slow": 14, "stall": 14, "frozen": 14,
+SCENARIO_SECONDS = {"host_left": 67, "shogun_bonus": 57, "pool_start": 42, "ma_turret": 23, "left": 32, "delay": 31, "results_hole": 19, "slow": 14, "stall": 14, "frozen": 14,
                     "lag": 13}
 # They build and run the test programs of the build folder, which two of them must not do at once.
 RUN_ALONE = ("sim", "desync_sim")

@@ -268,6 +268,23 @@ Newest first. One block per run that matters (a milestone, a release, a QA level
 
 ```
 date:       2026-11-14
+commit:     issue/14-lives-pool-start, on issue/combined-test-6 58b019c1 (the red on 58b019c1's own build)
+identity:   ROM US 1.0, Linux, GCC, OpenGL on a software renderer, no window; 2, 3 and 4 game clients on one PC, UDP
+            over loopback, through the join driver; Debug, and Release for the campaign run
+what ran:   python tools/coop/lockstep_test.py --no-build --only pool_start (on 58b019c1's build, red, and on the
+            branch); python tools/coop/test_all.py --no-build --only
+            checks,lockstep,replay-test,hash-run-1,hash-run-2,coop-off --base-exe <build of 58b019c1>;
+            lockstep_test.py --no-build --only survive_gaps_four; python tools/coop/campaign.py --players 4 --levels
+            aquas --mortal on Release
+result:     automated, for the pool's start value (decision 0007 rule 1). Red on 58b019c1: pool 2 with two, three and
+            four players. Branch: pool 3, 4 and 5 from the first frame player 0 flies, every game of a session
+            equal on 2000 frames. lockstep 56 of 56 scenarios, replay-test, hash-run-1 and -2, the checks and
+            coop-off (co-op off hashes as 58b019c1 does) pass. A restart of the first level for three and for two
+            games began with 4 and 3. Four clients without gInvincible in Aquas: game over at frame 7558, equal on
+            the 6945 frames flown (5965 and 4946 with a pool of 2), so the level is still not finished that way.
+            Not run: a route past the first level, a player joining or leaving between levels, the lobby's own
+            start (menu_test.py), the number a HUD draws, Windows, two PCs, a person playing.
+date:       2026-11-14
 commit:     issue/322-players-campaign: campaign runs on the game code of issue/combined-test-6 8c342fbf with the
             tool of 5ea0a5e5; #324's fix 1be6625b (test code under src/port/coop/test and game/input.c), its red on
             8c342fbf's build
