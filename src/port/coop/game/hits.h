@@ -25,6 +25,26 @@ void CoopHits_BolseBeam(struct Boss* base, float xRot, float yRot, float xOffset
 // The test of Andross_8018D0D8, for the players after player 0, measured from (x, y) as that function does.
 void CoopHits_AndrossReach(float x, float y);
 
+struct Actor;
+
+// The test of the fire of a bomb of Macbeth's train end (Macbeth_MaBombDrop_Update, state 1), for the players after
+// player 0 (#272): a box around the bomb, as high as its fire has grown. The fire burns on after a hit, as it does for
+// player 0, so every tank in it is hit.
+void CoopHits_MacbethBombFire(struct Actor* bomb);
+
+// The test of the blast of Macbeth's train car 7 (Macbeth_MaTrainCar7_Update, state 1, the one frame it blows up), for
+// the players after player 0 (#280): a box around the car, with no mercy timer, as for player 0. It also tells the
+// view which players, player 0 included, are in the box: the red of the screen is for their clients
+// (CoopView_MacbethBlast, #303).
+void CoopHits_MacbethCarBlast(struct Actor* car);
+
+// The test of an explosion of Andross' escape (Andross_AndExplosion_Update), for the players after player 0 (#282, the
+// owner's choice A): a flying player within 500 of it in x and z gets shields 0, both wings 0 and the two hits, as
+// player 0 does, whatever gInvincible says, as for player 0. It then goes down as any player after player 0 does
+// (decision 0007 rule 4: back beside player 0 after 150 frames for a life of the pool). The kill cutscene and the
+// restart stay player 0's.
+void CoopHits_AndrossExplosion(struct Actor* explosion);
+
 #ifdef __cplusplus
 }
 #endif

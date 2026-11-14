@@ -950,6 +950,7 @@ void HUD_LivesCount2_Draw(f32 x, f32 y, s32 number) {
     s32 i;
     s32 form;
 
+    CoopScore_NoteLivesDrawn(number); // COOP: the number drawn, for the view trace (#335)
     RCP_SetupDL(&gMasterDisp, SETUPDL_78_OPTIONAL);
     gDPSetPrimColor(gMasterDisp++, 0, 0, 255, 255, 255, 255);
 
@@ -3701,7 +3702,8 @@ void HUD_SinglePlayer(void) {
         }
         CALL_CANCELLABLE_EVENT(DrawLivesCounterHUDEvent) {
             if (gCurrentLevel != LEVEL_TRAINING) {
-                HUD_LivesCount2_Draw(248.0f, 11.0f, gLifeCount[CoopPlayers_HudIndex()]); // COOP: was gPlayerNum
+                // COOP: was gLifeCount[gPlayerNum]; in co-op the team's pool, whoever the client looks through (#335)
+                HUD_LivesCount2_Draw(248.0f, 11.0f, gLifeCount[CoopScore_LifeSlot(CoopPlayers_HudIndex())]);
             }
         }
     }

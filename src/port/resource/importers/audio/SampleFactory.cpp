@@ -10,6 +10,13 @@
 
 #include "vorbis/vorbisfile.h"
 
+// COOP: spare bytes behind a sample the audio engine decodes itself, zeroed. AudioSynth_ProcessNote
+// (src/audio/audio_synthesis.c) loads a sample in whole 16-byte blocks from an address rounded down to 16, one block
+// more than the frames it decodes need, as the N64's loader did: up to 31 bytes past the last frame it decodes. And
+// where a sample's data ends inside its last frame, that frame's missing bytes are decoded too. Both were bytes of
+// whatever followed this buffer; now they are zeros (#145, #232, #276; docs/coop/NOTES.md, 2026-11-13).
+#define SAMPLE_LOAD_SLACK 64
+
 namespace SF64 {
 std::shared_ptr<Ship::IResource> ResourceFactoryBinarySampleV1::ReadResource(std::shared_ptr<Ship::File> file,
                                                                              std::shared_ptr<Ship::ResourceInitData> initData) {
@@ -26,7 +33,7 @@ std::shared_ptr<Ship::IResource> ResourceFactoryBinarySampleV1::ReadResource(std
     sample->mSample.size = reader->ReadUInt32();
     sample->mSample.loop = LoadChild<AdpcmLoopData*>(reader->ReadUInt64());
     sample->mSample.book = LoadChild<AdpcmBookData*>(reader->ReadUInt64());
-    sample->mSample.sampleAddr = new uint8_t[sample->mSample.size];
+    sample->mSample.sampleAddr = new uint8_t[sample->mSample.size + SAMPLE_LOAD_SLACK](); // COOP: see above
     reader->Read((char*) sample->mSample.sampleAddr, sample->mSample.size);
 
     if(sample->mSample.codec == 2){
@@ -221,7 +228,7 @@ std::shared_ptr<Ship::IResource> ResourceFactoryXMLSampleV0::ReadResource(std::s
         }
     }
     // Not a normal streamed sample. Fallback to the original ADPCM sample to be decoded by the audio engine.
-    sample->mSample.sampleAddr = new uint8_t[size];
+    sample->mSample.sampleAddr = new uint8_t[size + SAMPLE_LOAD_SLACK](); // COOP: see above
     // Can't use memcpy due to endianness issues.
     for (uint32_t i = 0; i < size; i++) {
         sample->mSample.sampleAddr[i] = (*sampleFile->Buffer)[i];

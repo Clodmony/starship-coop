@@ -4,6 +4,8 @@
     python tools/coop/lockstep_test.py                     # sim, then every game scenario but the long ones
     python tools/coop/lockstep_test.py --only sim          # no game, no ROM
     python tools/coop/lockstep_test.py --only steer,pause
+    python tools/coop/lockstep_test.py --jobs 4            # four scenarios at a time, after sim and desync_sim (#290)
+    python tools/coop/lockstep_test.py --jobs 4 --speed max --exe <Release build>  # test_all.py's Release lane (#316)
     python tools/coop/lockstep_test.py --only full         # all of Corneria, about 10 minutes
     python tools/coop/lockstep_test.py --list
     python tools/coop/lockstep_test.py --only release,rates,audio,menu --feed <lockstep log of full> --release-exe <Starship>
@@ -19,6 +21,9 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   sim       src/port/coop/sync/lockstep.c alone, in a virtual network with loss, lag, reordering and duplicates, for two to
             four players (tools/coop/locksteptest).
   steer     each client flies its own player. Hashes equal, each game looks through its own player.
+  unlimited the flight of steer with no frame limit on either game (#287): the games run as fast as they can, and
+            the client's frames before it joins are the same however fast that is. Hashes equal. On a Release
+            build a client that joined in its first frames left the host at level frame 4 to 9 (voice player).
   aim       enemies aim at the nearest human (#193): on Corneria's rails some enemy shots or missiles fly at player 1,
             the two games log the same ones (src/port/coop/test/aim_trace.h), and the hashes stay equal.
   return    a player 2-4 who goes down comes back (decision 0007 rule 4, #14): player 1 is forced down on Corneria's
@@ -55,6 +60,8 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             Katina's own restart from the checkpoint does, a laser of player 1 in a hatch takes 10 off it, as one of
             player 0 does in another.
   three     the same with three games, so that input goes through the host to the other client.
+  replay_ends a game's replay file runs out in the middle of the level (#324): the session's input stays the
+            lockstep's, and both games stay equal once the feed steers.
   control   the same run with SF64_COOP_TEST_NO_LOCKSTEP: it must differ, or this test says nothing.
   pause     Start on either client pauses both on the same frame, Start on either resumes.
   save      the intro skip goes by the host's save, which every game holds in a session (decision 0009 item 8, #191),
@@ -78,6 +85,8 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   menu      the whole way through the real menu, with real widgets.
   full      all of Corneria: pilots fly it live, one on each client, then plain runs repeat what they flew. Takes a while.
   player_hits Corneria with pilots (#252): each human's own hits count, add up to at most the team's, same on both.
+  results   the level clear status screen out of Corneria (#252): the scene holds until both pressed A, a press
+            before 2 s does not count; then again with player 1 idle: it goes on alone after 30 s. Same on both.
   guests    Corneria, client as Falco, Slippy and Peppy down (#15, 0012 B4): Katt flies Falco's scenes.
   map_saves two PCs with two saves (decision 0009 item 8): the host's blank, the client's with every level cleared
             and its own sound settings. Pilots fly Corneria to its end, the map writes the save, and the games go on
@@ -99,7 +108,8 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   vehicles  Titania, Aquas and Macbeth, the Landmaster and Blue Marine levels: same hash, both drive where co-op has opened.
   vehicle_end a vehicle level to its end: pilots drive it live, one on each client, with gInvincible on both, through
             the boss to level complete. Same hash on every frame. By hand, not in test_all.py. All three took 23
-            minutes with other tests running, Titania alone about 8 (level complete at frame 36223, limit 42000, #266).
+            minutes with other tests running when Titania's limit was 42000; it is 14000 now (level complete at about
+            9399 since #271, #276).
   rates     the plain run at real time, with the two clients at different gInterpolationFPS.
   desync_sim src/port/coop/sync/desync.c alone, in a virtual network (tools/coop/desynctest), WP-23.
   desync    a bit flipped on one client, on rails and in all-range: both games name that frame, the players and the
@@ -118,6 +128,10 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             printed, not checked, as they follow which members chase Fox when. `inhale`: the face's inhale swallows
             player 1, chews and spits it out (its wings break), and player 0 flies on and is not hit meanwhile
             (owner's choice A for #213's option D). By hand, not in test_all.py: about 2 minutes.
+  inhale_four whom the face's inhale swallows with four players (#330), from the boss trace: `nearest`, players 0 to 2
+            hold a corner each and player 3 lets go: player 3, the nearest to the mouth, with all four in reach; `tie`,
+            players 2 and 3 on one spot, nearer than the others: player 2, the lower index. Four games each, hashes and
+            traces equal on all four. By hand, not in test_all.py: under a minute on Release.
   other_bosses the other bosses go after the nearer human too (#220), read from the boss trace, which the base build
             writes as well: `granga`, Corneria's Granga walks at and turns to player 1 on most frames that player 1 is
             the nearer; `shogun`, Sector Y's Shoguns keep player 1 often and turn toward the player they keep;
@@ -127,7 +141,28 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             across the path, `goras`, Titania's Goras goes after the player it keeps (pilots on both), and `vulkain`,
             Solar's Vulkain turns its head to player 1 (campaign run). On
             rails player 0 holds the top left and player 1 the bottom right, the nearer one. Hashes and boss traces
-            equal on both games.
+            equal on both games. `macbeth` (wave 7): Macbeth's train end, actor 207, goes to and faces the tank that
+            is the nearer when each of its states starts; pilots drive both Landmasters and keep them apart in the
+            fight (SF64_COOP_PILOT_LANES), player 1 on the train's side. The build before it fails as "goes to and
+            faces player 0 while player 1 is nearer". About 5 minutes.
+  w7macbeth_ram Macbeth's train end at the end of the track (#220, the owner's choice of 2026-11-12): it rams player 0
+            (states 18 and 19), and that ends the try as upstream: player 0 goes down at the ram, not refilled under
+            it (decision 0007's refill would buy only the next ram until the pool is gone). Pilots in lanes, no
+            gInvincible, a pool of 90, SF64_COOP_MA_TRACK_END to reach the track's end at the fight's start. By hand,
+            about 3 minutes.
+  sy_robot_spread Sector Y's robots spread some shots around the human they aim at (#273): on the rails player 0
+            holds the top left and player 1 flies near the middle. The aim trace's syrobot lines give each robot
+            shot's start and direction: a plain one flies at the nearest human, a spread one at a point at most 150
+            from it in x and y, and those with player 1 the nearer are spread around it. Hashes equal on all 9500
+            frames. By hand, not in test_all.py: about a minute.
+  sy_robot_pose the same flight (#281): a robot that aims turns its head and gun to the human its shot flies at, the
+            nearest. The aim trace's sypose lines give each angle before and after a frame, so the target the game
+            turned it to, and each player's direction: with player 1 the nearer the target is player 1's. Upstream it
+            is player 0's always. By hand.
+  granga_spread Corneria's Granga (#281): both players fly the same circle side by side over it, so each is the nearer
+            to its gun at times. The aim trace's plasma lines give each shot's line: it passes within the spread of the
+            human nearest to its start, and no shot flies straight at a human (a spread that made the other human the
+            nearer did, before). By hand.
   eels    Aquas' boss fight with both marines firing, so the eels of the Bacoon's pods (actor 255) are shot and
             explode piece by piece. src/port/coop/test/smoke_trace.h names every smoke puff: each puff of an eel has to
             lie in the fight, not at a position read from outside the eel's history (the desync of a real Windows and
@@ -136,8 +171,70 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             the session cleans them to CAPTAIN and SAM.OK!, the host shares both, and by the level start each game
             holds both. Each game marks the other player's ship with its name (CAPTAIN on the client, SAM.OK! on the
             host) and never its own, and the hashes are equal on every frame.
+  macbeth_bombs Macbeth with two Landmasters (#272, #280): a bomb's fire, a state-16 beam of the train's end, a shot of
+            a train car's turret and the blast of train car 7, placed on one tank at a time by
+            src/port/coop/test/mabomb_probe.h, hit that tank, player 1 as well as player 0, and no other, and a
+            turret's shot at a tank in a barrel roll is deflected; on a build without the fixes they hit and are
+            deflected by player 0 only. Hashes and the two probe logs equal. The view traces of the two games then show
+            car 7's flash (#303): the client whose own tank is in the blast draws the fill red, the other white, on
+            every frame of the fade, and both games hold the same fill.
+  ma_turret Macbeth with two Landmasters (#302): the turret of a train car turns to and fires at the nearest of the
+            humans in its window, so a ready turret never holds its fire while a human is in the window; with nobody
+            in it, it turns to the nearest human. Upstream it turned to and fired by player 0 alone. Read from the
+            aim trace's turret lines (the angle steps and who is in the window), which do not ask the aim code. In
+            the default run since #318.
+  shogun_bonus Sector Y's all-range, two sessions (#304): the score probe's `shogun` kind makes one player's laser the
+            last hit on the first small Shogun and on the last Shogun, and Falco's on the second small one. The team
+            gets the same hits whether the player is player 1 or player 0 (decision 0008, 4b), and nothing for
+            Falco's. In the default run since #318.
+  ve1_pillars Venom 1 with pilots (#276): src/port/coop/test/ve1_pillar_probe.h makes the Golemech raise six pillars
+            from the last row of its tables; the sixth, read past the table, stands where the N64 puts it, and the
+            hashes and the two probe logs are equal. By hand, not in test_all.py.
+  escape_look Andross' escape (#282, option A): sessions start at it (SF64_COOP_JOIN_CHECKPOINT), and
+            src/port/coop/test/escape_probe.h puts an explosion just out of player 1's reach (nobody hurt), one in its
+            reach (player 1 goes down, comes back 150 frames later for a life of the pool; player 0 flies on), the
+            exit's trigger in its reach (nothing: the exit is player 0's), then an explosion on player 0 (down, the
+            level starts again; player 1 unhurt), with gInvincible and without, the same; then James' route alone in
+            each of the three mazes. On a build without CoopHits_AndrossExplosion the explosion leaves player 1 alone.
+            By hand, not in test_all.py: about 3 minutes.
   log     the co-op log (#172): each game's folder holds its own log and the other player's, streamed during the
             session; the hash stays equal with streaming on; nothing personal is in the files; coop_log.py merges them.
+  survive_gaps_route #267: Corneria parts and starts again, pilots fly it to the map and into the next level, which
+            parts 200 frames in and starts again with the route it carries; flown to its end, the map and the level
+            after. Every frame of both restarted runs equal, and every game holds the same route and save at every
+            level and map (the driver's `route` lines). About 5 minutes.
+  survive_gaps_map #267: the games part on the map after Corneria: Corneria starts again from the session's own level
+            start, the map's changes to the route and the save dropped, equal from its frame 0.
+  survive_gaps_map_lost the same with a client that stops sending input on the map: it comes back with the session id.
+  survive_gaps_checkpoints #267: a restart from the game's own checkpoint, one session per level (--levels; by default
+            the 11 rails levels' own rings, put where player 2 flies, and Katina and Bolse; andross by name), flown
+            on to the level's end. About 20 minutes.
+  survive_gaps_venom_jump #267: a restart in Venom 2's second part, which Venom 1 jumps into: the restart point a
+            jump leaves, flown on into the level after.
+  survive_gaps_four #267: four games; one lost, the level starts again for three; a second lost, again for two.
+  pool_start decision 0007 rule 1 (#14): sessions of two, three and four games; the team's pool of lives, gLifeCount[0],
+            is 2 plus 1 for each player after the first (3, 4, 5) from the first frame player 0 flies, the same in
+            every game, and the games are equal on every frame.
+  hud_lives #335: sessions of two and four games on Corneria's rails, and of two with the port's beta boost gauge
+            (which draws the number itself, src/port/mods/PortEnhancements.c); player 1 goes down and comes back for
+            a life, then player 0 is refilled for another. On every frame each game's HUD draws the pool,
+            gLifeCount[0], as its lives number (the view trace's hudlives), also the games that look through player
+            1, 2 or 3, whose own slots the pool's changes do not write. The games are equal on every frame.
+  names_four four games in Fortuna's all-range with pilots and names of 3 to 8 letters (#332): the ships bunch, and
+            each game's view trace gives every name and shield bar it drew as a box on the 320x240 screen. On no
+            frame may two names on screen cover each other, and on some frames two of them must have stood where
+            they would have, had one not been moved up (the trace's lift); a build that never moves a name fails.
+            #342: no shield bar may be drawn after a name it lies on (the trace's places of each bar and name:
+            the later one is on top), and on some frames a bar must lie on a name. Hashes equal on every frame of
+            the four.
+  <rule>_three, <rule>_four  #329: a scenario that checks one rule, with three and with four games: aim,
+            macbeth_bombs, ma_turret, sy_robot_spread, sy_robot_pose, granga_spread and escape_look. Every game's
+            hashes and traces
+            are the host's, and the checks read every player of the session: a shot or missile at each player; every
+            hazard of Macbeth on each tank in turn, that tank hit and no other, the flash red on its own client; a
+            turret's steps to each player when the rule names it; a spread shot around each player when it is the
+            nearest; an explosion in reach of each player after the second. The default run has aim_four,
+            macbeth_bombs_four and ma_turret_four; the others are by name.
 
 Every scenario that compares two games also checks that neither wrote a desync report (WP-23).
 
@@ -156,7 +253,7 @@ import struct
 import subprocess
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -171,6 +268,7 @@ import make_save  # noqa: E402
 import menu_test  # noqa: E402
 import player_trace  # noqa: E402
 import replay as replay_tool  # noqa: E402
+from run_folder import make_run_folder  # noqa: E402
 import view_check  # noqa: E402
 
 IS_LINUX = platform.system() == "Linux"
@@ -178,8 +276,10 @@ BUTTON_A, BUTTON_B, BUTTON_START, BUTTON_L = 0x8000, 0x4000, 0x1000, 0x0020
 BUTTON_C_LEFT = 0x0002  # gBoostButton, src/engine/fox_game.c
 BOOST_AT, BOOST_FRAMES = 2000, 40  # feed frames of sc_boost
 START_FRAME = 600
-REPLAY_FRAMES = 30000  # longer than a short run: the games stop on `done`, not at the end of this. A game whose replay
-# ends leaves lockstep there (its pads are its own again), so a longer run passes replay_frames to session()
+REPLAY_FRAMES = 30000  # longer than a short run: the games stop on `done`, not at the end of this. Until #324 a game
+# whose replay ended left lockstep there (its pads were its own again), which is why a longer run passes replay_frames
+# to session(); now the lockstep keeps the input (sc_replay_ends), but a pilot still steps twice a frame only while
+# the replay lasts (src/port/coop/test/pilot.h), so a pilot's run keeps its long replay
 INPUT_DELAY = 3  # COOP_LOCKSTEP_INPUT_DELAY
 TIMEOUT_MS = 30000  # the join driver's transport timeout
 STALL_SECONDS = 10  # COOP_LOCKSTEP_STALL_MS
@@ -319,11 +419,21 @@ def session(args, folder, host_env=None, client_env=None, both=None, config=None
     games = [host]
     for n, pick in zip(range(clients), ("falco", "slippy", "peppy")):
         games.append(Client(args, folder, f"client{n}", {**env, "SF64_COOP_JOIN_CONNECT": f"127.0.0.1:{port}",
-                                                         "SF64_COOP_JOIN_PICKS": pick, **(client_env or {}),
+                                                         "SF64_COOP_JOIN_PICKS": pick,
+                                                         "SF64_COOP_JOIN_CONNECT_FRAME": str(replay_tool.CLIENT_JOIN_FRAME),
+                                                         **(client_env or {}),
                                                          **((client_envs or [{}] * clients)[n])}, replay_frames))
         if saves and saves.get(f"client{n}") is not None:
             put_save(saves[f"client{n}"], games[-1].run)
         games[-1].start(client_config if client_config is not None else config)
+        if n < clients - 1:
+            # The host seats the clients in the order their joins arrive, so the next one starts when this one is in:
+            # two started back to back took the seats in either order (#286).
+            deadline = time.monotonic() + 120
+            while not join_test.said(games[-1].report(), "joined"):
+                if games[-1].proc.poll() is not None or time.monotonic() >= deadline:
+                    break
+                time.sleep(0.1)
     return tuple(games)
 
 
@@ -435,19 +545,67 @@ def played(game):
 
 
 def run_short(args, folder, script=sway, frames=SHORT_FRAMES, host_env=None, client_env=None, both=None, seconds=900,
-              saves=None):
-    """Both games fed by script, to frame `frames`. Returns the two, stopped. saves: see session()."""
+              saves=None, players=2, client_envs=None, config=None):
+    """Every game fed by script, to frame `frames`. Returns them, stopped: two, or `players` of them (#329). saves,
+    client_envs and config: see session()."""
     folder.mkdir(parents=True, exist_ok=True)
     feed = folder / "feed.txt"
     write_feed(feed, frames + 16, script)
     env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(frames), **(both or {})}
-    host, client = session(args, folder, host_env, client_env, env, saves=saves)
+    games = session(args, folder, host_env, client_env, env, saves=saves, clients=players - 1, client_envs=client_envs,
+                    config=config)
     try:
-        wait_for([host, client], "done", seconds)
+        wait_for(list(games), "done", seconds, "" if players == 2 else f"with {players} players")
     finally:
-        host.close()
-        client.close()
-    return host, client
+        for game in games:
+            game.close()
+    return games
+
+
+# ---- #329: the scenarios that check one rule each take a player count ----
+#
+# A rule scenario has a `players` parameter, 2 unless a row of SCENARIOS says otherwise (`aim_three`, `aim_four`, ...:
+# with_players). With more than two the session has that many games (session(clients=players - 1)), the hashes and
+# traces of every game are compared with the host's, and the checks read every player of the trace, not p0 and p1.
+
+def with_players(scenario, players):
+    """`scenario` with `players` games, as a row of SCENARIOS."""
+    def run(args, folder):
+        return scenario(args, folder, players=players)
+    run.__doc__ = f"{scenario.__name__} with {players} players (#329)."
+    return run
+
+
+def compare_all(games, frames=None):
+    """compare() of the host with every other game: the least number of frames compared."""
+    return min(compare(games[0], other, frames) for other in games[1:])
+
+
+def same_trace(games, rows_of, what):
+    """The rows of every game's trace, as far as both hold them, are the host's: a game can run a little past `done`
+    before it is stopped, so the shorter trace has to start the longer one. Returns the host's rows that every game
+    holds."""
+    ours = rows_of(games[0])
+    n = len(ours)
+    for other in games[1:]:
+        theirs = rows_of(other)
+        n = min(n, len(theirs))
+        for a, b in zip(ours, theirs):
+            expect(a == b, f"the {what} differ: {games[0].name} `{a}`, {other.name} `{b}`")
+    return ours[:n]
+
+
+def sway_apart(players):
+    """sway for `players` players: each steers the same wave a part of its period later, so that every pair of them
+    is far apart across the path at times and each is the nearest to something. With 2 it is sway but for rounding."""
+    def script(frame, player):
+        if frame < JOIN_FRAME:
+            return 0, 0, 0
+        x = int(60 * math.sin(frame * 0.05 + 2 * math.pi * (player % players) / players))
+        y = int(30 * math.sin(frame * 0.03 + player))
+        button = BUTTON_A if frame % (7 + 2 * player) == 0 else 0
+        return button, x, y
+    return script
 
 
 # ---- Scenarios. Each returns the text for its summary line. ----
@@ -507,6 +665,30 @@ def sc_steer(args, folder):
     return f"same hash on {frames} frames, moved {moved[0]:.0f} and {moved[1]:.0f}; {played(host)}, {played(client)}"
 
 
+def sc_unlimited(args, folder):
+    """steer with no frame limit (#287). A Release game plays 1100 frames a second and more, so a client that joins as
+    soon as it can has played a few title frames when the host's level start arrives, and the two part at level frame 4
+    to 9 (the voice player of the sound thread, NOTES.md #287). With a limit of 8 the client had played 290. The session
+    ends, both games play on alone and no `done` comes: this waits two minutes, a run takes seconds."""
+    host, client = run_short(args, folder, both={"SF64_COOP_TEST_SPEED": "max"}, seconds=120)
+    frames = compare(host, client, SHORT_FRAMES)
+    moved = flown(client)
+    expect(moved[0] > 500 and moved[1] > 500, f"a player did not fly: moved {moved}")
+    return f"no frame limit: same hash on {frames} frames, moved {moved[0]:.0f} and {moved[1]:.0f}; {played(host)}"
+
+
+def apart_in_turn(players, period=150):
+    """For `players` Landmasters (#329): for `period` frames at a time one tank steers to the left edge of the track
+    and every other to the right, each tank in its turn, so that each is far across the track from all the others for
+    a part of every round. sway and sway_apart do not part three or four tanks by 250 (macbeth_bombs_three placed 11
+    of its 30 cases with sway_apart)."""
+    def script(frame, player):
+        if frame < JOIN_FRAME:
+            return 0, 0, 0
+        return 0, (-60 if (frame // period) % players == player else 60), 0
+    return script
+
+
 AIM_LINE = re.compile(r"(shot|missile) level=(\d+) frame=(\d+) .*player=(-?\d+)$")
 
 
@@ -521,26 +703,33 @@ def aim_rows(path):
     return rows
 
 
-def sc_aim(args, folder):
-    """Enemies aim at the nearest human (#193). The trace watches the shots and does not ask the aim code, so a build
-    with every enemy aiming at player 0 fails here."""
-    traces = {name: folder / f"{name}-aim.txt" for name in ("host", "client")}
+def aim_traces(folder, players):
+    """{game name: its aim trace} for a session of `players` games, the old files removed (the trace appends), and the
+    env of each client that names its own."""
+    folder.mkdir(parents=True, exist_ok=True)
+    traces = {name: folder / f"{name}-aim.txt" for name in ["host"] + [f"client{n}" for n in range(players - 1)]}
     for path in traces.values():
         if path.exists():
-            path.unlink()  # the trace appends
-    host, client = run_short(args, folder, frames=AIM_FRAMES,
-                             host_env={"SF64_COOP_AIM_TRACE": str(traces["host"])},
-                             client_env={"SF64_COOP_AIM_TRACE": str(traces["client"])})
-    frames = compare(host, client, AIM_FRAMES)
-    ours, theirs = aim_rows(traces["host"]), aim_rows(traces["client"])
-    # A game can run a little past `done` before it is stopped, so the shorter trace has to start the longer one.
-    n = min(len(ours), len(theirs))
-    for a, b in zip(ours[:n], theirs[:n]):
-        expect(a == b, f"the aim traces differ: host `{a[4]}`, client `{b[4]}`")
-    at = {player: sum(1 for row in ours if row[3] == player) for player in (-1, 0, 1)}
-    expect(at[1] > 0, f"no enemy shot or missile flew at player 1: {at[0]} at player 0, {at[-1]} at nobody")
-    return (f"same hash on {frames} frames; {at[1]} shots or missiles at player 1, {at[0]} at player 0, "
-            f"{at[-1]} at nobody; {n} trace lines alike")
+            path.unlink()
+    return traces, [{"SF64_COOP_AIM_TRACE": str(traces[f"client{n}"])} for n in range(players - 1)]
+
+
+def sc_aim(args, folder, players=2):
+    """Enemies aim at the nearest human (#193). The trace watches the shots and does not ask the aim code, so a build
+    with every enemy aiming at player 0 fails here. With more than two players (#329) each steers apart from the
+    others (sway_apart) and some shot or missile has to fly at each of them."""
+    traces, client_envs = aim_traces(folder, players)
+    games = run_short(args, folder, script=sway if players == 2 else sway_apart(players), frames=AIM_FRAMES,
+                      host_env={"SF64_COOP_AIM_TRACE": str(traces["host"])}, client_envs=client_envs, players=players)
+    frames = compare_all(games, AIM_FRAMES)
+    ours = aim_rows(traces["host"])
+    n = len(same_trace(games, lambda game: [row[4] for row in aim_rows(traces[game.name])], "aim traces"))
+    at = {player: sum(1 for row in ours if row[3] == player) for player in (-1, *range(players))}
+    text = ", ".join(f"{at[player]} at player {player}" for player in range(players - 1, -1, -1))
+    missed = [player for player in range(1, players) if at[player] == 0]
+    expect(not missed, f"no enemy shot or missile flew at player {', '.join(str(p) for p in missed)}: {text}, "
+                       f"{at[-1]} at nobody")
+    return f"same hash on {frames} frames; shots or missiles: {text}, {at[-1]} at nobody; {n} trace lines alike"
 
 
 def boost_of_player_1(frame, player):
@@ -1164,8 +1353,10 @@ LASER_AT = 1900  # feed frame a laser item appears in front of player 1 (sc_lase
 
 
 def run_item(args, folder, spec):
-    """Both games with SF64_COOP_LOCKSTEP_ITEM=spec. Returns (frames, [per game: placed, rows]) where a row is the dict of
-    a `lasers` line with strength, wings and states as lists of ints, after hashes and lockstep logs matched."""
+    """Both games with SF64_COOP_LOCKSTEP_ITEM=spec. Returns (frames, [per game: rows, drops]) where a row is the dict of
+    a `lasers` line with strength, wings and states as lists of ints, after hashes and lockstep logs matched. Only the
+    lines of the frames compared count: the games play on after their `done` until the tool stops them, and how far
+    they get depends on the clock, at no frame limit some 600 frames (#316)."""
     host, client = run_short(args, folder, both={"SF64_COOP_LOCKSTEP_ITEM": spec}, frames=LASER_AT + 200)
     frames = compare(host, client, LASER_AT + 200)
     games = []
@@ -1176,8 +1367,9 @@ def run_item(args, folder, spec):
         for row in join_test.said(report, "lasers"):
             rows.append({key: ([int(v) for v in row[key].split(",")] if key != "frame" else int(row[key]))
                          for key in ("frame", "strength", "wings", "states")})
-        expect(rows, f"{game.name}: no `lasers` line")
-        games.append((rows, join_test.said(report, "drop")))
+        rows = [row for row in rows if row["frame"] < frames]
+        expect(rows, f"{game.name}: no `lasers` line in the {frames} frames compared")
+        games.append((rows, [drop for drop in join_test.said(report, "drop") if int(drop["frame"]) < frames]))
     expect(games[0][0][1:] == games[1][0][1:] or games[0][0][-1] == games[1][0][-1],
            f"the two games saw different pickups: {games[0][0]} / {games[1][0]}")
     return frames, games
@@ -1273,13 +1465,15 @@ def score_rows(path):
     return rows
 
 
-def run_score(args, folder, probe, frames, level=None, jump=None):
+def run_score(args, folder, probe, frames, level=None, jump=None, cvars=None):
     """Both games with SF64_COOP_SCORE_PROBE=probe, steered by `steer` (and L at `jump`). Returns (frames compared, the
-    report rows), after hashes and lockstep logs matched and both games reported alike."""
+    report rows), after hashes and lockstep logs matched and both games reported alike. cvars: more CVars for both."""
     folder.mkdir(parents=True, exist_ok=True)
     feed = folder / "feed.txt"
     write_feed(feed, frames + 16, press(steer, {(jump, 0)}, BUTTON_L) if jump is not None else steer)
     config = {"CVars": {"gDebugJumpToAllRange": 1}} if jump is not None else None
+    if cvars:
+        config = {"CVars": {**(config or {}).get("CVars", {}), **cvars}}
     reports = {name: folder / f"{name}-score.txt" for name in ("host", "client")}
     for path in reports.values():
         if path.exists():
@@ -1758,6 +1952,109 @@ def sc_bosses(args, folder):
     return "; ".join(lines)
 
 
+# ---- #330: whom the face's inhale swallows when more than two fly ----
+#
+# The inhale pulls every human (CoopAim_AndrossPull) and all of them share player 0's z on rails
+# (CoopPlayers_FollowPath), so all are within 200 of the face's z on the same frame and CoopAim_AndrossSwallow
+# (src/port/coop/game/aim.c) chooses by x and y alone: the nearest to the mouth (the face's x, y - 150, z), a tie to the
+# lower index. Four games, gInvincible, nobody fires; read from the boss trace, which does not ask the aim code.
+#   nearest: players 0 to 2 each hold a corner of the path and player 3 lets its stick go, so the pull takes it to the
+#            mouth: it is swallowed, the highest index, with all four in reach (a choice of the lowest index in reach,
+#            or of player 0, fails here).
+#   tie:     players 2 and 3 hold the same corner with the same stick and lie on one spot (to the trace's 0.1), nearer
+#            than players 0 and 1: player 2 is swallowed (a tie that goes to the higher index fails here).
+# An inhale lasts 180 frames (state 17's timer) and ends about 370 short of ships that only fly on, so all four boost
+# for 60 frames, as player 1 does in `inhale`: the same boost for each, so they still share one z.
+INHALE4_FRAMES = 2700  # level frames: with these sticks the face's first inhale runs from 2052 to 2232
+INHALE4_BOOST = 2072
+INHALE4_MARGIN = 20.0  # how much nearer the mouth than the others the expected players are, at least
+INHALE4_RUNS = {  # name: (sticks x, y of players 0 to 3 once the tunnel ends, the player swallowed)
+    "nearest": (((-70, -60), (70, -60), (-70, 60), (0, 0)), 3),
+    "tie": (((-70, -60), (70, -60), (70, 60), (70, 60)), 2),
+}
+
+
+def inhale4_swallows(trace):
+    """[(frame, player swallowed, [distance to the mouth per player, None when not in reach], [(x, y) per player])] of
+    a boss trace: each frame on which a player goes into PLAYERSTATE_ANDROSS_MOUTH. In reach as CoopAim_AndrossSwallow
+    counts it: within 200 of the face's z, and for the players after player 0 flying (not parked, state 3 or 5)."""
+    found = []
+    for before, row in zip(trace, trace[1:]):
+        face = next((v.split(",") for k, v in row.items() if re.fullmatch(r"b\d+", k) and
+                     v.split(",")[0] == str(OBJ_BOSS_AND_ANDROSS)), None)
+        players = [row[f"p{i}"].split(",") for i in range(4) if f"p{i}" in row]
+        was = [before.get(f"p{i}", "").split(",") for i in range(len(players))]
+        for i, p in enumerate(players):
+            if face is None or p[0] != "11" or was[i][0] == "11":
+                continue
+            mouth = (float(face[2]), float(face[3]) - 150.0, float(face[4]))
+            distances = []
+            for j, q in enumerate(players):
+                state = was[j] if j == i else q  # the swallowed one flew until this frame
+                at = tuple(float(v) for v in q[2:5])
+                reach = abs(at[2] - mouth[2]) < 200.0 and (j == 0 or (state[1] == "0" and state[0] in ("3", "5")))
+                distances.append(math.dist(at, mouth) if reach else None)
+            found.append((row["frame"], i, distances, [(q[2], q[3]) for q in players]))
+    return found
+
+
+def check_inhale4(name, swallows):
+    """The swallows of one run of INHALE4_RUNS, checked against the rule. Returns a line."""
+    want = INHALE4_RUNS[name][1]
+    expect(swallows, f"{name}: the face swallowed nobody")
+    lines = []
+    for frame, player, distances, places in swallows:
+        text = (f"frame {frame} player {player} of " +
+                ", ".join("out of reach" if d is None else f"{d:.1f}" for d in distances))
+        expect(len(distances) == 4 and None not in distances, f"{name}: not all four in reach: {text}")
+        expect(player == want, f"{name}: swallowed player {player}, want {want}: {text}")
+        rest = [d for j, d in enumerate(distances) if j != want and not (name == "tie" and j == 3)]
+        expect(distances[want] + INHALE4_MARGIN < min(rest), f"{name}: the run does not decide: {text}")
+        if name == "tie":
+            expect(places[2] == places[3], f"{name}: players 2 and 3 are not on one spot: {places[2]}, {places[3]}")
+        lines.append(text)
+    return "; ".join(lines)
+
+
+def sc_inhale_four(args, folder):
+    """#330: with four players the face's inhale swallows the nearest to its mouth of those in reach, whatever its
+    index (`nearest`: player 3), and of two on one spot the lower index (`tie`: player 2). Four games each; hashes
+    and boss traces equal on all four. --levels picks some of nearest,tie."""
+    only = getattr(args, "levels", None)
+    lines = []
+    for name, (sticks, _) in INHALE4_RUNS.items():
+        if only and name not in only:
+            continue
+        run = folder / name
+        run.mkdir(parents=True, exist_ok=True)
+        feed = run / "feed.txt"
+        write_feed(feed, INHALE4_FRAMES + 16,
+                   lambda frame, player: (0, 0, 0) if frame < ANDROSS_WALLS else
+                   (BUTTON_C_LEFT if INHALE4_BOOST <= frame < INHALE4_BOOST + 60 else 0, *sticks[player]))
+        traces = [run / f"{game}-boss.txt" for game in ("host", "client0", "client1", "client2")]
+        for path in traces:
+            if path.exists():
+                path.unlink()  # the trace appends
+        env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(INHALE4_FRAMES)}
+        games = session(args, run, {"SF64_COOP_JOIN_LEVEL": str(BOSS_RUNS["inhale"][0]),
+                                    "SF64_COOP_BOSS_TRACE": str(traces[0])}, None, env, clients=3,
+                        client_envs=[{"SF64_COOP_BOSS_TRACE": str(path)} for path in traces[1:]],
+                        config={"CVars": {"gInvincible": 1}})
+        try:
+            wait_for(list(games), "done", 900, "with four players at Andross")
+        finally:
+            for game in games:
+                game.close()
+        frames = min(compare(games[0], client, INHALE4_FRAMES) for client in games[1:])
+        ours = boss_trace(traces[0])
+        for path in traces[1:]:
+            theirs = boss_trace(path)
+            n = min(len(ours), len(theirs))
+            expect(n >= INHALE4_FRAMES - 40 and ours[:n] == theirs[:n], f"{name}: the boss traces differ ({path.name})")
+        lines.append(f"{name}: same hash on {frames} frames; {check_inhale4(name, inhale4_swallows(ours[:INHALE4_FRAMES]))}")
+    return "; ".join(lines)
+
+
 # ---- #220: the other bosses go after the nearest human ----
 #
 # Each run flies one level with gInvincible on both games and reads the boss trace (src/port/coop/test/boss_trace.h,
@@ -1805,8 +2102,16 @@ OTHER_BOSS_RUNS = {  # name: level, frames, script, CVars beyond gInvincible, en
     "spyborg": (2, 13000, rails_script, {}, {}),
     "vulkain": (7, 12000, rails_script, {}, {}),
     # Titania: Goras waits in state 3 until it is shot, so pilots on both clients drive the Landmasters (the feed is
-    # not played then) and bring it into its fight, states 7 to 12, from about 7800 frames in.
-    "goras": (12, 13000, rails_script, {}, {"SF64_COOP_LOCKSTEP_PILOT": "1"}),
+    # not played then) and bring it into its fight, states 7 to 12, from about 7800 frames in. Since the pilot reads
+    # Goras' boxes right (#262, CoopPilot_GorasTarget) it beats Goras and the level ends at about frame 11760, so the run
+    # stops before that: the map's frames hold no Goras for the trace the check counts.
+    "goras": (12, 11000, rails_script, {}, {"SF64_COOP_LOCKSTEP_PILOT": "1"}),
+    # Macbeth's train end (wave 7, #220): pilots on both clients (the feed is not played then) drive the Landmasters to
+    # the fight, from about level frame 6400 on, and there keep apart (SF64_COOP_PILOT_LANES): player 0 on the right of
+    # the path, player 1 on the left, the side of the train over which the train's end hovers between its attacks. They
+    # do not aim at it, so it is not shot down and the run ends before the track does (the ram of states 18 and 19).
+    "macbeth": (11, 12000, rails_script, {}, {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt",
+                                             "SF64_COOP_PILOT_LANES": "60,-60"}),
 }
 OBJ_BOSS_SX_SPYBORG, OBJ_BOSS_TI_GORAS, OBJ_BOSS_SO_VULKAIN = 303, 306, 315  # include/sf64object.h
 SPYBORG_CHASES = (1, 2, 3, 4, 8, 9, 85)  # SectorX_SxSpyborg_Update's states that move it to its target's x and y
@@ -2024,6 +2329,64 @@ def other_boss_vulkain_story(trace):
     return face, frames
 
 
+# Macbeth's train end (wave 7, #220): actor 207 (Macbeth_Actor207_Update, src/overlays/ovl_i5/fox_ma.c), the end of the
+# train in the Landmaster fight at the end of Macbeth, with a kept slot of its own (the `ma=` field of the boss trace).
+W7MACBETH_GOES = (5, 7, 15)  # its states that move it across the path to its target's x
+W7MACBETH_FACES = (4, 5, 6)  # its states in which Macbeth_Actor207_FacePlayer turns it to its target on every frame
+W7MACBETH_APART = 300.0  # the players more than this apart across the path, or nobody is the nearer by much
+
+
+def w7macbeth_story(trace):
+    """Macbeth's train end, from the boss trace. Each time it enters one of W7MACBETH_GOES or W7MACBETH_FACES, the human
+    then nearer to it (as CoopAim_Nearest measures: x, y and trueZpos, on the row before) is the one it should go after
+    in that state. Per that nearer player: the frames of W7MACBETH_GOES on which its x is nearer that player's than the
+    other's and the other way round (`goes`), and the frames of W7MACBETH_FACES on which it faces (rot y within FACING)
+    that player and not the other (within NOT_FACING) and the other way round (`faces`); only frames with the players
+    more than W7MACBETH_APART apart across the path. Also its kept slot per value, over those states."""
+    def turn(a):
+        return (a + 180.0) % 360.0 - 180.0
+
+    goes = {0: [0, 0], 1: [0, 0]}
+    faces = {0: [0, 0], 1: [0, 0]}
+    picks = {0: 0, 1: 0}
+    kept = {}
+    state = None
+    pick = None
+    last = None
+    for row in trace:
+        m = row.get("ma", "").split(",")
+        if "p1" not in row or len(m) < 8:
+            state = None
+            last = None
+            continue
+        now = int(m[1])
+        pos = [float(v) for v in m[2:5]]
+        players = [[float(v) for v in row[f"p{i}"].split(",")[2:5]] for i in (0, 1)]
+        if now != state and now in W7MACBETH_GOES + W7MACBETH_FACES:
+            at = last if last is not None else (pos, players)
+            dist = [math.dist(at[0], p) for p in at[1]]
+            pick = 1 if dist[1] < dist[0] else 0
+            picks[pick] += 1
+        state = now
+        last = (pos, players)
+        if now not in W7MACBETH_GOES + W7MACBETH_FACES:
+            continue
+        kept[m[7]] = kept.get(m[7], 0) + 1
+        if abs(players[0][0] - players[1][0]) <= W7MACBETH_APART:
+            continue
+        if now in W7MACBETH_GOES:
+            mine, other = abs(pos[0] - players[pick][0]), abs(pos[0] - players[1 - pick][0])
+            goes[pick][0 if mine < other else 1] += 1
+        if now in W7MACBETH_FACES:
+            yaw = float(m[6])
+            off = [abs(turn(yaw - math.degrees(math.atan2(p[0] - pos[0], p[2] - 130.0 - pos[2])))) for p in players]
+            if off[pick] < FACING and off[1 - pick] > NOT_FACING:
+                faces[pick][0] += 1
+            elif off[1 - pick] < FACING and off[pick] > NOT_FACING:
+                faces[pick][1] += 1
+    return goes, faces, picks, kept
+
+
 def sc_other_bosses(args, folder):
     """#220: the bosses other than Area 6's and Andross go after the nearer human. granga: Corneria's Granga walks at
     and turns its guns to player 1 when player 1 is the nearer. --levels picks some of OTHER_BOSS_RUNS."""
@@ -2100,7 +2463,517 @@ def sc_other_bosses(args, folder):
             expect(sum(face) >= 30, f"vulkain: too few frames of the Vulkain's head to tell: {text}")
             expect(face[1] > 2 * face[0], f"vulkain: the Vulkain turns its head to player 0: {text}")
             lines.append(f"vulkain: same hash on {frames} frames; {text}")
+        if name == "macbeth":
+            goes, faces, picks, kept = w7macbeth_story(trace)
+            text = (f"states picked with player 1 the nearer {picks[1]}, player 0 {picks[0]}; going across the path "
+                    f"with player 1 the nearer it goes to player 1 on {goes[1][0]}, to player 0 on {goes[1][1]}, with "
+                    f"player 0 the nearer to player 0 on {goes[0][0]}, to player 1 on {goes[0][1]}; facing, with player 1 "
+                    f"the nearer, player 1 on {faces[1][0]}, player 0 on {faces[1][1]}, with player 0 the nearer, player "
+                    f"0 on {faces[0][0]}, player 1 on {faces[0][1]}; kept "
+                    f"{', '.join(f'{k}: {v}' for k, v in sorted(kept.items()))}")
+            # Player 1 drives the train's side of the path, so it is mostly the nearer one when a state starts. What
+            # counts is that the train's end goes after whoever is the nearer then: player 1 there, and player 0 when
+            # player 0 is (seldom here, so that half is not asked to be large).
+            expect(sum(goes[1]) >= 100 and sum(faces[1]) >= 50,
+                   f"macbeth: too few frames with player 1 the nearer to tell: {text}")
+            wrong = [what for what, v in (("goes to", goes[1]), ("faces", faces[1])) if not v[0] > 2 * v[1]]
+            expect(not wrong, f"macbeth: the train's end {' and '.join(wrong)} player 0 while player 1 is nearer: {text}")
+            expect(goes[0][0] + faces[0][0] >= 2 * (goes[0][1] + faces[0][1]),
+                   f"macbeth: the train's end goes after player 1 while player 0 is nearer: {text}")
+            lines.append(f"macbeth: same hash on {frames} frames; {text}")
     return "; ".join(lines)
+
+
+# ---- sy_robot_spread (#273) ----
+# Some of Sector Y's robots spread their shot (SectorY_SyRobot_Update, iwork[19] != 0): the point they aim at is moved
+# by RAND_FLOAT_CENTERED(300.0f) in x and in y, (Rand_ZeroOne() - 0.5f) * 300 (include/macros.h), and Rand_ZeroOne is
+# in [0, 1) (src/sys/sys_math.c): each axis by -150 up to just under 150, uniform, mean 0, root mean square 86.6.
+W8_SYROBOT_LEVEL = 5  # LEVEL_SECTOR_Y, campaign.py's "sector-y"
+W8_SYROBOT_STEER = 650  # both players fly from level frame 611 in Sector Y with this file's seeds (FOX_REFILL_LEVELS)
+W8_SYROBOT_FRAMES = 9500  # robot 89 (level script 89, the last that spreads) fires at about level frame 8500
+W8_SYROBOT_BOUND = 150.0
+W8_SYROBOT_TOLERANCE = 2.0  # how far a shot aimed straight at a player may miss it here: the trace's printed digits
+W8_SYROBOT_MIN_AT_1 = 6  # spread shots with player 1 the nearer, fewer is too few to tell
+W8_SYROBOT_LINE = re.compile(r"syrobot level=(\d+) frame=(\d+) slot=(\d+) script=(\d+) spread=(-?\d+) start=(\S+) "
+                             r"dir=(\S+)((?: p\d=\S+)+)$")
+
+
+def w8_syrobot_script(frame, player):
+    """Sector Y's rails: from W8_SYROBOT_STEER player 0 holds the top left; player 1 never steers and flies where it
+    joined, near the middle of the path (250, 80). The robots that spread their shots fire from the middle (level
+    scripts 66, 22 and 89), so player 1 is the nearer one for most of their shots."""
+    if frame < W8_SYROBOT_STEER or player != 0:
+        return 0, 0, 0
+    return 0, -70, -60
+
+
+W8_SYROBOT_UP = (5500, 7500)  # frames in which the players between the first and the last climb (#329)
+
+
+def w8_syrobot_script_many(players):
+    """w8_syrobot_script for more than two players (#329). The players after the first fly where they joined, and in
+    that flight the robots of level script 67 (level frames 6500 to 6700) have them all in one place, low on the right
+    (x 1100, a tie that goes to player 1), so the last player was never the nearest to a spread shot
+    (sy_robot_spread_four: 10 around player 1, 2 around player 2, none around player 3). So the players between the
+    first and the last climb for W8_SYROBOT_UP and leave the last one the nearest to those robots."""
+    def script(frame, player):
+        if 0 < player < players - 1:
+            return (0, 0, -60) if W8_SYROBOT_UP[0] <= frame < W8_SYROBOT_UP[1] else (0, 0, 0)
+        return w8_syrobot_script(frame, player)
+    return script
+
+
+def w8_syrobot_rows(path):
+    """The syrobot lines of an aim trace (src/port/coop/test/aim_trace.h): one dict per robot shot."""
+    rows = []
+    if not path.exists():
+        return rows
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        match = W8_SYROBOT_LINE.match(line)
+        if not match:
+            continue
+        players = {}
+        for part in match.group(8).split():
+            key, value = part.split("=")
+            values = value.split(",")
+            players[int(key[1:])] = ([float(v) for v in values[:3]], values[3] == "1")
+        rows.append({"level": int(match.group(1)), "frame": int(match.group(2)), "script": int(match.group(4)),
+                     "spread": int(match.group(5)), "start": [float(v) for v in match.group(6).split(",")],
+                     "dir": [float(v) for v in match.group(7).split(",")], "players": players, "line": line})
+    return rows
+
+
+def w8_syrobot_nearest(row):
+    """The player the shot aims at by the rule of src/port/coop/game/aim.c: of the players that may be aimed at, the
+    nearest to the shot's start, a tie to the lower index."""
+    best, best_dist = 0, None
+    for i in sorted(row["players"]):
+        pos, flies = row["players"][i]
+        if not flies:
+            continue
+        dist = sum((a - b) ** 2 for a, b in zip(pos, row["start"]))
+        if best_dist is None or dist < best_dist:
+            best, best_dist = i, dist
+    return best
+
+
+def w8_syrobot_miss(row, player):
+    """Where the shot crosses the depth (trueZpos) of `player`, less that player's x and y: the offset of the point the
+    robot aimed at from that player. None for a shot that does not fly along z."""
+    (px, py, pz), _ = row["players"][player]
+    sx, sy, sz = row["start"]
+    dx, dy, dz = row["dir"]
+    if abs(dz) < 1e-6:
+        return None
+    t = (pz - sz) / dz
+    return sx + t * dx - px, sy + t * dy - py
+
+
+def w8_syrobot_spread_text(misses):
+    if not misses:
+        return "none"
+    xs, ys = [m[0] for m in misses], [m[1] for m in misses]
+    rms = math.sqrt(sum(v * v for v in xs + ys) / (2 * len(misses)))
+    return (f"x {min(xs):.0f} to {max(xs):.0f} (mean {sum(xs) / len(xs):.0f}), y {min(ys):.0f} to {max(ys):.0f} "
+            f"(mean {sum(ys) / len(ys):.0f}), root mean square {rms:.0f}")
+
+
+def w8_syrobot_run(args, folder, rows_of, what, players=2):
+    """Sector Y's rails as w8_syrobot_script flies them, with the aim trace on every game (gInvincible). Returns (the
+    frames compared, the rows rows_of(path) reads from the host's trace that every game's trace holds alike)."""
+    traces, client_envs = aim_traces(folder, players)
+    games = run_short(args, folder, script=w8_syrobot_script if players == 2 else w8_syrobot_script_many(players),
+                      frames=W8_SYROBOT_FRAMES,
+                      host_env={"SF64_COOP_JOIN_LEVEL": str(W8_SYROBOT_LEVEL),
+                                "SF64_COOP_AIM_TRACE": str(traces["host"])},
+                      client_envs=client_envs, config={"CVars": {"gInvincible": 1}}, seconds=1200, players=players)
+    frames = compare_all(games, W8_SYROBOT_FRAMES)
+    # A game runs on a little past `done`: the lines every trace holds are compared, the checks read the plan's frames.
+    n = len(same_trace(games, lambda game: [row["line"] for row in rows_of(traces[game.name])], what))
+    return frames, rows_of(traces["host"])[:n]
+
+
+def sc_sy_robot_spread(args, folder, players=2):
+    """#273: Sector Y's robots spread a shot around the human it aims at. On the rails player 0 holds the top left and
+    player 1 flies in the middle, near the robots that spread. Each robot shot is read from the aim trace's syrobot
+    lines: a plain one flies at the nearest human, a spread one at a point at most W8_SYROBOT_BOUND from it in x and y,
+    and the spread shots at player 1 are spread: none straight at it, root mean square at least a fifth of the bound."""
+    frames, ours = w8_syrobot_run(args, folder, w8_syrobot_rows, "robot shot lines", players)
+    rows = [row for row in ours if row["level"] == W8_SYROBOT_LEVEL and row["frame"] <= W8_SYROBOT_FRAMES]
+    expect(rows, "no robot shot in the trace (a build without the syrobot line of aim_trace.h writes none)")
+    problems, text = w8_syrobot_story(rows, players)
+    expect(not problems, f"{'; '.join(problems)}. {text}")
+    return f"same hash on {frames} frames; {text}"
+
+
+# ---- sy_robot_pose (#281, item 1) ----
+# While a Sector Y robot aims (SectorY_SyRobot_Update, work_046 1 or 2) it turns its head and gun to a player. Each
+# angle goes a fixed part of the way to its target per frame (Math_SmoothStepToAngle: `scale` of the difference, at most
+# `most`), so the angle before and after a frame gives the target the game used: before + step / scale while the step is
+# under the cap, else only the side it lies on. The aim trace's sypose line holds both and, per player, the yaw and
+# pitch the robot would turn to for that player (aim_trace.h). Upstream the target is player 0's, whoever the shot
+# flies at.
+W9_SYPOSE_LINE = re.compile(r"sypose level=(\d+) frame=(\d+) slot=(\d+) body=(\d) before=(\S+) after=(\S+) "
+                            r"start=(\S+)((?: w\d=\S+)+)((?: p\d=\S+)+)$")
+# name, index into the line's 5 angles, the part of w<n> it turns to (0 yaw, 1 pitch), scale, cap, when it applies
+# (body 0: the robot turns its head; None: also when it turns its body). The body's own yaw (obj.rot.y, the fifth
+# angle) is left out: it does not step to one target, 117 of its 291 steps in a run of the base fit neither player.
+W9_SYPOSE_ANGLES = (("head pitch", 0, 1, 0.1, 2.0, None), ("head yaw", 1, 0, 0.1, 2.0, 0),
+                    ("gun pitch", 3, 1, 0.2, 5.0, None))
+W9_SYPOSE_APART = 5.0  # degrees between the two players' targets for an angle, or the angle cannot tell them apart
+W9_SYPOSE_MIN = 100  # angle steps that tell, with player 1 the nearer; fewer is too few
+W9_SYPOSE_SHARE = 0.9
+
+
+def w9_turn(angle):
+    """An angle difference in (-180, 180]."""
+    return (angle + 180.0) % 360.0 - 180.0
+
+
+def w9_sypose_rows(path):
+    """The sypose lines of an aim trace: one dict per robot and frame."""
+    rows = []
+    if not path.exists():
+        return rows
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        match = W9_SYPOSE_LINE.match(line)
+        if not match:
+            continue
+        wants = {int(part.split("=")[0][1:]): [float(v) for v in part.split("=")[1].split(",")]
+                 for part in match.group(8).split()}
+        players = {}
+        for part in match.group(9).split():
+            key, value = part.split("=")
+            values = value.split(",")
+            players[int(key[1:])] = ([float(v) for v in values[:3]], values[3] == "1")
+        rows.append({"level": int(match.group(1)), "frame": int(match.group(2)), "slot": int(match.group(3)),
+                     "body": int(match.group(4)), "before": [float(v) for v in match.group(5).split(",")],
+                     "after": [float(v) for v in match.group(6).split(",")],
+                     "start": [float(v) for v in match.group(7).split(",")], "wants": wants, "players": players,
+                     "line": line})
+    return rows
+
+
+def w9_sypose_votes(row, aimed=None):
+    """For each angle of W9_SYPOSE_ANGLES that can tell on this frame: the player whose target the robot turned it to,
+    or None for nobody's. With two players an angle tells when their two targets are W9_SYPOSE_APART apart. With more
+    (#329) `aimed` is the player the rule names, the nearest: an angle tells it from the players whose targets are that
+    far from its own (the others fly too near it to tell, and are left out), and the vote is `aimed` when the step
+    fits its target, else the one of those players whose target it fits."""
+    players = sorted(row["wants"])
+    if aimed is None:
+        aimed = 0  # two players: either is apart from the other or neither, so it does not matter which is asked
+    votes = []
+    for _, index, part, scale, most, body in W9_SYPOSE_ANGLES:
+        if body is not None and body != row["body"]:
+            continue
+        want = {i: row["wants"][i][part] for i in players}
+        rest = [i for i in players if i != aimed and abs(w9_turn(want[i] - want[aimed])) >= W9_SYPOSE_APART]
+        if not rest:
+            continue
+        before = row["before"][index]
+        step = w9_turn(row["after"][index] - before)
+        if abs(step) < most - 0.01:
+            off = {i: abs(w9_turn(before + step / scale - want[i])) for i in [aimed] + rest}
+            near = min(off, key=lambda i: (off[i], i != aimed, i))
+            votes.append(near if off[near] < W9_SYPOSE_APART / 2 else None)
+        else:
+            side = {i: w9_turn(want[i] - before) * step > 0 for i in [aimed] + rest}
+            if len(set(side.values())) == 2:
+                votes.append(aimed if side[aimed] else next(i for i in rest if side[i]))
+    return votes
+
+
+def w9_sypose_story(rows, players=2):
+    """The checks of sy_robot_pose on its pose lines: (the problems found, the summary). count[n] is, for the frames
+    with player n the nearest, the angle steps to its own direction, to another player's and to nobody's."""
+    count = {nearest: [0, 0, 0] for nearest in range(players)}
+    for row in rows:
+        nearest = w8_syrobot_nearest(row)
+        for vote in w9_sypose_votes(row, nearest if players > 2 else None):
+            count[nearest][0 if vote == nearest else 2 if vote is None else 1] += 1
+    robots = len({(row["slot"], row["frame"] // 200) for row in rows})
+    if players == 2:
+        text = (f"{len(rows)} frames of robots aiming (about {robots} robots); with player 1 the nearer, "
+                f"{count[1][0]} angle steps go to player 1's direction, {count[1][1]} to player 0's, {count[1][2]} to "
+                f"neither; with player 0 the nearer, {count[0][0]} to player 0's, {count[0][1]} to player 1's, "
+                f"{count[0][2]} to neither")
+    else:
+        text = (f"{len(rows)} frames of robots aiming (about {robots} robots); angle steps to the nearest player's "
+                f"direction, to another's, to nobody's: "
+                + "; ".join(f"with player {n} the nearest {count[n][0]}, {count[n][1]}, {count[n][2]}"
+                            for n in (*range(1, players), 0)))
+    problems = []
+    own = sum(count[n][0] for n in range(1, players))
+    told = sum(sum(count[n]) for n in range(1, players))
+    whom = "player 1" if players == 2 else "a player after the first"
+    if told < W9_SYPOSE_MIN:
+        problems.append(f"too few angle steps tell the players apart with {whom} the nearer")
+    elif own < W9_SYPOSE_SHARE * told:
+        problems.append(f"the robots turn head and gun to player 0 while {whom} is the nearer, the one they shoot at")
+    for n in range(2, players):
+        if count[n][0] == 0:
+            problems.append(f"no angle step tells with player {n} the nearest: the run says nothing about it")
+    if count[0][0] < W9_SYPOSE_SHARE * sum(count[0]):
+        problems.append("the robots do not turn to player 0 when it is the nearer")
+    return problems, text
+
+
+def sc_sy_robot_pose(args, folder, players=2):
+    """#281: a Sector Y robot turns its head and gun to the human its shot flies at, the nearest. The flight of
+    sy_robot_spread; from the aim trace's sypose lines, the target of each angle step that can tell the two players
+    apart: with player 1 the nearer it is player 1's, with player 0 the nearer player 0's. Upstream it is player 0's
+    always. With more players (#329): the target of each step that can tell the nearest player from every other."""
+    frames, ours = w8_syrobot_run(args, folder, w9_sypose_rows, "robot pose lines", players)
+    rows = [row for row in ours if row["level"] == W8_SYROBOT_LEVEL and row["frame"] <= W8_SYROBOT_FRAMES]
+    expect(rows, "no robot pose in the trace (a build without the sypose line of aim_trace.h writes none)")
+    problems, text = w9_sypose_story(rows, players)
+    expect(not problems, f"{'; '.join(problems)}. {text}")
+    return f"same hash on {frames} frames; {text}"
+
+
+# ---- granga_spread (#281, item 2) ----
+# The Granga's gun spreads its plasma shot (Corneria_CoGranga_HandleAttacks, GRANGA_ATTACK_PLASMA,
+# src/overlays/ovl_i1/fox_co.c): the point it aims at is the aimed human moved by RAND_FLOAT_CENTERED(300.0f) in x, y
+# and z, each by -150 up to just under 150. The aim trace's plasma line gives the shot's start, its direction and the
+# players; the shot is a straight line, and how near that line passes a player says whom it was aimed at.
+W9_PLASMA_LEVEL = 0  # LEVEL_CORNERIA
+W9_PLASMA_FRAMES = JOIN_FRAME + 100 + 5900
+W9_PLASMA_BOUND = 150.0 * math.sqrt(3.0)  # the farthest the spread point is from the aimed human
+W9_PLASMA_STRAIGHT = 2.0  # a line that passes a player this near was aimed at that player itself
+W9_PLASMA_MIN = 6  # plasma shots, and those with player 1 the nearer; fewer is too few to tell
+W9_PLASMA_LINE = re.compile(r"plasma level=(\d+) frame=(\d+) start=(\S+) dir=(\S+)((?: p\d=\S+)+)$")
+W9_PLASMA_TURN = JOIN_FRAME + 476  # GRANGA_CIRCLE: flying straight, the players pass the Granga's start about here
+
+
+def w9_plasma_script(frame, player):
+    """Corneria: player 0 presses L (gDebugJumpToAllRange) at JOIN_FRAME + 100; then both players fly the same input,
+    straight into the middle of the Granga's ground and in a circle there, side by side as they joined. So the two are
+    about as far from the Granga's gun, each the nearer at times, and a spread that moves one of them can make the
+    other the nearer."""
+    if frame == JOIN_FRAME + 100 and player == 0:
+        return BUTTON_L, 0, 0
+    return (0, 70, 0) if frame >= W9_PLASMA_TURN else (0, 0, 0)
+
+
+def w9_plasma_rows(path):
+    rows = []
+    if not path.exists():
+        return rows
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        match = W9_PLASMA_LINE.match(line)
+        if not match:
+            continue
+        players = {}
+        for part in match.group(5).split():
+            key, value = part.split("=")
+            values = value.split(",")
+            players[int(key[1:])] = ([float(v) for v in values[:3]], values[3] == "1")
+        rows.append({"level": int(match.group(1)), "frame": int(match.group(2)),
+                     "start": [float(v) for v in match.group(3).split(",")],
+                     "dir": [float(v) for v in match.group(4).split(",")], "players": players, "line": line})
+    return rows
+
+
+def w9_plasma_pass(row, player):
+    """How near the shot's line passes `player`."""
+    to = [a - b for a, b in zip(row["players"][player][0], row["start"])]
+    length = math.sqrt(sum(d * d for d in row["dir"]))
+    along = sum(a * d for a, d in zip(to, row["dir"])) / length
+    return math.sqrt(max(sum(a * a for a in to) - along * along, 0.0))
+
+
+def sc_granga_spread(args, folder, players=2):
+    """#281: the Granga's plasma spread lands around the human the shot aims at, the nearest to its gun, also when the
+    spread point lies nearer to another human. Both players fly the same circle side by side over the Granga, so each
+    is the nearer at times. From the aim trace's plasma lines: every shot's line passes within the spread
+    (W9_PLASMA_BOUND) of the human nearest to its start, and no shot flies straight at a human: a shot that does was
+    aimed at a human the spread did not move."""
+    traces, client_envs = aim_traces(folder, players)
+    games = run_short(args, folder, script=w9_plasma_script, frames=W9_PLASMA_FRAMES,
+                      host_env={"SF64_COOP_JOIN_LEVEL": str(W9_PLASMA_LEVEL),
+                                "SF64_COOP_AIM_TRACE": str(traces["host"])},
+                      client_envs=client_envs, config={"CVars": {"gInvincible": 1, "gDebugJumpToAllRange": 1}},
+                      seconds=1200, players=players)
+    frames = compare_all(games, W9_PLASMA_FRAMES)
+    n = len(same_trace(games, lambda game: [row["line"] for row in w9_plasma_rows(traces[game.name])],
+                       "plasma lines"))
+    rows = [row for row in w9_plasma_rows(traces["host"])[:n]
+            if row["level"] == W9_PLASMA_LEVEL and row["frame"] <= W9_PLASMA_FRAMES]
+    expect(rows, "no plasma shot in the trace (a build without the plasma line of aim_trace.h writes none, or the "
+                 "Granga did not fire its gun)")
+    problems, text = w9_plasma_story(rows, players)
+    expect(not problems, f"{'; '.join(problems)}. {text}")
+    return f"same hash on {frames} frames; {text}"
+
+
+def w9_plasma_story(rows, players=2):
+    """The checks of granga_spread on its plasma shots: (the problems found, the summary). With more than two players
+    the count asked of player 1's shots is asked of the shots at the players after the first, taken together."""
+    at = {0: [], 1: []}
+    off, straight = [], []
+    for row in rows:
+        aimed = w8_syrobot_nearest(row)
+        passes = {i: w9_plasma_pass(row, i) for i in sorted(row["players"])}
+        at.setdefault(aimed, []).append(passes[aimed])
+        for i, near in passes.items():
+            if near <= W9_PLASMA_STRAIGHT:
+                straight.append(f"frame {row['frame']}: at player {i} ({near:.1f}), the nearest was player {aimed}")
+        if passes[aimed] > W9_PLASMA_BOUND + W9_PLASMA_STRAIGHT:
+            off.append(f"frame {row['frame']} passes player {aimed}, the nearest, at {passes[aimed]:.0f}")
+
+    def spread(values):
+        return f"{min(values):.0f} to {max(values):.0f} (mean {sum(values) / len(values):.0f})" if values else "none"
+
+    text = f"{len(rows)} plasma shots; " + "; ".join(
+        f"{len(at.get(player, []))} with player {player} the nearer, they pass it at {spread(at.get(player, []))}"
+        for player in (1, 0, *range(2, players)))
+    problems = []
+    others = spread_others(at, players, problems, "plasma shot")
+    if straight:
+        problems.append(f"{len(straight)} of {len(rows)} spread shots fly straight at a human ({'; '.join(straight)})")
+    if off:
+        problems.append(f"{len(off)} shots are not around the nearest human, more than {W9_PLASMA_BOUND:.0f} off "
+                        f"({'; '.join(off)})")
+    if len(rows) < W9_PLASMA_MIN or len(others) < W9_PLASMA_MIN:
+        problems.append("too few plasma shots, or too few with "
+                        + ("player 1" if players == 2 else "a player after the first") + " the nearer, to tell")
+    return problems, text
+
+
+def spread_others(at, players, problems, what):
+    """For a spread story with more than two players (#329): the shots around every player after the first, as one
+    list, and a problem for each such player no shot was around (the run says nothing about it). With two players the
+    list is player 1's."""
+    for player in range(2, players):
+        if not at.get(player):
+            problems.append(f"no {what} with player {player} the nearest: the run says nothing about it")
+    return [m for player in range(1, players) for m in at.get(player, [])]
+
+
+def w8_syrobot_story(rows, players=2):
+    """The checks of sy_robot_spread on its robot shots: (the problems found, the summary). With more than two players
+    what is asked of player 1's shots is asked of the shots around every player after the first, taken together."""
+    plain = [row for row in rows if row["spread"] == 0]
+    spread = [row for row in rows if row["spread"] != 0]
+    worst = 0.0
+    wide = []  # plain shots that miss the nearest human
+    for row in plain:
+        miss = w8_syrobot_miss(row, w8_syrobot_nearest(row))
+        if miss is not None:
+            worst = max(worst, abs(miss[0]), abs(miss[1]))
+            if max(abs(miss[0]), abs(miss[1])) > W8_SYROBOT_TOLERANCE:
+                wide.append(f"frame {row['frame']} misses player {w8_syrobot_nearest(row)} by {miss[0]:.1f}, "
+                            f"{miss[1]:.1f}")
+    at = {0: [], 1: []}
+    off = []  # spread shots that are not around the nearest human
+    for row in spread:
+        aimed = w8_syrobot_nearest(row)
+        miss = w8_syrobot_miss(row, aimed)
+        if miss is None:
+            continue
+        if max(abs(miss[0]), abs(miss[1])) > W8_SYROBOT_BOUND + W8_SYROBOT_TOLERANCE:
+            off.append(f"frame {row['frame']} misses player {aimed} by {miss[0]:.0f}, {miss[1]:.0f}")
+            continue
+        at.setdefault(aimed, []).append(miss)
+    by_command = {value: sum(1 for row in spread if row["spread"] == value)
+                  for value in sorted({row["spread"] for row in spread})}
+    text = (f"{len(rows)} robot shots: {len(plain)} plain, all within {worst:.2f} of the nearest human; {len(spread)} "
+            f"spread (iwork[19] {', '.join(f'{k}: {v}' for k, v in by_command.items()) or 'none'}), "
+            + "; ".join(f"{len(at.get(player, []))} around player {player}, the nearer: "
+                        f"{w8_syrobot_spread_text(at.get(player, []))}" for player in (1, 0, *range(2, players))))
+    problems = []
+    others = spread_others(at, players, problems, "spread shot")
+    whom = "player 1" if players == 2 else "the players after the first"
+    if wide:
+        problems.append(f"{len(wide)} plain shots miss the nearest human ({'; '.join(wide)})")
+    if off:
+        problems.append(f"{len(off)} of {len(spread)} spread shots are not around the nearest human, more than "
+                        f"{W8_SYROBOT_BOUND:.0f} off in x or y ({'; '.join(off)})")
+    if len(others) < W8_SYROBOT_MIN_AT_1:
+        problems.append(f"too few spread shots around {whom} to tell, {len(others)}")
+    straight = sum(1 for m in others if abs(m[0]) <= W8_SYROBOT_TOLERANCE and abs(m[1]) <= W8_SYROBOT_TOLERANCE)
+    if straight:
+        problems.append(f"{straight} of the {len(others)} spread shots with {whom} the nearer fly straight at it")
+    if others and math.sqrt(sum(m[0] ** 2 + m[1] ** 2 for m in others) / (2 * len(others))) < W8_SYROBOT_BOUND / 5:
+        problems.append(f"the spread around {whom} is too small")
+    every = at[0] + others
+    if every and any(abs(sum(m[axis] for m in every) / len(every)) >= W8_SYROBOT_BOUND / 2 for axis in (0, 1)):
+        problems.append("the spread is not centred on the human aimed at")
+    return problems, text
+
+
+# Macbeth's ram at the end of the track (wave 7, #220; the owner's choice of 2026-11-12): once the track's stage reaches 4
+# the train's end rams player 0 (Macbeth_Actor207_Update, states 18 and 19) and zeroes its shields at every touch. That
+# ends the try as upstream: player 0 goes down, past decision 0007's refill (CoopPlayers_RefillFox). The run: pilots on
+# both clients, in lanes apart once the fight is on, without gInvincible (it keeps a hit from taking a tank down), a pool of
+# W7MACBETH_RAM_POOL lives so that both reach the fight, and SF64_COOP_MA_TRACK_END, which gives the track's stage 4 the
+# first time the train's end is in state 4, so it rams at once.
+W7MACBETH_RAM_FRAMES = 8000  # the fight starts at about level frame 6400; the ram and player 0's down come within 400
+W7MACBETH_RAM_POOL = 90
+W7MACBETH_RAM_WAIT = 600  # frames from the ram's start (state 19) by which player 0 has to be down
+
+
+def w7macbeth_ram_story(boss_rows, view):
+    """From the host's boss trace and view trace: the frame the train's end starts its ram (state 19), the frames on which
+    player 0 was refilled from then on (a life gone from the pool while it stays ACTIVE and player 1 does not come back),
+    the first frame it is DOWN, and the pool when the ram starts. Only up to the level's start again (frames go back)."""
+    start = next((int(r["frame"]) for r in boss_rows if r.get("ma", "").split(",")[1:2] == ["19"]), None)
+    if start is None:
+        return None, [], None, None
+    rows = []
+    for row in view.rows:
+        if row.frame < start:
+            continue
+        if rows and row.frame <= rows[-1].frame:
+            break  # the level started again
+        rows.append(row)
+    refills = []
+    for before, now in zip(rows, rows[1:]):
+        p, q = before.players[0], now.players[0]
+        came_back = len(now.players) > 1 and before.players[1].parked and not now.players[1].parked
+        if q.lives == p.lives - 1 and q.state == player_trace.ACTIVE and not came_back:
+            refills.append(now.frame)
+    down = next((r.frame for r in rows if r.players[0].state == PLAYERSTATE_DOWN), None)
+    return start, refills, down, (rows[0].players[0].lives if rows else None)
+
+
+def sc_w7macbeth_ram(args, folder):
+    """#220, the owner's choice of 2026-11-12: Macbeth's train end rams player 0 at the end of the track, and that ends the
+    try as upstream: player 0 goes down at the ram, once, and is not refilled under it (decision 0007's refill would buy
+    only the next ram, about every 31 frames, until the pool is gone). Hashes equal on both games."""
+    folder.mkdir(parents=True, exist_ok=True)
+    frames = W7MACBETH_RAM_FRAMES
+    traces = {name: folder / f"{name}-boss.txt" for name in ("host", "client")}
+    views = {name: folder / f"{name}-view.txt" for name in ("host", "client")}
+    for path in [*traces.values(), *views.values()]:
+        if path.exists():
+            path.unlink()  # the traces append
+    both = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt", "SF64_COOP_PILOT_LANES": "60,-60",
+            "SF64_COOP_MA_TRACK_END": "1", "SF64_COOP_VIEW_POKE": f"100:0:lives:{W7MACBETH_RAM_POOL}",
+            "SF64_COOP_LOCKSTEP_END": str(frames)}
+    host, client = session(args, folder, {"SF64_COOP_JOIN_LEVEL": "11", "SF64_COOP_BOSS_TRACE": str(traces["host"]),
+                                          "SF64_COOP_VIEW_TRACE": str(views["host"])},
+                           {"SF64_COOP_BOSS_TRACE": str(traces["client"]), "SF64_COOP_VIEW_TRACE": str(views["client"])},
+                           both, config={"CVars": {}})
+    try:
+        wait_for([host, client], "done", 900)
+    finally:
+        host.close()
+        client.close()
+    compared = compare(host, client, frames)
+    stories = [w7macbeth_ram_story(boss_trace(traces[name]), view_check.read_trace(1, views[name]))
+               for name in ("host", "client")]
+    expect(stories[0] == stories[1], f"w7macbeth_ram: the games differ: host {stories[0]}, client {stories[1]}")
+    start, refills, down, pool = stories[0]
+    expect(start is not None, f"w7macbeth_ram: the train's end never started its ram (state 19) in {frames} frames")
+    text = (f"the ram starts at frame {start} with {pool} lives in the pool; player 0 refilled under it "
+            f"{len(refills)} times{f' (first {refills[0]}, last {refills[-1]})' if refills else ''}, down at "
+            f"{down if down is not None else 'no frame'}")
+    expect(not refills, f"w7macbeth_ram: player 0 is refilled under the ram, so it drains the pool: {text}")
+    expect(down is not None and down - start <= W7MACBETH_RAM_WAIT,
+           f"w7macbeth_ram: player 0 does not go down at the ram: {text}")
+    return f"same hash on {compared} frames; {text}"
 
 
 EELS_FRAMES = 9000  # Aquas from the join: the Bacoon lets its eels out from about level frame 5600 on
@@ -2172,12 +3045,16 @@ def sc_eels(args, folder):
 # level complete at frame 29169 in the first run, Macbeth at 9523, Aquas at 7240 (the join is close to its boss), so
 # there is room for a slower fight. Titania's moved (#266): level complete came at 43591 on a later build, and at 36223
 # on `coop` at 33bd5fe6 (this scenario and campaign.py alike; NOTES.md, "the campaign run"), past the 34000 frames it
-# had been given. Why it moves is a guess (Goras follows the tank lined up with it, #220). Its limit is now 42000, about
-# 16 % above the latest run as 34000 was above the first, so a fight as long as the 43591 one fails here.
+# had been given. Why it moves is a guess (Goras follows the tank lined up with it, #220). With the pilot's fix of #271
+# (Goras' hitboxes read right, NOTES.md 2026-11-12) it completes at about 9399, so its limit is 14000 again, as the
+# others' (#276): a run plays every frame of its limit, and Titania took 261 s with 14000 on 2026-11-13.
 # Macbeth's boss kills player 0 outright when the train reaches the end of its track first (Macbeth_Actor207_Update,
 # state 18-19), and with gInvincible that tank is never downed: it climbs on and the game crashes later. A slower pilot
 # fails there.
-VEHICLE_END_LEVELS = (("Macbeth", 11, 14000), ("Titania", 12, 42000), ("Aquas", 13, 14000))
+# Titania's level complete comes only from Goras' dying function, once its timer has run down from 280 to 0
+# (Titania_TiGoras_Dying, src/overlays/ovl_i5/fox_ti.c:4800 and :5659-5662): a run that reaches it ran that function's 8
+# signed draws (#209), at its first frame and at timers 140, 120 and 100 (#232).
+VEHICLE_END_LEVELS = (("Macbeth", 11, 14000), ("Titania", 12, 14000), ("Aquas", 13, 14000))
 
 
 def sc_vehicle_end(args, folder):
@@ -2207,9 +3084,73 @@ def sc_vehicle_end(args, folder):
         expect(complete is not None, f"{name}: player 0 never reached level complete in {frames} frames")
         active, _, joined = vehicle_story(client)
         expect(joined > frames // 2, f"{name}: player 1 drove on only {joined} of {frames} frames")
-        texts.append(f"{name} {compared} frames, level complete at {complete}, player 1 drove on {joined}")
+        goras = " (Goras' dying function ran to its end)" if level == 12 else ""
+        texts.append(f"{name} {compared} frames, level complete at {complete}{goras}, player 1 drove on {joined}")
     expect(texts, "no level chosen")
     return "same hash; " + "; ".join(texts)
+
+
+# #276: Venom 1's pillars from the last row (src/port/coop/test/ve1_pillar_probe.h). Row 4 of the two tables of
+# Venom1_Ve1Golemech_Update (src/overlays/ovl_i1/fox_ve1.c), as (x, y) of the pillars, and what the N64 reads for a
+# sixth pillar past it: D_i1_80199B40[4][5] is D_i1_80199CD0[0][0] behind it, D_i1_80199CD0[4][5] the five s16 of
+# D_i1_80199E60 (1, 2, 2, 2, 3, big-endian), so x and y are the float bits 0x00010002 and 0x00020002.
+VE1_PILLAR_ROWS = {
+    "D_i1_80199B40": {(500.0, 424.0), (500.0, 112.0), (787.0, 600.0), (800.0, 291.0), (800.0, 724.0)},
+    "D_i1_80199CD0": {(-770.0, 96.0), (-500.0, 478.0), (-500.0, 78.0), (-800.0, 364.0), (-870.0, 708.0)},
+}
+VE1_PILLAR_N64 = {"D_i1_80199B40": (0xC4408000, 0x42C00000), "D_i1_80199CD0": (0x00010002, 0x00020002)}
+VE1_PILLAR_FRAMES = 13000  # Venom 1 reached level complete at 11478 in the sanitizer sweep, the Golemech well before
+VE1_PILLAR_PROBE = "ve1-pillars.txt"
+
+
+def ve1_pillar_batches(path):
+    """The probe's pillars, by the frame they were first seen: {frame: [(x bits, y bits)]}, and the Golemech's frame."""
+    batches, golemech = {}, None
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines() if path.exists() else []:
+        words = dict(word.split("=", 1) for word in line.split()[1:] if "=" in word)
+        if line.startswith("golemech "):
+            golemech = int(words["frame"])
+        elif line.startswith("pillar "):
+            batches.setdefault(int(words["frame"]), []).append((int(words["x"], 16), int(words["y"], 16)))
+    return batches, golemech
+
+
+def float_of(bits):
+    return struct.unpack("<f", struct.pack("<I", bits))[0]
+
+
+def sc_ve1_pillars(args, folder):
+    """#276: Venom 1's Golemech raises six pillars from the last row of its tables, as it does once in a while in a
+    fight (the probe forces its count to 5 and its row to 4). The sixth is read past the table; it has to stand where
+    the N64 puts it (VE1_PILLAR_N64), and both games have to hash alike. A pilot on each client, gInvincible on both."""
+    env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt",
+           "SF64_COOP_LOCKSTEP_END": str(VE1_PILLAR_FRAMES), "SF64_COOP_VE1_PILLAR_PROBE": VE1_PILLAR_PROBE}
+    host, client = session(args, folder, {"SF64_COOP_JOIN_LEVEL": "6"}, None, env,
+                           config={"CVars": {"gInvincible": 1}}, replay_frames=VE1_PILLAR_FRAMES + 20000)
+    try:
+        wait_for([host, client], "done", max(args.level_seconds, VE1_PILLAR_FRAMES * 0.25), "in Venom 1")
+    finally:
+        host.close()
+        client.close()
+    compared = compare(host, client, VE1_PILLAR_FRAMES)
+    batches, golemech = ve1_pillar_batches(host.run / VE1_PILLAR_PROBE)
+    expect(golemech is not None, "the Golemech never came: a build without ve1_pillar_probe.c (#276), or the pilot "
+                                 "did not get there")
+    expect((batches, golemech) == ve1_pillar_batches(client.run / VE1_PILLAR_PROBE), "the two games' probe logs differ")
+    sixth = {table: [] for table in VE1_PILLAR_ROWS}
+    for frame, pillars in sorted(batches.items()):
+        places = [(float_of(x), float_of(y)) for x, y in pillars]
+        for table, row in VE1_PILLAR_ROWS.items():
+            if sum(place in row for place in places) >= 3:  # an attack from this table's row 4
+                sixth[table] += [(frame, bits) for bits, place in zip(pillars, places) if place not in row]
+    expect(any(sixth.values()), f"no attack raised a sixth pillar in {len(batches)} batches of pillars")
+    wrong = [f"{table} at frame {frame}: x {x:08x} y {y:08x} ({float_of(x):g}, {float_of(y):g}), the N64's "
+             f"{VE1_PILLAR_N64[table][0]:08x} {VE1_PILLAR_N64[table][1]:08x}"
+             for table, found in sixth.items() for frame, (x, y) in found if (x, y) != VE1_PILLAR_N64[table]]
+    expect(not wrong, f"a sixth pillar is not where the N64 puts it: {'; '.join(wrong[:4])}")
+    counts = ", ".join(f"{len(found)} from {table}" for table, found in sixth.items())
+    return (f"same hash on {compared} frames; the Golemech at frame {golemech}, {len(batches)} batches of pillars, "
+            f"sixth pillars {counts}, each where the N64 puts it")
 
 
 def sc_three(args, folder):
@@ -2231,6 +3172,50 @@ def sc_three(args, folder):
         own = int(join_test.said(game.report(), "joined")[0]["player"])  # whoever joined first is player 1
         expect(own in {player for _, player in view_of(game)}, f"{game.name} never looked through player {own}")
     return f"three games: {equal[0]} and {equal[1]} frames equal, each looking through its own player"
+
+
+W11B_REPLAY_FRAMES = 2000  # the replay of sc_replay_ends: it ends in the level, well before the level's frame SHORT_FRAMES
+
+
+def sc_replay_ends(args, folder):
+    """#324: a game's replay file runs out in the middle of a level, and the session's input must stay the lockstep's.
+    Every test game plays a replay from boot (zeros; the feed or the pilot gives the pads), and when it ended the
+    playback cleared every input source, the lockstep's with them (src/port/coop/test/replay.c): that game then flew
+    its own player from its own pad with no input delay and the others from nothing, so the games parted once the feed
+    steered. Two games, a replay of W11B_REPLAY_FRAMES frames that ends in the level in both, the feed's steering from
+    JOIN_FRAME on, equal to SHORT_FRAMES. Always at a frame limit of 8, whatever COOP_TOOLS_MEETING_SPEED says: a replay
+    counts the frames of the menus too, and at no limit those are as many as the PC renders, so the replay ended
+    before the level and the run showed nothing."""
+    folder.mkdir(parents=True, exist_ok=True)
+    feed = folder / "feed.txt"
+    write_feed(feed, SHORT_FRAMES + 16, sway)
+    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(SHORT_FRAMES),
+           "SF64_COOP_TEST_SPEED": "8"}
+    games = session(args, folder, both=env, replay_frames=W11B_REPLAY_FRAMES)
+    ended = {}
+    try:
+        deadline = time.monotonic() + 900
+        while not all(join_test.said(game.sync(), "done") for game in games):
+            for game in games:
+                expect(game.proc.poll() is None, f"{game.name} ended with code {game.proc.returncode} before `done`")
+                if game.name not in ended and (game.run / "replay-report.txt").exists():
+                    rows = [line for line in game.sync_log.read_text(encoding="utf-8").splitlines()
+                            if line and not line.startswith("#")] if game.sync_log.exists() else []
+                    ended[game.name] = int(rows[-1].split()[0]) if rows else -1
+            expect(time.monotonic() < deadline, "no `done` after 900 s")
+            time.sleep(0.05)
+    finally:
+        for game in games:
+            game.close()
+    for game in games:
+        at = ended.get(game.name)
+        expect(at is not None and 0 <= at < SHORT_FRAMES,
+               f"{game.name}: its replay did not end in the level (seen at lockstep frame {at}), so this run shows "
+               f"nothing")
+    host, client = games
+    frames = compare(host, client, SHORT_FRAMES)
+    return (f"the replays ended in the level (seen by lockstep frame {ended['host']} on the host, {ended['client0']} "
+            f"on the client), {frames} frames equal after it, steering from frame {JOIN_FRAME}")
 
 
 def sc_control(args, folder):
@@ -2440,6 +3425,147 @@ def sc_player_hits(args, folder):
         found.append(f"{game.name}: team {team}, players {own}")
     expect(trace_hit_rows(host)[-1] == trace_hit_rows(client)[-1], "host and client end on different counts")
     return f"{frames} frames of Corneria, {equal} frames equal; " + "; ".join(found)
+
+
+RESULTS_AT = JOIN_FRAME + 100      # the probe turns the level clear screen on
+RESULTS_READY_FROM = 60             # src/port/coop/game/score.c: presses count from here
+RESULTS_HOLD_AT = 150               # the scene holds from here
+RESULTS_TIMEOUT = 900               # and goes on alone after this many held frames
+RESULTS_EARLY = RESULTS_AT + 20     # player 1's press before 2 s: not counted
+RESULTS_HOST = RESULTS_AT + 90      # player 0 ready
+RESULTS_CLIENT = RESULTS_AT + 400   # player 1 ready, well into the hold
+
+
+def results_runs(rows):
+    """The `results` lines as [(frame, holding, (ready 0, ready 1))], and the frames the screen went on and off."""
+    held, on, off = [], None, None
+    for kind, row in rows:
+        if kind != "results":
+            continue
+        if "on" in row:
+            if row["on"] == "1":
+                on = int(row["frame"])
+            else:
+                off = int(row["frame"])
+        else:
+            held.append((int(row["frame"]), int(row["holding"]), tuple(int(v) for v in row["ready"].split(","))))
+    return held, on, off
+
+
+def sc_results(args, folder):
+    """#252: the level clear status screen holds the scene in a session until every human pressed A or B, presses in
+    its first 2 s do not count, and it goes on alone after 30 s. The probe turns the screen on in Corneria, as a
+    level's end does. Both games report the same frames, and their hashes match through the hold."""
+    def idle(frame, player):
+        return 0, 0, 0
+
+    texts = []
+    both = press(idle, {(RESULTS_EARLY, 1), (RESULTS_HOST, 0), (RESULTS_CLIENT, 1)}, BUTTON_A)
+    frames = RESULTS_CLIENT + 100
+    compared, rows = run_results(args, folder / "pressed", both, frames)
+    held, on, off = results_runs(rows)
+    expect(on == RESULTS_AT, f"the screen went on at {on}, want {RESULTS_AT}")
+    ready0 = next((f for f, _, r in held if r[0]), None)
+    ready1 = next((f for f, _, r in held if r[1]), None)
+    start = next((f for f, h, _ in held if h), None)
+    end = next((f for f, h, _ in held if start is not None and f > start and not h), None)
+    # Report lines come one frame after the update that changed them (the probe reads in GamePreUpdate).
+    expect(ready0 == RESULTS_HOST + 1, f"player 0 counted ready at {ready0}, pressed at {RESULTS_HOST}")
+    expect(ready1 == RESULTS_CLIENT + 1, f"player 1 counted ready at {ready1}, pressed at {RESULTS_CLIENT} "
+                                          f"(and early at {RESULTS_EARLY}, which must not count)")
+    expect(start is not None and abs(start - (RESULTS_AT + RESULTS_HOLD_AT)) <= 2,
+           f"the hold began at {start}, want about {RESULTS_AT + RESULTS_HOLD_AT}")
+    expect(end == RESULTS_CLIENT + 1, f"the hold ended at {end}, want the frame after player 1's press")
+    expect(off == end + 30, f"the probe's screen went off at {off}")
+    texts.append(f"both pressed: held {start} to {end}, {compared} frames equal")
+
+    one = press(idle, {(RESULTS_HOST, 0)}, BUTTON_A)
+    frames = RESULTS_AT + RESULTS_HOLD_AT + RESULTS_TIMEOUT + 100
+    compared, rows = run_results(args, folder / "timeout", one, frames)
+    held, on, off = results_runs(rows)
+    start = next((f for f, h, _ in held if h), None)
+    end = next((f for f, h, _ in held if start is not None and f > start and not h), None)
+    expect(start is not None and end is not None, f"no hold, or it never ended: {held}")
+    expect(abs((end - start) - RESULTS_TIMEOUT) <= 2, f"held {end - start} frames with player 1 idle, want "
+                                                       f"{RESULTS_TIMEOUT}")
+    expect(not any(r[1] for _, _, r in held), "player 1 counted ready without a press")
+    texts.append(f"player 1 idle: held {end - start} frames, {compared} frames equal")
+    return "; ".join(texts)
+
+
+# #252: a seat with no human holds nobody. Three games, the first client (player 2) leaves on purpose, and the level
+# starts again for the other two with roster Fox,-,Slippy: seat 1 is empty (CoopPlayers_IsOut). The probe turns the
+# level clear screen on in that second level; Fox and the player in seat 2 press, and the hold must end after the later
+# press, not after the 900-frame limit.
+def sc_results_hole(args, folder):
+    folder.mkdir(parents=True, exist_ok=True)
+    feed = folder / "feed.txt"
+    pad = press(idle, {(RESULTS_HOST, 0), (RESULTS_CLIENT, 2)}, BUTTON_A)
+    write_feed(feed, RESULTS_CLIENT + 200, pad)
+    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(SURVIVE_FRAMES),
+           "SF64_COOP_SCORE_PROBE": f"results:{RESULTS_AT}"}
+    reports = {n: folder / f"{n}-score.txt" for n in ("host", "client0", "client1")}
+    for path in reports.values():
+        if path.exists():
+            path.unlink()
+    games = session(args, folder, both=env, clients=2,
+                    client_envs=[{"SF64_COOP_JOIN_LEAVE_FILE": "leave", "SF64_COOP_SCORE_REPORT": str(reports["client0"])},
+                                 {"SF64_COOP_SCORE_REPORT": str(reports["client1"])}],
+                    host_env={"SF64_COOP_SCORE_REPORT": str(reports["host"])})
+    host, goes, stays = games
+    try:
+        wait_for(list(games), "done", 900, "before the player left")
+        (goes.run / "leave").write_text("", encoding="utf-8")
+        survive_wait([host, stays], "again", 1, SURVIVE_AGAIN_SECONDS, "after the player left")
+        deadline = time.monotonic() + 600
+        while not any(k == "results" and r.get("on") == "0" for k, r in score_rows(reports["client1"])):
+            expect(time.monotonic() < deadline, "the results screen never went off in the second level")
+            expect(stays.proc.poll() is None and host.proc.poll() is None, "a game ended before the screen went off")
+            time.sleep(0.5)
+        survive_no_end([host, stays])
+    finally:
+        for game in games:
+            game.close()
+    expect(player_of(goes) == 2 and player_of(stays) == 3, f"seats: the one who left is player {player_of(goes)}, the "
+                                                        f"other {player_of(stays)}; the test needs the hole at seat 1")
+    roster = [r for _, r in survive_starts(host)]
+    expect(len(roster) == 2 and roster[1].split(",")[1] == "-" and roster[1].split(",")[2] != "-",
+           f"the second level start's roster is {roster}, want a hole at player 2")
+    rows = [score_rows(reports[n]) for n in ("host", "client1")]
+    expect(rows[0] == rows[1], "the two games that stayed saw different things")
+    held, on, off = results_runs(rows[0])
+    start = next((f for f, h, _ in held if h), None)
+    end = next((f for f, h, _ in held if start is not None and f > start and not h), None)
+    expect(start is not None and end is not None, f"no hold, or it never ended: {held}")
+    expect(end == RESULTS_CLIENT + 1, f"the hold ended at {end}, want the frame after the press of the player in seat "
+                                      f"3 at {RESULTS_CLIENT} (the empty seat must not hold it, nor the 900-frame limit)")
+    expect(not any(r[1] for _, _, r in held), "the empty seat counted ready")
+    return f"seat 2 empty after a leave: held {start} to {end}, the screen did not wait for the empty seat"
+
+
+def run_results(args, folder, script, frames):
+    """run_score with the `results` probe and a feed of its own: nothing but the presses in `script`."""
+    folder.mkdir(parents=True, exist_ok=True)
+    feed = folder / "feed.txt"
+    write_feed(feed, frames + 16, script)
+    reports = {name: folder / f"{name}-score.txt" for name in ("host", "client")}
+    for path in reports.values():
+        if path.exists():
+            path.unlink()
+    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(frames),
+           "SF64_COOP_SCORE_PROBE": f"results:{RESULTS_AT}"}
+    host, client = session(args, folder, {"SF64_COOP_SCORE_REPORT": str(reports["host"])},
+                           {"SF64_COOP_SCORE_REPORT": str(reports["client"])}, env)
+    try:
+        wait_for([host, client], "done", 900)
+    finally:
+        host.close()
+        client.close()
+    compared = compare(host, client, frames)
+    rows = [score_rows(reports[name]) for name in ("host", "client")]
+    expect(rows[0], "no score probe report (a build without the results probe)")
+    expect(rows[0] == rows[1], f"the two games saw different things: host {rows[0]}, client {rows[1]}")
+    return compared, rows[0]
 
 
 # Decision 0013, Corneria's Falco rescue flown by Slippy: Falco's lines (CO S60:7, :25, S59:44) do not play; Slippy's
@@ -2942,8 +4068,13 @@ RESET_FRAMES = 900
 def sc_reset(args, folder):
     """A client that played a level alone in the same process, with damage, then reset to the title: what that level
     left must not part the games at the session's level start (#187)."""
+    # The client joins once it is back at the title after its own flight: from its frame RESET_FLY_FRAMES + 100 on, with
+    # 100 title frames in a row. The host's frame count says nothing about that when the games run fast, as the host is
+    # thousands of frames on while the client boots, and neither does its own: the boot logo waits 1000 ms of the clock,
+    # 240 frames on Debug at a limit of 8 and 1750 with no limit (#287).
     client_env = {"SF64_COOP_TEST_START_LEVEL": "0", "SF64_COOP_TEST_START_SKIP_INTRO": "1",
-                  "SF64_COOP_TEST_START_TITLE_FRAMES": "40", "SF64_COOP_TEST_START_RESET": str(RESET_FLY_FRAMES)}
+                  "SF64_COOP_TEST_START_TITLE_FRAMES": "40", "SF64_COOP_TEST_START_RESET": str(RESET_FLY_FRAMES),
+                  "SF64_COOP_JOIN_CONNECT_FRAME": str(RESET_FLY_FRAMES + 100), "SF64_COOP_JOIN_CONNECT_TITLE": "100"}
     host, client = run_short(args, folder, frames=RESET_FRAMES,
                              host_env={"SF64_COOP_JOIN_START_FRAME": str(RESET_START_FRAME)}, client_env=client_env)
     _, rows = hash_check.read_log(client.run / "state-hash.txt")
@@ -3019,7 +4150,10 @@ def sc_lag(args, folder):
 def sc_delay(args, folder):
     runs = []
     for delay in ("1", "6"):
-        host, client = run_short(args, folder / delay, both={"SF64_COOP_TEST_INPUT_DELAY": delay})
+        # Two sessions are compared here, and the level start carries gRadioMsgId as the host's title screen left it,
+        # which is not the same in every run (#289, src/port/coop/test/switches.h): 0 for both.
+        host, client = run_short(args, folder / delay, both={"SF64_COOP_TEST_INPUT_DELAY": delay,
+                                                             "SF64_COOP_TEST_START_NO_TITLE_RADIO": "1"})
         compare(host, client, SHORT_FRAMES)
         runs.append(host)
     names, _, one = runs[0].rows()
@@ -3502,6 +4636,56 @@ def check_private(game, files):
         expect("~/" in text or "~\\" in text, f"{game.name}'s log of player {player} never shows the home folder as ~")
 
 
+# What a co-op log holds after a run of so many lockstep frames, whatever the speed (#316). Some lines come on the
+# game's clock, not on its frames: the transport's counters every 5 s (LOG_NET_MS, session.c), every player's state
+# every second (STATE_LINE_MS, log_game.c), the lockstep's summary every 10 s and a frame held 200 ms or more
+# (lockstep_game.c). At no frame limit a Release game plays SHORT_FRAMES in about 2 s and its log has no `net` line;
+# at a limit of 8 it has more `state` lines. So the count and the categories go by the lines that come on frames, and
+# a line on the clock is wanted only where the log's own clock says one was due.
+LOG_CLOCK_CATEGORIES = ("net", "state")
+LOG_CLOCK_LOCKSTEP = re.compile(r"frames held for \d+ ms so far|^frame \d+ held \d+ ms for player")
+LOG_CHECKED_FRAMES = 300  # a desync line `frame N: M frames compared with a peer` every 300 frames (desync_game.c)
+LOG_NET_SECONDS = 5  # LOG_NET_MS: from a peer's join on, a `net` line at least this often
+LOG_STATE_SECONDS = 1  # STATE_LINE_MS: in a level, a `state` line at least this often
+# The lines on frames up to frame SHORT_FRAMES in either player's own log (#316, Release at no limit): log opened,
+# hosting or joining, the other game's build, the roster twice, level start, save and the sine (the host's game state
+# init -> title, the client's request for its character), title -> play, desync check on, lockstep started, the desync
+# lines of frames 300 to 2700 and the three player lines of frame 1674. The floor was 40 lines of any kind before, which
+# a run at a limit of 8 reached with the clock's lines and one at no limit did not (31).
+LOG_FRAME_LINES = 25
+
+
+def on_clock(line):
+    """A co-op log line written on the game's clock, not on its frames (see LOG_CLOCK_CATEGORIES)."""
+    return line.category in LOG_CLOCK_CATEGORIES or (line.category == "lockstep"
+                                                     and LOG_CLOCK_LOCKSTEP.search(line.text) is not None)
+
+
+def check_log_frames(lines, player, frames):
+    """What player's own log must hold after a run of `frames` lockstep frames, at any speed (#316). Returns the number
+    of its lines that come on frames, up to `frames`."""
+    framed = [line for line in lines if not on_clock(line) and (line.frame is None or line.frame <= frames)]
+    expect(len(framed) >= LOG_FRAME_LINES, f"player {player}'s own log has only {len(framed)} lines that come on "
+                                           f"frames up to frame {frames}, want {LOG_FRAME_LINES}")
+    checked = {int(match.group(1)) for match in (re.match(r"frame (\d+): \d+ frames compared with a peer", line.text)
+                                                 for line in lines if line.category == "desync") if match}
+    due = [frame for frame in range(LOG_CHECKED_FRAMES, frames, LOG_CHECKED_FRAMES) if frame not in checked]
+    expect(not due, f"player {player}'s log lacks the desync line of frame {due[:3]}")
+    want = {"session", "lockstep", "desync", "game", "player", "log"}
+    categories = {line.category for line in framed}
+    expect(want <= categories, f"player {player}'s log lacks {sorted(want - categories)}")
+    # The clock's lines, where the log's own times say one was due.
+    last = lines[-1].time
+    joined = next((line.time for line in lines if line.category == "session"
+                   and re.search(r"\bjoined\b", line.text)), None)
+    started = next((line.time for line in lines if line.text.startswith("lockstep started")), None)
+    for category, since, seconds in (("net", joined, LOG_NET_SECONDS), ("state", started, LOG_STATE_SECONDS)):
+        if since is not None and (last - since).total_seconds() >= seconds + 1:
+            expect(any(line.category == category for line in lines),
+                   f"player {player}'s log has no `{category}` line in {(last - since).total_seconds():.1f} s")
+    return len(framed)
+
+
 def sc_log(args, folder):
     """Every folder holds every player's log, the received copy is the sender's own, the hash stays equal with the
     streaming on, and the merge tool orders them."""
@@ -3513,18 +4697,17 @@ def sc_log(args, folder):
                f"{game.name} holds logs of players {sorted(files[game], key=lambda p: p or 0)}, want 1 and 2")
         check_private(game, files[game])
     received = 0
+    framed = []
     for own_game, other_game, player in ((host, client, 1), (client, host, 2)):
-        own = [line.format() for line in coop_log.read_lines(files[own_game][player], player)]
+        own_lines = coop_log.read_lines(files[own_game][player], player)
+        own = [line.format() for line in own_lines]
         got = [line.format() for line in coop_log.read_lines(files[other_game][player], player)]
-        expect(len(own) >= 40, f"player {player}'s own log has only {len(own)} lines")
+        framed.append(check_log_frames(own_lines, player, SHORT_FRAMES))
         missing = [line for line in got if line not in own]
         expect(not missing, f"{other_game.name} holds a line of player {player} that player never wrote: "
                             f"{missing[0] if missing else ''}")
         expect(got == [line for line in own if line in set(got)], f"player {player}'s lines arrived out of order")
         expect(len(got) >= 0.8 * len(own), f"{other_game.name} got {len(got)} of player {player}'s {len(own)} lines")
-        categories = {line.category for line in coop_log.read_lines(files[own_game][player], player)}
-        want = {"session", "net", "lockstep", "desync", "game", "state", "log"}
-        expect(want <= categories, f"player {player}'s log lacks {sorted(want - categories)}")
         texts = "\n".join(own)
         # The session's sine (decision 0011, #186) is on before the level.
         for phrase in ("lockstep started at frame 0", "level start: level 0", "desync check on", "log closed",
@@ -3542,7 +4725,8 @@ def sc_log(args, folder):
                            str(client.run), "--category", "session,desync"], capture_output=True, text=True)
     expect(done.returncode == 0 and "level start" in done.stdout, f"coop_log.py merge failed: {done.stdout[-300:]}")
     return (f"same hash on {frames} frames with streaming on; both folders hold both logs, {received} lines received, "
-            f"{len(merged)} in the merged timeline of session {session}; nothing personal in them")
+            f"{len(merged)} in the merged timeline of session {session}; {framed[0]} and {framed[1]} lines on frames "
+            f"up to frame {SHORT_FRAMES}; nothing personal in them")
 
 
 NAMES_TYPED_258 = ("Captain Fox", "sam.ok!")  # what the host and the client type
@@ -3586,6 +4770,114 @@ def sc_player_names(args, folder):
         marks[game.name] = f"{want} on {len(marked)} of {len(rows)} frames"
     return (f"both hold {NAMES_HELD_258}; host marks {marks['host']}, client marks {marks['client0']}; same hash on "
             f"{frames} frames")
+
+
+NAMES_FOUR_332 = ("CAPTAIN", "WINGMAN8", "SAM", "PEPPYOLD")  # each game's name; 8 letters is the most a name holds
+NAMES_FOUR_FRAMES_332 = 1500  # lockstep frames of Fortuna: the four ships first bunch at about level frame 270 (#332)
+LEVEL_FORTUNA = 14
+SCREEN_332 = (0.0, 0.0, 320.0, 240.0)  # the N64's screen, the one the trace's boxes are on
+
+
+def area_332(a, b):
+    """The area two boxes (left, top, right, bottom) share."""
+    return max(min(a[2], b[2]) - max(a[0], b[0]), 0.0) * max(min(a[3], b[3]) - max(a[1], b[1]), 0.0)
+
+
+def name_boxes_332(path, on_screen_only=True):
+    """name_box_rows_332 of the view trace in the file `path`."""
+    return name_box_rows_332(Path(path).read_text(encoding="utf-8", errors="replace"), on_screen_only)
+
+
+def name_box_rows_332(text, on_screen_only=True):
+    """(frame, {player: (name box, bar box, lift, order)}) of every line of a view trace with `tagbox`
+    (src/port/coop/test/view_trace.c), only the names that are on the screen (all that were drawn with
+    on_screen_only False). The lift is how far the name was moved up so as not to cover another, in pixels of that
+    screen, 0 when the trace has none. The order (#342) is (the place of the player's bar, the place of its name)
+    among what the frame drew of them, the first drawn being 0, or None when the trace has none: of two things on one
+    spot the later one is on top."""
+    rows = []
+    for line in text.splitlines():
+        fields = dict(kv.split("=", 1) for kv in line.split() if "=" in kv)
+        if "tagbox" not in fields or "frame" not in fields:
+            continue
+        boxes = {}
+        for item in ([] if fields["tagbox"] == "-" else fields["tagbox"].split(",")):
+            player, values = item.split(":", 1)
+            v = [float(x) for x in values.split("/")]
+            name, bar, lift = tuple(v[0:4]), tuple(v[4:8]), (v[8] if len(v) > 8 else 0.0)
+            order = (int(v[9]), int(v[10])) if len(v) > 10 else None
+            if not on_screen_only or area_332(name, SCREEN_332) > 0:
+                boxes[int(player)] = (name, bar, lift, order)
+        rows.append((int(fields["frame"]), boxes))
+    return rows
+
+
+def bars_on_names_342(boxes):
+    """#342: the (bar's player, name's player) pairs of one frame whose bar lies on the name's box, wherever each was
+    drawn. `boxes` is one row of name_boxes_332 read with on_screen_only False; only names on the screen count, bars
+    everywhere."""
+    return [(p, q) for q, (name, _, _, _) in sorted(boxes.items()) if area_332(name, SCREEN_332) > 0
+            for p, (_, bar, _, _) in sorted(boxes.items()) if area_332(name, bar) > 0]
+
+
+def bars_over_names_342(boxes):
+    """#342: of bars_on_names_342 those drawn after the name, which cover it: the later of two things on one spot is
+    on top. Needs the order of every box (the trace of a build with #342)."""
+    return [(p, q) for p, q in bars_on_names_342(boxes) if boxes[p][3][0] > boxes[q][3][1]]
+
+
+def sc_names_four(args, folder):
+    """#332: see the list at the top."""
+    env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_LOCKSTEP_END": str(NAMES_FOUR_FRAMES_332),
+           "SF64_COOP_VIEW_TRACE": "view-trace.txt"}
+    games = session(args, folder, host_env={"SF64_COOP_JOIN_LEVEL": str(LEVEL_FORTUNA),
+                                            "SF64_COOP_JOIN_NAME": NAMES_FOUR_332[0]},
+                    both=env, config={"CVars": {"gInvincible": 1}}, clients=3,
+                    client_envs=[{"SF64_COOP_JOIN_NAME": name} for name in NAMES_FOUR_332[1:]],
+                    replay_frames=NAMES_FOUR_FRAMES_332 + 20000)
+    try:
+        wait_for(list(games), "done", 900, "with four players in Fortuna")
+    finally:
+        for game in games:
+            game.close()
+    host, *clients = games
+    frames = min(compare(host, client) for client in clients)
+    found, covered, hidden = [], [], []
+    lifted_total = lying_total = 0
+    for game in games:
+        rows = name_boxes_332(game.run / "view-trace.txt")
+        expect(rows, f"{game.name}: the view trace has no tagbox (a build before #332)")
+        # #342: every box of the frame, to see where each bar lies on a name and which of the two was drawn later
+        every = name_boxes_332(game.run / "view-trace.txt", on_screen_only=False)
+        expect(all(box[3] is not None for _, boxes in every for box in boxes.values()),
+               f"{game.name}: the view trace has no draw order in its tagbox (a build before #342)")
+        lying = 0
+        for frame, boxes in every:
+            lying += bool(bars_on_names_342(boxes))
+            hidden += [f"{game.name} frame {frame} bar {p} drawn after name {q}" for p, q in bars_over_names_342(boxes)]
+        lying_total += lying
+        together = lifted = 0
+        for frame, boxes in rows:
+            ids = sorted(boxes)
+            together += len(ids) >= 2
+            pairs = [(a, b) for n, a in enumerate(ids) for b in ids[n + 1:]]
+            if any(area_332(boxes[a][0], boxes[b][0]) > 0 for a, b in pairs):
+                covered.append(f"{game.name} frame {frame} " + " ".join(
+                    f"{p}:{'/'.join(f'{v:.0f}' for v in boxes[p][0])}" for p in ids))
+            # where each name would have been without its lift
+            down = {p: (b[0][0], b[0][1] + b[2], b[0][2], b[0][3] + b[2]) for p, b in boxes.items()}
+            lifted += any(area_332(down[a], down[b]) > 0 for a, b in pairs)
+        lifted_total += lifted
+        found.append(f"{game.name} {len(rows)} frames, two or more names on screen on {together}, moved apart on "
+                     f"{lifted}, a bar on a name on {lying}")
+    expect(not covered, f"two names cover each other on {len(covered)} frames, first {covered[:3]}; " + "; ".join(found))
+    expect(lifted_total > 0, "no two names ever stood in each other's way, so the run tested nothing: " +
+           "; ".join(found))
+    # #342: where a bar lies on a name, the name is the one drawn last
+    expect(not hidden, f"a bar covers a name ({len(hidden)} times), first {hidden[:3]}; " + "; ".join(found))
+    expect(lying_total > 0, "no bar ever lay on a name, so the run tested no draw order: " + "; ".join(found))
+    return (f"same hash on {frames} frames in the four games; no name covers another, no bar covers a name; " +
+            "; ".join(found))
 
 
 # ---- The session survives (#189 and its sibling): a desync or a lost player starts the level again ----
@@ -3826,9 +5118,12 @@ def survive_checkpoint_run(args, folder, both, host_env=None, after=300):
     return games, reached[0][0], at + after
 
 
-def survive_check_checkpoint(games, checkpoint, poke, level, mode):
+def survive_check_checkpoint(games, checkpoint, poke, level, mode, saved_hits=True):
     """After a desync behind a checkpoint both games took a level start that begins at the host's checkpoint, began
-    there, and are equal from the first frame of that run on. Returns a line."""
+    there, and are equal from the first frame of that run on. Returns a line. saved_hits: the level's setup takes its
+    hits from the checkpoint's gSavedHitCount; Andross takes them from D_ctx_80177CA4 instead
+    (src/engine/fox_play.c:4710, saved at the brain's arrival, src/overlays/ovl_i6/fox_andross.c:1120), and then the
+    run only has to begin with the same hits on every game."""
     host, client = games
     for game in games:
         over = int(join_test.said(game.sync(), "over")[0]["frame"])
@@ -3845,7 +5140,8 @@ def survive_check_checkpoint(games, checkpoint, poke, level, mode):
                f"{game.name}: the level start's checkpoint {second[SURVIVE_CHECKPOINT_FLAG:]} is not the one reached, "
                f"{checkpoint}")
         began, again = survive_run_state(game, 1), survive_run_state(game, 2)
-        expect(began["load"] == 0 and began["path"] == 0 and began["allrange"] == 0,
+        # A level's start: no checkpoint, and the path at 0 or behind it (Macbeth's tank begins at -770).
+        expect(began["load"] == 0 and began["saved_load"] == 0 and began["path"] <= 0 and began["allrange"] == 0,
                f"{game.name}: the first run did not begin at the level's start: {began}")
         expect(again["level"] == level and again["mode"] == mode, f"{game.name}: run 2 is in {again}")
         expect(again["saved_load"] == int(checkpoint["load"]) and again["allrange"] == int(checkpoint["allrange"]),
@@ -3856,8 +5152,8 @@ def survive_check_checkpoint(games, checkpoint, poke, level, mode):
             expect(again["load"] >= int(checkpoint["load"]) and
                    0 <= again["path"] - int(checkpoint["path"]) < 400,
                    f"{game.name}: run 2 did not begin at the checkpoint's place: {again}, want {checkpoint}")
-        expect(again["hits"] == int(checkpoint["hits"]), f"{game.name}: run 2 began with {again['hits']} hits, the "
-                                                         f"checkpoint held {checkpoint['hits']}")
+        expect(not saved_hits or again["hits"] == int(checkpoint["hits"]),
+               f"{game.name}: run 2 began with {again['hits']} hits, the checkpoint held {checkpoint['hits']}")
         expect(again["lives"] == began["lives"], f"{game.name}: the restart cost a life: {again['lives']}")
     expect(join_test.said(host.report(), "restart_at_checkpoint"), "the host did not take its checkpoint")
     expect(survive_run_state(host, 2) == survive_run_state(client, 2),
@@ -3952,10 +5248,1504 @@ def sc_survive_next_level(args, folder):
             f"hash alike on its first {frames} frames; `{line}`")
 
 
+# ---- #272, #280: Macbeth's bomb fire, state-16 beams, turret shots and car blast hit every tank (lane macbeth-bombs) ----
+#
+# src/port/coop/test/mabomb_probe.h places a hazard where one tank will be, while every other tank is at least 250
+# across the track (850 from a blast's car), and logs whom the hazard's own update hit: a bomb of the train's end, a
+# beam of its state 16 (#272), a shot of a train car's turret, the same shot at a tank in a barrel roll, and the blast
+# of train car 7 (#280). Each kind runs for each tank in turn, W8_MABOMB_ROUNDS times. Upstream all four tests look at
+# player 0 only (Macbeth_MaBombDrop_Update, Macbeth_Effect380_Update, Macbeth_Effect378_Update and
+# Macbeth_MaTrainCar7_Update in src/overlays/ovl_i5/fox_ma.c), so on a build without the fixes a hazard on player 1
+# hits nobody, while the cases on player 0 hit it on every build: they show the probe reaches its target.
+W8_MABOMB_FRAMES = 4500  # level frames: the tanks part from JOIN_FRAME on (sway), 20 cases fit well after that
+W8_MABOMB_CASES = ("bomb", "beam", "shot", "roll", "blast")  # sMaBombCases in src/port/coop/test/mabomb_probe.c
+W8_MABOMB_WORDS = {"bomb": "under a bomb's fire", "beam": "in a beam", "shot": "by a turret's shot",
+                   "roll": "(its roll deflects the shot)", "blast": "in a car's blast"}
+W8_MABOMB_DEFLECTS = ("roll",)  # cases whose target is not hit: the shot is deflected
+# MABOMB_ROUNDS there. Not 3: without a pilot the tanks stop about 2700 frames in (z about -33800) and are seldom 250
+# apart there, so the last cases of a third round did not start on a build where a hit moves player 1 (26 of 30 ran).
+W8_MABOMB_ROUNDS = 2
+W8_MABOMB_UPDATE = re.compile(r"mabomb t=\d+ frame=\d+ case=\w+ target=\d+ at=(\S+) state=-?\d+ p=(\S+)")
+W8_MABOMB_PROBE = "mabomb.txt"  # in each game's run folder
+W8_MABOMB_MORE = 2500  # level frames more for each player after the second (#329)
+W8_MABOMB_LINE = re.compile(r"mabomb frame=(\d+) case=(\w+) target=(\d+) hit=(\d+) first=(\S+) lost=(\d) dx=(\S+)"
+                            r"(?: defl=(\d))?")
+
+
+def w8_mabomb_off(case, target, hit, updates):
+    """Whether a bomb case never had its target in the fire's box (#329): the probe drops a bomb where its target
+    will be three frames on if it drives on as it does, and a tank that bumps into something (the whole team is thrown
+    back along the track) or drives under a wall the bomb bursts on is not there. `updates` are the case's `t=` lines
+    as (the bomb's x, y, z, the target's x, y, z); the box is the fire's own (Macbeth_MaBombDrop_Update,
+    src/overlays/ovl_i5/fox_ma.c, and CoopHits_MacbethBombFire, src/port/coop/game/hits.c): under 80 in x, under 40
+    in z, the tank no more than 5 below the bomb. Its upper edge (35 times the fire's scale) is not asked, so a case
+    counts as on its target rather too often. A build without the `t=` lines gives no updates and no case is off."""
+    if case != "bomb" or hit & (1 << target) or not updates:
+        return False
+    return not any(abs(px - x) < 80.0 and abs(pz - z) < 40.0 and py - y > -5.0 for x, y, z, px, py, pz in updates)
+
+
+def w8_mabomb_rows(path):
+    """The probe's case lines as dicts, and whether it wrote its last line. row["off"]: w8_mabomb_off."""
+    rows, done, updates = [], False, []
+    if not path.exists():
+        return rows, done
+    for line in path.read_text(encoding="utf-8").splitlines():
+        match = W8_MABOMB_LINE.match(line)
+        update = W8_MABOMB_UPDATE.match(line)
+        if match:
+            rows.append({"frame": int(match.group(1)), "case": match.group(2), "target": int(match.group(3)),
+                         "hit": int(match.group(4)), "first": [int(v) for v in match.group(5).split(",")],
+                         "lost": match.group(6) == "1", "dx": float(match.group(7)),
+                         "deflected": match.group(8) == "1"})
+            rows[-1]["off"] = w8_mabomb_off(rows[-1]["case"], rows[-1]["target"], rows[-1]["hit"], updates)
+            updates = []
+        elif update:
+            updates.append(tuple(float(v) for v in update.group(1).split(",")[:3])
+                           + tuple(float(v) for v in update.group(2).split(",")[:3]))
+        elif line.startswith("mabomb done"):
+            done = True
+    return rows, done
+
+
+def w8_mabomb_story(rows, players=2):
+    """(case, target) -> [cases that ran to their end, of those the ones that did to the target what the case is for
+    (hit it; for a case of W8_MABOMB_DEFLECTS: the shot was deflected and hit nobody), the ones that hit another
+    tank]. A lost case (the hazard gone early, as at a restart) does not count, nor does a bomb that was never on its
+    target (w8_mabomb_off)."""
+    story = {(case, target): [0, 0, 0] for case in W8_MABOMB_CASES for target in range(players)}
+    for row in rows:
+        counts = story.setdefault((row["case"], row["target"]), [0, 0, 0])
+        if row["lost"] or row.get("off"):
+            continue
+        counts[0] += 1
+        if row["case"] in W8_MABOMB_DEFLECTS:
+            counts[1] += row["deflected"] and not row["hit"]
+        else:
+            counts[1] += bool(row["hit"] & (1 << row["target"]))
+        counts[2] += bool(row["hit"] & ~(1 << row["target"]))
+    return story
+
+
+# ---- #303: the red of train car 7's blast is for the client whose own tank is in it ----
+#
+# Upstream the blast turns the screen white, and red when player 0 is in it (Macbeth_MaTrainCar7_Update, state 1). The
+# fill (gFillScreen*) is one fade every game of a session holds alike, so the rule is in what a client draws
+# (CoopView_FillColor, src/port/coop/game/view.c): red on the client whose own tank is in the blast, white on the
+# others, the same alpha. The view trace's `drawn` field is the fill as the client drew it. The probe's blast cases put
+# the car beside one tank; the host looks through player 0 and the client through player 1.
+W10_BLAST_VIEW = "view-trace.txt"  # in each game's run folder
+W10_BLAST_LINE = re.compile(r"frame=(\d+) .* view=(\d+) .* fill=(\S+) .* drawn=(\S+)")
+W10_BLAST_FADE = 15  # frames: the flash is 255 on the blast's frame and fades by 16 a frame (Play_UpdateFillScreen)
+W10_WHITE, W10_RED = (255, 255, 255), (255, 0, 0)
+
+
+def w10_blast_trace(path):
+    """{gGameFrameCount: (view, fill, drawn)} of a view trace; the last line of a frame number wins (a restart)."""
+    found = {}
+    if path.exists():
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            match = W10_BLAST_LINE.match(line)
+            if match:
+                found[int(match.group(1))] = (int(match.group(2)), tuple(int(v) for v in match.group(3).split(",")),
+                                              tuple(int(v) for v in match.group(4).split(",")))
+    return found
+
+
+def w10_blast_views(games, rows):
+    """The rule of #303 on every blast case of the probe: its text for the summary. games[n] is the client of player n
+    (the host seats the clients in the order they join, session())."""
+    players = range(len(games))
+    views = [w10_blast_trace(game.run / W10_BLAST_VIEW) for game in games]
+    expect(all(views), "no `drawn` field in a view trace: a build without it (#303)")
+    seen = {target: 0 for target in players}
+    frames = dict(seen)
+    red = {(target, player): 0 for target in players for player in players}  # frames a client drew the flash red
+    white = dict(red)
+    for row in rows:
+        if row["case"] != "blast" or row["lost"]:
+            continue
+        target = row["target"]
+        expect(row["hit"] == 1 << target, f"the blast on player {target} at frame {row['frame']} hit mask {row['hit']}")
+        seen[target] += 1
+        for frame in range(row["frame"], row["frame"] + W10_BLAST_FADE):
+            for player, view in enumerate(views):
+                expect(frame in view, f"no view trace line of frame {frame} on the client of player {player}")
+                looks, fill, drawn = view[frame]
+                expect(looks == player, f"frame {frame}: the client of player {player} looks through player {looks}")
+                expect(drawn[3] == fill[3] and fill[3] > 0,
+                       f"frame {frame}, blast on player {target}: the client of player {player} drew alpha "
+                       f"{drawn[3]}, the game holds {fill[3]}")
+                red[(target, player)] += drawn[:3] == W10_RED
+                white[(target, player)] += drawn[:3] == W10_WHITE
+            fills = [view[frame][1] for view in views]
+            expect(all(fill == fills[0] for fill in fills),
+                   f"frame {frame}: the games hold different fills, {' and '.join(str(fill) for fill in fills)}")
+            frames[target] += 1
+    expect(all(seen.values()), "blast cases that ran: "
+           + ", ".join(f"{seen[target]} on player {target}" for target in players))
+
+    def others(target):
+        return "; ".join(f"the client of player {player} red on {red[(target, player)]} and white on "
+                         f"{white[(target, player)]}" for player in players if player != target)
+
+    text = "; ".join(f"{seen[target]} blasts on player {target}, {frames[target]} frames of flash: its own client "
+                     f"drew it red on {red[(target, target)]} and white on {white[(target, target)]}, "
+                     f"{others(target)}" for target in reversed(players))
+    expect(all(red[(target, player)] == (frames[target] if player == target else 0)
+               and white[(target, player)] == (0 if player == target else frames[target])
+               for target in players for player in players),
+           f"car 7's flash is not red on the client whose own tank is in the blast and white on the others (#303): "
+           f"{text}")
+    return f"car 7's flash (#303): {text}; the fill the games hold is the same on {'both' if len(games) == 2 else 'all'}"
+
+
+# ---- #302: the turret of a Macbeth train car turns to and fires at the nearest human ----
+#
+# Macbeth_8019F164 (src/overlays/ovl_i5/fox_ma.c) turns the turret to a player while it waits (the step of its salvo,
+# iwork[4], is 0) and fires its first shot when that player is in its window: 300 to 3000 beside the car (any x for the
+# train's last car) and 200 to 5000 behind it. Upstream the player is player 0. The aim trace's `turret` lines
+# (src/port/coop/test/aim_trace.h) give the angles before and after each frame, the angles it would turn to for each
+# player, and who is in the window.
+W10_TURRET_FRAMES = 4500
+W10_TURRET_APART = 5.0  # degrees between the two players' yaws from which a step tells whom it turns to
+W10_TURRET_NEAR = 2.0  # degrees a step's target may be off the player's yaw
+# For "the nearest human is in the window": the trace sees the car after its frame, the turret before the car moved (a
+# car moves along z, up to 30 a frame). So a player this close to an edge of the window is not counted, nor are
+# two players this close in distance (a move of the car along z changes both distances by nearly the same).
+W10_TURRET_EDGE = 40.0
+W10_TURRET_CLOSE = 5.0
+
+
+def w10_turret_script(frame, player):
+    """Macbeth: both tanks sway against each other, as in `vehicles`, without firing: no turret is shot off. Player 1
+    boosts (C-left) for 30 frames of every 150, so it drives ahead of player 0 and is the nearer to the train when
+    the two are about as far from the track."""
+    _, x, y = sway(frame, player)
+    boost = player == 1 and frame >= JOIN_FRAME and frame % 150 < 30
+    return (BUTTON_C_LEFT if boost else 0), x, y
+
+
+def w10_turret_rows(path):
+    """The turret lines of an aim trace: one dict per line. row["players"] is the players the line holds (#329)."""
+    rows = []
+    if not path.exists():
+        return rows
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not line.startswith("turret "):
+            continue
+        f = dict(kv.split("=", 1) for kv in line.split()[1:])
+        row = {"frame": int(f["frame"]), "slot": int(f["slot"]), "car": int(f["car"]), "last": int(f["last"]),
+               "boulder": int(f["boulder"]), "step": tuple(int(v) for v in f["step"].split(",")),
+               "hp": int(f["hp"]), "wait": int(f["wait"]),
+               "yaw": tuple(float(v) for v in f["yaw"].split(",")),
+               "at": tuple(float(v) for v in f["at"].split(",")), "line": line}
+        players = row["players"] = sorted(int(key[1:]) for key in f if re.fullmatch(r"p\d", key))
+        for n in players:
+            w = f[f"w{n}"].split(",")
+            p = f[f"p{n}"].split(",")
+            row[f"w{n}"] = float(w[0])
+            row[f"in{n}"] = int(w[2])
+            row[f"p{n}"] = tuple(float(v) for v in p[:3])
+            row[f"flies{n}"] = int(p[3])  # player 0's is 1 always (CoopAimTrace_Players)
+        flying = [n for n in players if n == 0 or row[f"flies{n}"]]
+        far = {n: math.dist(row[f"p{n}"], row["at"]) for n in flying}
+        row["near"] = min(flying, key=lambda n: (far[n], n))
+        # well<n>: player n is well inside the window; out<n>: clearly outside it; sure: one player is the nearest by
+        # a margin.
+        edge = W10_TURRET_EDGE
+        for n in players:
+            dx, dz = abs(row[f"p{n}"][0] - row["at"][0]), row[f"p{n}"][2] - row["at"][2]
+            flies = n in flying
+            row[f"well{n}"] = bool(flies and row[f"in{n}"] and 200.0 + edge < dz < 5000.0 - edge
+                                   and (row["last"] or 300.0 + edge < dx < 3000.0 - edge))
+            row[f"out{n}"] = bool(not flies or (not row[f"in{n}"] and (
+                dz < 200.0 - edge or dz > 5000.0 + edge
+                or (not row["last"] and (dx < 300.0 - edge or dx > 3000.0 + edge)))))
+        row["sure"] = all(far[n] - far[row["near"]] > W10_TURRET_CLOSE for n in flying if n != row["near"])
+        rows.append(row)
+    return rows
+
+
+def w10_angle(a, b):
+    """a - b in degrees, in -180 to 180."""
+    return (a - b + 180.0) % 360.0 - 180.0
+
+
+def w10_turret_story(rows, players=2):
+    """Counts over the turret lines: see sc_ma_turret. A count per player is a list; with two players the words of
+    the two-player text (near1, fire_only1, both_to0, ...) are its entries."""
+    each = lambda: [0] * players
+    count = {"lines": len(rows), "wait": 0, "near": each(), "none": 0, "fires": 0, "fire_only": each(),
+             "fire_several": 0, "fire_none": 0, "flips": 0, "idle": 0, "idle_only": each(), "idle_at": [],
+             "one": 0, "one_in": 0, "one_out": 0, "one_in_of": each(), "one_out_of": each(), "nobody": 0,
+             "nobody_near": 0, "nobody_far": 0, "nobody_near_of": each(), "nobody_far_of": each(), "several": 0,
+             "several_to": each(), "several_out": 0, "fire_at": each(), "fire_at_out": 0}
+    before = {}
+    for row in rows:
+        if row["boulder"] or row["step"][0] != 0:
+            before.pop(row["slot"], None)
+            continue
+        expect(row["players"] == list(range(players)),
+               f"a turret line holds players {row['players']}, the session has {players}: `{row['line']}`")
+        count["wait"] += 1
+        count["near"][row["near"]] += 1
+        last = before.get(row["slot"])
+        if last is not None and last[0] == row["frame"] - 1 and last[1] != row["near"]:
+            count["flips"] += 1  # the nearest human changed from one waiting frame to the next
+        before[row["slot"]] = (row["frame"], row["near"])
+        well = [n for n in range(players) if row[f"well{n}"]]
+        out = [n for n in range(players) if row[f"out{n}"]]
+        inside = [n for n in range(players) if row[f"in{n}"]]
+        if row["step"][1] == 1:
+            count["fires"] += 1
+            if len(inside) == 1:
+                count["fire_only"][inside[0]] += 1
+            else:
+                count["fire_several" if inside else "fire_none"] += 1
+            # Whom the gun is on at its first shot: the player whose yaw it holds, when that tells (#329).
+            off = [abs(w10_angle(row[f"w{n}"], row["yaw"][1])) for n in range(players)]
+            on = min(range(players), key=lambda n: off[n])
+            if off[on] < W10_TURRET_APART / 2 and all(off[n] >= W10_TURRET_APART for n in range(players) if n != on):
+                count["fire_at"][on] += 1
+                count["fire_at_out"] += not row[f"in{on}"]
+        elif row["wait"] == 0 and row["hp"] != 0 and well:
+            count["idle"] += 1  # ready, a human well inside the window, and no shot
+            if len(well) == 1 and len(out) == players - 1:
+                count["idle_only"][well[0]] += 1
+            count["idle_at"].append(row["frame"])
+        # Whom the yaw's step goes to: Math_SmoothStepToAngle moves a tenth of the way, 2 degrees at most. A player
+        # tells when its yaw is W10_TURRET_APART from every other player's.
+        step = w10_angle(row["yaw"][1], row["yaw"][0])
+        apart = [n for n in range(players)
+                 if all(abs(w10_angle(row[f"w{n}"], row[f"w{m}"])) >= W10_TURRET_APART
+                        for m in range(players) if m != n)]
+        if not apart or abs(step) < 0.011 or row["yaw"][1] in (120.0, 240.0):
+            continue
+        to = []
+        for n in range(players):
+            want = w10_angle(row[f"w{n}"], row["yaw"][0])
+            if abs(step) >= 1.999:
+                to.append(want * step > 0 and abs(want) >= 19.0)
+            else:
+                to.append(abs(want - step * 10.0) < W10_TURRET_NEAR)
+        if all(to) or not any(to):
+            count["none"] += 1
+            continue
+        # By who is in the window: one human alone, nobody, or several. `who` is the human the rule names; the step
+        # goes to it when it fits that one alone, to another when it does not fit it.
+        if len(well) == 1 and len(out) == players - 1:
+            who, kind = well[0], "one"
+        elif len(out) == players:
+            who, kind = row["near"], "nobody"
+            if not row["sure"]:
+                continue
+        elif len(well) >= 2 and len(well) + len(out) == players:
+            fits = [n for n in range(players) if to[n]]
+            if len(fits) == 1 and fits[0] in apart:
+                count["several"] += 1
+                count["several_to"][fits[0]] += 1
+                count["several_out"] += fits[0] in out  # to a human outside the window while others are in it
+            continue
+        else:
+            continue
+        if who not in apart or (to[who] and sum(to) > 1):
+            continue
+        count[kind] += 1
+        if kind == "one":
+            count["one_in" if to[who] else "one_out"] += 1
+            count["one_in_of" if to[who] else "one_out_of"][who] += 1
+        else:
+            count["nobody_near" if to[who] else "nobody_far"] += 1
+            count["nobody_near_of" if to[who] else "nobody_far_of"][who] += 1
+    return count
+
+
+def w10_turret_text(count, players):
+    """The summary of w10_turret_story's counts: with two players the text of #302, with more a count per player."""
+    if players == 2:
+        return (f"{count['lines']} turret frames, {count['wait']} waiting, player 1 the nearer on {count['near'][1]}; "
+                f"ready with a human in the window and no shot on {count['idle']} frames ({count['idle_only'][1]} "
+                f"with player 1 alone in it, {count['idle_only'][0]} with player 0 alone); yaw steps with one human "
+                f"alone in the window: {count['one_in']} to that one's direction ({count['one_in_of'][1]} of them "
+                f"player 1's), {count['one_out']} to the other's; with nobody in it: {count['nobody_near']} to the "
+                f"nearer one's, {count['nobody_far']} to the other's; with both in it: {count['several_to'][0]} to "
+                f"player 0's, {count['several_to'][1]} to player 1's; {count['none']} steps fit neither or both; "
+                f"{count['fires']} first shots: {count['fire_only'][1]} with only player 1 in the window, "
+                f"{count['fire_only'][0]} with only player 0, {count['fire_several']} with both, "
+                f"{count['fire_none']} with neither; the nearest human changed between two waiting frames "
+                f"{count['flips']} times")
+
+    def per(key):
+        return "/".join(str(v) for v in count[key])
+
+    return (f"{count['lines']} turret frames, {count['wait']} waiting; counts for players "
+            f"{'/'.join(str(n) for n in range(players))}: the nearest on {per('near')}; ready with a human in the "
+            f"window and no shot on {count['idle']} frames (alone in it: {per('idle_only')}); yaw steps with one human "
+            f"alone in the window: {count['one_in']} to that one's direction ({per('one_in_of')}), {count['one_out']} "
+            f"to another's ({per('one_out_of')}); with nobody in it: {count['nobody_near']} to the nearest one's "
+            f"({per('nobody_near_of')}), {count['nobody_far']} to another's ({per('nobody_far_of')}); with several in "
+            f"it: to {per('several_to')}, {count['several_out']} of them to one outside it; {count['none']} steps fit "
+            f"nobody or everybody; {count['fires']} first shots: with one human alone in the window "
+            f"{per('fire_only')}, {count['fire_several']} with several, {count['fire_none']} with nobody; the gun on "
+            f"{per('fire_at')} at its first shot, {count['fire_at_out']} of them outside the window; the nearest "
+            f"human changed between two waiting frames {count['flips']} times")
+
+
+def w10_turret_script_apart(players):
+    """w10_turret_script for `players` tanks: they steer apart (apart_in_turn), and each tank after player 0 boosts for
+    30 frames of every 150 * (players - 1), each in its own 150, so each drives ahead of the others at times."""
+    apart = apart_in_turn(players)
+
+    def script(frame, player):
+        _, x, y = apart(frame, player)
+        boost = (player > 0 and frame >= JOIN_FRAME and frame % 150 < 30
+                 and (frame // 150) % (players - 1) == player - 1)
+        return (BUTTON_C_LEFT if boost else 0), x, y
+    return script
+
+
+def w10_turret_check(count, players):
+    """The checks of ma_turret on w10_turret_story's counts; raises Fail. With two players they are those of #302.
+    With more (#329) a tank is seldom alone in a window, so what is asked of player 1 alone there is asked of each
+    player after the first in the cases that name one human: a step to it when it is alone in the window or, with
+    nobody in it, the nearest. No step goes to a human outside the window while others are in it, no gun is on one
+    outside it at its first shot, and some first shot is at a player after the first (alone in the window, or the gun
+    on it); the text names the players no first shot tells of."""
+    text = w10_turret_text(count, players)
+    others = range(1, players)
+    told = count["one"] if players == 2 else count["one"] + count["nobody"]
+    expect(sum(count["near"][n] for n in others) * 5 > count["wait"] and count["fires"] >= 5 and told >= 20,
+           f"too little to tell: player 1 is seldom the nearer, the turrets seldom fire, or a human is seldom alone in "
+           f"a window: {text}")
+    expect(count["idle"] == 0,
+           f"a turret that is ready holds its fire while a human is in its window (first on frames "
+           f"{count['idle_at'][:5]}): {text}")
+    if players == 2:
+        expect(count["one_in"] > 9 * count["one_out"] and count["one_in_of"][1] > 0,
+               f"the turrets do not turn to the human that is alone in the window: {text}")
+    else:
+        expect(count["one_out"] == 0 or count["one_in"] > 9 * count["one_out"],
+               f"the turrets do not turn to the human that is alone in the window: {text}")
+        expect(count["several"] == 0 or count["several"] > 10 * count["several_out"],
+               f"with several humans in the window the turrets turn to one outside it: {text}")
+        never = [n for n in others if count["one_in_of"][n] + count["nobody_near_of"][n] == 0]
+        expect(not never, f"no turret turned to player {', '.join(str(n) for n in never)} when it was alone in a "
+                          f"window or, with nobody in one, the nearest: the run says nothing about it: {text}")
+    expect(count["nobody_near"] > 2 * count["nobody_far"],
+           f"with nobody in the window the turrets do not turn to the nearer human: {text}")
+    if players == 2:
+        expect(count["fire_only"][1] > 0 and count["fire_none"] == 0,
+               f"no turret fires with player 1 alone in its window, or one fires with nobody in it: {text}")
+    else:
+        expect(count["fire_none"] == 0 and count["fire_at_out"] == 0,
+               f"a turret fires with nobody in its window, or with its gun on a human outside it: {text}")
+        expect(sum(count["fire_only"][n] + count["fire_at"][n] for n in others) > 0,
+               f"no turret fires with a player after the first alone in its window or with its gun on it: {text}")
+        # A run has a dozen first shots, most with several tanks in the window: which players they tell of is in the
+        # text, and not asked of each player.
+        never = [n for n in others if count["fire_only"][n] + count["fire_at"][n] == 0]
+        if never:
+            text += f"; no first shot tells of player {', '.join(str(n) for n in never)}"
+    return text
+
+
+def sc_ma_turret(args, folder, players=2):
+    """#302: Macbeth with two Landmasters. A train car's turret turns to and fires at the nearest of the humans in its
+    window (the owner's rule of 2026-11-13), and keeps that one while it stays in the window; with nobody in the window
+    it turns to the nearest human. Upstream it turned to and fired by player 0 alone. Read from the aim trace's turret
+    lines, which do not ask the aim code. Hashes and the two traces equal. With `players` tanks (#329) every player's
+    w<n> and p<n> of the line is read: each player after the first has to be turned to and fired at when it is alone in
+    a window."""
+    traces, client_envs = aim_traces(folder, players)
+    games = run_short(args, folder, script=w10_turret_script if players == 2 else w10_turret_script_apart(players),
+                      frames=W10_TURRET_FRAMES,
+                      host_env={"SF64_COOP_JOIN_LEVEL": "11", "SF64_COOP_AIM_TRACE": str(traces["host"])},
+                      client_envs=client_envs, both={"SF64_COOP_TRACE_SHIELDS": ",".join(["255"] * players)},
+                      seconds=1800, players=players)
+    frames = compare_all(games, W10_TURRET_FRAMES)
+    ours = w10_turret_rows(traces["host"])
+    n = len(same_trace(games, lambda game: [r["line"] for r in w10_turret_rows(traces[game.name])], "turret lines"))
+    expect(n > 0, "no turret line in the aim trace (a build without the turret line of aim_trace.h writes none, or no "
+                  "turret ran)")
+    return f"same hash on {frames} frames; {w10_turret_check(w10_turret_story(ours[:n], players), players)}"
+
+
+# ---- #304: a Shogun's bonus goes to the team when any human shoots it down (decision 0008, 4b) ----
+#
+# Sector Y's Shoguns keep the source of the shot that hit them last (swork[19], PlayerShot_CollisionCheck) and pay
+# their bonus by it: 4 hits for a small one, the boss bonus (Boss_AwardBonus) for the last. Upstream the source has to
+# be player 0. The score probe's `shogun` kind (src/port/coop/test/score_probe.h) shoots the first small one and the
+# last one down with a laser of one player and the second small one with a laser of Falco.
+SHOGUN_FROM = JOIN_FRAME + 400  # level frame: the cut to all-range (L at JOIN_FRAME + 100) is over
+SHOGUN_FRAMES = JOIN_FRAME + 100 + 3900
+LEVEL_SECTOR_Y = 5  # include/sf64level.h
+SHOGUN_FALCO = 101  # NPC_SHOT_ID + AI360_FALCO, include/sf64object.h and sf64player.h
+
+
+def shogun_gains(rows):
+    """{boss: (source, hits gained, player 0's own gained, player 1's own gained)} of a `shogun` report."""
+    gains = {}
+    down = {}
+    for kind, row in rows:
+        if kind == "down":
+            down[row["boss"]] = (int(row["source"]), int(row["hits"]), *[int(v) for v in row["own"].split(",")])
+            gains[int(row["boss"])] = (int(row["source"]), 0, 0, 0)
+        if kind == "bonus" and row["boss"] in down:
+            source, hits, own0, own1 = down[row["boss"]]
+            now = [int(v) for v in row["own"].split(",")]
+            gains[int(row["boss"])] = (source, int(row["hits"].split(",")[1]) - hits, now[0] - own0, now[1] - own1)
+    return gains
+
+
+def sc_shogun_bonus(args, folder):
+    """#304: two sessions in Sector Y's all-range. In the first player 1's laser is the last hit on the first small
+    Shogun and on the last Shogun, in the second player 0's: the team gets the same hits in both. Falco's laser on the
+    second small one pays nothing in either."""
+    gains = {}
+    frames = {}
+    for player in (1, 0):
+        frames[player], rows = run_score(args, folder / f"player{player}", f"shogun:{SHOGUN_FROM}:{player}",
+                                         SHOGUN_FRAMES, level=LEVEL_SECTOR_Y, jump=JOIN_FRAME + 100,
+                                         cvars={"gInvincible": 1})
+        fly_rows(rows)
+        gains[player] = shogun_gains(rows)
+        expect(sorted(gains[player]) == [0, 1, 2],
+               f"player {player}'s session: Shoguns shot down: {sorted(gains[player])} of 0, 1, 2; the report: "
+               f"{[(kind, row) for kind, row in rows if kind != 'shot']}")
+        expect([gains[player][boss][0] for boss in (1, 2, 0)] == [player, SHOGUN_FALCO, player],
+               f"player {player}'s session: the Shoguns hold other sources than the lasers': {gains[player]}")
+    text = "; ".join(f"with player {player}'s laser the team gets {gains[player][1][1]} hits for the first small "
+                     f"Shogun (player {player}'s own count {gains[player][1][2 + player]}) and "
+                     f"{gains[player][0][1]} for the last, with Falco's on the second {gains[player][2][1]}"
+                     for player in (1, 0))
+    expect(gains[0][1][1] == 4 and gains[0][0][1] > 0 and gains[0][2][1] == 0,
+           f"player 0, the control, does not get upstream's bonus: {text}")
+    expect(gains[1][2][1] == 0, f"a computer wingman's kill pays: {text}")
+    expect((gains[1][1][1], gains[1][0][1]) == (gains[0][1][1], gains[0][0][1]),
+           f"player 1's kills do not pay the team what player 0's do: {text}")
+    expect(gains[1][1][3] == gains[0][1][2] and gains[1][1][2] == 0 and gains[0][1][3] == 0,
+           f"the small Shogun's hits are not in the shooter's own count as in player 0's: {text}")
+    return f"same hash on {frames[1]} and {frames[0]} frames; {text}"
+
+
+def sc_macbeth_bombs(args, folder, players=2):
+    """Macbeth with two Landmasters (#272, #280): a bomb's fire, a state-16 beam of the train's end, a turret's shot
+    and the blast of train car 7, placed on one tank by src/port/coop/test/mabomb_probe.h, hit that tank, player 1 as
+    well as player 0, and no other; a turret's shot at a tank in a barrel roll is deflected and hits nobody. Both games
+    sway as in `vehicles`, with their shields held (SF64_COOP_TRACE_SHIELDS) so that nobody goes down between cases;
+    hashes and the two probe logs equal on every frame. With `players` tanks (#329) the probe takes each of them in
+    turn, they steer apart (apart_in_turn), and every game's hashes and probe log are the host's."""
+    games = run_short(args, folder, script=sway if players == 2 else apart_in_turn(players),
+                      frames=W8_MABOMB_FRAMES + W8_MABOMB_MORE * (players - 2),
+                      host_env={"SF64_COOP_JOIN_LEVEL": "11"},
+                      both={"SF64_COOP_MABOMB_PROBE": W8_MABOMB_PROBE,
+                            "SF64_COOP_TRACE_SHIELDS": ",".join(["255"] * players),
+                            "SF64_COOP_VIEW_TRACE": W10_BLAST_VIEW},
+                      seconds=1800, players=players)
+    host = games[0]
+    frames = compare_all(games, W8_MABOMB_FRAMES + W8_MABOMB_MORE * (players - 2))
+    rows, done = w8_mabomb_rows(host.run / W8_MABOMB_PROBE)
+    expect(rows, "the probe placed nothing: a build without src/port/coop/test/mabomb_probe.c (#272), or the tanks "
+                 "never parted by 250")
+    for other in games[1:]:
+        expect((rows, done) == w8_mabomb_rows(other.run / W8_MABOMB_PROBE),
+               f"the probe logs of host and {other.name} differ")
+    wanted = len(W8_MABOMB_CASES) * players * W8_MABOMB_ROUNDS
+    waits = [line for line in (host.run / W8_MABOMB_PROBE).read_text(encoding="utf-8").splitlines()
+             if line.startswith("mabomb wait")]
+    expect(done, f"the probe ran {len(rows)} of {wanted} cases in {frames} frames; the last one waited: "
+                 f"`{waits[-1] if waits else 'no wait line'}`")
+    story = w8_mabomb_story(rows, players)
+    lost = sum(row["lost"] for row in rows)
+    off = [row for row in rows if row.get("off")]
+    for (case, target), (ran, _, _) in sorted(story.items()):
+        expect(ran >= W8_MABOMB_ROUNDS - 1, f"{case} on player {target}: only {ran} cases ran to their end "
+                                            f"({lost} lost in all, {len(off)} bombs off their target)")
+
+    def hits(target):
+        return ", ".join(f"{W8_MABOMB_WORDS[case]} on {story[(case, target)][1]} of {story[(case, target)][0]}"
+                         for case in W8_MABOMB_CASES)
+
+    expect(all(story[(case, 0)][1] == story[(case, 0)][0] for case in W8_MABOMB_CASES),
+           f"player 0, the control, is not hit every time: {hits(0)}")
+    for target in range(1, players):
+        expect(all(story[(case, target)][1] == story[(case, target)][0] for case in W8_MABOMB_CASES),
+               f"player {target} is not hit: {hits(target)}; player 0, the control: {hits(0)}")
+    others = sum(counts[2] for counts in story.values())
+    expect(others == 0, f"a hazard hit a tank it was not placed on in {others} cases (the tanks were too close)")
+    first = sorted({row["first"][row["target"]] for row in rows
+                    if not row["lost"] and not row.get("off") and row["case"] not in W8_MABOMB_DEFLECTS})
+    blast = w10_blast_views(games, rows)
+    missed = "" if not off else (f", {len(off)} bombs never had their target in the fire's box (not counted: "
+                                 + ", ".join(f"player {row['target']} at frame {row['frame']}" for row in off) + ")")
+    return (f"same hash on {frames} frames; {len(rows)} cases, {lost} lost{missed}; "
+            + "; ".join(f"player {target} hit {hits(target)}" for target in range(players - 1, -1, -1))
+            + f"; no hazard hit {'the other tank' if players == 2 else 'another tank'}; frames to the hit {first}; "
+            f"last case at frame {rows[-1]['frame']}; {blast}")
+
+
+# ---- #282: what each player gets in Andross' escape, and the rule the owner chose for it (2026-11-13, option A) ----
+#
+# In the escape after the brain (src/overlays/ovl_i6/fox_andross.c) an explosion within 500 of player 0 in x and z sets
+# its shields to 0 and kills it 10 frames later whatever gInvincible says (Andross_AndExplosion_Update), and the exit's
+# trigger ends the level only for player 0 (Andross_AndJamesTrigger_Update): both test gPlayer[0] alone. Each session
+# here starts in Andross' second part at its checkpoint, which is the escape (SF64_COOP_JOIN_CHECKPOINT=1: the game's
+# own restart there, Andross_801961AC), the pilots fly James' route (src/port/coop/test/pilot_andross.c), and
+# src/port/coop/test/escape_probe.h puts an explosion or a trigger in reach of one player while every other player is
+# out of it. The scenario checks the measurement (the cases ran, the cases on player 0 acted, both games equal) and
+# the rule the owner chose on 2026-11-13 (#282, option A): the explosions hit every human, the exit stays player 0's.
+#
+# The rule for player 1 (CoopHits_AndrossExplosion, src/port/coop/game/hits.c), checked by w9_escape_rule:
+#   miss1   an explosion 550 from player 1 and at least 510 from player 0: nobody is hit, no shields or lives change.
+#   blast1  an explosion 450 from player 1, player 0 at least 510 away: player 1 gets the hit, shields 0, and goes down
+#           (decision 0007 rule 4); player 0 is untouched and flies on; the life is spent when player 1 comes back
+#           beside player 0, W9_ESCAPE_RETURN frames after it went down, with full shields.
+#   exit1   the trigger 450 from player 1: no level complete, the exit is player 0's.
+#   blast0  an explosion 450 from player 0, player 1 away: player 0 goes down and the level starts again (upstream);
+#           player 1 gets no hit and loses no shields.
+# gInvincible changes none of this, and that is meant: upstream writes player 0's shields to 0 itself, whatever the
+# cheat says (the cheat only makes the damage of the two hits 0, Player_ApplyDamage), and the owner left that as it is
+# (#282 question 2). The helper repeats upstream's writes for the other players, as the helpers of #136 and #272 repeat
+# their tests (those go through Player_ApplyDamage alone, so the cheat makes their damage 0 for every player alike;
+# this one writes the shields first, for every player alike). So with the cheat on player 1 goes down in an explosion
+# exactly as player 0 does: one danger for every human, cheat or not.
+W9_ESCAPE_PROBE = "escape.txt"  # in each game's run folder
+# An explosion just out of player 1's reach, one on player 1, the trigger on player 1, an explosion on player 0.
+W9_ESCAPE_CASES = ("miss1", "blast1", "exit1", "blast0")
+W9_ESCAPE_RETURN = 150  # COOP_RETURN_FRAMES, src/port/coop/game/players.c: frames from a down to the return
+W9_ESCAPE_FULL = 255  # Play_GetMaxShields without the team's upgrade: what a returning player holds
+W9_ESCAPE_FRAMES = 7000  # lockstep frames: the escape, the cases, a restart at its checkpoint, the flight to the exit
+W9_ESCAPE_MORE = 1500  # lockstep frames more for each player after the second: three more cases (#329)
+W9_ESCAPE_KEEP = 510.0  # ESCAPE_KEEP in escape_probe.c: every other player at least this far from a case's object
+W9_ESCAPE_REACH = 500.0  # both objects act under this in x and in z
+# (name, cases, gInvincible, start seeds): with the cases, with and without the cheat; then James' route alone, as #275
+# flies it, once in each of the three mazes (Andross_80187C5C draws one; these seeds draw it from the checkpoint).
+W9_ESCAPE_RUNS = (("cases_inv", W9_ESCAPE_CASES, True, None), ("cases_noinv", W9_ESCAPE_CASES, False, None),
+                  ("route_c036b6c", (), True, None), ("route_c036310", (), True, "1,2,3,4,5,6"),
+                  ("route_c03733c", (), True, "31,41,59,26,53,58"))
+W9_ESCAPE_STATES = {"3": "active", "4": "down", "5": "u-turn", "6": "next", "7": "level complete"}
+
+
+def w9_escape_rows(path):
+    """The probe's lines as (kind, {key: value}, line): kind is the word after `escape`, or the key of its first pair."""
+    rows = []
+    if not path.exists():
+        return rows
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        parts = line.split()
+        if len(parts) < 2 or parts[0] != "escape":
+            continue
+        rows.append((parts[1].split("=", 1)[0], dict(p.split("=", 1) for p in parts[1:] if "=" in p), line))
+    return rows
+
+
+def w9_escape_session(args, folder, cases, invincible, seeds=None, players=2):
+    """One session from the escape's checkpoint to lockstep frame W9_ESCAPE_FRAMES, from SEEDS or `seeds`. Returns (the
+    host's probe rows, frames compared)."""
+    folder.mkdir(parents=True, exist_ok=True)
+    both = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt",
+            "SF64_COOP_LOCKSTEP_END": str(W9_ESCAPE_FRAMES), "SF64_COOP_ESCAPE_PROBE": W9_ESCAPE_PROBE}
+    if cases:
+        both["SF64_COOP_ESCAPE_CASES"] = ",".join(cases)
+    both["SF64_COOP_LOCKSTEP_END"] = str(W9_ESCAPE_FRAMES + W9_ESCAPE_MORE * (players - 2))
+    games = session(args, folder, both=both, config={"CVars": {"gInvincible": 1}} if invincible else None,
+                    host_env={"SF64_COOP_JOIN_LEVEL": "9", "SF64_COOP_JOIN_PHASE": "1",
+                              "SF64_COOP_JOIN_CHECKPOINT": "1",
+                              **({"SF64_COOP_TEST_START_SEEDS": seeds} if seeds else {})}, clients=players - 1)
+    try:
+        wait_for(list(games), "done", args.level_seconds, "in Andross' escape")
+    finally:
+        for game in games:
+            game.close()
+    frames = compare_all(games)
+    ours = w9_escape_rows(games[0].run / W9_ESCAPE_PROBE)
+    same_trace(games, lambda game: [r[2] for r in w9_escape_rows(game.run / W9_ESCAPE_PROBE)], "probe logs")
+    expect([r for r in ours if r[0] == "start"],
+           "no escape: a build without SF64_COOP_JOIN_CHECKPOINT and src/port/coop/test/escape_probe.c (#282), or the "
+           f"level never reached it in {W9_ESCAPE_FRAMES} frames")
+    return ours, frames
+
+
+def w9_escape_players(values):
+    """{player: (least reach, most reach, shields before, least, after, states)} of a case line."""
+    found = {}
+    for key, value in values.items():
+        if re.fullmatch(r"p\d", key):
+            reach, shields, states = value.split(",", 2)
+            found[int(key[1])] = (*[float(v) for v in reach.split("/")], *[int(v) for v in shields.split("/")],
+                                  states)
+    return found
+
+
+def w9_escape_states(text):
+    return ">".join(W9_ESCAPE_STATES.get(s, s) for s in text.split("-"))
+
+
+def w9_escape_case_story(rows, name):
+    """The line of case `name` as text; checks that it ran and kept the other players out of reach."""
+    found = [v for k, v, _ in rows if k == "case" and v.get("case") == name and "target" in v]
+    expect(found, f"case {name} never ran")
+    v = found[0]
+    target = int(v["target"])
+    players = w9_escape_players(v)
+    expect(v["lost"] == "0" or v["exit"] == "1", f"case {name} lost its object after {v['updates']} updates")
+    for i, (least, _, _, _, _, _) in players.items():
+        expect((i == target and not name.startswith("miss")) or least >= W9_ESCAPE_KEEP,
+               f"case {name}: player {i} came {least:.0f} near the object")
+    # A case whose object never came into its target's reach says nothing (#329): the probe found no place that kept
+    # every other player out, and held the object 3000 away (`off`).
+    expect(name.startswith("miss") or players[target][0] < W9_ESCAPE_REACH,
+           f"case {name} was never in reach of player {target}: its object came {players[target][0]:.0f} near, "
+           f"{v['off']} of {v['updates']} updates away from every player (the others fly too close to it)")
+    text = []
+    for i, (least, most, before, low, after, states) in sorted(players.items()):
+        hit = "hit" if int(v["hit"]) & (1 << i) else "no hit"
+        down = "down" if int(v["down"]) & (1 << i) else "not down"
+        text.append(f"player {i} at {least:.0f} to {most:.0f}, shields {before}>{low}>{after}, {hit}, {down}, "
+                    f"{w9_escape_states(states)}")
+    return v, (f"{name} (frame {v['frame']}, {v['updates']} updates, {v['off']} away): exit {v['exit']}, lives "
+               f"{v['lives']}; " + "; ".join(text))
+
+
+def w9_escape_cases(players):
+    """The cases for a session of more than two players (#329): the explosion on player 0, then the three cases of
+    player 1 on the last player. The pilots fly James' route in a row, about 235 apart, and the probe needs a place
+    450 from its target and 510 from everyone else: there is one for a player at an end of the row and none for a
+    player inside it (with four players the cases on player 2 waited 3000 away for all 60 updates, `off=60`). So the
+    last player is the one a session can show: player 2 with three games, player 3 with four. The explosion on
+    player 0 comes first, not last as with two: a player that went down comes back beside player 0, its pilot flies
+    to player 0's own waypoint, and with four games player 3 then flew within 16 of player 0 for the rest of the
+    escape, so an explosion on player 0 after its return had no place either. Player 0's down starts the escape again
+    at its checkpoint, and the other cases run in that second escape."""
+    return ("blast0",) + tuple(f"{kind}{players - 1}" for kind in ("miss", "blast", "exit"))
+
+
+def w9_escape_rule(rows, name, values):
+    """#282 option A for case `name` (the table above W9_ESCAPE_CASES; the digit of the name is the player the case
+    is on, #329): what the players other than the control got. Returns text for the summary."""
+    players = w9_escape_players(values)
+    kind, target = name[:-1], int(name[-1])
+    hit, down = int(values["hit"]), int(values["down"])
+    before, after = (int(v) for v in values["lives"].split("/"))
+    untouched = lambda i: not (hit | down) & (1 << i) and players[i][2] == players[i][3] == players[i][4]
+    rest = [i for i in sorted(players) if i != target]
+    if kind == "miss":
+        expect(hit == 0 and down == 0 and all(untouched(i) for i in players) and before == after,
+               f"{name}: an explosion out of everyone's reach hurt someone: hit {hit}, down {down}, lives "
+               f"{before}/{after}, shields {[players[i][2:5] for i in sorted(players)]}")
+        return "nobody hurt"
+    if kind == "exit" and target != 0:
+        expect(values["exit"] == "0",
+               f"{name}: the trigger ended the level for player {target}; the exit is player 0's")
+        return "no exit"
+    if name == "blast0":
+        hurt = [i for i in rest if hit & (1 << i) or players[i][2] != players[i][3]]
+        expect(not hurt, f"{name}: player {', '.join(str(i) for i in hurt)}, out of reach, was hurt: hit {hit}, "
+                         f"shields {[players[i][2:5] for i in hurt]}")
+        return f"player {', '.join(str(i) for i in rest)} unhurt"
+    if kind != "blast":
+        return ""
+    bit = 1 << target
+    expect(hit & bit and down & bit and players[target][3] == 0,
+           f"{name}: an explosion in reach of player {target} did not take it down (#282 option A): hit mask {hit}, "
+           f"down mask {down}, its shields {players[target][2]}>{players[target][3]}>{players[target][4]}, states "
+           f"{w9_escape_states(players[target][5])}")
+    for i in rest:
+        expect(untouched(i) and set(players[i][5].split("-")) <= {"3", "5"},
+               f"{name}: player {i}, out of reach, did not fly on untouched: hit {hit}, down {down}, shields "
+               f"{players[i][2:5]}, states {w9_escape_states(players[i][5])}")
+    expect(before == after, f"{name}: the pool went {before} to {after} during the case; the life is spent at the "
+                            "return, not at the crash (decision 0007 rule 4)")
+    # The players' lines from the case before this one on: frames start again with an escape, and with more than two
+    # players this case runs in the second (w9_escape_cases).
+    at = next((n for n, (_, v, _) in enumerate(rows) if v is values), 0)
+    since = max([n for n, (k, v, _) in enumerate(rows[:at]) if k == "start" or (k == "case" and "target" in v)],
+                default=0)
+    mine = [v for k, v, _ in rows[since:] if k == "player" and v["player"] == str(target)
+            and int(v["frame"]) >= int(values["frame"]) and v.get("level") == "9"]
+    went = next((v for v in mine if v["down"] == "1"), None)
+    expect(went is not None, f"{name}: no line says player {target} is down")
+    back = next((v for v in mine if int(v["frame"]) > int(went["frame"]) and v["down"] == "0"), None)
+    expect(back is not None, f"{name}: player {target} never came back after its down at frame {went['frame']}")
+    waited = int(back["frame"]) - int(went["frame"])
+    expect(waited == W9_ESCAPE_RETURN and back["parked"] == "0" and back["state"] == "3"
+           and int(back["shields"]) == W9_ESCAPE_FULL and int(back["lives"]) == before - 1,
+           f"{name}: player {target} came back {waited} frames after its down (want {W9_ESCAPE_RETURN}), parked "
+           f"{back['parked']}, state {back['state']}, shields {back['shields']} (want {W9_ESCAPE_FULL}), lives "
+           f"{back['lives']} (want {before - 1})")
+    return (f"player {target} down at frame {went['frame']}, back at {back['frame']} with shields {back['shields']}, "
+            f"lives {before}>{back['lives']}")
+
+
+def w9_escape_after_exit(rows):
+    """What the players' lines say from the exit on: (exit row, [player lines after it])."""
+    for n, (kind, values, _) in enumerate(rows):
+        if kind == "exit" and values.get("case") == "-":
+            return values, [v for k, v, _ in rows[n + 1:] if k == "player"]
+    return None, []
+
+
+def w9_escape_run(args, folder, name, cases, invincible, seeds, players=2):
+    """One of W9_ESCAPE_RUNS: its summary text."""
+    if cases and players > 2:
+        cases = w9_escape_cases(players)
+    rows, frames = w9_escape_session(args, folder, cases, invincible, seeds, players)
+    starts = [v for k, v, _ in rows if k == "start"]
+    ends = [v for k, v, _ in rows if k == "run_end"]
+    text = [f"{name}: equal on {frames} frames, gInvincible {int(invincible)}, escapes started at "
+            + ", ".join(f"{v['frame']} (lives {v['lives']}, trigger {v['trigger']})" for v in starts)]
+    for case in cases:
+        values, story = w9_escape_case_story(rows, case)
+        text.append(story)
+        if case.startswith("blast0"):
+            expect(int(values["down"]) & 1, f"{case}, the control: player 0 did not go down in the explosion")
+        if case.startswith("exit0"):
+            expect(values["exit"] == "1", f"{case}, the control: the trigger did not end the level for player 0")
+        text.append(f"{case} rule: {w9_escape_rule(rows, case, values)}")
+    exit_row, after = w9_escape_after_exit(rows)
+    expect(exit_row is not None, f"{name}: the pilots did not reach the exit in {W9_ESCAPE_FRAMES} frames; escapes "
+                                 f"ended: {[(v['frame'], v['why']) for v in ends]}")
+    final = [v for v in ends if v["why"] == "exit"][-1]
+    text.append(f"exit at frame {exit_row['frame']} of escape {exit_row['run']}, its nearest explosion per player "
+                f"{final['nearest']} (frames under {W9_ESCAPE_REACH:.0f}: {final['touch']})")
+    later = [v for v in after if v["player"] != "0"]
+    if later:
+        text.append("then " + ", ".join(f"player {v['player']} at {v['frame']}: state {v['state']} cs {v['cs']} "
+                                         f"parked {v['parked']} draw {v['draw']} level {v['level']}"
+                                         for v in later[:4]))
+    if not cases:
+        expect(final["touch"].split(",")[0] == "0", f"{name}: James' route took player 0 into an explosion's reach")
+    return " | ".join(text)
+
+
+def sc_escape_look(args, folder, players=2):
+    """#282: what each player gets in Andross' escape, and the rule the owner chose (option A): the explosions hit
+    every human, the exit stays player 0's. Sessions start at the escape's checkpoint (SF64_COOP_JOIN_CHECKPOINT);
+    pilots fly James' route; src/port/coop/test/escape_probe.h puts an explosion just out of player 1's reach, one in
+    reach of player 1 (player 0 out of it), the exit's trigger in reach of player 1, then an explosion in reach of
+    player 0, each for 60 of its updates, with gInvincible and without; then the route alone, once in each maze
+    (--levels picks some of the sessions of W9_ESCAPE_RUNS). Checks: the cases ran with every other player out of
+    reach; the rule (w9_escape_rule): nobody hurt out of reach, player 1 in reach goes down, costs a life of the pool
+    at its return 150 frames later, player 0 flies on; the trigger does nothing for player 1; the explosion on player 0
+    takes it down and leaves player 1 unhurt; the same with gInvincible; the pilots reached the exit, James' route
+    kept player 0 out of every explosion's reach, hashes and probe logs equal."""
+    lines, failed = [], []
+    names = args.levels or [run[0] for run in W9_ESCAPE_RUNS]
+    unknown = [name for name in names if name not in [run[0] for run in W9_ESCAPE_RUNS]]
+    expect(not unknown, f"no session {', '.join(unknown)}; the choices are {', '.join(r[0] for r in W9_ESCAPE_RUNS)}")
+    for name, cases, invincible, seeds in [run for run in W9_ESCAPE_RUNS if run[0] in names]:
+        try:
+            lines.append(w9_escape_run(args, folder / name, name, cases, invincible, seeds, players))
+            print(f"        {lines[-1]}", flush=True)
+        except (Fail, join_test.Fail) as failure:
+            failed.append(f"{name}: {failure}")
+            print(f"        FAILED {name}: {failure}", flush=True)
+    expect(not failed, "; ".join(failed))
+    return f"{len(lines)} sessions: " + " || ".join(lines)
+
+
+# ---- #267: the session survives beyond its first level and its first three players (survive_gaps_*) ----
+#
+# Decision 0014 on more than Corneria and three games: a level that started again and is then flown to its end, the
+# map and the level after it; a restart while the map is up; the game's own checkpoints in the other levels; Venom's
+# jump; four players. The lockstep driver's places (lockstep_driver.h: L<n> the n-th level a game entered in a run, M<n>
+# the n-th map) say where a bit is flipped or the input stops, and its `route` lines what each game holds there.
+
+SURVIVE_GAPS_TAIL = 300  # frames of the level after the map, or after a jump, that have to hash alike
+SURVIVE_GAPS_ON_MAP = 120  # frames into the map at which it goes wrong: well inside the map's 600 or so
+SURVIVE_GAPS_REPLAY = 150000  # frames of the empty replay: longer than any run here, as a game leaves lockstep at its end
+SURVIVE_GAPS_ROUTE_FIELDS = ("state", "level", "phase", "mission", "planets", "mission_hits", "medals", "team", "paths",
+                             "total", "clear", "status", "lives", "save")
+SURVIVE_GAPS_ENDING = 8  # GSTATE_ENDING
+SURVIVE_GAPS_GAME_OVER = 5  # GSTATE_GAME_OVER
+
+
+def survive_gaps_routes(game, run=None):
+    """The `route` lines of a game's lockstep report (lockstep_driver.h), of run `run` or of all runs."""
+    return [r for r in join_test.said(game.sync(), "route") if run is None or r["run"] == str(run)]
+
+
+def survive_gaps_route_state(route):
+    """What a route line says of the campaign and the save, without where and when it was taken."""
+    return {key: route[key] for key in SURVIVE_GAPS_ROUTE_FIELDS}
+
+
+def survive_gaps_route_change(before, after):
+    """The fields of two route lines that differ, as a short text."""
+    return ", ".join(key for key in SURVIVE_GAPS_ROUTE_FIELDS if before[key] != after[key]) or "nothing"
+
+
+def survive_gaps_run_frames(game, run):
+    """How many lockstep frames of run `run` a game's lockstep log holds; 0 before that run began."""
+    lines = game.sync_log.read_text(encoding="utf-8").splitlines() if game.sync_log.exists() else []
+    marks = [i for i, line in enumerate(lines) if line.startswith("# run ")]
+    starts = [0] + [i + 1 for i in marks]
+    ends = marks + [len(lines)]
+    return ends[run - 1] - starts[run - 1] if len(starts) >= run else 0
+
+
+def survive_gaps_watch(games, done, seconds, what, again_max=None):
+    """Until done() is true. Fails as soon as a game is gone, a session ended, or a level started again more often than
+    again_max: then nothing that is waited for can come."""
+    deadline = time.monotonic() + seconds
+    while not done():
+        for game in games:
+            expect(game.proc.poll() is None, f"{game.name} ended with code {game.proc.returncode} {what}")
+            ended = [line for _, _, line in game.report() if line.startswith("ended")]
+            expect(not ended, f"{game.name}'s session ended {what}: {ended[0][:300] if ended else ''}")
+            again = len(join_test.said(game.sync(), "again"))
+            expect(again_max is None or again <= again_max,
+                   f"{game.name}: the level started again {again} times {what}, want at most {again_max}")
+        expect(time.monotonic() < deadline, f"nothing after {seconds:.0f} s {what}")
+        time.sleep(1)
+
+
+def survive_gaps_compare(games, run, frames=None):
+    """The hash logs and lockstep logs of run `run` are equal on every game from that run's frame 0: on `frames` frames,
+    or on all that the shortest log holds of the run. Returns the frames compared."""
+    names, ours = survive_run_rows(games[0], run)
+    logs = survive_run_log(games[0], run)
+    counted = None
+    for other in games[1:]:
+        _, theirs = survive_run_rows(other, run)
+        theirs_log = survive_run_log(other, run)
+        n = frames if frames is not None else min(len(ours), len(theirs), len(logs), len(theirs_log))
+        expect(min(len(ours), len(theirs), len(logs), len(theirs_log)) >= n,
+               f"run {run}: only {min(len(ours), len(theirs))} hash rows and {min(len(logs), len(theirs_log))} lockstep "
+               f"frames of {games[0].name} and {other.name}, want {n}")
+        difference = join_test.first_difference(names, ours[:n], theirs[:n])
+        expect(difference is None, f"run {run}: the hash logs of {games[0].name} and {other.name} differ at {difference}")
+        for i in range(n):
+            expect(logs[i] == theirs_log[i], f"run {run}: the lockstep logs of {games[0].name} and {other.name} differ at "
+                                             f"frame {i}: {logs[i]} against {theirs_log[i]}")
+        counted = n if counted is None else min(counted, n)
+    return counted
+
+
+def survive_gaps_same_routes(games, run, places):
+    """Every game wrote the same `route` lines in run `run`, at `places` in that order. Returns the host's."""
+    ours = survive_gaps_routes(games[0], run)
+    expect([r["place"] for r in ours] == places, f"run {run}: {games[0].name} was at {[r['place'] for r in ours]}, want "
+                                                  f"{places}")
+    for other in games[1:]:
+        theirs = survive_gaps_routes(other, run)
+        for a, b in zip(ours, theirs):
+            expect(a == b, f"run {run}, {a['place']}: {games[0].name} and {other.name} hold different routes: "
+                           f"{survive_gaps_route_change(a, b)}")
+        expect(len(theirs) == len(ours), f"run {run}: {other.name} was at {[r['place'] for r in theirs]}")
+    return ours
+
+
+def survive_gaps_first_differences(games, pokes):
+    """#189's line for each flipped bit (frames `pokes`, players 1 and 2): once in each game's own co-op log, the same
+    in all games. Returns the lines."""
+    found = []
+    for poke in pokes:
+        needle = f"first difference at frame {poke}, players 1 and 2: "
+        texts = set()
+        for game in games:
+            own = coop_logs(game)[player_of(game)]
+            lines = [line.format() for line in coop_log.read_lines(own, player_of(game)) if needle in line.format()]
+            expect(len(lines) == 1, f"{game.name}'s co-op log says `{needle}` {len(lines)} times")
+            texts.add(lines[0].split(needle, 1)[1])
+        expect(len(texts) == 1, f"the games wrote different lines for frame {poke}: {sorted(texts)}")
+        found.append(texts.pop())
+    return found
+
+
+def sc_survive_gaps_route(args, folder):
+    """#267 item 1: a level that started again is flown to its end, then the map and the next level, twice: once in
+    the session's first level and once in the level after the map, which the session starts again with the route it
+    carries. Pilots fly (lockstep_driver.h), with gInvincible on but in Corneria as tools/coop/campaign.py has it, set on
+    the same frame of every game. A bit of player 2 is flipped on the client in Corneria (run 1), so Corneria starts
+    again (run 2) and is flown to the map and into the next level, where a second bit is flipped 200 frames in; that
+    level starts again (run 3) and is flown to its end, the map and SURVIVE_GAPS_TAIL frames of the level after.
+    Every frame of runs 2 and 3 up to the flipped bit is equal, the `route` lines (what the map and the next level read:
+    mission number, planets, medals, paths, total hits, clear flags, lives and the save's progress) are equal on both
+    games at every level and map, and each level that started again began with the route and the save it was first
+    entered with."""
+    folder.mkdir(parents=True, exist_ok=True)
+    env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt", "SF64_COOP_LOCKSTEP_END": "900000",
+           "SF64_COOP_LOCKSTEP_ROUTE": "1", "SF64_COOP_LOCKSTEP_CAMPAIGN_CHEATS": "1"}
+    pokes = f"1:L1:{JOIN_FRAME + 300},2:L2:200"
+    games = session(args, folder, both=env, replay_frames=SURVIVE_GAPS_REPLAY,
+                    client_envs=[{"SF64_COOP_LOCKSTEP_POKE_AT": pokes, "SF64_COOP_HASH_POKE_PLAYER": "1"}])
+    host, client = games
+
+    def next_level_flown():
+        after = [r for r in survive_gaps_routes(host, 3) if r["place"] == "L2"]
+        return bool(after) and survive_gaps_run_frames(host, 3) >= int(after[0]["frame"]) + SURVIVE_GAPS_TAIL
+
+    try:
+        survive_gaps_watch(games, next_level_flown, 2 * args.level_seconds,
+                           "on the way through two restarts, two levels and two maps", again_max=2)
+        time.sleep(2)
+    finally:
+        for game in games:
+            game.close()
+    poked = join_test.said(client.sync(), "poke_at")
+    expect([(p["run"], p["place"]) for p in poked] == [("1", "L1"), ("2", "L2")] and poked[0]["level"] == "0" and
+           poked[1]["level"] != "0", f"the bits were not flipped in Corneria and in the level after the map: {poked}")
+    poke1, poke2, level2 = int(poked[0]["frame"]), int(poked[1]["frame"]), int(poked[1]["level"])
+    for game in games:
+        starts = join_test.said(game.report(), "level_start")
+        expect([(v["run"], v["level"]) for v in starts] == [("1", "0"), ("2", "0"), ("3", str(level2))],
+               f"{game.name}: level starts {[(v['run'], v['level']) for v in starts]}, want Corneria twice, then "
+               f"level {level2}")
+        # A client hears of a desync twice: from its own check and from the host (SESSION_RECOVER).
+        recover = join_test.said(game.report(), "recover")
+        expect(len(recover) >= 2 and all(int(v["reason"]) == SURVIVE_REASONS["desync"] for v in recover),
+               f"{game.name}: recover {recover}")
+        overs = [int(v["frame"]) for v in join_test.said(game.sync(), "over")]
+        expect(len(overs) == 2 and poke1 <= overs[0] <= poke1 + DESYNC_SEEN_WITHIN and
+               poke2 <= overs[1] <= poke2 + DESYNC_SEEN_WITHIN, f"{game.name}: lockstep stopped at {overs}, the bits "
+                                                                f"were flipped at {poke1} and {poke2}")
+        expect(len(own_reports(game)) == 2, f"{game.name} wrote {len(own_reports(game))} desync reports, want 2")
+        first, second, third = (survive_level_values(game, run) for run in (1, 2, 3))
+        expect(second == first, f"{game.name}: Corneria did not start again from the session's own level start")
+        expect(third[SURVIVE_MISSION_NUMBER] == 1 and third[SURVIVE_TOTAL_HITS] > 0 and
+               not any(third[SURVIVE_CHECKPOINT_FLAG:]),
+               f"{game.name}: level start 3 holds mission number {third[SURVIVE_MISSION_NUMBER]}, total hits "
+               f"{third[SURVIVE_TOTAL_HITS]}, checkpoint {third[SURVIVE_CHECKPOINT_FLAG:]}")
+        for run, level in ((2, 0), (3, level2)):
+            began = survive_run_state(game, run)
+            expect(began["level"] == level and began["load"] == 0 and began["path"] == 0 and began["hits"] == 0,
+                   f"{game.name}: run {run} did not begin at the start of level {level}: {began}")
+    expect(len(join_test.said(host.report(), "recover")) == 2, f"host: {join_test.said(host.report(), 'recover')}")
+    expect(survive_level_values(host, 3) == survive_level_values(client, 3), "the games took different level starts")
+    survive_gaps_same_routes(games, 1, ["L1"])
+    run2 = survive_gaps_same_routes(games, 2, ["L1", "M1", "L2"])
+    run3 = survive_gaps_same_routes(games, 3, ["L1", "M1", "L2"])
+    run1 = survive_gaps_routes(host, 1)
+    expect(survive_gaps_route_state(run2[0]) == survive_gaps_route_state(run1[0]),
+           f"Corneria started again with another route: {survive_gaps_route_change(run1[0], run2[0])}")
+    expect(survive_gaps_route_state(run3[0]) == survive_gaps_route_state(run2[2]),
+           f"level {level2} started again with another route than it was entered with: "
+           f"{survive_gaps_route_change(run2[2], run3[0])}")
+    expect(run3[1]["mission"] != run2[1]["mission"] or run3[1]["save"] != run2[1]["save"],
+           "the map after the second level holds what the map after Corneria held")
+    frames2 = survive_gaps_compare(games, 2, poke2)
+    frames3 = survive_gaps_compare(games, 3)
+    expect(frames3 >= int(run3[2]["frame"]) + SURVIVE_GAPS_TAIL, f"run 3: {frames3} frames compared")
+    lines = survive_gaps_first_differences(games, [poke1, poke2])
+    no_more = [r for r in survive_gaps_routes(host) if int(r["run"]) > 3]
+    expect(not no_more, f"a fourth run: {no_more[:1]}")
+    return (f"Corneria parted at {poke1} and started again from the session's level start (run 2); pilots flew it to "
+            f"the map (frame {run2[1]['frame']}) and into level {level2} ({run2[2]['frame']}), which parted at "
+            f"{poke2} and started again (run 3) with mission number {run3[0]['mission']} and {run3[0]['total']} total "
+            f"hits; flown to the map ({run3[1]['frame']}) and into level {run3[2]['level']} ({run3[2]['frame']}). Equal "
+            f"on {frames2} frames of run 2 and {frames3} of run 3; the route lines equal on both games at all 7 places; "
+            f"each level that started again began with the route and save of its first entry; the map after Corneria "
+            f"changed {survive_gaps_route_change(run2[0], run2[1])}; `{lines[1]}`")
+
+
+def survive_gaps_map_session(args, folder, client_env):
+    """Pilots fly Corneria to the map, where client_env makes the client go wrong, and the level starts again. Returns
+    the two games, stopped once both flew SURVIVE_FRAMES frames of the level that started again."""
+    folder.mkdir(parents=True, exist_ok=True)
+    env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt",
+           "SF64_COOP_LOCKSTEP_END": str(SURVIVE_FRAMES), "SF64_COOP_LOCKSTEP_ROUTE": "1"}
+    games = session(args, folder, both=env, client_envs=[client_env])
+    try:
+        survive_gaps_watch(games, lambda: all(join_test.said(g.sync(), "again") for g in games), args.level_seconds,
+                           "before the level started again from the map", again_max=1)
+        survive_wait(games, "done", 2, 600, "in the level that started again")
+        survive_no_end(games)
+        time.sleep(2)
+    finally:
+        for game in games:
+            game.close()
+    return games
+
+
+def survive_gaps_map_check(games):
+    """What a restart from the map has to show on both games: Corneria again from the session's own level start, with
+    the route and the save it began with, equal on its first SURVIVE_FRAMES frames. Returns (frames, the change the map
+    had made to the route)."""
+    host, client = games
+    for game in games:
+        starts = join_test.said(game.report(), "level_start")
+        expect([(v["run"], v["level"]) for v in starts] == [("1", "0"), ("2", "0")],
+               f"{game.name}: level starts {[(v['run'], v['level']) for v in starts]}, want Corneria twice")
+        expect(survive_level_values(game, 2) == survive_level_values(game, 1),
+               f"{game.name}: Corneria did not start again from the session's own level start")
+        began = survive_run_state(game, 2)
+        expect(began["level"] == 0 and began["load"] == 0 and began["path"] == 0 and began["hits"] == 0,
+               f"{game.name}: run 2 did not begin at Corneria's start: {began}")
+    expect(not join_test.said(host.report(), "restart_at_checkpoint"), "the host took a checkpoint on the map")
+    run1 = survive_gaps_same_routes(games, 1, ["L1", "M1"])
+    run2 = survive_gaps_same_routes(games, 2, ["L1"])
+    expect(survive_gaps_route_state(run2[0]) == survive_gaps_route_state(run1[0]),
+           f"Corneria started again with another route than it began with: {survive_gaps_route_change(run1[0], run2[0])}")
+    return survive_compare(games, 2, SURVIVE_FRAMES), survive_gaps_route_change(run1[0], run1[1])
+
+
+def trace_entry_jumps(game):
+    """#276: the player trace (SF64_COOP_TRACE) writes players only from Play_Init on, which sets the frame count to 0.
+    Entering a level, gPlayer points for a few frames (PLAY_STANDBY) into memory Game_SetGameState freed
+    (src/engine/fox_game.c:95-118); a line written then shows as a jump of the frame count that is not to 0. Returns
+    those jumps as (frame, next frame); a pause repeats a frame."""
+    frames = [int(line.split()[0].split("=")[1]) for line in
+              (game.run / "trace.txt").read_text(encoding="utf-8", errors="replace").splitlines()
+              if line.startswith("frame=")]
+    return [(a, b) for a, b in zip(frames, frames[1:]) if b not in (a, a + 1, 0)]
+
+
+def sc_survive_gaps_map(args, folder):
+    """#267 item 2: the games part while the map is up. Pilots fly Corneria to the map; SURVIVE_GAPS_ON_MAP frames into
+    it a bit is flipped on the client (the hash's own target, the last actor slot, which the map hashes too). Decision
+    0014 item 2 says the level the team last entered: both games take a level start for Corneria, the session's own,
+    so the map's changes to the route and the save are dropped, and the level is equal from its frame 0 on."""
+    games = survive_gaps_map_session(args, folder, {"SF64_COOP_LOCKSTEP_POKE_AT": f"1:M1:{SURVIVE_GAPS_ON_MAP}"})
+    host, client = games
+    poked = join_test.said(client.sync(), "poke_at")
+    expect(len(poked) == 1 and poked[0]["place"] == "M1" and int(poked[0]["state"]) == MAP,
+           f"the bit was not flipped on the map: {poked}")
+    poke = int(poked[0]["frame"])
+    for game in games:
+        over = int(join_test.said(game.sync(), "over")[0]["frame"])
+        expect(poke <= over <= poke + DESYNC_SEEN_WITHIN, f"{game.name}: lockstep stopped at {over}, poke at {poke}")
+        recover = join_test.said(game.report(), "recover")
+        expect(recover and all(int(v["reason"]) == SURVIVE_REASONS["desync"] for v in recover),
+               f"{game.name}: recover {recover}")
+    expect(len(join_test.said(host.report(), "recover")) == 1, f"host: {join_test.said(host.report(), 'recover')}")
+    parted = next(line for _, _, line in host.report() if line.startswith("parted"))
+    said = parted.split("text=", 1)[1].split(" A report", 1)[0][:160]
+    # #276: the place is the map, not the level flown before it, whose number the map still holds
+    expect(f"out of step at frame {poke} of the map:" in parted, f"the text does not name the map: `{said}`")
+    frames, changed = survive_gaps_map_check(games)
+    for game in games:  # Corneria entered again from the map
+        jumps = trace_entry_jumps(game)
+        expect(not jumps, f"{game.name}: the player trace wrote lines while the level was entered: {jumps[:3]}")
+    line = survive_first_difference(games, poke)  # one report each: none in the level that started again
+    return (f"bit flipped {SURVIVE_GAPS_ON_MAP} frames into the map (frame {poke}): `{said}`; both games took level "
+            f"start 2 for Corneria, the session's own, began it with the route it began with (the map had changed "
+            f"{changed}) and hash alike on its first {frames} frames; `{line}`")
+
+
+def sc_survive_gaps_map_lost(args, folder):
+    """#267 item 2, a lost player: the client stops sending input SURVIVE_GAPS_ON_MAP frames into the map after
+    Corneria, with its connection up (as `stall`). The host drops it as a lost player with its slot kept, the client
+    sees the host close and comes back with the session id, and Corneria starts again for both from the session's own
+    level start, as after a desync on the map."""
+    games = survive_gaps_map_session(args, folder, {"SF64_COOP_LOCKSTEP_MUTE_AT": f"1:M1:{SURVIVE_GAPS_ON_MAP}"})
+    host, client = games
+    muted = join_test.said(client.sync(), "mute_at")
+    expect(len(muted) == 1 and int(muted[0]["state"]) == MAP, f"the input did not stop on the map: {muted}")
+    mute = int(muted[0]["frame"])
+    over = int(join_test.said(host.sync(), "over")[0]["frame"])
+    expect(mute <= over <= mute + 2 * INPUT_DELAY, f"the host ran to frame {over}, input stopped at {mute}")
+    parted = [line for _, _, line in host.report() if line.startswith("parted")]
+    expect(parted and "reason=2" in parted[0] and "stopped sending input" in parted[0], f"host: {parted}")
+    left = join_test.said(host.report(), "left")
+    expect(left and left[0]["away"] == "1", f"host: the slot of the player it dropped was not kept: {left}")
+    recover = [line for _, _, line in host.report() if line.startswith("recover")]
+    expect(recover and "Player 2 lost the connection" in recover[0], f"host: {recover}")
+    back = [v for v in join_test.said(client.report(), "joined") if v.get("rejoined") == "1"]
+    expect(len(back) == 1 and back[0]["player"] == "1", f"the client did not come back as player 2: {back}")
+    for game in games:
+        expect(survive_starts(game) == [(1, "Fox,Falco,-,-"), (2, "Fox,Falco,-,-")],
+               f"{game.name}: level starts {survive_starts(game)}")
+    frames, changed = survive_gaps_map_check(games)
+    no_desync(games)
+    return (f"input stopped {SURVIVE_GAPS_ON_MAP} frames into the map (frame {mute}); the host stopped at {over}, kept "
+            f"player 2's slot, the client came back with the session id, both took Corneria's own level start again, "
+            f"began it with the route it began with (the map had changed {changed}) and hash alike on its first "
+            f"{frames} frames")
+
+
+def sc_survive_gaps_four(args, folder):
+    """#267 item 4, decision 0014 items 1 and 3 with four players: a lost connection starts the level again for those
+    who are there once the host has waited 15 s. Four games in a level; one is killed (its connection is gone for good),
+    and the level starts again for the three who stay, without it; then a second is killed, and it starts again for the
+    two who are left. Each run is equal on every game that took it, on its first JOIN_FRAME + 300 frames."""
+    folder.mkdir(parents=True, exist_ok=True)
+    feed = folder / "feed.txt"
+    end = JOIN_FRAME + 300
+    write_feed(feed, 3 * SHORT_FRAMES, sway)
+    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(end)}
+    games = session(args, folder, both=env, clients=3)
+    host, a, b, c = games
+    try:
+        wait_for(list(games), "done", 900, "with four players")
+        c.stop(kill=True)
+        survive_wait([host, a, b], "again", 1, SURVIVE_AGAIN_SECONDS, "after the first player was lost")
+        survive_wait([host, a, b], "done", 2, 900, "in the level that started again for three")
+        b.stop(kill=True)
+        survive_wait([host, a], "again", 2, SURVIVE_AGAIN_SECONDS, "after the second player was lost")
+        survive_wait([host, a], "done", 3, 900, "in the level that started again for two")
+        survive_no_end([host, a])
+    finally:
+        for game in games:
+            game.close()
+    roster = survive_starts(host)[0][1].split(",")
+    expect(sorted(roster) == ["Falco", "Fox", "Peppy", "Slippy"], f"the first level start's roster is {roster}")
+    three, two = list(roster), list(roster)
+    three[player_of(c) - 1] = "-"
+    two[player_of(c) - 1] = two[player_of(b) - 1] = "-"
+    want = [(1, ",".join(roster)), (2, ",".join(three)), (3, ",".join(two))]
+    for game in (host, a):
+        expect(survive_starts(game) == want, f"{game.name}: level starts {survive_starts(game)}, want {want}")
+    expect(survive_starts(b) == want[:2], f"{b.name}: level starts {survive_starts(b)}, want {want[:2]}")
+    recover = [line for _, _, line in host.report() if line.startswith("recover")]
+    for i, lost in enumerate((c, b)):
+        expect(len(recover) > i and "reason=1" in recover[i] and
+               f"Player {player_of(lost)} lost the connection. Waiting for it to come back (15 s)" in recover[i],
+               f"host: {recover}")
+    gone = [v for v in join_test.said(host.report(), "left") if v["away"] == "0"]
+    expect(len(gone) == 2, f"host: {len(gone)} players gone for good after the wait, want 2: "
+                           f"{join_test.said(host.report(), 'left')}")
+    frames1 = survive_compare(list(games), 1, end)
+    frames2 = survive_compare([host, a, b], 2, end)
+    frames3 = survive_compare([host, a], 3, end)
+    no_desync([host, a])
+    return (f"four games ({','.join(roster)}): player {player_of(c)} lost, the level started again for three "
+            f"({want[1][1]}), then player {player_of(b)} lost and it started again for two ({want[2][1]}); equal on "
+            f"{frames1} frames with four, {frames2} with three and {frames3} with two")
+
+
+# Levels with a checkpoint of their own, found in the code and the level object tables of the US 1.0 ROM (#267,
+# NOTES.md): (LevelId, phase, frame cap of the level, what the checkpoint is). A rails ring is OBJ_ITEM_CHECKPOINT at
+# that index of the level's table (ItemCheckpoint_Update, src/engine/fox_enmy.c:2508); all-range: gAllRangeCheckpoint.
+SURVIVE_GAPS_LEVELS = {
+    "corneria": (0, 0, 26000, "ring, object 369"),
+    "meteo": (1, 0, 26000, "ring, object 479"),
+    "sector_x": (2, 0, 26000, "ring, object 275"),
+    "area_6": (3, 0, 40000, "ring, object 250"),
+    "sector_y": (5, 0, 36000, "ring, object 215"),
+    "venom_1": (6, 0, 26000, "ring, object 1164"),
+    "solar": (7, 0, 26000, "ring, object 92"),
+    "zoness": (8, 0, 26000, "ring, object 271"),
+    "macbeth": (11, 0, 26000, "ring, object 313"),
+    "titania": (12, 0, 60000, "ring, object 350"),
+    "aquas": (13, 0, 26000, "ring, object 189"),
+    "katina": (16, 0, 26000, "the Saucerer's arrival, src/overlays/ovl_i4/fox_ka.c:943"),
+    "bolse": (17, 0, 40000, "the core's shield down, src/overlays/ovl_i4/fox_bo.c:385 and :309"),
+    "andross": (9, 1, 26000, "the brain's arrival, src/overlays/ovl_i6/fox_andross.c:1084"),
+}
+
+
+# What runs without --levels: every level the pilots take to its end from the checkpoint, the rails with their own
+# ring put where player 2 flies. Andross' second part runs with --levels andross: there the pilots run out of lives in
+# the brain fight (2026-11-12).
+SURVIVE_GAPS_DEFAULT = [f"{name}@ring" for name in ("corneria", "meteo", "sector_x", "area_6", "sector_y", "venom_1",
+                                                      "solar", "zoness", "macbeth", "titania", "aquas")] + ["katina",
+                                                                                                             "bolse"]
+
+
+def survive_gaps_checkpoint_in(args, folder, name):
+    """One level of survive_gaps_checkpoints. Returns its line. `<level>@ring`: the level's own checkpoint ring is put
+    across the path where player 2 flies (SF64_COOP_LOCKSTEP_RING_TO, its depth unchanged), as the pilot does not steer
+    for rings: the checkpoint is still the level's own, at its object index and path. `<level>@testring`: a ring the
+    driver makes in front of player 2 once the level has loaded 40 objects (item kind 3, as survive_checkpoint), which
+    builds from before RING_TO have too (a run against the reference build)."""
+    name, _, how = name.partition("@")
+    level, phase, cap, what = SURVIVE_GAPS_LEVELS[name]
+    if how == "ring":
+        what = f"{what}, put where player 2 flies"
+    elif how == "testring":
+        what = f"a test ring from frame {JOIN_FRAME + 1000}"
+    cvars = {} if name == "corneria" else {"gInvincible": 1}  # as tools/coop/campaign.py flies a level
+    if name in ("zoness", "andross"):
+        cvars["gInfiniteBombs"] = 1
+    folder.mkdir(parents=True, exist_ok=True)
+    env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt", "SF64_COOP_LOCKSTEP_END": str(cap),
+           "SF64_COOP_LOCKSTEP_ROUTE": "1"}
+    if how == "ring":
+        env["SF64_COOP_LOCKSTEP_RING_TO"] = "1"
+    elif how == "testring":
+        env["SF64_COOP_LOCKSTEP_ITEM"] = f"{JOIN_FRAME + 1000}:1:{SURVIVE_ITEM_CHECKPOINT}"
+    games = session(args, folder, both=env, config={"CVars": cvars} if cvars else None, replay_frames=SURVIVE_GAPS_REPLAY,
+                    host_env={"SF64_COOP_JOIN_LEVEL": str(level), "SF64_COOP_JOIN_PHASE": str(phase)},
+                    client_envs=[{"SF64_COOP_LOCKSTEP_POKE_AFTER": "300", "SF64_COOP_HASH_POKE_PLAYER": "1"}])
+    host, client = games
+
+    def left_routes(run):
+        # The map, or another level (a jump); not the same level set up again inside itself (Andross' brain, frame
+        # 977 of a run: one frame of PLAY_INIT).
+        return [r for r in survive_gaps_routes(host, run) if r["place"].startswith("M") or
+                (r["place"] != "L1" and (r["level"], r["phase"]) != (str(level), str(phase)))]
+
+    def run1_over():
+        left = left_routes(1)
+        expect(not left, f"{name}: the level ended at frame {left[0]['frame'] if left else 0} without a checkpoint")
+        expect(not join_test.said(host.sync(), "done"), f"{name}: no checkpoint in {cap} frames")
+        return all(join_test.said(g.sync(), "again") for g in games)
+
+    def run2_left():
+        # The map, the level a jump goes to, or what follows Andross: the ending.
+        expect(len(join_test.said(host.sync(), "done")) < 2, f"{name}: the level did not end in {cap} frames of run 2")
+        left = left_routes(2)
+        if left:
+            return survive_gaps_run_frames(host, 2) >= int(left[0]["frame"]) + 60
+        rows = survive_run_log(host, 2) if survive_gaps_run_frames(host, 2) else []
+        ending = [i for i, row in enumerate(rows) if row.split()[1] == str(SURVIVE_GAPS_ENDING)]
+        return bool(ending) and len(rows) >= ending[0] + 60
+
+    try:
+        survive_gaps_watch(games, run1_over, args.level_seconds, f"in {name} before the checkpoint", again_max=1)
+        survive_gaps_watch(games, run2_left, args.level_seconds, f"in {name} after the checkpoint", again_max=1)
+        time.sleep(2)
+    finally:
+        for game in games:
+            game.close()
+    reached = [v for v in join_test.said(host.sync(), "checkpoint") if v["run"] == "1"]
+    expect(reached, f"{name}: no checkpoint")
+    poke = int(reached[0]["frame"]) + 300  # SF64_COOP_LOCKSTEP_POKE_AFTER: after the first checkpoint
+    # The level start carries the checkpoint the host held when the games parted: the last one before the bit.
+    before = [v for v in reached if int(v["frame"]) <= poke]
+    theirs = [v for v in join_test.said(client.sync(), "checkpoint") if v["run"] == "1"][:len(before)]
+    expect(theirs == before, f"{name}: the games reached different checkpoints: {before}, {theirs}")
+    checkpoint = before[-1]
+    mode = 0 if int(checkpoint["load"]) != 0 else 1
+    line = survive_check_checkpoint(games, checkpoint, poke, level, mode, saved_hits=name != "andross")
+    frames = survive_gaps_compare(games, 2)
+    left = left_routes(2)
+    # Out of lives, the game goes to its game over and on to the map: that is no end of the level.
+    over = [i for i, row in enumerate(survive_run_log(host, 2)) if row.split()[1] == str(SURVIVE_GAPS_GAME_OVER)]
+    expect(not over, f"{name} ({what}): the restart held, {line}, equal on all {frames} frames; but the team ran out of "
+                     f"lives at frame {over[0] if over else 0} of run 2 (game over): the pilot did not end the level")
+    end = (f"the map at frame {left[0]['frame']}" if left and left[0]["place"].startswith("M") else
+           f"level {left[0]['level']} (a jump) at frame {left[0]['frame']}" if left else "the ending")
+    return f"{name}{'@' + how if how else ''} ({what}): {line}; run 2 flew on to {end}, equal on all {frames} frames"
+
+
+def sc_survive_gaps_checkpoints(args, folder):
+    """#267 item 3: a restart from the game's own checkpoint in the levels beyond Corneria's rails (--levels, default
+    SURVIVE_GAPS_DEFAULT; the names are those of SURVIVE_GAPS_LEVELS). Pilots fly the level from its start (gInvincible
+    on but in Corneria, gInfiniteBombs in Zoness and Andross, as tools/coop/campaign.py); 300 frames after the first
+    checkpoint a bit of player 2 is flipped on the client. Both games take a level start at the host's checkpoint, begin
+    there as after a death with no life taken (survive_check_checkpoint), and fly on to the level's end, the map or the
+    level a jump goes to (a game over is no end): equal on every frame of that run. One session per level; the failures
+    are named together. `<level>@ring` and `<level>@testring`: survive_gaps_checkpoint_in."""
+    names = args.levels or SURVIVE_GAPS_DEFAULT
+    unknown = [name for name in names if name.partition("@")[0] not in SURVIVE_GAPS_LEVELS or
+               name.partition("@")[2] not in ("", "ring", "testring")]
+    expect(not unknown, f"no level {', '.join(unknown)}; the choices are {', '.join(SURVIVE_GAPS_LEVELS)}")
+    lines, failed = [], []
+    for name in names:
+        try:
+            lines.append(survive_gaps_checkpoint_in(args, folder / name, name))
+            print(f"        {lines[-1]}", flush=True)
+        except (Fail, join_test.Fail) as failure:
+            failed.append(f"{name}: {failure}")
+            print(f"        FAILED {name}: {failure}", flush=True)
+    expect(not failed, "; ".join(failed))
+    return f"{len(lines)} levels: " + " | ".join(lines)
+
+
+def sc_survive_gaps_venom_jump(args, folder):
+    """#267 item 3, Venom 2's second part: Venom 1 ends with a jump into it (gNextGameState with Venom 2, phase 2,
+    src/overlays/ovl_i1/fox_ve1.c:2521), and the host takes its restart point there (CoopLevelStart_Entering), which no
+    scenario had run. Pilots fly Venom 1 (gInvincible on both); 60 frames into the second part a bit is flipped on the
+    client (the last actor slot: the player poke shows only for a player in flight). Both games take a level start for
+    Venom 2, phase 2, begin it as the jump did, with the route it was entered with, and fly on into the level it jumps
+    to: equal on every frame of that run."""
+    folder.mkdir(parents=True, exist_ok=True)
+    env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt", "SF64_COOP_LOCKSTEP_END": "60000",
+           "SF64_COOP_LOCKSTEP_ROUTE": "1"}
+    games = session(args, folder, both=env, config={"CVars": {"gInvincible": 1}}, replay_frames=SURVIVE_GAPS_REPLAY,
+                    host_env={"SF64_COOP_JOIN_LEVEL": "6"}, client_envs=[{"SF64_COOP_LOCKSTEP_POKE_AT": "1:L2:60"}])
+    host, client = games
+
+    def next_level_flown():
+        after = [r for r in survive_gaps_routes(host, 2) if r["place"] == "L2"]
+        return bool(after) and survive_gaps_run_frames(host, 2) >= int(after[0]["frame"]) + SURVIVE_GAPS_TAIL
+
+    try:
+        survive_gaps_watch(games, next_level_flown, 2 * args.level_seconds, "through Venom 1, its jump and a restart",
+                           again_max=1)
+        time.sleep(2)
+    finally:
+        for game in games:
+            game.close()
+    poked = join_test.said(client.sync(), "poke_at")
+    expect(len(poked) == 1 and poked[0]["place"] == "L2" and poked[0]["level"] == "19",
+           f"the bit was not flipped in Venom 2's second part: {poked}")
+    poke = int(poked[0]["frame"])
+    entering = join_test.said(host.report(), "entering")
+    expect([(v["level"], v["phase"]) for v in entering][:1] == [("19", "2")],
+           f"the host took no restart point at the jump: {entering}")
+    for game in games:
+        starts = join_test.said(game.report(), "level_start")
+        expect([(v["run"], v["level"], v["phase"]) for v in starts] == [("1", "6", "0"), ("2", "19", "2")],
+               f"{game.name}: level starts {[(v['run'], v['level'], v['phase']) for v in starts]}")
+        over = int(join_test.said(game.sync(), "over")[0]["frame"])
+        expect(poke <= over <= poke + DESYNC_SEEN_WITHIN, f"{game.name}: lockstep stopped at {over}, poke at {poke}")
+    expect(survive_level_values(host, 2) == survive_level_values(client, 2), "the games took different level starts")
+    run1 = survive_gaps_same_routes(games, 1, ["L1", "L2"])
+    run2 = survive_gaps_same_routes(games, 2, ["L1", "L2"])
+    expect(survive_gaps_route_state(run2[0]) == survive_gaps_route_state(run1[1]),
+           f"Venom 2's second part started again with another route: {survive_gaps_route_change(run1[1], run2[0])}")
+    frames = survive_gaps_compare(games, 2)
+    line = survive_first_difference(games, poke)
+    return (f"Venom 1 jumped into Venom 2's second part at frame {run1[1]['frame']} (the host's restart point: level 19, "
+            f"phase 2); bit flipped at {poke}; both games took level start 2 there, began it with the route it was "
+            f"entered with, and flew on into level {run2[1]['level']} (phase {run2[1]['phase']}, frame "
+            f"{run2[1]['frame']}): equal on all {frames} frames; `{line}`")
+
+
+
+POOL_START_FRAMES = JOIN_FRAME + 300  # level frames compared: every player flies for 300 of them
+POOL_START_SINGLE = 2  # the original's start, src/engine/fox_play.c (Player_Setup, under gClearPlayerInfo)
+
+
+def sc_pool_start(args, folder):
+    """Decision 0007 rule 1 (#14): the pool of lives a session starts with is 2 plus 1 for each player after the first.
+    One session each of two, three and four games, a level from its start. The pool is read from every game's view
+    trace (gLifeCount[0], src/port/coop/test/view_trace.c) on the first frame player 0 flies, and every game's own
+    slot once that player has joined; the games' hashes, which hold every gLifeCount slot, are equal on every frame."""
+    found, wrong = [], []
+    for clients in (1, 2, 3):
+        players = clients + 1
+        want = POOL_START_SINGLE + clients
+        sub = folder / f"{players}-players"
+        sub.mkdir(parents=True, exist_ok=True)
+        feed = sub / "feed.txt"
+        write_feed(feed, POOL_START_FRAMES + 16, sway)
+        names = ["host"] + [f"client{n}" for n in range(clients)]
+        traces = {name: sub / f"{name}-view.txt" for name in names}
+        for path in traces.values():
+            if path.exists():
+                path.unlink()
+        env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(POOL_START_FRAMES)}
+        games = session(args, sub, both=env, clients=clients, host_env={"SF64_COOP_VIEW_TRACE": str(traces["host"])},
+                        client_envs=[{"SF64_COOP_VIEW_TRACE": str(traces[f"client{n}"])} for n in range(clients)])
+        try:
+            wait_for(list(games), "done", 900, f"with {players} players")
+        finally:
+            for game in games:
+                game.close()
+        seen = []
+        for game in games:
+            rows = [r for r in view_check.read_trace(1, traces[game.name]).rows if r.frame <= POOL_START_FRAMES]
+            expect(rows and all(len(r.players) == players for r in rows),
+                   f"{players} players, {game.name}: the view trace does not hold {players} players on every frame")
+            flies = next((r for r in rows if r.players[0].state == player_trace.ACTIVE), None)
+            expect(flies is not None, f"{players} players, {game.name}: player 0 never flew")
+            last = rows[-1]
+            joined = next((r for r in rows if all(not p.parked for p in r.players)), None)
+            expect(joined is not None, f"{players} players, {game.name}: the players never all flew")
+            seen.append((flies.frame, flies.players[0].lives, last.frame, last.players[0].lives, joined.frame,
+                         tuple(p.lives for p in joined.players)))
+        expect(all(s == seen[0] for s in seen), f"{players} players: the games read different pools: " +
+               "; ".join(f"{g.name} {s}" for g, s in zip(games, seen)))
+        first, pool, end, pool_end, joined_at, slots = seen[0]
+        frames = min(compare(games[0], other, POOL_START_FRAMES) for other in games[1:])
+        # The three sessions all run before a wrong pool fails the scenario, so its line names every count.
+        if (pool, pool_end) != (want, want) or slots != (want,) * players:
+            wrong.append(f"{players} players: pool {pool} on frame {first}, the first on which player 0 flies, and "
+                         f"{pool_end} on frame {end}, slots {slots} on frame {joined_at}, the first on which everyone "
+                         f"flies, in all {players} games; want {want} in each")
+        found.append(f"{players} players: pool {pool} from frame {first} to {end} in all {players} games, equal on "
+                     f"{frames} frames")
+    expect(not wrong, "; ".join(wrong) + " (2 plus 1 for each player after the first)")
+    return "; ".join(found)
+
+
+# Level frames of hud_lives (#335). Player 1 is poked down and comes back RETURN_FRAMES later for a life of the pool;
+# then player 0 is poked down and refilled in place for another (decision 0007 rules 3 and 4, Corneria's rails). So
+# the pool changes twice, and each time some player's own gLifeCount slot is not written: players 2 and 3 at the
+# return, everyone but player 0 at the refill.
+HUD_LIVES_DOWN_P1 = JOIN_FRAME + 50
+HUD_LIVES_DOWN_P0 = JOIN_FRAME + 300
+HUD_LIVES_FRAMES = JOIN_FRAME + 450
+HUD_LIVES_MIN_DRAWN = 60  # frames each game has to draw the number after each change of the pool
+# The sessions: clients, and the config of every game. The port's "restore beta boost gauge" draws the number itself, at
+# the bottom right, in place of the HUD's (OnLivesCounterDraw, src/port/mods/PortEnhancements.c).
+HUD_LIVES_SESSIONS = ((1, None, ""), (3, None, ""), (1, {"CVars": {"gRestoreBetaBoostGauge": 1}}, ", beta gauge"))
+
+
+def hud_lives_story(game, path, players):
+    """From one game's view trace, from the first frame player 0 flies (Player_Setup writes the pool on frame 1): (the
+    pools in order, the frames the pool changed on, wrong), wrong being one entry per run of frames on which the number
+    the HUD drew was not the pool."""
+    rows = [r for r in view_check.read_trace(1, path).rows if r.frame <= HUD_LIVES_FRAMES]
+    expect(rows and all(len(r.players) == players for r in rows),
+           f"{players} players, {game.name}: the view trace does not hold {players} players on every frame")
+    flies = next((n for n, r in enumerate(rows) if r.players[0].state == player_trace.ACTIVE), None)
+    expect(flies is not None, f"{players} players, {game.name}: player 0 never flew")
+    rows = rows[flies:]
+    expect(all(r.hudlives is not None for r in rows),
+           f"{players} players, {game.name}: the view trace has no hudlives (a build before #335)")
+    drops = [b.frame for a, b in zip(rows, rows[1:]) if b.players[0].lives != a.players[0].lives]
+    pools = [rows[0].players[0].lives] + [r.players[0].lives for a, r in zip(rows, rows[1:])
+                                          if r.players[0].lives != a.players[0].lives]
+    drawn_after = [sum(1 for r in rows if r.frame >= f and r.hudlives >= 0) for f in drops]
+    expect(drawn_after and min(drawn_after) >= HUD_LIVES_MIN_DRAWN,
+           f"{players} players, {game.name}: the HUD drew its lives number on {drawn_after} frames after the pool's "
+           f"changes at {drops}, want {HUD_LIVES_MIN_DRAWN} or more after each")
+    wrong, run = [], None
+    for r in rows:
+        bad = r.hudlives >= 0 and r.hudlives != r.players[0].lives
+        key = (r.view, r.hudlives, r.players[0].lives) if bad else None
+        if run is not None and (key != run[0] or r.frame != run[2] + 1):
+            wrong.append(run)
+            run = None
+        if key is not None:
+            run = [key, r.frame, r.frame] if run is None else [run[0], run[1], r.frame]
+    if run is not None:
+        wrong.append(run)
+    text = [f"{game.name} (seat {rows[-1].local}) looking through player {view} drew {drawn} while the pool was "
+            f"{pool}, frames {a} to {b}" for (view, drawn, pool), a, b in wrong]
+    return pools, drops, text
+
+
+def sc_hud_lives(args, folder):
+    """#335: the lives number the HUD of every game draws is the team's pool, gLifeCount[0] (decision 0007), also in a
+    game that looks through player 1, 2 or 3, after the pool changed without that player's own slot being written.
+    Sessions of two and four games on Corneria's rails, and of two with the port's beta boost gauge, which draws the
+    number in place of the HUD: player 1 goes down and comes back for a life, then player 0 is refilled for another.
+    The number drawn is what HUD_LivesCount2_Draw was given (the view trace's hudlives, noted by the draw itself),
+    never in the state hash; the games' hashes are equal on every frame."""
+    found, wrong = [], []
+    pokes = f"{HUD_LIVES_DOWN_P1}:1:down:4,{HUD_LIVES_DOWN_P0}:0:down:4"
+    for clients, config, label in HUD_LIVES_SESSIONS:
+        players = clients + 1
+        start = POOL_START_SINGLE + clients
+        sub = folder / f"{players}-players{label.replace(', ', '-').replace(' ', '-')}"
+        sub.mkdir(parents=True, exist_ok=True)
+        feed = sub / "feed.txt"
+        write_feed(feed, HUD_LIVES_FRAMES + 16, sway)
+        names = ["host"] + [f"client{n}" for n in range(clients)]
+        traces = {name: sub / f"{name}-view.txt" for name in names}
+        for path in traces.values():
+            if path.exists():
+                path.unlink()
+        env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(HUD_LIVES_FRAMES),
+               "SF64_COOP_VIEW_POKE": pokes}
+        games = session(args, sub, both=env, clients=clients, host_env={"SF64_COOP_VIEW_TRACE": str(traces["host"])},
+                        client_envs=[{"SF64_COOP_VIEW_TRACE": str(traces[f"client{n}"])} for n in range(clients)],
+                        config=config)
+        try:
+            wait_for(list(games), "done", 900, f"with {players} players{label}")
+        finally:
+            for game in games:
+                game.close()
+        what = f"{players} players{label}"
+        stories = [hud_lives_story(game, traces[game.name], players) for game in games]
+        expect(all(s[:2] == stories[0][:2] for s in stories), f"{what}: the games' pools differ: " +
+               "; ".join(f"{g.name} {s[0]} at {s[1]}" for g, s in zip(games, stories)))
+        pools, drops = stories[0][:2]
+        expect(pools == [start, start - 1, start - 2],
+               f"{what}: the pool went {pools} at frames {drops}, want {start}, {start - 1} at player 1's "
+               f"return and {start - 2} at player 0's refill")
+        frames = min(compare(games[0], other, HUD_LIVES_FRAMES) for other in games[1:])
+        # Every session runs before a wrong number fails the scenario, so its line names every game.
+        for story in stories:
+            wrong += [f"{what}: {line}" for line in story[2]]
+        found.append(f"{what}: pool {' -> '.join(map(str, pools))} at {drops}, the number drawn is the "
+                     f"pool in all {players} games, equal on {frames} frames")
+    expect(not wrong, "; ".join(wrong) + " (want the pool, gLifeCount[0], in every game)")
+    return "; ".join(found)
+
+
 SCENARIOS = {
     "sim": sc_sim,
     "desync_sim": sc_desync_sim,
     "steer": sc_steer,
+    "unlimited": sc_unlimited,
     "aim": sc_aim,
     "boost": sc_boost,
     "return": sc_return,
@@ -3977,6 +6767,7 @@ SCENARIOS = {
     "wing": sc_wing,
     "saucerer": sc_saucerer,
     "three": sc_three,
+    "replay_ends": sc_replay_ends,
     "control": sc_control,
     "pause": sc_pause,
     "save": sc_save,
@@ -3994,6 +6785,8 @@ SCENARIOS = {
     "full": sc_full,
     "scenes": sc_scenes,
     "player_hits": sc_player_hits,
+    "results": sc_results,
+    "results_hole": sc_results_hole,
     "guests": sc_guests,
     "allrange": sc_allrange,
     "allrange_down": sc_allrange_down,
@@ -4017,16 +6810,71 @@ SCENARIOS = {
     "survive_checkpoint": sc_survive_checkpoint,
     "survive_checkpoint_allrange": sc_survive_checkpoint_allrange,
     "survive_next_level": sc_survive_next_level,
+    "survive_gaps_route": sc_survive_gaps_route,
+    "survive_gaps_map": sc_survive_gaps_map,
+    "survive_gaps_map_lost": sc_survive_gaps_map_lost,
+    "survive_gaps_checkpoints": sc_survive_gaps_checkpoints,
+    "survive_gaps_venom_jump": sc_survive_gaps_venom_jump,
+    "survive_gaps_four": sc_survive_gaps_four,
     "vehicles": sc_vehicles,
     "vehicle_end": sc_vehicle_end,
+    "ve1_pillars": sc_ve1_pillars,
     "bosses": sc_bosses,
     "other_bosses": sc_other_bosses,
+    "sy_robot_spread": sc_sy_robot_spread,
+    "sy_robot_pose": sc_sy_robot_pose,
+    "granga_spread": sc_granga_spread,
+    "w7macbeth_ram": sc_w7macbeth_ram,
     "eels": sc_eels,
     "player_names": sc_player_names,
+    "macbeth_bombs": sc_macbeth_bombs,
+    "ma_turret": sc_ma_turret,
+    "shogun_bonus": sc_shogun_bonus,
+    "escape_look": sc_escape_look,
+    "pool_start": sc_pool_start,
+    "hud_lives": sc_hud_lives,
+    "names_four": sc_names_four,
+    "inhale_four": sc_inhale_four,
 }
-LONG = ("survive_next_level", "fox_refill_levels", "fox_refill_long", "fox_lead_swap", "fox_lead_swap_all_range", "full", "scenes", "allrange", "allrange_down", "allrange_others", "allrange_down_others", "teambar",
+# #329: the rule scenarios with a third and a fourth player, `<name>_three` and `<name>_four`.
+RULES_WITH_PLAYERS = ("aim", "macbeth_bombs", "ma_turret", "sy_robot_spread", "sy_robot_pose", "granga_spread",
+                      "escape_look")
+for _name in RULES_WITH_PLAYERS:
+    for _word, _players in (("three", 3), ("four", 4)):
+        SCENARIOS[f"{_name}_{_word}"] = with_players(SCENARIOS[_name], _players)
+LONG = ("survive_next_level", "survive_gaps_route", "survive_gaps_map", "survive_gaps_map_lost",
+        "survive_gaps_checkpoints", "survive_gaps_venom_jump", "fox_refill_levels", "fox_refill_long", "fox_lead_swap", "fox_lead_swap_all_range", "full", "scenes", "allrange", "allrange_down", "allrange_others", "allrange_down_others", "teambar",
         "map_saves", "map_saves_host_full", "map_saves_equal", "audio", "release", "rates", "vehicles", "vehicle_end", "bosses", "other_bosses",
-        "eels")
+        "eels", "w7macbeth_ram")
+LONG += ("sy_robot_spread",)  # Sector Y's rails, 9500 frames (#273)
+LONG += ("sy_robot_pose", "granga_spread")  # the same rails; Corneria's Granga, 7700 frames (#281)
+LONG += ("ve1_pillars",)  # Venom 1 to its boss, 13000 frames (#276)
+LONG += ("escape_look",)  # five sessions in Andross' escape: the explosions hit every human (#282)
+LONG += ("inhale_four",)  # two sessions of four games at Andross' face (#330)
+# #329: of the rule scenarios with more players the default run has the four-player ones of the three that are in it
+# with two (aim_four, macbeth_bombs_four, ma_turret_four: a third and a fourth player in one session each, 26, 104 and
+# 49 s with other runs beside them). The three-player ones and those of the long scenarios are by name.
+LONG += tuple(f"{name}_three" for name in RULES_WITH_PLAYERS)
+LONG += tuple(f"{name}_four" for name in RULES_WITH_PLAYERS if name in LONG)
+
+
+# Seconds a scenario took on Debug at a limit of 8 (2026-11-13, #290). Only the order of a pool of --jobs depends on it:
+# the long ones start first, so the pool does not end on one of them.
+SCENARIO_SECONDS = {"macbeth_bombs_four": 104, "host_left": 67, "shogun_bonus": 57, "ma_turret_four": 49,
+                    "pool_start": 42, "aim_four": 26, "ma_turret": 23, "left": 32, "delay": 31, "results_hole": 19, "slow": 14, "stall": 14, "frozen": 14,
+                    "lag": 13}
+# They build and run the test programs of the build folder, which two of them must not do at once.
+RUN_ALONE = ("sim", "desync_sim")
+
+
+def run_scenario(name, args, root):
+    """(passed, the line to print) for one scenario."""
+    started = time.monotonic()
+    try:
+        detail = SCENARIOS[name](args, root / name)
+        return True, f"ok      {name}: {detail} ({time.monotonic() - started:.0f} s)"
+    except (Fail, join_test.Fail) as failure:
+        return False, f"FAILED  {name}: {failure} ({time.monotonic() - started:.0f} s)"
 
 
 def main():
@@ -4035,7 +6883,11 @@ def main():
     ap.add_argument("--release-exe", help="for `release`: a Release build of the same commit")
     ap.add_argument("--only", help="scenarios, comma-separated")
     ap.add_argument("--list", action="store_true")
+    ap.add_argument("--jobs", type=int, default=1,
+                    help="scenarios at the same time (default 1); sim and desync_sim go first, alone (#290)")
     ap.add_argument("--no-build", action="store_true", help="do not build coop_lockstep_test")
+    ap.add_argument("--speed", help="frame limit of the games that meet over sockets, a number or max (default: "
+                                    "COOP_TOOLS_MEETING_SPEED, else 8); test_all.py gives max on a Release build (#316)")
     ap.add_argument("--build-dir", help="where to find coop_lockstep_test (default: build-cmake)")
     ap.add_argument("--config", default="Debug", help="for a build with several configurations")
     ap.add_argument("--out", help="folder for the logs (default: a new one under local/)")
@@ -4047,12 +6899,17 @@ def main():
                     help="for `fox_refill_levels`, `fox_refill_long` and `fox_lead_swap`: some of "
                          + ",".join(FOX_REFILL_LEVELS) + " (and corneria for fox_refill_long); "
                          "for `vehicles` and `vehicle_end`: some of titania,aquas,macbeth (default all); for "
-                         "`bosses`: some of gorgon,andross,dogfight,inhale; for `other_bosses`: some of "
-                         + ",".join(OTHER_BOSS_RUNS))
+                         "`bosses`: some of gorgon,andross,dogfight,inhale; for `inhale_four`: some of nearest,tie; for "
+                         "`other_bosses`: some of "
+                         + ",".join(OTHER_BOSS_RUNS) + "; for `survive_gaps_checkpoints`: some of "
+                         + ",".join(SURVIVE_GAPS_LEVELS) + "; for `escape_look`: some of "
+                         + ",".join(run[0] for run in W9_ESCAPE_RUNS))
     args = ap.parse_args()
     if args.list:
         print("\n".join(SCENARIOS))
         return 0
+    if args.speed:
+        replay_tool.MEETING_SPEED = args.speed  # as COOP_TOOLS_MEETING_SPEED would, for every game of this run
     names = args.only.split(",") if args.only else [name for name in SCENARIOS if name not in LONG]
     if any(name not in ("sim", "desync_sim") for name in names):
         args.exe = replay_tool.find_exe(args.exe)
@@ -4062,16 +6919,32 @@ def main():
     for name in names:
         if name not in SCENARIOS:
             sys.exit(f"lockstep: no scenario {name}")
-    root = Path(args.out).resolve() if args.out else replay_tool.ROOT / "local" / f"test-lockstep-{time.strftime('%Y%m%d-%H%M%S')}"
+    # make_run_folder notes the folder, in run_folder.py's HAND when run by hand, so that a test_all.py run beside it
+    # leaves it (#317), as it leaves the games' folders
+    root = Path(args.out).resolve() if args.out else make_run_folder(replay_tool.ROOT / "local", "test-lockstep-")
     passed = 0
-    for name in names:
-        started = time.monotonic()
-        try:
-            detail = SCENARIOS[name](args, root / name)
-            passed += 1
-            print(f"ok      {name}: {detail} ({time.monotonic() - started:.0f} s)", flush=True)
-        except (Fail, join_test.Fail) as failure:
-            print(f"FAILED  {name}: {failure} ({time.monotonic() - started:.0f} s)", flush=True)
+    if args.jobs <= 1:
+        for name in names:
+            ok, line = run_scenario(name, args, root)
+            passed += ok
+            print(line, flush=True)
+    else:
+        # Each scenario has a folder of its own under root, games with their own SHIP_HOME and run folders
+        # (run_folder.py takes none twice), and a port of the system's choosing, so they can run side by side.
+        for name in [n for n in names if n in RUN_ALONE]:
+            ok, line = run_scenario(name, args, root)
+            passed += ok
+            print(line, flush=True)
+        rest = sorted((n for n in names if n not in RUN_ALONE), key=lambda n: -SCENARIO_SECONDS.get(n, 0))
+        with ThreadPoolExecutor(max_workers=args.jobs) as pool:
+            futures = {pool.submit(run_scenario, name, args, root): name for name in rest}
+            for future in as_completed(futures):
+                try:
+                    ok, line = future.result()
+                except Exception as error:  # a scenario that broke in some other way than a failed check
+                    ok, line = False, f"FAILED  {futures[future]}: {type(error).__name__}: {error}"
+                passed += ok
+                print(line, flush=True)
     print(f"RESULT: {passed}/{len(names)} scenarios passed")
     print(f"logs: {root}")
     return 0 if passed == len(names) else 1

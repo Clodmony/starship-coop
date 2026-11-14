@@ -277,7 +277,7 @@ static void CoopPlayers_ReturnFromDown(s32 i) {
         D_ctx_80177990[i] = D_ctx_801779A8[i] = gMuzzleFlashScale[i] = gShieldAlpha[i] = 0.0f;
     gLaserStrength[i] = LASERS_SINGLE;
     gBombCount[i] = 3;
-    gLifeCount[i] = gLifeCount[0]; // decides nothing (0007 rule 1); the HUD of this player's client shows it (WP-28)
+    gLifeCount[i] = gLifeCount[0]; // decides nothing and is drawn nowhere: every HUD shows the pool (0007, #335)
 }
 
 // Decision 0007 rule 12: the levels where player 0 is refilled in place (rule 3) instead of going down. A level is
@@ -413,13 +413,29 @@ static s32 CoopPlayers_LeadSurvivor(void) {
     return 0;
 }
 
-// Decision 0007 rule 3. Reads simulated state only: the player count, the level, the pool, and what Player_Update
-// tested before it called here.
+// Macbeth's train end at the end of the track (Macbeth_Actor207_Update, state 19) sits on player 0 and zeroes its
+// shields at every touch, whoever touches or shoots it, and it leaves that state only for level complete or a hit on
+// the locomotive. Upstream that ends the try: one life and the checkpoint. A refill would only buy the next ram, about
+// every 31 frames, until the pool is gone and the run is over. So no refill there (the owner's choice on #220,
+// 2026-11-12).
+static s32 CoopPlayers_TrainEndRams(void) {
+    s32 i;
+
+    for (i = 0; (gCurrentLevel == LEVEL_MACBETH) && (i < ARRAY_COUNT(gActors)); i++) {
+        if ((gActors[i].obj.status == OBJ_ACTIVE) && (gActors[i].obj.id == OBJ_ACTOR_207) && (gActors[i].state == 19)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// Decision 0007 rule 3. Reads simulated state only: the player count, the level, the pool, what Player_Update tested
+// before it called here, and Macbeth's train end.
 int32_t CoopPlayers_RefillFox(Player* player) {
     if ((player->num != 0) || !CoopPlayers_IsCoop()) {
         return 0;
     }
-    if (sFoxRefillOff || !CoopPlayers_FoxRefillOpen() || (gLifeCount[0] <= 0)) {
+    if (sFoxRefillOff || !CoopPlayers_FoxRefillOpen() || (gLifeCount[0] <= 0) || CoopPlayers_TrainEndRams()) {
         // Spike #183, test switch only: at pool 0 the lead passes to a survivor instead of the run ending.
         s32 survivor = (sLeadSwapOn && (gLifeCount[0] <= 0)) ? CoopPlayers_LeadSurvivor() : 0;
 
@@ -724,6 +740,10 @@ void CoopPlayers_SolarHeat(void) {
 
 int32_t CoopPlayers_IsDown(int32_t index) {
     return (index >= 0) && (index < COOP_PLAYERS_MAX) && (sSlot[index] == COOP_SLOT_DOWN);
+}
+
+int32_t CoopPlayers_IsOut(int32_t index) {
+    return (index >= 0) && (index < COOP_PLAYERS_MAX) && (sSlot[index] == COOP_SLOT_OUT);
 }
 
 int32_t CoopPlayers_ReturnTimer(int32_t index) {

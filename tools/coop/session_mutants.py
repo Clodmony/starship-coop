@@ -783,6 +783,13 @@ BREAKS = [
      'return "";', SIM),
     ("end_text_other_session_missing",
      'return "The host runs another session now, so this game cannot come back to its own.";', 'return "";', SIM),
+    # The session's clock never runs backwards (#293): a call from inside a tick comes with a later time than the tick.
+    ("clock_recover_not_held", "    nowMs = Session_Clock(s, nowMs);\n    if (s->isHost) {", "    if (s->isHost) {", SIM),
+    ("clock_kick_not_held", "    nowMs = Session_Clock(s, nowMs);\n    away = s->id != 0;", "    away = s->id != 0;", SIM),
+    ("clock_poll_runs_back", "    nowMs = Session_Clock(s, nowMs);\n    CoopLog_Pump(", "    s->nowMs = nowMs;\n    CoopLog_Pump(",
+     SIM),
+    ("clock_first_time_lost", "if (!s->clockSet || (int32_t) (nowMs - s->nowMs) > 0) {",
+     "if ((int32_t) (nowMs - s->nowMs) > 0) {", SIM),
 ]
 
 # Texts the sanitizer breaks use more than once.

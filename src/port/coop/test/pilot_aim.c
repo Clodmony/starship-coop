@@ -1,6 +1,7 @@
 // What the pilot aims at outside Corneria (#181). See pilot_aim.h.
 
 #include "pilot_aim.h"
+#include "pilot_andross.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -131,13 +132,55 @@ static s32 CoopPilotAim_BolseCore(const Boss* b, s32* boxes) {
     return (count > 0) ? count : -1;
 }
 
+// Katina's Saucerer (src/overlays/ovl_i4/fox_ka.c, Katina_BossHandleDamage): a hit on box 0 to 3 takes the health of
+// hatch 0 to 3 (swork[10] to swork[13], 100 each) while it has some; boxes 4 to 7 take the core's (swork[14], 400) once
+// it is lowered, in a state over 10. The core comes down when the four hatches are gone or its timer runs out
+// (Katina_KaSaucerer_Update), charges, and its laser ends the level as a mission failed (SAUCERER_CS_ROTATE, player 0
+// in level complete with csState 100) unless the core falls first (SAUCERER_DEFEAT, MISSION_ACCOMPLISHED). With the
+// generic cycle the pilot never got the core down (#181). It is left alone before its fight (states 0 to 5): it comes
+// in only once it is out of player 0's view (D_edisplay_801615D0.y, src/engine/fox_edisplay.c, which stays player 0's
+// in co-op, #96), and a pilot flying at it from afar held it in standby for 24000 frames.
+static s32 CoopPilotAim_Saucerer(const Boss* b, s32* boxes) {
+    s32 n = 0;
+    s32 k;
+
+    if (b->state < 6) {
+        return -1;
+    }
+    if (b->state > 10) {
+        if (b->swork[14] <= 0) {
+            return -1;
+        }
+        for (k = 4; k < 8; k++) {
+            boxes[n++] = k;
+        }
+        return n;
+    }
+    for (k = 0; k < 4; k++) {
+        if (b->swork[10 + k] > 0) {
+            boxes[n++] = k;
+        }
+    }
+    return (n > 0) ? n : -1;
+}
+
+// Katina's front line base (OBJ_BOSS_KA_FLBASE) is the team's own, the one the Saucerer's laser aims at: a boss slot
+// with boxes, which the generic pick took for its nearest boss for most of a Katina flight (pilot log: boss 0, id 317).
+static s32 CoopPilotAim_Never(const Boss* b, s32* boxes) {
+    (void) b;
+    (void) boxes;
+    return -1;
+}
+
 static const struct {
     s32 id;
     s32 (*boxes)(const Boss* b, s32* boxes);
 } sBossBoxes[] = {
-    { OBJ_BOSS_A6_GORGON, CoopPilotAim_Gorgon },
-    { OBJ_BOSS_AND_ANDROSS, CoopPilotAim_Andross },
-    { OBJ_BOSS_BO_BASE_CORE, CoopPilotAim_BolseCore },
+    { OBJ_BOSS_A6_GORGON, CoopPilotAim_Gorgon },       // Area 6
+    { OBJ_BOSS_AND_ANDROSS, CoopPilotAim_Andross },    // Venom (Andross)
+    { OBJ_BOSS_BO_BASE_CORE, CoopPilotAim_BolseCore }, // Bolse
+    { OBJ_BOSS_KA_SAUCERER, CoopPilotAim_Saucerer },   // Katina
+    { OBJ_BOSS_KA_FLBASE, CoopPilotAim_Never },        // Katina, the team's base
 };
 
 static s32 CoopPilotAim_Table(const Boss* b, s32* boxes) {
@@ -459,6 +502,10 @@ void CoopPilot_FlyAllRangeAim(const Player* p, s32 i, PilotPad* pad) {
     f32 flight;
     f32 breakOff;
 
+    if (w8AndPilot_Escape(p, i, pad)) { // Andross' escape: its route, not a foe (pilot_andross.c, #275)
+        t->kind = AIM_NONE;
+        return;
+    }
     if ((sAimFrames[i] <= 0) || !CoopPilotAim_Refresh(t)) {
         if (!CoopPilotAim_Pick(p, i, t)) {
             // Nothing to shoot: stay in the arena.
@@ -523,6 +570,10 @@ static void CoopPilotAim_NoteBoss(FILE* log, const Boss* b) {
                     b->swork[1], b->swork[2], b->swork[3], b->swork[4], b->swork[5], b->swork[6], b->swork[7],
                     b->swork[36]);
             break;
+        case OBJ_BOSS_KA_SAUCERER:
+            fprintf(log, "frame=%d saucerer state=%d hatches=%d,%d,%d,%d core=%d timer=%d\n", gGameFrameCount, b->state,
+                    b->swork[10], b->swork[11], b->swork[12], b->swork[13], b->swork[14], b->swork[16]);
+            break;
         case OBJ_BOSS_ZO_SARUMARINE:
             fprintf(log, "frame=%d sarumarine parts=%d,%d,%d,%d,%d,%d bombs=%d,%d\n", gGameFrameCount, sZoSwork[8],
                     sZoSwork[9], sZoSwork[10], sZoSwork[11], sZoSwork[12], sZoSwork[13], gBombCount[0], gBombCount[1]);
@@ -536,6 +587,7 @@ void CoopPilot_NoteAim(FILE* log, const Player* p, s32 i) {
     const AimTarget* t = &sAim[i];
     s32 k;
 
+    w8AndPilot_Note(log, p, i); // pilot_andross.c, #275
     if ((log == NULL) || ((gGameFrameCount % 60) != 0) || (p->state != PLAYERSTATE_ACTIVE)) {
         return;
     }

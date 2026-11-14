@@ -75,7 +75,7 @@ desync check below decides ([decision 0010](docs/coop/decisions/0010-cross-platf
 
 | What | Rule | Where it stands |
 |---|---|---|
-| Lives | One shared pool of lives for the team ([decision 0007](docs/coop/decisions/0007-lives-and-respawn.md)). | The pool is the game's own life count; any life anyone collects goes into it. Its start size ("2 plus 1 per extra player" in the record) is **unknown**: I found no code that sets it. |
+| Lives | One shared pool of lives for the team ([decision 0007](docs/coop/decisions/0007-lives-and-respawn.md)). | The pool is the game's own life count; any life anyone collects goes into it. It starts at 2 plus 1 for each player after the first: 3 for two players, 4 for three, 5 for four, read in scripted sessions of two, three and four clients on one Linux PC ([#14](https://github.com/Clodmony/starship-coop/issues/14)); not yet played by hand. A player who joins or leaves between two levels does not change it. Every client's HUD shows the pool, also one that looks through player 2 to 4 ([#335](https://github.com/Clodmony/starship-coop/issues/335)). |
 | A second player goes down | They leave the level, and 150 game frames (about 5 seconds) later come back beside Fox, at full shields, for one life from the pool. At pool 0 they wait for a life or the next level. | Observed in scripted two-client runs on Corneria ([#14](https://github.com/Clodmony/starship-coop/issues/14), NOTES.md, 2026-11-09); nobody has reported it from a hand-played run. |
 | Fox (the host) goes down | Fox is refilled in place for one life from the pool (rule 12), on 16 levels; with no life left the original rule holds, game over. The owner opened all 16 levels on 2026-11-11 instead of one at a time. | Scripted two-client runs on every one of the 16 levels (NOTES.md, 2026-11-11, "Fox goes down"); nobody has seen it in play. |
 | Shields between levels | Every player's shields carry over and heal by 64 at each level load. | wingman part, [#15](https://github.com/Clodmony/starship-coop/issues/15); scripted, not hand-checked. |
@@ -136,7 +136,7 @@ No dates are promised for any of this.
 
 ## Current state
 
-Last updated 2026-11-11. For the live list see the [open issues](https://github.com/Clodmony/starship-coop/issues) and
+Last updated 2026-11-12. For the live list see the [open issues](https://github.com/Clodmony/starship-coop/issues) and
 the [roadmap](docs/coop/ROADMAP.md).
 
 **Two real games stay in step through all of Corneria on one PC, and two people have played the whole campaign on two
@@ -154,7 +154,11 @@ Fox is refilled in place for a life ([decision 0007](docs/coop/decisions/0007-li
 levels), a player's name shows over the other ships ([#257](https://github.com/Clodmony/starship-coop/issues/257),
 [#258](https://github.com/Clodmony/starship-coop/issues/258)), and the test pilot finishes all 17 levels with two clients,
 equal on every frame, while Sector X's Spyborg and Titania's Goras go after the nearest human
-([#220](https://github.com/Clodmony/starship-coop/issues/220)). A real connection drop, Windows and four players are not tried.
+([#220](https://github.com/Clodmony/starship-coop/issues/220)). A real connection drop and Windows are not tried. **Added on 2026-11-14, tested by scripts on one Linux PC:** the test pilots fly the campaign with three and four real clients ([#322](https://github.com/Clodmony/starship-coop/issues/322)): all 18 entries of the route with four, five levels with three, each once, equal on every frame; which levels, how many frames and what was not looked at (the picture, single rules with a third or fourth player) is in [docs/coop/QA.md](docs/coop/QA.md). The rules for a hit and an aim that have a scenario of their own (enemies' shots, Macbeth's bombs, beams, turrets and car blast, Sector Y's robots, the Granga's plasma, the explosions of Andross' escape) were then run with three and four clients and held for the third and the fourth player ([#329](https://github.com/Clodmony/starship-coop/issues/329)); what those runs could not show is in the same file.
+
+**Added on 2026-11-12, tested by scripts on one Linux PC and not yet played by hand:** Macbeth's train end goes after the nearest tank, and its bomb fire and beams hurt every tank, not player 0 only ([#220](https://github.com/Clodmony/starship-coop/issues/220), [#272](https://github.com/Clodmony/starship-coop/issues/272)); Sector Y's robots spread their shots around the human they aim at ([#273](https://github.com/Clodmony/starship-coop/issues/273)); the level clear screen waits for every human's A (30 s at most) ([#252](https://github.com/Clodmony/starship-coop/issues/252)); a restarted session is tested beyond Corneria (the map, the levels' own checkpoints, four players) ([#267](https://github.com/Clodmony/starship-coop/issues/267)); five stray reads and one write that a sanitizer sweep of every campaign level found are fixed ([#262](https://github.com/Clodmony/starship-coop/issues/262)). The test pilots now fly Andross' escape and the campaign runs Venom 2 through the brain and the escape to the ending, equal on every frame ([#275](https://github.com/Clodmony/starship-coop/issues/275)). **Added on 2026-11-13, tested by scripts on one Linux PC:** the explosions of Andross' escape hit every human, not player 0 only: a second player caught in one goes down and comes back beside player 0 for a life of the pool; the exit stays player 0's ([#282](https://github.com/Clodmony/starship-coop/issues/282)).
+
+**Added on 2026-11-13, tested by scripts on one Linux PC and not yet played by hand:** in Macbeth a train car's turret shots and the blast of train car 7 hurt every tank, not player 0 only ([#280](https://github.com/Clodmony/starship-coop/issues/280)); Sector Y's robots turn head and gun to the human they shoot at, and the Granga's plasma spread stays around the human it aims at ([#281](https://github.com/Clodmony/starship-coop/issues/281)).
 
 ### What works
 
@@ -162,7 +166,7 @@ Everything here is tested by scripts, on Linux; determinism also on Windows (Rel
 
 | Area | State |
 |---|---|
-| Players | Up to 4 Arwings fly Corneria on rails and in all-range, started from the co-op menu. Titania and Macbeth with a Landmaster per player, Aquas with a Blue Marine per player; all three run by test pilots to level complete, bosses included (one PC) |
+| Players | Up to 4 players, started from the co-op menu; with 3 and 4 tested by scripts only (the campaign's levels once each with four test pilots, #322), not played by hand. Up to 4 Arwings fly Corneria on rails and in all-range. Titania and Macbeth with a Landmaster per player, Aquas with a Blue Marine per player; all three run by test pilots to level complete, bosses included (one PC) |
 | Input | Each player has their own input source: a controller, a replay or the network |
 | View | Camera, HUD and sound follow your own player, and the other player is an Arwing with a shield bar |
 | Network | UDP transport with its own reliability, session handshake that refuses a different build, ROM or game setting and warns about a different platform, character choice |
@@ -176,7 +180,7 @@ Everything here is tested by scripts, on Linux; determinism also on Windows (Rel
 
 ### In progress
 
-Not yet on `coop`: [#259](https://github.com/Clodmony/starship-coop/pull/259) (the level clear screen waits for every human's A, a larger hit window with names), which nobody has played by hand. The next step is the same two-PC campaign again on the build that is on `coop` now: see [TWO_PC_TEST.md](docs/coop/TWO_PC_TEST.md). The player-facing text above was written for the test build and has had only the corrections this merge needs; a full pass is still open ([WP-31](https://github.com/Clodmony/starship-coop/issues/27)).
+Nothing waits in a pull request (the work of 2026-11-12 above is in `coop` with the combined test build 6, which nobody has played by hand). The next step is the same two-PC campaign again on the build that is on `coop` now: see [TWO_PC_TEST.md](docs/coop/TWO_PC_TEST.md). The player-facing text above was written for the test build and has had only the corrections this merge needs; a full pass is still open ([WP-31](https://github.com/Clodmony/starship-coop/issues/27)).
 
 ### What is open
 

@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""The campaign in co-op, scripted (WP-32, #28): two real game clients per level, a pilot on each, the levels in the
-order of a route, the state hashes compared on every frame, and one summary at the end.
+"""The campaign in co-op, scripted (WP-32, #28): two real game clients per level (three or four with --players, #322), a
+pilot on each, the levels in the order of a route, the state hashes compared on every frame, and one summary at the end.
 
     python tools/coop/campaign.py                         # every campaign level, the route `all`; unattended
     python tools/coop/campaign.py --route owner           # the route the owner and a friend played on 2026-11-09
     python tools/coop/campaign.py --levels meteo,bolse    # only these, in this order
+    python tools/coop/campaign.py --players 4             # a host and three clients per level (2, 3 or 4; #322)
     python tools/coop/campaign.py --lock <file>           # hold an flock on <file> for each level's session (Linux)
+    python tools/coop/campaign.py --seeds 1,2,3,4,5,6     # other start seeds: another flight
     python tools/coop/campaign.py --list
 
 Each level is a session of its own: a host and a client through the join driver (src/port/coop/test/join_driver.h),
@@ -16,11 +18,23 @@ lasers, team shields and the map's medals start as for a new game, and a route h
 gInvincible is on in both games unless --mortal, and but for Corneria (MORTAL): what is tested is the level, its boss
 and its end with two players, not the pilot. A player can go down where it is off, and the summary counts it. Zoness and
 Venom/Andross also run with gInfiniteBombs (BOMBS), as their bosses need bombs, and their summary lines say so.
+`venom-2-andross` (#275) starts in Venom 2 and flies on through the game's own jump into Andross' second part, the brain
+and the escape, which only that way leads to (W8_ANDPILOT_THROUGH); `venom-andross` is the first part, the face.
 
 A level passes when both games stay equal on every frame, hash log and input log (lockstep_test.compare: every region,
 no desync report), from the first frame in the level to the map or ending after it, and player 0 reached level
-complete. The cameras differ: each game looks through its own player. A level the pilot cannot finish within its frame
-cap is reported as that, with the frames that were compared.
+complete. The cameras differ: each game looks through its own player. And as the two clients of `hash_check.py views`
+differ (#129, #181), the host renders the high audio sample count per update and the client the low one (--audio), and
+the client's frames since boot are VIEW_SYS_FRAME_SKEW ahead (--skew): two PCs differ in both, and a radio line follows
+the sound thread. A level the pilot cannot finish within its frame cap is reported as that, with the frames that were
+compared; a game over (the team out of lives) ends the level's run at once and is reported as that (#275).
+
+With --players 3 or 4 (#322) the host waits for that many games (session(clients=N-1), as lockstep_test.py's
+survive_gaps_four), each client's pilot flies its own player, and every client's logs must equal the host's. The
+clients differ from the host and from each other: client n renders the low audio sample count when n is even and the
+high one when odd, and is (n + 1) * --skew frames ahead. The summary gives per player the frames flown, the downs and
+the lowest shields; a player that never flew in the level is named in the result ("player 3 never flew") and the level
+does not pass, as a pilot that is parked for a whole level tested nothing for that player.
 
 The games run at the speed of games that meet over sockets (replay.MEETING_SPEED), silent and without a window. A whole
 route takes hours. Exit code 0 when every level passed.
@@ -33,10 +47,12 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hash_check  # noqa: E402
 import join_test  # noqa: E402
 import lockstep_test  # noqa: E402
 import player_trace  # noqa: E402
 import replay as replay_tool  # noqa: E402
+from run_folder import make_run_folder  # noqa: E402
 
 # LevelId, include/sf64level.h; the names of hash_check.py's VIEW_LEVELS.
 LEVELS = {
@@ -46,20 +62,22 @@ LEVELS = {
 }
 # The map's paths (sPaths, src/overlays/ovl_menu/fox_map.c:455-480): blue is Corneria to Bolse and Venom 1, red is
 # Corneria to Area 6 and Venom 2; both end with Andross. `owner` is the route played by hand on 2026-11-09 (issue #2).
-# `all` is blue, then what red and the other paths add.
+# `all` is blue, then what red and the other paths add, and Andross' second part, where only Venom 2 leads (#275).
+# After Venom 2 the game plays Andross' second part, not the face (W8_ANDPILOT_THROUGH below), so red and owner end
+# with `venom-2-andross`, which flies Venom 2 and goes on through the game's jump (#283).
 ROUTES = {
     "blue": ("corneria", "meteo", "fortuna", "sector-x", "titania", "bolse", "venom-1", "venom-andross"),
-    "red": ("corneria", "sector-y", "aquas", "zoness", "sector-z", "area-6", "venom-2", "venom-andross"),
-    "owner": ("corneria", "meteo", "fortuna", "solar", "macbeth", "area-6", "venom-2", "venom-andross"),
+    "red": ("corneria", "sector-y", "aquas", "zoness", "sector-z", "area-6", "venom-2-andross"),
+    "owner": ("corneria", "meteo", "fortuna", "solar", "macbeth", "area-6", "venom-2-andross"),
     "all": ("corneria", "meteo", "fortuna", "sector-x", "titania", "bolse", "venom-1", "venom-andross", "sector-y",
-            "aquas", "zoness", "sector-z", "area-6", "venom-2", "katina", "solar", "macbeth"),
+            "aquas", "zoness", "sector-z", "area-6", "venom-2", "katina", "solar", "macbeth", "venom-2-andross"),
 }
 FRAMES = 26000  # lockstep frames a level may take at most: Corneria took about 11200 to the map, Sector X 11529 to
 FRAMES_BY_LEVEL = {"titania": 60000, "sector-y": 36000, "area-6": 40000,  # level complete; Titania's Goras 29169
-                   "bolse": 40000}
+                   "bolse": 40000, "venom-2-andross": 50000}
 # in #16's run and past 40000 in #28's first, Sector Y's last Shogun and Area 6's Gorgon longer than 24000 in #181's
 # views --pilot. Bolse: the core had 2 of its 8 parts up at 26000 frames with two clients (campaign run, 2026-11-11;
-# 16301 with one pilot flying both)
+# 16301 with one pilot flying both). Venom 2 and Andross' second part: 37249 frames to the ending in #275's run.
 # Levels flown without gInvincible: Corneria, as lockstep_test.py's `full` flies it. With gInvincible on both games,
 # Granga lay still with a leg shot off and its backpack at 110 for 20000 frames in #28's first run, out of the pilot's
 # reach (src/port/coop/test/pilot.h); without it the same pilot takes Corneria to the map.
@@ -71,7 +89,17 @@ MORTAL = {"corneria"}
 # (src/port/mods/PortEnhancements.c), a simulation CVar the two games agree on (src/port/coop/session/sim_cvars.c); the
 # pilot bombs with player 0 there (src/port/coop/test/pilot_aim.c). What is tested is still the level, its boss and its
 # end with two players.
-BOMBS = {"zoness", "venom-andross"}
+BOMBS = {"zoness", "venom-andross", "venom-2-andross"}
+# Levels flown on through the game's own jump into another (#275): name -> (the level the session starts in, the level
+# whose end the run waits for). Andross' second part, the brain and the escape after it, comes only after Venom 2: its
+# clear (gLeveLClearStatus, src/overlays/ovl_i6/fox_ve2.c:123) sends the game into Andross with gLevelPhase 1
+# (fox_ve2.c:442-446). `venom-andross` starts in phase 0: the face, and after it the short escape of the other route.
+W8_ANDPILOT_THROUGH = {"venom-2-andross": ("venom-2", "venom-andross")}
+# A level complete that is not the end of a level, as (LevelId, csState of player 0): Andross' escape begins as one,
+# 240 frames with csState 100 (src/overlays/ovl_i6/fox_andross.c:1106-1108). It ends at the trigger at the maze's exit
+# (fox_andross.c:683-690, in Venom 2's id, as the ending flight that follows is Venom 2's phase 1).
+W8_ANDPILOT_NOT_AN_END = {(9, 100)}
+W8_ANDPILOT_GAME_OVER = 5  # GSTATE_GAME_OVER, include/sf64thread.h: the team is out of lives
 TAIL = 60  # frames kept after the game leaves the level
 END_TAIL = 1800  # or after level complete, whichever comes first
 LEVEL_COMPLETE, DOWN, GS_PLAY = 7, 4, 7
@@ -103,22 +131,35 @@ def lines_from(path, at):
 
 
 def players_of(game, level, players=2):
-    """Per player, from a game's trace: (frames flown, times down, lowest shields)."""
-    rows = [r for r in player_trace.parse(game.run / "trace.txt") if r.level == level]
+    """Per player, from a game's trace: (frames flown, times down, lowest shields). level is a LevelId or a tuple of
+    them (a level flown through a jump, W8_ANDPILOT_THROUGH). Player 0 is down in PLAYERSTATE_DOWN. Players 1 and up
+    never get that state: one that goes down is parked with its state as it was (COOP_SLOT_DOWN,
+    src/port/coop/game/players.c, CoopPlayers_SetDown), so its downs are the frames it becomes parked while player 0
+    still flies; parked with player 0 (level complete, player 0 down) is not a down (#322: the count said 0 for a tank
+    that was out for half of Macbeth)."""
+    levels = level if isinstance(level, tuple) else (level,)
+    rows = [r for r in player_trace.parse(game.run / "trace.txt") if r.level in levels]
     stories = []
     for i in range(players):
         slots = [r.players[i] for r in rows if len(r.players) > i]
         flown = sum(1 for s in slots if s.state in player_trace.FLYING and not s.parked)
-        down = sum(1 for a, b in zip(slots, slots[1:]) if a.state != DOWN and b.state == DOWN)
+        if i == 0:
+            down = sum(1 for a, b in zip(slots, slots[1:]) if a.state != DOWN and b.state == DOWN)
+        else:
+            both = [(r.players[0], r.players[i]) for r in rows if len(r.players) > i]
+            down = sum(1 for (_, a), (lead, b) in zip(both, both[1:])
+                       if not a.parked and b.parked and a.state in player_trace.FLYING
+                       and lead.state in player_trace.FLYING)
         lowest = min((s.shields for s in slots if s.state in player_trace.FLYING and not s.parked), default=0)
         stories.append((flown, down, lowest))
     return stories
 
 
-def desync_value(host, client):
-    """What desync_report.py diff says about the two games' reports, or None."""
-    reports = [sorted(lockstep_test.own_reports(game)) for game in (host, client)]
-    if not all(reports):
+def desync_value(host, clients):
+    """What desync_report.py diff says about the host's report and the first client's that wrote one, or None."""
+    reports = [sorted(lockstep_test.own_reports(host))]
+    reports += [found for found in (sorted(lockstep_test.own_reports(client)) for client in clients) if found][:1]
+    if len(reports) < 2 or not all(reports):
         return None
     out = subprocess.run([sys.executable, str(Path(__file__).resolve().parent / "desync_report.py"), "diff",
                           str(reports[0][0]), str(reports[1][0])], capture_output=True, text=True)
@@ -127,8 +168,9 @@ def desync_value(host, client):
 
 
 def fly_level(args, folder, name):
-    """One level, two clients, pilots on both. Returns a dict for the summary."""
-    level = LEVELS[name]
+    """One level, args.players games (a host and its clients), a pilot on each. Returns a dict for the summary."""
+    starts_in, ends_in = W8_ANDPILOT_THROUGH.get(name, (name, name))
+    level, target = LEVELS[starts_in], LEVELS[ends_in]
     cap = FRAMES_BY_LEVEL.get(name, FRAMES) if args.frames is None else args.frames
     env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt",
            "SF64_COOP_LOCKSTEP_END": str(cap)}
@@ -138,15 +180,33 @@ def fly_level(args, folder, name):
     config = {"CVars": cvars} if cvars else None
     row = {"level": name, "id": level, "cap": cap, "folder": str(folder), "invincible": "gInvincible" in cvars,
            "bombs": name in BOMBS}
+    if name in W8_ANDPILOT_THROUGH:
+        row["through"] = target
+    if args.seeds:
+        row["seeds"] = args.seeds
+    row["audio"], row["skew"], row["games"] = args.audio, args.skew, args.players
     began = time.monotonic()
     held = lock(args.lock)
     try:
-        host, client = lockstep_test.session(args, folder, {"SF64_COOP_JOIN_LEVEL": str(level)}, None, env,
-                                             config=config, replay_frames=cap + 20000)
+        host_env = {"SF64_COOP_JOIN_LEVEL": str(level)}
+        if args.seeds:
+            host_env["SF64_COOP_TEST_START_SEEDS"] = args.seeds  # the level start's RNG, not lockstep_test.SEEDS
+        client_envs = [{} for _ in range(args.players - 1)]
+        if args.audio != "same":  # src/port/coop/test/switches.h, as hash_check.py's client_env
+            host_env["SF64_COOP_TEST_AUDIO_SAMPLES"] = "high"
+        for n, client_env in enumerate(client_envs):
+            if args.audio != "same":
+                client_env["SF64_COOP_TEST_AUDIO_SAMPLES"] = ("low", "high")[n % 2]
+            if args.skew:
+                client_env["SF64_COOP_TEST_SYS_FRAME_OFFSET"] = str(args.skew * (n + 1))
+        host, *clients = lockstep_test.session(args, folder, host_env, None, env, config=config,
+                                               clients=args.players - 1, client_envs=client_envs,
+                                               replay_frames=cap + 20000)
         # Frames of the host's hash log (from boot, with game state and level on every row) for the end, lockstep
         # frames for the cap. The level complete may come in another level's id: Venom 1 sets Venom 2's at its exit
         # (src/overlays/ovl_i6/fox_andross.c) and goes on to Andross in the same session.
-        complete = left = complete_level = None
+        complete = left = complete_level = over = None
+        reached = level == target  # a level flown through a jump counts its end only once in the level it waits for
         frames = hashed = 0
         at = hash_at = trace_at = 0
         why = None
@@ -156,7 +216,8 @@ def fly_level(args, folder, name):
                 lines, at = lines_from(host.sync_log, at)
                 for line in lines:
                     parts = line.split()
-                    if len(parts) >= 3:
+                    # "# run 2": the session started the level again after a desync (#181 saw one in level 4)
+                    if len(parts) >= 3 and not line.startswith("#"):
                         frames = int(parts[0]) + 1
                 lines, hash_at = lines_from(host.run / "state-hash.txt", hash_at)
                 for line in lines:
@@ -164,13 +225,21 @@ def fly_level(args, folder, name):
                     if line.startswith("#") or len(parts) < 3:
                         continue
                     hashed = int(parts[0])
+                    if over is None and int(parts[1]) == W8_ANDPILOT_GAME_OVER:
+                        over = hashed
                     if (complete is not None and left is None and
                             (int(parts[1]) != GS_PLAY or int(parts[2]) != complete_level)):
                         left = hashed
                 lines, trace_at = lines_from(host.run / "trace.txt", trace_at)
                 for line in lines:
                     fields = dict(kv.split("=", 1) for kv in line.split() if "=" in kv)
-                    if complete is None and "p0" in fields and fields["p0"].split(",")[0] == str(LEVEL_COMPLETE):
+                    p0 = fields["p0"].split(",") if "p0" in fields else []
+                    # In the level it waits for, once player 0 is out of the level complete that led there: the trace
+                    # names Andross' id while Venom 2's ends (frame 9469 of #275's first campaign run).
+                    if fields.get("level") == str(target) and p0 and p0[0] != str(LEVEL_COMPLETE):
+                        reached = True
+                    if (complete is None and reached and len(p0) > 1 and p0[0] == str(LEVEL_COMPLETE) and
+                            (int(fields["level"]), int(p0[1])) not in W8_ANDPILOT_NOT_AN_END):
                         complete = hashed  # read just before the trace: no later than the real one
                         complete_level = int(fields["level"])
                         row["complete_level_frame"] = int(fields["frame"])
@@ -179,45 +248,58 @@ def fly_level(args, folder, name):
                     why = "left the level"
                 elif complete is not None and hashed >= complete + END_TAIL:
                     why = "past level complete"
+                elif over is not None and complete is None:
+                    why = f"game over at frame {over}: the team ran out of lives"
                 elif frames >= cap or join_test.said(host.sync(), "done"):
                     why = "frame cap"
-                elif join_test.said(host.sync(), "over") or join_test.said(client.sync(), "over"):
+                elif any(join_test.said(game.sync(), "over") for game in (host, *clients)):
                     why = "the session ended"
-                elif host.proc.poll() is not None or client.proc.poll() is not None:
-                    why = (f"a game ended by itself: host {host.proc.poll()}, client {client.proc.poll()}, "
-                           f"at frame {frames}")
+                elif any(game.proc.poll() is not None for game in (host, *clients)):
+                    why = ("a game ended by itself: " +
+                           ", ".join(f"{game.name} {game.proc.poll()}" for game in (host, *clients)) +
+                           f", at frame {frames}")
                 elif time.monotonic() - began > args.level_seconds:
                     why = f"timeout after {args.level_seconds:.0f} s at frame {frames}"
         finally:
-            client.close()
+            for client in clients:
+                client.close()
             host.close()
     finally:
         if held is not None:
             held.close()
     row.update(stopped=why, seconds=round(time.monotonic() - began), left=left)
     try:
-        names, _, ours = host.rows()
-        _, _, theirs = client.rows()
-        n = min(len(ours), len(theirs))
+        n = min(len(game.rows()[2]) for game in (host, *clients))
         if left is not None:
             first = int(join_test.said(host.report(), "level_running")[0]["frame"])
             n = min(n, left + TAIL - first)
-        row["frames"] = lockstep_test.compare(host, client, n)
+        for client in clients:  # every client against the host, on the same frames
+            try:
+                row["frames"] = lockstep_test.compare(host, client, n)
+            except (lockstep_test.Fail, join_test.Fail) as failure:
+                raise lockstep_test.Fail(f"{client.name}: {failure}") from failure
         row["equal"] = True
     except (lockstep_test.Fail, join_test.Fail) as failure:
         row["equal"] = False
         row["difference"] = str(failure)
-        row["desync"] = desync_value(host, client)
-    views = {game.name: sorted({player for _, player in lockstep_test.view_of(game)}) for game in (host, client)}
+        row["desync"] = desync_value(host, clients)
+    views = {game.name: sorted({player for _, player in lockstep_test.view_of(game)}) for game in (host, *clients)}
     row["views"] = views
     try:
-        row["players"] = players_of(client, level)
+        row["players"] = players_of(clients[0], (level, target), args.players)
     except (OSError, ValueError, KeyError) as error:
         row["players"] = []
         row["trace_error"] = str(error)
     row["complete"] = row.get("complete_level_frame") is not None
+    failed = hash_check.failed_end(host.run / "trace.txt") if row["complete"] else None
+    if failed:
+        row["complete"] = False  # the level ended, its boss did not (#181)
+        row["failed_end"] = failed
     if not row["equal"]:
         row["result"] = f"hash difference: {row['difference']}" + (f" ({row['desync']})" if row.get("desync") else "")
+    elif failed:
+        row["result"] = (f"equal on the {row['frames']} frames flown, but the level ended without its boss's death: "
+                         f"{failed}")
     elif not row["complete"]:
         row["result"] = f"pilot cannot finish ({why}); equal on the {row['frames']} frames flown"
     else:
@@ -226,8 +308,17 @@ def fly_level(args, folder, name):
         row["result"] += " (gInvincible off)"
     if row["bombs"]:
         row["result"] += " (gInfiniteBombs on)"
-    if views.get("host") == views.get("client0"):
-        row["result"] += "; both games looked through the same player"
+    if name in W8_ANDPILOT_THROUGH:
+        row["result"] += f" (from {starts_in} through its jump into {ends_in})"
+    seen = [tuple(views[game.name]) for game in (host, *clients)]
+    if len(set(seen)) < len(seen):
+        row["result"] += ("; both games looked through the same player" if len(seen) == 2 else
+                          f"; games looked through the same player: {views}")
+    parked = [i + 1 for i, (flown, _, _) in enumerate(row["players"]) if flown == 0]
+    if parked and len(row["players"]) > 2:  # #322: a third or fourth pilot that never left its parking spot
+        row["parked"] = parked
+        row["complete"] = False
+        row["result"] += "; " + ", ".join(f"player {i} never flew" for i in parked)
     return row
 
 
@@ -236,28 +327,44 @@ def main():
     p.add_argument("--route", choices=ROUTES, default="all", help="the levels and their order (default all)")
     p.add_argument("--levels", help="these levels in this order, in place of a route")
     p.add_argument("--list", action="store_true", help="print the routes and levels")
+    p.add_argument("--players", type=int, choices=(2, 3, 4), default=2,
+                   help="games per level, the host among them, a pilot on each (default 2; #322)")
     p.add_argument("--mortal", action="store_true", help="without gInvincible, so a player can go down")
     p.add_argument("--frames", type=int, help=f"most lockstep frames per level (default {FRAMES}, Titania "
                    f"{FRAMES_BY_LEVEL['titania']})")
     p.add_argument("--level-seconds", type=float, default=7200, help="give up on a level after this long (default 7200)")
     p.add_argument("--lock", help="hold an flock on this file for each level's session, so that other tests on this "
                    "PC can take their turn in between (Linux)")
+    p.add_argument("--seeds", help="six numbers a,b,c,d,e,f the host's level starts from (default "
+                   "lockstep_test.SEEDS): another flight, for a level that draws at random, as Andross' escape draws "
+                   "one of three mazes (#275)")
+    p.add_argument("--audio", choices=("split", "same"), default="split",
+                   help="split: the host renders the high audio sample count per update, the client the low one "
+                        "(default); same: each its own choice (#181, as hash_check.py views)")
+    p.add_argument("--skew", type=int, default=hash_check.VIEW_SYS_FRAME_SKEW,
+                   help=f"frames since boot the client is ahead of a boot like the host's (default "
+                        f"{hash_check.VIEW_SYS_FRAME_SKEW}; 0 for none)")
     p.add_argument("--exe", help="Starship executable (default: newest build found)")
     p.add_argument("--out", help="folder for the logs (default: a new one under local/)")
     args = p.parse_args()
     if args.list:
         for route, names in ROUTES.items():
             print(f"{route}: {', '.join(names)}")
+        for name, (first, last) in W8_ANDPILOT_THROUGH.items():
+            print(f"{name}: {first}, then through its jump to the end of {last}")
         return 0
     names = args.levels.split(",") if args.levels else list(ROUTES[args.route])
-    unknown = [name for name in names if name not in LEVELS]
+    unknown = [name for name in names if name not in LEVELS and name not in W8_ANDPILOT_THROUGH]
     if unknown:
-        sys.exit(f"campaign: no level {', '.join(unknown)}; the choices are {', '.join(LEVELS)}")
+        sys.exit(f"campaign: no level {', '.join(unknown)}; the choices are "
+                 f"{', '.join(list(LEVELS) + list(W8_ANDPILOT_THROUGH))}")
     args.exe = replay_tool.find_exe(args.exe)
-    root = Path(args.out).resolve() if args.out else replay_tool.ROOT / "local" / f"test-campaign-{time.strftime('%Y%m%d-%H%M%S')}"
+    # make_run_folder notes the folder, in run_folder.py's HAND when run by hand, so that a test_all.py run beside it
+    # leaves it (#317), as it leaves the games' folders
+    root = Path(args.out).resolve() if args.out else make_run_folder(replay_tool.ROOT / "local", "test-campaign-")
     root.mkdir(parents=True, exist_ok=True)
-    print(f"campaign: {len(names)} levels: {', '.join(names)}; gInvincible {'off' if args.mortal else 'on'}; "
-          f"exe {args.exe}; logs {root}", flush=True)
+    print(f"campaign: {len(names)} levels: {', '.join(names)}; {args.players} players; gInvincible {'off' if args.mortal else 'on'}; "
+          f"audio {args.audio}, client skew {args.skew}; exe {args.exe}; logs {root}", flush=True)
     rows = []
     for name in names:
         try:
@@ -267,8 +374,11 @@ def main():
                    "result": f"no session: {failure}"}
         rows.append(row)
         downs = ",".join(str(d) for _, d, _ in row["players"]) or "-"
+        flown = ",".join(str(f) for f, _, _ in row["players"]) or "-"
+        lowest = ",".join(str(low) for _, _, low in row["players"]) or "-"
         print(f"campaign: {name}: {row['result']}; {row.get('frames', 0)} frames compared, level complete at level "
-              f"frame {row.get('complete_level_frame')}, downs {downs}, {row['seconds']} s", flush=True)
+              f"frame {row.get('complete_level_frame')}, downs {downs}, flown {flown}, lowest shields {lowest}, "
+              f"{row['seconds']} s", flush=True)
         (root / "summary.json").write_text(json.dumps(rows, indent=1), encoding="utf-8")
     print("campaign: summary (level, frames compared, level complete at level frame, downs per player, result)")
     for row in rows:

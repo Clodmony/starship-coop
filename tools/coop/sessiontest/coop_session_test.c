@@ -15,7 +15,8 @@
 //       the next one after each refusal. With --players a client stays until the first N players all hold a
 //       character, and the JSON has that roster. --pick-delay-ms waits that long before each pick. --start-level has
 //       the host try to start that level on every loop once --start-with clients (default: all of them) have joined,
-//       and count the tries that fail. --wait-level has a client stay until a level has started.
+//       and count the tries that fail. --wait-level has a client stay until a level has started. The JSON has the
+//       side's own UDP port, so a test can tell which client's packets a relay dropped (#309).
 //
 // Identity options: --build TEXT --platform TEXT --rom HEX (repeat for several archives) --cvar NAME=VALUE (repeat).
 // Defaults: build "test-build", this machine's platform, ROM US 1.0, every CVar at its default.
@@ -3499,6 +3500,20 @@ static void Script_HostRecoverCalls(void) {
     Drain(s, SCRIPT_T0 + 7 + COOP_SESSION_REJOIN_MS - 1, sides);
     EXPECT(sides[0].rejoined == 1 && sides[0].levelStarts == 2, name, "a dropped client did not get back in");
     CoopSession_Close(s);
+
+    // The game drops a client from inside its session tick, with a clock read after the tick's own (#293). The tick
+    // polls on with its older time: the slot is kept for COOP_SESSION_REJOIN_MS from the drop all the same.
+    s = Script_HostInLevel(&t, sides, &a, 1, TEST_ID);
+    Drain(s, SCRIPT_T0 + 4, sides);
+    EXPECT(CoopSession_Kick(s, 0, SCRIPT_T0 + 7), name, "the only client was not dropped");
+    Drain(s, SCRIPT_T0 + 4, sides);
+    EXPECT(sides[0].left == 1 && sides[0].leftAway == 1 && CoopSession_Recovering(s), name,
+           "a slot kept after the tick's own time was given up at once");
+    Drain(s, SCRIPT_T0 + 7 + COOP_SESSION_REJOIN_MS - 1, sides);
+    EXPECT(sides[0].left == 1, name, "a slot kept after the tick's own time was given up early");
+    Drain(s, SCRIPT_T0 + 7 + COOP_SESSION_REJOIN_MS, sides);
+    EXPECT(sides[0].left == 2, name, "a slot kept after the tick's own time was never given up");
+    CoopSession_Close(s);
 }
 
 // A client in a level that is told the level starts again, or sees so itself.
@@ -3675,6 +3690,24 @@ static void Script_ClientRecover(void) {
     EXPECT(side.recovers == 2 && side.ended == 0, name, "the host's word did not start the wait again");
     Drain(s, SCRIPT_T0 + 50 + 2 * COOP_SESSION_RECOVER_MS - 1, &side);
     EXPECT(side.ended == 1 && side.end == COOP_SESSION_END_NO_RECOVERY, name, "the wait did not end");
+    CoopSession_Close(s);
+
+    // The game calls from inside its session tick, with a clock read after the tick's own (#293: a desync that is
+    // complete on a message of this tick). The tick then polls on with its older time: the wait is not over, it has
+    // just begun, and it still ends COOP_SESSION_RECOVER_MS after the call.
+    s = Script_Joined(&t, &side, &a, 1);
+    Script_SaveMsg(&t);
+    Script_Message(&t, 0, COOP_MSG_SESSION_LEVEL_START, bytes, sizeof(bytes));
+    Drain(s, SCRIPT_T0 + 50, &side);
+    EXPECT(CoopSession_Recover(s, COOP_RECOVER_DESYNC, SCRIPT_T0 + 53), name, "a client in a level could not wait");
+    Drain(s, SCRIPT_T0 + 50, &side);
+    EXPECT(side.recovers == 1 && side.ended == 0 && t.disconnects[0] == 0, name,
+           "a wait that began after the tick's own time ended at once");
+    Drain(s, SCRIPT_T0 + 53 + COOP_SESSION_RECOVER_MS - 1, &side);
+    EXPECT(side.ended == 0, name, "a wait that began after the tick's own time ended early");
+    Drain(s, SCRIPT_T0 + 53 + COOP_SESSION_RECOVER_MS, &side);
+    EXPECT(side.ended == 1 && side.end == COOP_SESSION_END_NO_RECOVERY, name,
+           "a wait that began after the tick's own time did not end");
     CoopSession_Close(s);
 }
 
@@ -5081,8 +5114,10 @@ static int Bot_Main(const BotOptions* o) {
     if (f == NULL) {
         return 2;
     }
-    fprintf(f, "{\"role\": \"%s\", \"finished\": %s, \"received\": %u, \"ignored\": %u, \"rosters\": %u, \"roster\": [",
-            isHost ? "host" : "client", finished ? "true" : "false", (unsigned) received,
+    fprintf(f,
+            "{\"role\": \"%s\", \"port\": %u, \"finished\": %s, \"received\": %u, \"ignored\": %u, \"rosters\": "
+            "%u, \"roster\": [",
+            isHost ? "host" : "client", (unsigned) CoopNetSdl_Port(t), finished ? "true" : "false", (unsigned) received,
             (unsigned) CoopSession_Ignored(s), (unsigned) rosters);
     for (i = 0; isComplete && i < COOP_SESSION_PLAYERS; i++) {
         fprintf(f, "%s\"%s\"", i ? ", " : "", CoopSession_CharacterName(complete.character[i]));

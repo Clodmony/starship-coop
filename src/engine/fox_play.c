@@ -4937,7 +4937,7 @@ void Player_Setup(Player* playerx) {
         }
         gLaserStrength[gPlayerNum] = LASERS_SINGLE;
         gGoldRingCount[0] = gSavedGoldRingCount[0] = gTotalHits = 0;
-        gLifeCount[gPlayerNum] = 2;
+        gLifeCount[gPlayerNum] = CoopScore_StartLives(); // COOP: was 2; 1 more per extra human (0007 rule 1, #14)
         gBombCount[gPlayerNum] = 3;
         gGreatFoxIntact = true;
         if (gCamCount == (gPlayerNum + 1)) {

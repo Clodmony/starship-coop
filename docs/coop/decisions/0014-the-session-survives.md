@@ -34,7 +34,10 @@ Option 1. Options 2 and 3 are not part of this record; they stay for later.
    level that parted is dropped.
 2. **Which level.** The level the team last entered, from its start (the owner's Q1). If the host reached a checkpoint in
    it, the level starts there instead, as after a death but with no life taken (the owner's addition of 2026-11-11,
-   second step). The host's restart point is the level its game entered last, by the map or by a jump.
+   second step). The host's restart point is the level its game entered last, by the map or by a jump. While the map is
+   up that level is the one the team has just finished: a desync or a lost player then plays it again from its start,
+   and what the map changed since is dropped (the owner's call of 2026-11-12, who kept this rule; shown by
+   `survive_gaps_map` and `survive_gaps_map_lost`).
 3. **Waiting.** For a player whose connection was lost the host waits 15 seconds (the owner's Q2). That game goes back
    by itself with the session id and gets its slot and character back; after 15 seconds the level starts again with
    whoever is there. A player who leaves on purpose is not waited for.
@@ -57,9 +60,11 @@ Option 1. Options 2 and 3 are not part of this record; they stay for later.
 ## Consequences
 
 - A parted level costs the team the part of the level since its last checkpoint (or since its start), not the session.
-- Proven by scripted runs of real games on one Linux PC with two and three clients (`survive_*` in
-  `tools/coop/lockstep_test.py`, `docs/coop/QA.md`). **Not tried:** a real connection drop between two PCs, Windows,
-  four players, the map after a restarted level.
+- Proven by scripted runs of real games on one Linux PC with two, three and (2026-11-12) four clients (`survive_*` and
+  `survive_gaps_*` in `tools/coop/lockstep_test.py`, `docs/coop/QA.md`): the map after a restarted level, a restart while
+  the map is up, the levels' own checkpoints in 13 levels, Venom 2's second part, a second player lost of four.
+  **Not tried:** a real connection drop between two PCs, Windows, what a player sees and hears while the level starts
+  again.
 - What a lost player's game does when it cannot come back (its window, its music) is the game's own handling of a session
   that ended; nobody has watched it on a real PC.
 - Option 2 would save the level for a short drop; option 3 would also save it after a desync. Neither is built.

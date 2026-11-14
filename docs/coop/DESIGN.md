@@ -5,7 +5,8 @@ in this repo at that commit; line numbers drift with upstream syncs, so search f
 
 ## 1. What we are building
 
-Two players (later up to four) play the Star Fox 64 campaign together **online**: each player runs Starship on their
+Two players (up to four: built in the game layer, tested with three and four only where
+[QA.md](QA.md) lists it, #322) play the Star Fox 64 campaign together **online**: each player runs Starship on their
 own PC and sees the level from their own Arwing. Every player sees the same level: the same enemies, bosses, items,
 wingmen and route. The host's save holds the progress: a session plays on a copy of it on every PC, and no PC writes
 its save during a session ([0009](decisions/0009-vehicles-cutscenes-save.md), item 8).
@@ -90,9 +91,11 @@ Nothing in the online design may rule it out.
 
 ```
 src/port/coop/
-  session/   lobby, peers, handshake: build id, ROM version, sim-affecting CVars must match
+  session/   lobby, peers, handshake: build id, ROM version, sim-affecting CVars must match; a platform difference
+             only warns (decision 0010)
   net/       transport behind one interface: UDP on SDL2_net first (USE_NETWORKING, decision 0004), Steam relay later
-  sync/      the sync model from decision 0002 (input exchange + state hashes, or host snapshots)
+             (WP-26, USE_STEAM_RELAY, off by default; nothing in the game calls it yet)
+  sync/      deterministic lockstep (decision 0002): input exchange, a state hash on every frame, the desync check
   game/      game glue: player count apart from camera count, player 2+ spawn, input routing, HUD, rules
   ui/        ImGui menu entries: host, join, status (the menubar is in src/port/ui/ImguiUI.cpp)
   log/       the co-op log of a session, one file per player, streamed between the players (#172)
@@ -109,7 +112,10 @@ src/port/coop/
   client (WP-28). Code that hard-codes `gPlayer[0]` as "the player looking at the screen" is the main thing to find (WP-05).
 - **Engine work does not wait for the network.** In one process, a second player driven by a replay file (WP-03,
   WP-14) exercises all of `game/` before the transport exists. The network then replaces the replay file as that
-  player's input source (lockstep) or state source (host authority).
+  player's input source (lockstep, decision 0002).
+- **Two indexes per client:** who it is and what it shows are apart. `CoopPlayers_LocalIndex` is the player its
+  controller steers; `CoopPlayers_ViewIndex` is the player its camera, HUD and sound follow: its own while that flies,
+  player 0 while it is parked, before it joins, in a cut or after it went down (`src/port/coop/game/players.h`).
 - Local split screen later reuses the same player code and adds viewports (WP-13, WP-15).
 
 ## 4. Game rules to decide

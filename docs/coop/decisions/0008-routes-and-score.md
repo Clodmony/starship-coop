@@ -21,7 +21,8 @@ Scope:
   `gTeamShields[id]`, the value is whatever 0006 says. That includes the two routes that read a wingman directly,
   Corneria and Sector X.
 - Lives and respawn are record 0007, the save is record 0009.
-- Decision 0002 is still Proposed, so nothing here depends on the sync model.
+- Decision 0002 is still Proposed, so nothing here depends on the sync model. Update 2026-11-13: 0002 is Accepted as
+  deterministic lockstep (2026-11-07); nothing here changes with it.
 
 Everything below was read at `797c678b`. **Nothing was run.** Object and script numbers (`SX` object 375, `SY S21`) are
 ROM data from the `.o2r` built from US 1.0, read with a throwaway reader as in the NOTES entry, so they cannot be looked

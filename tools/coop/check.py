@@ -92,7 +92,8 @@ def main():
             failures.append("tools/coop/script_reader.py --past-end --check failed:\n  "
                             + "\n  ".join((past.stdout + past.stderr).strip().splitlines()))
 
-    # 7. Run folders: each test tool gets a folder of its own, however close together runs start.
+    # 7. Run folders: each test tool gets a folder of its own, however close together runs start, and crash_test.py,
+    # which runs after every build, leaves none of them when it passes (#308).
     folders = subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "coop" / "run_folder_test.py")],
                              cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
     if folders.returncode != 0:
@@ -112,6 +113,34 @@ def main():
     if logs.returncode != 0:
         failures.append("tools/coop/coop_log_test.py failed:\n  "
                         + "\n  ".join((logs.stdout + logs.stderr).strip().splitlines()))
+
+    # 8c. hash_check.py slots: its rule tells a leak from a burst or a set that ends by itself (#284, no game).
+    slots = run_tool("hash_check.py", "slots", "--rule-test")
+    if slots.returncode != 0:
+        failures.append("tools/coop/hash_check.py slots --rule-test failed:\n  "
+                        + "\n  ".join((slots.stdout + slots.stderr).strip().splitlines()))
+    # views --pilot flies the levels of its default list and lists the others as not covered: level 4 too (#307).
+    pilot = run_tool("hash_check_test.py")
+    if pilot.returncode != 0:
+        failures.append("tools/coop/hash_check_test.py failed:\n  "
+                        + "\n  ".join((pilot.stdout + pilot.stderr).strip().splitlines()))
+    # 8d. menu_test.py: each scenario with games keeps their logs in a folder of its own (#293), a wait stops when the
+    # game's session ended (#306); session_test.py: a failed level start through the relay says what the relay dropped
+    # and what the host saw (#309). No build, no game.
+    # lockstep_rules_test.py: the rule checks of lockstep_test.py read every player of a session of three or four,
+    # and rows broken for a player after the second fail (#329).
+    for name in ("menu_test_test.py", "session_test_test.py", "lockstep_rules_test.py"):
+        units = subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "coop" / name)],
+                               cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
+        if units.returncode != 0:
+            failures.append(f"tools/coop/{name} failed:\n  "
+                            + "\n  ".join((units.stdout + units.stderr).strip().splitlines()))
+    # 8e. replay_test.py: person stops its game only once the stop handler is in, and no wait of it is without a limit
+    # (#308; a stand-in for the game, no build, no ROM, about 12 s).
+    waits = run_tool("replay_test_test.py")
+    if waits.returncode != 0:
+        failures.append("tools/coop/replay_test_test.py failed:\n  "
+                        + "\n  ".join((waits.stdout + waits.stderr).strip().splitlines()))
 
     # 9. Build folders: libultraship's archives belong to one build folder, or a second config shares them.
     cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")

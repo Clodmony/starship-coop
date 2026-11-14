@@ -34,6 +34,25 @@ const char* CoopDesyncReport_ModeName(int32_t mode) {
     }
 }
 
+const char* CoopDesyncReport_PlaceName(const uint8_t state[4], char* buffer, size_t cap) {
+    char level[32];
+
+    // GameState, include/sf64thread.h: 7 GSTATE_PLAY, 4 GSTATE_MAP, 8 GSTATE_ENDING
+    switch (state[0]) {
+        case 7:
+            snprintf(buffer, cap, "%s (%s)", CoopDesyncReport_LevelName(state[1], level, sizeof(level)),
+                     CoopDesyncReport_ModeName(state[2]));
+            return buffer;
+        case 4:
+            return "the map";
+        case 8:
+            return "the ending";
+        default:
+            snprintf(buffer, cap, "game state %u", (unsigned) state[0]);
+            return buffer;
+    }
+}
+
 void CoopDesyncReport_Regions(const CoopDesync* d, char* out, size_t cap) {
     uint32_t bits = CoopDesync_Regions(d);
     size_t used = 0;

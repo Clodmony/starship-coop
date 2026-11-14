@@ -4251,7 +4251,10 @@ void Aquas_AqAnglerFish_Update(AqAnglerFish* this) {
     this->fwork[6] = (this->obj.pos.y * 0.003f) + 0.8f;
     this->fwork[7] = (this->obj.pos.y * 0.001f) + 0.8f;
 
-    this->iwork[12] = (this->obj.pos.y * -0.24f) + 150.0f;
+    // COOP: (s32) added. iwork is unsigned in the port (s32 on the N64), and a negative float to an unsigned integer
+    // is what the processor makes of it: x86-64 wraps it, ARM gives 0, and the value is in the state hash. Through
+    // s32 every platform wraps it as x86-64 did, so nothing changes there (#276).
+    this->iwork[12] = (s32) ((this->obj.pos.y * -0.24f) + 150.0f);
     if (this->iwork[12] < 30.0f) {
         this->iwork[12] = 30;
     }
@@ -5997,7 +6000,10 @@ void Aquas_AqJellyfish_Update(AqJellyfish* this) {
         Math_SmoothStepToF(&this->fwork[17 + i], D_i3_801C0374[it0 + 2], 0.1f, 5.0f, 0.000001f);
 
         it0 = 8 * i + this->iwork[10 + i];
-        if (this->iwork[7 + i] == D_i3_801C0440[it0]) {
+        // COOP: the third row is used up at step 8, and the next entry is one past the table. The N64 read 15 there
+        // (D_i3_801C04A0[0]) while the count is past 105, so it never matched; the port read whatever its compiler
+        // put behind the table, and a match would step on into strangers' numbers (#262). In every mode.
+        if ((it0 < ARRAY_COUNT(D_i3_801C0440)) && (this->iwork[7 + i] == D_i3_801C0440[it0])) {
             this->iwork[10 + i]++;
         }
     }

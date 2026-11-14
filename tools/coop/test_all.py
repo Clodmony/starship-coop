@@ -3,26 +3,43 @@
 
     python tools/coop/test_all.py --base-exe <file>                    # Debug in build-cmake; prints a short summary
     python tools/coop/test_all.py --config Release --base-exe <file>   # the same on a Release build, in build-release
+    python tools/coop/test_all.py --mixed --base-exe <file>            # frame-counting steps on Release, the rest on Debug
+    python tools/coop/test_all.py --mixed --base-ref origin/coop       # coop-off builds the base itself
     python tools/coop/test_all.py --no-build --only rails-2,views      # just those, on what is built
     python tools/coop/test_all.py --list
+    python tools/coop/test_all.py --dry-run [options]                  # what each step would run, and stop
 
-It builds first (build.py, with its checks), then runs the steps in lanes:
+It builds first (build.py, with its checks), builds the test programs of the loopback tools once, then runs the steps
+in lanes. The tools are given --no-build, so no two of them run cmake in one build folder:
 
-  serial  one step at a time: tools that bind ports or build test programs of their own, and the mutation checks, which
-          change a source file while they run.
+  pure    one step at a time: checks, unit tests and loopback tools that start no game.
+  serial  one step at a time: the tools that play a few games over sockets and whose scenarios are on the clock
+          (menu, input, join, lockstep).
   game    --lanes steps at a time: tools that only start the game, each game in a run folder of its own. Longest first.
+  mutants one step at a time, in a second checkout (mutation_tree.py): the mutation checks change a source file while
+          they run.
+  base    with --base-ref: base-setup builds that commit in a checkout of its own (mutation_tree.py --ref, at a low
+          priority, BASE_JOBS jobs), then coop-off plays on it. The checkout is removed at the end, also after a stop.
 
-The serial lane runs beside the game lanes. Nothing goes to the screen while it runs. Each step's whole output is
+The lanes run beside each other. With --mutants-in-tree, and on Windows, pure and serial are one lane, as they were
+before #290, and the mutation checks come last in it. Nothing goes to the screen while it runs. Each step's whole output is
 <name>.log in a stamped folder local/test-all-<date>-<time>/, and SUMMARY.txt there gets one line per step as it ends.
 At the end it prints the failures, the longest step and one RESULT line. A step that outlives --timeout is stopped, with
 what it started, and counts as failed. When all steps pass, the run folders they left in local/ are deleted (--keep
-keeps them); a failure keeps them for reading.
+keeps them); a failure keeps them for reading. Two runs in one checkout delete only what their own steps made (#283),
+and a run leaves the folders of a tool started by hand beside it (run_folder.py's HAND, #317).
 
-A build that is not Debug leaves out what only Debug can do: OPTIMISED below, printed at the end of a run.
+A build that is not Debug leaves out what only Debug can do: OPTIMISED below, printed at the end of a run. --mixed
+leaves nothing out: it builds Debug and Release (the checks only in Debug's build) and plays every step that
+starts the game on the Release build, which needs about 3 times less CPU per game, except the ones that need Debug's
+symbols (OPTIMISED), builds and coop-off. There `lockstep` plays at no frame limit (lockstep_test.py --speed max, as
+with --config Release; #305, #316); on Debug it stays at the limit of 8. The unit tests, the loopback tools, their
+AddressSanitizer runs and the mutation suites run as always.
 
-Two steps need a second build, and without one they do not run: coop-off plays co-op off on this build and --base-exe,
-the build before your change, and builds plays this build against the other config of the same commit, found by
-itself in the other default folder. The last step checks that no tracked file changed during the run.
+Two steps need a second build, and without one they do not run: coop-off plays co-op off on this build and the build
+before your change, which is --base-exe or a build of --base-ref that the run makes itself (the base gets copies of
+this build's game archives), and builds plays this build against the other config of the same commit, found by itself
+in the other default folder. The last step checks that no tracked file changed during the run.
 
 Exit code 0 when every step ran and passed, 1 when one failed, 2 when all that ran passed and a step could not run.
 --only and --skip are a choice, so what they leave out does not count as not run.
@@ -50,17 +67,25 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import replay as replay_tool  # noqa: E402
-from run_folder import make_run_folder  # noqa: E402
+from run_folder import HAND, OWNED_ENV, make_run_folder  # noqa: E402
 
 ROOT = replay_tool.ROOT
 TOOLS = ROOT / "tools" / "coop"
 LOCAL = ROOT / "local"
 IS_LINUX = platform.system() == "Linux"
 IS_WINDOWS = platform.system() == "Windows"
+RUNNING = "running.lock"  # in a run's folder, locked while the run runs (#283)
+OWNED = "owned"  # in a run's folder, a file for each run folder its steps made (run_folder.py, #283)
 GAME_LANES = 4  # 2, 3, 4 and 5 took 7m53s, 5m36s, 4m56s and 5m41s: see docs/coop/NOTES.md (#147)
+RATES_JOBS = 5  # games at a time in a rates step: all 5 rates at once, 10m31s for rails against 21 minutes at 3 (#290)
+LOCKSTEP_JOBS = 4  # scenarios of the lockstep step at a time: 14 min one after the other, 4m48s with 4 (#290)
+EXIT_JOBS = 4  # games of the exit-test step at a time: 376 s one after the other, 103 s with 4, 56 s with 8 (#290)
 STEP_TIMEOUT = 3600  # seconds; all of rates took 2500 at load 43, so it is two steps now
 STOP_WAIT = 15  # seconds a stopped step has before it is killed
-SERIAL, GAME = "serial", "game"
+PURE, SERIAL, GAME, MUTANTS, BASE = "pure", "serial", "game", "mutants", "base"
+MUT_TREE = LOCAL / "mutation-tree"  # the second checkout of the mutation suites (mutation_tree.py, #290)
+BASE_TREE = LOCAL / "base-tree"  # the checkout of --base-ref, built for coop-off (mutation_tree.py --ref, #290)
+BASE_JOBS = max(2, (os.cpu_count() or 4) // 4)  # jobs of that build, which runs beside the tests: see NOTES.md (#290)
 FOLDERS = {"Debug": "build-cmake", "Release": "build-release", "RelWithDebInfo": "build-relwithdebinfo"}
 CONFIG_PAIR = {"Debug": "Release", "Release": "Debug"}
 
@@ -69,8 +94,21 @@ CONFIG_PAIR = {"Debug": "Release", "Release": "Debug"}
 # message_released_too_early here until #158: the fake's poison of a released message was a memset before free, which
 # -O2 drops.)
 OPTIMISED = {
-    "exit-test": (["exit_test.py", "--skip", "fault-main,fault-stuck"], "exit-test fault-main, fault-stuck"),
+    "exit-test": (["exit_test.py", "--jobs", str(EXIT_JOBS), "--skip", "fault-main,fault-stuck"],
+                  "exit-test fault-main, fault-stuck"),
     "wingman": (["wingman_check.py", "run", "chain"], "wingman alive, down, sitout"),
+}
+
+# The test programs a step's tool builds before it runs (target() in the tools). test_all builds them once, in one cmake
+# run, and gives the tools --no-build: two tools that each run cmake in one build folder at the same time could clash
+# (#290). The mutation suites build in their own checkout and are not here.
+PROGRAMS = {
+    "net": ["coop_net_test"], "net-asan": ["coop_net_test_asan"],
+    "session": ["coop_session_test"], "session-asan": ["coop_session_test_asan"],
+    "steam": ["coop_steam_test"], "steam-asan": ["coop_steam_test_asan"],
+    "menu": ["coop_menu_test", "coop_session_test"], "menu-asan": ["coop_menu_test_asan"],
+    "input": ["coop_input_test"],
+    "lockstep": ["coop_lockstep_test", "coop_desync_test"],
 }
 
 # name, lane, the tool and its arguments, what it takes (see command_of), what goes in front of it, Linux only
@@ -78,47 +116,53 @@ Step = namedtuple("Step", "name lane command takes wrap linux", defaults=(None, 
 
 
 def all_steps():
-    """Every step, in the order its lane takes them. The mutation checks stay last in the serial lane: while one runs a
-    source file holds a break, which check.py would read, and the tree is dirty, which version_test.py would show."""
+    """Every step, in the order its lane takes them. The mutation checks break a source file while they run, which
+    check.py would read and version_test.py would show as a dirty tree, so they run in a second checkout beside the
+    other lanes (mutation_tree.py, #290); with --mutants-in-tree they come last in the serial lane."""
     steps = [
-        Step("checks", SERIAL, ["check.py"]),
-        Step("package", SERIAL, ["package_test.py"]),
-        Step("math", SERIAL, ["math_test.py"]),
-        Step("rand_order", SERIAL, ["rand_order_test.py"]),
-        Step("handover", SERIAL, ["handover_test.py"]),
-        Step("desync_dump", SERIAL, ["desync_dump_test.py"]),
-        Step("net", SERIAL, ["net_test.py"], "build", "net"),
-        Step("session", SERIAL, ["session_test.py"], "build", "net"),
-        Step("steam", SERIAL, ["steam_test.py"], "build", "net"),
+        Step("checks", PURE, ["check.py"]),
+        Step("package", PURE, ["package_test.py"]),
+        Step("math", PURE, ["math_test.py"]),
+        Step("rand_order", PURE, ["rand_order_test.py"]),
+        Step("handover", PURE, ["handover_test.py"]),
+        Step("desync_dump", PURE, ["desync_dump_test.py"]),
+        Step("net", PURE, ["net_test.py"], "build", "net"),
+        Step("session", PURE, ["session_test.py"], "build", "net"),
+        Step("steam", PURE, ["steam_test.py"], "build", "net"),
         Step("menu", SERIAL, ["menu_test.py", "--game"], "both", "game"),
         Step("input", SERIAL, ["input_test.py"], "both", "game"),
         Step("join", SERIAL, ["join_test.py"], "exe", "game"),
-        Step("lockstep", SERIAL, ["lockstep_test.py"], "both", "game"),
+        Step("lockstep", SERIAL, ["lockstep_test.py", "--jobs", str(LOCKSTEP_JOBS)], "both", "game"),
         Step("lockstep-full", SERIAL, ["lockstep_test.py", "--only", "full"], "both", "game"),
-        Step("version", SERIAL, ["version_test.py"], "exe", "game", True),
-        Step("net-asan", SERIAL, ["net_test.py", "--asan"], "build", "net", True),
-        Step("session-asan", SERIAL, ["session_test.py", "--asan"], "build", "net", True),
-        Step("steam-asan", SERIAL, ["steam_test.py", "--asan"], "build", "net", True),
-        Step("menu-asan", SERIAL, ["menu_test.py", "--asan"], "build", "net", True),
-        Step("session-mutants", SERIAL, ["session_mutants.py"], "build", "net"),
-        Step("session-mutants-asan", SERIAL, ["session_mutants.py", "--asan"], "build", "net", True),
-        Step("net-mutants", SERIAL, ["net_mutants.py"], "build", "net"),
-        Step("net-mutants-asan", SERIAL, ["net_mutants.py", "--asan"], "build", "net", True),
-        Step("lockstep-mutants", SERIAL, ["lockstep_mutants.py"], "build", "net"),
-        Step("desync-mutants", SERIAL, ["desync_mutants.py"], "build", "net"),
-        Step("steam-mutants", SERIAL, ["steam_mutants.py"], "build", "net"),
+        Step("version", PURE, ["version_test.py"], "exe", "game", True),
+        Step("net-asan", PURE, ["net_test.py", "--asan"], "build", "net", True),
+        Step("session-asan", PURE, ["session_test.py", "--asan"], "build", "net", True),
+        Step("steam-asan", PURE, ["steam_test.py", "--asan"], "build", "net", True),
+        Step("menu-asan", PURE, ["menu_test.py", "--asan"], "build", "net", True),
+        Step("session-mutants", MUTANTS, ["session_mutants.py"], "build", "net"),
+        Step("session-mutants-asan", MUTANTS, ["session_mutants.py", "--asan"], "build", "net", True),
+        Step("net-mutants", MUTANTS, ["net_mutants.py"], "build", "net"),
+        Step("net-mutants-asan", MUTANTS, ["net_mutants.py", "--asan"], "build", "net", True),
+        Step("lockstep-mutants", MUTANTS, ["lockstep_mutants.py"], "build", "net"),
+        Step("desync-mutants", MUTANTS, ["desync_mutants.py"], "build", "net"),
+        Step("steam-mutants", MUTANTS, ["steam_mutants.py"], "build", "net"),
     ]
-    # Longest first, so no lane is left with a long one at the end. exit-test goes last all the same: it waits on the
-    # clock, so it costs no time there, and under load a game can hang in the crash handler (docs/coop/NOTES.md).
+    # Longest first, so no lane is left with a long one at the end. exit-test (6 minutes one game at a time, mostly
+    # waiting on the clock; under 2 with EXIT_JOBS) comes right after the four longest, when the load drops: it used to
+    # be last, and with the serial lane no longer the clock it ended the run alone, 5 of 22 minutes (#290). Under load a
+    # game can hang in its crash handler (docs/coop/NOTES.md), so it does not go first.
     game = [
-        ("rates-rails", ["hash_check.py", "rates", "--section", "rails"], "exe", False),
-        ("rates-all-range", ["hash_check.py", "rates", "--section", "all-range"], "exe", False),
+        ("rates-rails", ["hash_check.py", "rates", "--section", "rails", "--jobs", str(RATES_JOBS)], "exe", False),
+        ("rates-all-range", ["hash_check.py", "rates", "--section", "all-range", "--jobs", str(RATES_JOBS)], "exe",
+         False),
         ("builds", ["hash_check.py", "builds"], "other", False),
         ("determinism", ["determinism.py"], "exe", False),
+        ("exit-test", ["exit_test.py", "--jobs", str(EXIT_JOBS)], "exe", True),
         ("view-check", ["view_check.py"], "exe", False),
         ("solar-heat", ["solar_check.py"], "exe", False),
         ("wingman", ["wingman_check.py", "all"], "exe", True),
         ("full-level", ["full_level.py"], "exe", False),
+        ("campaign-4", ["campaign.py", "--players", "4", "--levels", "fortuna"], "exe", False),  # 38 s, four clients (#322)
         ("lowhealth-allrange", ["player_trace.py", "lowhealth", "--players", "2", "--section", "all-range"], "exe",
          False),
         ("lowhealth-rails", ["player_trace.py", "lowhealth", "--players", "2"], "exe", False),
@@ -137,7 +181,6 @@ def all_steps():
         ("hash-start-1", ["hash_check.py", "start", "--players", "1"], "exe", False),
         ("hash-probe-2", ["hash_check.py", "probe", "--players", "2"], "exe", False),
         ("hash-probe-1", ["hash_check.py", "probe", "--players", "1"], "exe", False),
-        ("exit-test", ["exit_test.py"], "exe", True),
     ]
     return steps + [Step(name, GAME, command, takes, "game", only_linux) for name, command, takes, only_linux in game]
 
@@ -171,17 +214,21 @@ def read_id(folder):
     return header.read_text(encoding="utf-8") if header.exists() else None
 
 
-def command_of(step, args, exe, other):
-    """What to run for a step, or (None, why it cannot run). takes says which of the builds a tool gets, and how."""
+def command_of(step, args, exe, other, root=ROOT):
+    """What to run for a step, or (None, why it cannot run). takes says which of the builds a tool gets, and how. root
+    is the checkout the tool is run from: the mutation suites run from their own (MUT_TREE)."""
     tool = OPTIMISED[step.name][0] if args.config != "Debug" and step.name in OPTIMISED else step.command
-    command = [sys.executable, "-u", str(TOOLS / tool[0]), *tool[1:]]
+    command = [sys.executable, "-u", str(root / "tools" / "coop" / tool[0]), *tool[1:]]
+    build_dir = args.build_dir if root == ROOT else root / FOLDERS[args.config]
     if step.takes in ("exe", "both"):
         command += ["--exe", str(exe)]
     if step.takes in ("build", "both"):
-        command += ["--build-dir", str(args.build_dir), "--config", args.config]
+        command += ["--build-dir", str(build_dir), "--config", args.config]
+        if step.lane != MUTANTS:
+            command += ["--no-build"]  # the programs were built once, by run_programs (#290)
     if step.takes == "base":
         if args.base_exe is None:
-            return None, "no --base-exe"
+            return None, "no --base-exe or --base-ref"
         command += ["--base", str(args.base_exe), "--exe", str(exe)]
     if step.takes == "other":
         if other is None:
@@ -216,13 +263,15 @@ class Run:
         if hasattr(os, "getloadavg"):
             self.top_load = max(self.top_load, os.getloadavg()[0])
 
-    def run(self, name, command):
-        """Run one step in a process group of its own. Returns True if it passed."""
+    def run(self, name, command, cwd=None):
+        """Run one step in a process group of its own, in cwd (this checkout by default). True if it passed."""
         log = self.folder / f"{name}.log"
         started = time.monotonic()
         with open(log, "wb") as out:
-            proc = subprocess.Popen(command, cwd=ROOT, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
-                                    env=step_env(), start_new_session=not IS_WINDOWS)
+            proc = subprocess.Popen(command, cwd=cwd or ROOT, stdin=subprocess.DEVNULL, stdout=out,
+                                    stderr=subprocess.STDOUT,
+                                    env={**step_env(), OWNED_ENV: str(self.folder / OWNED)},
+                                    start_new_session=not IS_WINDOWS)
             with self.lock:
                 self.running[name] = proc
             try:
@@ -293,21 +342,41 @@ def lane(run, steps):
     """One worker of a lane: take steps until none are left."""
     while not run.stopping.is_set():
         try:
-            name, command = steps.get_nowait()
+            name, command, *where = steps.get_nowait()
         except queue.Empty:
             return
-        run.run(name, command)
+        run.run(name, command, *where)
 
 
-def run_steps(run, serial, game, lanes):
-    """serial and game are lists of (name, command)."""
+def setup_lane(run, steps):
+    """A lane whose first step makes what the rest need, one step after the other: the mutation suites' checkout, or
+    the build of --base-ref for coop-off. When that setup fails, the rest fail with it, each saying why."""
+    while not run.stopping.is_set():
+        try:
+            name, command, *where = steps.get_nowait()
+        except queue.Empty:
+            return
+        if not run.run(name, command, *where) and name.endswith("-setup"):
+            setup = name
+            while True:
+                try:
+                    name = steps.get_nowait()[0]
+                except queue.Empty:
+                    return
+                run.finish(name, False, 0, "no setup", f"{setup} failed")
+
+
+def run_steps(run, lanes, game_lanes):
+    """lanes maps a lane name to a list of (name, command) or (name, command, folder to run in). The lanes run beside
+    each other; the game lane has game_lanes workers, the others one."""
     workers = []
-    queues = (serial, 1), (game, lanes)
-    for steps, count in queues:
+    queues = [(lanes.get(PURE, ()), 1, lane), (lanes.get(SERIAL, ()), 1, lane), (lanes.get(GAME, ()), game_lanes, lane),
+              (lanes.get(MUTANTS, ()), 1, setup_lane), (lanes.get(BASE, ()), 1, setup_lane)]
+    for steps, count, work in queues:
         waiting = queue.Queue()
         for step in steps:
             waiting.put(step)
-        workers += [threading.Thread(target=lane, args=(run, waiting), daemon=True) for _ in range(count)]
+        workers += [threading.Thread(target=work, args=(run, waiting), daemon=True) for _ in range(count if steps else 0)]
     for worker in workers:
         worker.start()
     for worker in workers:
@@ -342,23 +411,69 @@ def chosen_steps(args):
     return [s for s in steps if (only is None or s.name in only) and s.name not in skip]
 
 
+def on_release(step, args):
+    """--mixed: every step that plays the game plays it on the Release build, which takes about 3 times less CPU per
+    game, except the ones that need Debug's symbols (OPTIMISED), builds (it plays both) and coop-off (it plays the base
+    build against this one). A tool that takes the build folder too (menu, input, lockstep) gets Debug's for its test
+    programs, which do not depend on the game."""
+    return args.mixed and step.lane in (GAME, SERIAL) and step.takes in ("exe", "both") and step.name not in OPTIMISED
+
+
+def program_targets(chosen):
+    """The test programs the chosen steps need, each once, in the order of the steps."""
+    targets = []
+    for step in chosen:
+        if step.lane != MUTANTS:
+            targets += [t for t in PROGRAMS.get(step.name, ()) if t not in targets]
+    return targets
+
+
 def make_plan(args, chosen):
-    """Returns (serial steps, game steps, steps that cannot run as (name, why))."""
+    """Returns (lanes: lane name -> steps, steps that cannot run as (name, why))."""
+    lanes = {PURE: [], SERIAL: [], GAME: [], MUTANTS: [], BASE: []}
     if args.plan:
         plan = load_plan(args.plan)
-        pick = lambda lane_name: [(s["name"], s["command"]) for s in plan if s["lane"] == lane_name]  # noqa: E731
-        return pick(SERIAL), pick(GAME), [(s["name"], s["why"]) for s in plan if s["lane"] == "none"]
+        for lane_name in lanes:
+            lanes[lane_name] = [(s["name"], s["command"]) for s in plan if s["lane"] == lane_name]
+        return lanes, [(s["name"], s["why"]) for s in plan if s["lane"] == "none"]
 
     other, args.other_why = other_build(args)
     exe = game_exe(args)
-    serial, game, missing = [], [], []
+    beside = not (args.mutants_in_tree or IS_WINDOWS)  # a second checkout needs symbolic links
+    missing = []
     for step in chosen:
-        command, why = command_of(step, args, exe, other)
-        if command is None:
+        in_tree = step.lane == MUTANTS and beside
+        release = on_release(step, args)
+        if release and other is None:
+            missing.append((step.name, args.other_why))
+            continue
+        command, why = command_of(step, args, other if release else exe, other, MUT_TREE if in_tree else ROOT)
+        if command and step.name == "lockstep" and (release or args.config == "Release"):
+            command += ["--speed", "max"]  # Release plays it at no frame limit: 2m35s, not 4m48s at 8 (#305, #316)
+        if step.takes == "base" and args.base_ref and IS_WINDOWS:
+            missing.append((step.name, "--base-ref needs symbolic links; give --base-exe"))
+        elif command is None:
             missing.append((step.name, why))
+        elif in_tree:
+            lanes[MUTANTS].append((step.name, command, MUT_TREE))
+        elif step.takes == "base" and args.base_ref:
+            lanes[BASE].append((step.name, command))  # after the build of the base, in a lane of its own
         else:
-            (serial if step.lane == SERIAL else game).append((step.name, command))
-    return serial, game, missing
+            # Without a second checkout the pure and the serial steps are one lane again, and the mutation suites
+            # come last in it, as before #290.
+            lanes[GAME if step.lane == GAME else PURE if step.lane == PURE and beside else SERIAL].append(
+                (step.name, command))
+    if lanes[MUTANTS]:
+        setup = [sys.executable, "-u", str(TOOLS / "mutation_tree.py"), "make", "--path", str(MUT_TREE), "--config",
+                 args.config, "--build-dir", FOLDERS[args.config]]
+        lanes[MUTANTS].insert(0, ("mutants-setup", setup, ROOT))
+    if lanes[BASE]:
+        archives = (replay_tool.find_data(exe, "sf64.o2r") or exe).parent  # the base gets copies of this build's
+        setup = [*wrap_of("build", args), sys.executable, "-u", str(TOOLS / "mutation_tree.py"), "make", "--path",
+                 str(BASE_TREE), "--ref", args.base_ref, "--build", "--jobs", str(BASE_JOBS), "--config", args.config,
+                 "--build-dir", FOLDERS[args.config], "--assets-from", str(archives)]
+        lanes[BASE].insert(0, ("base-setup", setup, ROOT))
+    return lanes, missing
 
 
 def parse_args():
@@ -368,6 +483,8 @@ def parse_args():
                                                   "build/x64 on Windows")
     p.add_argument("--exe", help="Starship executable (default: the one in the build folder)")
     p.add_argument("--base-exe", help="Starship executable of the build before your change, for coop-off")
+    p.add_argument("--base-ref", help="git ref of the commit before your change: coop-off builds it itself, in "
+                                      f"{BASE_TREE.relative_to(ROOT)}, beside the other steps (even with --no-build)")
     p.add_argument("--lanes", type=int, default=GAME_LANES, help=f"game steps at a time (default {GAME_LANES})")
     p.add_argument("--no-build", action="store_true", help="test what is built")
     p.add_argument("--only", help="comma-separated steps (default: all)")
@@ -378,12 +495,30 @@ def parse_args():
     p.add_argument("--game-wrap", help="command in front of each step that starts games (see the top of this file)")
     p.add_argument("--net-wrap", help="command in front of each loopback test and mutation check")
     p.add_argument("--build-wrap", help="command in front of the build")
+    p.add_argument("--mutants-in-tree", action="store_true",
+                   help="run the mutation suites last in the serial lane of this checkout, not beside the rest in a "
+                        "second one")
+    p.add_argument("--mixed", action="store_true",
+                   help="build Debug and Release; the steps that start the game play it on Release, except the ones "
+                        "that need Debug's symbols")
+    p.add_argument("--dry-run", action="store_true", help="print the lane, the build and the command of each step, and stop")
     p.add_argument("--plan", help=argparse.SUPPRESS)
     args = p.parse_args()
+    if args.mixed and args.config != "Debug":
+        p.error("--mixed plays on Debug and Release: use it with --config Debug")
     folder = "build/x64" if IS_WINDOWS else FOLDERS[args.config]
     build_dir = args.build_dir or Path(folder)
     args.build_dir = build_dir if build_dir.is_absolute() else ROOT / build_dir
     args.base_exe = Path(args.base_exe).resolve() if args.base_exe else None
+    if args.base_ref:
+        if args.base_exe:
+            p.error("--base-exe or --base-ref, not both")
+        found = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{args.base_ref}^{{commit}}"], cwd=ROOT,
+                               capture_output=True, text=True)
+        if found.returncode != 0:
+            p.error(f"--base-ref {args.base_ref}: no such commit")
+        args.base_ref = found.stdout.strip()  # this commit even if the ref moves during the run
+        args.base_exe = main_exe(BASE_TREE / FOLDERS[args.config], args.config)
     return args
 
 
@@ -392,10 +527,52 @@ def print_list():
         print(f"{step.name}: {step.lane}, {' '.join(step.command)}" + (", Linux only" if step.linux else ""))
 
 
-def run_build(run, args):
-    command = [*wrap_of("build", args), sys.executable, "-u", str(TOOLS / "build.py"), "--quiet", "--config",
-               args.config, "--build-dir", str(args.build_dir)]
-    return run.run("build", command)
+def build_commands(args):
+    """The build step: (name, command) for each build, one after the other. --mixed builds Release after Debug, without
+    the repository checks: check.py does not depend on the config, and Debug's build ran it. After a change to the
+    co-op sources the step took 93 s with check.py twice and takes 65 s so; the two builds at the same time with half
+    the jobs each took 62 s, not worth running them beside each other (#290)."""
+    commands = []
+    for config in [args.config, *(["Release"] if args.mixed else [])]:
+        folder = args.build_dir if config == args.config or IS_WINDOWS else ROOT / FOLDERS[config]
+        command = [*wrap_of("build", args), sys.executable, "-u", str(TOOLS / "build.py"), "--quiet", "--config", config,
+                   "--build-dir", str(folder), *([] if config == args.config else ["--no-check"])]
+        commands.append(("build" if config == args.config else f"build-{config.lower()}", command))
+    return commands
+
+
+def run_builds(run, args):
+    """True when every build of the build step passed; it stops at the first that fails."""
+    return all(run.run(name, command) for name, command in build_commands(args))
+
+
+def run_programs(run, args, targets):
+    """The test programs of the loopback tools, built in one cmake run: the tools are given --no-build, so that none
+    of them runs cmake in this build folder while another one runs a test (#290). A failure shows as the step
+    "programs"; the steps that need a program that is not there say so themselves."""
+    if shutil.which("cmake") is None:
+        run.finish("programs", False, 0, "no cmake", "cmake not found")
+        return False
+    command = [*wrap_of("build", args), "cmake", "--build", str(args.build_dir), "--config", args.config, "--target",
+               *targets]
+    return run.run("programs", command)
+
+
+def print_plan(args, chosen):
+    """--dry-run: what would run, in which lane, and what would not."""
+    lanes, missing = make_plan(args, chosen)
+    if not args.no_build:
+        for name, command in build_commands(args):
+            print(f"build: {name}: {shlex.join(str(part) for part in command)}")
+    targets = program_targets(chosen)
+    if targets:
+        print(f"programs: cmake --build {args.build_dir} --config {args.config} --target {' '.join(targets)}")
+    for lane_name, steps in lanes.items():
+        for name, command, *_ in steps:
+            print(f"{lane_name}: {name}: {shlex.join(str(part) for part in command)}")
+    for name, why in missing:
+        print(f"NOT RUN {name}: {why}")
+    return 0
 
 
 def usable_game(run, args):
@@ -409,11 +586,57 @@ def usable_game(run, args):
     return why is None
 
 
+def lock_file(handle):
+    """Takes the lock on an open file without waiting; OSError when another process holds it."""
+    if IS_WINDOWS:
+        import msvcrt
+
+        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def hold_running(folder):
+    """Marks this run as running, for another run's clean_run_folders: a lock on a file of its folder, which the system
+    lets go when the process ends, however it ends. Returns the open file, to keep open until then."""
+    handle = open(folder / RUNNING, "a+b")
+    lock_file(handle)
+    return handle
+
+
+def is_running(folder):
+    """Whether the test_all run of this folder is still running: its lock is held."""
+    if not (folder / RUNNING).exists():
+        return False
+    try:
+        with open(folder / RUNNING, "a+b") as handle:
+            lock_file(handle)  # let go when the file closes
+        return False
+    except OSError:
+        return True
+
+
 def clean_run_folders(before, folder):
-    """Delete what the steps left in local/: folders that are new, named test-*, and not this run's own."""
+    """Delete what the steps left in local/: folders named test-* that are new since this run started, and not a run
+    folder of test_all. Two runs in one checkout (#283): a folder that another run's steps made (in that run's OWNED) is
+    that run's to delete or to keep, and while another run is running, a folder no run noted (a tool that names its own)
+    stays too, as it may be that run's. A folder that a tool started by hand made (noted in HAND, run_folder.py) is that
+    person's (#317); the notes of folders that are gone are deleted."""
+    others = [path for path in LOCAL.glob("test-all-*") if path != folder and path.is_dir()]
+    theirs = {note.name for other in others for note in (other / OWNED).glob("*")}
+    mine = {note.name for note in (folder / OWNED).glob("*")}
+    running = any(is_running(other) for other in others)
     for path in LOCAL.glob("test-*"):
-        if path.name not in before and path != folder and path.is_dir():
-            shutil.rmtree(path, ignore_errors=True)
+        if path.name in before or path.name.startswith("test-all-") or not path.is_dir() or path == HAND:
+            continue
+        if path.name in theirs or (running and path.name not in mine) or (HAND / path.name).exists():
+            continue
+        shutil.rmtree(path, ignore_errors=True)
+    for note in HAND.glob("*"):  # a note is written after its folder, so one whose folder is missing is done with
+        if not (LOCAL / note.name).is_dir():
+            note.unlink(missing_ok=True)
 
 
 def main():
@@ -423,8 +646,11 @@ def main():
         return 0
 
     chosen = chosen_steps(args)
+    if args.dry_run:
+        return print_plan(args, chosen)
     before = {path.name for path in LOCAL.glob("test-*")} if LOCAL.exists() else set()
     folder = make_run_folder(LOCAL, "test-all-")
+    running = hold_running(folder)  # noqa: F841 (held until the process ends)
     run = Run(folder, args.timeout)
     signal.signal(signal.SIGTERM, lambda *_: run.stop_all())
     signal.signal(signal.SIGINT, lambda *_: run.stop_all())
@@ -433,14 +659,25 @@ def main():
                           text=True).stdout.strip()
     tree = tracked_changes()
     load = f"{os.getloadavg()[0]:.0f}" if hasattr(os, "getloadavg") else "unknown"
-    run.write(f"tree {head}, {args.config}, {args.lanes} lanes, load {load}, started {time.strftime('%H:%M:%S')}")
+    run.write(f"tree {head}, {args.config}{' and Release (mixed)' if args.mixed else ''}, {args.lanes} lanes, "
+              f"load {load}, started {time.strftime('%H:%M:%S')}")
 
-    built = args.no_build or args.plan or run_build(run, args)
-    serial, game, missing = make_plan(args, chosen) if built else ([], [], [])
+    built = args.no_build or args.plan or run_builds(run, args)
+    lanes, missing = make_plan(args, chosen) if built else ({}, [])
     if built and not args.plan and not usable_game(run, args):
         built = False
+    if built and not args.plan:
+        targets = program_targets(chosen)
+        if targets:
+            run_programs(run, args, targets)
     if built:
-        run_steps(run, serial, game, args.lanes)
+        try:
+            run_steps(run, lanes, args.lanes)
+        finally:
+            for lane_name, checkout in ((MUTANTS, MUT_TREE), (BASE, BASE_TREE)):
+                if lanes.get(lane_name):
+                    subprocess.run([sys.executable, str(TOOLS / "mutation_tree.py"), "remove", "--path", str(checkout)],
+                                   cwd=ROOT, capture_output=True)
         same = tree == tracked_changes()
         run.finish("tree", same, 0, "changed", "no tracked file changed" if same else "a tracked file changed")
 
@@ -472,7 +709,7 @@ def main():
     for line in lines:
         print(line)
     run.write("\n".join(lines))
-    if code == 0 and not args.keep and not args.plan:
+    if code == 0 and not args.keep:
         clean_run_folders(before, folder)
     return code
 

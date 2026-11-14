@@ -1,5 +1,6 @@
 #include "view.h"
 
+#include <math.h>
 #include <string.h>
 
 #include "global.h"
@@ -78,6 +79,16 @@ static Vtx sDigitGlyphVtx[] = {
 };
 
 static bool sTagShown[COOP_PLAYERS_MAX];
+// Where each name was drawn this frame on a 320x240 screen, shadow included: left, top, right, bottom (#332, test
+// only).
+static f32 sTagBox[COOP_PLAYERS_MAX][4];
+// The same for each shield bar (#332, test only).
+static f32 sBarBox[COOP_PLAYERS_MAX][4];
+// The place of each bar and of each name among what CoopView_DrawShieldBars drew this frame, the first drawn being 0
+// (#342, test only): of two of them on one spot the one drawn later is on top.
+static s32 sBarPlace[COOP_PLAYERS_MAX];
+static s32 sTagPlace[COOP_PLAYERS_MAX];
+static s32 sDrawPlace;
 
 // The eye and target Display_Update works out for `player`. It has one more case, for a level complete cutscene in
 // all-range (Display_CsLevelCompleteHandleCamera), which keeps state of its own and is left out: there the plain camera
@@ -247,6 +258,49 @@ int32_t CoopView_HitFlashAlpha(void) {
                : 0;
 }
 
+// The full screen fill as Game_Update drew it on this client, for the view trace: red, green, blue, alpha.
+static s32 sDrawnFill[4];
+
+void CoopView_DrawnFill(int32_t* rgba) {
+    s32 i;
+
+    for (i = 0; i < 4; i++) {
+        rgba[i] = sDrawnFill[i];
+    }
+}
+
+// The flash of Macbeth's train car 7 (#303): view state, written by the simulation and by the draw, read by the draw
+// alone. Not in the state hash: it is the same on every game of a session, and nothing in the simulation reads it.
+static s32 sBlastOn;    // the fill is that flash
+static s32 sBlastMask;  // bit i: player i was in the blast
+static s32 sBlastAlpha; // the fill's alpha when it was last drawn
+
+void CoopView_MacbethBlast(int32_t inBlast) {
+    if (!CoopPlayers_IsCoop()) {
+        return;
+    }
+    sBlastOn = 1;
+    sBlastMask = inBlast;
+    sBlastAlpha = 255;
+}
+
+void CoopView_FillColor(int32_t* red, int32_t* green, int32_t* blue) {
+    s32 blastColor = (*red == 255) && (*green == *blue) && ((*green == 255) || (*green == 0));
+
+    if (sBlastOn &&
+        (!CoopPlayers_IsCoop() || (gFillScreenAlpha <= 0) || (gFillScreenAlpha > sBlastAlpha) || !blastColor)) {
+        sBlastOn = 0;
+    }
+    if (sBlastOn) {
+        sBlastAlpha = gFillScreenAlpha;
+        *green = *blue = ((sBlastMask >> CoopPlayers_ViewIndex()) & 1) ? 0 : 255;
+    }
+    sDrawnFill[0] = *red;
+    sDrawnFill[1] = *green;
+    sDrawnFill[2] = *blue;
+    sDrawnFill[3] = gFillScreenAlpha;
+}
+
 void CoopView_DrawHitFlash(void) {
     Graphics_FillRectangle(&gMasterDisp, OTRGetRectDimensionFromLeftEdge(0), 0,
                            OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH), SCREEN_HEIGHT, 255, 0, 0,
@@ -330,12 +384,119 @@ static void CoopView_SmallText(const char* text, f32 x, f32 y) {
     }
 }
 
+// 1 / tan of half the field of view of Lib_InitPerspective's projection.
+static f32 CoopView_Cot(void) {
+    return 1.0f / tanf(gFovY * M_DTOR / 2.0f);
+}
+
+// A point of the view drawn on a 320x240 screen, through the projection of Lib_InitPerspective.
+static void CoopView_Project(const Vec3f* eye, f32* screenX, f32* screenY) {
+    f32 depth = (eye->z > -1.0f) ? 1.0f : -eye->z;
+
+    *screenX = (SCREEN_WIDTH / 2) * (1.0f + eye->x * CoopView_Cot() * ((f32) SCREEN_HEIGHT / SCREEN_WIDTH) / depth);
+    *screenY = (SCREEN_HEIGHT / 2) * (1.0f - eye->y * CoopView_Cot() / depth);
+}
+
+// A point of the plane of the name (or of the bar), in its units, on the 320x240 screen: for the trace (#332).
+static void CoopView_TagCorner(f32 x, f32 y, f32* screenX, f32* screenY) {
+    Vec3f src = { x, y, 0.0f };
+    Vec3f eye;
+
+    Matrix_MultVec3f(gGfxMatrix, &src, &eye);
+    CoopView_Project(&eye, screenX, screenY);
+}
+
+// The scale of player i's bar: as Display_ActorMarks, about the same size on screen at any distance.
+static f32 CoopView_BarScale(s32 i) {
+    f32 scale = VEC3F_MAG(&sBarView[i]) * 0.0015f;
+
+    return (scale > 100.0f) ? 100.0f : (scale < 1.0f) ? 1.0f : scale;
+}
+
+// The scale of player i's name in the bar's units: the size the name has far away (#257, #258).
+static f32 CoopView_NameScale(s32 i) {
+    return MIN(VEC3F_MAG(&sBarView[i]) * 0.0015f, 100.0f) / CoopView_BarScale(i);
+}
+
+// The names of up to three other ships can meet on the screen (#332). The name of the nearest ship stays over its bar;
+// the name of a ship further away that would cover a nearer ship's name goes up, NAME_GAP pixels above it. In pixels
+// of the 320x240 screen, set by CoopView_PlaceNames each frame.
+#define NAME_GAP 1.0f
+static f32 sTagLift[COOP_PLAYERS_MAX];
+
+// Player i's name as it stands without a lift, on the 320x240 screen: left, top, right, bottom, shadow included. As
+// CoopView_DrawShieldBars puts it: from the ship's point, NAME_ABOVE units of the bar up, the font at the name's scale.
+static void CoopView_NameBox(s32 i, f32* box) {
+    f32 bar = CoopView_BarScale(i) * 0.25f;
+    f32 name = bar * CoopView_NameScale(i);
+    f32 x = -Graphics_GetSmallTextWidth((char*) CoopNames_Label(i)) * NAME_TEXEL / 2.0f;
+    Vec3f corner = sBarView[i];
+
+    corner.x = sBarView[i].x + name * x;
+    corner.y = sBarView[i].y + bar * NAME_ABOVE + name * NAME_SMALL_H * NAME_TEXEL;
+    CoopView_Project(&corner, &box[0], &box[1]);
+    corner.x = sBarView[i].x + name * (-x + NAME_TEXEL);
+    corner.y = sBarView[i].y + bar * NAME_ABOVE - name * NAME_TEXEL;
+    CoopView_Project(&corner, &box[2], &box[3]);
+}
+
+// The lifts of this frame's names: the nearest ship first, each name then as high as it must be to clear every nearer
+// one's. Only ever up, so it ends after at most one move per nearer name.
+static void CoopView_PlaceNames(void) {
+    s32 order[COOP_PLAYERS_MAX];
+    f32 box[COOP_PLAYERS_MAX][4];
+    s32 count = 0;
+    s32 i;
+    s32 j;
+    s32 n;
+    s32 m;
+    s32 pass;
+    s32 moved;
+
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        sTagLift[i] = 0.0f;
+        if (!sBarOn[i] || (sBarView[i].z >= 0.0f)) {
+            continue;
+        }
+        CoopView_NameBox(i, box[i]);
+        // nearest first; ships as far apart in player order
+        for (n = count; (n > 0) && (VEC3F_MAG(&sBarView[order[n - 1]]) > VEC3F_MAG(&sBarView[i])); n--) {
+            order[n] = order[n - 1];
+        }
+        order[n] = i;
+        count++;
+    }
+    for (n = 1; n < count; n++) {
+        i = order[n];
+        for (pass = 0; pass < n; pass++) {
+            moved = false;
+            for (m = 0; m < n; m++) {
+                j = order[m];
+                if ((box[i][0] < box[j][2]) && (box[i][2] > box[j][0]) &&
+                    (box[i][1] - sTagLift[i] < box[j][3] - sTagLift[j]) &&
+                    (box[i][3] - sTagLift[i] > box[j][1] - sTagLift[j])) {
+                    sTagLift[i] = box[i][3] - (box[j][1] - sTagLift[j]) + NAME_GAP;
+                    moved = true;
+                }
+            }
+            if (!moved) {
+                break;
+            }
+        }
+    }
+}
+
 // Player i's name, centred on x 0 from y 0 up, with a dark copy one texel down and right behind it so it reads on sky
 // and ground alike. The owner chose the name alone as the mark, no letter (#257).
 static void CoopView_DrawTag(s32 i) {
     const char* name = CoopNames_Label(i);
     f32 x = -Graphics_GetSmallTextWidth((char*) name) * NAME_TEXEL / 2.0f;
 
+    // #332: the box the trace reports, shadow included
+    CoopView_TagCorner(x, NAME_SMALL_H * NAME_TEXEL, &sTagBox[i][0], &sTagBox[i][1]);
+    CoopView_TagCorner(-x + NAME_TEXEL, -NAME_TEXEL, &sTagBox[i][2], &sTagBox[i][3]);
+
+    sTagPlace[i] = sDrawPlace++; // #342: for the trace
     RCP_SetupDL(&gMasterDisp, SETUPDL_62);
     gDPSetTextureFilter(gMasterDisp++, G_TF_POINT);
     gDPSetPrimColor(gMasterDisp++, 0x00, 0x00, 0, 0, 0, 200);
@@ -346,27 +507,27 @@ static void CoopView_DrawTag(s32 i) {
     sTagShown[i] = true;
 }
 
+// #342: every bar is drawn before every name. The bars' and names' display lists clear G_ZBUFFER, so what is drawn
+// later is on top, and a bar of a ship drawn after another ship's name used to cover it.
 void CoopView_DrawShieldBars(void) {
     f32 scale;
     f32 tagScale;
+    f32 lift;
     f32 shields;
     s32 i;
 
     if (!CoopPlayers_IsCoop()) {
         return;
     }
+    CoopView_PlaceNames(); // #332
+    sDrawPlace = 0;
     for (i = 0; i < CoopPlayers_Count(); i++) {
         if (!sBarOn[i] || (sBarView[i].z >= 0.0f)) {
             continue;
         }
         FrameInterpolation_RecordOpenChild("CoopShieldBar", i);
-        // As Display_ActorMarks: about the same size on screen at any distance.
-        scale = VEC3F_MAG(&sBarView[i]) * 0.0015f;
-        if (scale > 100.0f) {
-            scale = 100.0f;
-        } else if (scale < 1.0f) {
-            scale = 1.0f;
-        }
+        sBarPlace[i] = sDrawPlace++; // #342: for the trace
+        scale = CoopView_BarScale(i);
         shields = MIN(gPlayer[i].shields, 255) / 255.0f;
 
         Matrix_Push(&gGfxMatrix);
@@ -377,6 +538,8 @@ void CoopView_DrawShieldBars(void) {
         Matrix_Push(&gGfxMatrix);
         Matrix_Translate(gGfxMatrix, -BAR_HALF_WIDTH, BAR_ABOVE, 0.0f, MTXF_APPLY);
         gDPSetPrimColor(gMasterDisp++, 0x00, 0x00, 0, 0, 0, 160);
+        CoopView_TagCorner(0.0f, 26.0f, &sBarBox[i][0], &sBarBox[i][1]); // #332: for the trace
+        CoopView_TagCorner(240.0f, 0.0f, &sBarBox[i][2], &sBarBox[i][3]);
         CoopView_DrawBar(1.0f);
         if (shields < 0.25f) {
             gDPSetPrimColor(gMasterDisp++, 0x00, 0x00, 255, 40, 0, 255);
@@ -385,24 +548,55 @@ void CoopView_DrawShieldBars(void) {
         }
         CoopView_DrawBar(shields);
         Matrix_Pop(&gGfxMatrix);
-        // #257, #258: the name above the bar, the size it has far away
-        Matrix_Push(&gGfxMatrix);
-        Matrix_Translate(gGfxMatrix, 0.0f, NAME_ABOVE, 0.0f, MTXF_APPLY);
-        tagScale = MIN(VEC3F_MAG(&sBarView[i]) * 0.0015f, 100.0f) / scale;
-        Matrix_Scale(gGfxMatrix, tagScale, tagScale, 1.0f, MTXF_APPLY);
-        CoopView_DrawTag(i);
-        Matrix_Pop(&gGfxMatrix);
         Matrix_Pop(&gGfxMatrix);
         FrameInterpolation_RecordCloseChild();
 
         sBarShown[i] = true;
         sBarValue[i] = shields;
     }
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        if (!sBarOn[i] || (sBarView[i].z >= 0.0f)) {
+            continue;
+        }
+        FrameInterpolation_RecordOpenChild("CoopShieldName", i);
+        scale = CoopView_BarScale(i);
+
+        Matrix_Push(&gGfxMatrix);
+        Matrix_Translate(gGfxMatrix, sBarView[i].x, sBarView[i].y, sBarView[i].z, MTXF_APPLY);
+        Matrix_Scale(gGfxMatrix, scale * 0.25f, scale * 0.25f, 1.0f, MTXF_APPLY);
+        // #257, #258: the name above the bar, the size it has far away; #332: lifted clear of a nearer ship's name
+        lift = sTagLift[i] * -sBarView[i].z / ((SCREEN_HEIGHT / 2) * CoopView_Cot()) / (scale * 0.25f);
+        Matrix_Translate(gGfxMatrix, 0.0f, NAME_ABOVE + lift, 0.0f, MTXF_APPLY);
+        tagScale = CoopView_NameScale(i);
+        Matrix_Scale(gGfxMatrix, tagScale, tagScale, 1.0f, MTXF_APPLY);
+        CoopView_DrawTag(i);
+        Matrix_Pop(&gGfxMatrix);
+        FrameInterpolation_RecordCloseChild();
+    }
     gSPSetGeometryMode(gMasterDisp++, G_CULL_BACK);
 }
 
 int32_t CoopView_TagShown(int32_t index) {
     return (index >= 0) && (index < COOP_PLAYERS_MAX) && sTagShown[index];
+}
+
+int32_t CoopView_TagBox(int32_t index, float* box, float* bar, int32_t* place) {
+    s32 i;
+
+    if (!CoopView_TagShown(index)) {
+        return 0;
+    }
+    for (i = 0; i < 4; i++) {
+        box[i] = sTagBox[index][i];
+        bar[i] = sBarBox[index][i];
+    }
+    place[0] = sBarPlace[index];
+    place[1] = sTagPlace[index];
+    return 1;
+}
+
+float CoopView_TagLift(int32_t index) {
+    return CoopView_TagShown(index) ? sTagLift[index] : 0.0f;
 }
 
 float CoopView_ShieldBar(int32_t index) {

@@ -7,7 +7,8 @@
 #include "global.h"
 #include "assets/ast_sector_y.h"
 #include "fox_record.h"
-#include "port/coop/game/aim.h" // COOP: the Shoguns go after the nearest human (#220)
+#include "port/coop/game/aim.h"   // COOP: the Shoguns go after the nearest human (#220)
+#include "port/coop/game/score.h" // COOP: a Shogun's bonus for any human's kill (#304)
 
 #define SHOGUN_SHIP (0)
 
@@ -565,9 +566,11 @@ void SectorY_80199438(SyShogun* this) {
             if (this->timer_058 < 67) {
                 this->fwork[0] = 1.0f;
             }
-            if ((this->timer_058 == 60) && (this->swork[19] == 0)) {
+            // COOP: was swork[19] == 0, player 0's shot; any human's counts (decision 0008 4b, #304)
+            if ((this->timer_058 == 60) && CoopScore_HumanShot(this->swork[19])) {
                 BonusText_Display(this->obj.pos.x, this->obj.pos.y, this->obj.pos.z, 3);
                 gHitCount += 4;
+                CoopScore_CreditShot(this->swork[19], 4); // COOP: the shooter's own count, display (#252, #304)
             }
             if (this->timer_058 == 50) {
                 AUDIO_PLAY_SFX(NA_SE_EN_MS_EXPLOSION_S, this->sfxSource, 4);
@@ -603,7 +606,7 @@ void SectorY_80199438(SyShogun* this) {
         }
 
         if ((gCsFrameCount == 120) && (this->swork[36] == 0) && (this->index == 0)) {
-            if (this->swork[19] == 0) {
+            if (CoopScore_HumanShot(this->swork[19])) { // COOP: was swork[19] == 0 (decision 0008 4b, #304)
                 Boss_AwardBonus(this);
             }
 
@@ -3575,6 +3578,7 @@ void SectorY_SyRobot_Update(SyRobot* this) {
     Vec3f sp50;
     s32 sp4C = 30;
     s32 pad;
+    Player* aimed; // COOP: (#273, #281)
 
     this->iwork[14] = this->eventType - 48;
     this->info.drawType = 2;
@@ -3650,6 +3654,9 @@ void SectorY_SyRobot_Update(SyRobot* this) {
         this->fwork[15] = 0.0f;
     }
 
+    // COOP: the human this robot shoots at and turns to on this frame, picked once (#273, #281)
+    aimed = &gPlayer[CoopAim_Nearest(this->fwork[16], this->fwork[17], this->fwork[18])];
+
     switch (this->work_046) {
         case 0:
             i = this->iwork[17];
@@ -3688,15 +3695,25 @@ void SectorY_SyRobot_Update(SyRobot* this) {
                 if (this->iwork[19] < 0) {
                     ActorEvent_8006F254(this);
                 } else {
+                    // COOP: the spread is around the human the shot aims at, the nearest (#193), not around player 0:
+                    // player 0 goes to the spread point at that human's depth, and the other humans that may be aimed
+                    // at go there too (CoopAim_PointShot), so the shot flies at the point. Outside co-op the nearest
+                    // is player 0 and every line below does what upstream does (#273)
+                    f32 trueZ = gPlayer[0].trueZpos; // COOP: (#273)
+
                     sp1E4 = gPlayer[0].pos.x;
                     sp1E0 = gPlayer[0].pos.y;
                     if (this->iwork[19] != 0) {
-                        gPlayer[0].pos.x += RAND_FLOAT_CENTERED(300.0f);
-                        gPlayer[0].pos.y += RAND_FLOAT_CENTERED(300.0f);
+                        gPlayer[0].pos.x = aimed->pos.x + RAND_FLOAT_CENTERED(300.0f); // COOP: was gPlayer[0] +=
+                        gPlayer[0].pos.y = aimed->pos.y + RAND_FLOAT_CENTERED(300.0f); // COOP: was gPlayer[0] +=
+                        gPlayer[0].trueZpos = aimed->trueZpos;                         // COOP: (#273)
+                        CoopAim_PointShot(gPlayer[0].pos.x, gPlayer[0].pos.y, gPlayer[0].trueZpos); // COOP: (#273)
                     }
                     Effect_EnemyLaser(OBJ_EFFECT_354, this->fwork[16], this->fwork[17], this->fwork[18], 100.0f);
+                    CoopAim_PointShotEnd(); // COOP: (#273)
                     gPlayer[0].pos.x = sp1E4;
                     gPlayer[0].pos.y = sp1E0;
+                    gPlayer[0].trueZpos = trueZ; // COOP: (#273)
                     AUDIO_PLAY_SFX(NA_SE_EN_MS_SHOT_S, this->sfxSource, 4);
                 }
                 this->work_048 = 0;
@@ -3784,9 +3801,10 @@ void SectorY_SyRobot_Update(SyRobot* this) {
             Matrix_RotateY(gCalcMatrix, -this->obj.rot.y * M_DTOR, MTXF_APPLY);
         }
 
-        sp5C.x = gPlayer[0].pos.x - this->obj.pos.x;
-        sp5C.y = gPlayer[0].pos.y - this->obj.pos.y;
-        sp5C.z = gPlayer[0].pos.z - this->obj.pos.z;
+        // COOP: head and gun turn to the human the shot flies at, the nearest to where it starts; was gPlayer[0] (#281)
+        sp5C.x = aimed->pos.x - this->obj.pos.x;
+        sp5C.y = aimed->pos.y - this->obj.pos.y;
+        sp5C.z = aimed->pos.z - this->obj.pos.z;
 
         Matrix_MultVec3fNoTranslate(gCalcMatrix, &sp5C, &sp50);
 

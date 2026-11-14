@@ -35,6 +35,10 @@ void CoopDesyncReport_Regions(const CoopDesync* d, char* out, size_t cap);
 const char* CoopDesyncReport_LevelName(int32_t level, char* buffer, size_t cap);
 const char* CoopDesyncReport_ModeName(int32_t mode);
 
+// Where the games were, from a frame's state bytes (game state, level, level mode, play state): "Corneria (rails)" in a
+// level, "the map" on the map, whose level byte is the last level flown (#276), "the ending", or "game state <n>".
+const char* CoopDesyncReport_PlaceName(const uint8_t state[4], char* buffer, size_t cap);
+
 #ifdef __cplusplus
 }
 #endif

@@ -276,6 +276,20 @@ proven by two-client runs with equal hashes (`docs/coop/NOTES.md`, "Fox goes dow
 down is written for Corneria only. A level that shows trouble in play is taken out of the table in
 `CoopPlayers_FoxRefillOpen` (one line); the owner also kept the spike of rule 13 in the code behind its test switch.
 
+**Update 2026-11-14 (rule 1, built and run; `docs/coop/NOTES.md`, 2026-11-14, #14).** The start value is built
+(`CoopScore_StartLives`, `src/port/coop/game/score.c`, called from `Player_Setup` where the game wrote 2): 3, 4 and 5 in
+sessions of two, three and four clients, equal on every frame. The other three writes of 2 are unchanged; each is
+followed by that one at the next level. The cap of 99 is the game's own.
+The owner's answer of 2026-11-14 on a join or a leave between two levels of a route: rule 1 is the start only. The pool counts
+the players of the session once, when the game's life count is set at the first level (and again if that level starts again); a
+player who joins later adds no life and a player who leaves takes none away. Nothing to build for it.
+
+**Update 2026-11-14 (what the screen shows, #335, #336; `docs/coop/NOTES.md`, 2026-11-14).** Every client's HUD now
+draws the pool as its lives number, also one that looks through player 2 to 4 (`src/engine/fox_hud.c:3706` read that
+player's own slot, which only a join or a return writes), run with two and four clients (`lockstep_test.py --only
+hud_lives`). The other lives numbers of the HUD, and the map's, already read slot 0 in a session, where `gPlayerNum` is 0
+outside the player loop. No session shows the map before its first level, so #336's 2 on the map is never a session's.
+
 ### Every client decides alike
 
 - The rule reads simulated state only: `gLifeCount[0]`, the player slots, the return counter, `gPlayer[0].state`, and
