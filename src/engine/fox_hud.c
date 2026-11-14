@@ -3702,7 +3702,8 @@ void HUD_SinglePlayer(void) {
         }
         CALL_CANCELLABLE_EVENT(DrawLivesCounterHUDEvent) {
             if (gCurrentLevel != LEVEL_TRAINING) {
-                HUD_LivesCount2_Draw(248.0f, 11.0f, gLifeCount[CoopPlayers_HudIndex()]); // COOP: was gPlayerNum
+                // COOP: was gLifeCount[gPlayerNum]; in co-op the team's pool, whoever the client looks through (#335)
+                HUD_LivesCount2_Draw(248.0f, 11.0f, gLifeCount[CoopScore_LifeSlot(CoopPlayers_HudIndex())]);
             }
         }
     }
