@@ -1625,6 +1625,73 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-14, #332: the view with three other ships, the names that met, and the lobby with four
+
+Read and run on `issue/332-view-four` (from `issue/combined-test-6` `ade4c08e`). Identity: ROM US 1.0, Linux, GCC,
+Debug, OpenGL on a software renderer (llvmpipe) through SDL's offscreen driver, no window on any display; four game
+clients on one PC in lockstep over loopback through the join driver, drawing (`SF64_COOP_TEST_NO_DRAW=0`) in a
+640x480 window. Pictures came from an `LD_PRELOAD` helper like `tools/coop/versiontest/frame_shot.c` that read the back
+buffer every 100 game frames; they stayed local and were deleted.
+
+**Observed (code)**
+
+- One camera per client whatever the count: `Game_Draw(CoopPlayers_ViewIndex())` (`src/engine/fox_game.c:522`), and
+  `gCamCount` stays 1 (`:424`), so the game's own split screen (`:525-537`) never runs in co-op.
+- Bars and names: `CoopView_SeePlayer` (`src/port/coop/game/view.c`, called at `src/engine/fox_display.c:1985`) marks
+  every player that is not the one looked through, not parked and drawn; `CoopView_DrawShieldBars` (called at
+  `fox_display.c:2076`) draws for each of them in front of the camera a bar and above it the name, in player order. With
+  three other ships that is up to three of each; nothing limits them. Their setup display lists clear `G_ZBUFFER`
+  (`SETUPDL_12`, `SETUPDL_62`, `src/engine/fox_rcp_setup.c:174`, `:884`), so they draw over all 3D geometry; the HUD
+  and the radio box come later (`fox_game.c:575-577`) and draw over them.
+- A name far away is about 7 of 240 pixels high and 8 of 320 wide per letter; the runs measured 22 to 26 pixels for
+  SAM, 46 to 56 for CAPTAIN, 54 to 70 for WINGMAN8 and PEPPYOLD.
+- The co-op window opens at 420x400 (`src/port/coop/ui/menu_window.cpp:233`) and wraps its lines (`:77`).
+
+**Observed (runs)**
+
+- `campaign.py --players 4` with every game drawing, through a scratch driver that only added the drawing, a view
+  trace, names (CAPTAIN, WINGMAN8, SAM, PEPPYOLD) and the window size: Katina, Corneria and Fortuna, 3000 lockstep
+  frames each, all four games equal on every frame (2528 to 3156 frames compared per level, three runs).
+- The view trace's new `tagbox` (each name and bar drawn, as a box on the 320x240 screen, and the name's lift) matches
+  the pictures: 5100, 4902 and 7039 white pixels inside the boxes of 40 to 49 names, against 1523, 600 and 642 in the
+  same boxes 20 rows higher.
+- Before the fix, of about 36700 frames over the 12 game-level runs (4 clients, 3 levels): two or more names on screen
+  on 6103; two names covering each other on 1262 (28 to 281 per client and level), up to a name wholly inside another
+  (Katina, host, frame 800: WINGMAN8, SAM and PEPPYOLD in one smear around 165-225 x 68-79); a name on another ship's
+  bar on 1246; a name in the HUD's top-left corner (shield gauge, hits, rings) on 2717, its top-right corner (lives,
+  boost, bombs) on 2816, where the HUD covers part of it (Fortuna, client 2, frame 2500: `...TAIN` beside the hits); a
+  name partly off the screen's edge on 4736. Names drawn wholly off screen (a ship in front of the camera but outside
+  the view) are counted in the trace's `tags` too: `tags` says drawn, not seen.
+- After the fix (below), the same three levels: two names covering each other on 0 frames; a name on another's bar on
+  886; the HUD corners 2552 and 2796; cut at the edge 4592. The same Katina frame reads PEPPYOLD, WINGMAN8 and SAM one
+  above the other; their three bars still lie on each other.
+- `lockstep_test.py --only names_four` (four games, Fortuna, 1500 frames, no drawing): red on `782c2780` (587 frames
+  with two names covering each other), green on the fix (none; names moved apart on 539 frames of the four games;
+  hashes equal).
+- The lobby with four, through the real co-op window (`menu_test.py`'s `Game`, scratch driver): every window lists all
+  four players with name and character (`Player 4: PEPPYOLD, Peppy, ping 6 ms` on the host); nothing is cut or
+  scrolled at 420x400. The host's last line ends about 100 pixels and a client's Leave button about 46 pixels above the
+  window's bottom edge. A client shows a ping for the host only, as the session is a star.
+
+**What changed**
+
+- `CoopView_PlaceNames` (`view.c`): each frame, the nearest ship's name stays over its bar, and the name of each ship
+  further away goes up until it clears the names of the nearer ones, 1 pixel of the 320x240 screen above them. Bars
+  stay on their ships. Display only, gated on co-op; the hash does not see it.
+
+**Derived**
+
+- With the names of 3 to 8 letters a session will see, ships within about a name's width of each other on screen put
+  their names on each other; in all-range the four ships bunch often (Fortuna most).
+
+**Unknown**
+
+- A window wider than 4:3: the boxes are on the N64's 320x240 screen, which the port widens at the sides.
+- How the names read moving, at 30 frames a second, on a real screen; whether a lifted name that jumps from one
+  frame to the next is a bother.
+- The radio box: the trace does not know when it is shown, so names under it are not counted.
+- Windows, two PCs, a person playing.
+
 ### 2026-11-14, #14: the pool of lives starts at 2 plus 1 for each player after the first (decision 0007 rule 1)
 
 Read and run on `issue/14-lives-pool-start` (from `issue/combined-test-6` `58b019c1`). Identity: ROM US 1.0, Linux, GCC,
