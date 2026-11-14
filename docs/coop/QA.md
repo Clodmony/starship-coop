@@ -268,6 +268,19 @@ Newest first. One block per run that matters (a milestone, a release, a QA level
 
 ```
 date:       2026-11-14
+commit:     issue/combined-test-6, the merge of issue/345-turret-aim-trace (PR #348) into f18733f5
+identity:   ROM US 1.0, Linux, GCC; no game started for this record
+what ran:   git merge --no-ff --no-commit (no conflict); git diff --cached issue/345-turret-aim-trace (empty);
+            python tools/coop/check.py; python tools/coop/lockstep_rules_test.py
+result:     the merged tree, before this record, is the tree of issue/345-turret-aim-trace at 59150e01, so its runs
+            hold for it: the worker's record in PR #348 (aim_four and ma_turret_four, 2 of 2, rerun by the
+            coordinator; checks, lockstep 61 of 61, replay-test, hash-run-1, coop-off, lockstep-mutants 22 of 22). The
+            full gate runs on the head after PR #349 is merged as well; the last one is the record for f18733f5
+            (59 of 59, 18m44s).
+```
+
+```
+date:       2026-11-14
 commit:     issue/combined-test-6, the merge of issue/342-bars-before-names (PR #347) into ce17520d
 identity:   ROM US 1.0, Linux, GCC; no game started for this record
 what ran:   git merge --no-ff --no-commit (no conflict); git diff --cached issue/342-bars-before-names (empty);

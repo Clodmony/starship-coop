@@ -12,6 +12,13 @@ second, and the broken rows have to fail:
   one that holds its fire with the last player alone in it, a run in which no turret turns to player 2, one in which
   the turrets fire at player 0 alone, and a first shot with the gun on a human outside the window, fail; a run without
   a first shot at player 2 passes and says so.
+- turret (#345): a run in which no first shot flies at player 2 while it is the turret's pick fails; a first shot
+  on the frame a human comes into an empty window, the gun still on the human it had turned to, is counted apart, and
+  one with the gun on another human outside the window still fails.
+- aim (#345): w14_shot_rows and w14_aim_story on `shot` lines with places; shots at the nearest human to their start
+  pass, and so do the kinds the check cannot judge (at nobody, spread, near a human but not at its place, a near tie,
+  a possible scatter of player 0); a shot at a human who is not the nearest fails, so do one at a human who does not
+  fly and lines without places (a build before #345).
 - plasma: w9_plasma_story; a shot that passes the nearest human, player 3, too far off fails, and so does a run in
   which player 2 is never the nearest (it says nothing about player 2).
 - sy-robot: w8_syrobot_story; a spread shot straight at player 2 fails.
@@ -142,8 +149,23 @@ def test_turret():
         fails(f"turret {players} holds its fire",
               lambda: lt.w10_turret_check(lt.w10_turret_story(turret_rows(players, idle=players - 1), players),
                                           players), "holds its fire")
-        text = lt.w10_turret_check(lt.w10_turret_story(turret_rows(players, no_fire=2), players), players)
-        check(f"turret {players} never fires at player 2", "no first shot tells of player 2" in text, text)
+        fails(f"turret {players} never fires at player 2",
+              lambda: lt.w10_turret_check(lt.w10_turret_story(turret_rows(players, no_fire=2), players), players),
+              "no first shot flew at player 2 with the gun on it")
+        check(f"turret {players} first shots at the pick", count["fire_pick"] == [4] * players
+              and count["fire_other"] == 0, f"{count['fire_pick']}")
+        # A human comes into the empty window and the turret fires at once, its gun still on the nearest of all,
+        # player 0, outside the window: counted apart; the gun on another human outside it still fails.
+        entering = turret_rows(players) + [turret_row(9000, players), turret_row(9001, players, alone=1, to=0,
+                                                                                fires=True)]
+        count = lt.w10_turret_story(entering, players)
+        text = lt.w10_turret_check(count, players)
+        check(f"turret {players} fires as a human comes in", count["fire_entering"] == 1
+              and count["fire_at_out"] == 0, text)
+        fails(f"turret {players} fires as a human comes in, the gun on another outside the window",
+              lambda: lt.w10_turret_check(lt.w10_turret_story(entering[:-1] + [
+                  turret_row(9001, players, alone=1, to=2, fires=True)], players), players),
+              "with its gun on a human outside it")
         fails(f"turret {players} fires at player 0 alone",
               lambda: lt.w10_turret_check(lt.w10_turret_story(
                   [r for r in turret_rows(players) if r["step"][1] == 0 or r["well0"]]
@@ -163,6 +185,70 @@ def test_turret():
     text = lt.w10_turret_check(count, 2)
     check("turret two", "player 1 the nearer on 34" in text and "3 with only player 1" not in text
           and "4 with only player 1 in the window, 4 with only player 0" in text, text)
+
+
+# ---- #345: the player a shot flies at is the nearest to its start ----
+
+def aim_line(frame, players, target, start_x=None, places=None, flies=None, off=0.0, shot_id=353, level=0):
+    """A shot line of the aim trace: from (start_x, 0, 0), by default 400 * target, at player `target`'s place,
+    `off` units beside it in x. Player n is at (400 * n, 0, -3000) unless `places` says otherwise, so the nearest to
+    the start is the player whose x it has, by 26.6 and more."""
+    places = places or {n: (400.0 * n, 0.0, -3000.0) for n in range(players)}
+    start = (400.0 * target if start_x is None else start_x, 0.0, 0.0)
+    if target >= 0:
+        aim = [a - b for a, b in zip(places[target], start)]
+        aim[0] += off
+    else:
+        aim = [0.0, 0.0, -1.0]
+    fields = " ".join(f"p{n}={x:.3f},{y:.3f},{z:.3f},{0 if flies and n in flies else 1}"
+                      for n, (x, y, z) in sorted(places.items()))
+    return (f"shot level={level} frame={frame} id={shot_id} player={target} start={start[0]:.3f},0.000,0.000 "
+            f"dir={aim[0] / 60:.6f},{aim[1] / 60:.6f},{aim[2] / 60:.6f} {fields}")
+
+
+def aim_story(lines, players):
+    return lt.w14_aim_story(lt.w14_shot_lines(lines), players)
+
+
+def aim_lines(players):
+    """Three shots at each player as the rule has them, and one of every kind the check does not judge."""
+    lines = [aim_line(10 * n + k, players, n) for n in range(players) for k in range(3)]
+    lines.append(aim_line(900, players, -1))  # at nobody
+    lines.append(aim_line(901, players, 1, start_x=0.0, shot_id=376))  # Corneria's plasma: spread
+    lines.append(aim_line(902, players, 1, start_x=0.0, off=60.0))  # 1.1 degrees beside player 1: near
+    tie = {n: (400.0 * n, 0.0, -3000.0) for n in range(players)}
+    tie[players - 1] = (0.2, 0.0, -3000.0)  # 0.0000067 farther from (0, 0, 0) than player 0: a tie
+    lines.append(aim_line(903, players, players - 1, start_x=0.0, places=tie))
+    scatter = {n: (400.0 * n, 0.0, -3000.0) for n in range(players)}
+    scatter[1] = (100.0, 0.0, -3000.0)  # 1.7 farther than player 0, which EVACT_8 may have moved 212 away
+    lines.append(aim_line(904, players, 1, start_x=0.0, places=scatter))
+    return lines
+
+
+def test_aim():
+    for players in (2, 3, 4):
+        count = aim_story(aim_lines(players), players)
+        text = lt.w14_aim_check(count, players)
+        check(f"aim {players}", count["judged"] == [3] * players and not count["wrong"] and count["nobody"] == 1
+              and count["spread"] == 1 and count["near"] == 1 and count["tie"] == 1 and count["scatter"] == 1, text)
+        last = players - 1
+        fails(f"aim {players} at the farther player",  # the last player's start, the shot at the one before it
+              lambda: lt.w14_aim_check(aim_story(aim_lines(players) + [aim_line(950, players, last - 1,
+                                                                                start_x=400.0 * last)],
+                                                 players), players), "not the nearest to their start")
+        fails(f"aim {players} at a player 0 nearer than the scatter",  # player 0's start, 3026.6 against 3007.5
+              lambda: lt.w14_aim_check(aim_story(aim_lines(players) + [aim_line(951, players, 1, start_x=0.0)],
+                                                 players), players), "not the nearest to their start")
+        fails(f"aim {players} at a player that does not fly",
+              lambda: lt.w14_aim_check(aim_story(aim_lines(players) + [aim_line(952, players, last, flies={last})],
+                                                 players), players), "not the nearest to their start")
+        fails(f"aim {players} at nobody after the first",
+              lambda: lt.w14_aim_check(aim_story([aim_line(k, players, 0) for k in range(3)], players),
+                                       players), "no shot at a player after the first")
+    fails("aim without places",  # a build before #345
+          lambda: lt.w14_aim_check(aim_story(["shot level=0 frame=1 id=353 player=1"] + aim_lines(2), 2), 2),
+          "hold no places")
+    fails("aim lines of two players in a session of three", lambda: aim_story(aim_lines(2), 3), "the session has 3")
 
 
 # ---- the Granga's plasma, Sector Y's robots ----
@@ -357,11 +443,11 @@ def test_names():
 
 
 def main():
-    for test in (test_mabomb, test_turret, test_spread, test_pose, test_escape, test_names):
+    for test in (test_mabomb, test_turret, test_aim, test_spread, test_pose, test_escape, test_names):
         test()
     for line in FAILED:
         print(f"FAILED  {line}")
-    print("FAIL" if FAILED else "PASS: the rule checks of lockstep_test.py read every player (#329) and the bars and names of the view (#342)")
+    print("FAIL" if FAILED else "PASS: the rule checks of lockstep_test.py read every player (#329), the bars and names of the view (#342) and the places of the aim trace's shots (#345)")
     return 1 if FAILED else 0
 
 
