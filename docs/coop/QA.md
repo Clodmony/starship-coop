@@ -267,6 +267,17 @@ Running tests must never use or modify the owner's own `starship.cfg.json`, save
 Newest first. One block per run that matters (a milestone, a release, a QA level change).
 
 ```
+date:       2026-11-15
+commit:     issue/combined-test-6, the merge of docs/followup-rule (PR #356) into 0bc99fc4
+identity:   ROM US 1.0, Linux, GCC; no game started for this record
+what ran:   git merge --no-ff --no-commit (no conflict); git diff --cached docs/followup-rule (empty);
+            python tools/coop/check.py
+result:     documentation only: AGENTS.md ground rule 12 (follow-up issues only for a game bug, a rule question for
+            the owner, or a real-hardware task). No code changed, so the gate on 0bc99fc4 (59 of 59, 20m33s) holds for
+            this head.
+```
+
+```
 date:       2026-11-14
 commit:     issue/combined-test-6, the merge of issue/345-pilot-places (PR #349) into the merge of PR #348
 identity:   ROM US 1.0, Linux, GCC; no game started for this record
