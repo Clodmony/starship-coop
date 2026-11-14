@@ -6242,7 +6242,7 @@ LONG += ("escape_look",)  # five sessions in Andross' escape: the explosions hit
 
 # Seconds a scenario took on Debug at a limit of 8 (2026-11-13, #290). Only the order of a pool of --jobs depends on it:
 # the long ones start first, so the pool does not end on one of them.
-SCENARIO_SECONDS = {"host_left": 67, "shogun_bonus": 57, "ma_turret": 23, "left": 32, "delay": 31, "results_hole": 19, "slow": 14, "stall": 14, "frozen": 14,
+SCENARIO_SECONDS = {"host_left": 67, "shogun_bonus": 57, "pool_start": 42, "ma_turret": 23, "left": 32, "delay": 31, "results_hole": 19, "slow": 14, "stall": 14, "frozen": 14,
                     "lag": 13}
 # They build and run the test programs of the build folder, which two of them must not do at once.
 RUN_ALONE = ("sim", "desync_sim")

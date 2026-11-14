@@ -27,6 +27,23 @@ int32_t CoopScore_LifeSlot(int32_t slot) {
     return CoopPlayers_IsCoop() ? 0 : slot;
 }
 
+#define COOP_START_LIVES 2 // the original's: src/engine/fox_play.c, Player_Setup
+
+int32_t CoopScore_StartLives(void) {
+    s32 lives = COOP_START_LIVES;
+    s32 i;
+
+    if (!CoopPlayers_IsCoop()) {
+        return COOP_START_LIVES;
+    }
+    for (i = 1; i < CoopPlayers_Count(); i++) {
+        if (!CoopPlayers_IsOut(i)) {
+            lives++;
+        }
+    }
+    return lives;
+}
+
 static u16 sSavedScores[COOP_PLAYERS_MAX];
 
 static void CoopScore_Credit(s32 index, s32 hits) {
