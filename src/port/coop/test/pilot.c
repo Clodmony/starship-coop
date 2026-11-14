@@ -472,15 +472,8 @@ static s32 CoopPilot_ClearSteps(const Player* p, f32 spotX, bool hover) {
     return step;
 }
 
-static s32 sAimPart = -1;
-static Vec3f sAimAt;
-extern s16 D_i5_801BE320[35]; // fox_ma.c
-
-// Macbeth's boss is actor 207 (Macbeth_Actor207_Update, it talks as RCID_BOSS_MACBETH). In state 8 any hit takes
-// its health, D_i5_801BE320[29]; if the train reaches the end of the track first (D_i5_801BE320[18] == 4) it goes to
-// state 18 and then kills player 0 outright. Aim at its middle whenever it is ahead.
-// Where box n of an object's hitbox list sits in the world: its offset turned by the object's rotation, as it is drawn
-// (Y, then X, then Z). Markers are skipped. Returns false past the list's end.
+// Box n's half size across and up (#345), as the hitbox lists it, not turned with the object. Markers are skipped.
+// Returns false past the list's end.
 bool CoopPilot_BoxHalf(const f32* data, s32 n, f32* halfX, f32* halfY) {
     s32 count = (s32) *data++;
     s32 i;
@@ -502,6 +495,15 @@ bool CoopPilot_BoxHalf(const f32* data, s32 n, f32* halfX, f32* halfY) {
     return false;
 }
 
+static s32 sAimPart = -1;
+static Vec3f sAimAt;
+extern s16 D_i5_801BE320[35]; // fox_ma.c
+
+// Macbeth's boss is actor 207 (Macbeth_Actor207_Update, it talks as RCID_BOSS_MACBETH). In state 8 any hit takes
+// its health, D_i5_801BE320[29]; if the train reaches the end of the track first (D_i5_801BE320[18] == 4) it goes to
+// state 18 and then kills player 0 outright. Aim at its middle whenever it is ahead.
+// Where box n of an object's hitbox list sits in the world: its offset turned by the object's rotation, as it is drawn
+// (Y, then X, then Z). Markers are skipped. Returns false past the list's end.
 bool CoopPilot_BoxCenter(const Object* obj, const f32* data, s32 n, Vec3f* at) {
     s32 count = (s32) *data++;
     s32 i;
