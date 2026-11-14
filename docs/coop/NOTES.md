@@ -325,6 +325,8 @@ lane after the merge of both.
   Release took about 4m50s (#318's measurement). `sim` and `desync_sim` did not run in those six: the test programs they need are
   built only in Debug's folder, so my command could not start them; in the lane they come from Debug's folder
   (`--build-dir build-cmake --config Debug`, as for `menu` and `input`) and they passed in the gates on Debug.
+  Then the lane itself, three runs of `python tools/coop/test_all.py --mixed --no-build --only lockstep` on this branch (alone on
+  the machine): **56 of 56 scenarios each time**, `sim` and `desync_sim` included, 2m46s, 2m47s and 2m47s for the step.
 - **Done:** the commit of #316's worker (kept apart in the patch until #324 was fixed): with `--mixed` and with `--config Release`
   `test_all.py` gives `lockstep_test.py --speed max`; on Debug the step stays at the limit of 8; `lockstep-full`, `menu` and `join`
   keep their limits; `test_all_test.py` checks both.
