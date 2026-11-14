@@ -266,6 +266,36 @@ Running tests must never use or modify the owner's own `starship.cfg.json`, save
 Newest first. One block per run that matters (a milestone, a release, a QA level change).
 
 ```
+date:       2026-11-14
+commit:     issue/322-players-campaign: campaign runs on the game code of issue/combined-test-6 8c342fbf with the
+            tool of 5ea0a5e5; #324's fix 1be6625b (test code under src/port/coop/test and game/input.c), its red on
+            8c342fbf's build
+identity:   ROM US 1.0, Linux, GCC, OpenGL on a software renderer, no window; 3 or 4 game clients on one PC, UDP over
+            loopback, through the join driver, a pilot on each; Corneria and Titania of the first table on Debug,
+            every other campaign run on Release; test runs of other branches on the PC at the same time
+what ran:   python tools/coop/campaign.py --players 3 --levels <level>, for corneria, titania, macbeth, aquas, meteo;
+            --players 4 --levels <level> for each of the 18 entries of the route `all`; --players 4 --mortal for
+            macbeth, aquas, titania, meteo, sector-y; one level per run. python tools/coop/lockstep_test.py --no-build
+            --only replay_ends (Debug: on 8c342fbf's build and on 1be6625b; Release with
+            COOP_TOOLS_MEETING_SPEED=max, 3 runs); --only survive_gaps_four on Release with
+            COOP_TOOLS_MEETING_SPEED=max, 3 runs, two scenarios at a time; --only survive_three,survive_gaps_four on
+            Debug; python tools/coop/test_all.py --no-build --only lockstep (on 1be6625b), then --only
+            hash-run-1,hash-run-2,input,replay-test; python tools/coop/check.py
+result:     automated, for the levels and frames listed, each flown once with the default seeds. Four clients: equal
+            on every frame to the end on all 18 entries, 214950 frames in all (corneria 9859, titania 11853, macbeth
+            13111, aquas 9237, meteo 19723, sector-x 11536, fortuna 7500, sector-y 9606, katina 13188, bolse 10667,
+            area-6 14999, solar 10324, zoness 12426, sector-z 7507, venom-1 10497, venom-andross 7506, venom-2 5184,
+            venom-2-andross 30227), every player flying in each. Three clients: equal to the end on corneria 9742,
+            titania 11709, macbeth 11886, aquas 9718, meteo 19378. Four clients without gInvincible: equal on the
+            frames flown, macbeth 9404, aquas 4946 and meteo 6790 to a game over, titania 11695 and sector-y 9622 to
+            level complete; all four players lost shields in each. #324: replay_ends fails on 8c342fbf (`the hash
+            logs differ at level frame 1698: players, globals`) and passes on 1be6625b (2700 frames equal; Debug, and
+            3 of 3 on Release); survive_gaps_four 3 of 3 on Release at no frame limit (it failed 1 of 12 there
+            before, by #324's count, so 3 runs do not prove the fix; the red and green of replay_ends do, for the
+            cause they show). lockstep 53 of 53 scenarios, hash-run-1 and -2, input, replay-test and the checks pass.
+            Not run: three clients on 13 entries of the route, other seeds, any single rule (an aim, a hit) with a
+            third or fourth player, the picture with three other ships, three or four PCs, Windows, a person
+            playing; co-op off against the base (no upstream file changed).
 date:       2026-11-13
 commit:     issue/302-303-304-macbeth-shogun, C sources as built 2d65e62d (#302's rule change: the nearest human in
             the window); red: the commit before it, e9dea93a (the first rule's code with the new test)

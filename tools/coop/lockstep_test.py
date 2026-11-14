@@ -2948,11 +2948,14 @@ def sc_replay_ends(args, folder):
     playback cleared every input source, the lockstep's with them (src/port/coop/test/replay.c): that game then flew
     its own player from its own pad with no input delay and the others from nothing, so the games parted once the feed
     steered. Two games, a replay of W11B_REPLAY_FRAMES frames that ends in the level in both, the feed's steering from
-    JOIN_FRAME on, equal to SHORT_FRAMES."""
+    JOIN_FRAME on, equal to SHORT_FRAMES. Always at a frame limit of 8, whatever COOP_TOOLS_MEETING_SPEED says: a replay
+    counts the frames of the menus too, and at no limit those are as many as the PC renders, so the replay ended
+    before the level and the run showed nothing."""
     folder.mkdir(parents=True, exist_ok=True)
     feed = folder / "feed.txt"
     write_feed(feed, SHORT_FRAMES + 16, sway)
-    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(SHORT_FRAMES)}
+    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(SHORT_FRAMES),
+           "SF64_COOP_TEST_SPEED": "8"}
     games = session(args, folder, both=env, replay_frames=W11B_REPLAY_FRAMES)
     ended = {}
     try:

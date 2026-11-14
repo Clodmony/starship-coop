@@ -9,6 +9,50 @@ Private notes (your paths, your PC, your logs) go in `local/`, not here.
 
 ## Build and run
 
+### 2026-11-14, #324: a test game whose replay file ran out dropped out of lockstep without saying so
+
+**Observed**
+
+- Every game a test tool starts plays a replay file from boot (`SF64_COOP_REPLAY_PLAY`; zeros in a lockstep session,
+  where the feed or the pilot gives the pads). When the file ended, `CoopReplay_FinishPlayback` called
+  `CoopInput_ClearSources()` (`src/port/coop/test/replay.c:202` at `8c342fbf`), which takes out every input source,
+  the lockstep's too (set by `Sync_Start`, `src/port/coop/sync/lockstep_game.c:129-132`). From then on
+  `CoopInput_ReadPlayer` (`src/port/coop/game/input.c`) gave that game its own player straight from its controller
+  slot, with no input delay, and every other player nothing; the lockstep went on sending and the state hashes went on
+  being compared.
+- `python tools/coop/lockstep_test.py --only replay_ends` (new): two games, a replay of 2000 frames, the feed's
+  steering from frame 1700 (`sway`, `JOIN_FRAME`). On `8c342fbf`, Debug, at the usual limit of 8:
+  `the hash logs differ at level frame 1698: players, globals`. With the fix: 2700 frames equal, the replays seen
+  ended by lockstep frame 1396 (host) and 1769 (client).
+- The desync reports kept from #324's failures (Release, no frame limit, `survive_gaps_four`, the run for three after
+  the first lost player) show the same: frame 1698, region `players` only; in the host's and player 2's reports
+  `gPlayer[1]` differs in 27 words, in the host's copy the stick-fed camera fields `unk_02C`, `unk_030` and `camRoll`
+  (`include/sf64player.h:180-182`) are 0 and the velocities are 0, in player 2's own game they are -4, 1.6, 0.018 and
+  the ship has begun to move; the host's and player 3's dumps of that pair are equal byte for byte.
+
+**Derived**
+
+- Frame 1698 is the feed, not the level: the feed's row 1700 is the first that steers, a delay of 3 puts it into the
+  driver's pad at frame 1697 (`Driver_Pad`, `src/port/coop/test/lockstep_driver.c:279`), and a game without the
+  lockstep's source flies it on that frame, three frames before the others get it. Before that row the pads are zeros
+  and nothing shows, however early the replay ended.
+- Why only at no frame limit: a replay counts game frames from the title on, in menus and waits too. `REPLAY_FRAMES` is
+  30000; at the limit of 8 the 15 s wait for a lost player is about 3600 frames, at no limit it is as many as the PC
+  renders, so the replay of a client can end inside the level that started again for three. The moment depends on the
+  load, which fits 1 of 12 alone and 3 of 3 with two long scenarios beside it (#324's numbers, not run again here).
+- Outside a test nothing plays a replay in a session, so no player's session was at risk: this was a fault of the test
+  code under `src/port/coop/test/`.
+
+**Fix:** the playback takes out only its own source (`CoopInput_ClearSource`, `src/port/coop/game/input.c`).
+
+**Unknown**
+
+- Whether this was the only cause of #324's failures: the failing runs' replay reports were not kept, so the end of
+  the replay inside the level is derived from the reports' bytes and from `replay_ends`, not read from those runs.
+  See QA.md for the runs of `survive_gaps_four` at no limit with the fix.
+- A pilot run whose replay ends still changes: the pilot steps twice a frame only while the replay lasts
+  (`src/port/coop/test/pilot.h`), so `campaign.py` keeps its long replays.
+
 ### 2026-11-13, the owner's three decisions on the open items of the wave 9 hand-offs
 
 Answered by the owner in a dialog on 2026-11-13 (night), each as the recommendation of the hand-off it comes from.
@@ -1276,6 +1320,82 @@ Unknown:
 - Release config and macOS: not tried in this session.
 
 ## Engine and players
+
+### 2026-11-14, #322: three and four real clients through the campaign, and what the runs show
+
+Run on `issue/322-players-campaign` (from `issue/combined-test-6` `8c342fbf`; the game code is that commit's, the
+later commit for #324 changes test code only). Identity: ROM US 1.0, Linux, GCC, OpenGL on a software renderer, no
+window, three or four game clients on one PC in lockstep over loopback through the join driver, a pilot on each
+(`python tools/coop/campaign.py --players 3|4 --levels <one level>`), other workers' tests on the PC at the same time.
+Corneria and Titania on the Debug build, the rest on Release. Each level is a session of its own.
+
+**Observed**
+
+- Equal on every frame, hash log and input log of every client against the host's, from the first frame in the level
+  to the map or what follows level complete, with no desync report, and every player flew:
+
+  | Level | 3 clients: frames compared | 4 clients: frames compared | 4 clients: level complete at level frame |
+  |---|---|---|---|
+  | corneria (`gInvincible` off) | 9742 | 9859 | 7564 |
+  | titania | 11709 | 11853 | 9524 |
+  | macbeth | 11886 | 13111 | 10886 |
+  | aquas | 9718 | 9237 | 7180 |
+  | meteo | 19378 | 19723 | 17393 |
+  | sector-x | not run | 11536 | 9361 |
+  | fortuna | not run | 7500 | 5151 |
+  | sector-y | not run | 9606 | 7435 |
+  | katina | not run | 13188 | 10792 |
+  | bolse | not run | 10667 | 8610 |
+  | area-6 | not run | 14999 | 12915 |
+  | solar | not run | 10324 | 8116 |
+  | zoness (`gInfiniteBombs`) | not run | 12426 | 10160 |
+  | sector-z | not run | 7507 | 4690 |
+  | venom-1 | not run | 10497 | 1 (the tool's number: Venom 1's level complete comes in another level's id) |
+  | venom-andross (`gInfiniteBombs`) | not run | 7506 | 6994 |
+  | venom-2 | not run | 5184 | 4571 |
+  | venom-2-andross (`gInfiniteBombs`) | not run | 30227 | 22650 |
+
+  That is the route `all`, 18 entries and 214950 frames with four clients, each run once, with one set of seeds.
+- Four clients without `gInvincible` (`--mortal`, Release), frames compared, all equal: macbeth 9404 (game over at
+  frame 10201), aquas 4946 (game over at 5965), meteo 6790 (game over at 7694), titania 11695 and sector-y 9622 (both
+  to level complete). Every player's shields fell to 0 or 1 in macbeth, aquas, meteo and titania (sector-y: 0, 0, 1,
+  5); in Corneria the lowest were 175, 55, 127, 175 of 255. Downs per player (player 0 in `PLAYERSTATE_DOWN`, the
+  others parked while player 0 flies): macbeth 1,1,1,1; aquas 1,2,1,1; meteo 1,1,1,1; titania 0,1,1,0; sector-y
+  0,1,1,0.
+- In that Macbeth run player 2 was parked at level frame 4522 and back at 4672, player 3 was parked at 4659 and never
+  came back, player 4 at 8305, and player 0 went down at 8808, which ended the run.
+- At Andross (`venom-andross`, four clients) player 2 was in `PLAYERSTATE_ANDROSS_MOUTH` four times, 302 frames each
+  (from level frames 2760, 3813, 4868, 5923); players 1, 3 and 4 never. That is why it flew 5786 frames and the others
+  6994.
+- Each client's hash log names the players it looked through: the host player 0 only, client n players 0 and n + 1.
+- A level took 29 to 134 s on Release with four clients and 50 to 540 s on Debug (Titania 427 s with three, 540 s
+  with four), other tests running on the PC.
+
+**Derived**
+
+- A down of a player 2 to 4 costs the pool a life when it returns (`CoopPlayers_ReturnFromDown`, the test at
+  `src/port/coop/game/players.c:537`: counter run out, `gLifeCount[0] > 0`, player 0 active), and so does Fox's
+  refill (`CoopPlayers_RefillFox`, `players.c:448`). Nothing in `players.c` scales the pool with the number of
+  players (its uses of `gLifeCount` are lines 233, 261, 280, 438-448 and 537); where the pool's size at a level start
+  comes from was not traced. The Macbeth run above fits that: the third tank down found the pool empty and stayed out
+  (`players.c:534-536`, "At pool 0 the player stays out").
+- The campaign tool's "downs" said 0 for players 2 to 4 before this branch, also with two clients: they never get
+  `PLAYERSTATE_DOWN` (`CoopPlayers_SetDown`, `players.c:469-474`, parks them).
+
+**Unknown**
+
+- Whether three clients stay equal on the 13 entries not run with three.
+- Other seeds, other flights: each level was flown once. A pilot's flight with four differs from its flight with two
+  (the frames of level complete differ), so the two-client results say nothing about the four-client ones and the
+  other way round.
+- Whether every hazard reaches players 3 and 4: the runs show that all four take damage in six levels, not which
+  enemy, boss or hazard hit whom. Nothing here checked a single rule (aim at the nearest, a hit on every human) with a
+  third or fourth player; the scenarios of `lockstep_test.py` for those rules run with two.
+- What a client shows with three other ships (camera, HUD, name tags, shield bars): the games ran without a window and
+  nothing looked at a picture.
+- Why Andross swallowed player 2 each time and nobody else: a rule (`CoopAim_AndrossSwallow`,
+  `src/port/coop/game/aim.h:58`) or where the pilots happened to fly; not looked into.
+- Three or four PCs, Windows, a person playing.
 
 ### 2026-11-13, #302, #303, #304: Macbeth's turrets and car 7's flash, Sector Y's Shogun bonus
 

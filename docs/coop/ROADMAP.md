@@ -4,7 +4,10 @@
 release (see "Later").
 
 **Two players first.** M1 and M2 are for two players. [Decision 0005](decisions/0005-players-and-characters.md) allows
-up to four, so nothing built for M1 and M2 may block that, but three and four players stay under "Later".
+up to four, so nothing built for M1 and M2 may block that. Three and four players have no work package of their own:
+the game layer takes up to four (the menu's "x of 4 players"), and what scripts have flown with three and four games
+is listed in [QA.md](QA.md) (the record of #322, and the rows `rails-4`, `survive_three`, `survive_gaps_four`). What is
+not in those lists is not tested with more than two.
 
 Each work package (WP) is one GitHub issue with the `type/work-package` label, and one branch and PR when someone
 takes it. The issue is the source of truth for who holds it and where it stands; this file only lists what exists and
@@ -89,7 +92,12 @@ Deferred work packages keep their issues, in the GitHub milestone "Later".
 | WP-13 | [#11](https://github.com/Clodmony/starship-coop/issues/11) | Local split screen: cameras and viewports for 2 players on one PC | render | WP-10, WP-28 | Two viewports, each following its own player |
 | WP-15 | [#13](https://github.com/Clodmony/starship-coop/issues/13) | Local split screen: HUD per viewport | ui | WP-13 | Both HUDs drawn in their viewports |
 
-- Three and four players. Decision 0005 sets the rules, and versus mode already handles four `Player` structs.
+- Three and four players beyond what is tested. Decision 0005 sets the rules and the game layer seats up to four
+  players; `campaign.py --players 3|4` flies a level with three or four real clients
+  ([#322](https://github.com/Clodmony/starship-coop/issues/322)). Open: the levels not yet flown that way, the rules
+  written for one extra player (which wingman a third or fourth player gets, their share of the lives), what the
+  camera, the HUD and the name tags show with three other ships, and a session of three or four PCs. The list of what
+  ran is in QA.md.
 - Rollback instead of plain lockstep, if input delay hurts (decision 0002).
 - Cross-platform play (Windows with Linux), if determinism holds across compilers. A platform difference warns and the
   session runs (decision 0010); the desync check shows whether the two stay in step.
