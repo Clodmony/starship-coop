@@ -39,6 +39,12 @@ int32_t CoopScore_LifeSlot(int32_t slot);
 // and versus: 2, the original's.
 int32_t CoopScore_StartLives(void);
 
+// Test only, for src/port/coop/test/view_trace.c (#335). HUD_LivesCount2_Draw, the lives number of the HUD in flight
+// and of the level clear screen, notes the number it draws; Take gives the last one noted since the previous call, -1
+// for none, and forgets it. Nothing the simulation reads, and not in the state hash. Co-op off: nothing is noted.
+void CoopScore_NoteLivesDrawn(int32_t lives);
+int32_t CoopScore_TakeLivesDrawn(void);
+
 // Hits per player, for display only (#252, decision 0008 4d on top of 4b). In co-op a human's kill also adds its hits
 // to gPlayerScores[that player], next to the team's gHitCount, where the game knows the shooter: an actor's dmgSource
 // or a PlayerShot's sourceId. Hits with no shooter (chain blasts, scripted kills, bosses) count for the team only, so

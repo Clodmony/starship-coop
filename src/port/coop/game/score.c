@@ -44,6 +44,21 @@ int32_t CoopScore_StartLives(void) {
     return lives;
 }
 
+static s32 sLivesDrawn = -1;
+
+void CoopScore_NoteLivesDrawn(int32_t lives) {
+    if (CoopPlayers_IsCoop()) {
+        sLivesDrawn = lives;
+    }
+}
+
+int32_t CoopScore_TakeLivesDrawn(void) {
+    s32 lives = sLivesDrawn;
+
+    sLivesDrawn = -1;
+    return lives;
+}
+
 static u16 sSavedScores[COOP_PLAYERS_MAX];
 
 static void CoopScore_Credit(s32 index, s32 hits) {

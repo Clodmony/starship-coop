@@ -26,6 +26,8 @@
 //   heat=<shields>,<height>             what this client last gave Solar's heat alarm this frame, - for nothing (#140)
 //   turned=<n>/<all>                    billboards (poles, trees, facades) drawn facing this client's eye in place of
 //                                       player 0's, of all drawn (#140)
+//   hudlives=<n>                        the lives number the HUD drew this frame (HUD_LivesCount2_Draw, #335), - for
+//                                       none
 //   sfx=<id>@<source>,...               sound requests of this frame, - for none. The source is d for the default
 //                                       source, p<i> for player i and o for anything else
 //

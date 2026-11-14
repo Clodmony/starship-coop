@@ -127,7 +127,7 @@ TIMEOUT = 1500
 Client = namedtuple("Client", "index rows by_frame")
 Slot = namedtuple("Slot", "state parked shields bombs lives alternate sfx pos")
 Row = namedtuple("Row", "frame mode local view eye at shield bombs cockpit fill flash bars players noise paused sfx "
-                       "seen guns tags reticles turned heat")
+                       "seen guns tags reticles turned heat hudlives")
 
 
 def floats(text):
@@ -152,10 +152,12 @@ def parse_row(line):
     reticles = tuple(int(v) != 0 for v in f["reticles"].split(",")) if "reticles" in f else None
     turned = tuple(int(v) for v in f["turned"].split("/")) if "turned" in f else None
     heat = None if "heat" not in f else () if f["heat"] == "-" else tuple(int(v) for v in f["heat"].split(","))
+    # #335: the lives number the HUD drew, -1 for none drawn; None from a build before it.
+    hudlives = None if "hudlives" not in f else -1 if f["hudlives"] == "-" else int(f["hudlives"])
     return Row(int(f["frame"]), int(f["mode"]), int(f["local"]), int(f["view"]), floats(f["eye"]), floats(f["at"]), float(f["shield"]),
                int(f["bombs"]), int(f["cockpit"]) != 0, tuple(int(v) for v in f["fill"].split(",")), int(f["flash"]),
                bars, players, tuple(int(v) for v in f["noise"].split(",")), int(f["pause"]) != 0, sfx,
-               tuple(int(v) != 0 for v in f["seen"].split(",")), guns, tags, reticles, turned, heat)
+               tuple(int(v) != 0 for v in f["seen"].split(",")), guns, tags, reticles, turned, heat, hudlives)
 
 
 def read_trace(index, path):

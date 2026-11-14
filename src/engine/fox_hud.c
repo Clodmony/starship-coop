@@ -950,6 +950,7 @@ void HUD_LivesCount2_Draw(f32 x, f32 y, s32 number) {
     s32 i;
     s32 form;
 
+    CoopScore_NoteLivesDrawn(number); // COOP: the number drawn, for the view trace (#335)
     RCP_SetupDL(&gMasterDisp, SETUPDL_78_OPTIONAL);
     gDPSetPrimColor(gMasterDisp++, 0, 0, 255, 255, 255, 255);
 
