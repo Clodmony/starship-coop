@@ -23,7 +23,8 @@ second, and the broken rows have to fail:
 - two: the same checks on two-player rows give the counts of the two-player text.
 - places (#345): campaign.py's one_spot counts the frames two flying players share a place, and one_spot_failed takes
   a pair over its share (players 1 and 3 of four on one spot on 400 of 1000 frames) and leaves 30 frames, and frames
-  with one of them parked.
+  with one of them parked; w9_escape_together finds a returned player 3 within 16 of player 0 for 500 frames of the
+  escape and not a pass of 40 frames, nor rows on rails.
 - names: bars_over_names_342 (#342) on rows of a view trace's `tagbox`; a bar drawn after the name it lies on is found
   (the order of a build before #342's fix: each ship's bar and name together), the same boxes with every bar drawn
   before every name are not, and neither are bars and names that do not meet, a name off the screen, or a trace without
@@ -359,7 +360,7 @@ def test_names():
     check("names old trace", old[0][3] is None, f"{old[0]}")
 
 
-# ---- #345: pilots on one spot ----
+# ---- #345: pilots on one spot, and in one another in the escape ----
 
 def place_rows(places, level=9, mode=1, parked=()):
     """Trace rows, one per frame, from [(x, y, z) per player] per frame; players in `parked` parked."""
@@ -387,6 +388,16 @@ def test_places():
     parked = campaign.one_spot(place_rows(four(1000, 400), 9, 0, parked=(3,)), 4)
     check("one spot parked", (1, 3, 0, 0) in parked and not campaign.one_spot_failed(parked), f"{parked}")
 
+    # the escape: a returned player 3 within 16 of player 0 for 500 frames (#329) fails; a pass of 40 frames does not
+    def escape(n, near):
+        return [[(-6676.0, 346.0, -2358.0 - k), (-6676.0, 346.0, -1558.0 - k), (-6676.0, 346.0, -758.0 - k),
+                 (-6659.0 if k >= n - near else -5000.0, 340.0, -2352.0 - k)] for k in range(n)]
+    found = lt.w9_escape_together(place_rows(escape(1000, 500)), 4)
+    check("escape together", found == [(0, 3, 500, 500)], f"{found}")
+    check("escape a pass", lt.w9_escape_together(place_rows(escape(1000, 40)), 4) == [], "a short pass failed")
+    check("escape on rails", lt.w9_escape_together(place_rows(escape(1000, 500), 9, 0), 4) == [],
+          "rows on rails are not the escape")
+    fails("escape together fails", lambda: lt.expect(not found, "pilots flew in one another"), "one another")
 
 
 def main():

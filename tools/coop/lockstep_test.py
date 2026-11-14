@@ -195,7 +195,8 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             reach (player 1 goes down, comes back 150 frames later for a life of the pool; player 0 flies on), the
             exit's trigger in its reach (nothing: the exit is player 0's), then an explosion on player 0 (down, the
             level starts again; player 1 unhurt), with gInvincible and without, the same; then James' route alone in
-            each of the three mazes. On a build without CoopHits_AndrossExplosion the explosion leaves player 1 alone.
+            each of the three mazes; no two pilots fly in one another (#345). On a build without
+            CoopHits_AndrossExplosion the explosion leaves player 1 alone.
             By hand, not in test_all.py: about 3 minutes.
   log     the co-op log (#172): each game's folder holds its own log and the other player's, streamed during the
             session; the hash stays equal with streaming on; nothing personal is in the files; coop_log.py merges them.
@@ -5818,6 +5819,11 @@ W9_ESCAPE_FULL = 255  # Play_GetMaxShields without the team's upgrade: what a re
 W9_ESCAPE_FRAMES = 7000  # lockstep frames: the escape, the cases, a restart at its checkpoint, the flight to the exit
 W9_ESCAPE_MORE = 1500  # lockstep frames more for each player after the second: three more cases (#329)
 W9_ESCAPE_KEEP = 510.0  # ESCAPE_KEEP in escape_probe.c: every other player at least this far from a case's object
+# Two flying players nearer than W9_ESCAPE_APART on each axis fly in one another (#345: a returned player 3 flew within
+# 16 of player 0 from frame 560 to the end of the escape, #329); a pass while one falls back to its place is shorter
+# than W9_ESCAPE_APART_FRAMES.
+W9_ESCAPE_APART = 100.0
+W9_ESCAPE_APART_FRAMES = 60
 W9_ESCAPE_REACH = 500.0  # both objects act under this in x and in z
 # (name, cases, gInvincible, start seeds): with the cases, with and without the cheat; then James' route alone, as #275
 # flies it, once in each of the three mazes (Andross_80187C5C draws one; these seeds draw it from the checkpoint).
@@ -5840,9 +5846,25 @@ def w9_escape_rows(path):
     return rows
 
 
+def w9_escape_together(rows, players):
+    """[(i, j, frames, first frame)] for every pair of players that flew nearer than W9_ESCAPE_APART on each axis in
+    the escape (level 9, all-range) on more than W9_ESCAPE_APART_FRAMES frames, from a game's trace rows (#345)."""
+    found = []
+    for i in range(players):
+        for j in range(i + 1, players):
+            near = [r.frame for r in rows if r.level == 9 and r.mode == player_trace.ALL_RANGE and len(r.players) > j
+                    and all(not s.parked and s.state in player_trace.FLYING for s in (r.players[i], r.players[j]))
+                    and abs(r.players[i].x - r.players[j].x) < W9_ESCAPE_APART
+                    and abs(r.players[i].y - r.players[j].y) < W9_ESCAPE_APART
+                    and abs(r.players[i].z - r.players[j].z) < W9_ESCAPE_APART]
+            if len(near) > W9_ESCAPE_APART_FRAMES:
+                found.append((i, j, len(near), near[0]))
+    return found
+
+
 def w9_escape_session(args, folder, cases, invincible, seeds=None, players=2):
     """One session from the escape's checkpoint to lockstep frame W9_ESCAPE_FRAMES, from SEEDS or `seeds`. Returns (the
-    host's probe rows, frames compared)."""
+    host's probe rows, frames compared). Fails when two pilots flew in one another (w9_escape_together)."""
     folder.mkdir(parents=True, exist_ok=True)
     both = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt",
             "SF64_COOP_LOCKSTEP_END": str(W9_ESCAPE_FRAMES), "SF64_COOP_ESCAPE_PROBE": W9_ESCAPE_PROBE}
@@ -5864,6 +5886,10 @@ def w9_escape_session(args, folder, cases, invincible, seeds=None, players=2):
     expect([r for r in ours if r[0] == "start"],
            "no escape: a build without SF64_COOP_JOIN_CHECKPOINT and src/port/coop/test/escape_probe.c (#282), or the "
            f"level never reached it in {W9_ESCAPE_FRAMES} frames")
+    together = w9_escape_together(player_trace.parse(games[0].run / "trace.txt"), players)
+    expect(not together, "pilots flew in one another in the escape: " + ", ".join(
+        f"players {i} and {j} nearer than {W9_ESCAPE_APART:.0f} on each axis on {n} frames from frame {first}"
+        for i, j, n, first in together))
     return ours, frames
 
 
