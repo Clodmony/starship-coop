@@ -222,9 +222,13 @@ static void CoopAimTrace_OnObjectInit(IEvent* event) {
     if (!CoopAimTrace_IsEnemyShot(effect->obj.id)) {
         return;
     }
-    fprintf(sTraceFile, "shot level=%d frame=%d id=%d player=%d\n", (int) gCurrentLevel, (int) gGameFrameCount,
-            (int) effect->obj.id, CoopAimTrace_ShotTarget(effect));
-    fflush(sTraceFile); // tests stop the game from outside
+    // The places (#345): where the shot starts, where it flies and where every player is, so a test can tell whether
+    // the player it flies at was the nearest to its start.
+    fprintf(sTraceFile, "shot level=%d frame=%d id=%d player=%d start=%.3f,%.3f,%.3f dir=%.6f,%.6f,%.6f",
+            (int) gCurrentLevel, (int) gGameFrameCount, (int) effect->obj.id, CoopAimTrace_ShotTarget(effect),
+            effect->obj.pos.x, effect->obj.pos.y, effect->obj.pos.z, effect->vel.x - gPathVelX,
+            effect->vel.y - gPathVelY, effect->vel.z + gPathVelZ);
+    CoopAimTrace_Players(); // ends the line and flushes it: tests stop the game from outside
     CoopAimTrace_SyRobotShot(effect);
     CoopAimTrace_PlasmaShot(effect);
 }

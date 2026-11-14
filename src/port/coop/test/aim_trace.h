@@ -7,10 +7,14 @@
 // writes its lines too. It reads, never writes, the simulation. In co-op levels only (CoopPlayers_IsCoop), it appends:
 //
 //   shot level=<gCurrentLevel> frame=<gGameFrameCount> id=<obj.id> player=<index, -1 for none>
+//        start=<x>,<y>,<z> dir=<x>,<y>,<z> p0=<x>,<y>,<z>,<flies> p1=... (one per player of the session)
 //     for each new enemy shot (OBJ_EFFECT_ENEMY_LASER_1, 354 to 356, 376, 377), on its ObjectInitEvent: before it
 //     first moves, in the frame it was fired, after the players' update. player is the player it flies at: its
 //     velocity less the path's points within COOP_AIM_TRACE_DEGREES of that player's pos.x, pos.y, trueZpos, and
 //     nearer it than any other player that is not parked. A shot fired straight ahead, or at a camera, is -1.
+//     start is the shot's position, dir its velocity less the path's, and the p fields are as in the syrobot line
+//     below (#345): with them a test can tell whether the player a shot flies at was the nearest to its start, the
+//     rule of func_effect_8007E6B8 (src/engine/fox_effect.c), and how close the shot's line passes each player.
 //   missile level=<...> frame=<...> slot=<gActors index> player=<index>
 //     when a homing missile (OBJ_ACTOR_MISSILE_SEEK_*) starts to seek a player, or another one: its target point
 //     (fwork[27..29]) is that player's position after the frame. A missile that seeks a wingman writes no line.

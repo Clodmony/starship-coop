@@ -25,7 +25,9 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             the client's frames before it joins are the same however fast that is. Hashes equal. On a Release
             build a client that joined in its first frames left the host at level frame 4 to 9 (voice player).
   aim       enemies aim at the nearest human (#193): on Corneria's rails some enemy shots or missiles fly at player 1,
-            the two games log the same ones (src/port/coop/test/aim_trace.h), and the hashes stay equal.
+            the two games log the same ones (src/port/coop/test/aim_trace.h), and the hashes stay equal. Since #345
+            the shot lines hold the shot's start and the players' places: every shot that flies at a player's place
+            flies at the nearest to its start (the kinds it cannot judge are counted apart, see w14_aim_story).
   return    a player 2-4 who goes down comes back (decision 0007 rule 4, #14): player 1 is forced down on Corneria's
             rails, is out for exactly RETURN_FRAMES frames, comes back beside player 0 with full shields, 3 bombs and
             one life less in the pool, gLifeCount[0]; down again with the pool at 0 it stays out until a life comes in.
@@ -233,7 +235,8 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             are the host's, and the checks read every player of the session: a shot or missile at each player; every
             hazard of Macbeth on each tank in turn, that tank hit and no other, the flash red on its own client; a
             turret's steps to each player when the rule names it; a spread shot around each player when it is the
-            nearest; an explosion in reach of each player after the second. The default run has aim_four,
+            nearest; an explosion in reach of each player after the second; every shot at a player's place at the
+            nearest (#345). The default run has aim_four,
             macbeth_bombs_four and ma_turret_four; the others are by name.
 
 Every scenario that compares two games also checks that neither wrote a desync report (WP-23).
@@ -689,7 +692,7 @@ def apart_in_turn(players, period=150):
     return script
 
 
-AIM_LINE = re.compile(r"(shot|missile) level=(\d+) frame=(\d+) .*player=(-?\d+)$")
+AIM_LINE = re.compile(r"(shot|missile) level=(\d+) frame=(\d+) .*player=(-?\d+)(?: |$)")  # #345: places after it
 
 
 def aim_rows(path):
@@ -729,7 +732,145 @@ def sc_aim(args, folder, players=2):
     missed = [player for player in range(1, players) if at[player] == 0]
     expect(not missed, f"no enemy shot or missile flew at player {', '.join(str(p) for p in missed)}: {text}, "
                        f"{at[-1]} at nobody")
-    return f"same hash on {frames} frames; shots or missiles: {text}, {at[-1]} at nobody; {n} trace lines alike"
+    nearest = w14_aim_check(w14_aim_story(w14_shot_rows(traces["host"])[:sum(1 for r in ours[:n] if r[0] == "shot")],
+                                          players), players)
+    return (f"same hash on {frames} frames; shots or missiles: {text}, {at[-1]} at nobody; {n} trace lines alike; "
+            f"{nearest}")
+
+
+# ---- #345: the player a shot flies at is the nearest to its start ----
+#
+# Since #345 a `shot` line of the aim trace holds the shot's start, its direction and every player's place
+# (src/port/coop/test/aim_trace.h). func_effect_8007E6B8 (src/engine/fox_effect.c), behind Effect_EnemyLaser, aims at
+# the place of CoopAim_Nearest of the shot's start (src/port/coop/game/aim.c): the nearest by straight-line distance of
+# player 0 and the players that fly, a tie to the lower index. w14_aim_story judges each shot line by that rule where
+# the line can tell, and counts the others by why it cannot:
+# - nobody: a shot at nobody (player=-1: straight ahead, at a camera, at a moved point) says nothing about a pick;
+# - spread: a Sector Y robot's spread shot (354 with its syrobot line) and the Granga's plasma (376 in Corneria) aim at
+#   a point moved around the nearest human; sy_robot_spread and granga_spread judge those;
+# - near: a line that passes the player's place more than W14_AIM_EXACT degrees off was aimed at a point near it, not
+#   at it (Corneria's EVACT_8 moves player 0 by up to 150 in x and y for its shot, src/engine/fox_enmy2.c);
+# - tie: two players nearly as far from the start (W14_AIM_TIE): the printed places cannot tell the tie rule;
+# - scatter: a shot at a player after the first while player 0 was the nearer, by less than EVACT_8's scatter can
+#   move it: such a shot aimed at the nearest of the moved places, and the trace does not name the shooter.
+# Every other shot at a player's place has to be at the nearest. Not the rule here: a boss keeps its target (#213)
+# and works out its own aim, and a Macbeth turret fires at the nearest in its window (#302); the aim scenario's
+# Corneria rails hold neither, and a run with them would need the shooter, which the trace does not give.
+W14_AIM_EXACT = 0.05  # degrees: the 43 shots at a player of aim and aim_four (#345) were all within 0.00005
+W14_AIM_TIE = 0.5  # distance under which the printed places (3 decimals) do not tell the nearer of two players
+W14_AIM_SCATTER = 150.0  # EVACT_8 moves player 0 by RAND_FLOAT_CENTERED(300.0f) in x and in y
+W14_LEVEL_CORNERIA = 0  # include/sf64level.h
+
+
+def w14_shot_rows(path):
+    """The shot lines of an aim trace: one dict per line, in order (w14_shot_lines)."""
+    if not path.exists():
+        return []
+    return w14_shot_lines(path.read_text(encoding="utf-8", errors="replace").splitlines())
+
+
+def w14_shot_lines(lines):
+    """The shot lines of the lines of an aim trace: one dict per line, in order. row["start"] is None for a line
+    without places (a build before #345). row["robot"] is True for a shot with a syrobot line of the same frame and
+    start."""
+    rows = []
+    robots = set()
+    for line in lines:
+        if line.startswith("syrobot "):
+            f = dict(kv.split("=", 1) for kv in line.split()[1:])
+            robots.add((f["frame"], f["start"]))
+    for line in lines:
+        if not line.startswith("shot "):
+            continue
+        f = dict(kv.split("=", 1) for kv in line.split()[1:])
+        row = {"level": int(f["level"]), "frame": int(f["frame"]), "id": int(f["id"]), "player": int(f["player"]),
+               "start": None, "line": line}
+        if "start" in f:
+            row["start"] = tuple(float(v) for v in f["start"].split(","))
+            row["dir"] = tuple(float(v) for v in f["dir"].split(","))
+            row["players"] = sorted(int(key[1:]) for key in f if re.fullmatch(r"p\d", key))
+            for n in row["players"]:
+                p = f[f"p{n}"].split(",")
+                row[f"p{n}"] = tuple(float(v) for v in p[:3])
+                row[f"flies{n}"] = n == 0 or p[3] == "1"
+            row["robot"] = (f["frame"], f["start"]) in robots
+        rows.append(row)
+    return rows
+
+
+def w14_off(row, n):
+    """Degrees between the shot's direction and the line from its start to player n."""
+    to = [a - b for a, b in zip(row[f"p{n}"], row["start"])]
+    length = math.hypot(*to) * math.hypot(*row["dir"])
+    if length <= 0.0:
+        return 180.0
+    cosine = sum(a * b for a, b in zip(to, row["dir"])) / length
+    return math.degrees(math.acos(max(-1.0, min(1.0, cosine))))
+
+
+def w14_aim_story(rows, players):
+    """Counts over the shot lines: see the comment above. count["judged"] is per player, count["wrong"] the lines of
+    shots at a player's place that was not the nearest."""
+    count = {"lines": len(rows), "old": 0, "nobody": 0, "spread": 0, "near": 0, "tie": 0, "scatter": 0,
+             "judged": [0] * players, "wrong": []}
+    for row in rows:
+        n = row["player"]
+        if row["start"] is None:
+            count["old"] += 1
+            continue
+        expect(row["players"] == list(range(players)),
+               f"a shot line holds players {row['players']}, the session has {players}: `{row['line']}`")
+        if n < 0:
+            count["nobody"] += 1
+            continue
+        if (row["id"] == 354 and row["robot"]) or (row["id"] == 376 and row["level"] == W14_LEVEL_CORNERIA):
+            count["spread"] += 1
+            continue
+        if w14_off(row, n) > W14_AIM_EXACT:
+            count["near"] += 1
+            continue
+        flying = [m for m in range(players) if row[f"flies{m}"]]
+        if n not in flying:
+            count["wrong"].append(f"{row['line']} (player {n} does not fly)")
+            continue
+        far = {m: math.dist(row[f"p{m}"], row["start"]) for m in flying}
+        nearest = min(flying, key=lambda m: (far[m], m))
+        # Within W14_AIM_TIE of the nearest the printed places do not tell which the game found nearer.
+        if far[n] - far[nearest] < W14_AIM_TIE and (nearest != n or any(
+                far[m] - far[n] < W14_AIM_TIE for m in flying if m != n)):
+            count["tie"] += 1
+            continue
+        if nearest == n:
+            count["judged"][n] += 1
+            continue
+        # Player 0 the nearer: EVACT_8 may have moved it away for this shot. n has to be the nearest of the others,
+        # which stayed where they are, and no nearer than player 0 can be with the scatter.
+        others = [m for m in flying if m not in (0, n)]
+        if nearest == 0 and all(far[n] < far[m] for m in others):
+            x, y, z = row["p0"]
+            moved = max(math.dist((x + dx, y + dy, z), row["start"])
+                        for dx in (-W14_AIM_SCATTER, W14_AIM_SCATTER) for dy in (-W14_AIM_SCATTER, W14_AIM_SCATTER))
+            if far[n] < moved:
+                count["scatter"] += 1
+                continue
+        count["wrong"].append(f"{row['line']} (player {nearest} was the nearest, {far[n] - far[nearest]:.1f} nearer)")
+    return count
+
+
+def w14_aim_check(count, players):
+    """The check of aim on w14_aim_story's counts; raises Fail. Returns its text."""
+    judged = count["judged"]
+    text = (f"{sum(judged)} shots at a player's place, each at the nearest human to its start (players "
+            f"{'/'.join(str(n) for n in range(players))}: {'/'.join(str(v) for v in judged)}); not judged: "
+            f"{count['nobody']} at nobody, {count['spread']} spread around a human, {count['near']} near a human but "
+            f"not at its place, {count['tie']} at a near tie, {count['scatter']} that may be Corneria's scatter of "
+            f"player 0 (EVACT_8)")
+    expect(count["old"] == 0, f"{count['old']} of {count['lines']} shot lines hold no places: a build before the "
+                              f"shot line of #345 (src/port/coop/test/aim_trace.h) cannot say whom a shot was for")
+    expect(not count["wrong"], f"{len(count['wrong'])} shots flew at a human who was not the nearest to their start, "
+                               f"first `{count['wrong'][0] if count['wrong'] else ''}`: {text}")
+    expect(sum(judged[1:]) > 0, f"no shot at a player after the first could be judged: {text}")
+    return text
 
 
 def boost_of_player_1(frame, player):
