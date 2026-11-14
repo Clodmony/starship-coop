@@ -5,6 +5,7 @@
     python tools/coop/lockstep_test.py --only sim          # no game, no ROM
     python tools/coop/lockstep_test.py --only steer,pause
     python tools/coop/lockstep_test.py --jobs 4            # four scenarios at a time, after sim and desync_sim (#290)
+    python tools/coop/lockstep_test.py --jobs 4 --speed max --exe <Release build>  # test_all.py's Release lane (#316)
     python tools/coop/lockstep_test.py --only full         # all of Corneria, about 10 minutes
     python tools/coop/lockstep_test.py --list
     python tools/coop/lockstep_test.py --only release,rates,audio,menu --feed <lockstep log of full> --release-exe <Starship>
@@ -6267,6 +6268,8 @@ def main():
     ap.add_argument("--jobs", type=int, default=1,
                     help="scenarios at the same time (default 1); sim and desync_sim go first, alone (#290)")
     ap.add_argument("--no-build", action="store_true", help="do not build coop_lockstep_test")
+    ap.add_argument("--speed", help="frame limit of the games that meet over sockets, a number or max (default: "
+                                    "COOP_TOOLS_MEETING_SPEED, else 8); test_all.py gives max on a Release build (#316)")
     ap.add_argument("--build-dir", help="where to find coop_lockstep_test (default: build-cmake)")
     ap.add_argument("--config", default="Debug", help="for a build with several configurations")
     ap.add_argument("--out", help="folder for the logs (default: a new one under local/)")
@@ -6286,6 +6289,8 @@ def main():
     if args.list:
         print("\n".join(SCENARIOS))
         return 0
+    if args.speed:
+        replay_tool.MEETING_SPEED = args.speed  # as COOP_TOOLS_MEETING_SPEED would, for every game of this run
     names = args.only.split(",") if args.only else [name for name in SCENARIOS if name not in LONG]
     if any(name not in ("sim", "desync_sim") for name in names):
         args.exe = replay_tool.find_exe(args.exe)
