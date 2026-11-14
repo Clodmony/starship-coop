@@ -18,6 +18,9 @@ before its handler is in, LATE seconds after it started, and draws (writes READY
                 started, and the tool and its game are gone.
   stop-wait     wait_stopped, which tool-limit relies on to see every child of the tool: it returns only once the
                 process is stopped, also for one that forks as fast as it can when the signal comes.
+  dying         still_running, which the other scenarios use to see that a game they stopped is gone: a process that needs
+                a moment to end after its SIGTERM is not reported as still running, and `running` called at once does
+                report it (the look that failed in 1 of 24 runs of tool-limit under load, #308).
 The limits are short here (TOOL_LIMIT counts from the tool's start, so person's scenarios get a longer one than
 tool-limit), and every hang is longer: a run that waits one out, as the tool did before, fails on the
 time it took, whatever the timing of the machine. Exit code 0 when every scenario holds, 1 otherwise; check.py runs it.
@@ -142,6 +145,18 @@ def running(pid):
         return False
 
 
+def still_running(pid, seconds=5.0):
+    """Whether pid still runs `seconds` later. A process that was sent SIGTERM or SIGKILL needs a moment to end, and
+    under load that moment can come after the caller's look: `running` right after a kill read state R in 1 of 24
+    runs of tool-limit, and the process was gone a second later (#308)."""
+    end = time.monotonic() + seconds
+    while running(pid):
+        if time.monotonic() >= end:
+            return True
+        time.sleep(0.02)
+    return False
+
+
 def check_late_handler(stand, benches):
     exe, notes = stand.exe("late")
     bench = replay_test.Bench(str(exe))
@@ -155,7 +170,7 @@ def check_late_handler(stand, benches):
         failures.append("the stand-in's stop handler never ran")
     if took >= HANG:
         failures.append(f"took {took:.0f}s: it waited out a hang of {HANG}s")
-    if running(stand.pid_of(notes)):
+    if still_running(stand.pid_of(notes)):
         failures.append("the stand-in still runs")
     return failures
 
@@ -170,7 +185,7 @@ def check_stop_limit(stand, benches):
     failures = [] if any("still running" in f for f in found) else [f"person did not fail on the limit: {found}"]
     if took >= HANG:
         failures.append(f"took {took:.0f}s: it waited out a hang of {HANG}s, not a limit of {LIMITS['STOP_LIMIT']}s")
-    if running(stand.pid_of(notes)):
+    if still_running(stand.pid_of(notes)):
         failures.append("the stand-in still runs")
     return failures
 
@@ -196,7 +211,7 @@ def check_tool_limit(stand, benches):
     pid = stand.pid_of(notes)
     if pid is None:
         failures.append("the tool's game did not start")
-    elif running(pid):
+    elif still_running(pid):
         failures.append("the tool's game still runs")
     return failures
 
@@ -226,8 +241,36 @@ def check_stop_wait(stand, benches):
     return failures
 
 
+def check_dying(stand, benches):
+    """A process whose SIGTERM handler takes 0.5 s to end it: running() right after the signal says it runs (it
+    does), still_running() waits for the end and says it does not."""
+    dying = stand.folder / "dying.py"
+    dying.write_text("import signal, sys, time\n"
+                     "def end(*_):\n    time.sleep(0.5)\n    sys.exit(0)\n"
+                     "signal.signal(signal.SIGTERM, end)\nprint('ready', flush=True)\ntime.sleep(60)\n", encoding="utf-8")
+    proc = subprocess.Popen([sys.executable, "-I", str(dying)], stdout=subprocess.PIPE, text=True)
+    failures = []
+    try:
+        if proc.stdout.readline().strip() != "ready":
+            return ["the dying stand-in did not start"]
+        proc.send_signal(signal.SIGTERM)
+        if not running(proc.pid):
+            failures.append("the premise failed: the process had ended at once, so the test shows nothing")
+        began = time.monotonic()
+        if still_running(proc.pid, seconds=5.0):
+            failures.append("still_running says a process that ends 0.5 s after its SIGTERM still runs after 5 s")
+        elif time.monotonic() - began >= 4.0:
+            failures.append("still_running took the whole limit for a process that ended after 0.5 s")
+        if still_running(proc.pid, seconds=0.0):
+            failures.append("a process that has ended is reported as running")
+    finally:
+        proc.kill()
+        proc.wait()
+    return failures
+
+
 SCENARIOS = {"late-handler": check_late_handler, "stop-limit": check_stop_limit, "tool-limit": check_tool_limit,
-             "stop-wait": check_stop_wait}
+             "stop-wait": check_stop_wait, "dying": check_dying}
 
 
 def main():
