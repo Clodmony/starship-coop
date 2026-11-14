@@ -44,6 +44,10 @@ playbook pages are linked below where they apply.
     are, see `docs/coop/QA.md`.
 11. **Disclose AI use** in PRs. Upstream projects (Starship, libultraship, the sf64 decomp) have their own policies;
     read them before sending anything upstream.
+12. **File a follow-up issue only when it is a bug in the game, a rule question for the owner, or a task that needs real
+    hardware** (a second PC, Windows, Steam). A gap in a test tool or a test bot goes into the hand-off comment and
+    `docs/coop/NOTES.md`, not into a new issue. Each extra issue costs a worker, a gate run and merge conflicts in the
+    shared tool files; a gap becomes an issue when a missed bug shows it matters (owner's rule, 2026-11-15).
 
 ## Code rules
 
