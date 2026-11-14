@@ -312,6 +312,25 @@ Answered by the owner in a dialog on 2026-11-13 (night), each as the recommendat
 - **Decision 0015 is accepted** (#289, #299): a session's level start plays the sound ahead until no audio reset is
   running; option 2 (hold the level start back) is not wanted. Its status line and the index of the records say so.
 
+### 2026-11-14, #305, #316, #324: the Release lane of `lockstep` at no frame limit
+
+The lane is one line since #316's `log` and the item scenarios count frames, and #324's cause (a replay file that ran out
+cleared the lockstep's input sources) is fixed; the owner chose option A of #305 on 2026-11-13 and, on 2026-11-14, to apply the
+lane after the merge of both.
+
+- **Observed (a Linux machine, Release build of `58b019c1`, ROM US 1.0, each run alone on the machine, six in a row, `lockstep_test.py
+  --jobs 4` with `COOP_TOOLS_MEETING_SPEED=max`, `--build-dir` of the Release folder):** all 53 game scenarios passed in each of the 6
+  runs, `survive_gaps_four`, `ma_turret`, `shogun_bonus`, `replay_ends`, `log`, `laser_wing1`, `crate` among them (before #324's fix:
+  `survive_gaps_four` failed 3 of 3 with the two new scenarios in the pool). Each run took about 2m42s; the step at the limit of 8 on
+  Release took about 4m50s (#318's measurement). `sim` and `desync_sim` did not run in those six: the test programs they need are
+  built only in Debug's folder, so my command could not start them; in the lane they come from Debug's folder
+  (`--build-dir build-cmake --config Debug`, as for `menu` and `input`) and they passed in the gates on Debug.
+- **Done:** the commit of #316's worker (kept apart in the patch until #324 was fixed): with `--mixed` and with `--config Release`
+  `test_all.py` gives `lockstep_test.py --speed max`; on Debug the step stays at the limit of 8; `lockstep-full`, `menu` and `join`
+  keep their limits; `test_all_test.py` checks both.
+- **Unknown:** whether the lane holds under the gate's load (the six runs were alone on the machine; a wall-clock scenario at no
+  limit can behave differently under load of 14 to 68), and Windows.
+
 ### 2026-11-14, #322: one four-client level in `test_all.py` (`campaign-4`)
 
 The owner chose, after the whole route was flown with four clients (the entry of #322 below), one short level in the pipeline.
