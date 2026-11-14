@@ -268,6 +268,25 @@ Newest first. One block per run that matters (a milestone, a release, a QA level
 
 ```
 date:       2026-11-14
+commit:     issue/342-bars-before-names, C sources as built d118f78f (the later commits change docs and tools), on
+            issue/combined-test-6 ce17520d (the red on the build of 74187b4b, the probe without the fix)
+identity:   ROM US 1.0, Linux, GCC, OpenGL on a software renderer, no window; 4 game clients on one PC, UDP over
+            loopback, through the join driver; Debug (Release for builds)
+what ran:   python tools/coop/lockstep_test.py --no-build --only names_four (red on 74187b4b, green on d118f78f);
+            python tools/coop/test_all.py --no-build --only checks,views,view-check,draw,builds,coop-off,lockstep,
+            hash-run-2,replay-test and --only rates-rails,rates-all-range on d118f78f, --base-exe <Debug build of
+            ce17520d>; python tools/coop/lockstep_rules_test.py
+result:     automated, for the draw order of the other ships' shield bars and names (#342). Red: a bar drawn after a
+            name it lies on, 492 times in the four games' traces. Green: none, hashes equal on 1580 frames, a bar
+            lies on a name on the same frames as before (99 to 232 per game). 11 of 11 steps ok in 10m40s (lockstep
+            61 of 61 scenarios, view-check, views, draw, builds, coop-off, hash-run-2, replay-test, checks) and 3 of
+            3 ok in 12m11s (rates-rails, rates-all-range). The order is the trace's record of the display list; no
+            picture of the screen was looked at. Not run: three clients, Windows, two PCs, a person looking at the
+            screen.
+```
+
+```
+date:       2026-11-14
 commit:     issue/335-hud-lives, on issue/combined-test-6 ade4c08e (the red on the build of 4b035734, the probe
             without the fix)
 identity:   ROM US 1.0, Linux, GCC, OpenGL on a software renderer, no window; 2 and 4 game clients on one PC, UDP

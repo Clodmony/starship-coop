@@ -224,7 +224,9 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             each game's view trace gives every name and shield bar it drew as a box on the 320x240 screen. On no
             frame may two names on screen cover each other, and on some frames two of them must have stood where
             they would have, had one not been moved up (the trace's lift); a build that never moves a name fails.
-            Hashes equal on every frame of the four.
+            #342: no shield bar may be drawn after a name it lies on (the trace's places of each bar and name:
+            the later one is on top), and on some frames a bar must lie on a name. Hashes equal on every frame of
+            the four.
   <rule>_three, <rule>_four  #329: a scenario that checks one rule, with three and with four games: aim,
             macbeth_bombs, ma_turret, sy_robot_spread, sy_robot_pose, granga_spread and escape_look. Every game's
             hashes and traces
