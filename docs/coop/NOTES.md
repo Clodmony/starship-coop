@@ -1625,6 +1625,89 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-14, #329: the rules for a hit and an aim with a third and a fourth player
+
+Read and run on `issue/329-rules-four` (from `issue/combined-test-6` `ade4c08e`). Identity: ROM US 1.0, Linux, GCC, Debug,
+OpenGL on a software renderer, no window; two, three and four game clients on one PC in lockstep over loopback through
+the join driver. The scenarios of `tools/coop/lockstep_test.py` that check one rule each took a `players` parameter
+(`<name>_three`, `<name>_four`); the checks read every player of the trace.
+
+**Observed**
+
+- The co-op helpers behind these rules loop over every player of the session, not over a second one:
+  `CoopAim_Nearest` (`src/port/coop/game/aim.c:34`), `CoopAim_MacbethTurret` (`aim.c:134`), `CoopHits_MacbethBombFire`
+  (`src/port/coop/game/hits.c:112`), `CoopHits_MacbethCarBlast` (`hits.c:131`), `CoopHits_AndrossExplosion`
+  (`hits.c:151`). The probes and traces write a field per player as well (`CoopPlayers_Count()` in
+  `src/port/coop/test/aim_trace.c`, `mabomb_probe.c`, `escape_probe.c`). No engine line was changed for this issue.
+- Every rule held with three and with four games; each run's hashes and traces were equal in every game:
+  - `aim`: shots or missiles at players 0/1/2/3: 4/7/4/7 with four, 5/13/6 with three (8 and 11 with two; the counts
+    take in the lines a game writes after `done`, so they differ a little from run to run).
+  - `macbeth_bombs`: 30 cases with three and 40 with four, every hazard (a bomb's fire, a beam, a turret's shot, the
+    deflect in a roll, car 7's blast) hit the tank it was placed on and no other, and car 7's flash was red on that
+    tank's own client for all 30 frames and white on every other client.
+  - `ma_turret`: with nobody in a window the yaw stepped to the nearest human 353 times with three (176/10/167 by
+    player) and 346 times with four (71/91/88/96), never to another; with one human alone in it 76 and 104 times to
+    that one in two runs with three (a game writes lines after `done`); no step to a human outside the window while others were in it; no first shot with nobody in the window
+    or with the gun on a human outside it.
+  - `sy_robot_spread`: 13 spread shots, around players 0/1/2/3: 1/3/2/7 with four, 1/3/9 with three, none more than
+    150 off in x or y, none straight at a human; the 10 plain shots within 0.00 of the nearest human.
+  - `sy_robot_pose`: angle steps to the nearest player's direction against another's: 223 to 6, 116 to 2, 191 to 2 with
+    players 1, 2, 3 the nearest (four); 193 to 2 and 363 to 5 (three).
+  - `granga_spread`: 110 plasma shots with four (75/8/3/24 with players 0/1/2/3 the nearest) and 179 with three
+    (93/48/38), each within the spread of the nearest human, none straight at one.
+  - `escape_look`: an explosion in reach of the last player (player 2 with three, player 3 with four) took it down,
+    it came back 150 frames later with shields 255 and the pool one lower, and every other player flew on untouched;
+    the trigger in its reach did not end the level; the explosion on player 0 took it down and hurt nobody else; the
+    same with `gInvincible`. James' route alone, in each of the three mazes: the exit reached, no player within 500
+    of an explosion.
+- Macbeth, three and four tanks without a pilot: the tanks of `sway` and of a wave shifted per player were never 250
+  apart across the track for long (11 of 30 cases placed in 4500 frames). Steering by turns (one tank to the left
+  edge, the others to the right, 150 frames each) parts them: 30 cases by level frame 4009, 40 by 7769.
+- A tank that bumps into something throws every tank back: at level frame 4707 of the four-tank run all four
+  `trueZpos` went from -52838.5 to -52814.5 and on to -52724.5 over six frames (they are equal on every frame of the
+  trace), while players 0 and 1 stood at x 510 to 530 with the stick held right.
+- A bomb of the probe is dropped where its target will be three frames on if it drives on as it does
+  (`src/port/coop/test/mabomb_probe.c:193`). In one of the 6 bomb cases with three tanks and one of the 8 with four the
+  target was not there: after the throw-back above (the bomb 47 and more behind the tank on every update), and at level frame 3028 of the three-tank run, where
+  the bomb burst at y 41.0 with the tank at y -3.0 under it (the fire's box takes a tank no more than 5 below the
+  bomb, `src/overlays/ovl_i5/fox_ma.c:5910`, `hits.c:116`) and the tank's `hitTimer` was 19 on the bomb's first
+  update, a hit of something else one frame before. The probe's new `mabomb t=` line gives the bomb's and the target's
+  place per update; such a case is named in the summary and not counted.
+- Andross' escape: the pilots fly James' route in a row, about 235 apart in x or z (`miss3`: the object 550 from
+  player 3 was 775, 998 and 1221 from players 2, 1 and 0). The probe wants a place 450 from its target and 510 from
+  everyone else (`src/port/coop/test/escape_probe.c:137`): with four players the three cases on player 2 waited 3000
+  away for all 60 updates.
+- A player that went down comes back beside player 0, 250 in x and 80 in y per player index
+  (`CoopPlayers_PlaceBesidePlayer0`, `src/port/coop/game/players.c:199`), and its pilot steers at the same waypoint
+  as player 0's (`src/port/coop/test/pilot_andross.c:121`). With four games player 3 came back at frame 513, 750
+  beside player 0, and from frame 560 to the end of the escape flew within 16 of player 0 in x, y and z (frame 603:
+  -6676, 346, -2358 and -6659, 340, -2352). With three games player 2, back 500 beside it, did not (512 and more from
+  an object 450 from player 0 at frame 603).
+- Sector Y with four games and nobody but player 0 steering: at the shots of level script 67 (level frames 6501 to
+  6696) players 1, 2 and 3 were in one place (x 1100, y 2800 to 2956), and the tie went to player 1.
+
+**Derived**
+
+- The rules of #193, #272, #280, #281, #282 and #302 hold for a third and a fourth player as for the second: the same
+  loops, and a run for each.
+- Every red run of the new scenarios was a fault of the scenario (how the players are steered, where a probe can put
+  its object, which player a trace can tell from which), not of a rule: no run showed a hazard that missed a tank in
+  its box, a shot at a human who was not the nearest, or a step to the wrong human.
+- Two ships can fly in one place (the returned player 3 in player 0): players do not collide with each other.
+
+**Unknown**
+
+- Whether a turret's first shot is right for player 2 of four tanks: 13 first shots, all with several tanks in the
+  window, the gun on players 1 and 3 at three of them, on none that tells for player 2 (with three tanks: first shots
+  with players 0, 1 and 2 alone in the window 1, 1 and 2).
+- The escape's explosions for a player inside the pilots' row (players 1 and 2 of four, player 1 of three): no place
+  for the probe's object. Player 1 is shown with two games, player 2 with three.
+- Which tank bumped at level frame 4707 and into what, and whether one tank's bump should throw the others back
+  (the tanks share the track's progress).
+- What the bomb burst on at level frame 3028 (41 above the ground), and what hit the tank one frame before.
+- The other scenarios that read players 0 and 1 (`bosses`, `other_bosses`, `w7macbeth_ram`, `shogun_bonus`,
+  `player_hits`, `kill`, `wing`, `vehicles`): not run with three or four.
+
 ### 2026-11-14, #14: the pool of lives starts at 2 plus 1 for each player after the first (decision 0007 rule 1)
 
 Read and run on `issue/14-lives-pool-start` (from `issue/combined-test-6` `58b019c1`). Identity: ROM US 1.0, Linux, GCC,
