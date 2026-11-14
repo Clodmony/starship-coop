@@ -9,6 +9,7 @@
 #include "port/hooks/Events.h"
 #include "port/coop/game/names.h"
 #include "port/coop/game/players.h"
+#include "port/coop/game/score.h"
 #include "port/coop/game/view.h"
 
 // What the HUD and the draw code keep for themselves.
@@ -200,6 +201,15 @@ static void CoopViewTrace_OnGamePostUpdate(IEvent* event) {
         int32_t turned = CoopView_TakeTurned(&billboards);
 
         fprintf(sFile, " turned=%d/%d", turned, billboards);
+    }
+    {
+        int32_t lives = CoopScore_TakeLivesDrawn();
+
+        if (lives >= 0) {
+            fprintf(sFile, " hudlives=%d", lives);
+        } else {
+            fputs(" hudlives=-", sFile);
+        }
     }
     CoopViewTrace_WriteSfx();
     fputc('\n', sFile);

@@ -1625,6 +1625,93 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-14, #335: the lives number on the HUD of players 2 to 4 is the pool
+
+Read and run on `issue/335-hud-lives` (from `issue/combined-test-6` `ade4c08e`). Identity: ROM US 1.0, Linux, GCC,
+OpenGL on a software renderer, no window, two and four game clients on one PC in lockstep over loopback through the
+join driver; Debug.
+
+**Observed**
+
+- The HUD in flight draws its lives number with `HUD_LivesCount2_Draw(248.0f, 11.0f, gLifeCount[...])`
+  (`src/engine/fox_hud.c:3706`). Since #30 the index was `CoopPlayers_HudIndex()`, the player the client looks
+  through, so a client that looks through player 2 to 4 read that player's own slot. The slot is written when the
+  player joins (`src/port/coop/game/players.c:233`, a copy of slot 0) and when it comes back (`:280`), never when the
+  pool changes otherwise.
+- A probe reads the number drawn: `HUD_LivesCount2_Draw` notes it (one `// COOP:` line, `CoopScore_NoteLivesDrawn`,
+  `src/port/coop/game/score.c`), and the view trace writes it as `hudlives` (`src/port/coop/test/view_trace.h`).
+  Nothing simulated reads it, and it is not in the state hash.
+- `lockstep_test.py --only hud_lives`: Corneria's rails, player 1 poked down at level frame 1750 (back at 1901 for a
+  life), player 0 poked down at 2000 (refilled in place at 2001, decision 0007 rule 3), compared up to frame 2150. On
+  the build before the fix (`4b035734`) every game's pool went 3, 2, 1 (two games) and 5, 4, 3 (four games), the
+  games were equal on every frame although they drew different numbers, and the number drawn was not the pool: with
+  two games the client looking through player 1 drew 2 from 2001 on while the pool was 1; with four games the client
+  looking through player 1 drew 4 from 2001 (pool 3), and the clients looking through players 2 and 3 drew 5 from
+  1901 (pool 4, then 3). The host drew the pool throughout.
+- On the same build a third session, two games with the port's "restore beta boost gauge" on
+  (`gRestoreBetaBoostGauge`; `OnLivesCounterDraw`, `src/port/mods/PortEnhancements.c:399`, draws the number in place
+  of the HUD's with `gLifeCount[gPlayerNum]`), drew the pool in both games.
+- In a session every game has `gCamCount` 1, so `HUD_Draw` runs from `Game_Update` (`src/engine/fox_game.c:577`),
+  after `CoopView_EndDraw` has set `gPlayerNum` to 0 (`fox_game.c:523`, `src/port/coop/game/view.c:170`); the call
+  inside `Display_Update` is for `gCamCount != 1` only (`src/engine/fox_display.c:2102`). `players.h` says the same
+  of `CoopPlayers_HudIndex`.
+- The fix reads `gLifeCount[CoopScore_LifeSlot(CoopPlayers_HudIndex())]`: slot 0 in co-op, `gPlayerNum` with co-op
+  off. On the fixed build (`145cd696`) all three sessions draw the pool on every frame in every game, equal on 2150
+  frames; `coop-off` hashes as `ade4c08e` does.
+
+**Derived**
+
+- The other `gLifeCount[gPlayerNum]` reads of the HUD read the pool in a session for the same reason as the beta
+  gauge: the level start card (`fox_hud.c:724`), the pause screen (`:1511`, `:1726`, `:1742`), and pause retry's two
+  writes (`:1545`, `:1558`) take the life from the pool, as the entry of #210 says. Not run for those lines.
+- Players 1 to 3's own slots still hold what their join or return wrote. Nothing reads them for a decision (0007
+  rule 1) and now nothing draws them; they stay in the state hash as before.
+
+**Unknown**
+
+- Split screen (WP-13, `gCamCount` above 1) draws the HUD per viewport inside `Display_Update`, where `gPlayerNum` is
+  that viewport's player; not looked at, as a network session does not use it.
+- Three games (two and four are run), Windows, two PCs, a person looking at the screen: not run.
+
+### 2026-11-14, #336: no session shows the map before its first level
+
+Read on `issue/335-hud-lives` (from `issue/combined-test-6` `ade4c08e`). Nothing run for this entry: it is the answer
+to the question of #336, read from the code, and it needs no code.
+
+**Observed**
+
+- A session reaches the game through a level start only. `CoopSession_StartLevel` takes a level id below
+  `COOP_LEVEL_START_LEVELS` (`src/port/coop/session/session.c:393`), the first id that is not a campaign level
+  (`LEVEL_VERSUS`, `src/port/coop/game/level_start.c`, the `_Static_assert` under the tables); the map is not a level
+  id. Every game, the host's too, takes it in `COOP_SESSION_EV_LEVEL_START` (`src/port/coop/ui/menu.c:341-348`) and
+  enters it with `CoopLevelStart_Enter`, which sets `gNextGameState = GSTATE_PLAY` (`level_start.c:388`): from the
+  title, the map or a level alike, straight into the level, no map and no briefing between.
+- Nobody joins once a level has started (`COOP_SESSION_REFUSE_STARTED`, `src/port/coop/session/session.h:101`,
+  `session.c:951`), and a recovery starts a level again with a new `LEVEL_START` (`session.h:70-72`).
+- A game goes to the map from a level only: at the end of a level (`gFadeoutType` 4, `src/engine/fox_play.c:6195`) and
+  after the game over screen (`Map_8019E800`, `src/overlays/ovl_menu/fox_map.c:1215-1220`). The title's way to the map
+  (`Option_Map_Update`, `src/overlays/ovl_menu/fox_option.c:796`) is the single-player menu, which a session does not
+  pass through.
+- On the map of a session `gPlayerNum` is 0: `CoopView_EndDraw` sets it after every draw in co-op
+  (`src/port/coop/game/view.c:170`), and `Map_RetryCourse` sets it too (`fox_map.c:3627`). So the map's lives number,
+  `gLifeCount[gPlayerNum]` (`fox_map.c:5560`), is the pool, slot 0, on every game.
+
+**Derived**
+
+- The map of #336 (2 lives, then 3 to 5 in the level) cannot be a session's: in a session the map comes only after a
+  level, and the first level's `Player_Setup` has written the pool by then (`fox_play.c:4940`, when the level start
+  carries `gClearPlayerInfo`). The 2 a game shows on a map before the host presses Start is that game's own
+  single-player state, as upstream shows it. The derived line of the #14 entry below ("The map before a session's
+  first level shows 2") names that map; it is not part of a session.
+- Item closed as "cannot happen", as #319 was: no code, no probe.
+
+**Unknown**
+
+- Whether a session started while the host's game is in the middle of its own campaign (the lobby opens in any game
+  state; `gClearPlayerInfo` is 0 after a first level, `fox_play.c:4949`) should start the pool at rule 1's 3 to 5: the
+  level start carries the host's flag and lives as they are, so the pool would be the host's own count. Not run; a
+  question of rule 1 (#14), listed in the follow-ups of #335 and #336.
+
 ### 2026-11-14, #14: the pool of lives starts at 2 plus 1 for each player after the first (decision 0007 rule 1)
 
 Read and run on `issue/14-lives-pool-start` (from `issue/combined-test-6` `58b019c1`). Identity: ROM US 1.0, Linux, GCC,
@@ -1663,14 +1750,15 @@ driver; Debug, and Release for the campaign run.
   `src/port/mods/PortEnhancements.c:260`), and the clear screen's bonus names its slot (`src/engine/fox_hud.c:1092`).
 - The HUD of a player 2 to 4 still reads that player's own slot (`src/engine/fox_hud.c:3704`,
   `gLifeCount[CoopPlayers_HudIndex()]`). The slot is written when the player joins (`players.c:233`, a copy of slot 0)
-  and when it returns (`:280`), not when another player spends or gains a life. Read, not run.
+  and when it returns (`:280`), not when another player spends or gains a life. Read, not run. (Run and fixed since:
+  the entry of #335 above.)
 
 **Derived**
 
 - A level start that is not a new game keeps the pool: `gClearPlayerInfo` is 0 in it, so the write does not run. That
   holds for the next level of a route, for a restart at a checkpoint, and for a restart of a later level from its start.
 - The map before a session's first level shows 2 (`fox_map.c:5560` reads what `GSTATE_INIT` wrote), the level after it
-  the session's pool.
+  the session's pool. (No session shows a map before its first level: the entry of #336 above.)
 - With the debug CVar and no roster (`hash_check.py --players 2`) the pool is 3 as well: the count is
   `CoopPlayers_Count()` there. `hash-run-2` passes.
 

@@ -211,6 +211,11 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   pool_start decision 0007 rule 1 (#14): sessions of two, three and four games; the team's pool of lives, gLifeCount[0],
             is 2 plus 1 for each player after the first (3, 4, 5) from the first frame player 0 flies, the same in
             every game, and the games are equal on every frame.
+  hud_lives #335: sessions of two and four games on Corneria's rails, and of two with the port's beta boost gauge
+            (which draws the number itself, src/port/mods/PortEnhancements.c); player 1 goes down and comes back for
+            a life, then player 0 is refilled for another. On every frame each game's HUD draws the pool,
+            gLifeCount[0], as its lives number (the view trace's hudlives), also the games that look through player
+            1, 2 or 3, whose own slots the pool's changes do not write. The games are equal on every frame.
 
 Every scenario that compares two games also checks that neither wrote a desync report (WP-23).
 
@@ -6139,6 +6144,103 @@ def sc_pool_start(args, folder):
     return "; ".join(found)
 
 
+# Level frames of hud_lives (#335). Player 1 is poked down and comes back RETURN_FRAMES later for a life of the pool;
+# then player 0 is poked down and refilled in place for another (decision 0007 rules 3 and 4, Corneria's rails). So
+# the pool changes twice, and each time some player's own gLifeCount slot is not written: players 2 and 3 at the
+# return, everyone but player 0 at the refill.
+HUD_LIVES_DOWN_P1 = JOIN_FRAME + 50
+HUD_LIVES_DOWN_P0 = JOIN_FRAME + 300
+HUD_LIVES_FRAMES = JOIN_FRAME + 450
+HUD_LIVES_MIN_DRAWN = 60  # frames each game has to draw the number after each change of the pool
+# The sessions: clients, and the config of every game. The port's "restore beta boost gauge" draws the number itself, at
+# the bottom right, in place of the HUD's (OnLivesCounterDraw, src/port/mods/PortEnhancements.c).
+HUD_LIVES_SESSIONS = ((1, None, ""), (3, None, ""), (1, {"CVars": {"gRestoreBetaBoostGauge": 1}}, ", beta gauge"))
+
+
+def hud_lives_story(game, path, players):
+    """From one game's view trace, from the first frame player 0 flies (Player_Setup writes the pool on frame 1): (the
+    pools in order, the frames the pool changed on, wrong), wrong being one entry per run of frames on which the number
+    the HUD drew was not the pool."""
+    rows = [r for r in view_check.read_trace(1, path).rows if r.frame <= HUD_LIVES_FRAMES]
+    expect(rows and all(len(r.players) == players for r in rows),
+           f"{players} players, {game.name}: the view trace does not hold {players} players on every frame")
+    flies = next((n for n, r in enumerate(rows) if r.players[0].state == player_trace.ACTIVE), None)
+    expect(flies is not None, f"{players} players, {game.name}: player 0 never flew")
+    rows = rows[flies:]
+    expect(all(r.hudlives is not None for r in rows),
+           f"{players} players, {game.name}: the view trace has no hudlives (a build before #335)")
+    drops = [b.frame for a, b in zip(rows, rows[1:]) if b.players[0].lives != a.players[0].lives]
+    pools = [rows[0].players[0].lives] + [r.players[0].lives for a, r in zip(rows, rows[1:])
+                                          if r.players[0].lives != a.players[0].lives]
+    drawn_after = [sum(1 for r in rows if r.frame >= f and r.hudlives >= 0) for f in drops]
+    expect(drawn_after and min(drawn_after) >= HUD_LIVES_MIN_DRAWN,
+           f"{players} players, {game.name}: the HUD drew its lives number on {drawn_after} frames after the pool's "
+           f"changes at {drops}, want {HUD_LIVES_MIN_DRAWN} or more after each")
+    wrong, run = [], None
+    for r in rows:
+        bad = r.hudlives >= 0 and r.hudlives != r.players[0].lives
+        key = (r.view, r.hudlives, r.players[0].lives) if bad else None
+        if run is not None and (key != run[0] or r.frame != run[2] + 1):
+            wrong.append(run)
+            run = None
+        if key is not None:
+            run = [key, r.frame, r.frame] if run is None else [run[0], run[1], r.frame]
+    if run is not None:
+        wrong.append(run)
+    text = [f"{game.name} (seat {rows[-1].local}) looking through player {view} drew {drawn} while the pool was "
+            f"{pool}, frames {a} to {b}" for (view, drawn, pool), a, b in wrong]
+    return pools, drops, text
+
+
+def sc_hud_lives(args, folder):
+    """#335: the lives number the HUD of every game draws is the team's pool, gLifeCount[0] (decision 0007), also in a
+    game that looks through player 1, 2 or 3, after the pool changed without that player's own slot being written.
+    Sessions of two and four games on Corneria's rails, and of two with the port's beta boost gauge, which draws the
+    number in place of the HUD: player 1 goes down and comes back for a life, then player 0 is refilled for another.
+    The number drawn is what HUD_LivesCount2_Draw was given (the view trace's hudlives, noted by the draw itself),
+    never in the state hash; the games' hashes are equal on every frame."""
+    found, wrong = [], []
+    pokes = f"{HUD_LIVES_DOWN_P1}:1:down:4,{HUD_LIVES_DOWN_P0}:0:down:4"
+    for clients, config, label in HUD_LIVES_SESSIONS:
+        players = clients + 1
+        start = POOL_START_SINGLE + clients
+        sub = folder / f"{players}-players{label.replace(', ', '-').replace(' ', '-')}"
+        sub.mkdir(parents=True, exist_ok=True)
+        feed = sub / "feed.txt"
+        write_feed(feed, HUD_LIVES_FRAMES + 16, sway)
+        names = ["host"] + [f"client{n}" for n in range(clients)]
+        traces = {name: sub / f"{name}-view.txt" for name in names}
+        for path in traces.values():
+            if path.exists():
+                path.unlink()
+        env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(HUD_LIVES_FRAMES),
+               "SF64_COOP_VIEW_POKE": pokes}
+        games = session(args, sub, both=env, clients=clients, host_env={"SF64_COOP_VIEW_TRACE": str(traces["host"])},
+                        client_envs=[{"SF64_COOP_VIEW_TRACE": str(traces[f"client{n}"])} for n in range(clients)],
+                        config=config)
+        try:
+            wait_for(list(games), "done", 900, f"with {players} players{label}")
+        finally:
+            for game in games:
+                game.close()
+        what = f"{players} players{label}"
+        stories = [hud_lives_story(game, traces[game.name], players) for game in games]
+        expect(all(s[:2] == stories[0][:2] for s in stories), f"{what}: the games' pools differ: " +
+               "; ".join(f"{g.name} {s[0]} at {s[1]}" for g, s in zip(games, stories)))
+        pools, drops = stories[0][:2]
+        expect(pools == [start, start - 1, start - 2],
+               f"{what}: the pool went {pools} at frames {drops}, want {start}, {start - 1} at player 1's "
+               f"return and {start - 2} at player 0's refill")
+        frames = min(compare(games[0], other, HUD_LIVES_FRAMES) for other in games[1:])
+        # Every session runs before a wrong number fails the scenario, so its line names every game.
+        for story in stories:
+            wrong += [f"{what}: {line}" for line in story[2]]
+        found.append(f"{what}: pool {' -> '.join(map(str, pools))} at {drops}, the number drawn is the "
+                     f"pool in all {players} games, equal on {frames} frames")
+    expect(not wrong, "; ".join(wrong) + " (want the pool, gLifeCount[0], in every game)")
+    return "; ".join(found)
+
+
 SCENARIOS = {
     "sim": sc_sim,
     "desync_sim": sc_desync_sim,
@@ -6230,6 +6332,7 @@ SCENARIOS = {
     "shogun_bonus": sc_shogun_bonus,
     "escape_look": sc_escape_look,
     "pool_start": sc_pool_start,
+    "hud_lives": sc_hud_lives,
 }
 LONG = ("survive_next_level", "survive_gaps_route", "survive_gaps_map", "survive_gaps_map_lost",
         "survive_gaps_checkpoints", "survive_gaps_venom_jump", "fox_refill_levels", "fox_refill_long", "fox_lead_swap", "fox_lead_swap_all_range", "full", "scenes", "allrange", "allrange_down", "allrange_others", "allrange_down_others", "teambar",
