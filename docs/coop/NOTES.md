@@ -1625,6 +1625,83 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-14, #345: test pilots on one spot, a returned player in Andross' escape, the escape probe's row
+
+Read and run on `issue/345-pilot-places` (from `issue/combined-test-6` `f18733f5`). Identity: ROM US 1.0, Linux, GCC,
+Debug, OpenGL on a software renderer, no window; four game clients (three and two for the escape) on one PC in
+lockstep over loopback through the join driver, a pilot on each. "Base" is a Debug build of `f18733f5`. Only test code
+changed (`src/port/coop/test/`, `tools/coop/`).
+
+**Observed: pilots on one spot on rails** (`campaign.py --players 4 --levels <level>`, which now counts per pair the
+frames on which both flew nearer than 1 on each axis; frames both flew in brackets)
+
+| level, build | level complete at level frame | 0-1 | 0-2 | 0-3 | 1-2 | 1-3 | 2-3 |
+|---|---|---|---|---|---|---|---|
+| Venom/Andross, base | 6994 | 0 | 0 | 0 | 829 (5786) | 2712 (5786) | 788 (6994) |
+| Venom/Andross, final | 4977 | 0 | 0 | 0 | 237 (4373) | 435 (4373) | 314 (4977) |
+| Meteo, base | 17393 | 143 | 8797 (16540) | 135 | 1018 | 9748 (16541) | 1356 |
+| Meteo, final | 15545 | 106 | 125 | 111 | 113 | 127 | 62 (of about 14690) |
+| Fortuna (`campaign-4`), base and final | 5151 on base | 0 | 0 | 0 | 0 | 0 | 0 |
+
+- Base: on rails the generic box cycle starts player i at `i * ((count + 1) / 2)`, which for an even count puts
+  players 0 and 2 on one box and 1 and 3 on another (`src/port/coop/test/pilot_aim.c`, `CoopPilotAim_FirstBox` now);
+  with a table player i takes `i % count` (Andross' two hands: 0 and 2, 1 and 3). Meteo's 8797 and 9748 are those
+  pairs; Andross' 2712 is 1 and 3.
+- Final: with three or four players the cycle starts at `i * count / players`, a player whose first box is a lower
+  player's lines up half way to the box's right or left edge or half way up, and a clear spot that a lower player holds
+  costs 400 more in the spot search (`src/port/coop/test/pilot.c`, `CoopPilot_Taken`). Two players fly as before.
+- Steps between: a side of its own per player (spread from -250 to 250) left Andross alive at the frame cap (26429
+  frames compared) with players 2 and 3 at the path's right edge (x 1100) on 3153 of 21025 frames; without it, and
+  without `CoopPilot_Taken`, Andross died at 4162 (79, 94 and 4 frames for 1-2, 1-3, 2-3) and Meteo at 13777, but
+  Meteo's players 1, 2 and 3 held one clear spot at the top of the path from level frame 2736 to 3629 (974, 990 and
+  1323 frames).
+- The final Andross run's frames on one spot are mostly one span, level frames 4327 to 4658, with players 1, 2 and 3
+  at about the path's x and y 36; the 400 frames before a player entered Andross' mouth (state 11) hold few of them.
+
+**Observed: a returned player in Andross' escape** (`lockstep_test.py --only escape_look[_three|_four] --levels
+cases_inv`, which now fails a session in which two flying players were nearer than 100 on each axis on more than 60
+frames of the escape)
+
+- Base: two games pass; three fail (players 0 and 2 on 165 frames from frame 686, 1 and 2 on 453 from 683); four fail
+  (players 0 and 3 on 1675 frames from 543: the returned player 3, as #329 saw).
+- With the pilot braking out of a player before it (`src/port/coop/test/pilot_andross.c`, `w8AndPilot_KeepApart`:
+  within 200 on each axis, held until 600 away on an axis or the meter at 80, and not while a lower player within 600
+  brakes): two and three games pass; four fail on players 1 and 2 (197 frames from frame 413). At a corner player 2
+  came within 200 of player 1 and began to brake at frame 394, player 1 came within 200 of player 0 and began at 400,
+  and the two fell back side by side (trace: both 20 under their own speed from about frame 414 to 465). The wait
+  looks only at lower players, so player 1 did not wait for player 2.
+- The brake (`Player_ArwingBrake`, `src/engine/fox_play.c`): held, the speed of an all-range Arwing goes down by 1 a
+  frame to 20 under its own and the meter fills by 1.5 a frame (locked at 90 until empty); let go, the meter empties
+  by 0.35 a frame and the speed comes back by 0.5. With no button held and a meter not exactly 0, the boost code sets
+  the cooldown (`Player_ArwingBoost`), and no brake starts while it is set.
+- A pilot that pressed the brake every other frame left players 1 to 3 with a meter of exactly 0.100 and the cooldown
+  on for the whole escape (pilot log, every 60 frames), and none of them braked again.
+
+**Observed: the escape probe's row** (base, four games, `cases_inv` with the cases of an earlier state of this
+branch, which added an explosion on players 1 and 2): `blast1` waited 3000 away on all 60 updates (`off=60`, player 1 never nearer than 3000); in the same
+session `blast2`, after player 3's return, had a place (player 2 at 450, every other player 512 or more away).
+
+**Derived**
+
+- Two pilots on one spot test one place: the base runs at bosses with an even box count tested two places with four
+  players for much of the fight (Meteo: over half of it). The box spread also ends the fights sooner (Andross 4977 and
+  4162 against 6994, Meteo 15545 against 17393).
+- In a row beside the route (about 235 apart) only the players at its ends have a place 450 from them and 510 from
+  everyone else; a line along the route would give every player one, but a braked line needs the meter, and one burst
+  (about 1200 of ground) is all a meter gives before a wait of about 230 frames. Two players braked by the same burst
+  end at about the same place (a line with places 750 apart: players 1 and 2 together for 233 frames).
+- A returned player is a copy of player 0 with an empty meter, so one burst takes it out of player 0.
+
+**Unknown**
+
+- What puts players 1 to 3 on one spot at Andross from level frame 4327 to 4658 of the final run (not the pilots'
+  choice of box or spot as far as the log shows; whether the face's inhale pull, `CoopAim_AndrossPull`, is at work
+  there was not traced).
+- Why the meter stayed at 0.100 with the cooldown on.
+- Whether the other rails bosses (Sector X, Titania, Area 6, Venom 1, Zoness, Aquas, Katina, Bolse, Sector Y) keep
+  their runs with the box spread: only Venom/Andross, Meteo and Fortuna were run.
+- Two players on one box (a table of one box): not changed, not measured.
+
 ### 2026-11-14, #342: every shield bar is drawn before every name
 
 Read and run on `issue/342-bars-before-names` (from `issue/combined-test-6` `ce17520d`). Identity: ROM US 1.0, Linux,
