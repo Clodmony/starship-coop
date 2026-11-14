@@ -131,14 +131,24 @@ def lines_from(path, at):
 
 def players_of(game, level, players=2):
     """Per player, from a game's trace: (frames flown, times down, lowest shields). level is a LevelId or a tuple of
-    them (a level flown through a jump, W8_ANDPILOT_THROUGH)."""
+    them (a level flown through a jump, W8_ANDPILOT_THROUGH). Player 0 is down in PLAYERSTATE_DOWN. Players 1 and up
+    never get that state: one that goes down is parked with its state as it was (COOP_SLOT_DOWN,
+    src/port/coop/game/players.c, CoopPlayers_SetDown), so its downs are the frames it becomes parked while player 0
+    still flies; parked with player 0 (level complete, player 0 down) is not a down (#322: the count said 0 for a tank
+    that was out for half of Macbeth)."""
     levels = level if isinstance(level, tuple) else (level,)
     rows = [r for r in player_trace.parse(game.run / "trace.txt") if r.level in levels]
     stories = []
     for i in range(players):
         slots = [r.players[i] for r in rows if len(r.players) > i]
         flown = sum(1 for s in slots if s.state in player_trace.FLYING and not s.parked)
-        down = sum(1 for a, b in zip(slots, slots[1:]) if a.state != DOWN and b.state == DOWN)
+        if i == 0:
+            down = sum(1 for a, b in zip(slots, slots[1:]) if a.state != DOWN and b.state == DOWN)
+        else:
+            both = [(r.players[0], r.players[i]) for r in rows if len(r.players) > i]
+            down = sum(1 for (_, a), (lead, b) in zip(both, both[1:])
+                       if not a.parked and b.parked and a.state in player_trace.FLYING
+                       and lead.state in player_trace.FLYING)
         lowest = min((s.shields for s in slots if s.state in player_trace.FLYING and not s.parked), default=0)
         stories.append((flown, down, lowest))
     return stories
