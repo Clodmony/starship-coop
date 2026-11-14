@@ -234,9 +234,10 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             hashes and traces
             are the host's, and the checks read every player of the session: a shot or missile at each player; every
             hazard of Macbeth on each tank in turn, that tank hit and no other, the flash red on its own client; a
-            turret's steps to each player when the rule names it; a spread shot around each player when it is the
-            nearest; an explosion in reach of each player after the second; every shot at a player's place at the
-            nearest (#345). The default run has aim_four,
+            turret's steps to each player when the rule names it, and (#345) a first shot with the gun on each tank
+            while it is the nearest in the window, the tanks taking turns at the track's left edge; a spread shot
+            around each player when it is the nearest; an explosion in reach of each player after the second; every
+            shot at a player's place at the nearest (#345). The default run has aim_four,
             macbeth_bombs_four and ma_turret_four; the others are by name.
 
 Every scenario that compares two games also checks that neither wrote a desync report (WP-23).
@@ -5621,11 +5622,18 @@ def w10_turret_story(rows, players=2):
              "fire_several": 0, "fire_none": 0, "flips": 0, "idle": 0, "idle_only": each(), "idle_at": [],
              "one": 0, "one_in": 0, "one_out": 0, "one_in_of": each(), "one_out_of": each(), "nobody": 0,
              "nobody_near": 0, "nobody_far": 0, "nobody_near_of": each(), "nobody_far_of": each(), "several": 0,
-             "several_to": each(), "several_out": 0, "fire_at": each(), "fire_at_out": 0}
+             "several_to": each(), "several_out": 0, "fire_at": each(), "fire_at_out": 0, "fire_pick": each(),
+             "fire_other": 0, "fire_entering": 0}
     before = {}
+    # #345: the human each turret holds, as CoopAim_MacbethTurret picks it: forgotten at the end of a salvo, then the
+    # nearest of the humans in the window, kept while it stays in it; nobody while nobody is in it. None: nobody, or
+    # not known (a boulder in between).
+    pick = {}
+    empty = {}  # slot: (frame, the nearest human) of its last waiting frame with nobody in the window, else None
     for row in rows:
         if row["boulder"] or row["step"][0] != 0:
             before.pop(row["slot"], None)
+            pick[row["slot"]] = None
             continue
         expect(row["players"] == list(range(players)),
                f"a turret line holds players {row['players']}, the session has {players}: `{row['line']}`")
@@ -5638,6 +5646,11 @@ def w10_turret_story(rows, players=2):
         well = [n for n in range(players) if row[f"well{n}"]]
         out = [n for n in range(players) if row[f"out{n}"]]
         inside = [n for n in range(players) if row[f"in{n}"]]
+        was_empty = empty.get(row["slot"])
+        empty[row["slot"]] = None if inside else (row["frame"], row["near"])
+        if pick.get(row["slot"]) not in inside:
+            far = {n: math.dist(row[f"p{n}"], row["at"]) for n in inside}
+            pick[row["slot"]] = min(inside, key=lambda n: (far[n], n)) if inside else None
         if row["step"][1] == 1:
             count["fires"] += 1
             if len(inside) == 1:
@@ -5649,7 +5662,22 @@ def w10_turret_story(rows, players=2):
             on = min(range(players), key=lambda n: off[n])
             if off[on] < W10_TURRET_APART / 2 and all(off[n] >= W10_TURRET_APART for n in range(players) if n != on):
                 count["fire_at"][on] += 1
-                count["fire_at_out"] += not row[f"in{on}"]
+                if not row[f"in{on}"] and was_empty == (row["frame"] - 1, on):
+                    # #345: nobody was in the window on the frame before, so the gun was on the nearest human of all;
+                    # now another is in it, and the turret fires at once with its gun still on the first, outside the
+                    # window (CoopAim_MacbethTurret picks the one in the window, Macbeth_8019F164 fires on the frame
+                    # its pick is in the window, its shot flies where the gun points). Counted, not failed.
+                    count["fire_entering"] += 1
+                else:
+                    count["fire_at_out"] += not row[f"in{on}"]
+                    # #345: and that player is the one the rule picked (the nearest in the window when the turret
+                    # picked, kept while it stayed in it): the first shot flew at it, told by where the gun is. The
+                    # trace sees the window after the frame, the game before it, so another human is counted, not
+                    # failed.
+                    if on == pick[row["slot"]]:
+                        count["fire_pick"][on] += 1
+                    else:
+                        count["fire_other"] += 1
         elif row["wait"] == 0 and row["hp"] != 0 and well:
             count["idle"] += 1  # ready, a human well inside the window, and no shot
             if len(well) == 1 and len(out) == players - 1:
@@ -5729,20 +5757,33 @@ def w10_turret_text(count, players):
             f"it: to {per('several_to')}, {count['several_out']} of them to one outside it; {count['none']} steps fit "
             f"nobody or everybody; {count['fires']} first shots: with one human alone in the window "
             f"{per('fire_only')}, {count['fire_several']} with several, {count['fire_none']} with nobody; the gun on "
-            f"{per('fire_at')} at its first shot, {count['fire_at_out']} of them outside the window; the nearest "
-            f"human changed between two waiting frames {count['flips']} times")
+            f"{per('fire_at')} at its first shot, {count['fire_at_out']} of them outside the window, "
+            f"{count['fire_entering']} on the human it had turned to with nobody in the window, as another came in, "
+            f"{per('fire_pick')} on the human the rule picked (the nearest in the window, kept while in it), "
+            f"{count['fire_other']} on another; the nearest human changed between two waiting frames {count['flips']} "
+            f"times")
 
 
-def w10_turret_script_apart(players):
-    """w10_turret_script for `players` tanks: they steer apart (apart_in_turn), and each tank after player 0 boosts for
-    30 frames of every 150 * (players - 1), each in its own 150, so each drives ahead of the others at times."""
-    apart = apart_in_turn(players)
+# #345: with three and four tanks steered apart_in_turn (one tank at the left edge, the others at the right, 150
+# frames each) and boosting by turns, 13 first shots of a four-tank run told of players 1 and 3 and never of player 2:
+# a turn was too short for the tank to cross the track and wait at the edge for a turret to be ready. In Macbeth the
+# cars that fire run on the left of the tanks or level with the track's right side (car 14 at x -1045 to -132, the
+# last car at -733 to -415, car 8 at 266 to -16 in the two-tank run of #302, the tanks between x -630 and 130), so a
+# tank at the left edge is the nearest in the window, or the only one in it, while the others wait at the right edge.
+# Each tank takes that place for W14_TURRET_TURN frames in turn, without boost. 4500 frames held 12 or 13 first shots,
+# and with turns of 250 to 450 frames none had one at each tank; W14_TURRET_FRAMES_MANY held 26 with turns of 300, at
+# least one at each tank as the turret's pick (the old placement over as many frames: 21, none at players 0 and 2).
+W14_TURRET_TURN = 300
+W14_TURRET_FRAMES_MANY = 9000
 
+
+def w14_turret_script_turns(players, period=W14_TURRET_TURN):
+    """For `players` tanks (#345): from JOIN_FRAME the tanks take turns of `period` frames at the left edge of the
+    track, the others at the right edge, player 0 first. Nobody fires or boosts."""
     def script(frame, player):
-        _, x, y = apart(frame, player)
-        boost = (player > 0 and frame >= JOIN_FRAME and frame % 150 < 30
-                 and (frame // 150) % (players - 1) == player - 1)
-        return (BUTTON_C_LEFT if boost else 0), x, y
+        if frame < JOIN_FRAME:
+            return 0, 0, 0
+        return 0, (-60 if ((frame - JOIN_FRAME) // period) % players == player else 60), 0
     return script
 
 
@@ -5752,7 +5793,8 @@ def w10_turret_check(count, players):
     player after the first in the cases that name one human: a step to it when it is alone in the window or, with
     nobody in it, the nearest. No step goes to a human outside the window while others are in it, no gun is on one
     outside it at its first shot, and some first shot is at a player after the first (alone in the window, or the gun
-    on it); the text names the players no first shot tells of."""
+    on it). Since #345 every player has to get a first shot with the gun on it while it is the nearest human in the
+    window (w14_turret_script_turns places each tank there in turn)."""
     text = w10_turret_text(count, players)
     others = range(1, players)
     told = count["one"] if players == 2 else count["one"] + count["nobody"]
@@ -5783,11 +5825,11 @@ def w10_turret_check(count, players):
                f"a turret fires with nobody in its window, or with its gun on a human outside it: {text}")
         expect(sum(count["fire_only"][n] + count["fire_at"][n] for n in others) > 0,
                f"no turret fires with a player after the first alone in its window or with its gun on it: {text}")
-        # A run has a dozen first shots, most with several tanks in the window: which players they tell of is in the
-        # text, and not asked of each player.
-        never = [n for n in others if count["fire_only"][n] + count["fire_at"][n] == 0]
-        if never:
-            text += f"; no first shot tells of player {', '.join(str(n) for n in never)}"
+        # #345: the tanks take turns at the edge nearest the cars (w14_turret_script_turns), so each is the nearest
+        # human in a ready turret's window at times, and the first shot has to fly at it then.
+        never = [n for n in range(players) if count["fire_pick"][n] == 0]
+        expect(not never, f"no first shot flew at player {', '.join(str(n) for n in never)} with the gun on it as the "
+                          f"human the turret picked, the nearest in its window: the run says nothing about it: {text}")
     return text
 
 
@@ -5797,14 +5839,16 @@ def sc_ma_turret(args, folder, players=2):
     it turns to the nearest human. Upstream it turned to and fired by player 0 alone. Read from the aim trace's turret
     lines, which do not ask the aim code. Hashes and the two traces equal. With `players` tanks (#329) every player's
     w<n> and p<n> of the line is read: each player after the first has to be turned to and fired at when it is alone in
-    a window."""
+    a window. The tanks take turns at the left edge of the track (#345, w14_turret_script_turns) for
+    W14_TURRET_FRAMES_MANY frames, and each has to get a first shot with the gun on it as the turret's pick."""
     traces, client_envs = aim_traces(folder, players)
-    games = run_short(args, folder, script=w10_turret_script if players == 2 else w10_turret_script_apart(players),
-                      frames=W10_TURRET_FRAMES,
+    frames = W10_TURRET_FRAMES if players == 2 else W14_TURRET_FRAMES_MANY
+    games = run_short(args, folder, script=w10_turret_script if players == 2 else w14_turret_script_turns(players),
+                      frames=frames,
                       host_env={"SF64_COOP_JOIN_LEVEL": "11", "SF64_COOP_AIM_TRACE": str(traces["host"])},
                       client_envs=client_envs, both={"SF64_COOP_TRACE_SHIELDS": ",".join(["255"] * players)},
                       seconds=1800, players=players)
-    frames = compare_all(games, W10_TURRET_FRAMES)
+    frames = compare_all(games, frames)
     ours = w10_turret_rows(traces["host"])
     n = len(same_trace(games, lambda game: [r["line"] for r in w10_turret_rows(traces[game.name])], "turret lines"))
     expect(n > 0, "no turret line in the aim trace (a build without the turret line of aim_trace.h writes none, or no "

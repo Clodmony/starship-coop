@@ -12,6 +12,9 @@ second, and the broken rows have to fail:
   one that holds its fire with the last player alone in it, a run in which no turret turns to player 2, one in which
   the turrets fire at player 0 alone, and a first shot with the gun on a human outside the window, fail; a run without
   a first shot at player 2 passes and says so.
+- turret (#345): a run in which no first shot flies at player 2 while it is the turret's pick fails; a first shot
+  on the frame a human comes into an empty window, the gun still on the human it had turned to, is counted apart, and
+  one with the gun on another human outside the window still fails.
 - aim (#345): w14_shot_rows and w14_aim_story on `shot` lines with places; shots at the nearest human to their start
   pass, and so do the kinds the check cannot judge (at nobody, spread, near a human but not at its place, a near tie,
   a possible scatter of player 0); a shot at a human who is not the nearest fails, so do one at a human who does not
@@ -146,8 +149,23 @@ def test_turret():
         fails(f"turret {players} holds its fire",
               lambda: lt.w10_turret_check(lt.w10_turret_story(turret_rows(players, idle=players - 1), players),
                                           players), "holds its fire")
-        text = lt.w10_turret_check(lt.w10_turret_story(turret_rows(players, no_fire=2), players), players)
-        check(f"turret {players} never fires at player 2", "no first shot tells of player 2" in text, text)
+        fails(f"turret {players} never fires at player 2",
+              lambda: lt.w10_turret_check(lt.w10_turret_story(turret_rows(players, no_fire=2), players), players),
+              "no first shot flew at player 2 with the gun on it")
+        check(f"turret {players} first shots at the pick", count["fire_pick"] == [4] * players
+              and count["fire_other"] == 0, f"{count['fire_pick']}")
+        # A human comes into the empty window and the turret fires at once, its gun still on the nearest of all,
+        # player 0, outside the window: counted apart; the gun on another human outside it still fails.
+        entering = turret_rows(players) + [turret_row(9000, players), turret_row(9001, players, alone=1, to=0,
+                                                                                fires=True)]
+        count = lt.w10_turret_story(entering, players)
+        text = lt.w10_turret_check(count, players)
+        check(f"turret {players} fires as a human comes in", count["fire_entering"] == 1
+              and count["fire_at_out"] == 0, text)
+        fails(f"turret {players} fires as a human comes in, the gun on another outside the window",
+              lambda: lt.w10_turret_check(lt.w10_turret_story(entering[:-1] + [
+                  turret_row(9001, players, alone=1, to=2, fires=True)], players), players),
+              "with its gun on a human outside it")
         fails(f"turret {players} fires at player 0 alone",
               lambda: lt.w10_turret_check(lt.w10_turret_story(
                   [r for r in turret_rows(players) if r["step"][1] == 0 or r["well0"]]
