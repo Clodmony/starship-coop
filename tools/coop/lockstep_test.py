@@ -216,6 +216,11 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             a life, then player 0 is refilled for another. On every frame each game's HUD draws the pool,
             gLifeCount[0], as its lives number (the view trace's hudlives), also the games that look through player
             1, 2 or 3, whose own slots the pool's changes do not write. The games are equal on every frame.
+  names_four four games in Fortuna's all-range with pilots and names of 3 to 8 letters (#332): the ships bunch, and
+            each game's view trace gives every name and shield bar it drew as a box on the 320x240 screen. On no
+            frame may two names on screen cover each other, and on some frames two of them must have stood where
+            they would have, had one not been moved up (the trace's lift); a build that never moves a name fails.
+            Hashes equal on every frame of the four.
 
 Every scenario that compares two games also checks that neither wrote a desync report (WP-23).
 
@@ -4550,6 +4555,78 @@ def sc_player_names(args, folder):
             f"{frames} frames")
 
 
+NAMES_FOUR_332 = ("CAPTAIN", "WINGMAN8", "SAM", "PEPPYOLD")  # each game's name; 8 letters is the most a name holds
+NAMES_FOUR_FRAMES_332 = 1500  # lockstep frames of Fortuna: the four ships first bunch at about level frame 270 (#332)
+LEVEL_FORTUNA = 14
+SCREEN_332 = (0.0, 0.0, 320.0, 240.0)  # the N64's screen, the one the trace's boxes are on
+
+
+def area_332(a, b):
+    """The area two boxes (left, top, right, bottom) share."""
+    return max(min(a[2], b[2]) - max(a[0], b[0]), 0.0) * max(min(a[3], b[3]) - max(a[1], b[1]), 0.0)
+
+
+def name_boxes_332(path):
+    """(frame, {player: (name box, bar box, lift)}) of every line of a view trace with `tagbox`
+    (src/port/coop/test/view_trace.c), only the names that are on the screen. The lift is how far the name was moved
+    up so as not to cover another, in pixels of that screen, 0 when the trace has none."""
+    rows = []
+    for line in Path(path).read_text(encoding="utf-8", errors="replace").splitlines():
+        fields = dict(kv.split("=", 1) for kv in line.split() if "=" in kv)
+        if "tagbox" not in fields or "frame" not in fields:
+            continue
+        boxes = {}
+        for item in ([] if fields["tagbox"] == "-" else fields["tagbox"].split(",")):
+            player, values = item.split(":", 1)
+            v = [float(x) for x in values.split("/")]
+            name, bar, lift = tuple(v[0:4]), tuple(v[4:8]), (v[8] if len(v) > 8 else 0.0)
+            if area_332(name, SCREEN_332) > 0:
+                boxes[int(player)] = (name, bar, lift)
+        rows.append((int(fields["frame"]), boxes))
+    return rows
+
+
+def sc_names_four(args, folder):
+    """#332: see the list at the top."""
+    env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_LOCKSTEP_END": str(NAMES_FOUR_FRAMES_332),
+           "SF64_COOP_VIEW_TRACE": "view-trace.txt"}
+    games = session(args, folder, host_env={"SF64_COOP_JOIN_LEVEL": str(LEVEL_FORTUNA),
+                                            "SF64_COOP_JOIN_NAME": NAMES_FOUR_332[0]},
+                    both=env, config={"CVars": {"gInvincible": 1}}, clients=3,
+                    client_envs=[{"SF64_COOP_JOIN_NAME": name} for name in NAMES_FOUR_332[1:]],
+                    replay_frames=NAMES_FOUR_FRAMES_332 + 20000)
+    try:
+        wait_for(list(games), "done", 900, "with four players in Fortuna")
+    finally:
+        for game in games:
+            game.close()
+    host, *clients = games
+    frames = min(compare(host, client) for client in clients)
+    found, covered = [], []
+    lifted_total = 0
+    for game in games:
+        rows = name_boxes_332(game.run / "view-trace.txt")
+        expect(rows, f"{game.name}: the view trace has no tagbox (a build before #332)")
+        together = lifted = 0
+        for frame, boxes in rows:
+            ids = sorted(boxes)
+            together += len(ids) >= 2
+            pairs = [(a, b) for n, a in enumerate(ids) for b in ids[n + 1:]]
+            if any(area_332(boxes[a][0], boxes[b][0]) > 0 for a, b in pairs):
+                covered.append(f"{game.name} frame {frame} " + " ".join(
+                    f"{p}:{'/'.join(f'{v:.0f}' for v in boxes[p][0])}" for p in ids))
+            # where each name would have been without its lift
+            down = {p: (b[0][0], b[0][1] + b[2], b[0][2], b[0][3] + b[2]) for p, b in boxes.items()}
+            lifted += any(area_332(down[a], down[b]) > 0 for a, b in pairs)
+        lifted_total += lifted
+        found.append(f"{game.name} {len(rows)} frames, two or more names on screen on {together}, moved apart on "
+                     f"{lifted}")
+    expect(not covered, f"two names cover each other on {len(covered)} frames, first {covered[:3]}; " + "; ".join(found))
+    expect(lifted_total > 0, "no two names ever stood in each other's way, so the run tested nothing: " +
+           "; ".join(found))
+    return f"same hash on {frames} frames in the four games; no name covers another; " + "; ".join(found)
+
+
 # ---- The session survives (#189 and its sibling): a desync or a lost player starts the level again ----
 
 SURVIVE_FRAMES = 600  # frames of the level after a restart that have to hash alike: the intro, from frame 0 on
@@ -6333,6 +6410,7 @@ SCENARIOS = {
     "escape_look": sc_escape_look,
     "pool_start": sc_pool_start,
     "hud_lives": sc_hud_lives,
+    "names_four": sc_names_four,
 }
 LONG = ("survive_next_level", "survive_gaps_route", "survive_gaps_map", "survive_gaps_map_lost",
         "survive_gaps_checkpoints", "survive_gaps_venom_jump", "fox_refill_levels", "fox_refill_long", "fox_lead_swap", "fox_lead_swap_all_range", "full", "scenes", "allrange", "allrange_down", "allrange_others", "allrange_down_others", "teambar",

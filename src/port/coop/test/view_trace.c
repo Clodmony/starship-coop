@@ -130,6 +130,22 @@ static void CoopViewTrace_WriteTags(void) {
     if (tags == 0) {
         fputc('-', sFile);
     }
+    // #332: where each of those names and its bar were drawn, on a 320x240 screen: left/top/right/bottom of the name,
+    // then of the bar, then how far the name was lifted clear of a nearer one
+    tags = 0;
+    fputs(" tagbox=", sFile);
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        float box[4];
+        float bar[4];
+
+        if (CoopView_TagBox(i, box, bar)) {
+            fprintf(sFile, "%s%d:%.1f/%.1f/%.1f/%.1f/%.1f/%.1f/%.1f/%.1f/%.1f", (tags++ == 0) ? "" : ",", i, box[0],
+                    box[1], box[2], box[3], bar[0], bar[1], bar[2], bar[3], CoopView_TagLift(i));
+        }
+    }
+    if (tags == 0) {
+        fputc('-', sFile);
+    }
 }
 
 static void CoopViewTrace_OnGamePostUpdate(IEvent* event) {

@@ -67,7 +67,8 @@ void CoopView_FillColor(int32_t* red, int32_t* green, int32_t* blue);
 // A bar with the shields of every other player, over its Arwing, and above the bar its name (#257, #258, names.h). See
 // takes each player while gGfxMatrix holds the camera drawn, Draw comes after that matrix is popped, as
 // Display_ActorMarks does. A client marks every other player that flies in front of its camera, Fox included, never the
-// one it looks through; nothing off screen.
+// one it looks through; nothing off screen. Where two names would cover each other, the name of the ship further
+// away goes up, just above the nearer one's (#332).
 void CoopView_SeePlayer(const struct Player* player);
 void CoopView_DrawShieldBars(void);
 
@@ -95,6 +96,13 @@ void CoopView_DrawnFill(int32_t* rgba);
 float CoopView_ShieldBar(int32_t index);
 // Nonzero when player `index`'s name was drawn this frame; what it says is CoopNames_Label.
 int32_t CoopView_TagShown(int32_t index);
+// Where player `index`'s name (shadow included) and its shield bar were drawn this frame, on a 320x240 screen (the
+// N64's, which a 4:3 window scales; a wider window adds room at the sides): left, top, right, bottom each. Nonzero when
+// they were drawn (#332).
+int32_t CoopView_TagBox(int32_t index, float* box, float* bar);
+// How far player `index`'s name went up this frame so as not to cover a nearer ship's name, in pixels of that screen
+// (#332); 0 when it was not drawn.
+float CoopView_TagLift(int32_t index);
 // The last heat alarm settings of this frame, nonzero if any were set; clears them.
 int32_t CoopView_HeatAlarmSet(int32_t* shields, int32_t* heightParam);
 // How many billboards were drawn facing this client's own eye in place of player 0's since the last call; billboards:
