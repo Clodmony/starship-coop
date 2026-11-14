@@ -2538,28 +2538,28 @@ def w9_sypose_rows(path):
 def w9_sypose_votes(row, aimed=None):
     """For each angle of W9_SYPOSE_ANGLES that can tell on this frame: the player whose target the robot turned it to,
     or None for nobody's. With two players an angle tells when their two targets are W9_SYPOSE_APART apart. With more
-    (#329) `aimed` is the player the rule names, the nearest: an angle tells when that player's target is that far
-    from every other player's, and the vote is `aimed` when the step fits its target, else the other player whose
-    target it fits."""
+    (#329) `aimed` is the player the rule names, the nearest: an angle tells it from the players whose targets are that
+    far from its own (the others fly too near it to tell, and are left out), and the vote is `aimed` when the step
+    fits its target, else the one of those players whose target it fits."""
     players = sorted(row["wants"])
     if aimed is None:
         aimed = 0  # two players: either is apart from the other or neither, so it does not matter which is asked
-    rest = [i for i in players if i != aimed]
     votes = []
     for _, index, part, scale, most, body in W9_SYPOSE_ANGLES:
         if body is not None and body != row["body"]:
             continue
         want = {i: row["wants"][i][part] for i in players}
-        if any(abs(w9_turn(want[i] - want[aimed])) < W9_SYPOSE_APART for i in rest):
+        rest = [i for i in players if i != aimed and abs(w9_turn(want[i] - want[aimed])) >= W9_SYPOSE_APART]
+        if not rest:
             continue
         before = row["before"][index]
         step = w9_turn(row["after"][index] - before)
         if abs(step) < most - 0.01:
-            off = {i: abs(w9_turn(before + step / scale - want[i])) for i in players}
-            near = min(players, key=lambda i: (off[i], i != aimed, i))
+            off = {i: abs(w9_turn(before + step / scale - want[i])) for i in [aimed] + rest}
+            near = min(off, key=lambda i: (off[i], i != aimed, i))
             votes.append(near if off[near] < W9_SYPOSE_APART / 2 else None)
         else:
-            side = {i: w9_turn(want[i] - before) * step > 0 for i in players}
+            side = {i: w9_turn(want[i] - before) * step > 0 for i in [aimed] + rest}
             if len(set(side.values())) == 2:
                 votes.append(aimed if side[aimed] else next(i for i in rest if side[i]))
     return votes
