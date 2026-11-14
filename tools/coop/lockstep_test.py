@@ -212,7 +212,8 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             is 2 plus 1 for each player after the first (3, 4, 5) from the first frame player 0 flies, the same in
             every game, and the games are equal on every frame.
   <rule>_three, <rule>_four  #329: a scenario that checks one rule, with three and with four games: aim,
-            macbeth_bombs, ma_turret, sy_robot_spread, granga_spread and escape_look. Every game's hashes and traces
+            macbeth_bombs, ma_turret, sy_robot_spread, sy_robot_pose, granga_spread and escape_look. Every game's
+            hashes and traces
             are the host's, and the checks read every player of the session: a shot or missile at each player; every
             hazard of Macbeth on each tank in turn, that tank hit and no other, the flash red on its own client; a
             turret's steps to each player when the rule names it; a spread shot around each player when it is the
@@ -2534,53 +2535,81 @@ def w9_sypose_rows(path):
     return rows
 
 
-def w9_sypose_votes(row):
-    """For each angle of W9_SYPOSE_ANGLES that can tell the two players apart on this frame: the player whose target
-    the robot turned it to (0 or 1), or None for neither."""
+def w9_sypose_votes(row, aimed=None):
+    """For each angle of W9_SYPOSE_ANGLES that can tell on this frame: the player whose target the robot turned it to,
+    or None for nobody's. With two players an angle tells when their two targets are W9_SYPOSE_APART apart. With more
+    (#329) `aimed` is the player the rule names, the nearest: an angle tells when that player's target is that far
+    from every other player's, and the vote is `aimed` when the step fits its target, else the other player whose
+    target it fits."""
+    players = sorted(row["wants"])
+    if aimed is None:
+        aimed = 0  # two players: either is apart from the other or neither, so it does not matter which is asked
+    rest = [i for i in players if i != aimed]
     votes = []
     for _, index, part, scale, most, body in W9_SYPOSE_ANGLES:
         if body is not None and body != row["body"]:
             continue
-        want = [row["wants"][i][part] for i in (0, 1)]
-        if abs(w9_turn(want[1] - want[0])) < W9_SYPOSE_APART:
+        want = {i: row["wants"][i][part] for i in players}
+        if any(abs(w9_turn(want[i] - want[aimed])) < W9_SYPOSE_APART for i in rest):
             continue
         before = row["before"][index]
         step = w9_turn(row["after"][index] - before)
         if abs(step) < most - 0.01:
-            off = [abs(w9_turn(before + step / scale - w)) for w in want]
-            near = 0 if off[0] <= off[1] else 1
+            off = {i: abs(w9_turn(before + step / scale - want[i])) for i in players}
+            near = min(players, key=lambda i: (off[i], i != aimed, i))
             votes.append(near if off[near] < W9_SYPOSE_APART / 2 else None)
         else:
-            side = [w9_turn(w - before) * step > 0 for w in want]
-            if side[0] != side[1]:
-                votes.append(0 if side[0] else 1)
+            side = {i: w9_turn(want[i] - before) * step > 0 for i in players}
+            if len(set(side.values())) == 2:
+                votes.append(aimed if side[aimed] else next(i for i in rest if side[i]))
     return votes
 
 
-def sc_sy_robot_pose(args, folder):
+def w9_sypose_story(rows, players=2):
+    """The checks of sy_robot_pose on its pose lines: (the problems found, the summary). count[n] is, for the frames
+    with player n the nearest, the angle steps to its own direction, to another player's and to nobody's."""
+    count = {nearest: [0, 0, 0] for nearest in range(players)}
+    for row in rows:
+        nearest = w8_syrobot_nearest(row)
+        for vote in w9_sypose_votes(row, nearest if players > 2 else None):
+            count[nearest][0 if vote == nearest else 2 if vote is None else 1] += 1
+    robots = len({(row["slot"], row["frame"] // 200) for row in rows})
+    if players == 2:
+        text = (f"{len(rows)} frames of robots aiming (about {robots} robots); with player 1 the nearer, "
+                f"{count[1][0]} angle steps go to player 1's direction, {count[1][1]} to player 0's, {count[1][2]} to "
+                f"neither; with player 0 the nearer, {count[0][0]} to player 0's, {count[0][1]} to player 1's, "
+                f"{count[0][2]} to neither")
+    else:
+        text = (f"{len(rows)} frames of robots aiming (about {robots} robots); angle steps to the nearest player's "
+                f"direction, to another's, to nobody's: "
+                + "; ".join(f"with player {n} the nearest {count[n][0]}, {count[n][1]}, {count[n][2]}"
+                            for n in (*range(1, players), 0)))
+    problems = []
+    own = sum(count[n][0] for n in range(1, players))
+    told = sum(sum(count[n]) for n in range(1, players))
+    whom = "player 1" if players == 2 else "a player after the first"
+    if told < W9_SYPOSE_MIN:
+        problems.append(f"too few angle steps tell the players apart with {whom} the nearer")
+    elif own < W9_SYPOSE_SHARE * told:
+        problems.append(f"the robots turn head and gun to player 0 while {whom} is the nearer, the one they shoot at")
+    for n in range(2, players):
+        if count[n][0] == 0:
+            problems.append(f"no angle step tells with player {n} the nearest: the run says nothing about it")
+    if count[0][0] < W9_SYPOSE_SHARE * sum(count[0]):
+        problems.append("the robots do not turn to player 0 when it is the nearer")
+    return problems, text
+
+
+def sc_sy_robot_pose(args, folder, players=2):
     """#281: a Sector Y robot turns its head and gun to the human its shot flies at, the nearest. The flight of
     sy_robot_spread; from the aim trace's sypose lines, the target of each angle step that can tell the two players
     apart: with player 1 the nearer it is player 1's, with player 0 the nearer player 0's. Upstream it is player 0's
-    always."""
-    frames, ours = w8_syrobot_run(args, folder, w9_sypose_rows, "robot pose lines")
+    always. With more players (#329): the target of each step that can tell the nearest player from every other."""
+    frames, ours = w8_syrobot_run(args, folder, w9_sypose_rows, "robot pose lines", players)
     rows = [row for row in ours if row["level"] == W8_SYROBOT_LEVEL and row["frame"] <= W8_SYROBOT_FRAMES]
     expect(rows, "no robot pose in the trace (a build without the sypose line of aim_trace.h writes none)")
-    count = {nearest: {0: 0, 1: 0, None: 0} for nearest in (0, 1)}
-    for row in rows:
-        nearest = w8_syrobot_nearest(row)
-        for vote in w9_sypose_votes(row):
-            count[nearest][vote] += 1
-    robots = len({(row["slot"], row["frame"] // 200) for row in rows})
-    text = (f"{len(rows)} frames of robots aiming (about {robots} robots); with player 1 the nearer, "
-            f"{count[1][1]} angle steps go to player 1's direction, {count[1][0]} to player 0's, {count[1][None]} to "
-            f"neither; with player 0 the nearer, {count[0][0]} to player 0's, {count[0][1]} to player 1's, "
-            f"{count[0][None]} to neither")
-    told = count[1][0] + count[1][1] + count[1][None]
-    expect(told >= W9_SYPOSE_MIN, f"too few angle steps tell the players apart with player 1 the nearer. {text}")
-    expect(count[1][1] >= W9_SYPOSE_SHARE * told,
-           f"the robots turn head and gun to player 0 while player 1 is the nearer, the one they shoot at. {text}")
-    told = count[0][0] + count[0][1] + count[0][None]
-    expect(count[0][0] >= W9_SYPOSE_SHARE * told, f"the robots do not turn to player 0 when it is the nearer. {text}")
+    problems, text = w9_sypose_story(rows, players)
+    expect(not problems, f"{'; '.join(problems)}. {text}")
     return f"same hash on {frames} frames; {text}"
 
 
@@ -5653,12 +5682,16 @@ def w9_escape_case_story(rows, name):
 
 
 def w9_escape_cases(players):
-    """The cases for a session of more than two players (#329): the three cases of player 1 on the last player, then
-    the explosion on player 0. The pilots fly James' route in a row, about 225 apart, and the probe needs a place 450
-    from its target and 510 from everyone else: there is one for the player at the end of the row and none for a
+    """The cases for a session of more than two players (#329): the explosion on player 0, then the three cases of
+    player 1 on the last player. The pilots fly James' route in a row, about 235 apart, and the probe needs a place
+    450 from its target and 510 from everyone else: there is one for a player at an end of the row and none for a
     player inside it (with four players the cases on player 2 waited 3000 away for all 60 updates, `off=60`). So the
-    last player is the one a session can show: player 2 with three games, player 3 with four."""
-    return tuple(f"{kind}{players - 1}" for kind in ("miss", "blast", "exit")) + ("blast0",)
+    last player is the one a session can show: player 2 with three games, player 3 with four. The explosion on
+    player 0 comes first, not last as with two: a player that went down comes back beside player 0, its pilot flies
+    to player 0's own waypoint, and with four games player 3 then flew within 16 of player 0 for the rest of the
+    escape, so an explosion on player 0 after its return had no place either. Player 0's down starts the escape again
+    at its checkpoint, and the other cases run in that second escape."""
+    return ("blast0",) + tuple(f"{kind}{players - 1}" for kind in ("miss", "blast", "exit"))
 
 
 def w9_escape_rule(rows, name, values):
@@ -5697,7 +5730,12 @@ def w9_escape_rule(rows, name, values):
                f"{players[i][2:5]}, states {w9_escape_states(players[i][5])}")
     expect(before == after, f"{name}: the pool went {before} to {after} during the case; the life is spent at the "
                             "return, not at the crash (decision 0007 rule 4)")
-    mine = [v for k, v, _ in rows if k == "player" and v["player"] == str(target)
+    # The players' lines from the case before this one on: frames start again with an escape, and with more than two
+    # players this case runs in the second (w9_escape_cases).
+    at = next((n for n, (_, v, _) in enumerate(rows) if v is values), 0)
+    since = max([n for n, (k, v, _) in enumerate(rows[:at]) if k == "start" or (k == "case" and "target" in v)],
+                default=0)
+    mine = [v for k, v, _ in rows[since:] if k == "player" and v["player"] == str(target)
             and int(v["frame"]) >= int(values["frame"]) and v.get("level") == "9"]
     went = next((v for v in mine if v["down"] == "1"), None)
     expect(went is not None, f"{name}: no line says player {target} is down")
@@ -6472,7 +6510,8 @@ SCENARIOS = {
     "pool_start": sc_pool_start,
 }
 # #329: the rule scenarios with a third and a fourth player, `<name>_three` and `<name>_four`.
-RULES_WITH_PLAYERS = ("aim", "macbeth_bombs", "ma_turret", "sy_robot_spread", "granga_spread", "escape_look")
+RULES_WITH_PLAYERS = ("aim", "macbeth_bombs", "ma_turret", "sy_robot_spread", "sy_robot_pose", "granga_spread",
+                      "escape_look")
 for _name in RULES_WITH_PLAYERS:
     for _word, _players in (("three", 3), ("four", 4)):
         SCENARIOS[f"{_name}_{_word}"] = with_players(SCENARIOS[_name], _players)

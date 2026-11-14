@@ -15,6 +15,8 @@ second, and the broken rows have to fail:
 - plasma: w9_plasma_story; a shot that passes the nearest human, player 3, too far off fails, and so does a run in
   which player 2 is never the nearest (it says nothing about player 2).
 - sy-robot: w8_syrobot_story; a spread shot straight at player 2 fails.
+- pose: w9_sypose_story; robots that turn head and gun to player 0 while player 2 is the nearest fail, and so does a
+  run without a frame with the last player the nearest.
 - escape: w9_escape_rule; blast3 that does not take player 3 down, blast2 that hurts player 3, blast0 that hurts
   player 2, and exit3 that ends the level, fail. w9_escape_case_story: a case whose object never came into its
   target's reach fails as that, not as a broken rule.
@@ -208,6 +210,44 @@ def test_spread():
           str(problems))
 
 
+# ---- Sector Y's robots: head and gun ----
+
+def pose_row(frame, players, nearest, to):
+    """A robot's aiming frame with player `nearest` the nearest: head and gun step to player `to`'s direction. Player
+    n's yaw is 20 * n and its pitch 10 * n."""
+    row = shot_row(frame, players, nearest, (0.0, 0.0))
+    yaw, pitch = 20.0 * to, 10.0 * to
+    row.update({"slot": 5, "body": 0, "wants": {n: [20.0 * n, 10.0 * n] for n in range(players)},
+                "before": [pitch - 10.0, yaw - 10.0, 0.0, pitch - 10.0, 0.0],
+                "after": [pitch - 9.0, yaw - 9.0, 0.0, pitch - 8.0, 0.0]})
+    return row
+
+
+def pose_rows(players, wrong=None, skip=None):
+    return [pose_row(n * 100 + k, players, n, 0 if n == wrong else n)
+            for n in range(players) if n != skip for k in range(40)]
+
+
+def test_pose():
+    for players in (3, 4):
+        problems, text = lt.w9_sypose_story(pose_rows(players), players)
+        check(f"pose {players}", not problems and f"with player {players - 1} the nearest 120, 0, 0" in text,
+              f"{problems} {text}")
+        problems, text = lt.w9_sypose_story(pose_rows(players, wrong=2), players)
+        check(f"pose {players} turns to player 0 with player 2 the nearest",
+              any("turn head and gun to player 0" in p for p in problems)
+              and any("no angle step tells with player 2" in p for p in problems), f"{problems} {text}")
+        problems, _ = lt.w9_sypose_story(pose_rows(players, skip=players - 1), players)
+        check(f"pose {players} says nothing about the last player",
+              any(f"with player {players - 1} the nearest: the run says nothing" in p for p in problems), str(problems))
+    problems, text = lt.w9_sypose_story(pose_rows(2), 2)
+    check("pose two", not problems and "120 angle steps go to player 1's direction, 0 to player 0's" in text,
+          f"{problems} {text}")
+    problems, _ = lt.w9_sypose_story(pose_rows(2, wrong=1), 2)
+    check("pose two turns to player 0", any("turn head and gun to player 0 while player 1" in p for p in problems),
+          str(problems))
+
+
 # ---- Andross' escape ----
 
 def escape_values(players, hit=0, down=0, exit_=0, low=None, lives="5/5"):
@@ -225,8 +265,8 @@ def escape_back(target, lives=4):
 
 
 def test_escape():
-    check("escape cases 3", lt.w9_escape_cases(3) == ("miss2", "blast2", "exit2", "blast0"), str(lt.w9_escape_cases(3)))
-    check("escape cases 4", lt.w9_escape_cases(4) == ("miss3", "blast3", "exit3", "blast0"), str(lt.w9_escape_cases(4)))
+    check("escape cases 3", lt.w9_escape_cases(3) == ("blast0", "miss2", "blast2", "exit2"), str(lt.w9_escape_cases(3)))
+    check("escape cases 4", lt.w9_escape_cases(4) == ("blast0", "miss3", "blast3", "exit3"), str(lt.w9_escape_cases(4)))
     # A case line as the probe writes it: the object 450 from player 3, and one that waited 3000 away.
     line = ("escape case=blast3 target=3 run=1 frame=631 end=691 updates=60 off={off} lost=0 exit=0 hit={hit} "
             "down={hit} lives=5/5 backdrop=7 p0=533/3512,255/255/255,3 p1=767/3277,255/255/255,3 "
@@ -267,7 +307,7 @@ def test_escape():
 
 
 def main():
-    for test in (test_mabomb, test_turret, test_spread, test_escape):
+    for test in (test_mabomb, test_turret, test_spread, test_pose, test_escape):
         test()
     for line in FAILED:
         print(f"FAILED  {line}")
