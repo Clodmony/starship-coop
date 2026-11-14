@@ -4781,12 +4781,20 @@ def area_332(a, b):
     return max(min(a[2], b[2]) - max(a[0], b[0]), 0.0) * max(min(a[3], b[3]) - max(a[1], b[1]), 0.0)
 
 
-def name_boxes_332(path):
-    """(frame, {player: (name box, bar box, lift)}) of every line of a view trace with `tagbox`
-    (src/port/coop/test/view_trace.c), only the names that are on the screen. The lift is how far the name was moved
-    up so as not to cover another, in pixels of that screen, 0 when the trace has none."""
+def name_boxes_332(path, on_screen_only=True):
+    """name_box_rows_332 of the view trace in the file `path`."""
+    return name_box_rows_332(Path(path).read_text(encoding="utf-8", errors="replace"), on_screen_only)
+
+
+def name_box_rows_332(text, on_screen_only=True):
+    """(frame, {player: (name box, bar box, lift, order)}) of every line of a view trace with `tagbox`
+    (src/port/coop/test/view_trace.c), only the names that are on the screen (all that were drawn with
+    on_screen_only False). The lift is how far the name was moved up so as not to cover another, in pixels of that
+    screen, 0 when the trace has none. The order (#342) is (the place of the player's bar, the place of its name)
+    among what the frame drew of them, the first drawn being 0, or None when the trace has none: of two things on one
+    spot the later one is on top."""
     rows = []
-    for line in Path(path).read_text(encoding="utf-8", errors="replace").splitlines():
+    for line in text.splitlines():
         fields = dict(kv.split("=", 1) for kv in line.split() if "=" in kv)
         if "tagbox" not in fields or "frame" not in fields:
             continue
@@ -4795,10 +4803,25 @@ def name_boxes_332(path):
             player, values = item.split(":", 1)
             v = [float(x) for x in values.split("/")]
             name, bar, lift = tuple(v[0:4]), tuple(v[4:8]), (v[8] if len(v) > 8 else 0.0)
-            if area_332(name, SCREEN_332) > 0:
-                boxes[int(player)] = (name, bar, lift)
+            order = (int(v[9]), int(v[10])) if len(v) > 10 else None
+            if not on_screen_only or area_332(name, SCREEN_332) > 0:
+                boxes[int(player)] = (name, bar, lift, order)
         rows.append((int(fields["frame"]), boxes))
     return rows
+
+
+def bars_on_names_342(boxes):
+    """#342: the (bar's player, name's player) pairs of one frame whose bar lies on the name's box, wherever each was
+    drawn. `boxes` is one row of name_boxes_332 read with on_screen_only False; only names on the screen count, bars
+    everywhere."""
+    return [(p, q) for q, (name, _, _, _) in sorted(boxes.items()) if area_332(name, SCREEN_332) > 0
+            for p, (_, bar, _, _) in sorted(boxes.items()) if area_332(name, bar) > 0]
+
+
+def bars_over_names_342(boxes):
+    """#342: of bars_on_names_342 those drawn after the name, which cover it: the later of two things on one spot is
+    on top. Needs the order of every box (the trace of a build with #342)."""
+    return [(p, q) for p, q in bars_on_names_342(boxes) if boxes[p][3][0] > boxes[q][3][1]]
 
 
 def sc_names_four(args, folder):
@@ -4817,11 +4840,20 @@ def sc_names_four(args, folder):
             game.close()
     host, *clients = games
     frames = min(compare(host, client) for client in clients)
-    found, covered = [], []
-    lifted_total = 0
+    found, covered, hidden = [], [], []
+    lifted_total = lying_total = 0
     for game in games:
         rows = name_boxes_332(game.run / "view-trace.txt")
         expect(rows, f"{game.name}: the view trace has no tagbox (a build before #332)")
+        # #342: every box of the frame, to see where each bar lies on a name and which of the two was drawn later
+        every = name_boxes_332(game.run / "view-trace.txt", on_screen_only=False)
+        expect(all(box[3] is not None for _, boxes in every for box in boxes.values()),
+               f"{game.name}: the view trace has no draw order in its tagbox (a build before #342)")
+        lying = 0
+        for frame, boxes in every:
+            lying += bool(bars_on_names_342(boxes))
+            hidden += [f"{game.name} frame {frame} bar {p} drawn after name {q}" for p, q in bars_over_names_342(boxes)]
+        lying_total += lying
         together = lifted = 0
         for frame, boxes in rows:
             ids = sorted(boxes)
@@ -4835,11 +4867,15 @@ def sc_names_four(args, folder):
             lifted += any(area_332(down[a], down[b]) > 0 for a, b in pairs)
         lifted_total += lifted
         found.append(f"{game.name} {len(rows)} frames, two or more names on screen on {together}, moved apart on "
-                     f"{lifted}")
+                     f"{lifted}, a bar on a name on {lying}")
     expect(not covered, f"two names cover each other on {len(covered)} frames, first {covered[:3]}; " + "; ".join(found))
     expect(lifted_total > 0, "no two names ever stood in each other's way, so the run tested nothing: " +
            "; ".join(found))
-    return f"same hash on {frames} frames in the four games; no name covers another; " + "; ".join(found)
+    # #342: where a bar lies on a name, the name is the one drawn last
+    expect(not hidden, f"a bar covers a name ({len(hidden)} times), first {hidden[:3]}; " + "; ".join(found))
+    expect(lying_total > 0, "no bar ever lay on a name, so the run tested no draw order: " + "; ".join(found))
+    return (f"same hash on {frames} frames in the four games; no name covers another, no bar covers a name; " +
+            "; ".join(found))
 
 
 # ---- The session survives (#189 and its sibling): a desync or a lost player starts the level again ----

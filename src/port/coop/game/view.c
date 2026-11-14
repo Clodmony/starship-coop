@@ -84,6 +84,11 @@ static bool sTagShown[COOP_PLAYERS_MAX];
 static f32 sTagBox[COOP_PLAYERS_MAX][4];
 // The same for each shield bar (#332, test only).
 static f32 sBarBox[COOP_PLAYERS_MAX][4];
+// The place of each bar and of each name among what CoopView_DrawShieldBars drew this frame, the first drawn being 0
+// (#342, test only): of two of them on one spot the one drawn later is on top.
+static s32 sBarPlace[COOP_PLAYERS_MAX];
+static s32 sTagPlace[COOP_PLAYERS_MAX];
+static s32 sDrawPlace;
 
 // The eye and target Display_Update works out for `player`. It has one more case, for a level complete cutscene in
 // all-range (Display_CsLevelCompleteHandleCamera), which keeps state of its own and is left out: there the plain camera
@@ -491,6 +496,7 @@ static void CoopView_DrawTag(s32 i) {
     CoopView_TagCorner(x, NAME_SMALL_H * NAME_TEXEL, &sTagBox[i][0], &sTagBox[i][1]);
     CoopView_TagCorner(-x + NAME_TEXEL, -NAME_TEXEL, &sTagBox[i][2], &sTagBox[i][3]);
 
+    sTagPlace[i] = sDrawPlace++; // #342: for the trace
     RCP_SetupDL(&gMasterDisp, SETUPDL_62);
     gDPSetTextureFilter(gMasterDisp++, G_TF_POINT);
     gDPSetPrimColor(gMasterDisp++, 0x00, 0x00, 0, 0, 0, 200);
@@ -512,11 +518,13 @@ void CoopView_DrawShieldBars(void) {
         return;
     }
     CoopView_PlaceNames(); // #332
+    sDrawPlace = 0;
     for (i = 0; i < CoopPlayers_Count(); i++) {
         if (!sBarOn[i] || (sBarView[i].z >= 0.0f)) {
             continue;
         }
         FrameInterpolation_RecordOpenChild("CoopShieldBar", i);
+        sBarPlace[i] = sDrawPlace++; // #342: for the trace
         scale = CoopView_BarScale(i);
         shields = MIN(gPlayer[i].shields, 255) / 255.0f;
 
@@ -559,7 +567,7 @@ int32_t CoopView_TagShown(int32_t index) {
     return (index >= 0) && (index < COOP_PLAYERS_MAX) && sTagShown[index];
 }
 
-int32_t CoopView_TagBox(int32_t index, float* box, float* bar) {
+int32_t CoopView_TagBox(int32_t index, float* box, float* bar, int32_t* place) {
     s32 i;
 
     if (!CoopView_TagShown(index)) {
@@ -569,6 +577,8 @@ int32_t CoopView_TagBox(int32_t index, float* box, float* bar) {
         box[i] = sTagBox[index][i];
         bar[i] = sBarBox[index][i];
     }
+    place[0] = sBarPlace[index];
+    place[1] = sTagPlace[index];
     return 1;
 }
 

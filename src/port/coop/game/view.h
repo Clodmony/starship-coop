@@ -98,8 +98,9 @@ float CoopView_ShieldBar(int32_t index);
 int32_t CoopView_TagShown(int32_t index);
 // Where player `index`'s name (shadow included) and its shield bar were drawn this frame, on a 320x240 screen (the
 // N64's, which a 4:3 window scales; a wider window adds room at the sides): left, top, right, bottom each. Nonzero when
-// they were drawn (#332).
-int32_t CoopView_TagBox(int32_t index, float* box, float* bar);
+// they were drawn (#332). place[0] and place[1]: the places of the bar and of the name among all the bars and names
+// this frame drew, the first being 0, so that of two on one spot the later one is on top (#342).
+int32_t CoopView_TagBox(int32_t index, float* box, float* bar, int32_t* place);
 // How far player `index`'s name went up this frame so as not to cover a nearer ship's name, in pixels of that screen
 // (#332); 0 when it was not drawn.
 float CoopView_TagLift(int32_t index);
