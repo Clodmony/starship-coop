@@ -268,6 +268,21 @@ Newest first. One block per run that matters (a milestone, a release, a QA level
 
 ```
 date:       2026-11-14
+commit:     issue/combined-test-6, the merge of issue/345-pilot-places (PR #349) into the merge of PR #348
+identity:   ROM US 1.0, Linux, GCC; no game started for this record
+what ran:   git merge --no-ff --no-commit; conflicts in docs/coop/NOTES.md (both entries kept), tools/coop/README.md
+            (one row changed by both PRs, merged word by word) and tools/coop/lockstep_rules_test.py (the list of
+            tests: test_aim from #348 and test_places from #349); no duplicate top-level function in
+            lockstep_test.py, lockstep_rules_test.py or campaign.py; python tools/coop/check.py;
+            python tools/coop/lockstep_rules_test.py
+result:     the two PRs touch different C and tool code, the conflicts were in docs and the list of rule tests only.
+            The runs of PR #349 are its own record (checks, lockstep 61 of 61, campaign-4, replay-test, hash-run-1,
+            coop-off; escape_look_three rerun by the coordinator); the full gate on this merged head is the next
+            step and its result is in the comment on PR #285.
+```
+
+```
+date:       2026-11-14
 commit:     issue/combined-test-6, the merge of issue/345-turret-aim-trace (PR #348) into f18733f5
 identity:   ROM US 1.0, Linux, GCC; no game started for this record
 what ran:   git merge --no-ff --no-commit (no conflict); git diff --cached issue/345-turret-aim-trace (empty);

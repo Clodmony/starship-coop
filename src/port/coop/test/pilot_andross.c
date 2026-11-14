@@ -10,6 +10,13 @@
 #define W8_ANDPILOT_PASS 1500.0f // or once the ship is past it toward the next one, this near
 #define W8_ANDPILOT_BLAST 500.0f // an explosion's reach in x and z (Andross_AndExplosion_Update)
 #define W8_ANDPILOT_CLOSE 800.0f // the log notes a player 0 this near an explosion
+// A player that came back beside player 0 flew in it (#345: within 16 from frame 560 to the end of the escape, as both
+// steer at the same waypoint and two ships do not collide). One that comes this near a player before it on each axis
+// brakes until it is W8_ANDPILOT_APART away along any axis, or its meter is nearly full.
+#define W8_ANDPILOT_NEAR 200.0f
+#define W8_ANDPILOT_APART 600.0f
+#define W8_ANDPILOT_BRAKE_FULL 80.0f // at 90 the meter locks the brake until it is empty (Player_ArwingBrake)
+#define W8_ANDPILOT_CLIMB_MAX -45.0f // stick y while braking: under -50 a brake press is a U-turn (Player_ArwingBrake)
 
 static s32 sW8AndPilotNext[COOP_PLAYERS_MAX]; // the waypoint each player flies at
 static s32 sW8AndPilotLast[COOP_PLAYERS_MAX]; // the frame of its last call, to see an escape start again
@@ -79,6 +86,50 @@ static bool w8AndPilot_Done(const Player* p, const Scenery360* wp, const Scenery
            (w8AndPilot_Distance(p, at) < W8_ANDPILOT_PASS);
 }
 
+static bool sW8AndPilotBraking[COOP_PLAYERS_MAX];
+
+// The larger of the x, y and z distances from player p to the nearest flying player before player i. `braking` says
+// whether one of those within W8_ANDPILOT_APART is braking out of another now.
+static f32 w8AndPilot_Nearest(const Player* p, s32 i, bool* braking) {
+    f32 best = 1e30f;
+    s32 j;
+
+    *braking = false;
+    for (j = 0; j < i; j++) {
+        const Player* q = &gPlayer[j];
+
+        if (!CoopPlayers_IsParked(j) && (q->state == PLAYERSTATE_ACTIVE)) {
+            f32 d =
+                fmaxf(fmaxf(fabsf(q->pos.x - p->pos.x), fabsf(q->pos.y - p->pos.y)), fabsf(q->trueZpos - p->trueZpos));
+
+            best = fminf(best, d);
+            *braking |= sW8AndPilotBraking[j] && (d < W8_ANDPILOT_APART);
+        }
+    }
+    return best;
+}
+
+// Player i brakes out of a player before it (#345). The brake takes an all-range Arwing's speed down by 1 a frame to
+// 20 under its own and fills the meter by 1.5 a frame (Player_ArwingBrake): held to W8_ANDPILOT_BRAKE_FULL, about 1200
+// of ground; one burst, as a held brake is let go at a meter of W8_ANDPILOT_BRAKE_FULL. (A pilot of #345 that pressed
+// the brake every other frame left the meter of players 1 to 3 at 0.1 with the cooldown on, and no brake got past
+// that: unknown why.) Two that brake on one frame fall back side by side (players 1 and 2 of four at a corner, 197
+// frames): a player waits while one before it and near it brakes.
+static void w8AndPilot_KeepApart(const Player* p, s32 i, PilotPad* pad) {
+    bool otherBrakes;
+    f32 nearest = w8AndPilot_Nearest(p, i, &otherBrakes);
+
+    if ((nearest >= W8_ANDPILOT_APART) || p->boostCooldown || (p->boostMeter >= W8_ANDPILOT_BRAKE_FULL)) {
+        sW8AndPilotBraking[i] = false;
+    } else if ((nearest < W8_ANDPILOT_NEAR) && !otherBrakes) {
+        sW8AndPilotBraking[i] = true;
+    }
+    if (sW8AndPilotBraking[i]) {
+        pad->button |= gBrakeButton[i];
+        pad->y = fmaxf(pad->y, W8_ANDPILOT_CLIMB_MAX);
+    }
+}
+
 bool w8AndPilot_Escape(const Player* p, s32 i, PilotPad* pad) {
     const Scenery360* wp;
     const Scenery360* next;
@@ -124,6 +175,7 @@ bool w8AndPilot_Escape(const Player* p, s32 i, PilotPad* pad) {
     } else {
         return false;
     }
+    w8AndPilot_KeepApart(p, i, pad);
     return true;
 }
 

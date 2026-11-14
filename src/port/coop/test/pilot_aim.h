@@ -25,6 +25,8 @@ typedef struct {
 // pilot.c
 f32 CoopPilot_SteerAt(const Player* p, f32 x, f32 y, f32 z, PilotPad* pad);
 bool CoopPilot_BoxCenter(const Object* obj, const f32* data, s32 n, Vec3f* at);
+// Box n's half size across and up, as the hitbox gives it (not turned with the object).
+bool CoopPilot_BoxHalf(const f32* data, s32 n, f32* halfX, f32* halfY);
 
 // On rails: where player i should line up to shoot a boss ahead, if there is one. Moves the point every
 // PILOT_AIM_DWELL frames to the next box, the two players on different boxes, so that every part gets shots.

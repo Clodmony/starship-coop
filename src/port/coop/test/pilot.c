@@ -182,6 +182,26 @@ static bool CoopPilot_IsClear(f32 x, f32 y) {
     return true;
 }
 
+// With three or four players, whether a spot is where a player before player i flies (#345). Two ships do not collide,
+// and two pilots that took the same clear spot flew the same line frame for frame, as their sticks were the same: in
+// Meteo players 1, 2 and 3 held one spot for 900 frames. Such a spot costs more, and the later player takes the next.
+#define PILOT_TAKEN_COST 400.0f
+
+static bool CoopPilot_Taken(s32 i, f32 x, f32 y) {
+    s32 j;
+
+    if (CoopPlayers_Count() <= 2) {
+        return false;
+    }
+    for (j = 0; j < i; j++) {
+        if (!CoopPlayers_IsParked(j) && (gPlayer[j].state == PLAYERSTATE_ACTIVE) &&
+            (fabsf(gPlayer[j].pos.x - x) < 40.0f) && (fabsf(gPlayer[j].pos.y - y) < 20.0f)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // On rails the stick sets rot, and rot sets the speed across the path. Each player keeps to its own side and sways, as
 // a shot goes where a ship was. Of the spots across the path that are clear of what is ahead, it takes the one nearest
 // to where it is and where it wants to be.
@@ -203,7 +223,8 @@ static void CoopPilot_FlyRails(const Player* p, s32 i, PilotPad* pad) {
 
             if (CoopPilot_IsClear(spotX, spotY)) {
                 f32 cost = fabsf(spotX - p->pos.x) + fabsf(spotY - p->pos.y) +
-                           (fabsf(spotX - wantX) + fabsf(spotY - wantY)) * wantWeight;
+                           (fabsf(spotX - wantX) + fabsf(spotY - wantY)) * wantWeight +
+                           (CoopPilot_Taken(i, spotX, spotY) ? PILOT_TAKEN_COST : 0.0f);
 
                 if (cost < best) {
                     best = cost;
@@ -449,6 +470,29 @@ static s32 CoopPilot_ClearSteps(const Player* p, f32 spotX, bool hover) {
         }
     }
     return step;
+}
+
+// Box n's half size across and up (#345), as the hitbox lists it, not turned with the object. Markers are skipped.
+// Returns false past the list's end.
+bool CoopPilot_BoxHalf(const f32* data, s32 n, f32* halfX, f32* halfY) {
+    s32 count = (s32) *data++;
+    s32 i;
+
+    for (i = 0; i < count; i++, data += 6) {
+        if (data[0] == HITBOX_ROTATED) {
+            data += 4;
+        } else if (data[0] >= HITBOX_SHADOW) {
+            data++;
+        }
+        if (i == n) {
+            const Hitbox* box = (const Hitbox*) data;
+
+            *halfX = box->x.size;
+            *halfY = box->y.size;
+            return true;
+        }
+    }
+    return false;
 }
 
 static s32 sAimPart = -1;

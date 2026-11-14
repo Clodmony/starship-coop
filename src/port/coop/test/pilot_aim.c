@@ -229,6 +229,53 @@ static bool CoopPilotAim_Leads(const Boss* b, s32 k, s32 i) {
     return (k < count) && (kept[k] == i);
 }
 
+// The first box player i tries of a boss with `count` boxes to try. With a table each player keeps its own (`table`);
+// in the generic cycle every box takes a turn, the players spread over them. With two players as before #345; with
+// three or four, i * count / players, as "i * ((count + 1) / 2)" put players 0 and 2, and 1 and 3, on one box.
+static s32 CoopPilotAim_FirstBox(s32 i, s32 count, bool table) {
+    s32 players = CoopPlayers_Count();
+
+    if (table) {
+        return i % count;
+    }
+    if (players > 2) {
+        return (s32) ((gGameFrameCount / AIM_DWELL) + (u32) ((i * count) / players)) % count;
+    }
+    return (s32) ((gGameFrameCount / AIM_DWELL) + (u32) (i * ((count + 1) / 2))) % count;
+}
+
+// With three or four players, how many players before player i start on the same box (#345). Two ships do not
+// collide, and two pilots lined up with one box flew one line frame for frame (#330: players 1 and 3 of four at
+// Andross on 2448 of 6237 frames). The second on a box takes it half way to its right edge, the third half way to its
+// left, the fourth half way up. Two players fly as before #345.
+static s32 CoopPilotAim_Sharers(s32 i, s32 count, bool table) {
+    s32 first = CoopPilotAim_FirstBox(i, count, table);
+    s32 rank = 0;
+    s32 j;
+
+    if (CoopPlayers_Count() <= 2) {
+        return 0;
+    }
+    for (j = 0; j < i; j++) {
+        if (CoopPilotAim_FirstBox(j, count, table) == first) {
+            rank++;
+        }
+    }
+    return rank;
+}
+
+static void CoopPilotAim_ShareBox(const Boss* b, s32 box, s32 rank, Vec3f* at) {
+    static const f32 sAcross[4] = { 0.0f, 0.5f, -0.5f, 0.0f };
+    static const f32 sUp[4] = { 0.0f, 0.0f, 0.0f, 0.5f };
+    f32 halfX;
+    f32 halfY;
+
+    if ((rank > 0) && (rank < 4) && CoopPilot_BoxHalf(b->info.hitbox, box, &halfX, &halfY)) {
+        at->x += sAcross[rank] * halfX;
+        at->y += sUp[rank] * halfY;
+    }
+}
+
 // Where the box player i lined up with last frame was, to lead a box that moves (2026-11-11): Andross' hands swing
 // and punch, and a shot that goes where a hand was takes about 15 frames to get there.
 static s32 sRailKey[COOP_PLAYERS_MAX];
@@ -242,6 +289,8 @@ bool CoopPilot_RailAim(const Player* p, s32 i, f32* x, f32* y) {
         s32 table[AIM_BOXES_MAX];
         s32 count;
         s32 first;
+        s32 rank;
+        bool isTable;
         s32 n;
 
         if (!CoopPilotAim_BossUp(b) || ((p->trueZpos - b->obj.pos.z) < AIM_AHEAD_MIN) ||
@@ -261,11 +310,9 @@ bool CoopPilot_RailAim(const Player* p, s32 i, f32* x, f32* y) {
         // Every box of the generic cycle takes a turn, as some of them do not count. The boxes of a table all count:
         // there each player keeps its own, as a swap every AIM_DWELL frames sent both across the path and back
         // (Andross' two hands, 2026-11-11).
-        if (CoopPilotAim_Table(b, table) > 0) {
-            first = i % count;
-        } else {
-            first = (s32) ((gGameFrameCount / AIM_DWELL) + (u32) (i * ((count + 1) / 2))) % count;
-        }
+        isTable = CoopPilotAim_Table(b, table) > 0;
+        first = CoopPilotAim_FirstBox(i, count, isTable);
+        rank = CoopPilotAim_Sharers(i, count, isTable);
         for (n = 0; n < count; n++) {
             s32 box = CoopPilotAim_Box(b, first + n, &count);
             s32 key = k * 256 + box;
@@ -280,6 +327,7 @@ bool CoopPilot_RailAim(const Player* p, s32 i, f32* x, f32* y) {
                  ((p->yPath + p->pathFloor) > (gGroundHeight + 50.0f)))) {
                 f32 flight = (p->trueZpos - at.z) / AIM_SHOT_SPEED;
 
+                CoopPilotAim_ShareBox(b, box, rank, &at);
                 *x = at.x;
                 *y = at.y;
                 if ((sRailKey[i] == key) && (sRailFrame[i] + 1 == gGameFrameCount)) {
