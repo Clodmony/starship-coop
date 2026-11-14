@@ -280,6 +280,9 @@ down is written for Corneria only. A level that shows trouble in play is taken o
 (`CoopScore_StartLives`, `src/port/coop/game/score.c`, called from `Player_Setup` where the game wrote 2): 3, 4 and 5 in
 sessions of two, three and four clients, equal on every frame. The other three writes of 2 are unchanged; each is
 followed by that one at the next level. The cap of 99 is the game's own.
+The owner's answer of 2026-11-14 on a join or a leave between two levels of a route: rule 1 is the start only. The pool counts
+the players of the session once, when the game's life count is set at the first level (and again if that level starts again); a
+player who joins later adds no life and a player who leaves takes none away. Nothing to build for it.
 
 ### Every client decides alike
 
