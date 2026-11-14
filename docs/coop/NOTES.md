@@ -1625,6 +1625,73 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-14, #345: whom a shot was for, and a turret's first shot at each of four tanks
+
+Read and run on `issue/345-turret-aim-trace` (from `issue/combined-test-6` `f18733f5`). Identity: ROM US 1.0, Linux,
+GCC, Debug, OpenGL on a software renderer, no window; two, three and four game clients on one PC in lockstep over
+loopback through the join driver. Test code and tools only; no game line changed.
+
+**Observed (code)**
+
+- `func_effect_8007E6B8` (`src/engine/fox_effect.c:2446`), behind `Effect_EnemyLaser`, aims a shot at the place
+  (`pos.x`, `pos.y`, `trueZpos`) of `CoopAim_Nearest` of the shot's own start; `func_effect_8007E93C` aims at that
+  player's `cam.eye`; `func_effect_8007EBB8`, `func_effect_8007ED54` and `func_effect_8007F04C` take a velocity from
+  their caller (straight ahead, or a boss's own sum to its kept target, #213). Corneria's `EVACT_8`
+  (`src/engine/fox_enmy2.c:1939`) moves player 0 by up to 150 in x and in y for one `Effect_EnemyLaser` call and back.
+- A new effect's `ObjectInitEvent` comes in the effects' loop of `Object_Update` (`src/engine/fox_enmy.c:3065`,
+  `:3224`), after the bosses' and actors' updates that fire, so the players are where the shooter saw them, and an
+  upstream "move player 0, fire, move it back" is over by then.
+- `CoopAim_MacbethTurret` (`src/port/coop/game/aim.c:120`): with nobody in the window it forgets its human and turns to
+  the nearest of all; on the frame a human is in the window it picks that one, and `Macbeth_8019F164`
+  (`src/overlays/ovl_i5/fox_ma.c:1734`) may fire on that frame, its shot flying where the gun points.
+
+**Observed (runs)**
+
+- The aim trace's `shot` line now holds `start=`, `dir=` and `p<n>=` (`src/port/coop/test/aim_trace.h`). In `aim`
+  (Corneria's rails, 4000 frames) 20 shots flew at a player's place (8 at player 0, 12 at player 1), in `aim_four` 23
+  (4/7/5/7); every one within 0.00005 degrees of that place, every one at the nearest human to its start; none near a
+  human but not at its place, no near tie, no possible `EVACT_8` scatter; 60 and 54 at nobody.
+- A throw-away build with `CoopAim_Nearest` picking the farthest human (`dist > bestDist`, `aim.c:48`, never
+  committed): `aim_four` still had a shot or missile at every player (6/3/8/2, the check of #329 passed), and the new
+  check failed it: 18 shots at a human who was not the nearest, the first at frame 1806, player 0 305 nearer; one more
+  fell in the scatter allowance.
+- `ma_turret_four` as it was (`apart_in_turn`, boost by turns, 4500 frames): 13 first shots, the gun told of players
+  1 and 3 only (0/1/0/2 as the turret's pick); over 9000 frames 21 first shots, still none for players 0 and 2.
+- In the 9000-frame run with turns the first four turns ended with the tank whose turn it was at x -700 and the
+  others at 700, where the track's edges stop them; of all 24 turns 14 ended with that tank at -700 and 6 with all
+  the others at 700 (later in the level the tanks stand elsewhere at the end of a turn; unknown why: the track's
+  course, a bump). The car that fires most, car 14, ran at x -424 to -1045 in the 4500-frame run; the last car at -22
+  to 281 with the tanks more than 5000 behind (nobody in its window); car 10 at 462 to 469. 55 frames after a change
+  of turn two tanks were at -393 and 393: a tank crosses the track at about 5.6 a frame, 250 frames.
+- Turns of 300 frames at the left edge, the others at the right, 9000 frames: 26 first shots, the gun on the turret's
+  pick (the nearest in the window when it picked, kept while in it) 1/3/3/1 times for players 0 to 3, never on
+  another human in the window; with three tanks 20 first shots, 3/3/2. Turns of 250, 300, 340 and 420 frames over
+  4500 frames held 10 to 13 first shots and none reached every tank; 450 over 9000 missed player 2.
+- At level frame 7277 of the four-tank run car 4's turret (at x -743) had nobody in its window on the frame before
+  (the tanks 5000.2 behind it) and was turned to player 2 at x -700, the nearest human of all but beside the car, out
+  of the window. On 7277 the other three tanks (x 574 to 582) came into it, and the turret fired its first shot that
+  frame with its yaw at 2.1, 1.6 off player 2's direction and 14 off the others'.
+
+**Derived**
+
+- "The nearest" is judged per kind of shot: a shot at a player's place within 0.05 degrees was aimed by
+  `func_effect_8007E6B8` (or by a boss's own sum), so with no boss in the run it must be at the nearest human to its
+  start; a spread shot or one near a player was aimed at a moved point; a shot at a player after the first with
+  player 0 nearer by less than `EVACT_8`'s scatter cannot be told from such a scatter.
+- The first shot of a turret can fly at a human outside its window: the turret turns to the nearest of all while its
+  window is empty and fires on the frame another human comes in, before it has turned. Upstream it turns to player 0
+  and fires when player 0 is in the window, so the gun is on the human it fires at. `ma_turret` counts this case
+  apart; whether the turret should wait until its gun is on its pick is a rule for the owner.
+
+**Unknown**
+
+- Which shooter fired a shot: the trace does not say, so the check cannot judge a boss's shots (kept targets) or a
+  turret's, and runs only in `aim`'s Corneria rails.
+- Whether the turret's shot at frame 7277 hit player 2, and how often a human comes into an empty window in other
+  runs.
+- Whether 300-frame turns keep reaching every tank when Macbeth's train or the tanks' speed changes: one run each with
+  three and four tanks, deterministic for this build.
+
 ### 2026-11-14, #342: every shield bar is drawn before every name
 
 Read and run on `issue/342-bars-before-names` (from `issue/combined-test-6` `ce17520d`). Identity: ROM US 1.0, Linux,
