@@ -318,7 +318,7 @@ def scenario_dry_run_mixed(bench):
     release.mkdir()
     (release / "Starship").write_text("", encoding="utf-8")  # the folders carry no build id, so they are of one commit
     _, plan = dry_run(bench, "--mixed")
-    for name in ("rates-rails", "hash-run-1", "replay-test", "full-level", "rails-4", "hash-probe-1", "menu", "input",
+    for name in ("rates-rails", "hash-run-1", "replay-test", "full-level", "campaign-4", "rails-4", "hash-probe-1", "menu", "input",
                  "join", "lockstep", "lockstep-full"):
         want("--exe " in plan[name][1] and f"{release}/Starship" in plan[name][1],
              f"{name} does not play on Release: {plan[name][1]!r}")

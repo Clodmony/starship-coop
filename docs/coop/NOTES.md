@@ -312,6 +312,21 @@ Answered by the owner in a dialog on 2026-11-13 (night), each as the recommendat
 - **Decision 0015 is accepted** (#289, #299): a session's level start plays the sound ahead until no audio reset is
   running; option 2 (hold the level start back) is not wanted. Its status line and the index of the records say so.
 
+### 2026-11-14, #322: one four-client level in `test_all.py` (`campaign-4`)
+
+The owner chose, after the whole route was flown with four clients (the entry of #322 below), one short level in the pipeline.
+
+- **Observed (a Linux machine, the machine otherwise idle, ROM US 1.0):** `campaign.py --players 4 --levels fortuna`: equal
+  on every frame to the end, 7533 frames compared on Release and 7398 on Debug, level complete at level frame 5151, no
+  player down, 38 s on both builds (a game plays at a fixed pace here, so Release is not faster for this level). The
+  measurements of #322 for the other levels (29 s to 134 s on Release, Debug much longer for some) are in its entry.
+- **Done:** the step `campaign-4` in the game lane of `test_all.py` (`campaign.py --players 4 --levels fortuna`), after
+  `full-level`; `test_all_test.py`'s `--mixed` dry run wants it on the Release build. Through `test_all.py --no-build --only
+  campaign-4` on a Debug build: 2 of 2 steps ok in 0m38s.
+- **Unknown:** what the step adds to the `--mixed` pipeline's total (it runs beside the other game steps in a lane of four;
+  the longest step is `rates-rails`, 14 minutes), and how it behaves under the gate's load of 14 to 68 (a wall-clock
+  failure under load would be a finding, not a fault of the game).
+
 ### 2026-11-14, #308 (second correction): `tool-limit` looked at a killed game once, at once
 
 The correction below (`wait_stopped`) did not remove the flake of `replay_test_test.py`'s `tool-limit`, "the tool's game
