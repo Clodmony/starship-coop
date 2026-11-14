@@ -8,7 +8,8 @@
 // kills it, whatever gInvincible says (Andross_AndExplosion_Update). The all-range pilot (pilot_aim.c) knew no route:
 // it went on chasing the dead brain's boxes and flew into one, every time, until the team was out of lives. Here each
 // player flies the route James flies: the level's waypoints (OBJ_SCENERY_LEVEL_OBJECTS) in the order of their
-// pathIndex (Andross_ActorTeamArwing_Update), to the trigger at the exit (Andross_AndJamesTrigger_Update).
+// pathIndex (Andross_ActorTeamArwing_Update), to the trigger at the exit (Andross_AndJamesTrigger_Update). A player
+// that comes within 200 of a player before it brakes out of it (#345: a returned player flew in player 0).
 
 #include <stdbool.h>
 #include <stdio.h>
