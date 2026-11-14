@@ -59,6 +59,8 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             Katina's own restart from the checkpoint does, a laser of player 1 in a hatch takes 10 off it, as one of
             player 0 does in another.
   three     the same with three games, so that input goes through the host to the other client.
+  replay_ends a game's replay file runs out in the middle of the level (#324): the session's input stays the
+            lockstep's, and both games stay equal once the feed steers.
   control   the same run with SF64_COOP_TEST_NO_LOCKSTEP: it must differ, or this test says nothing.
   pause     Start on either client pauses both on the same frame, Start on either resumes.
   save      the intro skip goes by the host's save, which every game holds in a session (decision 0009 item 8, #191),
@@ -246,8 +248,10 @@ BUTTON_A, BUTTON_B, BUTTON_START, BUTTON_L = 0x8000, 0x4000, 0x1000, 0x0020
 BUTTON_C_LEFT = 0x0002  # gBoostButton, src/engine/fox_game.c
 BOOST_AT, BOOST_FRAMES = 2000, 40  # feed frames of sc_boost
 START_FRAME = 600
-REPLAY_FRAMES = 30000  # longer than a short run: the games stop on `done`, not at the end of this. A game whose replay
-# ends leaves lockstep there (its pads are its own again), so a longer run passes replay_frames to session()
+REPLAY_FRAMES = 30000  # longer than a short run: the games stop on `done`, not at the end of this. Until #324 a game
+# whose replay ended left lockstep there (its pads were its own again), which is why a longer run passes replay_frames
+# to session(); now the lockstep keeps the input (sc_replay_ends), but a pilot still steps twice a frame only while
+# the replay lasts (src/port/coop/test/pilot.h), so a pilot's run keeps its long replay
 INPUT_DELAY = 3  # COOP_LOCKSTEP_INPUT_DELAY
 TIMEOUT_MS = 30000  # the join driver's transport timeout
 STALL_SECONDS = 10  # COOP_LOCKSTEP_STALL_MS
@@ -2937,6 +2941,50 @@ def sc_three(args, folder):
         own = int(join_test.said(game.report(), "joined")[0]["player"])  # whoever joined first is player 1
         expect(own in {player for _, player in view_of(game)}, f"{game.name} never looked through player {own}")
     return f"three games: {equal[0]} and {equal[1]} frames equal, each looking through its own player"
+
+
+W11B_REPLAY_FRAMES = 2000  # the replay of sc_replay_ends: it ends in the level, well before the level's frame SHORT_FRAMES
+
+
+def sc_replay_ends(args, folder):
+    """#324: a game's replay file runs out in the middle of a level, and the session's input must stay the lockstep's.
+    Every test game plays a replay from boot (zeros; the feed or the pilot gives the pads), and when it ended the
+    playback cleared every input source, the lockstep's with them (src/port/coop/test/replay.c): that game then flew
+    its own player from its own pad with no input delay and the others from nothing, so the games parted once the feed
+    steered. Two games, a replay of W11B_REPLAY_FRAMES frames that ends in the level in both, the feed's steering from
+    JOIN_FRAME on, equal to SHORT_FRAMES. Always at a frame limit of 8, whatever COOP_TOOLS_MEETING_SPEED says: a replay
+    counts the frames of the menus too, and at no limit those are as many as the PC renders, so the replay ended
+    before the level and the run showed nothing."""
+    folder.mkdir(parents=True, exist_ok=True)
+    feed = folder / "feed.txt"
+    write_feed(feed, SHORT_FRAMES + 16, sway)
+    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(SHORT_FRAMES),
+           "SF64_COOP_TEST_SPEED": "8"}
+    games = session(args, folder, both=env, replay_frames=W11B_REPLAY_FRAMES)
+    ended = {}
+    try:
+        deadline = time.monotonic() + 900
+        while not all(join_test.said(game.sync(), "done") for game in games):
+            for game in games:
+                expect(game.proc.poll() is None, f"{game.name} ended with code {game.proc.returncode} before `done`")
+                if game.name not in ended and (game.run / "replay-report.txt").exists():
+                    rows = [line for line in game.sync_log.read_text(encoding="utf-8").splitlines()
+                            if line and not line.startswith("#")] if game.sync_log.exists() else []
+                    ended[game.name] = int(rows[-1].split()[0]) if rows else -1
+            expect(time.monotonic() < deadline, "no `done` after 900 s")
+            time.sleep(0.05)
+    finally:
+        for game in games:
+            game.close()
+    for game in games:
+        at = ended.get(game.name)
+        expect(at is not None and 0 <= at < SHORT_FRAMES,
+               f"{game.name}: its replay did not end in the level (seen at lockstep frame {at}), so this run shows "
+               f"nothing")
+    host, client = games
+    frames = compare(host, client, SHORT_FRAMES)
+    return (f"the replays ended in the level (seen by lockstep frame {ended['host']} on the host, {ended['client0']} "
+            f"on the client), {frames} frames equal after it, steering from frame {JOIN_FRAME}")
 
 
 def sc_control(args, folder):
@@ -6055,6 +6103,7 @@ SCENARIOS = {
     "wing": sc_wing,
     "saucerer": sc_saucerer,
     "three": sc_three,
+    "replay_ends": sc_replay_ends,
     "control": sc_control,
     "pause": sc_pause,
     "save": sc_save,

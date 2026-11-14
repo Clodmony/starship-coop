@@ -5,7 +5,8 @@ in this repo at that commit; line numbers drift with upstream syncs, so search f
 
 ## 1. What we are building
 
-Two players (later up to four) play the Star Fox 64 campaign together **online**: each player runs Starship on their
+Two players (up to four: built in the game layer, tested with three and four only where
+[QA.md](QA.md) lists it, #322) play the Star Fox 64 campaign together **online**: each player runs Starship on their
 own PC and sees the level from their own Arwing. Every player sees the same level: the same enemies, bosses, items,
 wingmen and route. The host's save holds the progress: a session plays on a copy of it on every PC, and no PC writes
 its save during a session ([0009](decisions/0009-vehicles-cutscenes-save.md), item 8).

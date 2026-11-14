@@ -199,7 +199,10 @@ static void CoopReplay_FinishPlayback(const char* failure) {
         fclose(sPilotFile);
         sPilotFile = NULL;
     }
-    CoopInput_ClearSources();
+    // Only the replay's own: a session's lockstep took the input over when its level began, and a replay file that
+    // runs out in that level must leave it there (#324). The game then flew its own player from its own pad with no
+    // input delay, and the session parted.
+    CoopInput_ClearSource(&sReplaySource);
     if (failure != NULL) {
         result = failure;
     } else if (sFirstMismatch >= 0) {
