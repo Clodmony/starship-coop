@@ -127,7 +127,9 @@ def main():
     # 8d. menu_test.py: each scenario with games keeps their logs in a folder of its own (#293), a wait stops when the
     # game's session ended (#306); session_test.py: a failed level start through the relay says what the relay dropped
     # and what the host saw (#309). No build, no game.
-    for name in ("menu_test_test.py", "session_test_test.py"):
+    # lockstep_rules_test.py: the rule checks of lockstep_test.py read every player of a session of three or four,
+    # and rows broken for a player after the second fail (#329).
+    for name in ("menu_test_test.py", "session_test_test.py", "lockstep_rules_test.py"):
         units = subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "coop" / name)],
                                cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
         if units.returncode != 0:

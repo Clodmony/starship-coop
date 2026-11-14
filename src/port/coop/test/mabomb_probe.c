@@ -314,6 +314,27 @@ static void CoopMaBombProbe_ReportWait(const MaBombCase* c) {
     fflush(sMaBombFile);
 }
 
+// One update of a running case's hazard, as the header says (#329): where it and its target are after the frame.
+static void CoopMaBombProbe_ReportUpdate(const MaBombCase* c) {
+    const Player* t = &gPlayer[sMaBombTarget];
+    const Object* obj = NULL;
+    s32 state = -1;
+
+    if (!CoopMaBombProbe_HazardAlive(c)) {
+        return;
+    }
+    if ((c->kind == MABOMB_KIND_BOMB) || (c->kind == MABOMB_KIND_BLAST)) {
+        obj = &sMaBombBomb->obj;
+        state = sMaBombBomb->state;
+    } else {
+        obj = &sMaBombBeam->obj;
+        state = sMaBombBeam->state;
+    }
+    fprintf(sMaBombFile, "mabomb t=%d frame=%d case=%s target=%d at=%.1f,%.1f,%.1f state=%d p=%.1f,%.1f,%.1f,%d,%d\n",
+            (int) sMaBombFrames, (int) gGameFrameCount, c->name, (int) sMaBombTarget, obj->pos.x, obj->pos.y,
+            obj->pos.z, (int) state, t->pos.x, t->pos.y, t->trueZpos, (int) t->state, (int) t->hitTimer);
+}
+
 // The next case and target, or nonzero when there is none left.
 static s32 CoopMaBombProbe_Advance(void) {
     sMaBombCount++;
@@ -338,6 +359,7 @@ static void CoopMaBombProbe_Watch(const MaBombCase* c) {
     s32 i;
 
     if (sMaBombUpdated) {
+        CoopMaBombProbe_ReportUpdate(c);
         for (i = 0; i < CoopPlayers_Count(); i++) {
             const Player* p = &gPlayer[i];
 
