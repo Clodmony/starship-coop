@@ -21,6 +21,9 @@ second, and the broken rows have to fail:
   player 2, and exit3 that ends the level, fail. w9_escape_case_story: a case whose object never came into its
   target's reach fails as that, not as a broken rule.
 - two: the same checks on two-player rows give the counts of the two-player text.
+- places (#345): campaign.py's one_spot counts the frames two flying players share a place, and one_spot_failed takes
+  a pair over its share (players 1 and 3 of four on one spot on 400 of 1000 frames) and leaves 30 frames, and frames
+  with one of them parked.
 - names: bars_over_names_342 (#342) on rows of a view trace's `tagbox`; a bar drawn after the name it lies on is found
   (the order of a build before #342's fix: each ship's bar and name together), the same boxes with every bar drawn
   before every name are not, and neither are bars and names that do not meet, a name off the screen, or a trace without
@@ -356,8 +359,38 @@ def test_names():
     check("names old trace", old[0][3] is None, f"{old[0]}")
 
 
+# ---- #345: pilots on one spot ----
+
+def place_rows(places, level=9, mode=1, parked=()):
+    """Trace rows, one per frame, from [(x, y, z) per player] per frame; players in `parked` parked."""
+    return [lt.player_trace.Row(n, level, mode,
+                                [lt.player_trace.Slot(3, 0, x, y, z, int(i in parked), 1, 0.0, 0.0, 0.0, 0.0, 0.0, 255,
+                                                      0, 0) for i, (x, y, z) in enumerate(frame)],
+                                0.0, 0.0, 0.0, 0, 0, 0, [], [], 0)
+            for n, frame in enumerate(places)]
+
+
+def test_places():
+    import campaign
+
+    # campaign: players 1 and 3 of four on one spot on 400 of 1000 frames (#330's 2448 of 6237) fail; 30 do not
+    def four(n, same):
+        return [[(-250.0, 300.0, -n), (250.0 + n, 300.0, -n), (0.0, 400.0, -n),
+                 (250.0 + n + (0.0 if k < same else 2.0), 300.0, -n)] for k in range(n)]
+    pairs = campaign.one_spot(place_rows(four(1000, 400), 9, 0), 4)
+    check("one spot counted", (1, 3, 400, 1000) in pairs, f"{pairs}")
+    check("one spot others", all(same == 0 for i, j, same, _ in pairs if (i, j) != (1, 3)), f"{pairs}")
+    check("one spot fails", campaign.one_spot_failed(pairs) == [(1, 3, 400, 1000)], f"{campaign.one_spot_failed(pairs)}")
+    few = campaign.one_spot(place_rows(four(1000, 30), 9, 0), 4)
+    check("one spot few", campaign.one_spot_failed(few) == [], f"{few}")
+    # frames with one of the two parked are not frames both flew
+    parked = campaign.one_spot(place_rows(four(1000, 400), 9, 0, parked=(3,)), 4)
+    check("one spot parked", (1, 3, 0, 0) in parked and not campaign.one_spot_failed(parked), f"{parked}")
+
+
+
 def main():
-    for test in (test_mabomb, test_turret, test_spread, test_pose, test_escape, test_names):
+    for test in (test_mabomb, test_turret, test_spread, test_pose, test_escape, test_names, test_places):
         test()
     for line in FAILED:
         print(f"FAILED  {line}")

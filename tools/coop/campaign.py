@@ -34,7 +34,9 @@ survive_gaps_four), each client's pilot flies its own player, and every client's
 clients differ from the host and from each other: client n renders the low audio sample count when n is even and the
 high one when odd, and is (n + 1) * --skew frames ahead. The summary gives per player the frames flown, the downs and
 the lowest shields; a player that never flew in the level is named in the result ("player 3 never flew") and the level
-does not pass, as a pilot that is parked for a whole level tested nothing for that player.
+does not pass, as a pilot that is parked for a whole level tested nothing for that player. Nor does a level in which two
+pilots flew on one spot on more than ONE_SPOT_SHARE of the frames both flew (#345): those two tested one place; the
+summary line gives the frames on one spot of every pair.
 
 The games run at the speed of games that meet over sockets (replay.MEETING_SPEED), silent and without a window. A whole
 route takes hours. Exit code 0 when every level passed.
@@ -153,6 +155,39 @@ def players_of(game, level, players=2):
         lowest = min((s.shields for s in slots if s.state in player_trace.FLYING and not s.parked), default=0)
         stories.append((flown, down, lowest))
     return stories
+
+
+# Two pilots on one spot (#345): nearer than ONE_SPOT on each axis, both flying and not parked. Two ships do not collide
+# (#329), so two pilots that line up with the same box fly the same line frame for frame: in #330's run players 1 and 3
+# of four were on one spot at Andross on 2448 of the 6237 frames both flew, and the run tested one place for two
+# players. With three or four games a level fails when a pair is on one spot on more than ONE_SPOT_SHARE of the frames
+# both flew; the summary gives every pair's count.
+ONE_SPOT = 1.0  # the trace writes one decimal
+ONE_SPOT_SHARE = 0.05
+
+
+def one_spot(rows, players):
+    """[(i, j, frames on one spot, frames both flew)] for every pair of players, from a trace's rows."""
+    pairs = []
+    for i in range(players):
+        for j in range(i + 1, players):
+            both = same = 0
+            for r in rows:
+                if len(r.players) <= j:
+                    continue
+                a, b = r.players[i], r.players[j]
+                if a.parked or b.parked or a.state not in player_trace.FLYING or b.state not in player_trace.FLYING:
+                    continue
+                both += 1
+                if abs(a.x - b.x) < ONE_SPOT and abs(a.y - b.y) < ONE_SPOT and abs(a.z - b.z) < ONE_SPOT:
+                    same += 1
+            pairs.append((i, j, same, both))
+    return pairs
+
+
+def one_spot_failed(pairs):
+    """The pairs of one_spot that were on one spot on more than ONE_SPOT_SHARE of the frames both flew."""
+    return [(i, j, same, both) for i, j, same, both in pairs if both and same > ONE_SPOT_SHARE * both]
 
 
 def desync_value(host, clients):
@@ -287,6 +322,8 @@ def fly_level(args, folder, name):
     row["views"] = views
     try:
         row["players"] = players_of(clients[0], (level, target), args.players)
+        trace = [r for r in player_trace.parse(clients[0].run / "trace.txt") if r.level in (level, target)]
+        row["one_spot"] = one_spot(trace, args.players)
     except (OSError, ValueError, KeyError) as error:
         row["players"] = []
         row["trace_error"] = str(error)
@@ -319,6 +356,11 @@ def fly_level(args, folder, name):
         row["parked"] = parked
         row["complete"] = False
         row["result"] += "; " + ", ".join(f"player {i} never flew" for i in parked)
+    crowded = one_spot_failed(row.get("one_spot", [])) if args.players > 2 else []
+    if crowded:  # #345: two pilots that test one place
+        row["complete"] = False
+        row["result"] += "; " + ", ".join(f"players {i} and {j} flew on one spot on {same} of the {both} frames both "
+                                          f"flew" for i, j, same, both in crowded)
     return row
 
 
@@ -376,9 +418,10 @@ def main():
         downs = ",".join(str(d) for _, d, _ in row["players"]) or "-"
         flown = ",".join(str(f) for f, _, _ in row["players"]) or "-"
         lowest = ",".join(str(low) for _, _, low in row["players"]) or "-"
+        spots = ",".join(f"{i}-{j}:{same}" for i, j, same, _ in row.get("one_spot", [])) or "-"
         print(f"campaign: {name}: {row['result']}; {row.get('frames', 0)} frames compared, level complete at level "
               f"frame {row.get('complete_level_frame')}, downs {downs}, flown {flown}, lowest shields {lowest}, "
-              f"{row['seconds']} s", flush=True)
+              f"frames on one spot per pair {spots}, {row['seconds']} s", flush=True)
         (root / "summary.json").write_text(json.dumps(rows, indent=1), encoding="utf-8")
     print("campaign: summary (level, frames compared, level complete at level frame, downs per player, result)")
     for row in rows:
