@@ -1777,6 +1777,106 @@ buffer every 100 game frames; they stayed local and were deleted.
   frame to the next is a bother.
 - The radio box: the trace does not know when it is shown, so names under it are not counted.
 - Windows, two PCs, a person playing.
+### 2026-11-14, #330: why Andross' face swallowed the same player four times in the four-client campaign run
+
+Read and run on `issue/330-andross-swallow` (from `issue/combined-test-6` `ade4c08e`; no game code changed, the games
+are that commit's Release build). Identity: ROM US 1.0, Linux, GCC 16.2, Release, OpenGL on a software renderer, no
+window, four game clients on a Linux machine in lockstep over loopback through the join driver, other workers' tests
+on it at the same time. Players are counted from 0 here (the issue's "player 2" is player 1).
+
+**Observed** (the campaign run: `campaign.py --players 4 --levels venom-andross`, a pilot on each client, with
+`SF64_COOP_BOSS_TRACE` set in every game; equal on every frame, 7506 frames compared, level complete at level frame
+6994, flown 6993, 5786, 6994, 6994; the four games' boss traces equal on the level's first 6900 lines)
+
+- Four swallows, all of player 1, on level frames 2760, 3813, 4868 and 5923: the frames #322 saw.
+- The trace line of each of those frames (written after the frame, so with the positions the choice was made from:
+  the swallowed player's x, y, z are still those of its last flying frame), as the distance of each player to the mouth
+  (the face's x, y - 150, z, what `fox_andross.c:2729` passes), from the trace's one decimal:
+
+  | level frame | player 0 | player 1 | player 2 | player 3 | z from the face, all four | swallowed | the face's kept target |
+  |---|---|---|---|---|---|---|---|
+  | 2760 | 202.0 | 200.5 | 320.1 | 200.5 | 197.4 | 1 | 2 |
+  | 3813 | 196.5 | 195.6 | 198.0 | 195.6 | 192.3 | 1 | 2 |
+  | 4868 | 201.2 | 199.6 | 201.9 | 199.6 | 195.7 | 1 | 2 |
+  | 5923 | 201.2 | 199.6 | 201.9 | 199.6 | 195.7 | 1 | 2 |
+
+  Across the path (x, y from the mouth): at 2760 player 0 39.2, 16.9; players 1 and 3 0.2, 35.4; player 2 -190.9,
+  164.4. At 3813: 7.3, 39.9; -1.7, 36.0 (1 and 3); 30.5, 36.0. At 4868 and 5923: 8.9, 45.7; -3.5, 39.1 (1 and 3);
+  30.2, 39.3.
+- On the frame before each swallow all four were 200.2 to 208.4 from the face in z, the same number for all four;
+  on the swallow's frame all four were inside 200.
+- Players 1 and 3 had the same x, y and z in the trace (one decimal) on 2448 of the 6237 frames on which both flew,
+  from level frame 1848 on, and on all four swallow frames.
+- The held slot stayed at 1 after the first swallow (`held=1` on the lines between the swallows, while player 1 flew).
+
+**Observed** (code)
+
+- `CoopAim_AndrossSwallow` (`src/port/coop/game/aim.c:206-236`) looks at every player: in reach is within 200 of the
+  face's z (`:223`; players after player 0 only while they fly, `CoopAim_CanAimAt`, `:17`), and of those the least
+  squared distance to the mouth wins, `dist < bestDist` (`:230`), so the first of two at the same distance stays. It
+  does not read `sKept`: neither the face's kept target nor the held slot, which `CoopAim_InMouth` (`:238`) only
+  counts while that player is in `PLAYERSTATE_ANDROSS_MOUTH`.
+- On rails every player after player 0 gets player 0's `pos.z` each frame (`CoopPlayers_FollowPath`,
+  `src/port/coop/game/players.c:586`), and `trueZpos` is that plus the player's own `camDist` (`:603`).
+- The inhale pulls every flying human to the mouth's x and y by the same step (`CoopAim_AndrossPull`, `aim.c:190`;
+  player 0 at `fox_andross.c:2722-2723`).
+- The test pilots: on rails each wants its side of the path, player 0 the left and every other player the right
+  (`src/port/coop/test/pilot.c:190`), and with a boss up it lines up with one of the boss's boxes; where the boss has
+  a table of boxes (Andross: his two hands, then his two eyes, `pilot_aim.c:98-112`) player i takes box `i % count`
+  (`pilot_aim.c:265`): players 0 and 2 the first, players 1 and 3 the second. The player the face keeps flies its own
+  line (`pilot_aim.c:251`).
+
+**Observed** (the rule alone: `python tools/coop/lockstep_test.py --only inhale_four`, new; four games, scripted
+sticks, `gInvincible`, the boss trace; base build `ade4c08e`, Release)
+
+- `nearest`: players 0 to 2 hold a corner of the path each, player 3 lets its stick go, all four boost for 60 frames
+  (an inhale ends about 370 short of ships that only fly on). Level frame 2127: all four in reach, distances 1224.1,
+  1217.3, 1080.5, 209.9, player 3 swallowed. The face's kept target was player 1.
+- `tie`: players 2 and 3 hold the same corner with the same stick, and the path's edge puts them on one spot. Level
+  frame 2127: distances 1224.1, 1214.2, 1031.6, 1031.6, player 2 swallowed.
+- Same hash on 2700 frames between the host and each client, and the four boss traces equal, in both runs.
+**Observed** (two breaks of `aim.c:230`, each built on Release and run; the source is unchanged in the branch)
+
+- The tie to the higher index (`dist <= bestDist`): `inhale_four --levels tie` fails, "swallowed player 3, want 2:
+  frame 2127 player 3 of 1224.1, 1214.2, 1031.6, 1031.6". So players 2 and 3 of `tie` are at the same distance as the
+  game computes it, not only to the trace's decimal.
+- The first player in reach (`if (best < 0)`): `inhale_four --levels nearest` fails, "swallowed player 0, want 3: frame
+  2127 player 0 of 1224.1, 1217.3, 1080.5, 209.9".
+- The campaign run above on the build with the tie to the higher index: at level frame 2760, with the same trace line
+  as on the base build (202.0, 200.5, 320.1, 200.5), player 3 was swallowed. The flight differs from there on: the
+  next swallow, at 3817, took player 1 (distances 196.5, 195.6, 198.0, 195.6; x from the mouth -1.7 for player 1, -1.8
+  for player 3), and the level was complete at level frame 4865 after those two (flown 4864, 4563, 4865, 4563; equal
+  on every frame, 5377 compared).
+
+**Derived**
+
+- The pilots are the cause, not the rule. All four ships share one z, so all four come inside 200 of the face on the
+  same frame and the choice is made across the path alone, where the pull has by then drawn them to within 2.5 of each
+  other (but for player 2 at the first swallow). Players 1 and 3 fly the same line, since their pilots line up with
+  the same box, and were the nearest at each swallow, 0.9 to 1.6 nearer than player 0; of the two the rule takes the
+  lower index. At the first swallow the two were at exactly the same distance: the build whose tie goes the other way
+  took player 3 from the same positions.
+- The rule does not favour a low index: player 0 was in reach each time and was not taken, and in `nearest` the highest
+  index is taken with three lower ones in reach. An index decides only between players at the same distance.
+- The face's kept target and the held slot play no part: the function reads neither, the kept target was player 2 in
+  the campaign run and player 1 in the scripted ones and neither was swallowed, and the held slot named player 1 before
+  the second swallow only because nothing empties it.
+- The later swallows repeat because the flight does: the trace's numbers at 4868 and 5923 are the same to one decimal.
+
+**Unknown**
+
+- Whether players 1 and 3 were at the same distance as the game computes it at the base run's second to fourth
+  swallows, or only to the trace's decimal: the build with the tie to the higher index flies another line after the
+  first swallow, so it answers for the first only. Player 3 was not the nearer at any of them, or it would have been
+  taken.
+- Why player 0's pilot ends 0.9 to 1.6 farther from the mouth than players 1 and 3: which of its lines (its side, its
+  box, the grid of spots it picks from) makes the difference was not traced.
+- Other seeds and three clients: one campaign run, the default seeds.
+- A second swallow in one scripted session, with other players the nearer at each: not run on the base build. That a
+  second swallow can take someone else follows from the code above; the one run that shows it (player 3, then player
+  1) is of the build with the tie to the higher index.
+- Whether people flying would see one of them swallowed again and again: people do not fly one line, so the tie
+  between two ships on one spot is a property of these pilots; not tested with people.
 
 ### 2026-11-14, #14: the pool of lives starts at 2 plus 1 for each player after the first (decision 0007 rule 1)
 
@@ -1964,7 +2064,8 @@ Corneria and Titania on the Debug build, the rest on Release. Each level is a se
 - What a client shows with three other ships (camera, HUD, name tags, shield bars): the games ran without a window and
   nothing looked at a picture.
 - Why Andross swallowed player 2 each time and nobody else: a rule (`CoopAim_AndrossSwallow`,
-  `src/port/coop/game/aim.h:58`) or where the pilots happened to fly; not looked into.
+  `src/port/coop/game/aim.h:58`) or where the pilots happened to fly; not looked into. [answered 2026-11-14, #330: the
+  pilots; see that entry]
 - Three or four PCs, Windows, a person playing.
 
 ### 2026-11-13, #302, #303, #304: Macbeth's turrets and car 7's flash, Sector Y's Shogun bonus

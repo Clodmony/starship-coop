@@ -128,6 +128,10 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             printed, not checked, as they follow which members chase Fox when. `inhale`: the face's inhale swallows
             player 1, chews and spits it out (its wings break), and player 0 flies on and is not hit meanwhile
             (owner's choice A for #213's option D). By hand, not in test_all.py: about 2 minutes.
+  inhale_four whom the face's inhale swallows with four players (#330), from the boss trace: `nearest`, players 0 to 2
+            hold a corner each and player 3 lets go: player 3, the nearest to the mouth, with all four in reach; `tie`,
+            players 2 and 3 on one spot, nearer than the others: player 2, the lower index. Four games each, hashes and
+            traces equal on all four. By hand, not in test_all.py: under a minute on Release.
   other_bosses the other bosses go after the nearer human too (#220), read from the boss trace, which the base build
             writes as well: `granga`, Corneria's Granga walks at and turns to player 1 on most frames that player 1 is
             the nearer; `shogun`, Sector Y's Shoguns keep player 1 often and turn toward the player they keep;
@@ -1868,6 +1872,109 @@ def sc_bosses(args, folder):
         expect(kept[1] > kept[0], f"{name}: kept player 1 on {kept[1]} frames, player 0 on {kept[0]}")
         lines.append(f"{name}: same hash on {frames} frames; {text}; kept player 1 on {kept[1]} frames, player 0 on "
                      f"{kept[0]}")
+    return "; ".join(lines)
+
+
+# ---- #330: whom the face's inhale swallows when more than two fly ----
+#
+# The inhale pulls every human (CoopAim_AndrossPull) and all of them share player 0's z on rails
+# (CoopPlayers_FollowPath), so all are within 200 of the face's z on the same frame and CoopAim_AndrossSwallow
+# (src/port/coop/game/aim.c) chooses by x and y alone: the nearest to the mouth (the face's x, y - 150, z), a tie to the
+# lower index. Four games, gInvincible, nobody fires; read from the boss trace, which does not ask the aim code.
+#   nearest: players 0 to 2 each hold a corner of the path and player 3 lets its stick go, so the pull takes it to the
+#            mouth: it is swallowed, the highest index, with all four in reach (a choice of the lowest index in reach,
+#            or of player 0, fails here).
+#   tie:     players 2 and 3 hold the same corner with the same stick and lie on one spot (to the trace's 0.1), nearer
+#            than players 0 and 1: player 2 is swallowed (a tie that goes to the higher index fails here).
+# An inhale lasts 180 frames (state 17's timer) and ends about 370 short of ships that only fly on, so all four boost
+# for 60 frames, as player 1 does in `inhale`: the same boost for each, so they still share one z.
+INHALE4_FRAMES = 2700  # level frames: with these sticks the face's first inhale runs from 2052 to 2232
+INHALE4_BOOST = 2072
+INHALE4_MARGIN = 20.0  # how much nearer the mouth than the others the expected players are, at least
+INHALE4_RUNS = {  # name: (sticks x, y of players 0 to 3 once the tunnel ends, the player swallowed)
+    "nearest": (((-70, -60), (70, -60), (-70, 60), (0, 0)), 3),
+    "tie": (((-70, -60), (70, -60), (70, 60), (70, 60)), 2),
+}
+
+
+def inhale4_swallows(trace):
+    """[(frame, player swallowed, [distance to the mouth per player, None when not in reach], [(x, y) per player])] of
+    a boss trace: each frame on which a player goes into PLAYERSTATE_ANDROSS_MOUTH. In reach as CoopAim_AndrossSwallow
+    counts it: within 200 of the face's z, and for the players after player 0 flying (not parked, state 3 or 5)."""
+    found = []
+    for before, row in zip(trace, trace[1:]):
+        face = next((v.split(",") for k, v in row.items() if re.fullmatch(r"b\d+", k) and
+                     v.split(",")[0] == str(OBJ_BOSS_AND_ANDROSS)), None)
+        players = [row[f"p{i}"].split(",") for i in range(4) if f"p{i}" in row]
+        was = [before.get(f"p{i}", "").split(",") for i in range(len(players))]
+        for i, p in enumerate(players):
+            if face is None or p[0] != "11" or was[i][0] == "11":
+                continue
+            mouth = (float(face[2]), float(face[3]) - 150.0, float(face[4]))
+            distances = []
+            for j, q in enumerate(players):
+                state = was[j] if j == i else q  # the swallowed one flew until this frame
+                at = tuple(float(v) for v in q[2:5])
+                reach = abs(at[2] - mouth[2]) < 200.0 and (j == 0 or (state[1] == "0" and state[0] in ("3", "5")))
+                distances.append(math.dist(at, mouth) if reach else None)
+            found.append((row["frame"], i, distances, [(q[2], q[3]) for q in players]))
+    return found
+
+
+def check_inhale4(name, swallows):
+    """The swallows of one run of INHALE4_RUNS, checked against the rule. Returns a line."""
+    want = INHALE4_RUNS[name][1]
+    expect(swallows, f"{name}: the face swallowed nobody")
+    lines = []
+    for frame, player, distances, places in swallows:
+        text = (f"frame {frame} player {player} of " +
+                ", ".join("out of reach" if d is None else f"{d:.1f}" for d in distances))
+        expect(len(distances) == 4 and None not in distances, f"{name}: not all four in reach: {text}")
+        expect(player == want, f"{name}: swallowed player {player}, want {want}: {text}")
+        rest = [d for j, d in enumerate(distances) if j != want and not (name == "tie" and j == 3)]
+        expect(distances[want] + INHALE4_MARGIN < min(rest), f"{name}: the run does not decide: {text}")
+        if name == "tie":
+            expect(places[2] == places[3], f"{name}: players 2 and 3 are not on one spot: {places[2]}, {places[3]}")
+        lines.append(text)
+    return "; ".join(lines)
+
+
+def sc_inhale_four(args, folder):
+    """#330: with four players the face's inhale swallows the nearest to its mouth of those in reach, whatever its
+    index (`nearest`: player 3), and of two on one spot the lower index (`tie`: player 2). Four games each; hashes
+    and boss traces equal on all four. --levels picks some of nearest,tie."""
+    only = getattr(args, "levels", None)
+    lines = []
+    for name, (sticks, _) in INHALE4_RUNS.items():
+        if only and name not in only:
+            continue
+        run = folder / name
+        run.mkdir(parents=True, exist_ok=True)
+        feed = run / "feed.txt"
+        write_feed(feed, INHALE4_FRAMES + 16,
+                   lambda frame, player: (0, 0, 0) if frame < ANDROSS_WALLS else
+                   (BUTTON_C_LEFT if INHALE4_BOOST <= frame < INHALE4_BOOST + 60 else 0, *sticks[player]))
+        traces = [run / f"{game}-boss.txt" for game in ("host", "client0", "client1", "client2")]
+        for path in traces:
+            if path.exists():
+                path.unlink()  # the trace appends
+        env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(INHALE4_FRAMES)}
+        games = session(args, run, {"SF64_COOP_JOIN_LEVEL": str(BOSS_RUNS["inhale"][0]),
+                                    "SF64_COOP_BOSS_TRACE": str(traces[0])}, None, env, clients=3,
+                        client_envs=[{"SF64_COOP_BOSS_TRACE": str(path)} for path in traces[1:]],
+                        config={"CVars": {"gInvincible": 1}})
+        try:
+            wait_for(list(games), "done", 900, "with four players at Andross")
+        finally:
+            for game in games:
+                game.close()
+        frames = min(compare(games[0], client, INHALE4_FRAMES) for client in games[1:])
+        ours = boss_trace(traces[0])
+        for path in traces[1:]:
+            theirs = boss_trace(path)
+            n = min(len(ours), len(theirs))
+            expect(n >= INHALE4_FRAMES - 40 and ours[:n] == theirs[:n], f"{name}: the boss traces differ ({path.name})")
+        lines.append(f"{name}: same hash on {frames} frames; {check_inhale4(name, inhale4_swallows(ours[:INHALE4_FRAMES]))}")
     return "; ".join(lines)
 
 
@@ -6411,6 +6518,7 @@ SCENARIOS = {
     "pool_start": sc_pool_start,
     "hud_lives": sc_hud_lives,
     "names_four": sc_names_four,
+    "inhale_four": sc_inhale_four,
 }
 LONG = ("survive_next_level", "survive_gaps_route", "survive_gaps_map", "survive_gaps_map_lost",
         "survive_gaps_checkpoints", "survive_gaps_venom_jump", "fox_refill_levels", "fox_refill_long", "fox_lead_swap", "fox_lead_swap_all_range", "full", "scenes", "allrange", "allrange_down", "allrange_others", "allrange_down_others", "teambar",
@@ -6420,6 +6528,7 @@ LONG += ("sy_robot_spread",)  # Sector Y's rails, 9500 frames (#273)
 LONG += ("sy_robot_pose", "granga_spread")  # the same rails; Corneria's Granga, 7700 frames (#281)
 LONG += ("ve1_pillars",)  # Venom 1 to its boss, 13000 frames (#276)
 LONG += ("escape_look",)  # five sessions in Andross' escape: the explosions hit every human (#282)
+LONG += ("inhale_four",)  # two sessions of four games at Andross' face (#330)
 
 
 # Seconds a scenario took on Debug at a limit of 8 (2026-11-13, #290). Only the order of a pool of --jobs depends on it:
@@ -6462,7 +6571,8 @@ def main():
                     help="for `fox_refill_levels`, `fox_refill_long` and `fox_lead_swap`: some of "
                          + ",".join(FOX_REFILL_LEVELS) + " (and corneria for fox_refill_long); "
                          "for `vehicles` and `vehicle_end`: some of titania,aquas,macbeth (default all); for "
-                         "`bosses`: some of gorgon,andross,dogfight,inhale; for `other_bosses`: some of "
+                         "`bosses`: some of gorgon,andross,dogfight,inhale; for `inhale_four`: some of nearest,tie; for "
+                         "`other_bosses`: some of "
                          + ",".join(OTHER_BOSS_RUNS) + "; for `survive_gaps_checkpoints`: some of "
                          + ",".join(SURVIVE_GAPS_LEVELS) + "; for `escape_look`: some of "
                          + ",".join(run[0] for run in W9_ESCAPE_RUNS))
