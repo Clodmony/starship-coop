@@ -407,7 +407,7 @@ def session(args, folder, host_env=None, client_env=None, both=None, config=None
     env["SF64_COOP_TEST_START_SEEDS"] = SEEDS
     if not repair:
         # A desync starts the level again (decision 0014), which is what the scenarios that provoke one look at; only the
-        # repair scenarios (decision 0016) let the games put themselves in step again.
+        # scenarios of the repair (decision 0016, `resync`) let the games put themselves in step again.
         env["SF64_COOP_TEST_NO_REPAIR"] = "1"
     host = Client(args, folder, "host", {**env, "SF64_COOP_JOIN_PORT_FILE": str(port_file),
                                          "SF64_COOP_JOIN_CLIENTS": str(clients), "SF64_COOP_JOIN_LEVEL": "0",
@@ -4683,20 +4683,23 @@ def repair_lines(game):
     return [line.format() for line in coop_log.read_lines(path, player_of(game))]
 
 
-def sc_repair(args, folder):
-    """Decision 0016: a bit of an actor flipped on the client. Both games find it, the host's state is written over the
-    client's at a barrier frame, and lockstep goes on: no level starts again, no session ends, the hash logs of both are
-    equal on every frame from the barrier to the end of the level run, and differ from the flipped bit to the barrier.
-    The client's log names what it wrote (a slot of gActors)."""
+def resync_run(args, folder, target=None, wrote="gActors[", extra_env=None, clients=1, poke_on=0):
+    """One session with a bit flipped on a client at JOIN_FRAME + 300 (`target` is SF64_COOP_HASH_POKE_TARGET: the last
+    actor's fwork[29] when None), repair on. Every game ends up equal to the host from the barrier on, no level starts
+    again, no session ends; the flipped client's log says the value it wrote starts with `wrote`. Returns the line and
+    the barrier."""
     folder.mkdir(parents=True, exist_ok=True)
     poke = JOIN_FRAME + 300
     frames = poke + 600
     feed = folder / "feed.txt"
     write_feed(feed, frames + 16, sway)
-    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(frames)}
-    # The last actor's fwork[29]: a slot the level rarely uses, so the flipped bit stays and the hashes stay apart. (A bit
-    # of a player's position heals by itself in a few frames: the game computes it again and rounds it away.)
-    games = session(args, folder, both=env, repair=True, client_envs=[{"SF64_COOP_LOCKSTEP_POKE": str(poke)}])
+    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(frames), **(extra_env or {})}
+    flipped = {"SF64_COOP_LOCKSTEP_POKE": str(poke)}
+    if target is not None:
+        flipped["SF64_COOP_HASH_POKE_TARGET"] = target
+    envs = [{} for _ in range(clients)]
+    envs[poke_on] = flipped
+    games = session(args, folder, both=env, repair=True, clients=clients, client_envs=envs)
     try:
         wait_for(list(games), "done", 900, "after the flipped bit: the repair did not let the level go on")
         survive_no_end(games)
@@ -4704,35 +4707,71 @@ def sc_repair(args, folder):
     finally:
         for game in games:
             game.close()
-    host, client = games
-    barrier = None
+    host = games[0]
+    flipper = games[1 + poke_on]
     for game in games:
         lines = repair_lines(game)
-        expect(any("The games are in step again" in line for line in lines), f"{game.name}: no repair line: "
-               f"{[line for line in lines if 'repair' in line][:3]}")
-        expect(survive_starts(game) == [(1, "Fox,Falco,-,-")], f"{game.name}: level starts {survive_starts(game)}")
+        expect(any("The games are in step again" in line for line in lines),
+               f"{game.name}: no repair line: {[line for line in lines if 'repair' in line][:3]}")
+        expect(len(survive_starts(game)) == 1, f"{game.name}: level starts {survive_starts(game)}")
         expect(not join_test.said(game.sync(), "again"), f"{game.name}: the level started again")
-    done = [line for line in repair_lines(client) if "repaired at frame" in line]
-    expect(len(done) == 1, f"the client repaired {len(done)} times: {done}")
+    done = [line for line in repair_lines(flipper) if "repaired at frame" in line]
+    expect(len(done) == 1, f"the flipped client repaired {len(done)} times: {done}")
     match = re.search(r"repaired at frame (\d+): (\d+) chunks written \((.*)\)", done[0])
     expect(match is not None, f"the client's line: {done[0]}")
     barrier = int(match.group(1))
-    expect(int(match.group(2)) >= 1 and "gActors[" in match.group(3), f"the client wrote {match.group(2)}: {match.group(3)}")
+    expect(int(match.group(2)) >= 1 and wrote in match.group(3),
+           f"the client wrote {match.group(2)}: {match.group(3)}, want {wrote}")
     expect(poke < barrier <= poke + 2 * DESYNC_SEEN_WITHIN + 60, f"barrier {barrier}, poke {poke}")
     names, _, ours = host.rows()
-    _, _, theirs = client.rows()
-    n = min(len(ours), len(theirs))
-    expect(n > barrier + 100, f"only {n} frames to compare, barrier {barrier}")
-    first = next((i for i in range(n) if ours[i] != theirs[i]), None)
-    expect(first == poke, f"the hash logs first differ at frame {first}, poke at {poke}")
-    # From the barrier on they are equal again. The barrier frame itself is hashed on the repaired state.
-    difference = join_test.first_difference(names, ours[barrier:n], theirs[barrier:n])
-    expect(difference is None, f"the hash logs differ again {difference} frames after the barrier {barrier}")
+    equal = 0
+    for game in games[1:]:
+        _, _, theirs = game.rows()
+        n = min(len(ours), len(theirs))
+        expect(n > barrier + 100, f"{game.name}: only {n} frames to compare, barrier {barrier}")
+        if game is flipper:
+            first = next((i for i in range(n) if ours[i] != theirs[i]), None)
+            expect(first == poke, f"the hash logs first differ at frame {first}, poke at {poke}")
+        difference = join_test.first_difference(names, ours[barrier:n], theirs[barrier:n])
+        expect(difference is None, f"{game.name}: the hash logs differ again {difference} frames after the barrier "
+                                   f"{barrier}")
+        equal = n - barrier
     for game in games:
         found = own_reports(game)
         expect(len(found) == 1, f"{game.name} wrote {len(found)} desync reports (the repair still writes its report)")
     return (f"flipped bit at {poke}, repaired at frame {barrier} ({match.group(2)} chunks: {match.group(3)}); the hash "
-            f"logs equal on {n - barrier} frames from there, no level start, no end")
+            f"logs equal on {equal} frames from there, no level start, no end"), barrier
+
+
+def sc_resync(args, folder):
+    """Decision 0016: a bit of an actor flipped on the client. Both games find it, the host's state is written over the
+    client's at a barrier frame, and lockstep goes on: no level starts again, no session ends, the hash logs of both are
+    equal on every frame from the barrier to the end of the level run, and differ from the flipped bit to the barrier.
+    The client's log names what it wrote (a slot of gActors)."""
+    return resync_run(args, folder)[0]
+
+
+# What each target of SF64_COOP_HASH_POKE_TARGET is written back as: the chunk the flipped client names.
+RESYNC_TARGETS = {"effect": "gEffects[", "item": "gItems[", "boss": "gBosses[", "scenery": "gScenery[",
+                  "sprite": "gSprites[", "shot": "gPlayerShots[", "rng": "sRandSeed2", "global": "gGoldRingCount",
+                  "perplayer": "gLaserStrength[", "team": "gTeamDamage", "life": "gLifeCount["}
+
+
+def sc_resync_targets(args, folder):
+    """Decision 0016: one session for each kind of value the repair writes (an effect, an item, a boss, a scenery, a
+    sprite, a player shot, a random seed, a global, a per-player array, a team array, the lives): a bit of it flipped on
+    the client, repaired, equal from the barrier on. The failure of one is named."""
+    done = []
+    failed = []
+    for target, wrote in RESYNC_TARGETS.items():
+        try:
+            line, barrier = resync_run(args, folder / target, target, wrote)
+        except Fail as error:
+            failed.append(f"{target}: {error}")
+            continue
+        done.append(f"{target}@{barrier}")
+    expect(not failed, "; ".join(failed))
+    return f"{len(done)} kinds repaired and equal after it: {', '.join(done)}"
 
 
 def sc_desync_three(args, folder):
@@ -7074,7 +7113,8 @@ SCENARIOS = {
     "release": sc_release,
     "rates": sc_rates,
     "desync": sc_desync,
-    "repair": sc_repair,
+    "resync": sc_resync,
+    "resync_targets": sc_resync_targets,
     "desync_control": sc_desync_control,
     "desync_three": sc_desync_three,
     "handover": sc_handover,

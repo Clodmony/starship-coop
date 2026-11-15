@@ -1036,11 +1036,65 @@ const char* CoopStateHash_RegionName(CoopHashRegion region) {
 // Test only: flip the lowest bit of the first byte of one value. By default that is the last actor's fwork[29]: the
 // last actor slot is rarely in use, so the change usually stays in memory and the hash stays different from that frame
 // on. With SF64_COOP_HASH_POKE_PLAYER it is that player's pos.x, a difference the game itself then goes on with.
+// SF64_COOP_HASH_POKE_TARGET: what the poke flips when it is not an actor or a player, to give each way a repair writes
+// a value back (decision 0016) a flipped bit of its own. A slot of an array that a level rarely uses (the last, or for effects, which spawn from both ends, the middle), so the
+// bit stays; or a value nothing recomputes.
+static const char* sPokeTarget = NULL;
+
+static u8* PokeTarget(const char* name, char* target, size_t cap) {
+    u8* p = NULL;
+    const char* what = NULL;
+
+    if (strcmp(name, "effect") == 0) {
+        p = (u8*) &gEffects[ARRAY_COUNT(gEffects) / 2].unk_60.x;
+        what = "gEffects[mid].unk_60.x";
+    } else if (strcmp(name, "item") == 0) {
+        p = (u8*) &gItems[ARRAY_COUNT(gItems) - 1].unk_50;
+        what = "gItems[last].unk_50";
+    } else if (strcmp(name, "boss") == 0) {
+        p = (u8*) &gBosses[ARRAY_COUNT(gBosses) - 1].fwork[29];
+        what = "gBosses[last].fwork[29]";
+    } else if (strcmp(name, "scenery") == 0) {
+        p = (u8*) &gScenery[ARRAY_COUNT(gScenery) - 1].vel.x;
+        what = "gScenery[last].vel.x";
+    } else if (strcmp(name, "sprite") == 0) {
+        p = (u8*) &gSprites[ARRAY_COUNT(gSprites) - 1].obj.pos.x;
+        what = "gSprites[last].obj.pos.x";
+    } else if (strcmp(name, "shot") == 0) {
+        p = (u8*) &gPlayerShots[ARRAY_COUNT(gPlayerShots) - 1].obj.pos.x;
+        what = "gPlayerShots[last].obj.pos.x";
+    } else if (strcmp(name, "rng") == 0) {
+        p = (u8*) &sRandSeed2;
+        what = "sRandSeed2";
+    } else if (strcmp(name, "global") == 0) {
+        p = (u8*) &gGoldRingCount[0];
+        what = "gGoldRingCount[0]";
+    } else if (strcmp(name, "perplayer") == 0) {
+        p = (u8*) &gLaserStrength[1];
+        what = "gLaserStrength[1]";
+    } else if (strcmp(name, "team") == 0) {
+        p = (u8*) &gTeamDamage[TEAM_ID_FALCO];
+        what = "gTeamDamage[TEAM_ID_FALCO]";
+    } else if (strcmp(name, "life") == 0) {
+        p = (u8*) &gLifeCount[1];
+        what = "gLifeCount[1]";
+    }
+    if (what != NULL) {
+        snprintf(target, cap, "%s", what);
+    }
+    return p;
+}
+
 static void Poke(void) {
     char target[32];
     u8* p;
 
-    if (sPokePlayer < 0) {
+    if ((sPokeTarget != NULL) && (sPokePlayer < 0)) {
+        p = PokeTarget(sPokeTarget, target, sizeof(target));
+        if (p == NULL) {
+            return;
+        }
+    } else if (sPokePlayer < 0) {
         p = (u8*) &gActors[ARRAY_COUNT(gActors) - 1].fwork[29];
         snprintf(target, sizeof(target), "gActors[%d].fwork[29]", (s32) ARRAY_COUNT(gActors) - 1);
     } else if ((gGameState == GSTATE_PLAY) && (gPlayer != NULL) && (sPokePlayer < CoopPlayers_Count())) {
@@ -1440,6 +1494,9 @@ void CoopStateHash_Init(void) {
     }
     if ((pokePlayer != NULL) && (pokePlayer[0] != '\0')) {
         sPokePlayer = strtol(pokePlayer, NULL, 10);
+    }
+    if ((getenv("SF64_COOP_HASH_POKE_TARGET") != NULL) && (getenv("SF64_COOP_HASH_POKE_TARGET")[0] != '\0')) {
+        sPokeTarget = getenv("SF64_COOP_HASH_POKE_TARGET");
     }
     if ((probe != NULL) && (probe[0] != '\0')) {
         sProbePeriod = strtoll(probe, NULL, 10);
