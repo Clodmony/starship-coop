@@ -1,10 +1,10 @@
 # 0016: The session resumes after a short drop and repairs a desync in place
 
-- Status: Proposed (written 2026-11-15 after the owner asked for both; nothing is built; the owner reads it in the pull
-  request that brings it, and the questions at the end are his)
+- Status: Proposed (written 2026-11-15 after the owner asked for both; nothing is built; the owner's answers are at the end and he reads
+  the text in the pull request that brings it)
 - Date: 2026-11-15
 - Issues: #267 (options 2 and 3 of decision 0014), #189 (the report a repair must still write)
-- Changes: nothing in an accepted record. Adds to decision 0014, which says "options 2 and 3 are not part of this
+- Changes: the rejoin window of 0014 item 3 (15 s to 30 s); nothing in an accepted record. Adds to decision 0014, which says "options 2 and 3 are not part of this
   record; they stay for later", and builds the fallback that decision 0002 names as option C ("lockstep with host
   correction"). The level start of 0014 stays as the last resort for both.
 
@@ -60,7 +60,7 @@ Desync:
 ### Derived
 
 - A resume needs the client's game to be alive and in the same run; it is no help for a client that restarted, a
-  desync, or a host that went. The window for it is 5 s (the link ends) to 15 s (the slot is given up).
+  desync, or a host that went. The window for it is 5 s (the link ends) to 15 s today (the slot is given up); 30 s with the owner's answer 1.
 - A dump that restores is the dump we already have, written back into the variables it came from, with the cleared fields
   left as the receiver has them and `ObjectInfo` rebuilt from the object id. That is one format, one code path to keep
   in step with the hash (a new hashed variable is a new chunk on both sides).
@@ -105,10 +105,10 @@ Option 4 stays for later.
 ### A. Resume after a drop (built second)
 
 1. **When.** A client's link ends in a level, the host's game and the client's game are both alive and in the same run,
-   and the client comes back with the session id inside `COOP_SESSION_REJOIN_MS` (15 s).
+   and the client comes back with the session id inside `COOP_SESSION_REJOIN_MS` (30 s, the owner's answer 1; 15 s in 0014).
 2. **Telling the others.** The host does not send `SESSION_RECOVER` at the first loss. The other clients are told, by one
    notice, that a player is away and for how long; their games stop where they are, as lockstep does by itself. The
-   co-op window and the log carry one line: "Player 2 lost the connection. Waiting for it to come back (15 s)."
+   co-op window and the log carry one line: "Player 2 lost the connection. Waiting for it to come back (30 s)."
    `SESSION_RECOVER` goes out only when the window ends, as now.
 3. **Coming back.** The host answers `SESSION_REJOIN` as it does now and adds the run and the frame it stands at. The
    client compares them with its own; if its game is in the same run and within the ring of the host's frame, it answers
@@ -188,10 +188,15 @@ On one Linux PC with real games, as the `survive_*` scenarios of `tools/coop/loc
 - Costs (a guess, not measured): A is a few hundred lines of C with its tests; B is somewhat larger because of the restore
   and its mutants.
 
-## Questions for the owner
+## The owner's answers (2026-11-15)
 
-1. **The window.** Keep 15 s for a resume (0014's answer to Q2), or longer now that the level is not lost?
-2. **A repair counts as a test failure by default**, as written above. Say so if a repaired desync should pass.
-3. **Order.** Answered 2026-11-15: B first, because a desync has cost more sessions than a drop so far (the sessions
-   of 2026-11-10 ended in desyncs at the Aquas boss and on the map, not in drops).
-4. **A repair across platforms.** Allowed and tried like any other (proposed), or off until two PCs have tested it.
+1. **The window: 30 s** for a player who is away (`COOP_SESSION_REJOIN_MS` goes from 15 s to 30 s; 0014 item 3 and its
+   Q2 answer of 15 s are changed by this). The host's stall check (10 s) and a client's wait for the host (40 s,
+   `COOP_SESSION_RECOVER_MS`) then have to be read against 30 s: the stall check must not drop an away player, and the
+   client's wait must be longer than the window. The build changes both and a test holds them.
+2. **A repair counts as a test failure by default**; a test about repairs says it expects one.
+3. **Order: repair first**, because a desync has cost more sessions than a drop so far (the sessions of 2026-11-10 ended
+   in desyncs at the Aquas boss and on the map, not in drops).
+4. **A repair across platforms** is tried like any other; the owner tests it on two PCs. It is not claimed until then.
+5. **On screen:** one line in the co-op window and in the log, no overlay. The game is held at the barrier frame for the
+   time the state takes to arrive.
