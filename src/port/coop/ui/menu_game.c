@@ -139,7 +139,15 @@ static void Link_Identity(int peer, char* out, size_t cap) {
     }
 }
 
-static const CoopSyncLink sLink = { Link_Send, Link_Pump, Link_Fail, Link_Identity, Link_Recover, Link_Entering };
+// The games parted and are put in step again (decision 0016): the co-op window says so. The co-op log has it already.
+static void Link_Notice(const char* text) {
+    if (sMenu != NULL) {
+        snprintf(sMenu->message, sizeof(sMenu->message), "%s", text);
+    }
+}
+
+static const CoopSyncLink sLink = { Link_Send,     Link_Pump,     Link_Fail,    Link_Identity,
+                                    Link_Recover,  Link_Entering, Link_Notice };
 
 void CoopMenuGame_EnterLevel(const CoopLevelStart* start) {
     CoopSave_Enter(start->save); // the host's progress for the session, until CoopSyncGame_End (decision 0009 item 8)

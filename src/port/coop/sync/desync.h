@@ -89,6 +89,7 @@ typedef struct {
     int32_t theirPlayer;    // whose `theirs` is, -1 while none came
     uint32_t theirFrame;    // the frame that side named, which can differ from ours
     bool answered;          // `theirs` is from the side this game needs: the other of the pair, or whoever told us
+    uint32_t floor;         // what peers sent for frames before this one is not compared (CoopDesync_Resync)
 } CoopDesync;
 
 // Frame 0 is next. Nothing is compared before anything is recorded.
@@ -106,6 +107,10 @@ bool CoopDesync_Receive(CoopDesync* d, int peer, uint16_t msgId, const uint8_t* 
 // True once a desync was found and this game has what it needs for its report, or has waited the grace for it: the
 // caller writes the report and ends the session. A game outside the pair waits the grace either way.
 bool CoopDesync_Done(const CoopDesync* d, uint32_t nowMs);
+
+// A repair put this game back on the host's state before `frame`, the frame that runs next (decision 0016): the desync
+// found is forgotten and frames before `frame` are not compared any more, in what peers sent before or send after.
+void CoopDesync_Resync(CoopDesync* d, uint32_t frame);
 
 // The entry of `frame`, NULL if this game no longer holds it or has not reached it.
 const CoopDesyncEntry* CoopDesync_Entry(const CoopDesync* d, uint32_t frame);

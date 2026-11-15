@@ -42,6 +42,9 @@ typedef struct {
     // is what a recovery has to start again from here on, as the session's own level start was for the first level.
     // May be NULL.
     void (*entering)(const CoopLevelStart* start);
+    // One line for the player: the games parted and are put in step again (decision 0016). May be NULL; the co-op log
+    // has the line either way.
+    void (*notice)(const char* text);
 } CoopSyncLink;
 
 // Reasons of CoopSyncLink.recover.

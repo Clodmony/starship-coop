@@ -3,7 +3,7 @@
 // Message ids and the protocol version. The registry and the wire layout are in docs/coop/PROTOCOL.md.
 
 // Bump whenever a message layout changes (PROTOCOL.md rule 2).
-#define COOP_PROTOCOL_VERSION 10
+#define COOP_PROTOCOL_VERSION 11
 
 typedef enum {
     // Transport. These never reach the layers above it.
@@ -47,6 +47,12 @@ typedef enum {
     // #189: a game's dump of the desync frame, in numbered parts, so the other game of the pair can name the first
     // field that differs. See src/port/coop/sync/desync_dump.h.
     COOP_MSG_SYNC_DUMP = 0x0043,
+    // Decision 0016: the repair of a desync in place. SYNC_REPAIR (host to clients: the frame every game holds at),
+    // SYNC_STATE (host to a client: the state at that frame, in numbered parts, the stream of SYNC_DUMP), SYNC_REPAIRED
+    // (client to host: it wrote the state, and its hash of the result). See src/port/coop/sync/repair_game.h.
+    COOP_MSG_SYNC_REPAIR = 0x0044,
+    COOP_MSG_SYNC_STATE = 0x0045,
+    COOP_MSG_SYNC_REPAIRED = 0x0046,
 
     // The handover (#189): before a session closes, every game hands its desync report and the rest of its co-op log
     // to every player still connected. A kind byte first, see src/port/coop/sync/handover.h.

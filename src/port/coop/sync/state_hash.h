@@ -76,6 +76,15 @@ size_t CoopStateHash_DumpBytes(void);
 // As Compute, and every hashed byte also goes into dump, in hashing order. dump->used and count start from 0 here.
 void CoopStateHash_ComputeDump(CoopStateHash* out, CoopStateDump* dump);
 
+// Repair (decision 0016): write the state a stream holds (the stream of desync_dump.h: the bytes of a dump, in named
+// chunks) into this game, through the same traversal that hashes it. A chunk that is equal already is left alone, the
+// fields the hash clears (pointers, what follows the camera) stay as this game has them, an object with another id
+// gets the pointers the game sets for that id. Returns false, with `why`, if the stream does not fit this game (a
+// chunk missing on either side, another size, a pointer outside the hashed arrays, a value that cannot be written);
+// the game is then partly written and has to start the level again. On success `why` names the first chunks that
+// differed and `written` counts them.
+bool CoopStateHash_Restore(const uint8_t* stream, size_t size, char* why, size_t cap, uint32_t* written);
+
 // Test only: the poke of SF64_COOP_HASH_POKE on the frame now starting, for a frame only the caller can name.
 void CoopStateHash_PokeNow(void);
 
