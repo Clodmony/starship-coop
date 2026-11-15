@@ -1516,14 +1516,24 @@ static void Test_Resume(void) {
     EXPECT(sRecovers[0] == 0 && sRecovers[1] == 0 && sEnters[0] == 1 && sEnters[1] == 1,
            "a game stopped lockstep, or the level started again, though the player came back into it");
     Expect_Has(View(HOST)->message, "Player 2 is back", "the host is not told that the player is back");
+    // An outage of twice the time-out: the first try to come back reaches nobody and ends, and the client tries again
+    // while the host keeps the slot (30 s), instead of giving up after one.
+    sNet.cut = true;
+    Run(2 * COOP_MENU_TIMEOUT_MS + 2000);
+    EXPECT(View(A)->phase == COOP_MENU_CONNECTING && sSessionsEnded == 0, "the client gave up after one try");
+    sNet.cut = false;
+    Run(2500);
+    EXPECT(View(A)->phase == COOP_MENU_JOINED && sSessionsEnded == 0 && sResumeCalls == 2,
+           "the client did not get back in on its second try");
     // A game that cannot go on where it was: the level starts again, from the host's state.
     sResumeAnswer = false;
     sNet.cut = true;
     Run(COOP_MENU_TIMEOUT_MS + 1000);
     sNet.cut = false;
     Run(2500);
-    EXPECT(sResumeCalls == 2 && sEnters[0] == 2 && sEnters[1] == 2 && sSessionsEnded == 0,
+    EXPECT(sResumeCalls == 3 && sEnters[0] == 2 && sEnters[1] == 2 && sSessionsEnded == 0,
            "the level did not start again when the game could not go on");
+    Expect_Has(View(A)->message, "could not go on where it was", "the client is told of a player nobody is");
     // The wait ends: nobody is left, and the session is over, as before.
     sNet.cut = true;
     Run(COOP_MENU_TIMEOUT_MS + 1000);

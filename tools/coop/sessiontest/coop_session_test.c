@@ -3904,6 +3904,25 @@ static void Script_ClientRejoin(void) {
            "a client that came back did not take the level start of a later run");
     CoopSession_Close(s);
 
+    // A client that came back and was not asked to go on takes the host's SESSION_RECOVER and can start a recovery itself:
+    // it is in a level, though it saw no level start of its own yet (decision 0016 part A).
+    Script_Init(&t);
+    memset(&side, 0, sizeof(side));
+    s = CoopSession_Rejoin(&t.base, &a, SCRIPT_T0, TEST_ID, SLIPPY);
+    Script_Connected(&t, 0);
+    Script_Welcome(&t, &a, 2);
+    Drain(s, SCRIPT_T0 + 1, &side);
+    EXPECT(CoopSession_Recover(s, COOP_RECOVER_DESYNC, SCRIPT_T0 + 2), name,
+           "a client that came back could not wait for a recovery");
+    buf[0] = COOP_RECOVER_LOST;
+    buf[1] = 0xFF;
+    Script_Message(&t, 0, COOP_MSG_SESSION_RECOVER, buf, 2);
+    Drain(s, SCRIPT_T0 + 3, &side);
+    EXPECT(side.recovers >= 1 && side.recoverReason == COOP_RECOVER_LOST && side.ended == 0 &&
+               strstr(side.recoverText, "could not go on where it was") != NULL,
+           name, "a client that came back did not take SESSION_RECOVER, or its text names a player nobody is");
+    CoopSession_Close(s);
+
     // Another session on that host: the welcome is not taken.
     Script_Init(&t);
     memset(&side, 0, sizeof(side));
