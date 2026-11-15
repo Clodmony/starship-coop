@@ -3,7 +3,7 @@
 Status: the transport (WP-20), the session handshake (WP-21), the characters (WP-34), the level start (WP-24), the
 session's save (decision 0009 item 8), the players' names (#258), lockstep (WP-22), the desync check (WP-23), the co-op
 log (#172), the handover (#189), the recovery (a session that survives a lost player or a desync) and the dump of a
-desync frame (#189) and the repair of a desync in place (decision 0016) exist; `COOP_PROTOCOL_VERSION` is 11. Other sync and game messages come
+desync frame (#189) and the repair of a desync in place (decision 0016) exist; `COOP_PROTOCOL_VERSION` is 12. Other sync and game messages come
 with their work packages. This page sets the rules so parallel work does not collide.
 
 ## Rules
@@ -324,7 +324,7 @@ another save, for example, parts at frame 0 of every level start.
 
 | Size | Field |
 |---|---|
-| 1 | Reason: 1 a player's connection was lost and is waited for, 2 a player left or was dropped, 3 the games parted |
+| 1 | Reason: 1 a player's connection was lost and is waited for (or came back in another slot), 2 a player left or was dropped, 3 the games parted, 4 a player did not come back within the wait of a session that resumes |
 | 1 | The player it is about (index 1 to 3), 0xFF for nobody |
 
 `SESSION_REJOIN`, client to host, in place of the hello:
@@ -347,7 +347,7 @@ another save, for example, parts at frame 0 of every level start.
 
 What does not fit:
 
-- `SESSION_RECOVER` before a level is dropped and counted; one of another size, with a reason other than 1 to 3 or a
+- `SESSION_RECOVER` before a level is dropped and counted; one of another size, with a reason other than 1 to 4 or a
   player other than 0 to 3 or 0xFF ends the client with `BAD_MESSAGE`.
 - `SESSION_REJOIN` shorter than its head or with an identity that cannot be read is refused with bit 8; one from a
   client that has joined is dropped and counted.
@@ -550,6 +550,36 @@ What does not fit:
   of the wrong size is refused: nothing more is taken, and the line says that the dump could not be read. Neither ends
   anything.
 
+## Resume
+
+Decision 0016 part A: a player whose connection is lost and whose game is alive comes back into the level where it
+stood, instead of the level starting again. On by default (`CoopSession_SetResume`, the owner's call); off with
+`SF64_COOP_TEST_NO_RESUME=1`, which the scenarios of the lost player of `lockstep_test.py` set. The code is `session.c`
+(the slot and the wait), `lockstep_game.c` (`SYNC_RESUME`, `SYNC_RESUMED`), `lockstep.c` (`CoopLockstep_Reopen`) and
+`menu.c` / `menu_game.c`.
+
+1. **The wait.** A client whose connection times out, or that sends no input for `COOP_LOCKSTEP_STALL_MS` (10 s), keeps
+   its slot and character for `COOP_SESSION_RESUME_MS`, 30000 ms (15000 without resume). Nothing starts again meanwhile:
+   no `SESSION_RECOVER`. Every game stops where it is, since a frame needs every player's input; the others' window
+   says whom they wait for (`CoopSyncGame_Waiting`), the host's says "Player N lost the connection. Waiting for it to
+   come back (30 s)." The host's stall check leaves an away player alone.
+2. **A game that lost its host** keeps its lockstep standing, waiting for the host's input, while it tries to come
+   back; it does not stop lockstep (`recover`) as it did.
+3. **Coming back.** The client sends `SESSION_REJOIN` as before. If it lands in the slot it had (the games number their
+   players by slot) and no recovery is under way, the host's JOINED event has `resume` and the host sends
+   `SYNC_RESUME` (reliable, no run in front: the run is in it) with its run and frame. The client answers
+   `SYNC_RESUMED`: 0 if its game is in that run, within half of `COOP_LOCKSTEP_RING` (32) frames of the host's, and no
+   repair is under way; otherwise 1. A 0 on both sides reopens the lockstep link (`CoopLockstep_Reopen`: what the peer
+   confirmed is forgotten, except its own stream, which the host holds whole) and the frames flow again; nothing else
+   is sent. In another slot the host starts the level again (`SESSION_RECOVER` reason 1), as before.
+4. **When it does not go on.** A 1, no answer within `COOP_SYNC_RESUME_MS` (5 s), a loss that is not answered within
+   the wait (`SESSION_RECOVER` reason 4, "Player N did not come back. Starting the level again together."), or the
+   last player gone with nobody else left (the owner ends the session, as before): the level starts again.
+
+What does not fit: `SYNC_RESUME` from a client or of another size, and `SYNC_RESUMED` of another size, are dropped
+(`SYNC_RESUMED` also when no `SYNC_RESUME` was sent or of another run). A repair under way when a player is lost ends
+by its time limit and the level starts again.
+
 ## Repair
 
 Decision 0016 (Proposed): a desync is put right where it is, instead of starting the level again (Recovery), if the
@@ -683,13 +713,15 @@ Nothing is passed on: with three players a client gets the host's report, the ho
 | 0x0017 | `SESSION_SAVE` | host to client | the host's `Save`, 256 bytes, just ahead of every level start, see Session's save | decision 0009 item 8 |
 | 0x0018 | `SESSION_NAME` | both | entries of u8 player, u8 length (0 to 8), the characters: a client's own name, the host's list of all four, see Names | #258 |
 | 0x0019 | `SESSION_REJOIN` | client to host | u64 session id, u8 character, identity: a player of the session comes back, see Recovery | Recovery |
-| 0x001A | `SESSION_RECOVER` | host to client | u8 reason (1 to 3), u8 player or 0xFF: the level is going to start again, see Recovery | Recovery |
+| 0x001A | `SESSION_RECOVER` | host to client | u8 reason (1 to 4), u8 player or 0xFF: the level is going to start again, see Recovery | Recovery |
 | 0x0040 | `SYNC_INPUT` | both | u8 run, then frames of each player, see Lockstep | WP-22 |
 | 0x0041 | `SYNC_HASH` | both | u8 run, then the total state hash of the last 10 frames, see Desync check | WP-23 |
 | 0x0042 | `SYNC_DESYNC` | both | u8 run, then the sender's hash of the first differing frame, region by region, see Desync check | WP-23 |
 | 0x0043 | `SYNC_DUMP` | both | a part of the sender's dump of the desync frame, see Desync check | #189 |
 | 0x0044 | `SYNC_REPAIR` | host to client | u8 run, u32 barrier frame, u32 frame of the desync: the games hold at the barrier and the host sends its state, see Repair | #267 |
 | 0x0045 | `SYNC_STATE` | host to client | a part of the host's state at the barrier frame (the stream of `SYNC_DUMP`), see Repair | #267 |
+| 0x0047 | `SYNC_RESUME` | host to client | u8 run, u32 frame: the player came back, can its game go on at that frame, see Resume | #267 |
+| 0x0048 | `SYNC_RESUMED` | client to host | u8 run, u8 result (0 yes, 1 no), u32 frame, see Resume | #267 |
 | 0x0046 | `SYNC_REPAIRED` | client to host | u8 run, u8 result (0 written, 1 refused), u64 hash of the state now, u64 fingerprint of the object pointers, u32 barrier frame, see Repair | #267 |
 | 0x0080 | `HANDOVER` | both | u8 kind (1 `BEGIN`, 2 `FILE_START`, 3 `FILE_DATA`, 4 `DONE`, 5 `BYE`), then its fields, see Handover | #189 |
 | 0x00C0 | `TEST_RELIABLE` | both | test pattern, only sent by `coop_net_test` | WP-20 |

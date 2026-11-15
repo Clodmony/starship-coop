@@ -11661,6 +11661,42 @@ test build (`07d9207b`) plus decision 0016. Two to four real games on one PC, `t
   the held frame); whether the host's 90-odd parts per client are fast enough on a slow link; a second desync that
   has its cause in an unhashed value.
 
+### 2026-11-15, #267, the resume after a drop (decision 0016 part A): what was built, what it found
+
+Identity: ROM US 1.0, Linux x86-64, GCC 16.2, Debug, OpenGL software renderer, branch `issue/267-resume` on `issue/267-repair`.
+Two and three real games on one PC with `lockstep_test.py` (README rows `resume*`), the unit sims of the session, the
+lockstep and the menu. Nothing ran on Windows, on two PCs, in Release, or with a person playing.
+
+**Observed**
+
+- `resume`: the client stopped with SIGSTOP for 33 s comes back with the session id into its slot; the host asked its
+  game to go on (`SYNC_RESUME`), both reopened the lockstep link, and the hash logs of all games are equal on every frame
+  to the end of the run (1565 to 1672 frames), with no level start, no session end and no desync report. `resume_three`
+  (player 3 gone; 1657 to 1659 frames), `resume_early` (transport time-out 4 s, gone 14 s; 1682), `resume_refused` (the
+  client's game says no: the level starts again, run 2 equal on its first 600 frames), `resume_gone` (player 3 gone
+  for good: the other two start again without it, `SESSION_RECOVER` reason 4, equal on 600 frames).
+- In those runs the **10 s stall check of the host fires first**, not the transport's time-out (30 s in the join driver):
+  a frozen client is silent but connected, so `CoopSession_Kick` drops it with its slot kept and the wait starts there.
+  With the real 5 s time-out (`resume_early`) the session sees the loss first, and the stall check has to leave an
+  away player alone: a build without that guard ended the session ("Player 2 stopped sending input").
+- Three faults of the first version, each found by a test and not by reading: (1) `CoopLockstep_Reopen` forgot what the
+  peer confirmed of its **own** stream, so the host sent a client its own input back, which a client refuses
+  (`coop_lockstep_test reopen`; the real-game run had passed on a lucky order of the first messages); (2) the host asked a
+  returned player to go on while its stall clock still held the whole wait, dropped it again at once and had it come back
+  a second time (`resume_early`); (3) a game that stopped lockstep when its connection was lost (the menu's `recover`)
+  could not go on where it was, so a game that resumes keeps its lockstep standing and stops only on `SESSION_RECOVER`.
+- A returned player in **another slot** cannot resume: the games number players by slot. Two clients that were both
+  lost and come back the other way round take the level start (`host_resume`, `Script_HostResume`).
+- A session that does not resume is as it was: every other scenario of the lost player ran unchanged with
+  `SF64_COOP_TEST_NO_RESUME=1`; the wait there is 15 s, with resume 30 s (`COOP_SESSION_RESUME_MS`).
+- Mutants: `session_mutants.py` 456 of 456 (18 new), `lockstep_mutants.py` 23 of 23 (one new, one left out as
+  equivalent: the timed send makes up for `dirty`), by hand the stall guard, the answer of the host's check, the client's
+  check and the menu's pause; five by hand in `menu.c` each failed `coop_menu_test sim`.
+
+**Not tried:** Windows, two PCs, a real connection that drops (not a stopped process), a Release build, a person;
+`SYNC_RESUME` with no answer within 5 s (the timer is read, not exercised); a repair under way when a player is lost
+(read: it ends by its 10 s limit and the level starts again); a loss while the level changes (a map, a level start).
+
 ## Prior work
 
 ### 2026-11-01, triage

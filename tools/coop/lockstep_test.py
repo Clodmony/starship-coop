@@ -4890,7 +4890,7 @@ def lockstep_frames(game):
         return 0
 
 
-def resume_run(args, folder, clients=1, frozen=0, freeze_s=33, refuse=False, wait_after=300, resumes=True):
+def resume_run(args, folder, clients=1, frozen=0, freeze_s=33, refuse=False, wait_after=300, timeout_ms=None):
     """Decision 0016 part A. A session of 1 + `clients` games in a level; client `frozen` stops dead (SIGSTOP) for
     `freeze_s` seconds, which is longer than the transport's time-out of 30 s (the host keeps its slot) and shorter than
     the wait for it, then goes on. It comes back with the session id into the slot it had, and the level goes on where it
@@ -4903,9 +4903,10 @@ def resume_run(args, folder, clients=1, frozen=0, freeze_s=33, refuse=False, wai
     envs = [{} for _ in range(clients)]
     if refuse:
         envs[frozen] = {"SF64_COOP_TEST_RESUME_REFUSE": "1"}
-    games = session(args, folder, both={"SF64_COOP_LOCKSTEP_FEED": str(feed),
-                                        "SF64_COOP_LOCKSTEP_END": str(SURVIVE_FRAMES)},
-                    clients=clients, client_envs=envs, resume=True)
+    both = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(SURVIVE_FRAMES)}
+    if timeout_ms is not None:
+        both["SF64_COOP_JOIN_TIMEOUT_MS"] = str(timeout_ms)
+    games = session(args, folder, both=both, clients=clients, client_envs=envs, resume=True)
     host = games[0]
     gone = games[1 + frozen]
     try:
@@ -4966,6 +4967,47 @@ def sc_resume(args, folder):
     session id into the slot it had, and the level goes on where it stood: equal on every frame, no level start."""
     frames = resume_run(args, folder)
     return f"the client was gone for 33 s and came back into the level where it stood; equal on {frames} frames, no level start"
+
+
+def sc_resume_early(args, folder):
+    """Decision 0016 part A with a transport time-out of 4 s, as a real connection has 5 s: the host sees the loss before the
+    lockstep's 10 s without input, so the stall check meets a player who is away, and leaves it to the wait for it. The
+    client is gone for 14 s, past that check, and comes back into the level."""
+    frames = resume_run(args, folder, freeze_s=14, timeout_ms=4000)
+    return f"a transport time-out of 4 s, the client gone for 14 s and back; equal on {frames} frames, no level start"
+
+
+def sc_resume_gone(args, folder):
+    """Decision 0016 part A, the wait that ends: three games, the second client is gone for longer than the host waits
+    (10 s for the stall check and 30 s after it). The host and the first client start the level again without it, saying
+    it did not come back (RECOVER reason 4), and are equal on its first frames."""
+    expect(IS_LINUX, "needs SIGSTOP")
+    folder.mkdir(parents=True, exist_ok=True)
+    feed = folder / "feed.txt"
+    write_feed(feed, 4 * SHORT_FRAMES, sway)
+    games = session(args, folder, both={"SF64_COOP_LOCKSTEP_FEED": str(feed),
+                                        "SF64_COOP_LOCKSTEP_END": str(SURVIVE_FRAMES)}, clients=2, resume=True)
+    host, kept, gone = games
+    try:
+        wait_for(list(games), "done", 900, "before the freeze")
+        os.kill(gone.proc.pid, signal.SIGSTOP)
+        wait_for([host, kept], "over", 60, "after the freeze: the host did not stop lockstep")
+        survive_wait([host, kept], "again", 1, SURVIVE_AGAIN_SECONDS + 60, "the level did not start again without the player")
+        survive_wait([host, kept], "done", 2, 600, "in the level that started again")
+        survive_no_end([host, kept])
+    finally:
+        os.kill(gone.proc.pid, signal.SIGCONT)
+        for game in games:
+            game.close()
+    recover = join_test.said(host.report(), "recover")
+    expect(recover and int(recover[0]["reason"]) == SURVIVE_REASONS["gone"], f"host: recover {recover}")
+    said = [line for _, _, line in host.report() if line.startswith("recover")]
+    expect("did not come back" in said[0], f"host: {said[0]}")
+    for game in (host, kept):
+        expect(len(survive_starts(game)) == 2 and survive_starts(game)[1][1] == "Fox,Falco,-,-",
+               f"{game.name}: level starts {survive_starts(game)}")
+    frames = survive_compare([host, kept], 2, SURVIVE_FRAMES)
+    return f"the second client was gone for good: the level started again for the two who stayed, equal on {frames} frames"
 
 
 def sc_resume_three(args, folder):
@@ -5336,7 +5378,7 @@ def sc_names_four(args, folder):
 
 SURVIVE_FRAMES = 600  # frames of the level after a restart that have to hash alike: the intro, from frame 0 on
 SURVIVE_AGAIN_SECONDS = 120  # a level that starts again does so within a second or two; a build without it never
-SURVIVE_REASONS = {"lost": 1, "left": 2, "desync": 3}  # CoopRecoverReason, src/port/coop/session/session.h
+SURVIVE_REASONS = {"lost": 1, "left": 2, "desync": 3, "gone": 4}  # CoopRecoverReason, src/port/coop/session/session.h
 
 
 def survive_run_rows(game, run):
@@ -7324,6 +7366,8 @@ SCENARIOS = {
     "resync": sc_resync,
     "resume": sc_resume,
     "resume_three": sc_resume_three,
+    "resume_early": sc_resume_early,
+    "resume_gone": sc_resume_gone,
     "resume_refused": sc_resume_refused,
     "resync_targets": sc_resync_targets,
     "resync_three": sc_resync_three,
