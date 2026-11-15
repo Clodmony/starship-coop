@@ -312,7 +312,7 @@ another save, for example, parts at frame 0 of every level start.
 5. `SESSION_RECOVER` (and a desync the client completed itself) stops lockstep; the level goes on in that game alone
    until the level start comes. From here on a save and a level start are taken again, once. If none comes within
    `COOP_SESSION_RECOVER_MS`, 40000 ms, the client ends its session ("The host did not start the level again in time").
-6. A client that waits for another player's input leaves that to the host for 40000 ms (`SYNC_CLIENT_STALL_MS`),
+6. A client that waits for another player's input leaves that to the host for 60000 ms (`SYNC_CLIENT_STALL_MS`, 40000 before decision 0016 part A),
    where it used to end the session after 10000 ms: the host drops the silent player, or the connection to the host
    times out.
 7. A client whose connection to the host ends in a level without the host saying that the session is over (a
@@ -442,7 +442,7 @@ in each game, with the local player on its controller and the others idle: that 
 - The host that leaves: the client sees the session end. The host whose connection times out: the client tries to
   come back, and its session ends when it reaches nobody.
 - `COOP_LOCKSTEP_STALL_MS`, 10000 ms, with no frame and no input from a player, on a connection that stays up: the
-  host drops that player as a lost one and names it; a client leaves that to the host for 40000 ms. Before frame 0 it
+  host drops that player as a lost one and names it; a client leaves that to the host for 60000 ms. Before frame 0 it
   is `COOP_LOCKSTEP_START_MS`, 60000 ms, as a slow PC may still be loading.
 - The player reads why in the co-op window, which comes up by itself. So it does while a frame has waited for more than
   a second.
@@ -564,7 +564,9 @@ stood, instead of the level starting again. On by default (`CoopSession_SetResum
    says whom they wait for (`CoopSyncGame_Waiting`), the host's says "Player N lost the connection. Waiting for it to
    come back (30 s)." The host's stall check leaves an away player alone.
 2. **A game that lost its host** keeps its lockstep standing, waiting for the host's input, while it tries to come
-   back; it does not stop lockstep (`recover`) as it did.
+   back; it does not stop lockstep (`recover`) as it did. A try that reaches nobody is made again while the host still
+   keeps the slot. A client that did not drop waits `SYNC_CLIENT_STALL_MS`, 60000 ms, for all this before it ends its
+   session; a session that came back takes `SESSION_RECOVER` and can start a recovery as one in a level.
 3. **Coming back.** The client sends `SESSION_REJOIN` as before. If it lands in the slot it had (the games number their
    players by slot) and no recovery is under way, the host's JOINED event has `resume` and the host sends
    `SYNC_RESUME` (reliable, no run in front: the run is in it) with its run and frame. The client answers

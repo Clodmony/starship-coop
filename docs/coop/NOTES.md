@@ -11693,6 +11693,21 @@ lockstep and the menu. Nothing ran on Windows, on two PCs, in Release, or with a
   equivalent: the timed send makes up for `dirty`), by hand the stall guard, the answer of the host's check, the client's
   check and the menu's pause; five by hand in `menu.c` each failed `coop_menu_test sim`.
 
+- **A read-only review by a second model (Fable 5.2, no build, no run) found eight faults** in the committed version, each
+  fixed, each from reading: (1) and (2) are my own mistake, not a design fault: the stall-clock fix and the join
+  driver's `SF64_COOP_JOIN_TIMEOUT_MS` switch of the faults above had been lost when a mutant script of mine ran
+  `git checkout` on two files with those edits not yet committed, so the commits, the gate on `7ab59440` and the notes
+  above described a `resume_early` that never ran with a 4 s time-out; the review found it by reading, the edits are
+  back and committed, and `resume_early` now shows no `stall:` line in the host's log (the time-out came first). A
+  mutant script has to start from a commit. (3) a client that came back is not "started" (`CoopSession_Recover` failed
+  and `SESSION_RECOVER` was dropped), so a later unrepaired desync ended the session: `s->started || s->rejoin`, and a
+  session sim step; (4) a client that did not drop waited 40 s for the host's level start and the host's own wait is 10 s
+  + 30 s: `SYNC_CLIENT_STALL_MS` is 60 s, with a `_Static_assert` against the sum; (5) a client tried to come back once,
+  for 10 s, so an outage over about 20 s could not use the 30 s wait: it tries again while the wait lasts (menu and join
+  driver; `coop_menu_test sim` `resume` has the second try); (6) `SYNC_RESUME` to a game that never began lockstep called a
+  NULL `sLink.send`; (7) `sResume[]` was not cleared at a level start or a pause; (8) a failed resume showed "Player 256
+  lost the connection ... (15 s)": it has its own line.
+
 **Not tried:** Windows, two PCs, a real connection that drops (not a stopped process), a Release build, a person;
 `SYNC_RESUME` with no answer within 5 s (the timer is read, not exercised); a repair under way when a player is lost
 (read: it ends by its 10 s limit and the level starts again); a loss while the level changes (a map, a level start).
