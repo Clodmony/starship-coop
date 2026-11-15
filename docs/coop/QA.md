@@ -276,7 +276,8 @@ what ran:   lockstep_test.py --only resync,resync_targets,resync_three,resync_tw
 result:     the scripted runs of two to four games on one PC pass: a flipped bit of each kind of value is written back at
             a barrier frame and the hash logs are equal from there to the end of the level run, with no level start; the
             refusal and the second desync within 300 frames take the level start; desync_mutants.py 29 of 29 caught.
-            NOT run: Windows, two PCs, Release, a person; the full test_all.py gate (see the PR). The QA level of the
+            test_all.py --mixed --base-ref origin/issue/combined-test-6 on 30525d40 (the repair with the fixes of a
+            second model's review): PASS, 61/61 steps, 19m10s. NOT run: Windows, two PCs, a person. The QA level of the
             project does not change.
 ```
 
