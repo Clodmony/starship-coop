@@ -1045,7 +1045,18 @@ static u8* PokeTarget(const char* name, char* target, size_t cap) {
     u8* p = NULL;
     const char* what = NULL;
 
-    if (strcmp(name, "effect") == 0) {
+    if (strcmp(name, "live") == 0) {
+        // An actor that is in use, so that what the repair does with its pointers shows (Restore_Info).
+        s32 i;
+
+        for (i = 0; i < ARRAY_COUNT(gActors); i++) {
+            if (gActors[i].obj.status == OBJ_ACTIVE) {
+                p = (u8*) &gActors[i].fwork[29];
+                break;
+            }
+        }
+        what = "gActors[first active].fwork[29]";
+    } else if (strcmp(name, "effect") == 0) {
         p = (u8*) &gEffects[ARRAY_COUNT(gEffects) / 2].unk_60.x;
         what = "gEffects[mid].unk_60.x";
     } else if (strcmp(name, "item") == 0) {

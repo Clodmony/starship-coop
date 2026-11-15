@@ -4844,7 +4844,7 @@ def sc_resync_near(args, folder):
 
 
 # What each target of SF64_COOP_HASH_POKE_TARGET is written back as: the chunk the flipped client names.
-RESYNC_TARGETS = {"effect": "gEffects[", "item": "gItems[", "boss": "gBosses[", "scenery": "gScenery[",
+RESYNC_TARGETS = {"live": "gActors[", "effect": "gEffects[", "item": "gItems[", "boss": "gBosses[", "scenery": "gScenery[",
                   "sprite": "gSprites[", "shot": "gPlayerShots[", "rng": "sRandSeed2", "global": "gGoldRingCount",
                   "perplayer": "gLaserStrength[", "team": "gTeamDamage", "life": "gLifeCount["}
 
@@ -4855,7 +4855,10 @@ def sc_resync_targets(args, folder):
     the client, repaired, equal from the barrier on. The failure of one is named."""
     done = []
     failed = []
+    only = os.environ.get("RESYNC_ONLY")  # a developer's shortcut: one kind, as the name says
     for target, wrote in RESYNC_TARGETS.items():
+        if only and target not in only.split(","):
+            continue
         try:
             line, barrier = resync_run(args, folder / target, target, wrote)
         except Fail as error:
