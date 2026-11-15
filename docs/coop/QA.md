@@ -268,6 +268,21 @@ Newest first. One block per run that matters (a milestone, a release, a QA level
 
 ```
 date:       2026-11-15
+commit:     issue/267-repair (the repair of a desync in place, decision 0016, Proposed) on 07d9207b
+identity:   ROM US 1.0, Linux, GCC 16.2, Debug, OpenGL software renderer
+what ran:   lockstep_test.py --only resync,resync_targets,resync_three,resync_twice,resync_refused,resync_near,resync_lag;
+            --only sim,desync_sim,desync,survive_desync,survive_three,desync_three,handover (the scenarios that look at
+            the level start, now with SF64_COOP_TEST_NO_REPAIR=1); desync_mutants.py; check.py
+result:     the scripted runs of two to four games on one PC pass: a flipped bit of each kind of value is written back at
+            a barrier frame and the hash logs are equal from there to the end of the level run, with no level start; the
+            refusal and the second desync within 300 frames take the level start; desync_mutants.py 29 of 29 caught.
+            test_all.py --mixed --base-ref origin/issue/combined-test-6 on 30525d40 (the repair with the fixes of a
+            second model's review): PASS, 61/61 steps, 19m10s. NOT run: Windows, two PCs, a person. The QA level of the
+            project does not change.
+```
+
+```
+date:       2026-11-15
 commit:     issue/combined-test-6, the merge of issue/357-needle-origin (PR #361) into 7cf293dc
 identity:   ROM US 1.0, Linux, GCC; no game started for this record
 what ran:   git merge --no-ff --no-commit (no conflict: NOTES.md and the tools README merged by git);

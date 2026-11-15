@@ -26,6 +26,12 @@ typedef struct {
     uint8_t run; // the level start's number in its session
 } CoopDesyncGameLink;
 
+// A repair (repair_game.h) put this game back on the host's state before `frame`: the desync found is forgotten, the
+// check is on again from that frame, and a desync that comes later writes a report of its own.
+void CoopDesyncGame_Resync(uint32_t frame);
+// The frame the desync of the last CoopDesyncGame_Check names.
+uint32_t CoopDesyncGame_FoundFrame(void);
+
 void CoopDesyncGame_Init(void);
 
 // Lockstep starts at frame 0 with these players; the rings are allocated here.

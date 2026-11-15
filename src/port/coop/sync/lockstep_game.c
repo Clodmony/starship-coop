@@ -22,6 +22,7 @@
 #include "desync.h"
 #include "desync_game.h"
 #include "lockstep.h"
+#include "repair_game.h"
 
 // src/port/Game.cpp
 extern void Graphics_PushFrame(Gfx* data);
@@ -72,6 +73,7 @@ static uint32_t sOtherRuns = 0;  // messages of another run, dropped
 static bool sStallAsked = false; // host: the session was asked to drop the player this frame waits for
 static uint32_t sQuickParts = 0; // desyncs in a row that came within SYNC_QUICK_FRAMES of their level start
 static int32_t sLastGameState = GSTATE_PLAY; // gGameState on the lockstep frame before this one
+static char sDesyncText[SYNC_DESYNC_TEXT_SIZE]; // client: the desync's line, for when the host makes no repair offer
 
 // Lockstep cannot go on: the log hears why, then the session's owner.
 static void Sync_Fail(const char* text) {
@@ -131,6 +133,12 @@ static void Sync_Start(void) {
     }
     CoopInput_SetLocalSource(&sSource);
     CoopDesyncGame_Begin(&desync, sConfig.self, sConfig.host, sConfig.present, sConfig.delay);
+    {
+        CoopRepairLink repair = { Desync_Send, Dump_Send, sLink.notice, sConfig.host, sConfig.self, sConfig.present,
+                                  sConfig.delay, sRun };
+
+        CoopRepair_Begin(&repair);
+    }
     sState = SYNC_RUNNING;
     sLastGameState = gGameState;
     sSummaryMs = SDL_GetTicks();
@@ -138,26 +146,36 @@ static void Sync_Start(void) {
                   (unsigned) sConfig.delay, (unsigned) sConfig.present, sConfig.host ? "host" : "client");
 }
 
-// A desync that is complete: the session starts the level again for everyone, and where it cannot (WP-23, as it was)
-// the session ends with the text, as with a lost player.
+// A desync that the repair did not take, or none could: the session starts the level again for everyone, and where it
+// cannot (WP-23, as it was) the session ends with the text, as with a lost player.
+static void Sync_Recover(const char* text) {
+    char over[SYNC_DESYNC_TEXT_SIZE + 160];
+
+    // Every game of the session counts the same frames, so they give up on the same desync.
+    sQuickParts = (sLockstep.frame < SYNC_QUICK_FRAMES) ? sQuickParts + 1 : 0;
+    if (sQuickParts >= SYNC_QUICK_PARTS) {
+        snprintf(over, sizeof(over),
+                 "%s The level started again and the games parted again at once, so the session is over, and "
+                 "the level goes on here alone.",
+                 text);
+        Sync_Fail(over);
+    } else if ((sLink.recover == NULL) || !sLink.recover(COOP_SYNC_RECOVER_DESYNC, -1, text)) {
+        snprintf(over, sizeof(over), "%s The session is over, and the level goes on here alone.", text);
+        Sync_Fail(over);
+    }
+}
+
+// A desync that is complete: the games are put in step again where that can be done (repair_game.h), and otherwise the
+// level starts again, as before.
 static void Sync_CheckDesync(void) {
     char text[SYNC_DESYNC_TEXT_SIZE];
 
     if ((sState == SYNC_RUNNING) && CoopDesyncGame_Check(SDL_GetTicks(), text, sizeof(text))) {
-        char over[SYNC_DESYNC_TEXT_SIZE + 160];
-
-        // Every game of the session counts the same frames, so they give up on the same desync.
-        sQuickParts = (sLockstep.frame < SYNC_QUICK_FRAMES) ? sQuickParts + 1 : 0;
-        if (sQuickParts >= SYNC_QUICK_PARTS) {
-            snprintf(over, sizeof(over),
-                     "%s The level started again and the games parted again at once, so the session is over, and "
-                     "the level goes on here alone.",
-                     text);
-            Sync_Fail(over);
-        } else if ((sLink.recover == NULL) || !sLink.recover(COOP_SYNC_RECOVER_DESYNC, -1, text)) {
-            snprintf(over, sizeof(over), "%s The session is over, and the level goes on here alone.", text);
-            Sync_Fail(over);
+        if (CoopRepair_Found(CoopDesyncGame_FoundFrame(), sLockstep.frame, SDL_GetTicks(), text)) {
+            snprintf(sDesyncText, sizeof(sDesyncText), "%s", text);
+            return;
         }
+        Sync_Recover(text);
     }
 }
 
@@ -200,8 +218,38 @@ static bool Sync_FrameIsReady(void) {
         }
         now = SDL_GetTicks();
         CoopLockstep_Tick(&sLockstep, now);
+        if (CoopRepair_OfferExpired(now)) {
+            Sync_Recover(sDesyncText); // the host made no offer: the level starts again, as before
+            if (sState != SYNC_RUNNING) {
+                return true;
+            }
+        }
+        {
+            char late[SYNC_DESYNC_TEXT_SIZE];
+
+            // Past the barrier, or a barrier that is never reached, whatever input is in or missing.
+            if (CoopRepair_Check(sLockstep.frame, now, late, sizeof(late)) < 0) {
+                Sync_Recover(late);
+                return true;
+            }
+        }
         if (CoopLockstep_Waiting(&sLockstep) < 0) {
-            return true;
+            char text[SYNC_DESYNC_TEXT_SIZE];
+            int held = CoopRepair_Hold(sLockstep.frame, now, text, sizeof(text));
+
+            if (held == 0) {
+                return true;
+            }
+            if (held < 0) {
+                Sync_Recover(text);
+                return true;
+            }
+            // Held for a repair: the window answers, the state comes in.
+            if ((now - start) >= SYNC_WAIT_SLICE_MS) {
+                return false;
+            }
+            SDL_Delay(SYNC_WAIT_STEP_MS);
+            continue;
         }
         if (!sWaiting) {
             sWaiting = true;
@@ -366,11 +414,16 @@ void CoopSyncGame_Receive(int peer, uint16_t msgId, const uint8_t* data, uint16_
         CoopDesyncGame_ReceiveDump(peer, data, size, SDL_GetTicks());
         return;
     }
+    // So does the state of a repair (decision 0016).
+    if (msgId == COOP_MSG_SYNC_STATE) {
+        CoopRepair_ReceiveState(peer, data, size);
+        return;
+    }
     // Another game can get to the level first. What it sends before this one is there is dropped, as it repeats it.
     if (sState != SYNC_RUNNING) {
         return;
     }
-    if ((msgId != COOP_MSG_SYNC_INPUT) && !CoopDesync_IsMessage(msgId)) {
+    if ((msgId != COOP_MSG_SYNC_INPUT) && !CoopDesync_IsMessage(msgId) && !CoopRepair_IsMessage(msgId)) {
         return;
     }
     // The run in front: what was sent in the level before a restart is not for this one.
@@ -387,6 +440,12 @@ void CoopSyncGame_Receive(int peer, uint16_t msgId, const uint8_t* data, uint16_
             Sync_Fail("Another player sent a state hash that could not be read, so the session is over.");
         }
         Sync_CheckDesync();
+        return;
+    }
+    if (CoopRepair_IsMessage(msgId)) {
+        if (!CoopRepair_Receive(peer, msgId, data, size, SDL_GetTicks())) {
+            Sync_Fail("Another player sent a repair message that could not be read, so the session is over.");
+        }
         return;
     }
     if (msgId != COOP_MSG_SYNC_INPUT) {
@@ -408,6 +467,7 @@ void CoopSyncGame_Pause(void) {
                       (unsigned) sLockstep.frame, (unsigned) sHeldFrames, (unsigned) sHeldMs);
     }
     CoopDesyncGame_End();
+    CoopRepair_End();
     sState = SYNC_PAUSED;
     sWaiting = false;
 }
@@ -422,6 +482,7 @@ void CoopSyncGame_End(void) {
                       (unsigned) sLockstep.frame, (unsigned) sHeldFrames, (unsigned) sHeldMs);
     }
     CoopDesyncGame_End();
+    CoopRepair_End();
     CoopDesyncGame_DropDump(); // #189: nobody is left to send it, so the log says what is missing
     sQuickParts = 0;
     CoopMath_SetSession(0); // the C library again, as upstream (decision 0011)

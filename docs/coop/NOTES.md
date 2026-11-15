@@ -11591,6 +11591,76 @@ Read at `1ec6c677` (origin/coop). The handshake code is in `src/port/coop/sessio
 - Builds without git get the build id `unknown`, and two of them count as the same build. Two `-dirty` builds of the
   same commit also match, whatever their changes.
 
+### 2026-11-15, #267, the repair of a desync in place (decision 0016): what was built, what it found
+
+Identity: ROM US 1.0, Linux x86-64, GCC 16.2, Debug, OpenGL software renderer, branch `issue/267-repair` on the combined
+test build (`07d9207b`) plus decision 0016. Two to four real games on one PC, `tools/coop/lockstep_test.py` (README row
+`resync`). Nothing ran on Windows, on two PCs, in Release, or with a person playing.
+
+**Observed**
+
+- The desync check, the dump of its frame and the state hash are one set of bytes (`src/port/coop/sync/state_hash.c`,
+  `HashNamedTo`): 397 to 417 chunks, 111,137 bytes in Corneria with two players, 97 parts of `SYNC_STATE`. The restore
+  runs through the same traversal (`CoopStateHash_Restore`), so a variable that is hashed has a restore by construction;
+  what has no way to be written (`sceneChoice`, the voice clock) must be equal already, or the repair is refused.
+- The measurement of 37 earlier desync reports (Corneria, Meteo, Macbeth, Aquas, the map, one Windows against Linux, two
+  to four players): no word equal to `FOREIGN_POINTER` and none tagged as a pointer into a hashed array. The hash clears
+  the pointers it cannot carry (`ObjectInfo`, `Effect.unk_74`, `Player.sfx.srcPos`), so those are not in the dump at all;
+  the repair keeps this game's own for an object that keeps its id, and takes `Object_SetInfo`'s for one that has another.
+- `ObjectInfo.draw`, `.action` and `.hitbox` are set in 91 places outside `Object_SetInfo`
+  (`git grep -nE "info\.(hitbox|action|draw|dList) = " src/engine src/overlays src/sys`), so "follows from the id" is
+  not exact. An object that is new on the client (another id there) gets the pointers of its id, which can differ from
+  what the host's object runs after its own overrides. The hash does not see the pointers, so such a difference shows
+  only if it changes a later frame; then the second desync takes the level start (repair spacing, 300 frames).
+- Real games, `lockstep_test.py`: `resync` repaired a flipped actor bit at lockstep frame 2063 (found at 2013, flipped at
+  2000), 1 chunk (`gActors[59]`), hash logs equal on 1051 frames to the end, no level start, no session end;
+  `resync_targets` repaired a bit of a live actor, an effect, an item, a boss, a scenery, a sprite, a player shot, a random
+  seed, a global, a per-player array, a team array and the lives, each equal after the barrier (206 s);
+  `resync_three` with three and four games (the last client flipped, the others write nothing); `resync_twice`: two
+  desyncs 400 frames apart, both repaired; `resync_refused` and `resync_near`: the level starts again (run 2 equal on its
+  first 600 frames, no session end); `resync_lag`: through the chaos relay `good_wifi`, repaired at frame 2069.
+- A bit of a player's position (`SF64_COOP_HASH_POKE_PLAYER`) is not a persistent flip: the first run of `resync` used
+  it, both games found the desync at frame 2000 and, at the barrier, the client already held the host's value: the repair
+  wrote 0 chunks and the hash matched. The game computes the position again and rounds the bit away. A flip in the last
+  effect slot healed too (effects spawn from the end of the array); the poke now uses the middle one.
+- Mutants, by hand: the actor not written, the restore skipped, an item or a plain value not written, and the object
+  pointers set to NULL (with the `live` target, the client crashed) were each caught by the scenario that has them. The
+  barrier set to the current frame passed `resync` on loopback (a message is there before another frame runs) and failed
+  through the relay: that build took the level start; `resync_lag` is what holds the lead. `desync_mutants.py` has four
+  more for `CoopDesync_Resync`, 29 of 29 caught, after the sim got a case for a batch that was in flight at the repair.
+
+- A read-only review by a second model (Fable 5.2, no build, no run) found five things in the first version, each fixed
+  and each from reading the code, not from a run: a chunk name from the host copied into `char name[96]` (now refused at
+  96 bytes and printable bytes only); an `iwork` word accepted as a pointer without a check (now only what `NormalizeWord`
+  can make, a tagged offset only at an element start); `Restore_Info` keeping NULL pointers for a never-used slot with
+  id 0, the Corneria stone arch, and trusting the pointers of a same-id object although 91 places set them after
+  `Object_SetInfo` (now: kept only for an object in use here, and `SYNC_REPAIRED` carries `CoopStateHash_PointerPrint`,
+  a fingerprint of what the object pointers and hitboxes stand for, which the host compares, `resync_pointers`); a
+  refused restore that had already written the game, `gLevelMode` and `gGameState` included (now checked on a copy
+  first, and those five values are never written); and a client past the barrier that never said so while it waited for
+  input (now `CoopRepair_Check` each time round the wait). **Not tried:** a hostile stream (the parser's lengths and
+  the `iwork` check are read, not exercised by a test), a client past the barrier on a slow link, the values of a player
+  who is down (not in the hash, so they can differ unseen until the player returns).
+
+**Derived**
+
+- A repair needs the barrier ahead of every game when the offer arrives. A game is at most the input delay ahead of the
+  host, so `COOP_REPAIR_LEAD` (30) frames plus two check periods plus the delay cover about 53 frames of transit. At
+  the test speed that is milliseconds; at the game's own speed (30 updates a second, a guess from the frame counts in this
+  file) it is about 1.8 s. A link with more than that lags, and the answer is a refusal and the level start.
+
+**Guesses**
+
+- The overlay statics, level-object progress and audio that the hash does not hold (NOTES, 2026-11-06, "Unknown") stay a
+  limit: a divergence there is repaired in the hashed state and may come back; the second desync inside 300 frames
+  takes the level start, as 0014 says.
+
+**Unknown**
+
+- Windows, two PCs, Release, a real connection; what a person sees and hears at a repair (the co-op window line and
+  the held frame); whether the host's 90-odd parts per client are fast enough on a slow link; a second desync that
+  has its cause in an unhashed value.
+
 ## Prior work
 
 ### 2026-11-01, triage

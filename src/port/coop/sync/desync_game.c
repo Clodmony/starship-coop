@@ -378,6 +378,17 @@ void CoopDesyncGame_ReceiveDump(int peer, const uint8_t* data, uint16_t size, ui
     Dump_Compare();
 }
 
+uint32_t CoopDesyncGame_FoundFrame(void) {
+    return sDesync.frame;
+}
+
+void CoopDesyncGame_Resync(uint32_t frame) {
+    CoopDesync_Resync(&sDesync, frame);
+    sReported = false;
+    sFoundSaid = false;
+    sOn = true;
+}
+
 bool CoopDesyncGame_Check(uint32_t nowMs, char* text, size_t cap) {
     char regions[160];
     char buffer[48];
@@ -442,6 +453,14 @@ void CoopDesyncGame_Begin(const CoopDesyncGameLink* link, int32_t self, bool hos
 void CoopDesyncGame_Frame(uint32_t frame, uint32_t nowMs) {
     (void) frame;
     (void) nowMs;
+}
+
+void CoopDesyncGame_Resync(uint32_t frame) {
+    (void) frame;
+}
+
+uint32_t CoopDesyncGame_FoundFrame(void) {
+    return 0;
 }
 
 bool CoopDesyncGame_Receive(int peer, uint16_t msgId, const uint8_t* data, uint16_t size, uint32_t nowMs) {

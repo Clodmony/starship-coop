@@ -125,7 +125,8 @@ Option 4 stays for later.
 ### B. Repair a desync in place (built first)
 
 1. **When.** The check names a differing frame (#189) in a session of two to four, no game is in the middle of a level
-   start, and the games did not already repair or restart within `SYNC_QUICK_FRAMES` (300) frames. A desync is still
+   start, the level is past frame 60 (`COOP_REPAIR_MIN_FRAME`) and the last repair is 300 frames back
+   (`COOP_REPAIR_SPACING`). A desync is still
    written to the report and the log, as now; the repair does not hide it.
 2. **Who is right.** The host's state. A client that differs gets the host's.
 3. **Barrier.** The host picks a frame `B` that every game is still to reach (the frame it has now plus the input delay, the
@@ -138,7 +139,8 @@ Option 4 stays for later.
    `iwork` words into local addresses (the inverse of `NormalizeWord`). A `FOREIGN_POINTER` in a snapshot, a chunk of an
    unknown name or a size that does not fit refuses the repair.
 5. **Check.** The receiver hashes frame `B` again and sends the total; the host compares it with its own. Equal: both go on.
-   Different, or no answer in `COOP_DESYNC_GRACE_MS`: 0014's level start.
+   Different (the hash, or a fingerprint of what the object pointers stand for, which the hash clears), or no answer in
+   `COOP_REPAIR_MS` (10 s): 0014's level start.
 6. **Limits.** A second parting within 300 frames of a repair is not repaired: it takes the level start, and two partings
    in a row end the session as 0014 item 8 says. A repair per game is counted in the log, and a test run that is not
    about repairs fails on the first one (see Consequences).
@@ -178,9 +180,15 @@ On one Linux PC with real games, as the `survive_*` scenarios of `tools/coop/loc
 ## Consequences
 
 - A short drop and a desync cost a short stop and not the level; the level start of 0014 stays under both.
-- A repair hides a desync from the player, so tests that are not about repairs must fail on one: `lockstep_test.py`,
-  `campaign.py` and `hash_check.py` count repairs and report any as a failure unless the run says it expects one. Without
-  this a repaired session would pass tests that exist to find desyncs.
+- A repair hides a desync from the player, so tests that are not about repairs must fail on one. They do: a repair
+  writes the report of its desync and the hash logs of the two games differ from the flipped value to the barrier, so
+  `lockstep_test.py` (outside its `resync` scenarios, which set the repair on; the others switch it off with
+  `SF64_COOP_TEST_NO_REPAIR`), `campaign.py` and `hash_check.py`, which compare every frame, fail on a repaired
+  session. No tool needed a change.
+- The host can now write any hashed value into a client, where before it could only send pad input. The restore checks
+  sizes, array offsets and object ids, not the meaning of every field; a session is between people who chose to play
+  together. The values of a player who is down are not in the hash, so they can differ unseen and show as a new
+  desync when the player returns (read in the code, not tried); the second desync then takes the level start.
 - A new hashed variable is now also a variable the restore has to write. The hash and the restore live in one place
   (`state_hash.c`) and the mutants above check that they stay in step.
 - Not tried: Windows, a real connection between two PCs, a Release build, a person playing through a repair. State outside
