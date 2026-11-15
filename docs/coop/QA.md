@@ -268,6 +268,17 @@ Newest first. One block per run that matters (a milestone, a release, a QA level
 
 ```
 date:       2026-11-15
+commit:     issue/combined-test-6, the merge of docs/untrusted-content (PR #360) into dee185b8
+identity:   ROM US 1.0, Linux, GCC; no game started for this record
+what ran:   git merge --no-ff --no-commit (no conflict); git diff --cached docs/untrusted-content (empty);
+            python tools/coop/check.py; python tools/coop/injection_scan_test.py (9 scenarios)
+result:     AGENTS.md rule 13, the injection tripwire (tools/coop/injection_scan.py and its test, the step
+            injection-scan) and the "Agent safety" section of MAINTAINING.md. No game code changed, so the gate on
+            0bc99fc4 (59 of 59, 20m33s) holds for the game; the new step runs in the next gate.
+```
+
+```
+date:       2026-11-15
 commit:     issue/combined-test-6, the merge of docs/followup-rule (PR #356) into 0bc99fc4
 identity:   ROM US 1.0, Linux, GCC; no game started for this record
 what ran:   git merge --no-ff --no-commit (no conflict); git diff --cached docs/followup-rule (empty);
