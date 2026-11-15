@@ -544,6 +544,31 @@ static void sc_resync(void) {
     Check(sNodes[0].desync.checked >= before + 1000, "the host went on checking", sNodes[0].desync.checked, before);
     Check(sNodes[1].desync.checked >= 1000, "the client went on checking", sNodes[1].desync.checked, 0);
     Check((sNodes[0].doneMs == 0) && (sNodes[1].doneMs == 0), "done after the repair", 0, 0);
+    // A batch of hashes for frames before the repair that was still on its way is not compared; one of frames after it is.
+    {
+        uint8_t batch[COOP_DESYNC_HASH_HEADER + 8 * 10];
+        int k;
+
+        // A second repair, at frame 2480, so that the frames before it are still in the ring.
+        CoopDesync_Resync(&sNodes[0].desync, 2480);
+        memset(batch, 0xA5, sizeof(batch));
+        batch[0] = (uint8_t) (2460 & 0xFF);
+        batch[1] = (uint8_t) (2460 >> 8);
+        batch[2] = batch[3] = 0;
+        batch[4] = 10;
+        Check(CoopDesync_Receive(&sNodes[0].desync, 0, COOP_MSG_SYNC_HASH, batch, sizeof(batch), sNow),
+              "an old SYNC_HASH was refused", 0, 0);
+        Check(!sNodes[0].desync.found, "a batch of frames before the repair found a desync", 0, sNodes[0].desync.frame);
+        batch[0] = (uint8_t) (2490 & 0xFF); // the node ran to 2500, and its ring holds the last 64 frames
+        batch[1] = (uint8_t) (2490 >> 8);
+        for (k = 0; k < 10; k++) {
+            batch[COOP_DESYNC_HASH_HEADER + 8 * k] = (uint8_t) k;
+        }
+        Check(CoopDesync_Receive(&sNodes[0].desync, 0, COOP_MSG_SYNC_HASH, batch, sizeof(batch), sNow),
+              "a new SYNC_HASH was refused", 0, 0);
+        Check(sNodes[0].desync.found && (sNodes[0].desync.frame == 2490), "a batch of frames after the repair found nothing",
+              0, sNodes[0].desync.frame);
+    }
     // A SYNC_DESYNC of the desync that was repaired, still on its way when the repair happened, is let through and
     // ignored; one of a frame after the repair is a desync.
     memset(message, 0, sizeof(message));
