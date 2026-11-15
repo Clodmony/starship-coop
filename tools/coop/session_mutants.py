@@ -122,8 +122,8 @@ REJOIN_ID = "} else if (!s->started || s->id == 0 || SessionId_Read(net->data) !
 AWAY = "bool away = s->started && end == COOP_SESSION_END_TIMEOUT && s->id != 0;"
 AWAY_OVER = "if (s->away[i].on && nowMs - s->away[i].since >= Session_RejoinMs(s)) {"
 RESTART_RUN = "s->level.run = (run != 0) ? run : 1;"
-RECOVER_CALL = "if (!s->started || reason < COOP_RECOVER_LOST || reason >= COOP_RECOVER_REASONS) {"
-RECOVER_GATE = "if (s->client == CLIENT_ACTIVE && s->started && net.msgId == COOP_MSG_SESSION_RECOVER) {"
+RECOVER_CALL = "if (!(s->started || s->rejoin) || reason < COOP_RECOVER_LOST || reason >= COOP_RECOVER_REASONS) {"
+RECOVER_GATE = "if (s->client == CLIENT_ACTIVE && (s->started || s->rejoin) && net.msgId == COOP_MSG_SESSION_RECOVER) {"
 RECOVER_READ = ("if (net->size != 2 || net->data[0] < COOP_RECOVER_LOST || net->data[0] >= COOP_RECOVER_REASONS ||")
 AWAIT_OVER = "if (s->awaiting && nowMs - s->awaitSince >= COOP_SESSION_RECOVER_MS) {"
 SIM = ["sim"]
@@ -730,7 +730,8 @@ BREAKS = [
     ("kick_keeps_character", "s->roster.character[slot] = COOP_CHARACTER_NO_PLAYER;\n", "", SIM),
     ("kick_unsaid", "left.away = away;\n    Host_OweEvent(s, &left);", "left.away = away;", SIM),
     ("kick_no_recovery", "Host_RecoverBegin(s, away ? COOP_RECOVER_LOST : COOP_RECOVER_LEFT, (uint8_t) slot);\n", "", SIM),
-    ("recover_call_before_level", RECOVER_CALL, RECOVER_CALL.replace("!s->started || ", ""), SIM),
+    ("recover_call_before_level", RECOVER_CALL, RECOVER_CALL.replace("!(s->started || s->rejoin) || ", ""), SIM),
+    ("recover_call_rejoined_out", RECOVER_CALL, RECOVER_CALL.replace("(s->started || s->rejoin)", "s->started"), SIM),
     ("recover_call_reason_0", RECOVER_CALL, RECOVER_CALL.replace("reason < COOP_RECOVER_LOST || ", ""), SIM),
     ("recover_call_reason_high", RECOVER_CALL, RECOVER_CALL.replace(" || reason >= COOP_RECOVER_REASONS", ""), SIM),
     ("recover_call_host_alone", "        if (Host_JoinedCount(s) == 0 && !Host_AnyAway(s)) {\n            return false;",
@@ -751,7 +752,8 @@ BREAKS = [
     ("recover_text_no_wait", "(int) player + 1, COOP_SESSION_REJOIN_MS / 1000);", "(int) player + 1, 0);", SIM),
     ("recover_text_left_as_parted", "        case COOP_RECOVER_LEFT:\n            snprintf(", "        case 99:\n            snprintf(",
      SIM),
-    ("client_recover_before_level", RECOVER_GATE, RECOVER_GATE.replace("s->started && ", ""), SIM),
+    ("client_recover_before_level", RECOVER_GATE, RECOVER_GATE.replace("(s->started || s->rejoin) && ", ""), SIM),
+    ("client_recover_rejoined_out", RECOVER_GATE, RECOVER_GATE.replace("(s->started || s->rejoin)", "s->started"), SIM),
     ("client_recover_off", RECOVER_GATE, "if (0) {", SIM),
     ("client_recover_any_size", RECOVER_READ, RECOVER_READ.replace("net->size != 2 || ", "net->size < 2 || "), SIM),
     ("client_recover_reason_0", RECOVER_READ, RECOVER_READ.replace("net->data[0] < COOP_RECOVER_LOST || ", ""), SIM),
