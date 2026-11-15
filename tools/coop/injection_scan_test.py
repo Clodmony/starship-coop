@@ -17,6 +17,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import injection_scan  # noqa: E402
 
+# The log of the owner is not test data: every match this test makes goes to a log of its own, also the ones made in this process.
+DEFAULT_LOG = Path(os.path.expanduser("~/.claude/injection-tripwire.log"))
+os.environ["INJECTION_SCAN_LOG"] = str(Path(tempfile.mkdtemp(prefix="injection-scan-test-")) / "tripwire.log")
+
 TOOL = Path(__file__).resolve().parent / "injection_scan.py"
 
 FLAGGED = {
@@ -129,6 +133,18 @@ def long_page_is_cut():
     return None if not injection_scan.scan(text)[0] else "scanned past the limit"
 
 
+def the_owners_log_is_left_alone():
+    def state():
+        return (DEFAULT_LOG.stat().st_size, DEFAULT_LOG.stat().st_mtime_ns) if DEFAULT_LOG.exists() else None
+
+    before = state()
+    for name in ("classic", "leak", "role tag"):
+        injection_scan.hook(hook_event(FLAGGED[name]))
+    with tempfile.TemporaryDirectory() as tmp:
+        run_hook(hook_event(FLAGGED["classic"]), Path(tmp) / "other.log")
+    return None if state() == before else "a test wrote to the owner's own tripwire log"
+
+
 SCENARIOS = {
     "flagged texts": flagged_texts,
     "harmless texts": harmless_texts,
@@ -138,6 +154,7 @@ SCENARIOS = {
     "broken input never fails": broken_input_never_fails,
     "an unwritable log still warns": unwritable_log_still_warns,
     "a very long page is cut": long_page_is_cut,
+    "the owner's log is left alone": the_owners_log_is_left_alone,
 }
 
 
