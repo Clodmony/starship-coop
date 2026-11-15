@@ -245,6 +245,24 @@ bool CoopLockstep_Receive(CoopLockstep* l, int peer, const uint8_t* data, uint16
     return true;
 }
 
+void CoopLockstep_Reopen(CoopLockstep* l, int link) {
+    CoopLockstepLink* to;
+    int32_t player;
+
+    if ((link < 0) || (link >= COOP_NET_MAX_PEERS)) {
+        return;
+    }
+    to = &l->links[link];
+    for (player = 0; player < COOP_PLAYERS_MAX; player++) {
+        // Not the peer's own frames: a host holds all of them by definition, and a client refuses its own input back.
+        if (player != Link_Player(l, link)) {
+            to->next[player] = 0;
+        }
+    }
+    to->dirty = to->open;
+    to->sentMs = 0;
+}
+
 int32_t CoopLockstep_StalledOn(const CoopLockstep* l, uint32_t nowMs) {
     uint32_t limit = (l->frame == 0) ? COOP_LOCKSTEP_START_MS : COOP_LOCKSTEP_STALL_MS;
 

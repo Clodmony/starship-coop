@@ -70,6 +70,7 @@ typedef struct {
     uint8_t player;
     bool away;
     uint32_t diff;
+    bool resume; // JOINED: the player is back in its own slot
 } Queued;
 
 #define QUEUE_SIZE 16
@@ -99,6 +100,7 @@ struct CoopSession {
     uint64_t id;            // host: set by the owner; client: from the welcome
     CoopLevelStart restart; // host: what a recovery starts
     bool recovering;        // host: clients have been told, and the new level start has not gone out yet
+    bool resume;            // host: a lost player's slot is kept for COOP_SESSION_RESUME_MS, and nothing starts again
     uint8_t recoverReason;
     uint8_t recoverPlayer;
     Away away[COOP_SESSION_PLAYERS];
@@ -468,12 +470,19 @@ const char* CoopSession_EndText(CoopSessionEnd end) {
 void CoopSession_RecoverText(uint8_t reason, uint8_t player, char* out, size_t cap) {
     switch (reason) {
         case COOP_RECOVER_LOST:
+            if (player == 0xFF) { // nobody to wait for: a player came back and its game could not go on where it was
+                snprintf(out, cap, "A player came back, but its game could not go on where it was. Starting the level again together.");
+                break;
+            }
             snprintf(out, cap,
                      "Player %d lost the connection. Waiting for it to come back (%d s), then the level starts again.",
                      (int) player + 1, COOP_SESSION_REJOIN_MS / 1000);
             break;
         case COOP_RECOVER_LEFT:
             snprintf(out, cap, "Player %d left. Starting the level again together.", (int) player + 1);
+            break;
+        case COOP_RECOVER_GONE:
+            snprintf(out, cap, "Player %d did not come back. Starting the level again together.", (int) player + 1);
             break;
         default:
             snprintf(out, cap, "The games parted. Starting the level again together.");
@@ -679,6 +688,10 @@ static int Host_JoinedCount(const CoopSession* s) {
     return count;
 }
 
+static uint32_t Session_RejoinMs(const CoopSession* s) {
+    return s->resume ? COOP_SESSION_RESUME_MS : COOP_SESSION_REJOIN_MS;
+}
+
 static bool Host_AnyAway(const CoopSession* s) {
     int i;
 
@@ -730,7 +743,10 @@ static void Host_Left(CoopSession* s, int peer, CoopSessionEnd end, CoopSessionE
         Host_RosterChanged(s);
     }
     if (s->started) {
-        if (Host_JoinedCount(s) > 0 || Host_AnyAway(s)) {
+        if (away && s->resume) {
+            // Nothing starts again while the slot is kept: the games stand where they are, and the player comes back
+            // into the level (Host_Rejoin), or the wait ends (Host_AwayExpiry).
+        } else if (Host_JoinedCount(s) > 0 || Host_AnyAway(s)) {
             Host_RecoverBegin(s, away ? COOP_RECOVER_LOST : COOP_RECOVER_LEFT, (uint8_t) (peer + 1));
         } else {
             s->recovering = false;
@@ -775,7 +791,7 @@ static bool Host_Recovery(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) 
         }
     }
     for (i = 1; i < COOP_SESSION_PLAYERS; i++) {
-        if (s->away[i].on && nowMs - s->away[i].since >= COOP_SESSION_REJOIN_MS) {
+        if (s->away[i].on && nowMs - s->away[i].since >= Session_RejoinMs(s)) {
             s->away[i].on = false;
             s->roster.character[i] = COOP_CHARACTER_NO_PLAYER;
             Host_RosterChanged(s);
@@ -794,6 +810,33 @@ static bool Host_Recovery(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) 
         return false;
     }
     Host_Restart(s);
+    return false;
+}
+
+// A session that resumes: the wait for a player who was lost is over, and it is gone for good. The others start the level
+// again, if there are any (RECOVER says so); with nobody left the owner ends the session on the LEFT event. True if ev
+// was filled in.
+static bool Host_AwayExpiry(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) {
+    int i;
+
+    if (!s->resume || s->recovering) {
+        return false;
+    }
+    for (i = 1; i < COOP_SESSION_PLAYERS; i++) {
+        if (!s->away[i].on || (nowMs - s->away[i].since) < Session_RejoinMs(s)) {
+            continue;
+        }
+        s->away[i].on = false;
+        s->roster.character[i] = COOP_CHARACTER_NO_PLAYER;
+        Host_RosterChanged(s);
+        if (Host_JoinedCount(s) > 0 || Host_AnyAway(s)) {
+            Host_RecoverBegin(s, COOP_RECOVER_GONE, (uint8_t) i);
+        }
+        Event_Init(ev, COOP_SESSION_EV_LEFT, i - 1);
+        ev->end = COOP_SESSION_END_TIMEOUT;
+        ev->text = CoopSession_EndText(COOP_SESSION_END_TIMEOUT);
+        return true;
+    }
     return false;
 }
 
@@ -816,6 +859,7 @@ static bool Host_OwedEvent(CoopSession* s, CoopSessionEvent* ev) {
             ev->playerIndex = q->player;
             ev->diff = q->diff;
             ev->rejoined = true;
+            ev->resume = q->resume;
             CoopIdentity_Describe(q->diff, &s->local, &s->peers[q->peer].identity, s->text, sizeof(s->text));
             ev->text = s->text;
             break;
@@ -945,7 +989,9 @@ static void Host_Rejoin(CoopSession* s, int peer, const CoopNetEvent* net, uint3
             s->away[slot].on = true;
             s->away[slot].since = nowMs;
             Host_OweEvent(s, &left);
-            Host_RecoverBegin(s, COOP_RECOVER_LOST, (uint8_t) slot);
+            if (!s->resume) {
+                Host_RecoverBegin(s, COOP_RECOVER_LOST, (uint8_t) slot);
+            }
         }
         if (slot == 0 || !s->away[slot].on) {
             refuse = COOP_SESSION_REFUSE_STARTED;
@@ -955,6 +1001,9 @@ static void Host_Rejoin(CoopSession* s, int peer, const CoopNetEvent* net, uint3
         Host_Refuse(s, peer, refuse, nowMs, ev);
         return;
     }
+    // A game that came back in the slot it had can go on where it was; one that took another slot cannot, as the games
+    // number their players by slot.
+    q.resume = s->resume && !s->recovering && (slot == target);
     if (slot != target) {
         uint8_t other = s->roster.character[target];
         Away kept = s->away[target];
@@ -973,6 +1022,9 @@ static void Host_Rejoin(CoopSession* s, int peer, const CoopNetEvent* net, uint3
     s->peers[peer].state = PEER_JOINED;
     Host_PlayerNamesChanged(s); // the new connection starts from no names at all (#258)
     Host_RosterChanged(s);
+    if (s->resume && !s->recovering && !q.resume) {
+        Host_RecoverBegin(s, COOP_RECOVER_LOST, (uint8_t) target); // another slot: the level starts again
+    }
     Host_OweEvent(s, &q);
     Host_OwedEvent(s, ev);
 }
@@ -1106,12 +1158,22 @@ bool CoopSession_Kick(CoopSession* s, int peer, uint32_t nowMs) {
     }
     left.away = away;
     Host_OweEvent(s, &left);
-    Host_RecoverBegin(s, away ? COOP_RECOVER_LOST : COOP_RECOVER_LEFT, (uint8_t) slot);
+    if (!(away && s->resume)) { // a session that resumes waits for the player instead (Host_Left)
+        Host_RecoverBegin(s, away ? COOP_RECOVER_LOST : COOP_RECOVER_LEFT, (uint8_t) slot);
+    }
     return true;
 }
 
+void CoopSession_SetResume(CoopSession* s, bool on) {
+    s->resume = s->isHost && on;
+}
+
+bool CoopSession_IsAway(const CoopSession* s, int32_t player) {
+    return s->isHost && (player >= 1) && (player < COOP_SESSION_PLAYERS) && s->away[player].on;
+}
+
 bool CoopSession_Recover(CoopSession* s, uint8_t reason, uint32_t nowMs) {
-    if (!s->started || reason < COOP_RECOVER_LOST || reason >= COOP_RECOVER_REASONS) {
+    if (!(s->started || s->rejoin) || reason < COOP_RECOVER_LOST || reason >= COOP_RECOVER_REASONS) {
         return false;
     }
     nowMs = Session_Clock(s, nowMs);
@@ -1139,7 +1201,7 @@ static bool Host_Poll(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) {
 
     Host_SendOwed(s);
     if (Host_OwedEvent(s, ev) || Host_RosterEvent(s, ev) || Host_LevelEvent(s, ev) || Host_Tick(s, nowMs, ev) ||
-        Host_Recovery(s, nowMs, ev)) {
+        Host_Recovery(s, nowMs, ev) || Host_AwayExpiry(s, nowMs, ev)) {
         return true;
     }
     while (s->t->ops->poll(s->t, &net)) {
@@ -1479,7 +1541,7 @@ static bool Client_Poll(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) {
                     Client_Roster(s, &net, ev);
                     return true;
                 }
-                if (s->client == CLIENT_ACTIVE && s->started && net.msgId == COOP_MSG_SESSION_RECOVER) {
+                if (s->client == CLIENT_ACTIVE && (s->started || s->rejoin) && net.msgId == COOP_MSG_SESSION_RECOVER) {
                     Client_Recover(s, &net, nowMs, ev);
                     return true;
                 }

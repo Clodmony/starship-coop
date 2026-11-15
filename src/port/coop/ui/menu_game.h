@@ -32,6 +32,10 @@ void CoopMenuGame_SessionEnded(void);
 // HANDOVER from another game that ends the session (#189) ends it here too, through CoopMenu_Fail.
 void CoopMenuGame_Message(int peer, uint16_t msgId, const uint8_t* data, uint16_t size);
 uint32_t CoopMenuGame_Waiting(int32_t* player);
+// Decision 0016 part A: the menu's backend asks whether a lost player comes back into the level where it was, and, on
+// the host, tells the games that one did.
+bool CoopMenuGame_ResumeOn(void);
+bool CoopMenuGame_Resume(int peer);
 // CoopMenuBackend.handover: lockstep ends first, so its last lines go along, then the handover (handover_game.h).
 void CoopMenuGame_Handover(CoopSession* s, bool leaving);
 // CoopMenuBackend.recover: lockstep stops until the session starts the level again (CoopSyncGame_Pause).

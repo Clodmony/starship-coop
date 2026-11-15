@@ -28,6 +28,10 @@ extern "C" {
 // this long for a player whose connection was lost to come back with the session id, then starts the level with whoever
 // is there.
 #define COOP_SESSION_REJOIN_MS 15000
+// The same in a session that resumes (CoopSession_SetResume, decision 0016 part A): a player whose connection was lost
+// and whose game is alive comes back into the level where it was, so the wait is longer, and nothing starts again until
+// it is over.
+#define COOP_SESSION_RESUME_MS 30000
 // A client that has been told, or has seen, that the level cannot go on waits this long for the host's new level
 // start, then ends its session as before. More than the transport's time-out plus the host's wait for another player.
 #define COOP_SESSION_RECOVER_MS 40000
@@ -80,6 +84,7 @@ typedef enum {
     COOP_RECOVER_LOST = 1, // a player's connection was lost; the host waits COOP_SESSION_REJOIN_MS for it
     COOP_RECOVER_LEFT,     // a player left, or was dropped because it sent no input
     COOP_RECOVER_DESYNC,   // the games parted (WP-23)
+    COOP_RECOVER_GONE,     // a player did not come back within COOP_SESSION_RESUME_MS (a session that resumes)
     COOP_RECOVER_REASONS,
 } CoopRecoverReason;
 
@@ -118,6 +123,7 @@ typedef struct {
     uint8_t reason; // RECOVER: a CoopRecoverReason; playerIndex is the player it is about, 0xFF for nobody
     bool away;      // LEFT, host, in a level: the connection was lost, and the slot is kept for COOP_SESSION_REJOIN_MS
     bool rejoined;  // JOINED: a player of this session came back (host), or we did (client)
+    bool resume;    // JOINED, host, rejoined: the player is in the slot it had, and the level can go on where it was
 } CoopSessionEvent;
 
 typedef struct CoopSession CoopSession;
@@ -159,6 +165,13 @@ void CoopSession_SetRestart(CoopSession* s, const CoopLevelStart* start);
 // host's, COOP_SESSION_RECOVER_MS at most; then ENDED with NO_RECOVERY. A RECOVER event follows. False, and nothing
 // changes, outside a level, and on a host with no client: then the session ends as before.
 bool CoopSession_Recover(CoopSession* s, uint8_t reason, uint32_t nowMs);
+// Host, decision 0016 part A: a player whose connection is lost keeps its slot for COOP_SESSION_RESUME_MS and nobody is
+// told to start again meanwhile; if it comes back in the slot it had, JOINED has `resume` and the owner lets the games
+// go on where they stood (CoopSyncGame_ResumeClient); in another slot, or when the wait is over, the level starts again
+// as before (RECOVER). Off by default; the owner sets it before the first client joins.
+void CoopSession_SetResume(CoopSession* s, bool on);
+// Host: the player's connection was lost and its slot is kept (LEFT with `away` was the event).
+bool CoopSession_IsAway(const CoopSession* s, int32_t player);
 // Host, in a level: the client at `peer` stopped sending input, so it is dropped as a connection that timed out is:
 // its slot is kept for COOP_SESSION_REJOIN_MS if the session has an id (LEFT with `away` and RECOVER follow), and
 // without an id it is gone and the others start again. False, and nothing changes, if that would leave a host without

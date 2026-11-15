@@ -268,6 +268,20 @@ Newest first. One block per run that matters (a milestone, a release, a QA level
 
 ```
 date:       2026-11-15
+commit:     issue/267-resume (the resume after a drop, decision 0016 part A, Proposed) on issue/267-repair
+identity:   ROM US 1.0, Linux, GCC 16.2, Debug, OpenGL software renderer
+what ran:   lockstep_test.py --only resume,resume_early,resume_three,resume_refused,resume_gone; coop_session_test sim
+            (host_resume), coop_lockstep_test (reopen), coop_menu_test sim (resume); session_mutants.py 456/456,
+            lockstep_mutants.py 23/23; test_all.py --mixed --base-ref origin/issue/combined-test-6 on 7ab59440:
+            PASS, 61/61 steps, 17m24s
+result:     a client stopped for 33 s (past the transport time-out and the host's 10 s without input) comes back into
+            its slot and the level goes on where it stood: equal on every frame, no level start. In another slot, with
+            a no, or when the wait of 30 s is over, the level starts again. NOT run: Windows, two PCs, a real connection
+            that drops (a stopped process stands in), Release, a person. The QA level of the project does not change.
+```
+
+```
+date:       2026-11-15
 commit:     issue/267-repair (the repair of a desync in place, decision 0016, Proposed) on 07d9207b
 identity:   ROM US 1.0, Linux, GCC 16.2, Debug, OpenGL software renderer
 what ran:   lockstep_test.py --only resync,resync_targets,resync_three,resync_twice,resync_refused,resync_near,resync_lag;

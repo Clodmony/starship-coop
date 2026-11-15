@@ -102,25 +102,33 @@ Desync:
 Options 3 and 2, in that order (the owner's answer of 2026-11-15: the repair first); 1 stays as the fallback of both.
 Option 4 stays for later.
 
-### A. Resume after a drop (built second)
+### A. Resume after a drop (built second; what was built, PR of 2026-11-15)
 
-1. **When.** A client's link ends in a level, the host's game and the client's game are both alive and in the same run,
-   and the client comes back with the session id inside `COOP_SESSION_REJOIN_MS` (30 s, the owner's answer 1; 15 s in 0014).
-2. **Telling the others.** The host does not send `SESSION_RECOVER` at the first loss. The other clients are told, by one
-   notice, that a player is away and for how long; their games stop where they are, as lockstep does by itself. The
-   co-op window and the log carry one line: "Player 2 lost the connection. Waiting for it to come back (30 s)."
-   `SESSION_RECOVER` goes out only when the window ends, as now.
-3. **Coming back.** The host answers `SESSION_REJOIN` as it does now and adds the run and the frame it stands at. The
-   client compares them with its own; if its game is in the same run and within the ring of the host's frame, it answers
-   that it can resume, and both reopen their lockstep link for that player with the record of what the peer holds reset
-   (`CoopLockstep` gets one new call for it). If not, the client says so and the host takes today's path (level start,
-   run + 1). The client decides, because it knows its own state.
-4. **The check goes on.** Hashes lost in the gap are frames unchecked (`desync.h:10-11`); nothing is resent. A desync report
-   exchange that was under way when the link ended ends that way: the resume is not offered and the level starts again.
-5. **Stall.** While a player is away inside the window the host does not ask the session to drop it for a missing
-   input (`Sync_Stalled`); the window is the one limit.
+1. **When.** A client's connection times out in a level, or it sends no input for `COOP_LOCKSTEP_STALL_MS` (10 s, the
+   host drops it as lost), the host's and the client's game are both alive, and the client comes back with the session id
+   inside `COOP_SESSION_RESUME_MS` (30 s, the owner's answer 1; 15 s without resume, as in 0014). A session that resumes
+   is a flag of the host's session (`CoopSession_SetResume`), on by default in the game, off with
+   `SF64_COOP_TEST_NO_RESUME`, so every test of the old behaviour stays as it was.
+2. **Telling the others.** Changed from the first draft, which wanted a new notice: nothing starts again at the first
+   loss, so no `SESSION_RECOVER` goes out. Every game stops where it is, as lockstep does by itself, and the window the
+   game already has ("waiting for player N", `CoopSyncGame_Waiting`) says whom the others wait for; the host's window and
+   log say "Player N lost the connection. Waiting for it to come back (30 s)." When the wait ends, `SESSION_RECOVER`
+   goes out with a new reason 4, "Player N did not come back. Starting the level again together." (protocol 12).
+3. **Coming back.** The client comes back as it did (`SESSION_REJOIN`) and its game keeps its lockstep standing while it
+   does, where it stopped lockstep before. If it lands in the slot it had and no recovery is under way, the host asks its
+   game, `SYNC_RESUME`: its run and frame. The client answers `SYNC_RESUMED`: yes if its game is in that run, within half
+   the input ring of that frame and no repair is under way. Both then reopen their lockstep link
+   (`CoopLockstep_Reopen`: what the peer confirmed is forgotten, but not the peer's own stream, which a client refuses
+   back) and the frames flow. In another slot, a no, no answer in 5 s, or a loss with nobody left to start for, the
+   level starts again as in 0014. A player's slot is its player index in the running level, which is why another slot
+   cannot resume: the first loss of two clients who then come back the other way round takes the level start.
+4. **The check goes on.** Hashes lost in the gap are frames unchecked (`desync.h:10-11`); nothing is resent. A repair
+   under way when a player is lost ends by its time limit (10 s) and the level starts again.
+5. **Stall.** The host's check of a missing input (`Sync_Stalled`) leaves a player who is away alone, and one it has
+   just asked to go on (its stall clock starts over when it asks): a first version of this asked a player to go on and
+   dropped it again at once, from a clock that still held the wait.
 6. **Strictness.** The state hash and the desync check are not loosened (0014 rule 7). A resumed session has equal logs
-   on every frame, or the test fails.
+   on every frame, or the scenario fails.
 
 ### B. Repair a desync in place (built first)
 

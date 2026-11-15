@@ -82,6 +82,11 @@ bool CoopLockstep_Receive(CoopLockstep* l, int peer, const uint8_t* data, uint16
 void CoopLockstep_Tick(CoopLockstep* l, uint32_t nowMs);
 
 // The player we have waited too long for, -1 if we have not.
+// The connection to the peer behind `link` was lost and a new one stands there (decision 0016 part A): what that peer
+// confirmed is forgotten, so everything it lacks goes out again from what the ring still holds. Nothing else changes: the
+// frames both games ran are the same, since neither ran on without the other's input.
+void CoopLockstep_Reopen(CoopLockstep* l, int link);
+
 int32_t CoopLockstep_StalledOn(const CoopLockstep* l, uint32_t nowMs);
 
 #ifdef __cplusplus

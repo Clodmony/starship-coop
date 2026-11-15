@@ -117,6 +117,10 @@ bool CoopRepair_IsMessage(uint16_t msgId) {
     return (msgId == COOP_MSG_SYNC_REPAIR) || (msgId == COOP_MSG_SYNC_STATE) || (msgId == COOP_MSG_SYNC_REPAIRED);
 }
 
+bool CoopRepair_Busy(void) {
+    return sR.on || sR.offerWait;
+}
+
 uint32_t CoopRepair_Count(void) {
     return sR.count;
 }
@@ -499,6 +503,10 @@ void CoopRepair_ReceiveState(int peer, const uint8_t* data, uint16_t size) {
     (void) peer;
     (void) data;
     (void) size;
+}
+
+bool CoopRepair_Busy(void) {
+    return false;
 }
 
 uint32_t CoopRepair_Count(void) {
