@@ -395,7 +395,7 @@ class Client(join_test.LevelLog):
 
 
 def session(args, folder, host_env=None, client_env=None, both=None, config=None, client_config=None, client_port=None,
-            clients=1, client_envs=None, replay_frames=REPLAY_FRAMES, saves=None, repair=False):
+            clients=1, client_envs=None, replay_frames=REPLAY_FRAMES, saves=None, repair=False, resume=False):
     """A host and its clients through the join driver, on their way to a level. Returns them started: with one client as
     (host, client), with more as (host, client, client, ...). client_envs holds one more dict per client. saves maps a
     game's name (host, client0, ...) to a save file that goes into its folder before it starts: a game holds a blank
@@ -405,6 +405,10 @@ def session(args, folder, host_env=None, client_env=None, both=None, config=None
     port_file = folder / "port"
     env = dict(both or {})
     env["SF64_COOP_TEST_START_SEEDS"] = SEEDS
+    if not resume:
+        # A player who is lost and comes back starts the level again for everyone (decision 0014), which the scenarios of
+        # the lost player look at; only the scenarios of the resume (decision 0016 part A, `resume`) let it go on.
+        env["SF64_COOP_TEST_NO_RESUME"] = "1"
     if not repair:
         # A desync starts the level again (decision 0014), which is what the scenarios that provoke one look at; only the
         # scenarios of the repair (decision 0016, `resync`) let the games put themselves in step again.
@@ -4878,6 +4882,106 @@ def sc_resync_targets(args, folder):
     return f"{len(done)} kinds repaired and equal after it: {', '.join(done)}"
 
 
+def lockstep_frames(game):
+    """The frames this game's hash log holds so far."""
+    try:
+        return len(game.rows()[2])
+    except (OSError, ValueError, IndexError):
+        return 0
+
+
+def resume_run(args, folder, clients=1, frozen=0, freeze_s=33, refuse=False, wait_after=300, resumes=True):
+    """Decision 0016 part A. A session of 1 + `clients` games in a level; client `frozen` stops dead (SIGSTOP) for
+    `freeze_s` seconds, which is longer than the transport's time-out of 30 s (the host keeps its slot) and shorter than
+    the wait for it, then goes on. It comes back with the session id into the slot it had, and the level goes on where it
+    stood: every game's hash log is equal on every frame, to the end, and no level starts again, no session ends and no
+    desync is found. With `refuse` the client's game says it cannot go on: the level starts again for everyone."""
+    expect(IS_LINUX, "needs SIGSTOP")
+    folder.mkdir(parents=True, exist_ok=True)
+    feed = folder / "feed.txt"
+    write_feed(feed, 4 * SHORT_FRAMES, sway)
+    envs = [{} for _ in range(clients)]
+    if refuse:
+        envs[frozen] = {"SF64_COOP_TEST_RESUME_REFUSE": "1"}
+    games = session(args, folder, both={"SF64_COOP_LOCKSTEP_FEED": str(feed),
+                                        "SF64_COOP_LOCKSTEP_END": str(SURVIVE_FRAMES)},
+                    clients=clients, client_envs=envs, resume=True)
+    host = games[0]
+    gone = games[1 + frozen]
+    try:
+        wait_for(list(games), "done", 900, "before the freeze")
+        at = lockstep_frames(host)
+        os.kill(gone.proc.pid, signal.SIGSTOP)
+        time.sleep(freeze_s)
+        os.kill(gone.proc.pid, signal.SIGCONT)
+        if refuse:
+            survive_wait(games, "again", 1, SURVIVE_AGAIN_SECONDS, "after the thaw: the level did not start again")
+            survive_wait(games, "done", 2, 600, "in the level that started again")
+        else:
+            deadline = time.monotonic() + 180
+            while any(lockstep_frames(game) < at + wait_after for game in games):
+                expect(time.monotonic() < deadline, f"the level did not go on after the thaw: "
+                       f"{[lockstep_frames(game) for game in games]} frames of {at + wait_after}")
+                for game in games:
+                    expect(game.proc.poll() is None, f"{game.name} ended with code {game.proc.returncode}")
+                time.sleep(1)
+        survive_no_end(games)
+        time.sleep(2)
+    finally:
+        os.kill(gone.proc.pid, signal.SIGCONT)
+        for game in games:
+            game.close()
+    left = join_test.said(host.report(), "left")
+    expect(len(left) == 1 and left[0]["away"] == "1", f"host: the lost player's slot was not kept: {left}")
+    back = [v for v in join_test.said(gone.report(), "joined") if v.get("rejoined") == "1"]
+    expect(len(back) == 1 and back[0]["player"] == str(1 + frozen), f"the client did not come back in its slot: {back}")
+    if refuse:
+        for game in games:
+            expect(survive_starts(game)[-1][0] == 2 and len(survive_starts(game)) == 2,
+                   f"{game.name}: level starts {survive_starts(game)}")
+        recover = join_test.said(host.report(), "recover")
+        expect(recover and int(recover[0]["reason"]) == SURVIVE_REASONS["lost"], f"host: recover {recover}")
+        return survive_compare(games, 2, SURVIVE_FRAMES)
+    resumed = [v for v in join_test.said(host.report(), "resume")]
+    expect(len(resumed) == 1 and resumed[0]["player"] == str(1 + frozen), f"the host did not resume player {frozen + 2}: {resumed}")
+    for game in games:
+        expect(len(survive_starts(game)) == 1, f"{game.name}: level starts {survive_starts(game)}")
+        expect(not join_test.said(game.sync(), "again"), f"{game.name}: the level started again")
+        expect(not join_test.said(game.report(), "recover"), f"{game.name} was told to start again")
+    no_desync(games)
+    host_names, _, ours = host.rows()
+    equal = None
+    for game in games[1:]:
+        _, _, theirs = game.rows()
+        n = min(len(ours), len(theirs)) - 2
+        expect(n >= at + wait_after - 5, f"{game.name}: only {n} frames to compare, the freeze was at {at}")
+        difference = join_test.first_difference(host_names, ours[:n], theirs[:n])
+        expect(difference is None, f"{game.name} and the host differ at {difference}")
+        equal = n if equal is None else min(equal, n)
+    return equal
+
+
+def sc_resume(args, folder):
+    """Decision 0016 part A: a client stops dead for 33 s (past the transport's time-out of 30 s), comes back with the
+    session id into the slot it had, and the level goes on where it stood: equal on every frame, no level start."""
+    frames = resume_run(args, folder)
+    return f"the client was gone for 33 s and came back into the level where it stood; equal on {frames} frames, no level start"
+
+
+def sc_resume_three(args, folder):
+    """Decision 0016 part A with three games: the second client stops dead for 33 s; the host and the first client stand
+    still meanwhile, and all three go on equal on every frame."""
+    frames = resume_run(args, folder, clients=2, frozen=1)
+    return f"three games, player 3 gone for 33 s and back; equal on {frames} frames, no level start"
+
+
+def sc_resume_refused(args, folder):
+    """Decision 0016 part A, the fallback: the client's game says it cannot go on (SF64_COOP_TEST_RESUME_REFUSE), and the
+    level starts again for both from the host's state."""
+    frames = resume_run(args, folder, refuse=True)
+    return f"the client refused to go on, the level started again and both hash alike on {frames} frames"
+
+
 def sc_desync_three(args, folder):
     """The second client flips the bit: the host and it name players 1 and 3, the first client hears it from the host."""
     poke = JOIN_FRAME + 300
@@ -7218,6 +7322,9 @@ SCENARIOS = {
     "rates": sc_rates,
     "desync": sc_desync,
     "resync": sc_resync,
+    "resume": sc_resume,
+    "resume_three": sc_resume_three,
+    "resume_refused": sc_resume_refused,
     "resync_targets": sc_resync_targets,
     "resync_three": sc_resync_three,
     "resync_lag": sc_resync_lag,

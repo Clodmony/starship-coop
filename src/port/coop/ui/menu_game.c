@@ -112,6 +112,9 @@ static bool Link_Recover(int32_t reason, int32_t player, const char* text) {
     if (reason == COOP_SYNC_RECOVER_STALL) {
         return (sMenu->phase == COOP_MENU_HOSTING) && CoopSession_Kick(sMenu->session, player - 1, now);
     }
+    if (reason == COOP_SYNC_RECOVER_RESUME) {
+        return CoopSession_Recover(sMenu->session, COOP_RECOVER_LOST, now);
+    }
     return CoopSession_Recover(sMenu->session, COOP_RECOVER_DESYNC, now);
 }
 
@@ -146,8 +149,21 @@ static void Link_Notice(const char* text) {
     }
 }
 
-static const CoopSyncLink sLink = { Link_Send,     Link_Pump,     Link_Fail,    Link_Identity,
-                                    Link_Recover,  Link_Entering, Link_Notice };
+// Host: is this player's connection lost with its slot kept (decision 0016 part A)?
+static bool Link_Away(int32_t player) {
+    return (sMenu->session != NULL) && CoopSession_IsAway(sMenu->session, player);
+}
+
+bool CoopMenuGame_ResumeOn(void) {
+    return CoopSyncGame_ResumeOn();
+}
+
+bool CoopMenuGame_Resume(int peer) {
+    return CoopSyncGame_ResumeClient(peer);
+}
+
+static const CoopSyncLink sLink = { Link_Send,    Link_Pump,     Link_Fail,   Link_Identity,
+                                    Link_Recover, Link_Entering, Link_Notice, Link_Away };
 
 void CoopMenuGame_EnterLevel(const CoopLevelStart* start) {
     CoopSave_Enter(start->save); // the host's progress for the session, until CoopSyncGame_End (decision 0009 item 8)

@@ -17,6 +17,7 @@ Left out, because no test can tell them from the original:
 - Link_Send: the cut at COOP_LOCKSTEP_RING, for the same reason.
 - CoopLockstep_Receive: `dirty` for the other clients. The next timed send passes the frames on all the same.
 - CoopLockstep_Receive: `confirmed > from->next[player]`. Going backwards only repeats frames.
+- CoopLockstep_Reopen: `dirty`. The timed send, COOP_LOCKSTEP_RESEND_MS later, passes the frames on all the same.
 - CoopLockstep_Receive: `size < HEADER_SIZE`. Without it a short message is still refused, after a read past its end that
   only a sanitizer sees. The sim's messages sit in a larger buffer, so one would not see it here either.
 """
@@ -60,6 +61,9 @@ BREAKS = [
      "if ((count > COOP_LOCKSTEP_BLOCK_FRAMES) ||", SIM),
     ("long_block_taken", "if ((count == 0) || (count > COOP_LOCKSTEP_BLOCK_FRAMES) ||", "if ((count == 0) ||", SIM),
     ("unused_link_taken", "|| !l->links[peer].open || (size < HEADER_SIZE)) {", "|| (size < HEADER_SIZE)) {", SIM),
+    # Decision 0016 part A: a link that stands again
+    ("reopen_resets_own_stream", "        if (player != Link_Player(l, link)) {\n            to->next[player] = 0;\n        }",
+     "        to->next[player] = 0;", SIM),
 ]
 
 

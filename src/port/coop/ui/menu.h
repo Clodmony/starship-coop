@@ -62,6 +62,12 @@ typedef struct {
     // The level cannot go on as it is and the session will start it again, or this game lost its host and is trying to
     // come back: stop lockstep and keep the session's state until enterLevel or sessionEnded.
     void (*recover)(void);
+    // Decision 0016 part A, both optional, NULL for none: whether a player whose connection is lost comes back into the
+    // level where it was (the session keeps its slot for COOP_SESSION_RESUME_MS and nobody starts the level again
+    // meanwhile; a game that lost its host keeps its lockstep standing instead of stopping it); and, on the host, the
+    // player at `peer` came back in the slot it had: ask its game to go on. False: the level starts again.
+    bool (*resumeOn)(void);
+    bool (*resume)(int peer);
 } CoopMenuBackend;
 
 typedef struct {

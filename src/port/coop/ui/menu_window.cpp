@@ -36,7 +36,7 @@ const CoopMenuBackend kBackend = { CoopNetSdl_Host,           CoopNetSdl_Connect
                                    CoopIdentity_FromGame,     CoopMenuGame_Level,   CoopMenuGame_EnterLevel,
                                    CoopMenuGame_SessionEnded, CoopMenuGame_Message, CoopMenuGame_Waiting,
                                    CoopMenuGame_Handover,     CoopNames_Set,        CoopSessionId_New,
-                                   CoopMenuGame_Recover };
+                                   CoopMenuGame_Recover,      CoopMenuGame_ResumeOn, CoopMenuGame_Resume };
 
 CoopMenu sMenu;
 char sAddress[COOP_MENU_ADDRESS_SIZE];

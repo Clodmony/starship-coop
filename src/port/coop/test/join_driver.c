@@ -156,6 +156,9 @@ static void Session_Open(void) {
         if ((sSession != NULL) && (Env_Text("SF64_COOP_JOIN_NO_ID") == NULL)) {
             CoopSession_SetId(sSession, CoopSessionId_New());
         }
+        if (sSession != NULL) {
+            CoopSession_SetResume(sSession, CoopSyncGame_ResumeOn()); // decision 0016 part A, as the menu has it
+        }
     } else {
         char host[256];
         const char* colon = strrchr(sConnect, ':');
@@ -317,6 +320,8 @@ static bool Link_Recover(int32_t reason, int32_t player, const char* text) {
     }
     if (reason == COOP_SYNC_RECOVER_STALL) {
         taken = (sPortFile != NULL) && CoopSession_Kick(sSession, player - 1, now);
+    } else if (reason == COOP_SYNC_RECOVER_RESUME) {
+        taken = CoopSession_Recover(sSession, COOP_RECOVER_LOST, now);
     } else {
         taken = CoopSession_Recover(sSession, COOP_RECOVER_DESYNC, now);
     }
@@ -333,7 +338,12 @@ static void Link_Entering(const CoopLevelStart* start) {
     }
 }
 
-static const CoopSyncLink sLink = { Link_Send, Session_Pump, Link_Fail, Link_Identity, Link_Recover, Link_Entering };
+static bool Link_Away(int32_t player) {
+    return (sSession != NULL) && CoopSession_IsAway(sSession, player);
+}
+
+static const CoopSyncLink sLink = { Link_Send,    Session_Pump,  Link_Fail, Link_Identity,
+                                    Link_Recover, Link_Entering, NULL,      Link_Away };
 
 // As the menu has it (menu.c, Menu_Rejoin): the connection to the host went in a level, without the host saying that
 // the session is over, so this game goes back on a new connection as the player it was. True if that is under way.
@@ -360,7 +370,9 @@ static bool Session_Rejoin(CoopSessionEnd end) {
     CoopIdentity_FromGame(&id);
     sSession = CoopSession_Rejoin(t, &id, SDL_GetTicks(), sessionId, sCharacter);
     sRejoining = true;
-    CoopSyncGame_Pause();
+    if (!CoopSyncGame_ResumeOn()) {
+        CoopSyncGame_Pause(); // as the menu has it: a game that resumes keeps its lockstep standing
+    }
     Report("rejoin frame=%u character=%s", (unsigned) sFrame, Character_Word(sCharacter));
     return sSession != NULL;
 }
@@ -394,9 +406,19 @@ static void Session_Event(const CoopSessionEvent* ev) {
         case COOP_SESSION_EV_JOINED:
             if (sPortFile != NULL) {
                 sJoined++;
+                if (ev->rejoined && ev->resume) {
+                    // As the menu has it: the player is back in its own slot, and its game is asked to go on.
+                    Report("resume player=%u frame=%u", ev->playerIndex, (unsigned) sFrame);
+                    if (!CoopSyncGame_ResumeClient(ev->peer)) {
+                        CoopSession_Recover(sSession, COOP_RECOVER_LOST, SDL_GetTicks());
+                    }
+                }
             } else {
                 Report("joined player=%u rejoined=%d", ev->playerIndex, (int) ev->rejoined);
                 sSelf = ev->playerIndex;
+                if (ev->rejoined && CoopSyncGame_ResumeOn()) {
+                    sRejoining = false; // back in the session: the host says whether the level goes on or starts again
+                }
                 if (!ev->rejoined) {
                     Pick_Next();
                 }
@@ -410,7 +432,7 @@ static void Session_Event(const CoopSessionEvent* ev) {
             Report("left away=%d text=%s", (int) ev->away, ev->text);
             // A level needs every player, as the menu has it: the session starts it again for those who stay, and
             // with nobody left it is over.
-            if (sEntered && !CoopSession_Recovering(sSession)) {
+            if (sEntered && !CoopSession_Recovering(sSession) && !(ev->away && CoopSyncGame_ResumeOn())) {
                 Link_Fail(ev->text);
             }
             break;

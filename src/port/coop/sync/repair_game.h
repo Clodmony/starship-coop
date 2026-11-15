@@ -76,6 +76,9 @@ bool CoopRepair_Receive(int peer, uint16_t msgId, const uint8_t* data, uint16_t 
 // SYNC_STATE, as it came.
 void CoopRepair_ReceiveState(int peer, const uint8_t* data, uint16_t size);
 
+// A repair is under way in this game (offered or heard of, not finished).
+bool CoopRepair_Busy(void);
+
 // Repairs made in this run, and in all (for the log and the tests).
 uint32_t CoopRepair_Count(void);
 

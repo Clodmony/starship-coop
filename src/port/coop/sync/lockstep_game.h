@@ -45,11 +45,15 @@ typedef struct {
     // One line for the player: the games parted and are put in step again (decision 0016). May be NULL; the co-op log
     // has the line either way.
     void (*notice)(const char* text);
+    // Host: the connection of this player was lost and its slot is kept (CoopSession_IsAway). May be NULL.
+    bool (*away)(int32_t player);
 } CoopSyncLink;
 
 // Reasons of CoopSyncLink.recover.
 #define COOP_SYNC_RECOVER_DESYNC 1
 #define COOP_SYNC_RECOVER_STALL 2
+// Host: a player came back and its game could not go on where it was (`player` is it), or did not answer.
+#define COOP_SYNC_RECOVER_RESUME 3
 
 void CoopSyncGame_Init(void);
 
@@ -58,6 +62,16 @@ void CoopSyncGame_Init(void);
 // start's number in its session (CoopLevelStart.run): every sync message carries it in front, and one of another run
 // is dropped, so nothing of the level before a restart is taken for the level after it.
 void CoopSyncGame_Begin(const CoopSyncLink* link, const uint8_t* roster, int32_t self, bool host, uint8_t run);
+
+// Decision 0016 part A. True unless SF64_COOP_TEST_NO_RESUME is set: the owner turns CoopSession_SetResume on with it and
+// keeps the lockstep going when this game's connection to the host is lost, so that the game can go on where it was.
+bool CoopSyncGame_ResumeOn(void);
+// Host: the client at `peer` came back in the slot it had (JOINED with `resume`): ask its game to go on where it stands.
+// The client answers whether it can. False if lockstep is not running here: the owner then has the level start again.
+// When the client cannot, or does not answer within COOP_SYNC_RESUME_MS, CoopSyncLink.recover is asked with
+// COOP_SYNC_RECOVER_RESUME.
+bool CoopSyncGame_ResumeClient(int peer);
+#define COOP_SYNC_RESUME_MS 5000
 
 // The level cannot go on as it is and the session is going to start it again (a RECOVER event): lockstep stops, input
 // goes back to the local controller and the level goes on in this game until the new level start comes, as after
