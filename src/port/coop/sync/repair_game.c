@@ -18,7 +18,7 @@
 
 #define STATE_PARTS_PER_HOLD 16
 #define REPAIR_SIZE 8
-#define REPAIRED_SIZE 13
+#define REPAIRED_SIZE 21 // result, hash, fingerprint of the pointers, barrier
 #define TEXT_SIZE 256
 
 typedef struct {
@@ -27,6 +27,7 @@ typedef struct {
     bool answered;
     bool ok;
     uint64_t total;
+    uint64_t print;
 } Target;
 
 static struct {
@@ -34,6 +35,7 @@ static struct {
     CoopRepairLink link;
     bool off;           // SF64_COOP_TEST_NO_REPAIR
     bool refuse;        // SF64_COOP_TEST_REPAIR_REFUSE: a client that cannot write the state it is sent
+    bool badPrint;      // SF64_COOP_TEST_REPAIR_PRINT: a client whose object pointers differ after the write
     uint32_t barrier;   // the frame every game holds at
     uint32_t found;     // the frame the desync check named
     uint32_t sinceMs;   // when the repair began, for the time limit
@@ -44,6 +46,7 @@ static struct {
     uint8_t* stream;
     uint32_t size;
     uint64_t total;
+    uint64_t print; // the host's PointerPrint at the barrier
     Target targets[COOP_NET_MAX_PEERS];
     // Client: what comes in, and the wait for an offer.
     CoopDesyncDumpIn in;
@@ -100,6 +103,7 @@ void CoopRepair_Begin(const CoopRepairLink* link) {
     Repair_Clear();
     sR.link = *link;
     sR.off = (off != NULL) && (off[0] != '\0');
+    sR.badPrint = (getenv("SF64_COOP_TEST_REPAIR_PRINT") != NULL) && (getenv("SF64_COOP_TEST_REPAIR_PRINT")[0] != '\0');
     sR.refuse = (getenv("SF64_COOP_TEST_REPAIR_REFUSE") != NULL) && (getenv("SF64_COOP_TEST_REPAIR_REFUSE")[0] != '\0');
     sR.lastFrame = 0;
     sR.count = 0;
@@ -208,12 +212,13 @@ bool CoopRepair_Receive(int peer, uint16_t msgId, const uint8_t* data, uint16_t 
             return false;
         }
         t = &sR.targets[peer];
-        if (!sR.on || !t->used || (Get32(&data[9]) != sR.barrier)) {
+        if (!sR.on || !t->used || (Get32(&data[17]) != sR.barrier)) {
             return true; // not of this repair
         }
         t->answered = true;
         t->ok = data[0] == 0;
         t->total = Get64(&data[1]);
+        t->print = Get64(&data[9]);
         return true;
     }
     return true;
@@ -232,6 +237,7 @@ static int Fail(char* text, size_t cap, const char* format, ...) {
     va_start(args, format);
     vsnprintf(text, cap, format, args);
     va_end(args);
+    CoopLog_Write(COOP_LOG_DESYNC, false, "repair failed: %s", text);
     Repair_Clear();
     return -1;
 }
@@ -271,6 +277,7 @@ static int Hold_Host(uint32_t nowMs, char* text, size_t cap) {
             return Fail(text, cap, "The state of the game did not fit the repair.");
         }
         sR.total = hash.total;
+        sR.print = CoopStateHash_PointerPrint();
         for (p = 0; p < COOP_NET_MAX_PEERS; p++) {
             if (sR.targets[p].used) {
                 CoopDesyncDump_OutBegin(&sR.targets[p].out, sR.link.run, sR.barrier, (uint8_t) sR.link.self, sR.stream,
@@ -306,6 +313,12 @@ static int Hold_Host(uint32_t nowMs, char* text, size_t cap) {
             return Fail(text, cap, "Player %d's game could not take the state of the host, so the level starts again.",
                         p + 2);
         }
+        if ((t->total == sR.total) && (t->print != sR.print)) {
+            return Fail(text, cap,
+                        "Player %d's game holds other pointers for its objects after the repair, so the level starts "
+                        "again.",
+                        p + 2);
+        }
         if (t->total != sR.total) {
             return Fail(text, cap,
                         "Player %d's game still differs after the repair (hash %016llx, the host's %016llx), so the "
@@ -333,7 +346,7 @@ static int Hold_Client(uint32_t nowMs, char* text, size_t cap) {
     if (sR.in.refused) {
         memset(answer, 0, sizeof(answer));
         answer[0] = 1;
-        Put32(&answer[9], sR.barrier);
+        Put32(&answer[17], sR.barrier);
         sR.link.send(0, COOP_MSG_SYNC_REPAIRED, answer, sizeof(answer), COOP_NET_RELIABLE);
         return Fail(text, cap, "The state of the host could not be read, so the level starts again.");
     }
@@ -353,7 +366,7 @@ static int Hold_Client(uint32_t nowMs, char* text, size_t cap) {
     if (sR.refuse || !CoopStateHash_Restore(sR.in.stream, sR.in.size, why, sizeof(why), &written)) {
         memset(answer, 0, sizeof(answer));
         answer[0] = 1;
-        Put32(&answer[9], sR.barrier);
+        Put32(&answer[17], sR.barrier);
         sR.link.send(0, COOP_MSG_SYNC_REPAIRED, answer, sizeof(answer), COOP_NET_RELIABLE);
         CoopLog_Write(COOP_LOG_DESYNC, false, "repair at frame %u refused: %s", (unsigned) sR.barrier, why);
         return Fail(text, cap, "The state of the host does not fit this game (%s), so the level starts again.", why);
@@ -361,12 +374,35 @@ static int Hold_Client(uint32_t nowMs, char* text, size_t cap) {
     CoopStateHash_Compute(&hash);
     answer[0] = 0;
     Put64(&answer[1], hash.total);
-    Put32(&answer[9], sR.barrier);
+    Put64(&answer[9], CoopStateHash_PointerPrint() ^ (sR.badPrint ? 1u : 0u));
+    Put32(&answer[17], sR.barrier);
     if (!sR.link.send(0, COOP_MSG_SYNC_REPAIRED, answer, sizeof(answer), COOP_NET_RELIABLE)) {
         return Fail(text, cap, "The answer to the host could not be sent, so the level starts again.");
     }
     CoopLog_Write(COOP_LOG_DESYNC, false, "repaired at frame %u: %u chunks written (%s), hash now %016llx",
                   (unsigned) sR.barrier, (unsigned) written, why, (unsigned long long) hash.total);
+    return 0;
+}
+
+int CoopRepair_Check(uint32_t frame, uint32_t nowMs, char* text, size_t cap) {
+    if (!sR.on) {
+        return 0;
+    }
+    if (frame > sR.barrier) {
+        if (!sR.link.host) {
+            uint8_t answer[REPAIRED_SIZE];
+
+            memset(answer, 0, sizeof(answer));
+            answer[0] = 1;
+            Put32(&answer[17], sR.barrier);
+            sR.link.send(0, COOP_MSG_SYNC_REPAIRED, answer, sizeof(answer), COOP_NET_RELIABLE);
+        }
+        return Fail(text, cap, "This game was past the frame of the repair (%u, at %u), so the level starts again.",
+                    (unsigned) sR.barrier, (unsigned) frame);
+    }
+    if ((frame < sR.barrier) && ((nowMs - sR.sinceMs) >= COOP_REPAIR_MS * 2)) {
+        return Fail(text, cap, "The repair did not get to its frame in time, so the level starts again.");
+    }
     return 0;
 }
 
@@ -388,7 +424,7 @@ int CoopRepair_Hold(uint32_t frame, uint32_t nowMs, char* text, size_t cap) {
 
             memset(answer, 0, sizeof(answer));
             answer[0] = 1;
-            Put32(&answer[9], sR.barrier);
+            Put32(&answer[17], sR.barrier);
             sR.link.send(0, COOP_MSG_SYNC_REPAIRED, answer, sizeof(answer), COOP_NET_RELIABLE);
         }
         return Fail(text, cap, "This game was past the frame of the repair (%u, at %u), so the level starts again.",
@@ -432,6 +468,14 @@ bool CoopRepair_Found(uint32_t frame, uint32_t now, uint32_t nowMs, const char* 
 bool CoopRepair_OfferExpired(uint32_t nowMs) {
     (void) nowMs;
     return false;
+}
+
+int CoopRepair_Check(uint32_t frame, uint32_t nowMs, char* text, size_t cap) {
+    (void) frame;
+    (void) nowMs;
+    (void) text;
+    (void) cap;
+    return 0;
 }
 
 int CoopRepair_Hold(uint32_t frame, uint32_t nowMs, char* text, size_t cap) {

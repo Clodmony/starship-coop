@@ -572,11 +572,21 @@ games can. The host decides; the code is `src/port/coop/sync/repair_game.c`, the
    fields the hash clears (object pointers, what follows the camera) left as this game has them and an object whose id
    differs given the pointers the game sets for that id. A chunk that cannot be written (a pointer outside the hashed
    arrays, an effect 394 that has to be made, a value with no variable), a chunk missing on either side or one of another
-   size refuses the repair. The client answers `SYNC_REPAIRED` with the hash of its state now.
-5. **The end.** The host waits for every client. All written and every hash the host's own: the desync check starts over
+   size refuses the repair. The stream is checked on a copy first, and written only if every chunk fits, so a refusal
+   changes nothing; the values that say which part of the game this is (`gGameState`, `gPlayState`, `gLevelMode`,
+   `gCurrentLevel`, `gCamCount`) are never written, they have to be equal. The client answers `SYNC_REPAIRED` with the
+   hash of its state now and a fingerprint of what the object pointers stand for (`CoopStateHash_PointerPrint`: for every
+   object in use, whether `action`, `draw` and `hitbox` are what the game sets for its id, and the hitbox's boxes), since
+   the hash clears those pointers.
+5. **The end.** The host waits for every client. All written and every hash and pointer fingerprint the host's own: the desync check starts over
    from `B` on every game (frames before `B` are not compared any more, in what peers sent before or send after) and the
    frame runs. A refusal, another hash, or `COOP_REPAIR_MS` (10 s) without an answer: the level starts again as in
    Recovery. A report of the desync is written either way, and one line in the co-op log and the co-op window.
+
+A game past the barrier says so at once, whatever input it waits for. **Trust:** a client writes what the host sends
+into its own state, so the host can now put any value into any hashed variable (before, it could only send pad input).
+The restore checks sizes, array offsets and the object ids it reads, not the meaning of every field; a session is
+between people who chose to play together (decision 0002).
 
 What does not fit: `SYNC_REPAIR` from a client or of another size, `SYNC_REPAIRED` from the host or of another size, end
 the session. `SYNC_STATE` of another run or frame, or when no offer was made, is dropped.
@@ -680,7 +690,7 @@ Nothing is passed on: with three players a client gets the host's report, the ho
 | 0x0043 | `SYNC_DUMP` | both | a part of the sender's dump of the desync frame, see Desync check | #189 |
 | 0x0044 | `SYNC_REPAIR` | host to client | u8 run, u32 barrier frame, u32 frame of the desync: the games hold at the barrier and the host sends its state, see Repair | #267 |
 | 0x0045 | `SYNC_STATE` | host to client | a part of the host's state at the barrier frame (the stream of `SYNC_DUMP`), see Repair | #267 |
-| 0x0046 | `SYNC_REPAIRED` | client to host | u8 run, u8 result (0 written, 1 refused), u64 hash of the state now, u32 barrier frame, see Repair | #267 |
+| 0x0046 | `SYNC_REPAIRED` | client to host | u8 run, u8 result (0 written, 1 refused), u64 hash of the state now, u64 fingerprint of the object pointers, u32 barrier frame, see Repair | #267 |
 | 0x0080 | `HANDOVER` | both | u8 kind (1 `BEGIN`, 2 `FILE_START`, 3 `FILE_DATA`, 4 `DONE`, 5 `BYE`), then its fields, see Handover | #189 |
 | 0x00C0 | `TEST_RELIABLE` | both | test pattern, only sent by `coop_net_test` | WP-20 |
 | 0x00C1 | `TEST_UNRELIABLE` | both | test pattern, only sent by `coop_net_test` | WP-20 |

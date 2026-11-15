@@ -169,6 +169,7 @@ typedef struct {
 static struct {
     bool active;
     bool failed;
+    bool dry; // first pass: everything is checked on a copy, nothing is written
     char why[RESTORE_WHY];
     RestoreChunk* chunks;
     uint32_t count;
@@ -232,6 +233,23 @@ static void Restore_One(const char* name, int32_t index, const void* data, size_
         snprintf(sRestore.names[sRestore.written], sizeof(sRestore.names[0]), "%s[%d]", name, (int) index);
     }
     sRestore.written++;
+    if (sRestore.dry) {
+        // The same write on a copy, so that a stream that does not fit changes nothing here.
+        if (dest != NULL) {
+            void* copy = malloc(size);
+
+            if (copy == NULL) {
+                Restore_Fail("no memory to check %s[%d]", name, index);
+                return;
+            }
+            memcpy(copy, dest, size);
+            Restore_Write(kind, copy, c->bytes, size, name, index);
+            free(copy);
+        } else if (size != sizeof(int32_t)) {
+            Restore_Fail("%s[%d] is not one number", name, index);
+        }
+        return;
+    }
     Restore_Write(kind, dest, c->bytes, size, name, index);
 }
 
@@ -266,6 +284,8 @@ static void HashNamed(uint64_t* h, const char* name, int32_t index, const void* 
     HashNamedTo(h, name, index, data, size, NULL, K_NONE);
 }
 
+// What says which level and part this is: a repair never writes it, the games have to be there already.
+#define HASH_VAR_EQUAL(h, var) HashNamed((h), #var, -1, &(var), sizeof(var))
 #define HASH_VAR(h, var) HashNamedTo((h), #var, -1, &(var), sizeof(var), &(var), K_RAW)
 
 // One value per team member, beyond gTeamShields, that the simulation reads. WP-17 puts human players in these slots.
@@ -598,12 +618,12 @@ static void HashSave(uint64_t* h) {
 }
 
 static void HashGlobals(uint64_t* h) {
-    HASH_VAR(h, gGameState);
+    HASH_VAR_EQUAL(h, gGameState);
     HASH_VAR(h, gNextGameStateTimer);
-    HASH_VAR(h, gPlayState);
-    HASH_VAR(h, gLevelMode);
-    HASH_VAR(h, gCamCount);
-    HASH_VAR(h, gCurrentLevel);
+    HASH_VAR_EQUAL(h, gPlayState);
+    HASH_VAR_EQUAL(h, gLevelMode);
+    HASH_VAR_EQUAL(h, gCamCount);
+    HASH_VAR_EQUAL(h, gCurrentLevel);
     HASH_VAR(h, gLevelPhase);
     HASH_VAR(h, gLevelType);
     HASH_VAR(h, gMissionStatus);
@@ -637,7 +657,14 @@ static void HashGlobals(uint64_t* h) {
 // ---- Restore (decision 0016): the repair of a desync writes the host's state back through the same traversal ----
 
 // The inverse of NormalizeWord: a value that names a place in a hashed array becomes the address of that place here.
-// False for the marker of a pointer that points anywhere else, which nothing here can rebuild.
+// False for what NormalizeWord cannot have made (a stream from another PC is untrusted: a number above 32 bits that is not
+// a negative one and names no array, an offset that is not the start of an element) and for the marker of a pointer that
+// points anywhere else, which nothing here can rebuild.
+static const size_t sRangeElement[RANGE_COUNT] = {
+    sizeof(Player), sizeof(Actor), sizeof(Boss),       sizeof(Effect),     sizeof(Item),
+    sizeof(Scenery), sizeof(Sprite), sizeof(Scenery360), sizeof(PlayerShot),
+};
+
 static bool Restore_Word(uint64_t value, uintptr_t* out) {
     uint64_t tag = value >> 56;
 
@@ -647,20 +674,28 @@ static bool Restore_Word(uint64_t value, uintptr_t* out) {
     if ((tag >= 1) && (tag <= RANGE_COUNT)) {
         uint64_t offset = value & 0x00FFFFFFFFFFFFFFULL;
 
-        if ((sRanges[tag - 1].size == 0) || (offset >= sRanges[tag - 1].size)) {
+        if ((sRanges[tag - 1].size == 0) || (offset >= sRanges[tag - 1].size) ||
+            ((offset % sRangeElement[tag - 1]) != 0)) {
             return false;
         }
         *out = sRanges[tag - 1].base + (uintptr_t) offset;
         return true;
     }
+    if ((value > 0xFFFFFFFFULL) && ((value >> 32) != 0xFFFFFFFFULL)) {
+        return false;
+    }
     *out = (uintptr_t) value;
     return true;
 }
 
-// What ClearInfoPointers took out. An object that keeps its id keeps its own pointers; one that has another id here
-// gets what the game sets for that id (the hash holds the id, and says the pointers follow from it).
-static void Restore_Info(ObjectInfo* now, const ObjectInfo* before, s16 idNow, s16 idBefore, u8 statusNow) {
-    if ((idNow == idBefore) || (statusNow == OBJ_FREE) || ((u32) idNow >= OBJ_ID_MAX)) {
+// What ClearInfoPointers took out. An object that is in use here and keeps its id keeps its own pointers; a free slot of
+// this game, or an object with another id, gets what the game sets for that id (the hash holds the id, and says the
+// pointers follow from it; SYNC_REPAIRED carries a fingerprint of what they stand for, since 91 places set them after
+// Object_SetInfo). An object that is free in the stream keeps what this game has.
+static void Restore_Info(ObjectInfo* now, const ObjectInfo* before, s16 idNow, s16 idBefore, u8 statusNow,
+                         u8 statusBefore) {
+    if ((statusNow == OBJ_FREE) || ((u32) idNow >= OBJ_ID_MAX) ||
+        ((idNow == idBefore) && (statusBefore != OBJ_FREE))) {
         now->draw = before->draw;
         now->action = before->action;
         now->hitbox = before->hitbox;
@@ -736,7 +771,7 @@ static void Restore_Write(RestoreKind kind, void* dest, const uint8_t* in, size_
                 }
                 a->iwork[k] = word;
             }
-            Restore_Info(&a->info, &before.info, a->obj.id, before.obj.id, a->obj.status);
+            Restore_Info(&a->info, &before.info, a->obj.id, before.obj.id, a->obj.status, before.obj.status);
             RESTORE_VIEW(a, &before);
             if (a->obj.id == OBJ_ACTOR_SX_SLIPPY) {
                 a->obj.rot.x = (before.obj.id == OBJ_ACTOR_SX_SLIPPY) ? before.obj.rot.x : 0.0f;
@@ -753,7 +788,7 @@ static void Restore_Write(RestoreKind kind, void* dest, const uint8_t* in, size_
             }
             before = *b;
             memcpy(b, in, sizeof(Boss));
-            Restore_Info(&b->info, &before.info, b->obj.id, before.obj.id, b->obj.status);
+            Restore_Info(&b->info, &before.info, b->obj.id, before.obj.id, b->obj.status, before.obj.status);
             RESTORE_VIEW(b, &before);
             return;
         }
@@ -766,10 +801,10 @@ static void Restore_Write(RestoreKind kind, void* dest, const uint8_t* in, size_
             }
             before = *e;
             memcpy(e, in, sizeof(Effect));
-            Restore_Info(&e->info, &before.info, e->obj.id, before.obj.id, e->obj.status);
+            Restore_Info(&e->info, &before.info, e->obj.id, before.obj.id, e->obj.status, before.obj.status);
             RESTORE_VIEW(e, &before);
             // A display list only effect 394 reads; it cannot be made from the id.
-            if ((e->obj.id == before.obj.id) || (e->obj.status == OBJ_FREE)) {
+            if (((e->obj.id == before.obj.id) && (before.obj.status != OBJ_FREE)) || (e->obj.status == OBJ_FREE)) {
                 e->unk_74 = before.unk_74;
             } else if (e->obj.id == OBJ_EFFECT_394) {
                 Restore_Fail("%s[%d] is an effect that has to be created, not copied", name, index);
@@ -788,7 +823,7 @@ static void Restore_Write(RestoreKind kind, void* dest, const uint8_t* in, size_
             }
             before = *it;
             memcpy(it, in, sizeof(Item));
-            Restore_Info(&it->info, &before.info, it->obj.id, before.obj.id, it->obj.status);
+            Restore_Info(&it->info, &before.info, it->obj.id, before.obj.id, it->obj.status, before.obj.status);
             RESTORE_VIEW(it, &before);
             if (it->obj.id == OBJ_ITEM_METEO_WARP) {
                 it->obj.rot.y = (before.obj.id == OBJ_ITEM_METEO_WARP) ? before.obj.rot.y : 0.0f;
@@ -804,7 +839,7 @@ static void Restore_Write(RestoreKind kind, void* dest, const uint8_t* in, size_
             }
             before = *sc;
             memcpy(sc, in, sizeof(Scenery));
-            Restore_Info(&sc->info, &before.info, sc->obj.id, before.obj.id, sc->obj.status);
+            Restore_Info(&sc->info, &before.info, sc->obj.id, before.obj.id, sc->obj.status, before.obj.status);
             RESTORE_VIEW(sc, &before);
             return;
         }
@@ -817,7 +852,7 @@ static void Restore_Write(RestoreKind kind, void* dest, const uint8_t* in, size_
             }
             before = *sp;
             memcpy(sp, in, sizeof(Sprite));
-            Restore_Info(&sp->info, &before.info, sp->obj.id, before.obj.id, sp->obj.status);
+            Restore_Info(&sp->info, &before.info, sp->obj.id, before.obj.id, sp->obj.status, before.obj.status);
             return;
         }
         case K_SCENERY360: {
@@ -829,7 +864,7 @@ static void Restore_Write(RestoreKind kind, void* dest, const uint8_t* in, size_
             }
             before = *sc;
             memcpy(sc, in, sizeof(Scenery360));
-            Restore_Info(&sc->info, &before.info, sc->obj.id, before.obj.id, sc->obj.status);
+            Restore_Info(&sc->info, &before.info, sc->obj.id, before.obj.id, sc->obj.status, before.obj.status);
             return;
         }
         case K_SHOT: {
@@ -920,7 +955,7 @@ static bool Restore_Parse(const uint8_t* stream, size_t size) {
                 return false;
             }
             nameLen = stream[pos + 1];
-            if ((nameLen == 0) || ((size - pos) < (size_t) 2 + nameLen + 8)) {
+            if ((nameLen == 0) || (nameLen >= 96) || ((size - pos) < (size_t) 2 + nameLen + 8)) {
                 return false;
             }
             chunkSize = Get32(stream + pos + 2 + nameLen + 4);
@@ -967,18 +1002,34 @@ bool CoopStateHash_Restore(const uint8_t* stream, size_t size, char* why, size_t
         snprintf(why, cap, "the state of the host could not be read");
         return false;
     }
+    // Check first, write second: a refusal changes nothing.
     sRestore.active = true;
+    sRestore.dry = true;
     Compute(&scratch);
-    sRestore.active = false;
     for (n = 0; (n < sRestore.count) && !sRestore.failed; n++) {
         if (!sRestore.chunks[n].used) {
             char name[96];
+            uint8_t k;
 
-            memcpy(name, sRestore.chunks[n].name, sRestore.chunks[n].nameLen);
+            for (k = 0; k < sRestore.chunks[n].nameLen; k++) { // a name from another PC: printable bytes only
+                uint8_t c = sRestore.chunks[n].name[k];
+
+                name[k] = ((c >= 0x20) && (c < 0x7F)) ? (char) c : '?';
+            }
             name[sRestore.chunks[n].nameLen] = '\0';
             Restore_Fail("the stream has %s[%d], this game does not", name, sRestore.chunks[n].index);
         }
     }
+    if (!sRestore.failed) {
+        for (n = 0; n < sRestore.count; n++) {
+            sRestore.chunks[n].used = false;
+        }
+        sRestore.cursor = 0;
+        sRestore.written = 0;
+        sRestore.dry = false;
+        Compute(&scratch);
+    }
+    sRestore.active = false;
     ok = !sRestore.failed;
     if (written != NULL) {
         *written = sRestore.written;
@@ -998,6 +1049,62 @@ bool CoopStateHash_Restore(const uint8_t* stream, size_t size, char* why, size_t
     free(sRestore.chunks);
     memset(&sRestore, 0, sizeof(sRestore));
     return ok;
+}
+
+// What the pointers the hash clears stand for, as a number (decision 0016): for every object in use its id, whether
+// `action`, `draw` and `hitbox` are what the game sets for that id, and the boxes the hitbox points at. A repair writes
+// objects without those pointers, so this is how a wrong one is seen: the clients send it with the hash after a repair and
+// the host compares. No addresses go in, so two PCs agree.
+static void Print_Object(uint64_t* h, const ObjectInfo* info, s16 id, u8 status) {
+    ObjectInfo made;
+    u32 flags = 0;
+    s32 count = 0;
+
+    if (status == OBJ_FREE) {
+        return;
+    }
+    Fnv(h, &id, sizeof(id));
+    if ((u32) id < OBJ_ID_MAX) {
+        Object_SetInfo(&made, (u32) id);
+        flags = ((info->action == made.action) ? 1u : 0u) | ((info->draw == made.draw) ? 2u : 0u) |
+                ((info->hitbox == made.hitbox) ? 4u : 0u);
+    }
+    Fnv(h, &flags, sizeof(flags));
+    if (info->hitbox != NULL) {
+        count = (s32) info->hitbox[0];
+        if ((count < 0) || (count > 32)) {
+            count = -1;
+        }
+    } else {
+        count = -2;
+    }
+    Fnv(h, &count, sizeof(count));
+    if (count > 0) {
+        Fnv(h, info->hitbox, sizeof(f32) * (size_t) (1 + 6 * count));
+    }
+}
+
+#define PRINT_ARRAY(h, array, count)                                                      \
+    do {                                                                                  \
+        s32 i_;                                                                           \
+        for (i_ = 0; i_ < (count); i_++) {                                                \
+            Print_Object((h), &(array)[i_].info, (array)[i_].obj.id, (array)[i_].obj.status); \
+        }                                                                                 \
+    } while (0)
+
+uint64_t CoopStateHash_PointerPrint(void) {
+    uint64_t h = FNV_OFFSET;
+
+    PRINT_ARRAY(&h, gActors, ARRAY_COUNT(gActors));
+    PRINT_ARRAY(&h, gBosses, ARRAY_COUNT(gBosses));
+    PRINT_ARRAY(&h, gEffects, ARRAY_COUNT(gEffects));
+    PRINT_ARRAY(&h, gItems, ARRAY_COUNT(gItems));
+    PRINT_ARRAY(&h, gScenery, ARRAY_COUNT(gScenery));
+    PRINT_ARRAY(&h, gSprites, ARRAY_COUNT(gSprites));
+    if (Scenery360Valid()) {
+        PRINT_ARRAY(&h, gScenery360, SCENERY360_COUNT);
+    }
+    return h;
 }
 
 size_t CoopStateHash_DumpBytes(void) {

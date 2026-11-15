@@ -85,6 +85,10 @@ void CoopStateHash_ComputeDump(CoopStateHash* out, CoopStateDump* dump);
 // differed and `written` counts them.
 bool CoopStateHash_Restore(const uint8_t* stream, size_t size, char* why, size_t cap, uint32_t* written);
 
+// What the pointers the hash clears stand for (object pointers: whether they are what the game sets for the object's id,
+// and the hitbox's boxes), as one number with no address in it. A repair compares it between games after the write.
+uint64_t CoopStateHash_PointerPrint(void);
+
 // Test only: the poke of SF64_COOP_HASH_POKE on the frame now starting, for a frame only the caller can name.
 void CoopStateHash_PokeNow(void);
 

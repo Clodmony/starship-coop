@@ -264,12 +264,12 @@ static bool Receive_Desync(CoopDesync* d, int peer, const uint8_t* data, uint16_
     sender = data[4];
     a = data[5];
     b = data[6];
-    if (frame < d->floor) {
-        return true; // of a desync that a repair has dealt with since
-    }
     // A client speaks for itself, and the host for itself: the pair is who differed, the sender who saw it.
     if ((sender != Link_Player(d, peer)) || !Is_Present(d, a) || !Is_Present(d, b) || (a == b)) {
         return false;
+    }
+    if (frame < d->floor) {
+        return true; // of a desync that a repair has dealt with since
     }
     memset(&theirs, 0, sizeof(theirs));
     theirs.held = (data[7] & 1) != 0;

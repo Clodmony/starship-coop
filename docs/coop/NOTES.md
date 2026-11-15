@@ -11629,6 +11629,19 @@ test build (`07d9207b`) plus decision 0016. Two to four real games on one PC, `t
   through the relay: that build took the level start; `resync_lag` is what holds the lead. `desync_mutants.py` has four
   more for `CoopDesync_Resync`, 29 of 29 caught, after the sim got a case for a batch that was in flight at the repair.
 
+- A read-only review by a second model (Fable 5.2, no build, no run) found five things in the first version, each fixed
+  and each from reading the code, not from a run: a chunk name from the host copied into `char name[96]` (now refused at
+  96 bytes and printable bytes only); an `iwork` word accepted as a pointer without a check (now only what `NormalizeWord`
+  can make, a tagged offset only at an element start); `Restore_Info` keeping NULL pointers for a never-used slot with
+  id 0, the Corneria stone arch, and trusting the pointers of a same-id object although 91 places set them after
+  `Object_SetInfo` (now: kept only for an object in use here, and `SYNC_REPAIRED` carries `CoopStateHash_PointerPrint`,
+  a fingerprint of what the object pointers and hitboxes stand for, which the host compares, `resync_pointers`); a
+  refused restore that had already written the game, `gLevelMode` and `gGameState` included (now checked on a copy
+  first, and those five values are never written); and a client past the barrier that never said so while it waited for
+  input (now `CoopRepair_Check` each time round the wait). **Not tried:** a hostile stream (the parser's lengths and
+  the `iwork` check are read, not exercised by a test), a client past the barrier on a slow link, the values of a player
+  who is down (not in the hash, so they can differ unseen until the player returns).
+
 **Derived**
 
 - A repair needs the barrier ahead of every game when the offer arrives. A game is at most the input delay ahead of the

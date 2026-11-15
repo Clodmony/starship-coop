@@ -67,6 +67,10 @@ bool CoopRepair_OfferExpired(uint32_t nowMs);
 // repair failed and `text` says why (the caller starts the level again).
 int CoopRepair_Hold(uint32_t frame, uint32_t nowMs, char* text, size_t cap);
 
+// Every time round the wait for a frame, whatever input is in: a game that is past the barrier says so at once
+// (-1, `text`), and a barrier that is never reached is given up. 0 otherwise.
+int CoopRepair_Check(uint32_t frame, uint32_t nowMs, char* text, size_t cap);
+
 // SYNC_REPAIR (client) and SYNC_REPAIRED (host), the run already taken off. False if it could not be read.
 bool CoopRepair_Receive(int peer, uint16_t msgId, const uint8_t* data, uint16_t size, uint32_t nowMs);
 // SYNC_STATE, as it came.

@@ -4835,6 +4835,15 @@ def sc_resync_refused(args, folder):
     return f"the client refused the state, the level started again and both hash alike on its first {frames} frames"
 
 
+def sc_resync_pointers(args, folder):
+    """Decision 0016, the fallback: the hash clears the object pointers, so a client whose pointers differ after the write
+    (SF64_COOP_TEST_REPAIR_PRINT makes its fingerprint of them differ) would pass the hash; the host compares the
+    fingerprint and the level starts again."""
+    frames = resync_fallback(args, folder, [JOIN_FRAME + 300], {"SF64_COOP_TEST_REPAIR_PRINT": "1"},
+                             "the pointers differ", "holds other pointers for its objects after the repair")
+    return f"the fingerprint of the object pointers differed, the level started again and both hash alike on {frames} frames"
+
+
 def sc_resync_near(args, folder):
     """Decision 0016, the limit: a second desync 100 frames after a repair is not repaired (COOP_REPAIR_SPACING): the level
     starts again, from the host's state."""
@@ -7215,6 +7224,7 @@ SCENARIOS = {
     "resync_twice": sc_resync_twice,
     "resync_refused": sc_resync_refused,
     "resync_near": sc_resync_near,
+    "resync_pointers": sc_resync_pointers,
     "desync_control": sc_desync_control,
     "desync_three": sc_desync_three,
     "handover": sc_handover,

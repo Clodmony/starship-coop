@@ -224,6 +224,15 @@ static bool Sync_FrameIsReady(void) {
                 return true;
             }
         }
+        {
+            char late[SYNC_DESYNC_TEXT_SIZE];
+
+            // Past the barrier, or a barrier that is never reached, whatever input is in or missing.
+            if (CoopRepair_Check(sLockstep.frame, now, late, sizeof(late)) < 0) {
+                Sync_Recover(late);
+                return true;
+            }
+        }
         if (CoopLockstep_Waiting(&sLockstep) < 0) {
             char text[SYNC_DESYNC_TEXT_SIZE];
             int held = CoopRepair_Hold(sLockstep.frame, now, text, sizeof(text));
