@@ -7,6 +7,8 @@ name: Release
 #   2. builds Linux and Windows through coop-build.yml, the steps that test the code, with the tag in the package README,
 #   3. scans the packages once more for game data, and makes a DRAFT release with both packages and their checksums.
 # Nothing is public until someone presses "Publish release". It never runs on a push or a pull request.
+# Every action is pinned to a commit hash, not a tag: a tag can be moved by whoever owns that action's repository, and the
+# release job holds a token that can write (#358).
 on:
   push:
     tags:
@@ -35,7 +37,7 @@ jobs:
       prerelease: ${{ steps.check.outputs.prerelease }}
       notes: ${{ steps.check.outputs.notes }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
@@ -56,6 +58,9 @@ jobs:
     name: Draft release
     needs: [verify, build]
     runs-on: ubuntu-24.04
+    # The one job that can write to the repository waits for the owner when the environment `release` has a required
+    # reviewer (docs/coop/MAINTAINING.md, "Releases", setup). Without that setting it runs at once, and still only makes a draft.
+    environment: release
     permissions:
       contents: write
     env:
@@ -64,10 +69,10 @@ jobs:
       NOTES: ${{ needs.verify.outputs.notes }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ needs.verify.outputs.tag }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: starship-coop-*
           path: packages

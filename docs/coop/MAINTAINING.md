@@ -23,10 +23,13 @@ The repository is **public**. Applied (re-apply if it is ever recreated):
   PRs; direct pushes stay blocked.
 - Ruleset `upstream-mirror` on `main` (`.github/rulesets/upstream-mirror.json`): no deletion, no force push, and
   only repository admins can update it, by fast-forward from upstream.
+- Ruleset `release-tags` on the tags `v*` (`.github/rulesets/release-tags.json`, #358): only repository admins can create, move or
+  delete one, so a release tag is a deliberate act and never moves.
 
 ```sh
 gh api -X POST repos/Clodmony/starship-coop/rulesets --input .github/rulesets/coop.json
 gh api -X POST repos/Clodmony/starship-coop/rulesets --input .github/rulesets/upstream-mirror.json
+gh api -X POST repos/Clodmony/starship-coop/rulesets --input .github/rulesets/release-tags.json
 ```
 
 GitHub only allows rulesets on private repositories with a paid plan; if the repository ever goes private again,
@@ -159,6 +162,20 @@ Before the first one, decision 0002 and the roadmap (M3) name two conditions: a 
 6. **Try the draft on a PC that has never seen the repository:** unpack, give it the ROM, host from one PC and join from another. That run is
    also the two-PC run of #2 and the Windows check. Fix what it finds with a new tag (a tag is never moved).
 7. **Publish** the draft on GitHub. Nothing else makes a release public.
+
+**Setup once, before the first tag (the owner's action, in the repository's settings):** apply the ruleset `release-tags` (the command above),
+and make the environment `release` wait for you. The job that creates the draft names that environment, so with a required reviewer
+it does not start until you approve it on the run's page, even for a tag a stolen token pushed:
+
+```sh
+uid=$(gh api user --jq .id)   # the id of the account you are logged in as
+gh api -X PUT repos/Clodmony/starship-coop/environments/release --input - <<JSON
+{"reviewers": [{"type": "User", "id": $uid}], "prevent_self_review": false}
+JSON
+```
+
+The actions the workflows use are pinned to commit hashes (a tag of someone else's repository can be moved); update them by looking up
+the hash of the new tag, never by writing `@v5`.
 
 The workflow is new and has not been run on GitHub when this was written: expect to fix it on its first run, which is why step 6
 exists. The other workflows stay disabled; `release.yml` runs on tags only, so it makes no noise on a pull request.
