@@ -268,6 +268,18 @@ Newest first. One block per run that matters (a milestone, a release, a QA level
 
 ```
 date:       2026-11-15
+commit:     issue/combined-test-6, the merge of issue/357-needle-origin (PR #361) into 7cf293dc
+identity:   ROM US 1.0, Linux, GCC; no game started for this record
+what ran:   git merge --no-ff --no-commit (no conflict: NOTES.md and the tools README merged by git);
+            python tools/coop/check.py; python tools/coop/needle_search.py --help
+result:     research only: a NOTES entry (2026-11-15, #357) and the search tool needle_search.py, which reads a ROM from an
+            argument and holds no game data. No game code changed, so the gate on 0bc99fc4 (59 of 59, 20m33s) holds.
+            The worker's headline (1,609 listed textures, best correlation 0.953, control passed) was rerun by the
+            coordinator on a scratch ROM copy, since deleted; the 12-minute --raw stage was not rerun.
+```
+
+```
+date:       2026-11-15
 commit:     issue/combined-test-6, the merge of issue/358-release-workflow (PR #359) into the merge of PR #360
 identity:   ROM US 1.0, Linux, GCC; no game started for this record
 what ran:   git merge --no-ff --no-commit; one conflict, in the step list of tools/coop/test_all.py (injection-scan from
