@@ -3,7 +3,7 @@
 Status: the transport (WP-20), the session handshake (WP-21), the characters (WP-34), the level start (WP-24), the
 session's save (decision 0009 item 8), the players' names (#258), lockstep (WP-22), the desync check (WP-23), the co-op
 log (#172), the handover (#189), the recovery (a session that survives a lost player or a desync) and the dump of a
-desync frame (#189) exist; `COOP_PROTOCOL_VERSION` is 10. Other sync and game messages come
+desync frame (#189) and the repair of a desync in place (decision 0016) exist; `COOP_PROTOCOL_VERSION` is 11. Other sync and game messages come
 with their work packages. This page sets the rules so parallel work does not collide.
 
 ## Rules
@@ -550,6 +550,37 @@ What does not fit:
   of the wrong size is refused: nothing more is taken, and the line says that the dump could not be read. Neither ends
   anything.
 
+## Repair
+
+Decision 0016 (Proposed): a desync is put right where it is, instead of starting the level again (Recovery), if the
+games can. The host decides; the code is `src/port/coop/sync/repair_game.c`, the restore is `CoopStateHash_Restore`
+(`state_hash.c`). Off with `SF64_COOP_TEST_NO_REPAIR=1`.
+
+1. **The offer.** The desync check names a desync (above). The host, if it has not repaired within
+   `COOP_REPAIR_SPACING` (300) frames or `COOP_REPAIR_MAX` (8) times in this run and the level is past frame
+   `COOP_REPAIR_MIN_FRAME` (60), sends every client `SYNC_REPAIR` on the reliable lane: the barrier `B`, which is its own
+   frame now plus the input delay, two desync periods and `COOP_REPAIR_LEAD` (30) frames, and the frame of the desync.
+   Otherwise it recovers as before. A client that finds the desync itself waits `COOP_REPAIR_OFFER_MS` (3000) for the
+   offer, and recovers as before if none comes.
+2. **The barrier.** Every game runs on to `B` and holds there, before the frame runs, which is where the hash of `B` is
+   taken. A game that is past `B` when the offer comes answers `SYNC_REPAIRED` with result 1.
+3. **The state.** The host takes the dump of its own state at `B` (the bytes the hash runs over) and sends it to each
+   client as `SYNC_STATE`: the message and stream of `SYNC_DUMP` (run, frame `B`, sender 0, part, parts, size, bytes),
+   at most 16 parts per frame and client, on the reliable lane.
+4. **The write.** A client that has the whole stream writes it through the same traversal that hashes the state:
+   a chunk that is equal already is left alone, a chunk that differs is written into the variable it came from, with the
+   fields the hash clears (object pointers, what follows the camera) left as this game has them and an object whose id
+   differs given the pointers the game sets for that id. A chunk that cannot be written (a pointer outside the hashed
+   arrays, an effect 394 that has to be made, a value with no variable), a chunk missing on either side or one of another
+   size refuses the repair. The client answers `SYNC_REPAIRED` with the hash of its state now.
+5. **The end.** The host waits for every client. All written and every hash the host's own: the desync check starts over
+   from `B` on every game (frames before `B` are not compared any more, in what peers sent before or send after) and the
+   frame runs. A refusal, another hash, or `COOP_REPAIR_MS` (10 s) without an answer: the level starts again as in
+   Recovery. A report of the desync is written either way, and one line in the co-op log and the co-op window.
+
+What does not fit: `SYNC_REPAIR` from a client or of another size, `SYNC_REPAIRED` from the host or of another size, end
+the session. `SYNC_STATE` of another run or frame, or when no offer was made, is dropped.
+
 ## Co-op log
 
 #172: every game writes a log of the session into its own folder, `coop-log-<session start>-player<n>.txt`, and streams
@@ -647,6 +678,9 @@ Nothing is passed on: with three players a client gets the host's report, the ho
 | 0x0041 | `SYNC_HASH` | both | u8 run, then the total state hash of the last 10 frames, see Desync check | WP-23 |
 | 0x0042 | `SYNC_DESYNC` | both | u8 run, then the sender's hash of the first differing frame, region by region, see Desync check | WP-23 |
 | 0x0043 | `SYNC_DUMP` | both | a part of the sender's dump of the desync frame, see Desync check | #189 |
+| 0x0044 | `SYNC_REPAIR` | host to client | u8 run, u32 barrier frame, u32 frame of the desync: the games hold at the barrier and the host sends its state, see Repair | #267 |
+| 0x0045 | `SYNC_STATE` | host to client | a part of the host's state at the barrier frame (the stream of `SYNC_DUMP`), see Repair | #267 |
+| 0x0046 | `SYNC_REPAIRED` | client to host | u8 run, u8 result (0 written, 1 refused), u64 hash of the state now, u32 barrier frame, see Repair | #267 |
 | 0x0080 | `HANDOVER` | both | u8 kind (1 `BEGIN`, 2 `FILE_START`, 3 `FILE_DATA`, 4 `DONE`, 5 `BYE`), then its fields, see Handover | #189 |
 | 0x00C0 | `TEST_RELIABLE` | both | test pattern, only sent by `coop_net_test` | WP-20 |
 | 0x00C1 | `TEST_UNRELIABLE` | both | test pattern, only sent by `coop_net_test` | WP-20 |

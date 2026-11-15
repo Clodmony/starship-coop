@@ -33,6 +33,7 @@ static struct {
     bool on; // a repair is under way: offered (host) or heard of (client)
     CoopRepairLink link;
     bool off;           // SF64_COOP_TEST_NO_REPAIR
+    bool refuse;        // SF64_COOP_TEST_REPAIR_REFUSE: a client that cannot write the state it is sent
     uint32_t barrier;   // the frame every game holds at
     uint32_t found;     // the frame the desync check named
     uint32_t sinceMs;   // when the repair began, for the time limit
@@ -99,6 +100,7 @@ void CoopRepair_Begin(const CoopRepairLink* link) {
     Repair_Clear();
     sR.link = *link;
     sR.off = (off != NULL) && (off[0] != '\0');
+    sR.refuse = (getenv("SF64_COOP_TEST_REPAIR_REFUSE") != NULL) && (getenv("SF64_COOP_TEST_REPAIR_REFUSE")[0] != '\0');
     sR.lastFrame = 0;
     sR.count = 0;
 }
@@ -345,7 +347,10 @@ static int Hold_Client(uint32_t nowMs, char* text, size_t cap) {
         }
         return 1;
     }
-    if (!CoopStateHash_Restore(sR.in.stream, sR.in.size, why, sizeof(why), &written)) {
+    if (sR.refuse) {
+        snprintf(why, sizeof(why), "refused by SF64_COOP_TEST_REPAIR_REFUSE");
+    }
+    if (sR.refuse || !CoopStateHash_Restore(sR.in.stream, sR.in.size, why, sizeof(why), &written)) {
         memset(answer, 0, sizeof(answer));
         answer[0] = 1;
         Put32(&answer[9], sR.barrier);

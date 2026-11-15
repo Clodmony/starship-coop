@@ -4683,18 +4683,22 @@ def repair_lines(game):
     return [line.format() for line in coop_log.read_lines(path, player_of(game))]
 
 
-def resync_run(args, folder, target=None, wrote="gActors[", extra_env=None, clients=1, poke_on=0):
+def resync_run(args, folder, target=None, wrote="gActors[", extra_env=None, clients=1, poke_on=0, pokes=None):
     """One session with a bit flipped on a client at JOIN_FRAME + 300 (`target` is SF64_COOP_HASH_POKE_TARGET: the last
     actor's fwork[29] when None), repair on. Every game ends up equal to the host from the barrier on, no level starts
     again, no session ends; the flipped client's log says the value it wrote starts with `wrote`. Returns the line and
     the barrier."""
     folder.mkdir(parents=True, exist_ok=True)
     poke = JOIN_FRAME + 300
+    if pokes is not None:
+        poke = pokes[-1]  # several: the last one is the one the checks look at
     frames = poke + 600
     feed = folder / "feed.txt"
     write_feed(feed, frames + 16, sway)
     env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(frames), **(extra_env or {})}
     flipped = {"SF64_COOP_LOCKSTEP_POKE": str(poke)}
+    if pokes is not None:
+        flipped = {"SF64_COOP_LOCKSTEP_POKE_AT": ",".join(f"1:L1:{frame}" for frame in pokes)}
     if target is not None:
         flipped["SF64_COOP_HASH_POKE_TARGET"] = target
     envs = [{} for _ in range(clients)]
@@ -4716,13 +4720,14 @@ def resync_run(args, folder, target=None, wrote="gActors[", extra_env=None, clie
         expect(len(survive_starts(game)) == 1, f"{game.name}: level starts {survive_starts(game)}")
         expect(not join_test.said(game.sync(), "again"), f"{game.name}: the level started again")
     done = [line for line in repair_lines(flipper) if "repaired at frame" in line]
-    expect(len(done) == 1, f"the flipped client repaired {len(done)} times: {done}")
-    match = re.search(r"repaired at frame (\d+): (\d+) chunks written \((.*)\)", done[0])
+    expect(len(done) == (len(pokes) if pokes else 1), f"the flipped client repaired {len(done)} times: {done}")
+    match = re.search(r"repaired at frame (\d+): (\d+) chunks written \((.*)\)", done[-1])
     expect(match is not None, f"the client's line: {done[0]}")
     barrier = int(match.group(1))
     expect(int(match.group(2)) >= 1 and wrote in match.group(3),
            f"the client wrote {match.group(2)}: {match.group(3)}, want {wrote}")
-    expect(poke < barrier <= poke + 2 * DESYNC_SEEN_WITHIN + 60, f"barrier {barrier}, poke {poke}")
+    if pokes is None:
+        expect(poke < barrier <= poke + 2 * DESYNC_SEEN_WITHIN + 60, f"barrier {barrier}, poke {poke}")
     names, _, ours = host.rows()
     equal = 0
     for game in games[1:]:
@@ -4731,14 +4736,23 @@ def resync_run(args, folder, target=None, wrote="gActors[", extra_env=None, clie
         expect(n > barrier + 100, f"{game.name}: only {n} frames to compare, barrier {barrier}")
         if game is flipper:
             first = next((i for i in range(n) if ours[i] != theirs[i]), None)
-            expect(first == poke, f"the hash logs first differ at frame {first}, poke at {poke}")
+            if pokes is None:
+                expect(first == poke, f"the hash logs first differ at frame {first}, poke at {poke}")
+            else:
+                expect(first is not None, "the hash logs never differed: nothing was flipped")
         difference = join_test.first_difference(names, ours[barrier:n], theirs[barrier:n])
         expect(difference is None, f"{game.name}: the hash logs differ again {difference} frames after the barrier "
                                    f"{barrier}")
         equal = n - barrier
     for game in games:
         found = own_reports(game)
-        expect(len(found) == 1, f"{game.name} wrote {len(found)} desync reports (the repair still writes its report)")
+        want = len(pokes) if pokes else 1
+        if game in (host, flipper):
+            expect(len(found) == want, f"{game.name} wrote {len(found)} desync reports, want {want} (the repair still "
+                                       "writes its report)")
+        else:
+            # A game outside the pair waits the grace for its report, and the repair can come first.
+            expect(len(found) <= want, f"{game.name} wrote {len(found)} desync reports, want at most {want}")
     return (f"flipped bit at {poke}, repaired at frame {barrier} ({match.group(2)} chunks: {match.group(3)}); the hash "
             f"logs equal on {equal} frames from there, no level start, no end"), barrier
 
@@ -4749,6 +4763,63 @@ def sc_resync(args, folder):
     equal on every frame from the barrier to the end of the level run, and differ from the flipped bit to the barrier.
     The client's log names what it wrote (a slot of gActors)."""
     return resync_run(args, folder)[0]
+
+
+def sc_resync_three(args, folder):
+    """Decision 0016 with three and four games: the bit flipped on the second client (and, with four, the third): the
+    host's state goes to every client, which write what differs (the others nothing), and all are equal from the barrier."""
+    three, _ = resync_run(args, folder / "three", clients=2, poke_on=1)
+    four, _ = resync_run(args, folder / "four", clients=3, poke_on=2)
+    return f"three games: {three}; four games: {four}"
+
+
+def sc_resync_twice(args, folder):
+    """Decision 0016: two desyncs 400 frames apart are both repaired (the last repair is far enough back): two repairs,
+    one level start, two reports, equal from the second barrier on."""
+    return resync_run(args, folder, pokes=[JOIN_FRAME + 300, JOIN_FRAME + 700])[0]
+
+
+def resync_fallback(args, folder, pokes, client_env, why, want):
+    """A desync the repair does not take: the level starts again (decision 0014) from the host's state. Run 2 is equal on
+    both games from its frame 0, the session does not end, and the log says `want` about it. Returns the frames."""
+    folder.mkdir(parents=True, exist_ok=True)
+    frames = pokes[-1] + 600
+    feed = folder / "feed.txt"
+    write_feed(feed, frames + 16, sway)
+    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(SURVIVE_FRAMES)}
+    flipped = {"SF64_COOP_LOCKSTEP_POKE_AT": ",".join(f"1:L1:{frame}" for frame in pokes), **client_env}
+    games = session(args, folder, both=env, repair=True, client_envs=[flipped])
+    try:
+        survive_wait(games, "again", 1, SURVIVE_AGAIN_SECONDS + 120, f"after the desync {why}: the level did not start again")
+        survive_wait(games, "done", 2, 600, "in the level that started again")
+        survive_no_end(games)
+        time.sleep(2)
+    finally:
+        for game in games:
+            game.close()
+    said = [line for game in games for line in repair_lines(game)]
+    expect(any(want in line for line in said), f"no log says `{want}`: "
+           f"{[line for line in said if 'repair' in line or 'parted' in line][:6]}")
+    for game in games:
+        expect(survive_starts(game)[-1][0] == 2 and len(survive_starts(game)) == 2,
+               f"{game.name}: level starts {survive_starts(game)}")
+    return survive_compare(games, 2, SURVIVE_FRAMES)
+
+
+def sc_resync_refused(args, folder):
+    """Decision 0016, the fallback: a client that cannot write the state it is sent answers with a refusal, and the level
+    starts again for both from the host's state, as before the repair existed."""
+    frames = resync_fallback(args, folder, [JOIN_FRAME + 300], {"SF64_COOP_TEST_REPAIR_REFUSE": "1"}, "the client refuses",
+                             "refused by SF64_COOP_TEST_REPAIR_REFUSE")
+    return f"the client refused the state, the level started again and both hash alike on its first {frames} frames"
+
+
+def sc_resync_near(args, folder):
+    """Decision 0016, the limit: a second desync 100 frames after a repair is not repaired (COOP_REPAIR_SPACING): the level
+    starts again, from the host's state."""
+    frames = resync_fallback(args, folder, [JOIN_FRAME + 300, JOIN_FRAME + 400], {}, "within 300 frames of a repair",
+                             "the last repair is too near")
+    return f"a desync 100 frames after the repair took the level start, both hash alike on its first {frames} frames"
 
 
 # What each target of SF64_COOP_HASH_POKE_TARGET is written back as: the chunk the flipped client names.
@@ -7115,6 +7186,10 @@ SCENARIOS = {
     "desync": sc_desync,
     "resync": sc_resync,
     "resync_targets": sc_resync_targets,
+    "resync_three": sc_resync_three,
+    "resync_twice": sc_resync_twice,
+    "resync_refused": sc_resync_refused,
+    "resync_near": sc_resync_near,
     "desync_control": sc_desync_control,
     "desync_three": sc_desync_three,
     "handover": sc_handover,
