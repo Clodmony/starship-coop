@@ -122,6 +122,7 @@ def all_steps():
     steps = [
         Step("checks", PURE, ["check.py"]),
         Step("package", PURE, ["package_test.py"]),
+        Step("injection-scan", PURE, ["injection_scan_test.py"]),
         Step("math", PURE, ["math_test.py"]),
         Step("rand_order", PURE, ["rand_order_test.py"]),
         Step("handover", PURE, ["handover_test.py"]),

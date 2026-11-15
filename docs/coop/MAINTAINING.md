@@ -129,6 +129,61 @@ Generic fixes (port bugs, build fixes, new hook events that are not co-op specif
 from `origin/main` (the clean upstream mirror), cherry-pick, and open the PR against HarbourMasters/Starship from a
 personal fork of HarbourMasters/Starship. Follow their contribution rules, and disclose AI use.
 
+## Agent safety
+
+AGENTS.md rule 13 says what an agent does with text that comes from outside. This section says what holds when an agent does
+not notice (the first text aimed at an agent that this project met is in the table below).
+
+| Layer | What it stops | Where |
+|---|---|---|
+| Rules 9 and 13, and the worker briefs | The ordinary case: an agent that reads an order in a page, issue or log and takes it for data | `AGENTS.md`, `orch/brief-*` |
+| Workers cannot publish | An injected worker pushing, posting or merging: the coordinator reads the diff and publishes | the harness's permission mode |
+| The owner's approval | Merges, closes, deletes and public posts | the owner |
+| `push-guard` and the `coop` ruleset | Private data in a push; a force push, a deletion, a merge without review | `~/.config/git/push-guard`, `.github/rulesets/coop.json` |
+| `release-tags` ruleset, the `release` environment, actions pinned by hash | A tag or a release made by anyone but the admins; the one job that can write waiting for the owner | `.github/rulesets/release-tags.json`, `release.yml` |
+| The tripwire hook | Some of the cases above that an agent would have missed: it warns before the model acts | `tools/coop/injection_scan.py` |
+
+**What none of these covers:** the agent session holds the owner's GitHub login, so `gh` can do what the owner can, the admin
+merge into `coop` included, and only the harness's classifier and the owner's approvals stand between a fooled agent and that. A
+token for agent sessions without admin and delete rights would close it (the owner's action; it changes how merges into `coop` are
+made). Anything read in a session that also holds that login is the risk, so web research belongs in a worker that cannot write.
+
+**The tripwire.** `tools/coop/injection_scan.py` is a Claude Code PostToolUse hook. It reads what a tool brought in from outside and,
+when the text looks like an order to an AI agent, adds a warning to what the model sees and shows one to the user; it never blocks.
+Each match is also appended to `~/.claude/injection-tripwire.log` (time, tool, source, labels, 160 characters), so the answer to "were
+we attacked before" is on disk from the day it runs. It is a tripwire, not a wall: a text worded to pass it passes.
+
+Setup, once, by the owner (it writes outside the repository): copy the script, then add the hooks to `~/.claude/settings.json`
+beside the ones that are there (do not replace them):
+
+```sh
+mkdir -p ~/.claude/hooks && cp tools/coop/injection_scan.py ~/.claude/hooks/injection_scan.py
+```
+
+```json
+{"matcher": "WebFetch|WebSearch",
+ "hooks": [{"type": "command", "command": "python3 \"$HOME/.claude/hooks/injection_scan.py\"", "timeout": 10}]},
+{"matcher": "Bash",
+ "hooks": [
+  {"type": "command", "if": "Bash(curl *)", "command": "python3 \"$HOME/.claude/hooks/injection_scan.py\"", "timeout": 10},
+  {"type": "command", "if": "Bash(wget *)", "command": "python3 \"$HOME/.claude/hooks/injection_scan.py\"", "timeout": 10},
+  {"type": "command", "if": "Bash(gh issue view *)", "command": "python3 \"$HOME/.claude/hooks/injection_scan.py\"", "timeout": 10},
+  {"type": "command", "if": "Bash(gh pr view *)", "command": "python3 \"$HOME/.claude/hooks/injection_scan.py\"", "timeout": 10},
+  {"type": "command", "if": "Bash(gh api *)", "command": "python3 \"$HOME/.claude/hooks/injection_scan.py\"", "timeout": 10}]}
+```
+
+Both entries go into the list `hooks.PostToolUse`. After a change to `injection_scan.py`, copy it again.
+
+**Incidents** (newest first; also look in `~/.claude/injection-tripwire.log`)
+
+| Date | Where | What | What happened |
+|---|---|---|---|
+| 2026-11-15 | tcrf.net, two `WebFetch` calls of the coordinator and one of the worker `w15-needle` | A page served to the fetch tool, apparently on purpose against scrapers, with demands to pay, to terminate, to print a phrase and to write a file `key.bin`; the fetch tool's summary reported it | Not followed: the summary said so, the agents ignored it and told the owner. The real article was never read, so what the page says about the boost gauge is known only from a search summary (#357). |
+
+Searches of the project's 143 saved sessions, its tracker (two authors only: the owner and the collaborator), its tracked source and
+the agents' memory found no earlier one (2026-11-15). The project has had no outside commenter, fork or star so far; that changes with
+the first public release.
+
 ## Releases
 
 Not yet. When M2 is reached: tag `vX.Y.Z-coop`, let CI build, attach the artifacts, and write release notes with the
