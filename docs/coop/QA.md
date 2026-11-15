@@ -268,6 +268,20 @@ Newest first. One block per run that matters (a milestone, a release, a QA level
 
 ```
 date:       2026-11-15
+commit:     issue/combined-test-6, the merge of issue/358-release-workflow (PR #359) into the merge of PR #360
+identity:   ROM US 1.0, Linux, GCC; no game started for this record
+what ran:   git merge --no-ff --no-commit; one conflict, in the step list of tools/coop/test_all.py (injection-scan from
+            #360 and release-check from #359 added at the same line, both kept); python tools/coop/check.py;
+            package_test.py (35 of 35), release_check_test.py (14 of 14), injection_scan_test.py (9 of 9),
+            lockstep_rules_test.py; both workflow files parse as YAML
+result:     the release workflow (.github/workflows/release.yml, a workflow_call trigger in coop-build.yml, actions
+            pinned by commit hash), tools/coop/release_check.py, package.py --release-tag, the notes template and the
+            Releases section of MAINTAINING.md. Nothing of it has run on GitHub. No game code changed, so the gate on
+            0bc99fc4 (59 of 59) holds for the game; the new steps run in the next gate.
+```
+
+```
+date:       2026-11-15
 commit:     issue/combined-test-6, the merge of docs/untrusted-content (PR #360) into dee185b8
 identity:   ROM US 1.0, Linux, GCC; no game started for this record
 what ran:   git merge --no-ff --no-commit (no conflict); git diff --cached docs/untrusted-content (empty);

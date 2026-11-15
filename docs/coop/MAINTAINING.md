@@ -23,10 +23,13 @@ The repository is **public**. Applied (re-apply if it is ever recreated):
   PRs; direct pushes stay blocked.
 - Ruleset `upstream-mirror` on `main` (`.github/rulesets/upstream-mirror.json`): no deletion, no force push, and
   only repository admins can update it, by fast-forward from upstream.
+- Ruleset `release-tags` on the tags `v*` (`.github/rulesets/release-tags.json`, #358): only repository admins can create, move or
+  delete one, so a release tag is a deliberate act and never moves.
 
 ```sh
 gh api -X POST repos/Clodmony/starship-coop/rulesets --input .github/rulesets/coop.json
 gh api -X POST repos/Clodmony/starship-coop/rulesets --input .github/rulesets/upstream-mirror.json
+gh api -X POST repos/Clodmony/starship-coop/rulesets --input .github/rulesets/release-tags.json
 ```
 
 GitHub only allows rulesets on private repositories with a paid plan; if the repository ever goes private again,
@@ -47,6 +50,7 @@ status check of the `coop` ruleset (`.github/rulesets/coop.json`). What the work
 |---|---|---|---|
 | `Co-op checks` | `coop-checks.yml` | every PR, every push to `coop` | repo checks with the single-player audit and its tests, seconds |
 | `Co-op build` | `coop-build.yml` | PRs and pushes to `coop` that touch code, CMake files or submodules; manual | Linux and Windows, both through `tools/coop/build.py` |
+| `Release` | `release.yml` | a tag `vX.Y.Z-coop[-alpha1]`; manual from a tag | checks the tag, builds through `coop-build.yml`, makes a draft release (below, "Releases") |
 
 Nothing runs on `main`: upstream's own workflows are disabled (below), and ours only exist on `coop`.
 
@@ -186,5 +190,51 @@ the first public release.
 
 ## Releases
 
-Not yet. When M2 is reached: tag `vX.Y.Z-coop`, let CI build, attach the artifacts, and write release notes with the
-QA level and known issues.
+A release is a tag on a commit of `coop` whose code passed the full gate on the owner's PC. CI cannot run that gate (it needs a ROM
+and takes about 20 minutes with several game clients), so the tag means "tested" through the steps below, and
+`tools/coop/release_check.py` (tested by `release_check_test.py`, the step `release-check`) refuses a release that skips one.
+`.github/workflows/release.yml` does the rest and only ever makes a **draft**: nothing is public until someone presses "Publish release".
+
+Before the first one, decision 0002 and the roadmap (M3) name two conditions: a run on two real PCs
+([#2](https://github.com/Clodmony/starship-coop/issues/2)) and Windows Release hash checks
+([#145](https://github.com/Clodmony/starship-coop/issues/145)). The owner may cut a **pre-release** earlier (a name with
+`alpha`, `beta` or `rc`); its notes then say which condition is not done, and the first testers' runs are those runs.
+
+1. **The code is on `coop`** (the combined test build PR merged on the owner's word).
+2. **Gate on that commit, on the owner's PC:** `python tools/coop/test_all.py --mixed --base-ref <previous gated commit>` must end in
+   `RESULT: PASS`. Put the record in `docs/coop/QA.md`.
+3. **Notes:** copy `docs/coop/releases/TEMPLATE.md` to `docs/coop/releases/<tag>.md`, fill in every `TODO`, write the gated commit's
+   hash and the gate's result into its first two lines, and merge it. Only documentation (`docs/`, `README.md`) may change between the
+   gated commit and the tag; `release_check.py` fails on any other file and says to gate again. Also edit the README's "no download yet"
+   text when the first release is published.
+4. **Tag and push** (the owner's word): `git tag -a vX.Y.Z-coop-alpha1 <commit>` then `git push origin vX.Y.Z-coop-alpha1`. The name is
+   `vX.Y.Z-coop` for a release, `vX.Y.Z-coop-alpha1` (or `beta`, `rc`) for a pre-release.
+5. **The workflow** (`Release`, runs on that tag, or by hand from the tag with `gh workflow run release.yml --ref <tag> -f tag=<tag>`):
+   checks the tag and notes, builds Linux and Windows through `coop-build.yml` (the same steps and tests as a test build), scans both
+   packages for game data once more, and makes a draft release `<tag>` with `starship-coop-<id>-windows-x64.zip`,
+   `starship-coop-<id>-linux-x64.tar.gz` (keeps the executable flag) and `SHA256SUMS.txt`, the notes as its text, and the pre-release
+   flag set from the name. A run made again replaces its own draft and never a published release.
+6. **Try the draft on a PC that has never seen the repository:** unpack, give it the ROM, host from one PC and join from another. That run is
+   also the two-PC run of #2 and the Windows check. Fix what it finds with a new tag (a tag is never moved).
+7. **Publish** the draft on GitHub. Nothing else makes a release public.
+
+**Setup once, before the first tag (the owner's action, in the repository's settings):** apply the ruleset `release-tags` (the command above),
+and make the environment `release` wait for you. The job that creates the draft names that environment, so with a required reviewer
+it does not start until you approve it on the run's page, even for a tag a stolen token pushed:
+
+```sh
+uid=$(gh api user --jq .id)   # the id of the account you are logged in as
+gh api -X PUT repos/Clodmony/starship-coop/environments/release --input - <<JSON
+{"reviewers": [{"type": "User", "id": $uid}], "prevent_self_review": false}
+JSON
+```
+
+The actions the workflows use are pinned to commit hashes (a tag of someone else's repository can be moved); update them by looking up
+the hash of the new tag, never by writing `@v5`.
+
+The workflow is new and has not been run on GitHub when this was written: expect to fix it on its first run, which is why step 6
+exists. The other workflows stay disabled; `release.yml` runs on tags only, so it makes no noise on a pull request.
+
+Limits to say in the notes: the Linux package needs the libraries of Ubuntu 24.04; there is no macOS build (upstream's macOS jobs target a
+runner image GitHub retired); `starship.o2r` holds shaders and nine HUD textures of unknown origin that the owner accepted
+(NOTES.md, 2026-11-06, #26; #357 looks for the origin).
