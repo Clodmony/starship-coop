@@ -9,6 +9,155 @@ Private notes (your paths, your PC, your logs) go in `local/`, not here.
 
 ## Build and run
 
+### 2026-11-15, #357, the nine boost gauge needle textures: no source found in the ROM
+
+Research only: no build, no game. ROM US 1.0 (SHA-1 `d8b1088520f7c5f81433292a9258c1184afa1457`), the tree of `dee185b8`,
+Linux, Python 3 with numpy. Everything below is from `python tools/coop/needle_search.py <rom> --raw --top 25` (about
+12 minutes) unless a line says otherwise. Counts, scores and asset-table names only; no game data. It follows the entry
+of 2026-11-06 (#26, "where the files in starship.o2r come from") and closes its second Unknown in part.
+
+**Verdict**
+
+Not found, with the control passed for the listed textures and passed in part for the bytes no table lists. No graphic
+in the ROM is the needle of `port/assets/textures/hud/sBoostGaugeArrow0` to `8` turned, mirrored, scaled or recoloured,
+as far as the two controls reach (see "What the control covered"). Which graphic The Cutting Room Floor means by "Boost
+Meter pointer?" stays unknown: its page did not load here.
+
+**Observed: the needle**
+
+- Each of the nine files is 2128 bytes: an 80 byte resource header (type 2 = RGBA16, 32x32, 2048 bytes of pixels), then
+  32x32 RGBA16 with 1 bit of alpha and no palette. Every transparent pixel is the value 0.
+- A frame has 89 to 92 opaque pixels and 14 to 18 colours; the nine have 30 colour values together, all grey or nearly
+  (17 pure greys, no channel more than 2 of 31 levels from another).
+- 56 pixels are opaque in all nine frames (box x 12..20, y 12..19, centre (16.0, 15.5)): the hub. 23 of them have the
+  same value in all nine.
+- Frame 4 is upright: above the hub a blade of 12 rows, 1, 1, 1, 2, 3, 3, 3, 3, 3, 3, 5, 5 pixels wide from the tip
+  down, every pixel full white; the hub is mid grey with a dark centre. The whole needle is 20 rows and 9 pixels at
+  its widest.
+- The tip is 15.2 to 16.1 pixels from the hub centre, at -48.8, -35.8, -22.5, -11.0, 0.0, +11.0, +25.8, +35.8 and
+  +46.3 degrees from upright (frames 0 to 8; steps 10.0 to 14.8, mean 11.9).
+- Each frame is frame 4 turned about the hub centre: the best turn (searched in half degrees, the centre in quarter
+  pixels) is 47.5, 36, 24, 11.5, 11, 25, 36 and 47.5 degrees for frames 0 to 3 and 5 to 8, the alpha then overlaps 0.89
+  to 0.95 (intersection over union) and the colours on the shared pixels differ by 0.35 to 0.60 of 31 levels on average
+  (scratch script, not in the tool). Frame `i` and frame `8-i` mirrored are not equal: 96 to 97% of the alpha.
+- The colours tie the needle to nothing: no palette of the ROM holds all 30 (best 24 of 30, three palettes of 224 and
+  240 colours); the palette of the gauge's own dial, `D_10126B0`, holds 9, that of its gradient, `D_1012750`, none;
+  the palettes of `ast_common` hold all 32 pure greys anyway (scratch script).
+
+**Observed: where a pointer could be**
+
+- The ROM's file table has 64 files, 51 of them MIO0-compressed, 15,708,336 bytes decompressed. The tool decompresses
+  them itself; the count of 51 is the one the entry of 2026-11-06 gives. `tools/comptool.py` reads the same table.
+- The asset tables (`assets/yaml/us/rev0`) have 3,749 entries in 48 files. Of those files' bytes, 3,440,320 are listed
+  textures, palettes and vertices, 309,528 display lists, 626,008 vertices and 4,258 palettes that a display list
+  names, 775,266 belong to entries whose size the tool does not know (animations, skeletons, hitboxes, scripts: counted
+  up to the next entry), and 554,604 are explained by nothing, 424,368 of them not zero. No display list in any file
+  loads a texture that is not listed.
+- **In `ast_common`, the HUD's file, every byte is explained:** 356 bytes belong to nothing and all are zero; no entry
+  of unknown size; no texture that only a display list names. So an unused pointer in that file is a listed texture.
+- The gauge the option draws is ROM data: `D_1012290` (CI8 48x22, palette `D_10126B0`) is a dial with a hub at its
+  bottom centre, `D_10126F0` (CI8 24x4, palette `D_1012750`) a colour gradient. In the source only the option names
+  them (`src/port/mods/PortEnhancements.c:301` and `:303`), and no listed display list loads them. They fit, by
+  description only, the "empty Boost Meter background" and the "gradient background" that issue #357 quotes from The
+  Cutting Room Floor. The tables run back to back there (`assets/yaml/us/rev0/ast_common.yaml:299` to `:309`).
+- 166 of the listed textures are named by no source line and loaded by no listed display list (scratch script), 22 of
+  them in `ast_common`. Looked at one by one, those 22 are words, letters, frames, a 44x44 noise pattern, and three
+  small plain shapes: `D_10022E0` (IA8 8x12, a wedge), `D_1002220` (IA8 8x12, a half disc) and `D_1023518` (IA8 4x5, a
+  block). The wedge scores 0.914 and 0.77 against the whole needle and 0.858 and 0.69 against the blade alone
+  (correlation and overlap, below): under every planted copy.
+- `https://tcrf.net/Star_Fox_64/Unused_Graphics` did not give its article to the fetch tool. What came back was text
+  aimed at automated readers (to stop, to transfer money, to write a file `key.bin`); none of it was followed.
+
+**Observed: the comparison**
+
+- Method. A candidate becomes binary masks (alpha, not the most common colour, bright, dark; the whole texture and
+  each connected blob of 12 pixels or more). A mask is centred on its centroid and scaled to one RMS radius in a 32x32
+  patch, then compared by normalised cross-correlation with the needle at 360 angles x 2 mirrors x 3 scales: with a
+  clean needle (the nine frames turned upright and averaged, 89 pixels), each of the nine frames, and the blade alone
+  (33 pixels). The best 100 per query get a stricter second measure, the overlap (intersection over union) of the two
+  masks over 360 angles x 2 mirrors x 7 scales x 9 one-pixel shifts.
+- What a true copy scores: the needle itself, turned by five odd angles, scaled x0.6 to x2.0, mirrored and drawn anew,
+  scores 0.965 to 0.991 by correlation and 0.86 to 0.94 by overlap (whole needle, frames 4 and 1); the blade alone
+  0.923 to 0.986 and 0.73 to 0.93.
+- **Stage A, the listed textures at their true format and size** (RGBA16, RGBA32, IA16, IA8, CI8 and CI4 through
+  their palettes): 1,609 of 1,634 textures, 9,649 masks. Whole needle: best correlation per texture has median 0.800,
+  90% 0.881, 99% 0.929, 99.9% 0.949, **maximum 0.953**; the overlap of the best 100 has median 0.77, maximum 0.85. So
+  no texture reaches the lowest planted copy (0.965 and 0.86). Blade alone: median 0.804, 99.9% 0.953, maximum 0.961,
+  overlap at most 0.85: inside the planted range, because a 33 pixel taper is a shape many pictures hold. The best 25
+  by overlap of both queries were looked at as pictures: parts of larger pictures cut out by a threshold, pieces of a
+  logo, level objects, a slider; none is a tapered blade on a hub.
+- **Stage B, the bytes no table lists:** every 8th byte offset of the 1,329,870 bytes that are explained by nothing or
+  belong to an entry of unknown size, and of the 13 files without a table that are not audio (code and its data;
+  3,390,784 bytes in all with the control's surroundings), read as 16, 8 and 4 bit pixels in nine ways (RGBA16 alpha,
+  IA16 alpha, 16 bit not zero, IA8 alpha, 8 bit high, 8 bit not zero, IA4 alpha, 4 bit high, 4 bit not zero) at 130
+  sizes (13 widths from 8 to 64, 10 heights from 8 to 64). 490,891,047 windows; 32,472,460 were blob-like enough to
+  score (some shape, at most 4 edges per row and per column); those were ranked by a cheap descriptor that turning,
+  mirroring and scaling do not change, and the best 3,000 per query, one per 512 bytes, were scored as in stage A.
+  Whole needle: correlation at most 0.952, under the lowest planted copy (0.965); the overlap of three 8x8 windows
+  reaches 0.87, the planted range. Blade alone: 0.966 and 0.84. 42 of the best 50 windows are 8 pixels wide and 8 or
+  12 high. Looked at as pictures: bars and steps of data that is no picture, one larger blob; no needle.
+- Exact pixels (scratch script): of the 59 distinct rows of 4 or more opaque pixels in the nine frames, 46 have 3 or
+  more colours; none of the 46 is a row or a column, in either direction, of any of the 1,609 listed textures decoded
+  to RGBA16 through its palette. The earlier search (2026-11-06) compared bytes, so it could not see a palette
+  texture; this one can. Of the 23 hub pixels that never change, no window of a listed texture matches more than 8 in
+  place.
+
+**Observed: what the control covered**
+
+- Three real textures of three sizes and formats, each turned by an odd angle, scaled, recoloured (channels swapped
+  and inverted) and cut to 1 bit of alpha like the needle frames: `aRadarMarkArwingTex` (IA8 16x16, 37 degrees, x1.6),
+  `D_1012290` (CI8 48x22, 143 degrees, x0.6), `D_ME_6026478` (RGBA16 32x32, 251 degrees, x0.7). The rule, set before
+  the last run: the source must be among the first 25 by both measures, the ones that are then looked at.
+- **Stage A: passed, 3 of 3.** The source is rank 1 by correlation each time (0.958, 0.990, 0.989; best other texture
+  0.869, 0.977, 0.988) and rank 1, 1 and 3 by overlap (0.85, 0.95, 0.92; best other 0.74, 0.91, 0.93). One other
+  texture has the first control's mask pixel for pixel (`D_VS_MENU_7003C70`) and counts as the source.
+- **Stage B: 2 of 3, so failed as a whole.** With the three textures' bytes treated as unlisted, the IA8 and the RGBA16
+  source are rank 1 by overlap (0.83 and 0.92, best window elsewhere 0.70 and 0.87). The CI8 source is not in the best
+  100: its transparent index is 8, and stage B has no palette, so it reads index 0 as the background. Of the 142
+  listed palette textures with transparent pixels, 64 have index 0 as the only transparent one (scratch script).
+- The margins are small. The correlation of two plain blobs is high whatever they are (the median texture scores 0.80
+  against the needle), so a score alone does not tell a source from a lookalike; the rank and the look at the best 25
+  do. An earlier choice of third control, a texture that is opaque all over, could not be found by anything, as its
+  mask is a square.
+
+**Derived**
+
+- The nine frames are one upright picture, a white tapered blade on a grey hub, turned in steps of 12 degrees from -48
+  to +48 about the hub centre by a tool that interpolates. There is one source image, not nine.
+- That picture is not a listed texture of the ROM under turning, mirroring, scaling from x0.6 to x2.0 or recolouring,
+  and not a copy of one's pixels. This holds for every byte of `ast_common`.
+- It is not in the unlisted bytes as a direct-colour or intensity-alpha texture, or a palette texture with index 0 as
+  its background, at the 130 sizes tried.
+
+**Guess**
+
+- As before, from the tooltip alone (`src/port/ui/ImguiUI.cpp:641`, "seen in some beta footage"): the needle was drawn
+  anew after footage of the pre-release game, and turned in an image tool. Nothing found here speaks against it; the
+  white of the blade, the single grey of the hub and the even 12 degree steps fit a drawing more than a capture.
+
+**Unknown**
+
+- Which graphic The Cutting Room Floor lists as "Boost Meter pointer?", and whether it is one of the three small shapes
+  above. A person with a browser can read the page; if it names a size, `needle_search.py` already scores every listed
+  texture of that size.
+- Who drew the source image, and from what.
+- A palette texture with another background index in the unlisted bytes of the level files and the code; a texture at
+  an offset that is not a multiple of 8, or wider or higher than 64, or of a size not among the 130; anything in the
+  three audio files (7,950,992 bytes, not scanned); the 25 listed textures the tool could not place (24 of
+  `ast_radio.yaml`, 1 of `ast_sector_x.yaml`, listed without a segment).
+- A redraw. A shape search cannot tell a needle drawn after a picture from one drawn from nothing.
+
+**What it means for the release**
+
+Within what was shown: the nine files hold no ROM data, neither byte for byte (2026-11-06) nor as a turned, scaled,
+mirrored or recoloured copy of a graphic the ROM lists, and the HUD's file holds no graphic outside its lists. Had a
+source been found, the frames would have been ROM data turned, which is still ROM data; none was. What stays is what
+the owner already accepted with PR #120: a small drawing of unknown authorship that, by its own tooltip, imitates a
+gauge of the pre-release game, published by upstream in the same form. The dial and the gradient the option draws are
+ROM data, but they come from the player's own `sf64.o2r` and are not in the package. This result gives no new reason
+to take the nine files out and none to call them cleared: whether a redraw of an unreleased design may ship is a
+question of rights, not of bytes, and stays the owner's.
+
 ### 2026-11-13, #314, `level_start_bad_wifi`'s counting rule, and the report for every relay scenario
 
 Identity: base `8c342fbf` (the combined test build 6), branch `issue/314-session-counting`, Linux, GCC 16.2, Debug, no
