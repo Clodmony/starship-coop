@@ -55,6 +55,14 @@ on:
       - 'tools/coop/chaos/**'
       - '.github/workflows/coop-build.yml'
   workflow_dispatch:
+  # The release workflow (release.yml) builds through this file, so a release is built by the steps that tested the code (#358).
+  workflow_call:
+    inputs:
+      release_tag:
+        description: 'The tag of a release; the package README then says it is that release, not a test build'
+        type: string
+        required: false
+        default: ''
 
 concurrency:
   group: coop-build-${{ github.ref }}
@@ -96,7 +104,7 @@ jobs:
       # Upload only what passed the tests of this build; the name holds the id the game shows (#26).
       - name: Package
         id: package
-        run: python3 tools/coop/package.py --config Release
+        run: python3 tools/coop/package.py --config Release ${{ inputs.release_tag && format('--release-tag {0}', inputs.release_tag) || '' }}
       - name: Upload build
         uses: actions/upload-artifact@v4
         with:
@@ -123,7 +131,7 @@ jobs:
       # Upload only what passed the tests of this build; the name holds the id the game shows (#26).
       - name: Package
         id: package
-        run: python tools/coop/package.py --config Release
+        run: python tools/coop/package.py --config Release ${{ inputs.release_tag && format('--release-tag {0}', inputs.release_tag) || '' }}
       - name: Upload build
         uses: actions/upload-artifact@v4
         with:

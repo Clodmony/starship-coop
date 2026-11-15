@@ -256,6 +256,47 @@ reset for it):
   `view_check.py` and `campaign.py` were not run beside a `test_all.py` run; their folders go through the same
   `make_run_folder`.
 
+### 2026-11-15, #358: how a release is made from `coop`, and what its checks can and cannot say
+
+Identity: base `dee185b8` (the combined test build 6), branch `issue/358-release-workflow`, Linux, GCC, no ROM and no game started.
+
+**Observed** (files read, nothing run on GitHub)
+
+- `Co-op build` (`.github/workflows/coop-build.yml`) builds Linux and Windows, runs the transport and session tests and packs the game with
+  `tools/coop/package.py`; it is disabled in the repository settings (since 2026-11-07), its last runs (2026-11-07 and 2026-11-08) succeeded,
+  its artifacts live 14 days, and no workflow made a GitHub Release. `docs/coop/MAINTAINING.md` said "Releases: not yet".
+- The package holds the game, `config.yml`, `starship.o2r` and a README, scanned for game data by name, by start bytes and by ROM header
+  (`package_test.py`, 35 scenarios). The game asks for the player's ROM on its first start and makes `sf64.o2r` from it.
+- `coop` is at `07c03c1f`; the combined test build (PR #285) holds the work since, so a release from `coop` today would be the old game.
+
+**Built**
+
+- `release.yml`: runs on a tag `vX.Y.Z-coop[-alpha1]` or by hand from a tag, never on a push or pull request. Jobs: `verify`
+  (`tools/coop/release_check.py`), `build` (calls `coop-build.yml` with the tag, so the build is the one that tests the code),
+  `release` (scans both packages again, makes a `.tar.gz` that keeps the executable flag and a `.zip`, `SHA256SUMS.txt`, and a DRAFT release; a
+  tag with `alpha`, `beta` or `rc` is a pre-release). Only `release` has `contents: write`.
+- `release_check.py`: the tag's name; the commit is on `origin/coop` and is the commit the workflow runs on (`--expect-sha`, so a run
+  started from a branch cannot build another commit); `docs/coop/releases/<tag>.md` has `Gated commit:`, `Gate result: PASS` and four sections
+  with no `TODO`; the gated commit is the tagged one or an ancestor, and only `docs/` and the README changed since.
+  `release_check_test.py`: 14 scenarios on throwaway repositories; five hand-made breaks of the script (any change counts as documentation,
+  no branch check, no ancestor check, no `PASS` check, a looser name) were each caught.
+- `package.py --release-tag`: the README says it is that release; the text now also says how two players meet (port 46464, same build id,
+  same ROM version).
+
+**Derived**
+
+- "Tested" in a release means: the full gate passed on the gated commit on the owner's PC, and the tag is that commit plus documentation.
+  CI adds the build, the loopback tests and the scan. It does not add the gate, and nothing here checks that the owner's gate was honest: the
+  notes name the gated commit and the QA record in `docs/coop/QA.md` is the evidence.
+
+**Unknown**
+
+- Whether a reusable workflow that is disabled in the settings can be called by `release.yml` (`uses: ./.github/workflows/coop-build.yml`).
+  The other workflows stay disabled. If a call fails for that reason, the fix is one line in the settings or a copy of the two build jobs.
+- Whether `actions/download-artifact` puts each artifact in a folder named after it with `pattern:` (the documented behaviour), and so
+  whether the archive names come out as `starship-coop-<id>-<os>-x64.*`. The `release` job checks that exactly three files come out.
+- Nothing of `release.yml` has run on GitHub. The first run is the trial (MAINTAINING.md, step 6).
+
 ### 2026-11-14, #324: a test game whose replay file ran out dropped out of lockstep without saying so
 
 **Observed**

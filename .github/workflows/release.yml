@@ -1,0 +1,105 @@
+name: Release
+
+# A release is a tag on a commit of `coop` whose code passed the full gate on the owner's PC (docs/coop/MAINTAINING.md,
+# "Releases"; CI cannot run that gate, it needs a ROM). This workflow
+#   1. checks the tag, the gate record in docs/coop/releases/<tag>.md and that nothing but documentation changed since
+#      the gated commit (tools/coop/release_check.py),
+#   2. builds Linux and Windows through coop-build.yml, the steps that test the code, with the tag in the package README,
+#   3. scans the packages once more for game data, and makes a DRAFT release with both packages and their checksums.
+# Nothing is public until someone presses "Publish release". It never runs on a push or a pull request.
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+-coop'
+      - 'v[0-9]+.[0-9]+.[0-9]+-coop-*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'An existing tag: vX.Y.Z-coop or vX.Y.Z-coop-alpha1. Run the workflow from that tag.'
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Check the tag
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.check.outputs.tag }}
+      prerelease: ${{ steps.check.outputs.prerelease }}
+      notes: ${{ steps.check.outputs.notes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+      - name: Check the tag, the gate record and the notes
+        id: check
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: python3 tools/coop/release_check.py --tag "$TAG" --branch origin/coop --expect-sha "$GITHUB_SHA"
+
+  build:
+    name: Build
+    needs: verify
+    uses: ./.github/workflows/coop-build.yml
+    with:
+      release_tag: ${{ needs.verify.outputs.tag }}
+
+  release:
+    name: Draft release
+    needs: [verify, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.verify.outputs.tag }}
+      PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+      NOTES: ${{ needs.verify.outputs.notes }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.tag }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: starship-coop-*
+          path: packages
+      - name: Scan the packages again
+        run: |
+          set -e
+          ls packages
+          for folder in packages/*/; do python3 tools/coop/package.py --scan "$folder"; done
+      - name: Make the archives and the checksums
+        run: |
+          set -e
+          mkdir out
+          for folder in packages/*-linux-x64; do
+            chmod +x "$folder/Starship"
+            tar -C packages -czf "out/$(basename "$folder").tar.gz" "$(basename "$folder")"
+          done
+          for folder in packages/*-windows-x64; do
+            (cd packages && python3 -m zipfile -c "../out/$(basename "$folder").zip" "$(basename "$folder")")
+          done
+          (cd out && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          test "$(ls out | wc -l)" -eq 3  # the Linux archive, the Windows archive and the checksums
+      - name: Make the draft release
+        run: |
+          set -e
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = "true" ]; then
+              gh release delete "$TAG" --yes   # a run made again replaces its own draft, never a published release
+            else
+              echo "release $TAG is already published"
+              exit 1
+            fi
+          fi
+          flags=(--draft --verify-tag --title "Starship Co-op $TAG" --notes-file "$NOTES")
+          if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
+          gh release create "$TAG" "${flags[@]}" out/*
