@@ -11,6 +11,7 @@
 #include "port/coop/game/save.h"
 #include "port/coop/net/protocol.h"
 #include "port/coop/sync/handover_game.h"
+#include "port/coop/sync/lockstep.h"
 #include "port/coop/sync/lockstep_game.h"
 #include "port/coop/test/menu_driver.h"
 #include "port/coop/test/switches.h"
@@ -153,6 +154,9 @@ static void Link_Notice(const char* text) {
 static bool Link_Away(int32_t player) {
     return (sMenu->session != NULL) && CoopSession_IsAway(sMenu->session, player);
 }
+
+_Static_assert(SYNC_CLIENT_STALL_MS > COOP_LOCKSTEP_STALL_MS + COOP_SESSION_RESUME_MS + COOP_SYNC_RESUME_MS + 10000,
+               "a client that did not drop has to wait longer than the host does for a player who did");
 
 bool CoopMenuGame_ResumeOn(void) {
     return CoopSyncGame_ResumeOn();

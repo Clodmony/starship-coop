@@ -80,6 +80,7 @@ typedef struct {
     uint8_t pendingPick; // the CoopCharacter we asked for and got no answer on, 0 if none
     bool levelStarted;   // the session said so: nothing left to pick or start
     bool lost;           // a session ended in a level, and the player has not been shown why yet
+    uint32_t lostAt;     // when the connection to the host was lost, for the tries to come back (decision 0016 part A)
     bool recovering;     // the level is going to start again (a RECOVER event), and has not yet
     bool rejoining;      // client: the connection was lost in a level, and this is the session that goes back
     bool eyes;           // something about a recovery has to be seen, and has not been shown yet

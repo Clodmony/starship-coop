@@ -81,7 +81,11 @@ static bool Menu_Rejoin(CoopMenu* m, CoopSessionEnd end) {
     CoopTransport* t;
     uint64_t id;
 
-    if (m->phase != COOP_MENU_JOINED || !m->levelStarted || m->rejoining || m->character == 0 ||
+    // A try that reached nobody is made again while the host still keeps the slot (decision 0016 part A).
+    bool again = m->rejoining && Menu_Resumes(m) && (end == COOP_SESSION_END_TIMEOUT) &&
+                 ((uint32_t) (m->nowMs - m->lostAt) < COOP_SESSION_RESUME_MS);
+
+    if ((m->phase != COOP_MENU_JOINED && !again) || !m->levelStarted || (m->rejoining && !again) || m->character == 0 ||
         (end != COOP_SESSION_END_TIMEOUT && end != COOP_SESSION_END_CLOSED)) {
         return false;
     }
@@ -107,8 +111,11 @@ static bool Menu_Rejoin(CoopMenu* m, CoopSessionEnd end) {
         return true;
     }
     m->phase = COOP_MENU_CONNECTING;
+    if (!m->rejoining) {
+        m->lostAt = m->nowMs;
+        m->lostEnd = end;
+    }
     m->rejoining = true;
-    m->lostEnd = end;
     m->recovering = true;
     m->eyes = true;
     // A game that resumes keeps its lockstep standing, waiting for the host's input, so that it can go on where it was if

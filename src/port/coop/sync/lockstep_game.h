@@ -72,6 +72,12 @@ bool CoopSyncGame_ResumeOn(void);
 // COOP_SYNC_RECOVER_RESUME.
 bool CoopSyncGame_ResumeClient(int peer);
 #define COOP_SYNC_RESUME_MS 5000
+// A client that waits for another player's input leaves that to the host for this long: the host drops a player who
+// sends nothing, or the connection to the host times out, and in a session that resumes it then waits for it
+// COOP_SESSION_RESUME_MS (30 s) more and for its answer COOP_SYNC_RESUME_MS. So this is clearly more than that sum: a client
+// that did not drop must not end its session just before the host starts the level again for it (menu_game.c holds the
+// sum against COOP_SESSION_RESUME_MS). Only then does the client end the session by itself.
+#define SYNC_CLIENT_STALL_MS 60000
 
 // The level cannot go on as it is and the session is going to start it again (a RECOVER event): lockstep stops, input
 // goes back to the local controller and the level goes on in this game until the new level start comes, as after

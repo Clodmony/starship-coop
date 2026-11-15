@@ -40,9 +40,6 @@ extern void Graphics_PushFrame(Gfx* data);
 #define SYNC_LOG_HOLD_MS 200
 #define SYNC_LOG_SUMMARY_MS 10000
 
-// A client that waits for another player's input leaves that to the host for this long: the host drops a player who
-// sends nothing, or the connection to the host times out. Only then does the client end the session by itself.
-#define SYNC_CLIENT_STALL_MS 40000
 // A recovery that does not help: the games part again within this many frames of a level start. After
 // SYNC_QUICK_PARTS of those in a row the session ends as it did before there was a recovery, or it would start the
 // level again for ever: a client on another save, for example, parts at frame 0 of every level start.
@@ -200,6 +197,9 @@ static void Sync_Stalled(int32_t player) {
     if (sConfig.host && (sLink.away != NULL) && sLink.away(player)) {
         return; // its connection was lost and its slot is kept: the session waits for it (decision 0016 part A)
     }
+    if (sConfig.host && (player >= 1) && (player <= COOP_NET_MAX_PEERS) && sResume[player - 1].pending) {
+        return; // it came back and is being asked to go on: the wait is over, its input follows
+    }
     snprintf(text, sizeof(text), "Player %d stopped sending input, so the session is over.", (int) player + 1);
     CoopLog_Write(COOP_LOG_LOCKSTEP, false, "stall: no input from player %d for %u ms at frame %u", (int) player + 1,
                   (unsigned) waited, (unsigned) sLockstep.frame);
@@ -244,6 +244,7 @@ bool CoopSyncGame_ResumeClient(int peer) {
     }
     sResume[peer].pending = true;
     sResume[peer].sinceMs = SDL_GetTicks();
+    sLockstep.progressMs = sResume[peer].sinceMs; // the wait for its input starts over
     CoopLog_Write(COOP_LOG_LOCKSTEP, false, "player %d came back: asked whether its game can go on at frame %u", peer + 2,
                   (unsigned) sLockstep.frame);
     return true;
@@ -268,8 +269,8 @@ static void Sync_OnResume(int peer, const uint8_t* data, uint16_t size) {
     uint32_t mine;
     bool ok;
 
-    if ((size != 5) || (peer != 0) || sConfig.host) {
-        return;
+    if ((size != 5) || (peer != 0) || sConfig.host || (sState == SYNC_OFF)) {
+        return; // not from the host, or this game never began lockstep: nothing to answer with
     }
     hostFrame = (uint32_t) data[1] | ((uint32_t) data[2] << 8) | ((uint32_t) data[3] << 16) | ((uint32_t) data[4] << 24);
     mine = sLockstep.frame;
@@ -297,7 +298,7 @@ static void Sync_OnResume(int peer, const uint8_t* data, uint16_t size) {
 static void Sync_OnResumed(int peer, const uint8_t* data, uint16_t size) {
     char line[SYNC_TEXT_SIZE];
 
-    if ((size != 6) || !sConfig.host || (peer < 0) || (peer >= COOP_NET_MAX_PEERS) || !sResume[peer].pending ||
+    if ((size != 6) || (sState == SYNC_OFF) || !sConfig.host || (peer < 0) || (peer >= COOP_NET_MAX_PEERS) || !sResume[peer].pending ||
         (data[0] != sRun)) {
         return;
     }
@@ -513,6 +514,7 @@ void CoopSyncGame_Begin(const CoopSyncLink* link, const uint8_t* roster, int32_t
     sLink = *link;
     sRun = run;
     sStallAsked = false;
+    memset(sResume, 0, sizeof(sResume));
     sConfig.send = Send;
     sConfig.self = self;
     sConfig.host = host;
@@ -593,6 +595,7 @@ void CoopSyncGame_Pause(void) {
     }
     CoopDesyncGame_End();
     CoopRepair_End();
+    memset(sResume, 0, sizeof(sResume));
     sState = SYNC_PAUSED;
     sWaiting = false;
 }
@@ -608,6 +611,7 @@ void CoopSyncGame_End(void) {
     }
     CoopDesyncGame_End();
     CoopRepair_End();
+    memset(sResume, 0, sizeof(sResume));
     CoopDesyncGame_DropDump(); // #189: nobody is left to send it, so the log says what is missing
     sQuickParts = 0;
     CoopMath_SetSession(0); // the C library again, as upstream (decision 0011)

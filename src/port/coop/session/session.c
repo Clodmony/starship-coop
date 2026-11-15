@@ -470,6 +470,10 @@ const char* CoopSession_EndText(CoopSessionEnd end) {
 void CoopSession_RecoverText(uint8_t reason, uint8_t player, char* out, size_t cap) {
     switch (reason) {
         case COOP_RECOVER_LOST:
+            if (player == 0xFF) { // nobody to wait for: a player came back and its game could not go on where it was
+                snprintf(out, cap, "A player came back, but its game could not go on where it was. Starting the level again together.");
+                break;
+            }
             snprintf(out, cap,
                      "Player %d lost the connection. Waiting for it to come back (%d s), then the level starts again.",
                      (int) player + 1, COOP_SESSION_REJOIN_MS / 1000);
@@ -1169,7 +1173,7 @@ bool CoopSession_IsAway(const CoopSession* s, int32_t player) {
 }
 
 bool CoopSession_Recover(CoopSession* s, uint8_t reason, uint32_t nowMs) {
-    if (!s->started || reason < COOP_RECOVER_LOST || reason >= COOP_RECOVER_REASONS) {
+    if (!(s->started || s->rejoin) || reason < COOP_RECOVER_LOST || reason >= COOP_RECOVER_REASONS) {
         return false;
     }
     nowMs = Session_Clock(s, nowMs);
@@ -1537,7 +1541,7 @@ static bool Client_Poll(CoopSession* s, uint32_t nowMs, CoopSessionEvent* ev) {
                     Client_Roster(s, &net, ev);
                     return true;
                 }
-                if (s->client == CLIENT_ACTIVE && s->started && net.msgId == COOP_MSG_SESSION_RECOVER) {
+                if (s->client == CLIENT_ACTIVE && (s->started || s->rejoin) && net.msgId == COOP_MSG_SESSION_RECOVER) {
                     Client_Recover(s, &net, nowMs, ev);
                     return true;
                 }

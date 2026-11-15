@@ -39,6 +39,13 @@ extern s32 sSeededRandSeed3;
 #define JOIN_MAX_PICKS 4
 // A game that is loading a level on a busy machine stalls for a while, and that is no reason to lose a test.
 #define JOIN_TIMEOUT_MS 30000
+// SF64_COOP_JOIN_TIMEOUT_MS: the transport's time-out of this game, as a real connection has 10 s (menu.h), so a loss shows
+// before the lockstep's own 10 s without input does.
+static uint32_t Join_TimeoutMs(void) {
+    const char* text = getenv("SF64_COOP_JOIN_TIMEOUT_MS");
+
+    return ((text != NULL) && (atoi(text) > 0)) ? (uint32_t) atoi(text) : JOIN_TIMEOUT_MS;
+}
 
 static const char* sPortFile = NULL;
 static const char* sConnect = NULL;
@@ -74,6 +81,7 @@ static const char* sName = NULL;
 static char sNamesSaid[COOP_SESSION_PLAYERS * (COOP_NAME_MAX + 1) + 1];
 static u8 sCharacter = 0;       // what this client flew at the last level start, to come back as
 static bool sRejoining = false; // this session is the one that goes back to the host
+static uint32_t sLostAtMs = 0;  // when the connection was lost, for the tries to come back
 static char sHost[256];         // a client's host and port, to come back to
 static u16 sHostPort = 0;
 
@@ -136,7 +144,7 @@ static void Session_Open(void) {
     CoopTransport* t;
 
     sTried = true;
-    config.timeoutMs = JOIN_TIMEOUT_MS;
+    config.timeoutMs = Join_TimeoutMs();
     CoopIdentity_FromGame(&id);
     if (sPortFile != NULL) {
         FILE* f;
@@ -353,7 +361,10 @@ static bool Session_Rejoin(CoopSessionEnd end) {
     CoopTransport* t;
     uint64_t sessionId;
 
-    if ((sPortFile != NULL) || !sEntered || sRejoining || (sCharacter == 0) ||
+    // A try that reached nobody is made again while the host still keeps the slot (decision 0016 part A).
+    if ((sPortFile != NULL) || !sEntered || (sRejoining && !(CoopSyncGame_ResumeOn() && (end == COOP_SESSION_END_TIMEOUT) &&
+                                                              ((SDL_GetTicks() - sLostAtMs) < COOP_SESSION_RESUME_MS))) ||
+        (sCharacter == 0) ||
         ((end != COOP_SESSION_END_TIMEOUT) && (end != COOP_SESSION_END_CLOSED))) {
         return false;
     }
@@ -361,10 +372,13 @@ static bool Session_Rejoin(CoopSessionEnd end) {
     if (sessionId == 0) {
         return false;
     }
-    config.timeoutMs = JOIN_TIMEOUT_MS;
+    config.timeoutMs = Join_TimeoutMs();
     t = CoopNetSdl_Connect(sHost, sHostPort, &config);
     if (t == NULL) {
         return false;
+    }
+    if (!sRejoining) {
+        sLostAtMs = SDL_GetTicks();
     }
     CoopSession_Close(sSession);
     CoopIdentity_FromGame(&id);
