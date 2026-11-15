@@ -4683,7 +4683,8 @@ def repair_lines(game):
     return [line.format() for line in coop_log.read_lines(path, player_of(game))]
 
 
-def resync_run(args, folder, target=None, wrote="gActors[", extra_env=None, clients=1, poke_on=0, pokes=None):
+def resync_run(args, folder, target=None, wrote="gActors[", extra_env=None, clients=1, poke_on=0, pokes=None,
+               profile=None):
     """One session with a bit flipped on a client at JOIN_FRAME + 300 (`target` is SF64_COOP_HASH_POKE_TARGET: the last
     actor's fwork[29] when None), repair on. Every game ends up equal to the host from the barrier on, no level starts
     again, no session ends; the flipped client's log says the value it wrote starts with `wrote`. Returns the line and
@@ -4703,14 +4704,25 @@ def resync_run(args, folder, target=None, wrote="gActors[", extra_env=None, clie
         flipped["SF64_COOP_HASH_POKE_TARGET"] = target
     envs = [{} for _ in range(clients)]
     envs[poke_on] = flipped
-    games = session(args, folder, both=env, repair=True, clients=clients, client_envs=envs)
+    procs = []
+
+    def to_relay(port):
+        proc, listen, _ = relay(folder, port, profile)
+        procs.append(proc)
+        return listen
+
+    games = session(args, folder, both=env, repair=True, clients=clients, client_envs=envs,
+                    client_port=to_relay if profile else None)
     try:
-        wait_for(list(games), "done", 900, "after the flipped bit: the repair did not let the level go on")
+        wait_for(list(games), "done", 1200, "after the flipped bit: the repair did not let the level go on")
         survive_no_end(games)
         time.sleep(2)
     finally:
         for game in games:
             game.close()
+        for proc in procs:
+            proc.terminate()
+            proc.wait()
     host = games[0]
     flipper = games[1 + poke_on]
     for game in games:
@@ -4763,6 +4775,15 @@ def sc_resync(args, folder):
     equal on every frame from the barrier to the end of the level run, and differ from the flipped bit to the barrier.
     The client's log names what it wrote (a slot of gActors)."""
     return resync_run(args, folder)[0]
+
+
+def sc_resync_lag(args, folder):
+    """Decision 0016 through the chaos relay (--profiles, default good_wifi): the offer and the state cross a lagging
+    link, and every game is still before the barrier when the offer comes. At the games' test speed a frame takes a
+    fraction of the link's delay, so a profile that lags more than a few ms can take the fallback; `--profiles` says what
+    to try."""
+    done = [f"{profile}: {resync_run(args, folder / profile, profile=profile)[0]}" for profile in args.profiles.split(",")]
+    return "; ".join(done)
 
 
 def sc_resync_three(args, folder):
@@ -7187,6 +7208,7 @@ SCENARIOS = {
     "resync": sc_resync,
     "resync_targets": sc_resync_targets,
     "resync_three": sc_resync_three,
+    "resync_lag": sc_resync_lag,
     "resync_twice": sc_resync_twice,
     "resync_refused": sc_resync_refused,
     "resync_near": sc_resync_near,
