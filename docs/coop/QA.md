@@ -267,6 +267,37 @@ Running tests must never use or modify the owner's own `starship.cfg.json`, save
 Newest first. One block per run that matters (a milestone, a release, a QA level change).
 
 ```
+date:       2026-11-17
+commit:     issue/262-sessions-docs (69b3b6bc) on issue/combined-test-6 80a8e8ee: four scenarios for the drops decision
+            0016 part A had read and not run, and the fault one of them found, fixed in session.c (a client on its way
+            back can wait for a recovery)
+identity:   ROM US 1.0, Linux, GCC 16.2, Debug, OpenGL software renderer; two games on one PC (three in resume_three
+            and survive_three), niced, one session at a time
+what ran:   lockstep_test.py --jobs 1 --only resume_repair (three sessions): ok on the fix; RESUME_REPAIR_ONLY=raced on a
+            throwaway build with the old refusal: FAILED, the level did not start again. On the fix (dae40f5e):
+            --only resume_level,resume_map,resume_silent 3/3; --only sim,desync_sim 2/2; --only
+            resume,resume_early,resume_refused,resume_gone,resume_three,left,host_left 7/7; --only
+            resync,resync_refused,steer,pause,stall,frozen,survive_desync,survive_three,survive_gaps_map_lost 9/9;
+            session_mutants.py --only recover_coming_back_*: all 4 breaks caught.
+            On 69b3b6bc: test_all.py --lanes 1 --base-exe <a build of 80a8e8ee> --only
+            checks,session,session-asan,session-mutants,session-mutants-asan,menu,menu-asan,join,coop-off,
+            replay-test,hash-run-2,desync_dump: PASS, 16/16 steps, 13m21s (session-mutants: all 462 breaks caught).
+            Before the fix, on 269cd7cd: test_all.py --lanes 1 --only
+            checks,coop-off,replay-test,exit-test,hash-run-2,join,menu,session,desync_dump: PASS, 12/12 steps
+result:     a client that stops dead 120 frames into the map, or on the second frame of the level after it, for 14 s
+            comes back into its slot and the session goes on: equal on 13240 and 13256 frames, the route equal, no
+            level start. No answer to the host's question: the level starts again after 5 s. A client lost at the
+            repair offer: back after 14 s its game says no, back after 24 s the host's repair has given up (20 s
+            before the barrier, not the 10 s at it: decision 0016 A.4 corrected); the level starts again, no repair
+            completes, no session ends. Fault found and fixed: a client whose own repair gave up while it was on its
+            way back ended its session (2 of 8 runs of that session by chance; forced by the session `raced`).
+            Found, not changed: a returning game is refused when a setting that changes the game changed during the
+            session (NOTES.md, 2026-11-16). NOT run: Windows, two PCs, a real connection that is cut (a stopped
+            process stands in), Release, three and four games for the new scenarios, the lockstep step as a whole,
+            lockstep-mutants and desync-mutants, a person. The QA level of the project does not change.
+```
+
+```
 date:       2026-11-16
 commit:     issue/345-four-pilots (abd5e309; the escape runs on 7b2ce117, abd5e309 only wraps two lines) on
             issue/combined-test-6 82a44d62
