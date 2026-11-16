@@ -3923,6 +3923,39 @@ static void Script_ClientRejoin(void) {
            name, "a client that came back did not take SESSION_RECOVER, or its text names a player nobody is");
     CoopSession_Close(s);
 
+    // A client on its way back, before the host's answer (#262): its game stands in the level it lost the connection in
+    // and can find that the level cannot go on (a repair that gave up meanwhile). That is a wait for the host's level
+    // start, not the end of its session: the RECOVER event comes at once, before it is connected and while it waits for
+    // the welcome alike, and the welcome and the level start are taken after it.
+    Script_Init(&t);
+    memset(&side, 0, sizeof(side));
+    s = CoopSession_Rejoin(&t.base, &a, SCRIPT_T0, TEST_ID, SLIPPY);
+    EXPECT(CoopSession_Recover(s, COOP_RECOVER_DESYNC, SCRIPT_T0) && CoopSession_Recovering(s), name,
+           "a client on its way back could not wait for a recovery before it was connected");
+    Drain(s, SCRIPT_T0, &side);
+    EXPECT(side.recovers == 1 && side.recoverReason == COOP_RECOVER_DESYNC && side.ended == 0, name,
+           "a client on its way back got no RECOVER event for its own recovery, or its session ended");
+    CoopSession_Close(s);
+    Script_Init(&t);
+    memset(&side, 0, sizeof(side));
+    s = CoopSession_Rejoin(&t.base, &a, SCRIPT_T0, TEST_ID, SLIPPY);
+    Script_Connected(&t, 0);
+    Drain(s, SCRIPT_T0, &side);
+    EXPECT(CoopSession_Recover(s, COOP_RECOVER_DESYNC, SCRIPT_T0 + 1) && CoopSession_Recovering(s), name,
+           "a client on its way back could not wait for a recovery while it waited for the host's answer");
+    Script_Welcome(&t, &a, 2);
+    Drain(s, SCRIPT_T0 + 1, &side);
+    EXPECT(side.recovers == 1 && side.joined == 1 && side.rejoined == 1 && side.ended == 0 && CoopSession_Recovering(s),
+           name, "a client that asked for a recovery on its way back did not come back, or forgot the recovery");
+    Level_Bytes(bytes, TEST_LEVEL, TEST_PHASE, FOX, FALCO, SLIPPY, NO_PLAYER);
+    Level_Run(bytes, 2);
+    Script_SaveMsg(&t);
+    Script_Message(&t, 0, COOP_MSG_SESSION_LEVEL_START, bytes, sizeof(bytes));
+    Drain(s, SCRIPT_T0 + 2, &side);
+    EXPECT(side.levelStarts == 1 && side.levelStart.run == 2 && side.ended == 0 && !CoopSession_Recovering(s), name,
+           "a client that asked for a recovery on its way back did not take the host's level start");
+    CoopSession_Close(s);
+
     // Another session on that host: the welcome is not taken.
     Script_Init(&t);
     memset(&side, 0, sizeof(side));
@@ -3932,6 +3965,10 @@ static void Script_ClientRejoin(void) {
     Drain(s, SCRIPT_T0 + 1, &side);
     EXPECT(side.joined == 0 && side.ended == 1 && side.end == COOP_SESSION_END_OTHER_SESSION && t.disconnects[0] == 1,
            name, "a client came back into another session");
+    // Its session is over: nothing waits for a recovery there (the level would wait for a level start that cannot
+    // come).
+    EXPECT(!CoopSession_Recover(s, COOP_RECOVER_DESYNC, SCRIPT_T0 + 2) && !CoopSession_Recovering(s), name,
+           "a client whose way back had ended could wait for a recovery");
     EXPECT(strstr(side.endText, "another session") != NULL, name, "the end does not say why");
     CoopSession_Close(s);
 
