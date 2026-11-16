@@ -1815,6 +1815,81 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-16, #345: what put pilots 1 to 3 on one spot at Andross, and a place for every player of the escape's row
+
+Read and run on `issue/345-four-pilots` (from `issue/combined-test-6` `82a44d62`). Identity: ROM US 1.0, Linux, GCC,
+Debug, OpenGL on a software renderer, no window; three or four game clients on one PC in lockstep over loopback through
+the join driver, a pilot on each. "Base" is the Debug build of `82a44d62`. Only test code changed
+(`src/port/coop/test/`, `tools/coop/`). It follows the entry of 2026-11-14 below ("test pilots on one spot ...") and
+answers its first Unknown.
+
+**Observed: players 1 to 3 on one spot at Andross** (`campaign.py --players 4 --levels venom-andross`, the pilot log's
+Andross line every 60 frames and the trace)
+
+- Base, four games: as on 2026-11-14 to the frame: 237, 435 and 314 frames on one spot for pairs 1-2, 1-3 and 2-3, level
+  complete at level frame 4977. Three games on base: 0 for every pair, level complete at 5185.
+- Andross was in his state 17, the inhale, at the log's frames 2700, 3840 to 3900 and 4320 to 4440. In state 17 the face
+  pulls player 0 toward (its x, its y - 150) by at most `fwork[16]` a frame, which grows to 35, and
+  `CoopAim_AndrossPull` pulls every other flying player the same way (`src/overlays/ovl_i6/fox_andross.c`, case 17;
+  `src/port/coop/game/aim.c`). At frame 4440 players 1, 2 and 3 stood at (0, 36), player 0 at (6, 16).
+- Nobody was swallowed: player 0's bomb made Andross choke (state 15 with `swork[8]` 2), and in states 15 and 16 the face
+  moves no player. Players 1 to 3 still stood on one point (x -0.0, y the same for all three, 40 to 68) from 4500 to
+  about 4650, while their pilots had no boss box to aim at (`aim kind=0`).
+- The rails pilot takes the spot with the least cost on a grid of spots 80 apart across the path and 40 apart in y,
+  from y 60 above the path (`CoopPilot_FlyRails`, `src/port/coop/test/pilot.c`). Since 2026-11-14 a spot within 40 in
+  x and 20 in y of a lower player's place costs 400 more (`CoopPilot_Taken`). Three ships at y 36 to 40 are more than 20
+  from every row of spots, so no spot was taken for any of them, and three pilots with one place chose one spot.
+- With a spot that a lower player chose on this frame counted as taken too, four games: 1 frame on one spot for 1-2, 9
+  for 1-3, 0 for the others, of 5142 to 5746 frames both flew (639 of them in the inhale), level complete at 5746,
+  hashes equal. Fortuna with four (`campaign-4`): 0 for every pair, level complete at 5151, as before.
+  Meteo with three: 16, 1 and 1 frames for 0-1, 0-2 and 1-2, level complete at 15153, equal on every frame (base
+  not run with three).
+
+**Observed: a place for each player of the escape's row** (`lockstep_test.py --only escape_look_three|escape_look_four
+--levels cases_inv`; with three or four games the sessions now also run `blast1`, and with four `blast2`, the players
+inside the row; `off` is the updates of a case's 60 that waited 3000 away)
+
+| what the pilots do for a case on player t | 3 games | 4 games |
+|---|---|---|
+| every other player within 800 brakes one burst | pass; `blast1` 4 off | fail: 1 and 2 in one another, 116 frames from 540; `blast1` 57 off |
+| the others brake only until 200 behind t | not run | fail: 0 and 3, 109 frames from 749 |
+| only those within 200 behind or ahead of t brake | pass; `blast0` 55 off | not run |
+| those 200 behind to 600 ahead of t brake | pass; offs 9, 0, 12, 0, 0 | fail: 0 and 3, 81 frames from 778 |
+| as the row above, and the probe also tries the four diagonal places | pass; offs 0, 0, 6, 0, 0 | fail: 1 and 2, 274 frames from 384; offs 0, 0, 10, 0, 4, 0 |
+| t boosts while another is within 800 and less than 200 behind it; nobody brakes for room; a pilot starts no brake while any player near it brakes | pass; offs 0, 0, 6, 0, 0 | pass; offs 2, 0, 10, 0, 0, 7 |
+
+- Each failure with four games came after one or two players had braked for room: their meters were full or in
+  cooldown, and when they then met another player at a corner, the brake that keeps pilots apart could not start
+  (`w8AndPilot_KeepApart`). A player 600 ahead of t that braked for room lost about 1000 of ground and fell back onto
+  player 0.
+- In the final run every case's target was in reach and every other player at least 510 from the object; `blast1` and
+  `blast2` took players 1 and 2 down and brought them back 150 frames later with full shields for a life of the pool,
+  as with the last player.
+- Player 0's `boostSpeed` stayed at -3 for the whole second escape of several runs (the trace's `boost`), and player 1's
+  after its return. In `Player_ArwingBrake` (`src/engine/fox_play.c`) a negative speed comes back by 0.5 a frame only
+  while the meter is above 0; the meter empties by 0.35 in each of the brake and the boost code, so it can reach 0 before
+  the speed does, and then neither function brings the speed back to 0 (other code that sets `boostSpeed` was not
+  read).
+
+**Derived**
+
+- The frames on one spot at Andross were the pilots' doing, started by the game: the inhale brings every flying player
+  to one point (as decided on #213), and the pilots then had nothing that set them apart. With the chosen spot counted,
+  the inhale frames show no spot shared for long, so `campaign.py` keeps counting them.
+- The probe needs a player of the row 60 ahead of the others along the flight (or a diagonal place). The cheapest way is
+  that the case's target spends its own meter: a `blast` case takes it down anyway, and the others keep their meters to
+  brake out of each other.
+- Guess: the speed left at -3 is upstream's code, not co-op, and slows a ship by 3 after a short brake until something
+  else resets it. Why the meter of 2026-11-14 stayed at 0.100 is still unknown.
+
+**Unknown**
+
+- Whether the target's boost keeps the cases in reach in the other two mazes and without `gInvincible` (only `cases_inv`
+  ran, with three and with four games, once each).
+- How often two pilots of four still meet at a corner in other escapes (`w9_escape_together` passed in one run).
+- Whether the counted spot changes the other rails levels with three or four players: only Venom/Andross (three and
+  four), Fortuna (four) and Meteo (three) ran.
+
 ### 2026-11-14, #345: whom a shot was for, and a turret's first shot at each of four tanks
 
 Read and run on `issue/345-turret-aim-trace` (from `issue/combined-test-6` `f18733f5`). Identity: ROM US 1.0, Linux,

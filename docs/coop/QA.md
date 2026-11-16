@@ -267,6 +267,24 @@ Running tests must never use or modify the owner's own `starship.cfg.json`, save
 Newest first. One block per run that matters (a milestone, a release, a QA level change).
 
 ```
+date:       2026-11-16
+commit:     issue/345-four-pilots (abd5e309; the escape runs on 7b2ce117, abd5e309 only wraps two lines) on
+            issue/combined-test-6 82a44d62
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL software renderer; up to four games on one PC, niced, one session at a
+            time
+what ran:   campaign.py --players 4 --levels venom-andross (base 82a44d62 and 1a70bf21); --players 3 --levels
+            venom-andross (base), --levels meteo (abd5e309); lockstep_test.py --only escape_look_three and
+            escape_look_four --levels cases_inv (each step of the pilot's room, see NOTES 2026-11-16); test_all.py
+            --no-build --only checks,campaign-4 --lanes 1: PASS, 3/3 steps; lockstep_test.py --no-build --jobs 1: 72/74,
+            the two others (sim, desync_sim) lacked their programs and pass after building them: 2/2
+result:     Venom/Andross with four pilots: frames on one spot per pair 237, 435, 314 on base, at most 9 after (the 5%
+            rule passes); escape_look with three and four games runs a case on every player of the pilots' row, each in
+            reach, no two pilots in one another, hashes and probe logs equal. NOT run: the other escape sessions
+            (cases_noinv, route_*), the other rails levels with three or four, Release, Windows, two PCs, a person. The
+            QA level of the project does not change.
+```
+
+```
 date:       2026-11-15
 commit:     issue/267-resume (the resume after a drop, decision 0016 part A, Proposed) on issue/267-repair
 identity:   ROM US 1.0, Linux, GCC 16.2, Debug, OpenGL software renderer
