@@ -136,7 +136,7 @@ No dates are promised for any of this.
 
 ## Current state
 
-Last updated 2026-11-12. For the live list see the [open issues](https://github.com/Clodmony/starship-coop/issues) and
+Last updated 2026-11-15. For the live list see the [open issues](https://github.com/Clodmony/starship-coop/issues) and
 the [roadmap](docs/coop/ROADMAP.md).
 
 **Two real games stay in step through all of Corneria on one PC, and two people have played the whole campaign on two
@@ -180,7 +180,7 @@ Everything here is tested by scripts, on Linux; determinism also on Windows (Rel
 
 ### In progress
 
-Nothing waits in a pull request (the work of 2026-11-12 above is in `coop` with the combined test build 6, which nobody has played by hand). The next step is the same two-PC campaign again on the build that is on `coop` now: see [TWO_PC_TEST.md](docs/coop/TWO_PC_TEST.md). The player-facing text above was written for the test build and has had only the corrections this merge needs; a full pass is still open ([WP-31](https://github.com/Clodmony/starship-coop/issues/27)).
+The combined test build 6 (pull request [#285](https://github.com/Clodmony/starship-coop/pull/285), the branch `issue/combined-test-6`) holds all the work described above since the last merge into `coop`; it passed the full test run on 2026-11-14 (59 of 59 steps) and waits for the owner's word to merge. Nobody has played it by hand. The next step is the two-PC campaign again, on a release candidate: see [TWO_PC_TEST.md](docs/coop/TWO_PC_TEST.md). A workflow that makes a draft GitHub Release from a tag is built and has not run yet ([#358](https://github.com/Clodmony/starship-coop/issues/358), [docs/coop/MAINTAINING.md](docs/coop/MAINTAINING.md), "Releases"); the roadmap has the list of what a first public release still needs.
 
 ### What is open
 
@@ -194,7 +194,7 @@ Nothing waits in a pull request (the work of 2026-11-12 above is in `coop` with 
 | Other levels, bosses and cutscenes | [WP-19](https://github.com/Clodmony/starship-coop/issues/17), [#136](https://github.com/Clodmony/starship-coop/issues/136) |
 | macOS build | [WP-01](https://github.com/Clodmony/starship-coop/issues/1) |
 | Local split screen | [WP-13](https://github.com/Clodmony/starship-coop/issues/11), [WP-15](https://github.com/Clodmony/starship-coop/issues/13) |
-| A downloadable build, the full campaign run with scripts, and the rest of the player docs | [WP-31](https://github.com/Clodmony/starship-coop/issues/27) (the "How to play" section above is written; a download is missing), [WP-32](https://github.com/Clodmony/starship-coop/issues/28) |
+| A downloadable build, and a campaign run by people | The Release workflow is built and has not run ([#358](https://github.com/Clodmony/starship-coop/issues/358)); the first release also needs the two-PC run ([#2](https://github.com/Clodmony/starship-coop/issues/2)) and the Windows Release check ([#145](https://github.com/Clodmony/starship-coop/issues/145)); [WP-32](https://github.com/Clodmony/starship-coop/issues/28) stays open until people have played the campaign. See [docs/coop/ROADMAP.md](docs/coop/ROADMAP.md), "Before a first public release" |
 
 ## Goal
 
