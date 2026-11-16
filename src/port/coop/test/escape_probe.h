@@ -20,11 +20,11 @@
 //
 // SF64_COOP_ESCAPE_CASES=<case>[,<case>...] runs cases in that order, one at a time, once every player flies in an
 // escape (a restart at the checkpoint goes on with the next case). A case spawns one object of the level, as the maze
-// table does (Andross_80187C5C), and before each of its updates puts it 450 from its target in x or in z, on the side
-// that keeps every other player farthest out, so that the target is in its reach (500) and every other player at
-// least 510 from it; when no side does that (the players closer than about 60 on both axes) it waits 3000 away
-// instead (`off`). Its velocity is held at 0, so Actor_Move leaves it there. Only the place is forced; the object's own
-// update does the test, as in play:
+// table does (Andross_80187C5C), and before each of its updates puts it 450 from its target in x, in z or on a
+// diagonal (450 in both: the objects' measure is the larger of the two), on the side that keeps every other player
+// farthest out, so that the target is in its reach (500) and every other player at least 510 from it; when no side
+// does that (the players closer than about 60 on both axes) it waits 3000 away instead (`off`). Its velocity is held at
+// 0, so Actor_Move leaves it there. Only the place is forced; the object's own update does the test, as in play:
 //
 //   blast<i>  an explosion (OBJ_ACTOR_AND_EXPLOSION, Andross_AndExplosion_Update) in reach of player i
 //   exit<i>   the exit's trigger (OBJ_ACTOR_AND_JAMES_TRIGGER, Andross_AndJamesTrigger_Update) in reach of player i
@@ -46,12 +46,20 @@
 // went down (PLAYERSTATE_DOWN or PLAYERSTATE_NEXT, or out after a down as decision 0007 rule 4 has it). lost is 1 when
 // the object was gone or the escape over before its 60 updates. The probe changes the game, so a run with cases says
 // nothing about any other run; every game of a session must get the same values, and then they stay one game.
+//
+// With cases, the test pilots make room for a case (src/port/coop/test/pilot_andross.c, #345): from the frame its
+// target is named until its end, every other pilot within W8_ANDPILOT_ROOM of the target brakes one burst and the
+// target does not brake, so that the others fall back along the route and the target is the first of the row.
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 void CoopEscapeProbe_Init(void);
+// The player the next or running case is on, while it waits to begin or runs in an escape and that player flies; -1
+// otherwise, and always without SF64_COOP_ESCAPE_CASES. The pilots read it to make room (pilot_andross.c, #345): in
+// their row beside James' route a player inside it had no place 450 from it and 510 from everyone else.
+int CoopEscapeProbe_Target(void);
 
 #ifdef __cplusplus
 }

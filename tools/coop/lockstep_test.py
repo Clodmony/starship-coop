@@ -6471,16 +6471,18 @@ def w9_escape_case_story(rows, name):
 
 
 def w9_escape_cases(players):
-    """The cases for a session of more than two players (#329): the explosion on player 0, then the three cases of
-    player 1 on the last player. The pilots fly James' route in a row, about 235 apart, and the probe needs a place
-    450 from its target and 510 from everyone else: there is one for a player at an end of the row and none for a
-    player inside it (with four players the cases on player 2 waited 3000 away for all 60 updates, `off=60`). So the
-    last player is the one a session can show: player 2 with three games, player 3 with four. The explosion on
-    player 0 comes first, not last as with two: a player that went down comes back beside player 0, its pilot flies
-    to player 0's own waypoint, and with four games player 3 then flew within 16 of player 0 for the rest of the
-    escape, so an explosion on player 0 after its return had no place either. Player 0's down starts the escape again
-    at its checkpoint, and the other cases run in that second escape."""
-    return ("blast0",) + tuple(f"{kind}{players - 1}" for kind in ("miss", "blast", "exit"))
+    """The cases for a session of more than two players (#329, #345): the explosion on player 0, then the three cases
+    of player 1 on the last player, then an explosion on each player inside the pilots' row. The pilots fly James'
+    route in a row, about 235 apart, and the probe needs a place 450 from its target and 510 from everyone else: there
+    is one for a player at an end of the row and none for a player inside it (with four players the cases on player 2
+    waited 3000 away for all 60 updates, `off=60`), so the pilots make room for a case (pilot_andross.c: every other
+    player near its target brakes one burst). The explosion on player 0 comes first, not last as with two: a player
+    that went down comes back beside player 0, its pilot flies to player 0's own waypoint, and with four games player
+    3 then flew within 16 of player 0 for the rest of the escape, so an explosion on player 0 after its return had no
+    place either. Player 0's down starts the escape again at its checkpoint, and the other cases run in that second
+    escape."""
+    return (("blast0",) + tuple(f"{kind}{players - 1}" for kind in ("miss", "blast", "exit"))
+            + tuple(f"blast{i}" for i in range(1, players - 1)))
 
 
 def w9_escape_rule(rows, name, values):

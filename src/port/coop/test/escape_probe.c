@@ -111,16 +111,19 @@ static bool CoopEscapeProbe_ObjectAlive(void) {
 }
 
 // The object's place for this update: `pin` from the target on the side that keeps the other players farthest out, or
-// ESCAPE_AWAY from it when no side keeps them ESCAPE_KEEP away. Returns whether it is in place.
+// ESCAPE_AWAY from it when no side keeps them ESCAPE_KEEP away. Returns whether it is in place. The sides are along x,
+// along z and the four diagonals (#345): in the objects' measure a diagonal place is `pin` away too, and where the
+// route runs diagonally the players of the row are ahead of or behind each other on both axes.
 static bool CoopEscapeProbe_Pin(Actor* object, s32 target, f32 pin) {
-    static const f32 sides[4][2] = { { 1.0f, 0.0f }, { -1.0f, 0.0f }, { 0.0f, 1.0f }, { 0.0f, -1.0f } };
+    static const f32 sides[8][2] = { { 1.0f, 0.0f },  { -1.0f, 0.0f }, { 0.0f, 1.0f },  { 0.0f, -1.0f },
+                                     { 1.0f, 1.0f },  { 1.0f, -1.0f }, { -1.0f, 1.0f }, { -1.0f, -1.0f } };
     const Player* t = &gPlayer[target];
     f32 bestGap = -1.0f;
     s32 best = 0;
     s32 side;
     s32 i;
 
-    for (side = 0; side < 4; side++) {
+    for (side = 0; side < ARRAY_COUNT(sides); side++) {
         Vec3f at = { t->pos.x + sides[side][0] * pin, t->pos.y, t->trueZpos + sides[side][1] * pin };
         f32 gap = 1e30f;
 
@@ -447,6 +450,17 @@ static void CoopEscapeProbe_OnGamePostUpdate(IEvent* event) {
         }
     }
     sEscInEscape = inEscape;
+}
+
+int CoopEscapeProbe_Target(void) {
+    s32 target;
+
+    if ((sEscFile == NULL) || (sEscCase >= sEscCaseCount) || !sEscInEscape ||
+        ((sEscStage != ESCAPE_STAGE_WAIT) && (sEscStage != ESCAPE_STAGE_RUNNING))) {
+        return -1;
+    }
+    target = sEscCases[sEscCase].target;
+    return ((target < CoopPlayers_Count()) && CoopEscapeProbe_Flies(target)) ? target : -1;
 }
 
 static void CoopEscapeProbe_ReadCases(const char* text) {

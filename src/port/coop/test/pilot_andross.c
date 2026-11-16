@@ -5,6 +5,7 @@
 #include <math.h>
 
 #include "port/coop/game/players.h"
+#include "port/coop/test/escape_probe.h"
 
 #define W8_ANDPILOT_REACH 400.0f // a waypoint is reached this near on each axis (James takes 300, and turns slower)
 #define W8_ANDPILOT_PASS 1500.0f // or once the ship is past it toward the next one, this near
@@ -17,6 +18,15 @@
 #define W8_ANDPILOT_APART 600.0f
 #define W8_ANDPILOT_BRAKE_FULL 80.0f // at 90 the meter locks the brake until it is empty (Player_ArwingBrake)
 #define W8_ANDPILOT_CLIMB_MAX -45.0f // stick y while braking: under -50 a brake press is a U-turn (Player_ArwingBrake)
+// A case of the escape probe on player t (escape_probe.h, #345): t boosts while another player within W8_ANDPILOT_ROOM
+// of it on the x or the z axis is less than W8_ANDPILOT_BEHIND behind it along its own flight (beside it in the row,
+// or ahead), so that the probe has a place 450 from t and 510 from everyone else (a player 60 behind t is 510 from a
+// place 450 ahead of it). The row beside the route is about 235 wide per player, so a row of four is about 700. Only
+// t spends its meter: when the others braked to make room, two of four fell back side by side, met at a corner and had
+// no meter left to brake out of each other (players 1 and 2 for 116 and 274 frames, 2026-11-16), and one that braked
+// from 600 ahead fell back onto player 0 (81 and 109 frames).
+#define W8_ANDPILOT_ROOM 800.0f
+#define W8_ANDPILOT_BEHIND 200.0f
 
 static s32 sW8AndPilotNext[COOP_PLAYERS_MAX]; // the waypoint each player flies at
 static s32 sW8AndPilotLast[COOP_PLAYERS_MAX]; // the frame of its last call, to see an escape start again
@@ -89,20 +99,22 @@ static bool w8AndPilot_Done(const Player* p, const Scenery360* wp, const Scenery
 static bool sW8AndPilotBraking[COOP_PLAYERS_MAX];
 
 // The larger of the x, y and z distances from player p to the nearest flying player before player i. `braking` says
-// whether one of those within W8_ANDPILOT_APART is braking out of another now.
+// whether another flying player within W8_ANDPILOT_APART, before or after player i, is braking out of another now.
 static f32 w8AndPilot_Nearest(const Player* p, s32 i, bool* braking) {
     f32 best = 1e30f;
     s32 j;
 
     *braking = false;
-    for (j = 0; j < i; j++) {
+    for (j = 0; j < CoopPlayers_Count(); j++) {
         const Player* q = &gPlayer[j];
 
-        if (!CoopPlayers_IsParked(j) && (q->state == PLAYERSTATE_ACTIVE)) {
+        if ((j != i) && !CoopPlayers_IsParked(j) && (q->state == PLAYERSTATE_ACTIVE)) {
             f32 d =
                 fmaxf(fmaxf(fabsf(q->pos.x - p->pos.x), fabsf(q->pos.y - p->pos.y)), fabsf(q->trueZpos - p->trueZpos));
 
-            best = fminf(best, d);
+            if (j < i) {
+                best = fminf(best, d);
+            }
             *braking |= sW8AndPilotBraking[j] && (d < W8_ANDPILOT_APART);
         }
     }
@@ -114,7 +126,8 @@ static f32 w8AndPilot_Nearest(const Player* p, s32 i, bool* braking) {
 // of ground; one burst, as a held brake is let go at a meter of W8_ANDPILOT_BRAKE_FULL. (A pilot of #345 that pressed
 // the brake every other frame left the meter of players 1 to 3 at 0.1 with the cooldown on, and no brake got past
 // that: unknown why.) Two that brake on one frame fall back side by side (players 1 and 2 of four at a corner, 197
-// frames): a player waits while one before it and near it brakes.
+// frames): a player waits while one near it brakes. Before it was only one before it, and at that corner player 2
+// began to brake at frame 394 and player 1, near player 0, at 400 (#352): the two fell back together.
 static void w8AndPilot_KeepApart(const Player* p, s32 i, PilotPad* pad) {
     bool otherBrakes;
     f32 nearest = w8AndPilot_Nearest(p, i, &otherBrakes);
@@ -127,6 +140,40 @@ static void w8AndPilot_KeepApart(const Player* p, s32 i, PilotPad* pad) {
     if (sW8AndPilotBraking[i]) {
         pad->button |= gBrakeButton[i];
         pad->y = fmaxf(pad->y, W8_ANDPILOT_CLIMB_MAX);
+    }
+}
+
+// Room for the escape probe's case (#345): its target lets go of the brake and boosts while another flying player
+// within W8_ANDPILOT_ROOM of it is less than W8_ANDPILOT_BEHIND behind it along its flight (x and z), until its meter
+// is at W8_ANDPILOT_BRAKE_FULL. The boost takes the speed up by 2 a frame to 30 over its own and fills the meter by 1.5
+// a frame (Player_ArwingBoost). Every other player, and every player without a case, flies as before.
+static void w8AndPilot_MakeRoom(const Player* p, s32 i, PilotPad* pad) {
+    s32 target = CoopEscapeProbe_Target();
+    f32 speed = sqrtf(SQ(p->vel.x) + SQ(p->vel.z));
+    bool room = true;
+    s32 j;
+
+    if (target != i) {
+        return;
+    }
+    sW8AndPilotBraking[i] = false;
+    pad->button &= ~gBrakeButton[i];
+    if ((speed < 1.0f) || p->boostCooldown || (p->boostMeter >= W8_ANDPILOT_BRAKE_FULL)) {
+        return;
+    }
+    for (j = 0; j < CoopPlayers_Count(); j++) {
+        const Player* q = &gPlayer[j];
+        f32 ahead = ((p->pos.x - q->pos.x) * p->vel.x + (p->trueZpos - q->trueZpos) * p->vel.z) / speed;
+
+        if ((j != i) && !CoopPlayers_IsParked(j) && (q->state == PLAYERSTATE_ACTIVE) &&
+            (fmaxf(fabsf(q->pos.x - p->pos.x), fabsf(q->trueZpos - p->trueZpos)) < W8_ANDPILOT_ROOM) &&
+            (ahead < W8_ANDPILOT_BEHIND)) {
+            room = false;
+        }
+    }
+    if (!room) {
+        pad->button |= gBoostButton[i];
+        pad->y = fmaxf(pad->y, W8_ANDPILOT_CLIMB_MAX); // as for the brake: under -50 a boost press is a loop
     }
 }
 
@@ -176,6 +223,7 @@ bool w8AndPilot_Escape(const Player* p, s32 i, PilotPad* pad) {
         return false;
     }
     w8AndPilot_KeepApart(p, i, pad);
+    w8AndPilot_MakeRoom(p, i, pad);
     return true;
 }
 
