@@ -129,7 +129,8 @@ Option 4 stays for later.
    ahead of the barrier (20 s, twice `COOP_REPAIR_MS`) says no to the host's question, because its repair is still
    open; later the host's repair gives up on that limit and the level starts once the client is back
    (`lockstep_test.py --only resume_repair`, NOTES.md 2026-11-16), or without it when the 30 s are over (read, not
-   run).
+   run). A client whose own repair gives up while it is already on its way back waits for that level start; before
+   the fix of 2026-11-16 its session ended there (same entry).
 5. **Stall.** The host's check of a missing input (`Sync_Stalled`) leaves a player who is away alone, and one it has
    just asked to go on (its stall clock starts over when it asks): a first version of this asked a player to go on and
    dropped it again at once, from a clock that still held the wait.

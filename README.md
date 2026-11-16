@@ -43,7 +43,9 @@ by hand; what people played is the build of 2026-11-09 and 2026-11-10, see
   (observed: the campaign run used a direct connection over a VPN). Allow the game through a firewall when it asks. The
   Steam relay is **not available**: it is built, off by default and tested on a fake Steam only
   ([#24](https://github.com/Clodmony/starship-coop/issues/24)).
-- **Equal game settings.** Settings that change the game, such as cheats, must match.
+- **Equal game settings.** Settings that change the game, such as cheats, must match, and must stay as they are
+  while a session runs: a player whose game drops and comes back with such a setting changed is refused, and their
+  session ends (scripted, with a test's own cheat: NOTES.md, 2026-11-16, #262).
 
 ### Every player runs the same build
 

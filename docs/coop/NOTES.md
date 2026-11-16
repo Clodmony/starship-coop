@@ -12039,11 +12039,11 @@ changes. Those are the runs below.
 - `resume_level`: `the client stopped dead on frame 2 of level 1 (frame 12295; the host stood at 12298) for 14 s and
   came back into its slot; equal on 13256 frames, the route lines equal at all 3 places, no level start`. Level 1 is
   Meteo, entered from the map; the client stood three frames behind the host, inside the input delay.
-- `resume_repair`, gone 14 s: the host offers the repair (`The games parted at frame 2000. Syncing them again at frame
+- `resume_repair`, gone 14 s (the session `back`): the host offers the repair (`The games parted at frame 2000. Syncing them again at frame
   2063.`), stands at frame 2014, loses the link after 4 s and keeps the slot. The client comes back with its
   repair still open: `host asks to go on at frame 2014 (mine 2013, run 1 of 1): no` (`CoopRepair_Busy`), the host logs
   `resume of player 2 failed: it says so`, `recover (reason 1)`, and run 2 is equal on its first 600 frames.
-- `resume_repair`, gone 24 s: 20.0 s after the offer the host logs `repair failed: The repair did not get to its frame
+- `resume_repair`, gone 24 s (the session `late`): 20.0 s after the offer the host logs `repair failed: The repair did not get to its frame
   in time, so the level starts again.` and `recover (reason 3)`, stops lockstep and waits for the player whose slot it
   keeps; 4.1 s later `player 2 came back` and the level start of run 2 follows within 5 ms. The thawed client had
   given up its own repair on the same limit. Run 2 equal on 600 frames. In neither case was a repair completed or a
@@ -12067,6 +12067,52 @@ changes. Those are the runs below.
   cannot run a frame without that client's input. What ends the repair is the limit before the barrier, 20 s
   (`COOP_REPAIR_MS * 2`, `CoopRepair_Check`, `repair_game.c`), or the returning client's "no" if it is back before
   that. The record's sentence is changed on this branch to say so.
+
+**Observed: a fault of the game that a rerun found, fixed on this branch**
+
+- The second run of `resume_repair`'s two sessions (after one that passed) failed in its second session, `late`: `FAILED resume_repair: no
+  `again` number 1 from host, client0 after 240 s after the thaw: the level did not start again`. The host's log: the
+  offer at 23:17:10.567, `repair failed: The repair did not get to its frame in time` and `recover (reason 3)` 20.0 s
+  later, then nothing until the 30 s for the lost player were over (`left away=0`, the session closed at
+  23:17:44.568). The client's join report: `rejoin frame=2224 character=Falco`, then `ended text=The repair did not
+  get to its frame in time, so the level starts again. The session is over, and the level goes on here alone.`
+- The cause is the order of two things in the thawed client. Both are due at once: its transport has heard nothing
+  for 24 s (time-out 4 s), and its repair is 24 s old (limit 20 s). In the runs that passed the repair's check ran
+  first: the session, still the old one and `CLIENT_ACTIVE`, took the recovery (`recover (reason 3)` in the client's
+  log), then the lost link was seen and the game came back for the level start. In the run that failed the lost link
+  was seen first: the join driver made a new session (`CoopSession_Rejoin`), which had sent `SESSION_REJOIN` and had
+  no welcome yet when the repair gave up; `CoopSession_Recover` refused a client that was not `CLIENT_ACTIVE`
+  (`src/port/coop/session/session.c`), so `Sync_Recover` ended the session (`Sync_Fail`, `lockstep_game.c`) of a
+  player the host was waiting for. The menu comes back the same way (`Menu_Rejoin`, `menu.c`).
+- The fix (`dae40f5e`): a session made by `CoopSession_Rejoin` that has no answer yet (`CLIENT_CONNECTING`,
+  `CLIENT_WAIT_ANSWER`) takes the request as a client in a level does: it waits for the host's level start,
+  `COOP_SESSION_RECOVER_MS` at most, and says so with a RECOVER event. The host, which is in its own recovery, starts
+  the level once the player is back; a host that is not asks the game to go on and hears no, as lockstep has stopped.
+  One whose way back has ended (refused, another session) still cannot.
+- `coop_session_test sim`, `client_rejoin`: the new steps (a recovery before the connection and before the welcome,
+  the welcome and the level start taken after it, none after the way back ended). `session_mutants.py --only
+  recover_coming_back_refused,recover_coming_back_not_connecting,recover_coming_back_not_waiting,recover_coming_back_after_its_end`:
+  `RESULT: all 4 breaks caught`; the first of them is the code as it was, and fails with `a client on its way back
+  could not wait for a recovery before it was connected`.
+- In real games the order had to be forced, as `late` takes it by chance only (2 of 8 runs here): the scenario's
+  third session, `raced`, thaws the client after 15 s while the host is held (SIGSTOP) until 21.5 s after the offer. A
+  thawed client hears of the loss from the host within a few ms; with the host held it hears nothing and takes the
+  link for lost after its 4 s. On a throwaway build with the refusal back in (`RESUME_REPAIR_ONLY=raced`): `FAILED
+  resume_repair: no `again` number 1 from host, client0 after 240 s after the thaw: the level did not start again`;
+  the client's log has `session ended: The connection timed out` 19.1 s after it stopped, its join report `rejoin
+  frame=2225`, then `ended text=The repair did not get to its frame in time, so the level starts again. The session is
+  over, and the level goes on here alone.`, and the host's `left away=0` and `ended`. On the fix: `ok resume_repair:
+  ... Thawed after 15 s with the host held until 21.5 s: the client took the link for lost, was on its way back
+  without an answer when its own repair gave up, waited, and the level started again once the host had it back, equal
+  on 600 frames.` The client's log there: `session ended: The connection timed out` at 00:10:37.829, `coming back to a
+  session` in the same ms, `repair failed` and `recover (reason 3)` at 00:10:38.735, `came back as player 2` and the
+  level start of run 2 at 00:10:40.448.
+- `late` on the fix took the bad order by itself once (the session of 23:59:42: `coming back to a session`, then
+  `repair failed` and `recover (reason 3)` in the same ms, `came back as player 2` 12 ms later, level start 2), and
+  passed. `resume_repair` then passed three more times, and after the fix the session scenarios again, one session
+  at a time: `resume_level,resume_map,resume_silent` 3/3,
+  `resume,resume_early,resume_refused,resume_gone,resume_three,left,host_left` 7/7,
+  `resync,resync_refused,steer,pause,stall,frozen,survive_desync,survive_three,survive_gaps_map_lost` 9/9.
 
 **Observed: where the changed sentences of the README's "How to play" come from** (the pass of this branch; the
 entry of 2026-11-10, #27, has the older ones)
@@ -12103,6 +12149,10 @@ entry of 2026-11-10, #27, has the older ones)
   end there, with run 2 equal from its frame 0.
 - In play the refusal above needs a setting that changes the game to change on a game while a session runs. Then a
   drop that the resume would have carried ends that player's session instead.
+- The fault above needs, in play, a desync that is being repaired when a player's connection goes, and that player
+  back between 20 and 30 s later: then some of the time (2 of 8 runs here) that player's session ended and the
+  other waited 30 s for nothing. The same refusal met any other recovery a returning game asked for between its
+  `SESSION_REJOIN` and the welcome, a round trip on a real link (8 ms in these runs).
 
 **Guess**
 
