@@ -15,6 +15,9 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
+#include <signal.h>
+#endif
 
 #include <libultra/gbi.h>
 #include <libultraship/luslog.h>
@@ -75,6 +78,12 @@ int CoopTestSwitches_TakeMostDraws(void) {
 
     sMostDraws = 0;
     return most;
+}
+
+void CoopTestSwitches_FreezeNow(void) {
+#ifndef _WIN32
+    raise(SIGSTOP);
+#endif
 }
 
 static int CoopTestSwitches_IsSet(const char* value) {

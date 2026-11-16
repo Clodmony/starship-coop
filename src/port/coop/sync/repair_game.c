@@ -15,6 +15,7 @@
 #include "desync_dump.h"
 #include "desync_game.h"
 #include "state_hash.h"
+#include "port/coop/test/switches.h"
 
 #define STATE_PARTS_PER_HOLD 16
 #define REPAIR_SIZE 8
@@ -207,6 +208,11 @@ bool CoopRepair_Receive(int peer, uint16_t msgId, const uint8_t* data, uint16_t 
         sR.on = true;
         CoopLog_Write(COOP_LOG_DESYNC, false, "the host repairs the desync of frame %u: all games hold at frame %u",
                       (unsigned) sR.found, (unsigned) sR.barrier);
+        if ((getenv("SF64_COOP_TEST_REPAIR_FREEZE") != NULL) && (getenv("SF64_COOP_TEST_REPAIR_FREEZE")[0] != '\0')) {
+            // Test only (#262): this client is lost while the repair is under way, as a connection cut then.
+            CoopLog_Write(COOP_LOG_DESYNC, false, "stopped dead at the repair offer (SF64_COOP_TEST_REPAIR_FREEZE)");
+            CoopTestSwitches_FreezeNow();
+        }
         return true;
     }
     if (msgId == COOP_MSG_SYNC_REPAIRED) {

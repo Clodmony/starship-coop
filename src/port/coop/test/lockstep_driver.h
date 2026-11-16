@@ -40,6 +40,9 @@
 //   SF64_COOP_LOCKSTEP_POKE_AT=<run>:<place>:<frames>[,...]  flip the bit (as SF64_COOP_LOCKSTEP_POKE) on that frame of
 //                                      that place in that run, up to 4 of them; the report says `poke_at ...`
 //   SF64_COOP_LOCKSTEP_MUTE_AT=<run>:<place>:<frames>[,...]  stop sending input there, as SF64_COOP_LOCKSTEP_MUTE
+//   SF64_COOP_LOCKSTEP_FREEZE_AT=<run>:<place>:<frames>[,...]  this game stops dead there (SIGSTOP on itself, not on
+//                                      Windows) after the report says `freeze_at ...`; the test thaws it (SIGCONT). A
+//                                      frame-exact stand-in for a connection that is cut at that place (#262)
 //   SF64_COOP_LOCKSTEP_RING_TO=<player>  in the first run, the level's own checkpoint ring is put across the path where
 //                                      that player is (x and y; its depth stays), until someone flies through it; the
 //                                      report says `ring_to frame=N ...` once

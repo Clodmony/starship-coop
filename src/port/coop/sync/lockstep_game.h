@@ -70,6 +70,9 @@ bool CoopSyncGame_ResumeOn(void);
 // The client answers whether it can. False if lockstep is not running here: the owner then has the level start again.
 // When the client cannot, or does not answer within COOP_SYNC_RESUME_MS, CoopSyncLink.recover is asked with
 // COOP_SYNC_RECOVER_RESUME.
+// Test switches on the client: with SF64_COOP_TEST_RESUME_REFUSE=1 its game says it cannot go on, with
+// SF64_COOP_TEST_RESUME_MUTE=1 it never answers (#262). Both end in the level start, the second after
+// COOP_SYNC_RESUME_MS.
 bool CoopSyncGame_ResumeClient(int peer);
 #define COOP_SYNC_RESUME_MS 5000
 // A client that waits for another player's input leaves that to the host for this long: the host drops a player who

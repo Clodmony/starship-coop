@@ -19,6 +19,7 @@
 #include "port/coop/game/score.h"
 #include "port/coop/sync/lockstep_game.h"
 #include "port/coop/sync/state_hash.h"
+#include "switches.h"
 #include "port/hooks/Events.h"
 #include "public/bridge/consolevariablebridge.h"
 
@@ -371,6 +372,8 @@ static GapsAt sGapsPoke[GAPS_AT_MAX];
 static s32 sGapsPokeCount = 0;
 static GapsAt sGapsMute[GAPS_AT_MAX];
 static s32 sGapsMuteCount = 0;
+static GapsAt sGapsFreeze[GAPS_AT_MAX];
+static s32 sGapsFreezeCount = 0;
 static bool sGapsRoute = false;
 static bool sGapsCheats = false;
 static s32 sGapsRingTo = -1; // SF64_COOP_LOCKSTEP_RING_TO: the player the level's own ring is put in front of
@@ -552,6 +555,13 @@ static void Gaps_Frame(s32 frame) {
             CoopSyncGame_Mute();
         }
     }
+    for (i = 0; i < sGapsFreezeCount; i++) {
+        if (Gaps_Here(&sGapsFreeze[i])) {
+            Report("freeze_at frame=%d run=%d place=%c%d state=%d level=%d", (int) frame, (int) sRuns, sGapsKind,
+                   (int) sGapsFreeze[i].index, (int) gGameState, (int) gCurrentLevel);
+            CoopTestSwitches_FreezeNow();
+        }
+    }
 }
 
 // With no lockstep to count frames, the control run of the test counts them from the same place.
@@ -685,10 +695,13 @@ void CoopLockstepDriver_Init(void) {
     if (Env_Text("SF64_COOP_LOCKSTEP_MUTE_AT") != NULL) {
         sGapsMuteCount = Gaps_Parse(Env_Text("SF64_COOP_LOCKSTEP_MUTE_AT"), sGapsMute);
     }
+    if (Env_Text("SF64_COOP_LOCKSTEP_FREEZE_AT") != NULL) {
+        sGapsFreezeCount = Gaps_Parse(Env_Text("SF64_COOP_LOCKSTEP_FREEZE_AT"), sGapsFreeze);
+    }
     sGapsCheats = Env_Text("SF64_COOP_LOCKSTEP_CAMPAIGN_CHEATS") != NULL;
     sGapsRingTo = Env_Number("SF64_COOP_LOCKSTEP_RING_TO");
-    sGapsRoute =
-        (Env_Text("SF64_COOP_LOCKSTEP_ROUTE") != NULL) || (sGapsPokeCount > 0) || (sGapsMuteCount > 0) || sGapsCheats;
+    sGapsRoute = (Env_Text("SF64_COOP_LOCKSTEP_ROUTE") != NULL) || (sGapsPokeCount > 0) || (sGapsMuteCount > 0) ||
+                 (sGapsFreezeCount > 0) || sGapsCheats;
     if (slow != NULL) {
         sSlowEvery = atoi(slow);
         sSlowMs = (strchr(slow, ':') != NULL) ? atoi(strchr(slow, ':') + 1) : 0;
