@@ -10640,6 +10640,32 @@ Unknown:
 - Why Titania's end moved between 29169, 43591 and 36223 (NOTES above guesses that Goras follows the tank lined up with
   it).
 
+### 2026-11-16, issue #366: Effect 395 reads an uninitialized local, and the games part (Aquas, four players)
+
+Observed:
+
+- `python tools/coop/campaign.py --levels aquas --players 4` on `7354b331` (Debug, Linux, GCC 16.2, ROM US 1.0, software
+  renderer) parted at level frame 5573 in 6 of 11 runs (three builds of the same source, two of them with temporary traces); the other 5 were equal on every frame. The
+  report names `gPlayer[0]`, `hitTimer` 20 against 0.
+- A trace of `Player_ApplyDamage` showed two games applying a hit of 40 to all four players at frame 5573 and two games
+  not. A trace of every call to `func_effect_8007A774` (`src/engine/fox_effect.c:1025`) at frames 5565 to 5576 showed
+  Effect 395 with `status 0` and a box size that differed in each game (0, 2.7e32, -104925, -7.5e30), every other value
+  (effect, positions, mercy timers) equal.
+- `Effect_Effect395_Update` (`fox_effect.c:3562`) declares `f32 sp84;` and sets it in states 0, 2 (late) and 3 only. In
+  state 0 and state 2 the early `Object_Kill(...); break;` leaves it unset, and the test at the end of the function
+  (`state < 4 && state != 1`) passes it to `func_effect_8007A774`.
+
+Derived: the size is stack garbage. With a large value the effect hits player 0 and, through `CoopEffects_BoxHit`, the
+other players; the value differs between games and between runs, so a run parts or not by chance. The fix is
+`f32 sp84 = 0.0f;` (a killed effect hits nobody). With it, three Aquas runs with four players, two of them with a level
+start frame (1373, 1375) at which the unfixed binary had parted, were equal on every frame.
+
+Guess: other upstream locals are read unset on an early-exit path in the same way; a compile with
+`-O2 -Wmaybe-uninitialized` over `src/engine` and `src/overlays` would list them. Not run.
+
+Unknown: whether a single-player game ever reaches a large garbage value here (it would need a state 0 or 2 effect
+killed on the frame the stack holds a large value).
+
 ## Networking
 
 ### 2026-11-12, #267, the session survives beyond Corneria: the map, the levels after it, the game's own checkpoints, four players

@@ -3560,7 +3560,7 @@ f32 D_800D18E8 = 0.0f;
 f32 D_800D18EC = 0.0f;
 
 void Effect_Effect395_Update(Effect395* this) {
-    f32 sp84;
+    f32 sp84 = 0.0f; // COOP: state 0 kills the effect without setting the size the box test below reads (#366)
     f32 posXDiff;
     f32 posYDiff;
     f32 posZDiff;
