@@ -1,4 +1,5 @@
 #include "global.h"
+#include "port/coop/game/fixes.h" // COOP: a line is cleared when it is taken, in a session (#262)
 
 void Turret_SetupShot(Player* player, PlayerShot* shot, f32 xOffset, f32 yOffset, f32 zOffset, s32 shotId, f32 speed) {
     Vec3f sp4C;
@@ -99,6 +100,7 @@ void Turret_Shoot(Player* player) {
     // Draws a textured line to each Event Actor in sequence as R is held. Some sort of charged lock on attack?
     for (i = 0; i < player->turretLockOnCount; i++) {
         if ((gActors[i].obj.status == OBJ_ACTIVE) && (gActors[i].obj.id == OBJ_ACTOR_EVENT)) {
+            CoopFixes_TakeLine(i); // COOP: in a session a free line starts from zeros (#262)
             gTexturedLines[i].mode = 3;
             gTexturedLines[i].zScale = 1.0f;
 

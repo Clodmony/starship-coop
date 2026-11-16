@@ -8,6 +8,7 @@
 #include "global.h"
 #include "port/coop/game/effects.h" // COOP: the beams and the turrets' shots against the other tanks (#272, #280)
 #include "port/coop/game/hits.h"    // COOP: the bombs' fire and car 7's blast against the other tanks (#272, #280)
+#include "port/coop/game/fixes.h"   // COOP: a line is cleared when it is taken, in a session (#262)
 #include "assets/ast_macbeth.h"
 #include "assets/ast_landmaster.h"
 #include "assets/ast_enmy_planet.h"
@@ -3828,6 +3829,7 @@ void Macbeth_MaFallingBoulder_Draw(MaFallingBoulder* this) {
 }
 
 void Macbeth_801A68F8(Actor207* this, s16 arg1, f32 arg2, f32 arg3, f32 arg4, f32 arg5, f32 arg6, f32 arg7) {
+    CoopFixes_TakeLine(arg1); // COOP: in a session a free line starts from zeros (#262)
     gTexturedLines[arg1].mode = 3;
     gTexturedLines[arg1].posAA.x = arg2;
     gTexturedLines[arg1].posAA.y = arg3;

@@ -8,6 +8,7 @@
 #include "assets/ast_area_6.h"
 #include "fox_record.h"
 #include "port/coop/game/aim.h" // COOP: the Gorgon follows the nearest human (#213)
+#include "port/coop/game/fixes.h" // COOP: the remembered beam slot, the explosion's fade (#262)
 
 void Area6_8018A1B0(Boss* this, s32 arg1);
 void Area6_8018A2C4(Boss* this);
@@ -1075,7 +1076,10 @@ void Area6_A6Gorgon_Update(A6Gorgon* this) {
             break;
 
         case 7:
-            effect = &gEffects[this->swork[A6_SWK_39]];
+            // COOP: was &gEffects[this->swork[A6_SWK_39]], with no test that the slot still holds the beam that wrote
+            // its index there. In a session a slot that does not gets a stand-in: nothing of another effect is
+            // written or freed, and the phase ends when the cover is shut. Outside co-op as upstream (#262)
+            effect = CoopFixes_GorgonBeam(this->swork[A6_SWK_39]);
 
             Math_SmoothStepToF(&D_i3_801C22F0.unk_28[0], 255.0f, 1.0f, 100.0f, 0.00001f);
             Math_SmoothStepToF(&D_i3_801C22F0.unk_28[2], 255.0f, 1.0f, 100.0f, 0.00001f);
@@ -2788,12 +2792,15 @@ void Area6_LevelComplete(Player* player) {
             }
 
             if (gCsFrameCount > 146) {
+                // COOP: both tests were iwork[n] < 0, never true on the port's unsigned iwork (s32 on the N64): the
+                // two alphas of the explosion's light wrapped and ran through their low bytes again. In a session
+                // they stay at 0 as on the N64; outside co-op as upstream (#262)
                 actor4->iwork[3] -= 4;
-                if (actor4->iwork[3] < 0) {
+                if (CoopFixes_IworkNegative(actor4->iwork[3])) {
                     actor4->iwork[3] = 0;
                 }
                 actor4->iwork[7] -= 4;
-                if (actor4->iwork[7] < 0) {
+                if (CoopFixes_IworkNegative(actor4->iwork[7])) {
                     actor4->iwork[7] = 0;
                 }
                 Math_SmoothStepToF(&gActors[5].fwork[4], 450.0f, 0.03f, 1000.0f, 1.0f);

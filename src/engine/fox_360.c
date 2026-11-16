@@ -2,6 +2,7 @@
 #include "port/coop/game/players.h" // COOP: the camera drawn (#30)
 #include "port/coop/game/aim.h"     // COOP: dogfighters chase the nearest human (#213)
 #include "port/coop/game/score.h"   // COOP: a kill by any human scores (#210)
+#include "port/coop/game/fixes.h"   // COOP: the roll ring's side as the N64 reads it, in a session (#262)
 #include "assets/ast_katina.h"
 #include "assets/ast_venom_2.h"
 #include "assets/ast_fortuna.h"
@@ -2319,9 +2320,13 @@ void ActorAllRange_DrawBarrelRoll(ActorAllRange* this) {
         // COOP: draw only, it faces the camera drawn (#30)
         Matrix_RotateY(gGfxMatrix, M_DTOR * -this->obj.rot.y - gPlayer[CoopPlayers_ViewIndex()].camYaw, MTXF_APPLY);
         Matrix_RotateX(gGfxMatrix, gPlayer[CoopPlayers_ViewIndex()].camPitch, MTXF_APPLY);
-        Matrix_RotateZ(gGfxMatrix, gGameFrameCount * 20.0f * this->iwork[15] * M_DTOR, MTXF_APPLY);
+        // COOP: draw only. iwork[15] is 1 or -1, the side of the roll; iwork is unsigned in the port (s32 on the N64),
+        // so -1 was a factor of about 1.8e19 and the flip below never ran: the ring of a roll to that side jumped. In
+        // a session both read the s32; outside co-op they give what upstream computes (#262)
+        Matrix_RotateZ(gGfxMatrix, gGameFrameCount * 20.0f * CoopFixes_IworkFactor(this->iwork[15]) * M_DTOR,
+                       MTXF_APPLY);
 
-        if (this->iwork[15] < 0) {
+        if (CoopFixes_IworkNegative(this->iwork[15])) { // COOP: was this->iwork[15] < 0
             Matrix_RotateX(gGfxMatrix, M_PI, MTXF_APPLY);
         }
 
