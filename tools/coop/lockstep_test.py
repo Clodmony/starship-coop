@@ -5221,43 +5221,63 @@ def sc_resume_repair(args, folder):
     """Decisions 0016 A and B together, read but never run (#262): a player is lost while a repair is under way. A bit is
     flipped on the client; when the host's repair offer arrives the client stops dead (SF64_COOP_TEST_REPAIR_FREEZE),
     with a transport time-out of 4 s, so the host keeps its slot and stands before the barrier frame, which it cannot
-    reach without the client's input. Two sessions:
+    reach without the client's input. Three sessions (RESUME_REPAIR_ONLY=back,late,raced runs some):
     `back`: gone for 14 s. The client comes back while its repair is still open, so its game says it cannot go on where
     it stands (CoopRepair_Busy), and the level starts again.
     `late`: gone for 24 s, past the repair's own limit before the barrier (twice COOP_REPAIR_MS, 20 s) and inside the
     30 s the host waits for a lost player: the repair gives up first, and the level starts again once the client is
     back.
-    `raced`: gone for 18.5 s, and the host is held (SIGSTOP) from just before the client's thaw for 3 s. The client sees
-    the lost link at once and is on its way back, with no answer from the held host, when its own repair gives up at
-    20 s. That must be a wait for the host's level start: before the fix of #262 the client's session ended there (one
-    run in three of `late` did the same by itself, whenever the lost link was seen before the repair's limit).
+    `raced`: the client is thawed after 15 s while the host is held (SIGSTOP) from just before that until 21.5 s after
+    the offer. The thawed client hears nothing, takes the link for lost 4 s later and is on its way back, with no answer
+    from the held host, when its own repair gives up at 20 s. That must be a wait for the host's level start: before the
+    fix of #262 the client's session ended there, and the host waited its 30 s for nobody. (`late` took that order by
+    itself in about one run of four: a thawed client hears of the loss from the host within a few ms, and its repair's
+    limit is due at the same moment.)
     In all three no repair is completed, both games take level start 2 from the host's state and hash alike on its first
     frames, and no session ends."""
     expect(IS_LINUX, "needs SIGSTOP")
-    frames, ours, theirs = resume_repair_run(args, folder / "back", 14)
-    failed = [line for line in ours if "resume of player 2 failed" in line]
-    expect(len(failed) == 1 and failed[0].endswith("it says so"), f"back: the host's resume lines: {failed}")
-    said_no = [line for line in theirs if "host asks to go on" in line]
-    expect(len(said_no) == 1 and said_no[0].endswith(": no"), f"back: the client's answer: {said_no}")
-    late, ours, theirs = resume_repair_run(args, folder / "late", 24)
-    gave_up = [line for line in ours if "repair failed" in line]
-    expect(len(gave_up) == 1, f"late: the host's repair did not give up by its own limit: "
-                              f"{[line.split(' ', 5)[-1][:120] for line in ours if 'repair' in line or 'recover' in line]}")
-    raced, ours, theirs = resume_repair_run(args, folder / "raced", 18.5, host_held_s=3.0)
-    way_back = next((i for i, line in enumerate(theirs) if "coming back to a session" in line), None)
-    own_end = next((i for i, line in enumerate(theirs) if "repair failed" in line), None)
-    expect(way_back is not None and own_end is not None and way_back < own_end,
-           f"raced: the client's repair did not give up while it was on its way back (way back at line {way_back}, "
-           f"repair failed at {own_end}): the session did not get the order this run is for")
-    welcome = next((i for i, line in enumerate(theirs) if "came back as player 2" in line), None)
-    expect(welcome is not None and own_end < welcome,
-           f"raced: the client was back (line {welcome}) before its repair gave up (line {own_end})")
-    return (f"bit flipped at {JOIN_FRAME + 300}, the client stopped dead at the host's repair offer. Gone 14 s: back with "
-            f"its repair still open, its game refused to go on, the level started again, equal on {frames} frames. Gone "
-            f"24 s: the host's repair gave up first (`{gave_up[0].split('repair failed: ', 1)[-1][:90]}`), the level "
-            f"started again once the client was back, equal on {late} frames. Gone 18.5 s with the host held for 3 s: "
-            f"the client's own repair gave up while it was on its way back, it waited, and the level started again, "
-            f"equal on {raced} frames. No repair completed, no session end")
+    only = os.environ.get("RESUME_REPAIR_ONLY")  # a developer's shortcut, as RESYNC_ONLY
+    said = [f"bit flipped at {JOIN_FRAME + 300}, the client stopped dead at the host's repair offer."]
+    if not only or "back" in only.split(","):
+        frames, ours, theirs = resume_repair_run(args, folder / "back", 14)
+        failed = [line for line in ours if "resume of player 2 failed" in line]
+        expect(len(failed) == 1 and failed[0].endswith("it says so"), f"back: the host's resume lines: {failed}")
+        said_no = [line for line in theirs if "host asks to go on" in line]
+        expect(len(said_no) == 1 and said_no[0].endswith(": no"), f"back: the client's answer: {said_no}")
+        said.append(f"Gone 14 s: back with its repair still open, its game refused to go on, the level started again, "
+                    f"equal on {frames} frames.")
+    if not only or "late" in only.split(","):
+        frames, ours, theirs = resume_repair_run(args, folder / "late", 24)
+        gave_up = [line for line in ours if "repair failed" in line]
+        expect(len(gave_up) == 1, f"late: the host's repair did not give up by its own limit: "
+               f"{[line.split(' ', 5)[-1][:120] for line in ours if 'repair' in line or 'recover' in line]}")
+        way_back, own_end, _ = resume_repair_order(theirs)
+        order = ("the client was on its way back when its own repair gave up" if own_end is None or way_back < own_end
+                 else "the client's own repair gave up before it was on its way back")
+        said.append(f"Gone 24 s: the host's repair gave up first (`{gave_up[0].split('repair failed: ', 1)[-1][:90]}`), "
+                    f"the level started again once the client was back ({order}), equal on {frames} frames.")
+    if not only or "raced" in only.split(","):
+        frames, ours, theirs = resume_repair_run(args, folder / "raced", 15, host_held_s=6.5)
+        way_back, own_end, welcome = resume_repair_order(theirs)
+        expect(own_end is not None and way_back < own_end < welcome,
+               f"raced: the client's repair did not give up between the start of its way back and the host's answer "
+               f"(lines {way_back}, {own_end}, {welcome} of its log): the session did not get the order it is for")
+        expect(any("recover (reason 3)" in line for line in theirs[own_end:welcome]),
+               "raced: the client on its way back did not take its own recovery")
+        said.append(f"Thawed after 15 s with the host held until 21.5 s: the client took the link for lost, was on its "
+                    f"way back without an answer when its own repair gave up, waited, and the level started again once "
+                    f"the host had it back, equal on {frames} frames.")
+    return " ".join(said) + " No repair completed, no session end"
+
+
+def resume_repair_order(lines):
+    """Where a returning client's own co-op log has the start of its way back, its own repair's give-up (None if the
+    repair ended otherwise) and the host's answer, as line numbers."""
+    way_back = next((i for i, line in enumerate(lines) if "coming back to a session" in line), None)
+    own_end = next((i for i, line in enumerate(lines) if "repair failed" in line), None)
+    welcome = next((i for i, line in enumerate(lines) if "came back as player 2" in line), None)
+    expect(way_back is not None and welcome is not None, "the client's log does not show that it came back")
+    return way_back, own_end, welcome
 
 
 def sc_desync_three(args, folder):
