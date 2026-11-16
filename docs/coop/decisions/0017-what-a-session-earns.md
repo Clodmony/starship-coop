@@ -1,6 +1,6 @@
 # 0017: What a session earns: keep nothing, or merge the planets a session cleared into each player's own save
 
-- Status: Proposed (written 2026-11-16 for #262's item "what a session earns is not kept"; **nothing is built**; it is
+- Status: Accepted 2026-11-17 by the owner: K2, every player keeps the planet flags the session earned; cheat-earned medals count as in single player; rankings stay out (answers to questions 1 to 4). **Not built yet**, see the build issue. Written 2026-11-16 for #262's item "what a session earns is not kept"; **nothing is built**; it is
   a rule question for the owner, who has not been asked yet. Questions at the end)
 - Date: 2026-11-16
 - Issue: #262 (block "Sessions"); option S3 of [0009](0009-vehicles-cutscenes-save.md), item 8
