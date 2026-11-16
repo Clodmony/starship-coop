@@ -182,10 +182,17 @@ static bool CoopPilot_IsClear(f32 x, f32 y) {
     return true;
 }
 
-// With three or four players, whether a spot is where a player before player i flies (#345). Two ships do not collide,
-// and two pilots that took the same clear spot flew the same line frame for frame, as their sticks were the same: in
-// Meteo players 1, 2 and 3 held one spot for 900 frames. Such a spot costs more, and the later player takes the next.
+// With three or four players, whether a spot is where a player before player i flies, or the spot it took on this
+// frame (#345). Two ships do not collide, and two pilots that took the same clear spot flew the same line frame for
+// frame, as their sticks were the same: in Meteo players 1, 2 and 3 held one spot for 900 frames. Such a spot costs
+// more, and the later player takes the next. The spot taken counts too: Andross' inhale left players 1, 2 and 3 of four
+// on one point at y 36, under the lowest row of spots (y 60), where no player's place was within 20 of a spot, and all
+// three took the same one for 150 frames.
 #define PILOT_TAKEN_COST 400.0f
+
+static f32 sSpotX[COOP_PLAYERS_MAX];
+static f32 sSpotY[COOP_PLAYERS_MAX];
+static u32 sSpotFrame[COOP_PLAYERS_MAX]; // the frame sSpotX and sSpotY were taken on, +1 (0: never)
 
 static bool CoopPilot_Taken(s32 i, f32 x, f32 y) {
     s32 j;
@@ -194,8 +201,13 @@ static bool CoopPilot_Taken(s32 i, f32 x, f32 y) {
         return false;
     }
     for (j = 0; j < i; j++) {
-        if (!CoopPlayers_IsParked(j) && (gPlayer[j].state == PLAYERSTATE_ACTIVE) &&
-            (fabsf(gPlayer[j].pos.x - x) < 40.0f) && (fabsf(gPlayer[j].pos.y - y) < 20.0f)) {
+        if (CoopPlayers_IsParked(j) || (gPlayer[j].state != PLAYERSTATE_ACTIVE)) {
+            continue;
+        }
+        if ((fabsf(gPlayer[j].pos.x - x) < 40.0f) && (fabsf(gPlayer[j].pos.y - y) < 20.0f)) {
+            return true;
+        }
+        if ((sSpotFrame[j] == gGameFrameCount + 1) && (fabsf(sSpotX[j] - x) < 1.0f) && (fabsf(sSpotY[j] - y) < 1.0f)) {
             return true;
         }
     }
@@ -234,6 +246,9 @@ static void CoopPilot_FlyRails(const Player* p, s32 i, PilotPad* pad) {
             }
         }
     }
+    sSpotX[i] = targetX;
+    sSpotY[i] = targetY;
+    sSpotFrame[i] = gGameFrameCount + 1;
     pad->x = (targetX - p->pos.x) * 0.25f - p->vel.x * 2.0f;
     pad->y = -((targetY - p->pos.y) * 0.25f - p->vel.y * 2.0f);
     if ((gGameFrameCount % PILOT_FIRE_PERIOD) == 0) {
