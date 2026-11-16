@@ -9,6 +9,7 @@
 #include "assets/ast_aquas.h"
 #include "port/hooks/Events.h"
 #include "port/coop/game/aim.h" // COOP: the Bacoon aims at the nearest human (#220)
+#include "port/coop/game/fixes.h" // COOP: the Garoa's remembered beam slots, a line cleared when taken (#262)
 // #include "prevent_bss_reordering2.h"
 
 const char D_i3_801C1A30[] = "プレイヤーのすべてをクリア \n"; // Clear of all players
@@ -326,6 +327,7 @@ void Aquas_801A8E30(void) {
 }
 
 void Aquas_801A92EC(AqJellyfish* this, f32 xUnk, f32 yUnk, f32 zUnk, s32 index, s32 mode) {
+    CoopFixes_TakeLine(index); // COOP: in a session a free line starts from zeros (#262)
     gTexturedLines[index].mode = mode;
     gTexturedLines[index].xyScale = 10.0f;
     gTexturedLines[index].posAA.x = this->obj.pos.x;
@@ -4698,7 +4700,9 @@ void Aquas_AqGaroa_Update(AqGaroa* this) {
             if (this->iwork[2 + i] != 0) {
                 j = this->iwork[2 + i] - 1;
                 effect = &gEffects[j];
-                if ((effect->obj.id == OBJ_EFFECT_395) && (effect->state == 2) && (effect->timer_50 != 0)) {
+                // COOP: CoopFixes_HoldsBeam added: in a session the slot must also be in use (#262)
+                if (CoopFixes_HoldsBeam(effect, 2) && (effect->obj.id == OBJ_EFFECT_395) && (effect->state == 2) &&
+                    (effect->timer_50 != 0)) {
                     effect->unk_44 = 3;
                     this->iwork[2 + i] = 0;
                 }
@@ -4820,7 +4824,13 @@ void Aquas_AqGaroa_Update(AqGaroa* this) {
             if ((this->animFrame < 21) && (this->state == 4) && (this->iwork[3] != 0)) {
                 j = this->iwork[3] - 1;
                 effect = &gEffects[j];
-                if (this->animFrame == 20) {
+                // COOP: the Garoa moved and threw whatever lay in the slot it remembered, with no test that it still
+                // was its beam (a beam ends early when it hits something or is culled, and the slot of a beam that
+                // found none free is slot 0). In a session a slot that no longer holds a held beam is forgotten;
+                // outside co-op as upstream (#262)
+                if (!CoopFixes_HoldsBeam(effect, 2)) {
+                    this->iwork[3] = 0;
+                } else if (this->animFrame == 20) { // COOP: was if
                     spAC = gPlayer[0].pos.x - effect->obj.pos.x;
                     temp_dy = gPlayer[0].pos.y - effect->obj.pos.y;
                     temp_dz = gPlayer[0].trueZpos - 50.0f - effect->obj.pos.z;
@@ -4854,7 +4864,9 @@ void Aquas_AqGaroa_Update(AqGaroa* this) {
             if ((this->animFrame < 58) && (this->state == 4) && (this->iwork[2] != 0)) {
                 j = this->iwork[2] - 1;
                 effect = &gEffects[j];
-                if (this->animFrame == 57) {
+                if (!CoopFixes_HoldsBeam(effect, 2)) { // COOP: as for iwork[3] above (#262)
+                    this->iwork[2] = 0;
+                } else if (this->animFrame == 57) { // COOP: was if
                     spAC = gPlayer[0].pos.x - effect->obj.pos.x;
                     temp_dy = gPlayer[0].pos.y - effect->obj.pos.y;
                     temp_dz = gPlayer[0].trueZpos - 50.0f - effect->obj.pos.z;

@@ -7,6 +7,7 @@
 #include "port/coop/game/hits.h" // COOP: hits on the other players (#136)
 #include "port/coop/game/aim.h"  // COOP: Andross follows the nearest human (#213)
 #include "port/coop/game/players.h" // COOP: a co-op player's own pad in the mouth (#213)
+#include "port/coop/game/fixes.h" // COOP: a line is cleared when it is taken, in a session (#262)
 #include "assets/ast_bg_planet.h"
 #include "prevent_bss_reordering.h"
 #include "prevent_bss_reordering2.h"
@@ -561,6 +562,7 @@ void Andross_80188CB8(AndBrain* this) {
 
     for (i = 10; i < 12; i++) {
         if ((gActors[i].obj.status == OBJ_ACTIVE) && (gActors[i].obj.id == OBJ_ACTOR_ALLRANGE)) {
+            CoopFixes_TakeLine(i); // COOP: in a session a free line starts from zeros (#262)
             gTexturedLines[i].mode = 50;
             gTexturedLines[i].xyScale = 1.0f;
             gTexturedLines[i].posAA.x = this->obj.pos.x;
@@ -3636,6 +3638,7 @@ void Andross_AndLaserEmitter_Update(AndLaserEmitter* this) {
                     (fabsf(otherActor->obj.pos.z - this->obj.pos.z) < 200.0f)) {
                     this->timer_0BC = 5;
                     otherActor->timer_0BC = 5;
+                    CoopFixes_TakeLine(this->index); // COOP: in a session a free line starts from zeros (#262)
                     gTexturedLines[this->index].mode = 50;
                     gTexturedLines[this->index].xyScale = 1.0f;
                     gTexturedLines[this->index].posAA.x = this->obj.pos.x;
