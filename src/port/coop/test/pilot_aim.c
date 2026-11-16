@@ -95,6 +95,11 @@ static s32 CoopPilotAim_Gorgon(const Boss* b, s32* boxes) {
 
 // Andross (src/overlays/ovl_i6/fox_andross.c, Andross_8018D2B0): his hands, hitbox entries 2 and 3, take hits until
 // each has lost its 200 (swork[4], swork[5]); after both, only his eyes, entries 0 and 1, take hits.
+// With one hand down, his eyes come after the hand still up (#28, 4 players, 2026-11-16): once the right hand was down
+// his attacks went 2, 5, 17 over and over, the left hand resting some 1400 to -x and 650 under the path, out of every
+// pilot's reach, and it stayed at 110 for 16000 frames. Hits on his eyes (swork[6], in a state under 11 or 12) groan
+// him into state 12 or 13 and then 7, where the hands come up in reach (the hands lost most of their health there in
+// that run). The eyes are not offered in those states, so that the hand gets every shot then.
 static s32 CoopPilotAim_Andross(const Boss* b, s32* boxes) {
     s32 n = 0;
 
@@ -108,6 +113,10 @@ static s32 CoopPilotAim_Andross(const Boss* b, s32* boxes) {
     }
     if (b->swork[5] >= 0) {
         boxes[n++] = 3;
+    }
+    if ((n == 1) && (b->state != 7) && ((b->state < 12) || (b->state > 14))) {
+        boxes[n++] = 0;
+        boxes[n++] = 1;
     }
     return n;
 }
@@ -433,8 +442,9 @@ bool CoopPilot_RailBomb(const Player* p, s32 i) {
             }
             return (t->box == 0) && (b->fwork[29] < 30.0f);
         case OBJ_BOSS_AND_ANDROSS:
-            // Lined up with a hand, the other players' bombs as well, as long as they last.
-            return ((b->swork[4] >= 0) || (b->swork[5] >= 0)) && (b->state >= 2) && (b->state <= 7) &&
+            // Lined up with a hand, the other players' bombs as well, as long as they last (a hand, not the eyes his
+            // table offers after one: #28).
+            return (t->box >= 2) && ((b->swork[4] >= 0) || (b->swork[5] >= 0)) && (b->state >= 2) && (b->state <= 7) &&
                    ((p->trueZpos - b->obj.pos.z) > 1200.0f);
         default:
             return false;
