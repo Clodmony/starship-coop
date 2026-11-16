@@ -9,6 +9,63 @@ Private notes (your paths, your PC, your logs) go in `local/`, not here.
 
 ## Build and run
 
+### 2026-11-16, #370: play with a bot, a launcher for a pilot client that joins a person's session
+
+`tools/coop/play_with_bot.py` starts one more game, the bot, that joins the session a person hosts from the co-op window
+of a normal game, and its test pilot flies player 2. The three questions the issue asked first, answered from the code
+and one scripted run (`lockstep_test.py --only bot`):
+
+**1. Can the bot join a session hosted from the normal menu?** Yes.
+
+Observed:
+- The join driver's client opens its session with `CoopNetSdl_Connect` and `CoopSession_Join`
+  (`src/port/coop/test/join_driver.c`, `Session_Open`), the same transport and session calls the window's Join takes
+  (`src/port/coop/ui/menu_window.cpp`, `kBackend`). The host cannot tell the two apart; the lockstep driver says the
+  same of its session: "from join_driver.h or the real menu" (`src/port/coop/test/lockstep_driver.h`).
+- `bot` hosts from the real co-op window, clicked by the menu driver (`src/port/coop/test/menu_driver.h`), at real time;
+  the bot joins as player 2, picks Falco, the window's Start starts Corneria, and the state hash logs and input logs
+  are equal on all 2700 frames compared.
+- The join driver tries once (`sTried`, `Session_Open`). A try at a port nobody hosts ends after the time-out with
+  "The connection timed out: nothing was heard from the other side." The tool starts the bot's game again then (`bot`
+  checks a second try happens before the window hosts).
+- The handshake compares the sim CVars, `gCheckpoint.<level>.<field>` among them
+  (`src/port/coop/session/sim_cvars.c`). A fresh config lacks what the person's game set: `bot` puts `gSkipBriefing` in
+  the host's config only, and the bot is refused with `Setting "Skip briefing" (gSkipBriefing): host 1, joining player
+  0` (identity.c). `--settings-from <config>` reads those CVars from the person's config, read only, and the next bot joins.
+- A join after the level started is refused (`STARTED_TEXT`, `src/port/coop/session/session.c`): the bot has to be in
+  before the person clicks Start.
+
+**2. What the pilot does in a menu, on the map, in a cutscene, and when the bot goes down.**
+
+Observed:
+- `CoopPilot_Fly` does nothing unless `gGameState == GSTATE_PLAY` and `gPlayState == PLAY_UPDATE`; it skips a parked
+  player and one not `PLAYERSTATE_ACTIVE`, and flies an Arwing (rails and all-range) and, on rails, the Landmaster and
+  Blue Marine (`src/port/coop/test/pilot.c`, `CoopPilot_Fly`).
+- The lockstep driver gives the pad only the pilot's slot of this game's seat; its A every 30 frames goes into slot 0
+  (`src/port/coop/test/lockstep_driver.c`, `Driver_Pad`). So a bot in seat 1 presses nothing in menus, on the map, in
+  cutscenes, in the pause menu and at the results screen. The results hold until every human pressed A or B, at most
+  30 s (`src/port/coop/game/score.h`): with the bot it goes on 30 s after the person's press.
+
+Derived (from the records, not run here):
+- The map is the host's alone (decision 0008), so the bot's silence there loses nothing.
+- When the bot's player goes down it comes back after 150 frames for a life of the shared pool (decision 0007) and the
+  pilot flies it again once it is `PLAYERSTATE_ACTIVE`. The bot is not invincible, so it spends the team's lives.
+- When the bot's game goes away (Ctrl+C, a crash), the host waits 15 s for the lost player and then, with nobody else
+  left, the session ends and the person plays on (decision 0014, items 3 and 8; `lockstep_test.py --only left`).
+
+**3. The CPU share of two games beside the owner's other programs.**
+
+Observed (one run, this PC, Debug, GCC, other workers' game tests running beside it): in Corneria, over 90 s of the
+level at real time, the bot took 9% of one core and the stand-in host 21%. The bot runs headless with software
+rendering and draws nothing (`SF64_COOP_TEST_NO_DRAW`), niced by 10. In an earlier run of the same scenario it was held
+for the host's input on 2712 frames, 83 s of the 90: lockstep waits in `SDL_Delay` steps
+(`src/port/coop/sync/lockstep_game.c`, `Sync_FrameIsReady`), so a bot that waits costs little.
+
+Unknown: the share of a person's game that draws on the GPU, of `--window`, of a Release build, and on Windows.
+
+Observed besides: the game runs 30 game frames a second at real time (2700 frames in 90 s), which sets the length of the
+bot's no-input replay (`FRAMES_PER_MINUTE` in the tool).
+
 ### 2026-11-15, #357, the nine boost gauge needle textures: no source found in the ROM
 
 Research only: no build, no game. ROM US 1.0 (SHA-1 `d8b1088520f7c5f81433292a9258c1184afa1457`), the tree of `dee185b8`,

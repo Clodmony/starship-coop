@@ -85,6 +85,9 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   stall     a client stops sending input with its connection up: the session ends after COOP_LOCKSTEP_STALL_MS.
   frozen    a client stops dead (SIGSTOP): the session ends on the transport's timeout, and it can be thawed.
   menu      the whole way through the real menu, with real widgets.
+  bot       play_with_bot.py (#370): a stand-in for a person hosts from the real window at real time, the tool's bot
+            first tries before anyone hosts and starts again, is refused for a setting the host's config holds, then
+            joins with --settings-from that config; its pilot flies player 2. Same hash and input log on every frame.
   full      all of Corneria: pilots fly it live, one on each client, then plain runs repeat what they flew. Takes a while.
   player_hits Corneria with pilots (#252): each human's own hits count, add up to at most the team's, same on both.
   results   the level clear status screen out of Corneria (#252): the scene holds until both pressed A, a press
@@ -254,9 +257,11 @@ import platform
 import re
 import shutil
 import signal
+import socket
 import struct
 import subprocess
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -271,6 +276,7 @@ import hash_check  # noqa: E402
 import join_test  # noqa: E402
 import make_save  # noqa: E402
 import menu_test  # noqa: E402
+import play_with_bot  # noqa: E402
 import player_trace  # noqa: E402
 import replay as replay_tool  # noqa: E402
 from run_folder import make_run_folder  # noqa: E402
@@ -4514,6 +4520,125 @@ def sc_menu(args, folder):
             f"the session's sine is on")
 
 
+BOT_FRAMES = SHORT_FRAMES  # both players fly from about frame 1674 (JOIN_FRAME), so the pilot flies 1000 frames
+BOT_SETTING = "gSkipBriefing"  # a setting the handshake compares (sim_cvars.c), set in the stand-in's config only
+
+
+class BotHost(menu_test.Game):
+    """The scripted stand-in for the person of play_with_bot.py (#370): the real co-op window, clicked by the menu
+    driver, at real time as a person's game runs. No join driver and no start seeds of its own; a feed steers player 0
+    as the person's pad would."""
+
+    def __init__(self, exe, out, env, cvars):
+        env = {"SF64_COOP_LOCKSTEP_REPORT": "lockstep-report.txt", "SF64_COOP_LOCKSTEP_LOG": "lockstep-log.txt",
+               "SF64_COOP_TRACE": "trace.txt", "SF64_COOP_TEST_SPEED": "1", **env}
+        super().__init__(exe, "host", out, cvars=cvars, seeds=join_test.SEEDS["host"], env_extra=env)
+        self.sync_report = self.run / "lockstep-report.txt"
+        self.sync_log = self.run / "lockstep-log.txt"
+
+    def sync(self):
+        return join_test.read_report(self.sync_report)
+
+    def close(self):
+        self.stop()
+
+
+def free_udp_port():
+    """A port nobody on this PC uses now, for a host that has to be told one before it hosts."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def bot_watch(bot, said, stop, seconds):
+    """play_with_bot.watch on a thread of its own, with its lines in `said`: returns (thread, result list)."""
+    result = []
+    deadline = time.monotonic() + seconds
+    thread = threading.Thread(target=lambda: result.append(play_with_bot.watch(
+        bot, said.append, retry_seconds=1, stop_when=lambda: stop.is_set() or time.monotonic() > deadline)))
+    thread.start()
+    return thread, result
+
+
+def sc_bot(args, folder):
+    """play_with_bot.py (#370): a person hosts from the real window, the tool's bot joins and its pilot flies player 2."""
+    folder.mkdir(parents=True, exist_ok=True)
+    feed = folder / "feed.txt"
+    write_feed(feed, BOT_FRAMES + 16, sway)
+    port = free_udp_port()
+    host = BotHost(args.exe, folder, {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(BOT_FRAMES)},
+                   {BOT_SETTING: 1})
+    stop = threading.Event()
+    threads = []
+    bots = []
+    try:
+        menu_test.open_windows([host])
+        # 1. The bot as a person starts it first, before anyone hosts, without the host's settings: it tries, finds
+        # nobody, starts again, and once the window hosts the handshake refuses it and names the setting.
+        said_refused = []
+        bots.append(play_with_bot.Bot(args.exe, port=port, log=folder / "bot-refused.log"))
+        thread, refused = bot_watch(bots[-1], said_refused, stop, 600)
+        threads.append(thread)
+        deadline = time.monotonic() + 300
+        while bots[-1].tries < 2:
+            expect(thread.is_alive() and time.monotonic() < deadline,
+                   f"the bot did not try again while nobody hosted: {said_refused}")
+            time.sleep(0.5)
+        host.type("port", str(port))
+        host.click("host")
+        host.wait_text("status", rf"Hosting on port {port}, 1 of \d+ players\.")
+        thread.join(300)
+        expect(refused and refused[0][0] == 2, f"the bot without the host's settings was not refused: {refused}, "
+                                               f"{said_refused}")
+        expect("Skip briefing" in refused[0][1], f"the refusal does not name the setting: {refused[0][1]}")
+        bots[-1].close()
+        host.wait_text("status", rf"Hosting on port {port}, 1 of \d+ players\.")
+        # 2. With --settings-from the host's config, as a person passes it: the bot joins, picks, and flies.
+        cvars = play_with_bot.settings_from(host.run / "starship.cfg.json")
+        # The game writes its config back with some defaults of its own (gDebugPause): those come along, harmless.
+        expect(cvars.get(BOT_SETTING) == 1 and set(cvars) <= set(play_with_bot.sim_cvar_names()),
+               f"--settings-from read {cvars}")
+        said = []
+        bots.append(play_with_bot.Bot(args.exe, port=port, cvars=cvars, log=folder / "bot.log", extra_env={
+            "SF64_COOP_HASH_LOG": "state-hash.txt", "SF64_COOP_LOCKSTEP_LOG": "lockstep-log.txt",
+            "SF64_COOP_TRACE": "trace.txt", "SF64_COOP_LOCKSTEP_END": str(BOT_FRAMES)}))
+        bot = bots[-1]
+        thread, result = bot_watch(bot, said, stop, args.level_seconds)
+        threads.append(thread)
+        host.wait_text("player2", r"^Player 2: BOT, Falco", 300)
+        host.wait_item("start", enabled=True)
+        host.click("start")
+        deadline = time.monotonic() + 600
+        while not join_test.said(bot.report(), "level_running"):
+            expect(thread.is_alive() and time.monotonic() < deadline, f"the bot never got to the level: {said}")
+            time.sleep(0.5)
+        cpu0, wall0, host0 = bot.cpu_seconds(), time.monotonic(), play_with_bot.cpu_seconds(host.proc)
+        wait_for([host, bot], "done", args.level_seconds, "with the bot")
+        cpu1, wall1, host1 = bot.cpu_seconds(), time.monotonic(), play_with_bot.cpu_seconds(host.proc)
+        expect(thread.is_alive(), f"the bot's watch ended before `done`: {result}, {said}")
+    finally:
+        stop.set()
+        for thread in threads:
+            thread.join(60)
+        for game in bots:
+            game.close(tidy=True)
+        host.close()
+    equal = compare(host, bot, BOT_FRAMES)
+    expect(1 in {player for _, player in view_of(bot)}, "the bot never looked through player 1")
+    moved = flown(bot)
+    expect(moved[1] > 500, f"player 2 did not fly: moved {moved[1]:.0f}")  # as `steer` and `vehicles` ask
+    pressed = [row for row in log_rows(bot) if len(row) > 10 and int(row[0]) >= JOIN_FRAME and int(row[9]) != 0]
+    expect(pressed, "the bot's player never pressed a button after the players fly: no pilot")
+    expect(any("joined as player 2" in line for line in said), f"the tool did not say the bot joined: {said}")
+    cpu = ""
+    if None not in (cpu0, cpu1, host0, host1) and wall1 > wall0:
+        cpu = (f"; in the level the bot took {100 * (cpu1 - cpu0) / (wall1 - wall0):.0f}% of a core, the stand-in "
+               f"host {100 * (host1 - host0) / (wall1 - wall0):.0f}% ({wall1 - wall0:.0f} s)")
+    return (f"refused without the host's settings ({refused[0][1][:60]}...), then joined from the real window after "
+            f"{bot.tries} try: same hash on {equal} frames, player 2 flew {moved[1]:.0f} across the path, "
+            f"{len(pressed)} frames with its buttons{cpu}")
+
+
 def sc_leave(args, folder):
     """Leave in the real window, with the other player's window closed: it has to come up by itself and say why."""
     folder.mkdir(parents=True, exist_ok=True)
@@ -7346,6 +7471,7 @@ SCENARIOS = {
     "stall": sc_stall,
     "frozen": sc_frozen,
     "menu": sc_menu,
+    "bot": sc_bot,
     "full": sc_full,
     "scenes": sc_scenes,
     "player_hits": sc_player_hits,
