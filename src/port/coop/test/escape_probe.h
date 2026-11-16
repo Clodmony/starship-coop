@@ -23,8 +23,8 @@
 // table does (Andross_80187C5C), and before each of its updates puts it 450 from its target in x, in z or on a
 // diagonal (450 in both: the objects' measure is the larger of the two), on the side that keeps every other player
 // farthest out, so that the target is in its reach (500) and every other player at least 510 from it; when no side
-// does that (the players closer than about 60 on both axes) it waits 3000 away instead (`off`). Its velocity is held at 0, so Actor_Move leaves it there. Only the place is forced; the object's own
-// update does the test, as in play:
+// does that (the players closer than about 60 on both axes) it waits 3000 away instead (`off`). Its velocity is held at
+// 0, so Actor_Move leaves it there. Only the place is forced; the object's own update does the test, as in play:
 //
 //   blast<i>  an explosion (OBJ_ACTOR_AND_EXPLOSION, Andross_AndExplosion_Update) in reach of player i
 //   exit<i>   the exit's trigger (OBJ_ACTOR_AND_JAMES_TRIGGER, Andross_AndJamesTrigger_Update) in reach of player i

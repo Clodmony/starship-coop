@@ -163,10 +163,11 @@ static void w8AndPilot_MakeRoom(const Player* p, s32 i, PilotPad* pad) {
     }
     for (j = 0; j < CoopPlayers_Count(); j++) {
         const Player* q = &gPlayer[j];
+        f32 ahead = ((p->pos.x - q->pos.x) * p->vel.x + (p->trueZpos - q->trueZpos) * p->vel.z) / speed;
 
         if ((j != i) && !CoopPlayers_IsParked(j) && (q->state == PLAYERSTATE_ACTIVE) &&
             (fmaxf(fabsf(q->pos.x - p->pos.x), fabsf(q->trueZpos - p->trueZpos)) < W8_ANDPILOT_ROOM) &&
-            (((p->pos.x - q->pos.x) * p->vel.x + (p->trueZpos - q->trueZpos) * p->vel.z) / speed < W8_ANDPILOT_BEHIND)) {
+            (ahead < W8_ANDPILOT_BEHIND)) {
             room = false;
         }
     }
