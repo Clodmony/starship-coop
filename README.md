@@ -13,87 +13,114 @@ your own US 1.0 or US 1.1 Star Fox 64 ROM on first launch.
 
 ## How to play
 
-For two players, each on their own PC, each with their own Star Fox 64 ROM. This section describes `coop` as of the merge of
-2026-11-11, which holds what used to be the test build, because the campaign was played on it. Where
-this section says "observed", a person played it; "from the code" and "from the record" are not playtests.
+For two to four players, each on their own PC, each with their own Star Fox 64 ROM. This section describes the build
+this README comes with: the combined test build 6 of 2026-11-16 (the branch `issue/combined-test-6`, pull request
+[#285](https://github.com/Clodmony/starship-coop/pull/285)). Three words say how much stands behind a sentence:
+**observed** means a person played it, **scripted** means real games played it on one Linux PC, driven by test scripts
+and compared frame by frame, and **from the code** or **from the record** means neither. Nobody has played this build
+by hand; what people played is the build of 2026-11-09 and 2026-11-10, see
+[What a real run showed](#what-a-real-run-showed-observed).
 
 ### What you need
 
-- **The game's ROM, US 1.0 or 1.1, for each player.** Both players need the same version. It is never in this
+- **The game's ROM, US 1.0 or 1.1, for each player.** All players need the same version. It is never in this
   repository and must stay out of it. Starship builds its game data from your ROM; a source build needs it as
   `baserom.z64` in the repository folder, in z64 byte order (some dumps come in v64 or n64 order and must be swapped
   first; the ROM hashes it accepts are the entries of [`config.yml`](config.yml), and [CONTRIBUTING.md](CONTRIBUTING.md) has the build steps).
-- **The same build on both PCs.** There is **no download yet**: the repository has no release
-  ([Releases](https://github.com/Clodmony/starship-coop/releases) is empty) and GitHub CI has been off since 2026-11-07,
-  so no current build is published. The workflow `Co-op build` (`.github/workflows/coop-build.yml`) can make a Windows
-  and a Linux package, kept 14 days, when someone with write access re-enables and runs it. Otherwise each player
-  builds the same commit from source: `python tools/coop/build.py --config Release --assets`, steps and gotchas in
-  [docs/BUILDING.md](docs/BUILDING.md). The package holds the game and its settings, never game data.
+- **The same build on every PC.** There is **no download yet**: the repository has no release
+  ([Releases](https://github.com/Clodmony/starship-coop/releases) is empty). A workflow that makes a draft release
+  with a Windows and a Linux package from a tag is built and has never run
+  ([#358](https://github.com/Clodmony/starship-coop/issues/358), [docs/coop/MAINTAINING.md](docs/coop/MAINTAINING.md),
+  "Releases"); GitHub CI has been off since 2026-11-07. Until a release exists each player builds the same commit from
+  source, `python tools/coop/build.py --config Release --assets` (steps and gotchas in
+  [docs/BUILDING.md](docs/BUILDING.md)), or one player makes a package with `python tools/coop/package.py --config
+  Release` and gives it to the others. A package holds the game and its settings, never game data.
 - **Linux package:** it needs the shared libraries of Ubuntu 24.04 (`libzip.so.4`, `libtinyxml2.so.10`,
   `libspdlog.so.1.12`, `libfmt.so.9`) and does not start on a newer distribution
   ([#121](https://github.com/Clodmony/starship-coop/issues/121)). A source build has no such limit.
 - **A way through the network.** Direct: the host's UDP port 46464 (the menu's default) must be reachable, which means
-  the same home network, a port forwarded on the host's router, or both players on one virtual private network
-  (observed: the campaign run used a direct connection). Allow the game through a firewall when it asks. The Steam
-  relay is **not available**: it is built, off by default and tested on a fake Steam only
+  the same home network, a port forwarded on the host's router, or all players on one virtual private network
+  (observed: the campaign run used a direct connection over a VPN). Allow the game through a firewall when it asks. The
+  Steam relay is **not available**: it is built, off by default and tested on a fake Steam only
   ([#24](https://github.com/Clodmony/starship-coop/issues/24)).
 - **Equal game settings.** Settings that change the game, such as cheats, must match.
 
-### Both players run the same build
+### Every player runs the same build
 
 Press **F1** to open the menu bar. Its right end shows `Co-op <build id>`: the first 8 characters of the build id, and
 `-dirty` after them for a build made from uncommitted changes (in a bar with no room for all of it, as in the default
-window, only `<8 characters>-dirty`). Both players must see the same text, without `-dirty`: build from a clean
+window, only `<8 characters>-dirty`). Every player must see the same text, without `-dirty`: build from a clean
 checkout of the same commit. The handshake compares the whole id, not only what the label shows. A joining player
 whose build differs is **refused**: the join fails and the Co-op window prints
 `Different game builds: host <id>, joining player <id>. Both need the same Starship Co-op build.` (`src/port/coop/session/identity.c`).
 A different ROM version or a different game setting is refused the same way and names what differs. A different
-platform (Windows against Linux) is **not** refused: both players see a warning that names the two platforms, and the
+platform (Windows against Linux) is **not** refused: the players see a warning that names the two platforms, and the
 desync check below decides ([decision 0010](docs/coop/decisions/0010-cross-platform-sessions.md)).
 
 ### Host and join
 
-1. Both players start the game, press F1, and open **Co-op** in the menu bar.
-2. **Host:** leave **Port** at 46464 and click **Host a game**. The status line says `Hosting on port 46464, 1 of 2
-   players.` Tell the other player your address (`<host address>`: your local IP on a home network, your public IP
-   across the internet, or your VPN address).
-3. **Joining player:** type `<host address>` into **Host's address**, the port the host shows into **Port**, and click
-   **Join a game**. The status line shows the session and a ping.
-4. **Characters** (from the record, [decision 0005](docs/coop/decisions/0005-players-and-characters.md)): the host
+1. Every player starts the game, presses F1, opens **Co-op** in the menu bar and there the **Co-op window**.
+2. **Your name** (optional): up to 8 letters, digits, spaces and `- . ! :`. The other players see it over your ship
+   and in the list of players ([#258](https://github.com/Clodmony/starship-coop/issues/258), scripted).
+3. **Host:** leave **Port** at 46464 and click **Host a game**. The status line says `Hosting on port 46464, 1 of 4
+   players.` Tell the others your address (`<host address>`: your local IP on a home network, your public IP across
+   the internet, or your VPN address).
+4. **Joining players:** type `<host address>` into **Host's address**, the port the host shows into **Port**, and
+   click **Join a game**. The window lists every player with their character and a ping.
+5. **Characters** (from the record, [decision 0005](docs/coop/decisions/0005-players-and-characters.md)): the host
    always flies Fox; each other player picks Falco, Peppy or Slippy under **Your character**, and a wingman already
    taken cannot be chosen. A wingman nobody chose stays a computer wingman.
-5. **Host only:** **Start at** picks the level to begin with (Corneria unless you change it). A level
+6. **Host only:** **Start at** picks the level to begin with (Corneria unless you change it). A level
    started this way carries none of the route a campaign builds on the way. Then **Start the level**, once every player
-   has chosen. Both games go to the level together.
-6. Fly. **Either player's Start pauses both games**; the pause menu's cursor, retry and quit belong to the host.
-   **Leave** ends a session for the one who leaves, and for both in a session of two. If the connection drops or a
-   player sends no input for 10 seconds, the host waits 15 seconds for that player to come back, which its game does
-   by itself; then, as after a desync, the level starts again for everyone who is there, at the last checkpoint or
-   from its start.
+   has chosen. All games go to the level together.
+7. Fly. **Any player's Start pauses every game**; the pause menu's cursor, retry and quit belong to the host. At the
+   end of a level the results stay up until every player has pressed A, 30 seconds at most
+   ([#252](https://github.com/Clodmony/starship-coop/issues/252), scripted). After the level the host steers the map
+   and the games go on into the next level together.
+8. **Leave** ends the session for the one who leaves, and for both in a session of two; with three or four players
+   the level starts again for those who stay.
 
 ### What the game does in a session
 
 | What | Rule | Where it stands |
 |---|---|---|
-| Lives | One shared pool of lives for the team ([decision 0007](docs/coop/decisions/0007-lives-and-respawn.md)). | The pool is the game's own life count; any life anyone collects goes into it. It starts at 2 plus 1 for each player after the first: 3 for two players, 4 for three, 5 for four, read in scripted sessions of two, three and four clients on one Linux PC ([#14](https://github.com/Clodmony/starship-coop/issues/14)); not yet played by hand. A player who joins or leaves between two levels does not change it. Every client's HUD shows the pool, also one that looks through player 2 to 4 ([#335](https://github.com/Clodmony/starship-coop/issues/335)). |
-| A second player goes down | They leave the level, and 150 game frames (about 5 seconds) later come back beside Fox, at full shields, for one life from the pool. At pool 0 they wait for a life or the next level. | Observed in scripted two-client runs on Corneria ([#14](https://github.com/Clodmony/starship-coop/issues/14), NOTES.md, 2026-11-09); nobody has reported it from a hand-played run. |
-| Fox (the host) goes down | Fox is refilled in place for one life from the pool (rule 12), on 16 levels; with no life left the original rule holds, game over. The owner opened all 16 levels on 2026-11-11 instead of one at a time. | Scripted two-client runs on every one of the 16 levels (NOTES.md, 2026-11-11, "Fox goes down"); nobody has seen it in play. |
-| Shields between levels | Every player's shields carry over and heal by 64 at each level load. | wingman part, [#15](https://github.com/Clodmony/starship-coop/issues/15); scripted, not hand-checked. |
+| Players | Two to four. The host is player 1 and flies Fox. | Two: observed (the campaign run below). Three and four: scripted only, the campaign's levels once each with test pilots ([#322](https://github.com/Clodmony/starship-coop/issues/322)); nobody has played with more than two. |
+| Lives | One shared pool of lives for the team ([decision 0007](docs/coop/decisions/0007-lives-and-respawn.md)). | The pool is the game's own life count; any life anyone collects goes into it. It starts at 2 plus 1 for each player after the first: 3 for two players, 4 for three, 5 for four, read in scripted sessions of two, three and four clients ([#14](https://github.com/Clodmony/starship-coop/issues/14)); not yet played by hand. A player who joins or leaves between two levels does not change it. Every player's HUD shows the pool ([#335](https://github.com/Clodmony/starship-coop/issues/335)). A host who flew a level alone before starting the session brings its own life count as the pool ([#343](https://github.com/Clodmony/starship-coop/issues/343), from the code). |
+| A player other than Fox goes down | They leave the level, and 150 game frames (about 5 seconds) later come back beside Fox, at full shields, for one life from the pool. At pool 0 they wait for a life or the next level. | Scripted, on Corneria ([#14](https://github.com/Clodmony/starship-coop/issues/14), NOTES.md, 2026-11-09); nobody has reported it from a hand-played run. |
+| Fox (the host) goes down | Fox is refilled in place for one life from the pool (rule 12), on 16 levels; with no life left the original rule holds, game over. Macbeth's ram at the end of the track ends the try as in the original. | Scripted on every one of the 16 levels (NOTES.md, 2026-11-11, "Fox goes down"); nobody has seen it in play. |
+| Shields between levels | Every player's shields carry over and heal by 64 at each level load. | Scripted, not hand-checked. |
 | Who steers (the path owner) | The host: at a path split the side comes from the host's position, and on the map only the host's input decides go on, change path and retry ([decision 0008](docs/coop/decisions/0008-routes-and-score.md)). Any player can earn a route or a warp. Boost and brake of **any** player change the level's speed. | Boost: [#194](https://github.com/Clodmony/starship-coop/issues/194). The rest is the original game's path handling plus the record. |
-| Score | Hits by any player count for the team; medals keep the original check, so a player who is down at the clear costs a medal. | From the record; not checked in play. |
-| The level intro | If the host's save has the level cleared, either player's Start skips it on both games; otherwise Start does nothing there. The host's save decides, not the joining player's. | [#191](https://github.com/Clodmony/starship-coop/issues/191), scripted; the first sentence rests on a scripted run. |
-| Items | A laser, crate or wing repair works for the player who takes it. | [#201](https://github.com/Clodmony/starship-coop/issues/201), scripted. |
-| Enemies' aim | Most aimed enemy shots go at the nearest human player, not always at Fox. | [#193](https://github.com/Clodmony/starship-coop/issues/193), scripted; shots that aim some other way, and bosses, are not covered (see the issues below). |
-| Vehicles | Each player gets the level's Landmaster (Titania, Macbeth) or Blue Marine (Aquas). | [#16](https://github.com/Clodmony/starship-coop/issues/16). Observed in Macbeth with a second player in the campaign run. Titania and Aquas: scripted only. |
-| Save | Every game plays on the host's progress, which the host sends once just before the level starts; each game keeps its own sound settings, and no game writes its real save during a session, the host's included. What a session earns is not kept ([decision 0009](docs/coop/decisions/0009-vehicles-cutscenes-save.md), item 8, Accepted). | **Observed**: a Windows host and a Linux joining player went through Corneria, two maps, Sector Y and Aquas with different saves on the evening of 2026-11-10; scripted too (`map_saves`). |
-| Cutscenes and radio | Follow the host's timing; a player waits out a cutscene. A wingman a human flies has its radio lines kept and the calls for help dropped in all-range ([decision 0006](docs/coop/decisions/0006-human-flown-wingman.md)). | From the records. |
+| Score | Hits by any player count for the team; medals keep the original check, so a player who is down at the clear costs a medal. The results and the pause screen also show each player's own hits, with names. | The team total: from the record. The per-player numbers: scripted ([#252](https://github.com/Clodmony/starship-coop/issues/252)). |
+| Other players on your screen | Each other player is a ship with a shield bar and, over it, their name or the letter of their character. Camera, HUD and sound follow your own ship. | Scripted ([#257](https://github.com/Clodmony/starship-coop/issues/257), [#258](https://github.com/Clodmony/starship-coop/issues/258)); with three other ships on screen nobody has looked at it ([#332](https://github.com/Clodmony/starship-coop/issues/332)). |
+| The level intro | If the host's save has the level cleared, any player's Start skips it on every game; otherwise Start does nothing there. The host's save decides, not the joining player's. | Scripted ([#191](https://github.com/Clodmony/starship-coop/issues/191)). |
+| Items | A laser, crate or wing repair works for the player who takes it. Gold rings, 1-ups and the kills that drop lasers count for the team. | Scripted ([#201](https://github.com/Clodmony/starship-coop/issues/201), [#210](https://github.com/Clodmony/starship-coop/issues/210)). |
+| Enemies' and bosses' aim | Aimed enemy shots go at the nearest human player, not always at Fox, and so do the bosses that were changed so far: Sector X's Spyborg, Titania's Goras, Macbeth's train (its end, bombs, beams, turrets and the blast of car 7), Sector Y's robots, Corneria's Granga, Area 6's Gorgon and Andross with the explosions of his escape. | Scripted, each with a scenario of its own, most also with three and four clients ([#193](https://github.com/Clodmony/starship-coop/issues/193), [#213](https://github.com/Clodmony/starship-coop/issues/213), [#329](https://github.com/Clodmony/starship-coop/issues/329)). What still follows Fox alone is listed in [#220](https://github.com/Clodmony/starship-coop/issues/220). |
+| Vehicles | Each player gets the level's Landmaster (Titania, Macbeth) or Blue Marine (Aquas). | Observed in Macbeth with a second player in the campaign run. Titania and Aquas: scripted only, flown to level complete by test pilots. |
+| Save | Every game plays on the host's progress, which the host sends once just before the level starts; each game keeps its own sound settings, and no game writes its real save during a session, the host's included. **What a session earns (medals, cleared planets) is not kept**, on any PC ([decision 0009](docs/coop/decisions/0009-vehicles-cutscenes-save.md), item 8, Accepted; whether to keep it is an open question for the owner, [decision 0017](docs/coop/decisions/0017-what-a-session-earns.md), Proposed). | **Observed**: a Windows host and a Linux joining player went through Corneria, two maps, Sector Y and Aquas with different saves on the evening of 2026-11-10; scripted too (`map_saves`). |
+| Cutscenes and radio | Follow the host's timing; a player waits out a cutscene. A wingman a human flies has its radio lines kept and the calls for help dropped in all-range ([decision 0006](docs/coop/decisions/0006-human-flown-wingman.md)); a scene that would show that wingman goes to a free computer wingman, else to Katt or Bill ([decision 0012](docs/coop/decisions/0012-taken-wingman-scenes.md)). | From the records; scripted in part. |
 
-### If the games part
+### If something goes wrong
 
-Every game hashes its state each frame and the games compare. On a difference the game stops the session, says so on
-screen with the frame and what differs, and writes `coop-desync-<frame>-player<n>.txt` into its own folder, with the
-co-op logs `coop-log-*`. What to send back: [docs/coop/TWO_PC_TEST.md](docs/coop/TWO_PC_TEST.md), "What to send back".
-The reports and logs can hold your user name in file paths: do not post them in a public issue unchecked.
+The session is built to cost as little as it can when a connection drops or the games stop agreeing. All of this is
+**scripted on one Linux PC only**: nobody has cut a real connection between two PCs, and the rules of
+[decision 0014](docs/coop/decisions/0014-the-session-survives.md) and
+[decision 0016](docs/coop/decisions/0016-resume-and-repair.md) are Proposed, waiting for the owner.
+
+- **A connection drops, or a player sends nothing for 10 seconds.** Every game stops where it is. The host's Co-op
+  window says `Player 2 lost the connection. Waiting for it to come back (30 s).` The lost player's game comes back by
+  itself. If it returns within 30 seconds, the level goes on where it stood (`Player 2 is back. The level goes on.`),
+  on the map as in a level. If it does not, or its game cannot go on from where it was, the level starts again for
+  everyone who is there, at the last checkpoint or from its start, with no life taken; with nobody else left the
+  session ends and each game plays on alone.
+- **The games stop agreeing (a desync).** Every game hashes its state each frame and the games compare. On a
+  difference the Co-op window says `The games parted at frame N. Syncing them again at frame M.`, every game holds at
+  that frame for a moment, the host's state is written over the others', and play goes on (`The games are in step
+  again.`). If that cannot be done, the level starts again from the host's state (`The games parted. Starting the level
+  again together.`). If the games part again at once after a level start, twice in a row, the session ends.
+- **What to send back.** After a desync each game writes `coop-desync-<frame>-player<n>.txt` into its own folder, next
+  to the co-op logs `coop-log-*`, which name the first value that differed. What to send:
+  [docs/coop/TWO_PC_TEST.md](docs/coop/TWO_PC_TEST.md), "What to send back". The reports and logs can hold your user
+  name in file paths: do not post them in a public issue unchecked.
 
 ### What a real run showed (observed)
 
@@ -102,34 +129,35 @@ player, over a direct connection with a VPN ([#2](https://github.com/Clodmony/st
 Fortuna, Solar, Macbeth, Area 6, Venom 2, Venom with Andross, Venom 2 again, then the ending, 66 minutes by the log.
 The test build of that day had 0 desync lines, 0 errors and 0 warnings; ping median 33 ms, 95th percentile 52 ms,
 worst 90 ms; the games waited for the other player 31 times, 8 seconds in all. Two earlier builds had parted on the way
-(fixed since). That run covered a build of 2026-11-09 and not the newer test build.
+(fixed since). Sessions on the evening of 2026-11-10 parted on the map and at the Aquas boss (both fixed since). That is
+all anyone has played: the build this README comes with is more than 400 commits newer and has been flown by scripts
+only.
 
 ### Known issues
 
-**Seen in play (observed)**
+**Not tried by anyone**
 
-- The last two bosses, the Gorgon in Area 6 and Andross, **ignore the second player** ([#213](https://github.com/Clodmony/starship-coop/issues/213); a fix is in progress, not in any build yet).
+- This build, by hand, on two PCs. A real connection that drops. A desync repaired between a Windows and a Linux game.
+  A Release build through a campaign. Three or four people. The Steam transport.
+- Windows and Linux: nobody has shown that two builds compute the same game beyond the one campaign run above
+  ([decision 0010](docs/coop/decisions/0010-cross-platform-sessions.md)); the Windows Release check is open
+  ([#145](https://github.com/Clodmony/starship-coop/issues/145)).
+- The campaign run above did not go through Sector X, Sector Y, Sector Z, Katina, Bolse, Zoness, Titania, Aquas or
+  Venom 1. Scripts fly all 17 levels with two clients, equal on every frame; people have not.
 
 **From the open issues (from the code or the tracker, not re-played)**
 
-- Some items and triggers still look at player 0 only: the Meteo warp ring, the gold ring count, kill credit and the
-  wing-broken trigger ([#210](https://github.com/Clodmony/starship-coop/issues/210)). The second player's Solar heat
-  drain is fixed in the test build ([#200](https://github.com/Clodmony/starship-coop/issues/200)).
-- A scene that would show a wingman a human flies, such as Corneria's rescue call to Slippy and then Peppy, is
-  decided in [decision 0012](docs/coop/decisions/0012-taken-wingman-scenes.md) and built in two steps; the second step
-  (Katt and Bill) is open ([#202](https://github.com/Clodmony/starship-coop/issues/202)).
-- Scripted radio lines are lost while player index 0 is not active ([#88](https://github.com/Clodmony/starship-coop/issues/88)).
-- The heat alarm, the pause reticle and billboards still follow player 0 on every client
-  ([#140](https://github.com/Clodmony/starship-coop/issues/140)), and what a client sees while their own ship is out
-  is player 0's view ([#30](https://github.com/Clodmony/starship-coop/issues/30)).
-- Windows and Linux: nobody has shown that two builds compute the same game beyond the one campaign run above. Titania
-  has 18 statements of the kind that parted the two in Macbeth
-  ([#209](https://github.com/Clodmony/starship-coop/issues/209)); a Titania session between them can part.
-- **Not covered by any run:** Sector X, Sector Y, Sector Z, Katina, Bolse, Zoness, Titania and Aquas with two real
-  players; a Release build in a campaign; more than two players; the Steam transport; lag and loss
-  ([#25](https://github.com/Clodmony/starship-coop/issues/25)). Start-at-level sessions beyond Corneria are only
-  scripted for their first 40 seconds ([#129](https://github.com/Clodmony/starship-coop/issues/129)).
-- The map after a level started with **Start at** is untested.
+- What a session earns is not kept (the Save row above).
+- Some boss fights still follow Fox alone ([#220](https://github.com/Clodmony/starship-coop/issues/220)).
+- In Macbeth one tank's bump moves every tank back along the track
+  ([#346](https://github.com/Clodmony/starship-coop/issues/346), seen in a scripted run with four tanks; whether the
+  original game does that to its one tank is not known).
+- A session started after the host flew alone starts with the host's lives, not the pool of the rule
+  ([#343](https://github.com/Clodmony/starship-coop/issues/343)).
+- A level started with **Start at** carries no route. The scripts that start a level this way stop when its map comes
+  up ([docs/coop/QA.md](docs/coop/QA.md), `campaign.py`), so the map after such a level is not covered.
+- The Linux package needs Ubuntu 24.04's libraries; there is no macOS build
+  ([WP-01](https://github.com/Clodmony/starship-coop/issues/1)).
 - Local split screen does not exist yet.
 
 No dates are promised for any of this.
