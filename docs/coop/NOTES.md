@@ -8332,6 +8332,179 @@ player 0 loses 100.
 
 ## Determinism
 
+### 2026-11-16, #262: the sign tests, the remembered beam slots and the textured lines, fixed in a session only
+
+Identity: `sf64.o2r` and `starship.o2r` as shared for this run (ROM US 1.0; this worker did not read the ROM), base
+`82a44d62` (`issue/combined-test-6`), this change `76c7f571` on branch `issue/262-sign-tests` (the game was built from
+that tree before the commit was made, so it names itself `82a44d62056e-dirty` in its logs). Linux, GCC 16.2.1, Debug,
+OpenGL on a software renderer, no window, silent. Sessions: two real games over loopback on one PC (`campaign.py`).
+Not run: Windows, MSVC, a Release build, two PCs, more than two players, `test_all.py`. Line numbers are this
+branch's. It finishes the first block of #262; the entries of 2026-11-12 (the sanitizer sweep) and 2026-11-11 (the
+Aquas boss desync) hold the reading it starts from.
+
+**The rule that decided the form**
+
+- "With co-op off, the simulation must be unchanged from upstream" (`docs/coop/DESIGN.md`, the gate; `AGENTS.md`, code
+  rules), and decision 0011 chose the N64's own sine "in sessions only" over "always" for that reason. None of the
+  three faults here reads outside an array: upstream's result is defined and the same on every 64-bit build. So,
+  unlike the reads of the sweep (fixed in every mode: there was no upstream behaviour to keep), each fix here acts in
+  a session only. `src/port/coop/game/fixes.c` holds them; outside co-op (`CoopPlayers_IsCoop()` false) each function
+  gives what upstream's line gave.
+
+**Observed (code): the nine sign tests**
+
+`Actor.iwork` is `uintptr_t` in the port (`include/sf64object.h`), `s32` on the N64, so `iwork[n] < 0` is never true.
+
+| Place | Differs from the N64 | Now |
+|---|---|---|
+| `src/engine/fox_360.c:2326`, `:2329`, `ActorAllRange_DrawBarrelRoll` | yes, draw only: `iwork[15]` -1 is a factor of about 1.8e19 in the ring's angle and the flip never runs | in a session `CoopFixes_IworkFactor` gives -1 and `CoopFixes_IworkNegative` flips the ring |
+| `src/engine/fox_demo.c:2407`, Fortuna's ending, the explosion | in the code yes: `iwork[0]` (255, minus 2 a frame) would wrap below 0 at cutscene frame 228, the glow's alpha would run through its low byte again and `gLight3Brightness = iwork[0] / 255.0f` would be about 7e16. In a game that draws, no: the port's draw frees the actor at frame 227 (below) | in a session it ends at 0 with scale 0 if it gets that far |
+| `src/overlays/ovl_i3/fox_a6.c:2799`, `:2803`, `Area6_LevelComplete` | yes: `iwork[3]` (240) and `iwork[7]` (100), minus 4 a frame, wrap; they are the alphas of the explosion's light (`fox_demo.c:2803-2804` draws with them) | in a session both stay at 0 |
+| `src/overlays/ovl_i6/fox_sy.c:3695`, `SectorY_SyRobot_Update` | yes, and it is gameplay (below) | not touched |
+| `src/overlays/ovl_ending/fox_end1.c:1737` | no: `iwork[1]` counts down from 100 (`:1567`) by 1 and `<= 0` is `== 0`, reached exactly | not touched |
+| `src/overlays/ovl_i3/fox_aq.c:1807`, `Aquas_Actor255_Update` | no: `iwork[1]` counts down from 10 (`:1656`) by 1, `<= 0` is `== 0` | not touched |
+| `src/overlays/ovl_i3/fox_aq.c:6515`, a fish of a group | no: the decrement runs only while `iwork[0] != 0` (`:6492`, the `else` of `== 0`), so the test is dead code on the N64 too | not touched |
+| `src/overlays/ovl_i5/fox_ma.c:3158`, `Macbeth_MaRailroadSwitch_Update` | no: `iwork[0]` is counted down only in the `else` of `<= 0` | not touched |
+
+- Upstream's port frees Fortuna's explosion actor at cutscene frame 227, from its draw (`fox_demo.c:2601-2604`,
+  "@port: Fix interpolation issue ...", `gActors[50].obj.status = OBJ_FREE` in `ActorCutscene_Draw`). The counter
+  starts at 255 at frame 100 and loses 2 a frame from 101 on: it is 1 at frame 227 and would pass 0 at 228. So the
+  table of 2026-11-12 ("yes, from frame 129 of the explosion for as long as that scene runs") is wrong for a game that
+  draws that actor on that frame; it holds only where the draw does not run.
+- The Sector Y test (`fox_sy.c:3695`, `if (this->iwork[19] < 0)`): robots with commands 10 and 11 (`iwork[19]` -1,
+  `:3629`, `:3635`) fire `ActorEvent_8006F254` on the N64, a shot straight along their own aim with no random draw; in
+  the port they take the spread branch, two draws and a shot at a point around a player (the entry of 2026-11-12,
+  #273). It is the one sign test that changes how a level plays and its random numbers.
+
+**Observed (code): the remembered beam slots**
+
+- `Aquas_AqGaroa_Update` (`fox_aq.c`): state 3 keeps `slot + 1` of two beams in `iwork[2]` and `iwork[3]`
+  (`func_effect_80081B24`, which gives 0 when no slot is free: slot 0, whatever is there). State 4 writes the slot's
+  place on every frame and at animation frames 20 and 57 its `vel`, `unk_44` and `timer_50` (the two blocks at
+  `:4828` and `:4864`), and a dying Garoa writes `unk_44` (`:4706`), with no test of the slot's status.
+- `Area6_A6Gorgon_Update` (`fox_a6.c:1082`, state 7): writes and reads `unk_60` of `gEffects[swork[A6_SWK_39]]` and
+  frees that slot at the end (`:1105`); the Gorgon leaves state 7 only when that slot's `unk_60.z` is below 0.2. The
+  index is written by the beam itself on the frame the Gorgon's timer ends (`src/engine/fox_effect.c`,
+  `Effect_Effect395_Update`, state 10, `gBosses[0].swork[39] = this->index`).
+
+**Observed (code): `gTexturedLines`**
+
+- Users that take a free line by searching: the event actors (`src/engine/fox_enmy2.c:1416`), Titania's Delphor head
+  (`fox_ti.c:1946`, the index only; it writes the line on each frame it fires, `:1972`) and Goras (`fox_ti.c:4654`,
+  `mode = 1` alone; `Titania_TiGoras_Draw` fills the ends). Users of a fixed index, written again on every frame:
+  Aquas' jellyfish (`fox_aq.c:331`), Macbeth's train end (`fox_ma.c:3833`), Andross (`fox_andross.c:566`, `:3642`),
+  the unused turret mode (`fox_turret.c:104`). The map (`src/overlays/ovl_menu/fox_map.c`) uses the array with its own
+  code and never through `TexturedLine_UpdateAll`; not touched (another branch works in that file).
+- `TexturedLine_Update` (`src/engine/fox_enmy.c:3135`) frees a line whose `posAA.z + gPathProgress` is over 1000
+  outside all-range. A line Goras takes has, for the update of that frame, mode 1 (it hurts) and the ends its last
+  user left.
+- The Delphor head and Goras store `index + 1` and write `gTexturedLines[index - 1 + ...]` without a test that a free
+  line was found (`fox_ti.c:1969`, `:4664`): with all 100 lines in use that is index -1, a write before the array. Not
+  seen (the sweep of 2026-11-12 had no such report); `CoopFixes_TakeLine` ignores an index outside the array and the
+  game's own write is as upstream.
+
+**Built** (`src/port/coop/game/fixes.h`, `.c`; every call marked `// COOP:`)
+
+- `CoopFixes_IworkNegative(word)`: in a session `(s32) word < 0`, else 0. `CoopFixes_IworkFactor(word)`: in a session
+  the `s32` as a float, else the unsigned word as a float. Used at the three places of the table.
+- `CoopFixes_HoldsBeam(effect, state)`: in a session, whether the slot is an active `OBJ_EFFECT_395` in that state;
+  else 1. The Garoa forgets a slot that fails it (`iwork[2]` or `[3]` to 0, nothing written, no throw), and a dying
+  Garoa ends only beams that pass it.
+- `CoopFixes_GorgonBeam(slot)`: in a session `gEffects[slot]` while it is the active beam in state 10, else a stand-in
+  that is zeroed on each call; outside co-op `gEffects[slot]`. With the stand-in the Gorgon's lines write nothing of
+  the game's state, and its phase ends when its cover is shut (`fwork[A6_FWK_0]` below 1; the stand-in's width is 0).
+- `CoopFixes_TakeLine(index)`: in a session a line with mode 0 is zeroed before its user writes it; a line in use is
+  left alone. Called before the first write at the eight places above.
+
+**Observed (runs)**
+
+All runs on the tree of `76c7f571`. The base build for co-op off is a build of `82a44d62` (it names itself
+`82a44d62056e`).
+
+- Co-op off, one game against the base build, input by rule: `python tools/coop/hash_check.py base --base <base>`:
+  `co-op off: the base build and this one equal on all 5800 frames`, `hash: PASS`. The same with `--level aquas`,
+  `area-6`, `titania`, `fortuna` and `macbeth`, each `--frames 3000`: `equal on all 4684 frames`, `hash: PASS`, five
+  times.
+- Two real clients, `python tools/coop/campaign.py --levels aquas,area-6,titania,fortuna,macbeth,venom-andross
+  --lock <file>`: `6/6 levels equal on every frame to the end`. Frames compared and the level frame of level complete:
+  Aquas 9536 and 7369, Area 6 16828 and 14756, Titania 11507 and 9399, Fortuna 8012 and 5483, Macbeth 12682 and
+  10423, Venom (Andross) 7581 and 7069. Aquas and Titania complete on the frame they did on 2026-11-12 (7369, 9399).
+- The same sessions with both games under gdb (a wrapper as `--exe`; breakpoints on the lines that only a fix reaches,
+  each printing one line and going on), `--levels aquas,area-6,titania,fortuna`: `4/4 levels equal on every frame to
+  the end`, level complete on the same frames (7369, 14756, 9399, 5483). Per game, the same on both:
+  - Aquas: 25 lines cleared when taken (the jellyfish's, indexes 0 to 11), 13 of them with values of the last user
+    still in them (for example `timer` 2, `zScale` 874, both ends at z -70244); no Garoa forgot a slot.
+  - Area 6: `Area6_LevelComplete` set `iwork[7]` back to 0 on 45 frames (cutscene frames 172 to 216) and `iwork[3]` on
+    10 (207 to 216), where upstream lets them wrap; the Gorgon never got the stand-in.
+  - Titania: 7 lines cleared when taken. Indexes 0 to 2 at frames 2761 to 3038, still zero from the level start; at
+    frame 8227 Goras takes lines 0 to 3, and three of them held what the Delphor heads left (`zScale` 750 to 1095,
+    ends at z -35453 to -39721): on the base those were, for that frame's update, lines that hurt at those places.
+  - Fortuna: nothing. The pilots' flight ends with Star Wolf beaten, without the explosion, and draws no roll ring.
+- `--levels venom-2` under gdb (the ring is drawn for the team's Arwings in every all-range level and for Star Wolf
+  only in Venom 2, `fox_360.c:2386-2412`): `equal on every frame to the end`, level complete at 9143; the flip of the
+  ring ran on 741 draws per game, for all four of Star Wolf (`aiType` 4 to 7), each with `iwork[15]` -1 and
+  `CoopFixes_IworkFactor` -1.0.
+- Forced, the same on both games of the session (gdb, a one-time breakpoint that frees the beam's slot under its
+  holder, as a cull or a hit would), `--levels aquas,area-6`: `2/2 levels equal on every frame to the end`.
+  - Aquas: at frame 1858 the second beam of a Garoa (actor 8, slot 1, an active beam in state 2) is freed; the Garoa
+    forgets the slot on that frame. And one more, not forced: at frame 2308 another Garoa (actor 12) still remembered
+    slot 0 for its first beam, and slot 0 held an `OBJ_EFFECT_346` in status 1 (`OBJ_INIT`); it forgot the slot.
+    Upstream's code would have moved that effect into the Garoa's hand and thrown it. Equal on 9135 frames, level
+    complete at 7089 (the forcing changes the flight).
+  - Area 6: at frame 12345 the Gorgon's beam (slot 67, active, state 10) is freed; the Gorgon gets the stand-in on 51
+    frames (12345 to 12395) and ends the beam phase at 12395; its next beam phase ends the usual way at 15244. Equal
+    on 17863 frames, level complete at 15779 (14756 without the forcing).
+- Forced, Fortuna's failed ending (gdb sets `gAllRangeEventTimer` to 10099 at 3000 on both games, Star Wolf alive):
+  level complete at 3002, `equal on every frame to the end` (5421 and 5315 frames compared in two runs). The fade's
+  branch (`fox_demo.c:2408`) was not reached: the draw freed the explosion at cutscene frame 227 with `iwork[0]` 1, on
+  both games on frame 3771.
+- One session of these (Fortuna under gdb) never started: the client's join timed out ("The connection timed out:
+  nothing was heard from the other side") while the host sat at the title; the same command passed when run again.
+  Before any level code; not looked into.
+- `python tools/coop/build.py --quiet`: `build: OK`.
+
+**Derived**
+
+- Co-op off is upstream's: every new call returns upstream's value there, and the hash of a game with one player
+  equals the base build's on every frame of the six runs above.
+- In a session Area 6's light and Star Wolf's roll ring now do what the N64's code does (the counters stay at 0, the
+  ring of a roll to the other side turns by -1 and is flipped), and both games compute the same: the counters and the
+  lines are part of the hash, and the levels stayed equal on every frame.
+- Fortuna's explosion needs no fix in a game that draws it: the port's own draw ends it one frame before the counter
+  passes 0. The cast there is for a game that does not draw that frame.
+- A remembered slot that no longer holds its beam does happen in play: once in the forced Aquas flight, without
+  forcing (slot 0 held another effect). In the unforced flights it did not (0 forgets in Aquas, 0 stand-ins in Area 6,
+  as the traces of 2026-11-12 said).
+- When a beam is taken away under its holder nothing of another effect is written, and both levels still end.
+- A line that is taken can hold its last user's values, in two of the three levels looked at (Aquas 13 of 25, Titania 3
+  of 7); for Goras that was a line that hurts, at another boss part's old place, for one update.
+
+**Guess**
+
+- Why the Garoa's slot 0 held another effect at frame 2308: either its beam ended early (a hit on something, the cull
+  of `Effect_Move`) and the slot was taken again, or no slot was free at the take and `func_effect_80081B24` gave 0.
+  Not traced.
+- Four players fill the effect array more than two, so the second case gets likelier with them; not measured.
+
+**Unknown**
+
+- What `CoopFixes_HoldsBeam` cannot tell: a slot that was freed and taken by another Garoa's new beam before the first
+  Garoa's next update, and slot 0 holding another Garoa's beam when no slot was free. Both pass the test, and the two
+  Garoas then share one beam. Not seen, not forced.
+- The barrel roll ring and Area 6's light were not looked at on a screen: the runs show the code paths taken and the
+  values, not the picture. The ring of a team Arwing's roll was not reached (it needs a lock-on on a team mate).
+- Fortuna's explosion is freed from a draw function. Whether two clients of a session can differ in that (one draws
+  the actor on cutscene frame 227, the other does not, for example at another frame rate) was not tested; the two games
+  here freed it on the same frame.
+- Sector Y's robots: whether a session should play them as the N64 does. One line (`CoopFixes_IworkNegative` at
+  `fox_sy.c:3695`) would do it in a session only, but it changes how four placed robots shoot (10 of the 13 spread
+  shots of `sy_robot_spread` become shots straight ahead, with two random draws fewer each), which no decision record
+  covers, and `lockstep_test.py`'s `sy_robot_spread` then fails its own count (it wants at least 6 spread shots with
+  player 1 the nearer). Left as upstream; the owner's call (#283 item 8).
+- The about 35 comparisons of an `iwork` word with a signed variable (the entry of 2026-11-11) were not read again.
+- Windows, MSVC: not run. The functions use no pointer arithmetic and no float-to-integer conversion; `(s32)` of a
+  `uintptr_t` keeps the low 32 bits on every platform the port builds for.
+
 ### 2026-11-13, #145, #232, #276: the ADPCM loader decodes bytes from behind some samples; the anglerfish's light; Titania's boulder site
 
 Identity: `sf64.o2r` and `starship.o2r` as shared for this run (ROM US 1.0; this worker did not read the ROM), base
@@ -8896,7 +9069,7 @@ each table below ends exactly where the next one's name begins; for `gNoHitbox` 
 | Place | Code | On the N64 | In the port | Seen in play |
 |---|---|---|---|---|
 | `src/engine/fox_360.c:2324` (and `:2322`), `ActorAllRange_DrawBarrelRoll` | `iwork[15]` is 1 or -1 (`:1368`, `:1372`), the side an all-range ship rolls to; the roll's ring spins by `gGameFrameCount * 20 * iwork[15]` degrees and is flipped if `iwork[15] < 0` | a roll to the other side spins the ring the other way, flipped | -1 is 2^64 - 1: the angle is about 1e22 degrees, whose sine and cosine are whatever is left of the float, and the flip never happens | yes, as a ring that jumps instead of spinning, on half of the rolls; draw only |
-| `src/engine/fox_demo.c:2403`, Fortuna's ending, the explosion | `iwork[0]` starts at 255 and loses 2 a frame; below 0 it is set to 0 and the scale to 0 | the glow fades in 128 frames and is gone | 1 - 2 wraps: the test is never true, the scale stays, the alpha is the low byte (255, 253, ... again and again), and `gLight3Brightness = iwork[0] / 255.0f` is about 7e16 | yes, from frame 129 of the explosion for as long as that scene runs: the glow comes back and the light is at its brightest; not watched |
+| `src/engine/fox_demo.c:2403`, Fortuna's ending, the explosion | `iwork[0]` starts at 255 and loses 2 a frame; below 0 it is set to 0 and the scale to 0 | the glow fades in 128 frames and is gone | 1 - 2 wraps: the test is never true, the scale stays, the alpha is the low byte (255, 253, ... again and again), and `gLight3Brightness = iwork[0] / 255.0f` is about 7e16 | yes, from frame 129 of the explosion for as long as that scene runs: the glow comes back and the light is at its brightest; not watched `[wrong, see 2026-11-16: the port's draw frees the actor at cutscene frame 227, one frame before the counter passes 0]` |
 | `src/overlays/ovl_ending/fox_end1.c:1737` | `iwork[1]` starts at 100 (`:1567`) and loses 1; `<= 0` frees the actor | freed at 0 | `<= 0` is `== 0`, reached exactly | no difference |
 | `src/overlays/ovl_i3/fox_a6.c:2792`, `:2796`, `Area6_LevelComplete`, the explosion's light | `iwork[3]` (240) and `iwork[7]` (100) lose 4 a frame from cutscene frame 147, kept at 0 | the two alphas fade to 0 after 60 and 25 frames and stay | 240 reaches 0 and the next step wraps; 100 reaches 0 and wraps: the alphas run through their low bytes again | yes, from cutscene frame 172 on, as long as the actor is drawn: the light flickers back; not watched |
 | `src/overlays/ovl_i3/fox_aq.c:1814` (`:1805` when listed), `Aquas_Actor255_Update` | `iwork[1]--`, then `<= 0` ends the eel | ends at 0 | `== 0`, reached exactly (it starts above 0) | no difference |
