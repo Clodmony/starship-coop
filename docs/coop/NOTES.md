@@ -8461,6 +8461,12 @@ All runs on the tree of `76c7f571`. The base build for co-op off is a build of `
 - One session of these (Fortuna under gdb) never started: the client's join timed out ("The connection timed out:
   nothing was heard from the other side") while the host sat at the title; the same command passed when run again.
   Before any level code; not looked into.
+- `python tools/coop/test_all.py --lanes 1 --base-exe <base> --only checks,coop-off,determinism,hash-run-1,full-level,
+  draw,rails-2,rails-4,shots,effects,effects-allrange,lowhealth-rails,lowhealth-allrange,wingman` on `e7a86eda` (the
+  same code, with this entry): `RESULT: PASS, 16/16 steps ok, 19m22s`. Then `python tools/coop/lockstep_test.py --jobs 1
+  --only full,allrange,player_hits`: `RESULT: 3/3 scenarios passed` (`full: 11501 frames of Corneria to the map,
+  equal`). Not run from the rows of `tools/coop/README.md` for this change: `lockstep` as a whole, `campaign-4`,
+  `rates-rails` and `rates-all-range`, which start more than two games at once (this run was held to two).
 - `python tools/coop/build.py --quiet`: `build: OK`.
 
 **Derived**
