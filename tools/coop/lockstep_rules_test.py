@@ -359,8 +359,11 @@ def escape_back(target, lives=4):
 
 
 def test_escape():
-    check("escape cases 3", lt.w9_escape_cases(3) == ("blast0", "miss2", "blast2", "exit2"), str(lt.w9_escape_cases(3)))
-    check("escape cases 4", lt.w9_escape_cases(4) == ("blast0", "miss3", "blast3", "exit3"), str(lt.w9_escape_cases(4)))
+    # #345: then an explosion on each player inside the pilots' row
+    check("escape cases 3", lt.w9_escape_cases(3) == ("blast0", "miss2", "blast2", "exit2", "blast1"),
+          str(lt.w9_escape_cases(3)))
+    check("escape cases 4", lt.w9_escape_cases(4) == ("blast0", "miss3", "blast3", "exit3", "blast1", "blast2"),
+          str(lt.w9_escape_cases(4)))
     # A case line as the probe writes it: the object 450 from player 3, and one that waited 3000 away.
     line = ("escape case=blast3 target=3 run=1 frame=631 end=691 updates=60 off={off} lost=0 exit=0 hit={hit} "
             "down={hit} lives=5/5 backdrop=7 p0=533/3512,255/255/255,3 p1=767/3277,255/255/255,3 "
