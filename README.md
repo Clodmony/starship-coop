@@ -200,6 +200,8 @@ equal on every frame, while Sector X's Spyborg and Titania's Goras go after the 
 
 **Added on 2026-11-13, tested by scripts on one Linux PC and not yet played by hand:** in Macbeth a train car's turret shots and the blast of train car 7 hurt every tank, not player 0 only ([#280](https://github.com/Clodmony/starship-coop/issues/280)); Sector Y's robots turn head and gun to the human they shoot at, and the Granga's plasma spread stays around the human it aims at ([#281](https://github.com/Clodmony/starship-coop/issues/281)).
 
+**Added on 2026-11-17, tested by scripts on one Linux PC and not yet played by hand:** when a session ends, every player keeps the planet flags it earned (played, clear, medal) in their own save, and the co-op window names the planets ([decision 0017](docs/coop/decisions/0017-what-a-session-earns.md), [#373](https://github.com/Clodmony/starship-coop/issues/373)). A planet the host had cleared before is earned by nobody, which is open for the owner; rankings are not kept.
+
 ### What works
 
 Everything here is tested by scripts, on Linux; determinism also on Windows (Release and Debug). Two PCs (Windows host, Linux client) have played by hand since 2026-11-08: the first runs parted in Corneria (fixed), the campaign run of 2026-11-09 did not part.
