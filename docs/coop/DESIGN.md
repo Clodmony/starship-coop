@@ -9,7 +9,8 @@ Two players (up to four: built in the game layer, tested with three and four onl
 [QA.md](QA.md) lists it, #322) play the Star Fox 64 campaign together **online**: each player runs Starship on their
 own PC and sees the level from their own Arwing. Every player sees the same level: the same enemies, bosses, items,
 wingmen and route. The host's save holds the progress: a session plays on a copy of it on every PC, and no PC writes
-its save during a session ([0009](decisions/0009-vehicles-cutscenes-save.md), item 8).
+its save during a session ([0009](decisions/0009-vehicles-cutscenes-save.md), item 8). When the session ends, every
+PC adds the planet flags the session earned to its own save ([0017](decisions/0017-what-a-session-earns.md)).
 
 Local split screen (two players on one PC, the way versus mode renders) is deferred until after the first release.
 Nothing in the online design may rule it out.
@@ -145,7 +146,9 @@ Each needs a decision record before code depends on it. Proposals in brackets.
 8. Save: decided in [0009](decisions/0009-vehicles-cutscenes-save.md), item 8. The host's progress is the session's
    save: the host sends it once at the session's level start, every game plays on a copy of it in memory with its own
    sound settings, no machine writes a real save during a session, and each reads its own back when the session
-   ends. What a session earns is not kept.
+   ends. What a session earns: decided in [0017](decisions/0017-what-a-session-earns.md), K2. Every game then adds
+   the planet flags the session's copy gained (played, clear, medal) to its own save and writes it once; rankings
+   and the ending-seen flag are not kept, and a planet the host had cleared before is not earned.
 
 ## 5. Sync model
 

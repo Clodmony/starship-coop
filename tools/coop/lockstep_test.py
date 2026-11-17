@@ -95,11 +95,24 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   guests    Corneria, client as Falco, Slippy and Peppy down (#15, 0012 B4): Katt flies Falco's scenes.
   map_saves two PCs with two saves (decision 0009 item 8): the host's blank, the client's with every level cleared
             and its own sound settings. Pilots fly Corneria to its end, the map writes the save, and the games go on
-            through the map into the next level: equal on every frame. Then the client leaves: both save files are
-            byte for byte as before, each game's save in memory is its file's again, and in the session both held the
-            host's progress with their own sound settings. About 15 minutes.
-  map_saves_host_full the same with the host's save all cleared and the client's blank.
+            through the map into the next level: equal on every frame, and no save file changes while the session
+            runs. Then the client leaves: in the session both held the host's progress with their own sound settings,
+            each save file is the one from before with the flags the session earned (decision 0017: the host's gets
+            Corneria's clear), and each game's save in memory is its file's again. About 15 minutes.
+  map_saves_host_full the same with the host's save all cleared and the client's blank: the clear was the host's
+            before, so it is not earned and the client's save does not get it.
   map_saves_equal the same with one save on both, all cleared.
+  save_kept what a session earns (decision 0017, K2, #373): two games with two different saves (the host's has Meteo,
+            the client's Katina and its own sound settings) fly Corneria to its clear, and the session ends on the
+            map. Each save file afterwards is the one from before but for Corneria's byte and the checksum, in the save
+            and its backup; the client's does not get the host's Meteo; nothing was written while the session ran; the
+            co-op window's line and the co-op log name Corneria.
+  save_kept_host_had the same with a host that had Corneria cleared: the session's copy began with the clear, so
+            nothing is earned and the client's save does not get it.
+  save_kept_none the same two games, and the session ends 600 frames into Corneria: both save files are byte for byte
+            as before.
+  save_kept_window the same flight started and left through the real co-op windows, with blank saves: after the
+            client's Leave both windows show `Kept from this session: Corneria.`, the host's under `Player 2 left`.
   scenes    Corneria to Granga with the client as Falco (#15): no scene shows a second Falco, his rescue goes to Slippy,
             gTeamShields[Falco] holds the client's shields while it flies, and no computer Falco joins the boss fight.
   allrange  Katina with the client as Falco (#15): Falco's all-range slot is a body on the client's ship, and no
@@ -4001,11 +4014,53 @@ def progress(save):
     return bytes(data)
 
 
-def leave_and_check_saves(host, client, files):
+PLANET_FLAGS = 0xF8  # the five flags of a planet byte (include/sf64save.h); the three bits below are unused
+PLANET_CLEAR, PLANET_MEDAL, PLANET_PLAYED = 0x80, 0x40, 0x20
+# Save slot -> the name the co-op window gives it (src/port/coop/game/save.c, sPlanetNames).
+PLANET_NAMES = ("Meteo", "Area 6", "Bolse", "Sector Z", "Sector X", "Sector Y", "Katina", "Macbeth", "Zoness",
+                "Corneria", "Titania", "Aquas", "Fortuna", "Solar", "Venom 1", "Venom 2")
+CORNERIA_SLOT = make_save.SLOTS.index("corneria")
+
+
+def kept_lines(game):
+    """The join driver's `kept` lines: what the co-op window says the session added to this game's save, "" for
+    nothing."""
+    return [line.partition(" line=")[2] for word, _, line in game.report() if word == "kept"]
+
+
+def with_earned(before, earned):
+    """A save file as `before` with the flags of `earned` (16 bytes) ORed into its planets, the checksum of that, and
+    the backup the same: what Save_Write leaves."""
+    data = bytearray(before[:make_save.DATA_SIZE])
+    for slot, bits in enumerate(earned):
+        data[slot] |= bits
+    save = bytes(data) + make_save.checksum(data).to_bytes(2, "little")
+    return save + save
+
+
+def differing(before, now):
+    return [n for n in range(max(len(before), len(now))) if before[n:n + 1] != now[n:n + 1]]
+
+
+def leave_and_check_saves(host, client, files, want=None):
     """The client leaves the session (SF64_COOP_JOIN_LEAVE_FILE), the host sees it go, and both end their session.
-    Then: every game's default.sav is byte for byte what it was before the session (files: name -> bytes), its save in
-    memory after the session is that file's save again, and in the session each game held the host's progress with its
-    own settings. Returns a line about it."""
+    files: name -> the bytes of its default.sav before the session. Checked (decisions 0009 item 8 and 0017):
+
+    - until the leave, every game's default.sav is byte for byte what it was before the session;
+    - in the session each game held the host's progress with its own settings;
+    - what the session earned is the same on both games: the flags its copy held at the end (`save_session_end`) and
+      did not begin with (`save_session`), worked out here from the games' reports;
+    - after the session each default.sav is the one from before with those flags ORed into its planets, the checksum
+      of that, and nothing else changed: byte for byte the same when the session earned nothing this save lacked;
+    - the save in memory after the session is that file's save, and the line for the co-op window names every planet
+      whose flags this save got, and is empty when it got none.
+
+    want: name -> {save slot: flags} that have to be new in that game's file, and no other planet may change in it;
+    None looks at what the reports give alone. Returns a line about it."""
+    for game in (host, client):
+        during = (game.run / "default.sav").read_bytes()
+        expect(during == files[game.name], f"{game.name}'s default.sav changed while the session ran: bytes "
+                                           f"{differing(files[game.name], during)[:8]}")
     (client.run / "leave").write_text("now\n", encoding="utf-8")
     deadline = time.monotonic() + 120
     while not all(save_lines(game, "save_after") for game in (host, client)):
@@ -4013,40 +4068,93 @@ def leave_and_check_saves(host, client, files):
             expect(game.proc.poll() is None, f"{game.name} ended with code {game.proc.returncode} before `save_after`")
         expect(time.monotonic() < deadline, "no `save_after` from both games within 120 s of the client's leaving")
         time.sleep(1)
+    time.sleep(1)  # `kept` follows `save_after` in the same call
+    earned_by = {}
+    said = []
     for game in (host, client):
-        now = (game.run / "default.sav").read_bytes()
-        expect(not make_save.check(now, game.name), f"{game.name}: {make_save.check(now, game.name)}")
-        expect(now == files[game.name], f"{game.name}'s default.sav changed in the session: planets "
-                                        f"{make_save.planets(files[game.name])} before, {make_save.planets(now)} after")
-        after = save_lines(game, "save_after")[-1]
-        expect(after == now[:make_save.SAVE_SIZE], f"{game.name}: its save in memory after the session is not its "
-                                                   f"file's: planets {make_save.planets(after)}")
+        before = files[game.name]
         held = save_lines(game, "save_session")
         expect(len(held) == 1, f"{game.name}: {len(held)} `save_session` lines")
         expect(progress(held[0]) == progress(files["host"]), f"{game.name}: in the session it held planets "
                                                              f"{make_save.planets(held[0])}, the host's are "
                                                              f"{make_save.planets(files['host'])}")
-        expect(make_save.settings(held[0]) == make_save.settings(files[game.name]),
+        expect(make_save.settings(held[0]) == make_save.settings(before),
                f"{game.name}: in the session its sound settings were {make_save.settings(held[0])}, its own are "
-               f"{make_save.settings(files[game.name])}")
-        expect(held[0][make_save.LANGUAGES] == files[game.name][make_save.LANGUAGES], f"{game.name}: language bytes")
-    return (f"after the session both default.sav are byte for byte as before and back in memory; in it both held the "
-            f"host's planets {make_save.planets(files['host'])}, the client its own sound settings "
-            f"{make_save.settings(files['client0'])}")
+               f"{make_save.settings(before)}")
+        expect(held[0][make_save.LANGUAGES] == before[make_save.LANGUAGES], f"{game.name}: language bytes")
+        ended = save_lines(game, "save_session_end")
+        expect(ended, f"{game.name}: no `save_session_end` line")
+        earned = bytes(ended[0][slot] & ~held[0][slot] & PLANET_FLAGS for slot in range(len(make_save.SLOTS)))
+        earned_by[game.name] = earned
+        now = (game.run / "default.sav").read_bytes()
+        expect(not make_save.check(now, game.name), f"{game.name}: {make_save.check(now, game.name)}")
+        expect(now == with_earned(before, earned),
+               f"{game.name}'s default.sav after the session is not the one from before with what the session earned "
+               f"({make_save.planets(earned)}): planets {make_save.planets(before)} before, {make_save.planets(now)} "
+               f"after, bytes {differing(with_earned(before, earned), now)[:8]} differ from that")
+        new = [now[slot] & ~before[slot] for slot in range(len(make_save.SLOTS))]
+        if not any(new):
+            expect(now == before, f"{game.name}: the session earned nothing its save lacked, and its default.sav "
+                                  f"changed: bytes {differing(before, now)[:8]}")
+        if want is not None:
+            for slot in range(len(make_save.SLOTS)):
+                wanted = want[game.name].get(slot, 0)
+                expect(new[slot] & wanted == wanted and (wanted or not new[slot]),
+                       f"{game.name}: {make_save.SLOTS[slot]} got the flags {new[slot]:02x}, want "
+                       + (f"at least {wanted:02x}" if wanted else "none")
+                       + f"; planets {make_save.planets(before)} before, {make_save.planets(now)} after")
+            allowed = {off + slot for slot in want[game.name] for off in (0, make_save.SAVE_SIZE)}
+            allowed |= {make_save.DATA_SIZE, make_save.DATA_SIZE + 1, make_save.SAVE_SIZE + make_save.DATA_SIZE,
+                        make_save.SAVE_SIZE + make_save.DATA_SIZE + 1}
+            stray = [n for n in differing(before, now) if n not in allowed]
+            expect(not stray, f"{game.name}: its default.sav differs from before at bytes {stray[:8]}, beyond the "
+                              f"planets earned and the checksum")
+        after = save_lines(game, "save_after")[-1]
+        expect(after == now[:make_save.SAVE_SIZE], f"{game.name}: its save in memory after the session is not its "
+                                                   f"file's: planets {make_save.planets(after)}")
+        lines = kept_lines(game)
+        expect(lines, f"{game.name}: no `kept` line")
+        names = [PLANET_NAMES[slot] for slot in range(len(make_save.SLOTS)) if new[slot]]
+        if names:
+            expect(lines[0].startswith("Kept from this session: ") and all(name in lines[0] for name in names),
+                   f"{game.name}: the line for the player is `{lines[0]}`, its save got {', '.join(names)}")
+            expect(("medal" in lines[0]) == any(bits & (PLANET_MEDAL | 0x08) for bits in new),
+                   f"{game.name}: the line for the player is `{lines[0]}`, the flags its save got are "
+                   f"{make_save.planets(bytes(new))}")
+            log = coop_log_text(game)
+            expect(f"keeps what the session earned: {lines[0][len('Kept from this session: '):-1]}" in log,
+                   f"{game.name}: its co-op log does not name what was kept")
+        else:
+            expect(lines[0] == "", f"{game.name}: the line for the player is `{lines[0]}`, and its save got nothing")
+        said.append(f"{game.name} {make_save.planets(before)} -> {make_save.planets(now)}"
+                    + (f" (`{lines[0]}`)" if lines[0] else " (byte for byte as before)"))
+    expect(earned_by["host"] == earned_by["client0"],
+           f"the session earned {make_save.planets(earned_by['host'])} on the host and "
+           f"{make_save.planets(earned_by['client0'])} on the client")
+    return (f"no default.sav changed while the session ran; in it both held the host's planets "
+            f"{make_save.planets(files['host'])}, the client its own sound settings "
+            f"{make_save.settings(files['client0'])}; the session earned {make_save.planets(earned_by['host'])}; "
+            + "; ".join(said))
 
 
-def map_saves_run(args, folder, host_save, client_save, what):
+def coop_log_text(game):
+    """Every line of the co-op logs in a game's folder, as one text."""
+    return "\n".join(path.read_text(encoding="utf-8", errors="replace")
+                     for _, files in sorted(coop_log.log_files(game.run).items()) for path in files.values())
+
+
+def map_saves_run(args, folder, host_save, client_save, what, want=None):
     """Pilots fly Corneria to its end, the map writes the save (src/overlays/ovl_menu/fox_map.c, Map_Setup...), and
     the games go on through the map into the next level. host_save and client_save are save files, or None for none:
     the game writes gDefaultSave at boot. The hashes and lockstep logs must be equal on every frame, from the level
-    start through the map into the next level; then leave_and_check_saves."""
+    start through the map into the next level; then leave_and_check_saves, with want as there."""
     blank = make_save.save_file()
     files = {"host": host_save or blank, "client0": client_save or blank}
     leave = {"SF64_COOP_JOIN_LEAVE_FILE": "leave"}  # in the game's own folder, where it runs
     checked = []
     host, client, frames = fly(args, folder, saves={"host": host_save, "client0": client_save}, next_level=MAP_SAVES_NEXT,
                                client_env=leave,
-                               before_close=lambda h, c: checked.append(leave_and_check_saves(h, c, files)))
+                               before_close=lambda h, c: checked.append(leave_and_check_saves(h, c, files, want)))
     equal = compare(host, client, frames)
     return (f"{what}: equal on {equal} frames, Corneria to the map at {host.at_map}, the next level at {host.at_next} "
             f"and {MAP_SAVES_NEXT} frames of it; {checked[0]}")
@@ -4058,14 +4166,19 @@ def sc_map_saves(args, folder):
     shows and when: a planet played for the first time gets a stage of its own, D_menu_801CD980), so before the host's
     save went to the clients the first real Windows and Linux session parted 41 frames into the map after Corneria
     (route line 15 of gTexturedLines started on one game only, and the random numbers). Both games must stay one game
-    through the map into the next level, and neither save file may change."""
+    through the map into the next level, and no save file may change while the session runs. After it the host's
+    save has Corneria cleared, which the session earned (decision 0017), and the client's, which had it, is as before
+    but for a medal if the session earned one."""
     client = make_save.save_file(clear=make_save.slots("all"), volumes=OWN_VOLUMES, sound_mode=OWN_SOUND_MODE)
-    return map_saves_run(args, folder, None, client, "host blank, client all cleared")
+    return map_saves_run(args, folder, None, client, "host blank, client all cleared",
+                         {"host": {CORNERIA_SLOT: PLANET_CLEAR | PLANET_PLAYED}, "client0": {}})
 
 
 def sc_map_saves_host_full(args, folder):
     """map_saves the other way round: the host's save has every level cleared and its own sound settings, the client's
-    is blank."""
+    is blank. The session's copy began with Corneria cleared, so its clear is not earned and the client's save does not
+    get it (decision 0017 keeps the flags the session's copy did not begin with); a medal, which the host's save does
+    not have, would be."""
     host = make_save.save_file(clear=make_save.slots("all"), volumes=OWN_VOLUMES, sound_mode=OWN_SOUND_MODE)
     return map_saves_run(args, folder, host, None, "host all cleared, client blank")
 
@@ -4074,6 +4187,79 @@ def sc_map_saves_equal(args, folder):
     """map_saves with the same save on both, every level cleared."""
     both = make_save.save_file(clear=make_save.slots("all"))
     return map_saves_run(args, folder, both, both, "both all cleared")
+
+
+SAVE_KEPT_MAP = 300  # frames of the map after Corneria: Map_Setup_Play has set the flags and called Save_Write
+SAVE_KEPT_EARLY = 600  # lockstep frames of Corneria before the session that ends early
+
+
+def save_kept_saves():
+    """Two different saves, as two PCs hold them: the host's has Meteo cleared, the client's Katina and its own sound
+    settings. Neither has Corneria."""
+    return (make_save.save_file(clear=make_save.slots("meteo")),
+            make_save.save_file(clear=make_save.slots("katina"), volumes=OWN_VOLUMES, sound_mode=OWN_SOUND_MODE))
+
+
+def sc_save_kept(args, folder):
+    """What a session earns (decision 0017, K2, #373). Two games with two different saves fly Corneria to its clear
+    with pilots, and the session ends on the map. Each default.sav afterwards is the one from before but for
+    Corneria's byte and the checksum, in the save and in its backup; Corneria's byte is the old one with the session's
+    new flags; the client's save does not get the host's Meteo, nor the host's the client's Katina; nothing was written
+    while the session ran; the line for the co-op window and the co-op log name Corneria on both games."""
+    host_save, client_save = save_kept_saves()
+    files = {"host": host_save, "client0": client_save}
+    want = {name: {CORNERIA_SLOT: PLANET_CLEAR | PLANET_PLAYED} for name in files}
+    checked = []
+    host, client, frames = fly(args, folder, saves={"host": host_save, "client0": client_save}, tail=SAVE_KEPT_MAP,
+                               client_env={"SF64_COOP_JOIN_LEAVE_FILE": "leave"},
+                               before_close=lambda h, c: checked.append(leave_and_check_saves(h, c, files, want)))
+    equal = compare(host, client, frames)
+    return f"equal on {equal} frames, Corneria to the map at {host.at_map} and {SAVE_KEPT_MAP} frames of it; {checked[0]}"
+
+
+def sc_save_kept_host_had(args, folder):
+    """save_kept with a host that had Corneria cleared and a client that had not. The session's copy begins with the
+    host's clear, so the session's own clear sets nothing new in it: by decision 0017's rule nothing is earned, and
+    the client's save does not get the clear (nor the host's Meteo). Both files stay byte for byte, unless the pilots
+    earn the medal, which the host's save does not have."""
+    host_save = make_save.save_file(clear=make_save.slots("corneria,meteo"))
+    client_save = make_save.save_file(clear=make_save.slots("katina"), volumes=OWN_VOLUMES, sound_mode=OWN_SOUND_MODE)
+    files = {"host": host_save, "client0": client_save}
+    checked = []
+    host, client, frames = fly(args, folder, saves={"host": host_save, "client0": client_save}, tail=SAVE_KEPT_MAP,
+                               client_env={"SF64_COOP_JOIN_LEAVE_FILE": "leave"},
+                               before_close=lambda h, c: checked.append(leave_and_check_saves(h, c, files)))
+    equal = compare(host, client, frames)
+    now = (client.run / "default.sav").read_bytes()
+    expect(not now[CORNERIA_SLOT] & (PLANET_CLEAR | PLANET_PLAYED) and not now[make_save.SLOTS.index("meteo")],
+           f"the client's save got the host's progress: planets {make_save.planets(now)}")
+    return f"equal on {equal} frames, Corneria to the map at {host.at_map} and {SAVE_KEPT_MAP} frames of it; {checked[0]}"
+
+
+def sc_save_kept_none(args, folder):
+    """A session that ends before the clear keeps nothing (decision 0017): the two games of save_kept fly
+    SAVE_KEPT_EARLY frames of Corneria, the client leaves, and both default.sav are byte for byte as before; the line
+    for the co-op window is empty."""
+    host_save, client_save = save_kept_saves()
+    files = {"host": host_save, "client0": client_save}
+    folder.mkdir(parents=True, exist_ok=True)
+    env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt"}
+    host, client = session(args, folder, both=env, saves={"host": host_save, "client0": client_save},
+                           client_env={"SF64_COOP_JOIN_LEAVE_FILE": "leave"})
+    deadline = time.monotonic() + 900
+    try:
+        while not (host.sync_log.exists() and len(log_rows(host)) >= SAVE_KEPT_EARLY):
+            for game in (host, client):
+                expect(game.proc.poll() is None, f"{game.name} ended with code {game.proc.returncode}")
+            expect(time.monotonic() < deadline, f"no {SAVE_KEPT_EARLY} frames of the level after 900 s")
+            time.sleep(1)
+        checked = leave_and_check_saves(host, client, files, {"host": {}, "client0": {}})
+    finally:
+        client.close()
+        host.close()
+    for game in (host, client):
+        expect((game.run / "default.sav").read_bytes() == files[game.name], f"{game.name}'s default.sav changed")
+    return f"the session ended {SAVE_KEPT_EARLY} frames into Corneria; {checked}"
 
 
 def sc_save_own(args, folder):
@@ -4658,6 +4844,57 @@ def sc_leave(args, folder):
     finally:
         host.close()
         client.close()
+
+
+def sc_save_kept_window(args, folder):
+    """The co-op window's line for what a session earned (decision 0017, #373), with the real widgets and the menu's
+    own end of a session. Two games with blank saves host, join and start through the window, pilots fly Corneria to
+    the map, and the client clicks Leave. The client's window (it left by itself, so it has no message) and the
+    host's (which comes up with `Player 2 left`) both show `Kept from this session: Corneria.`; until the click no
+    default.sav had changed, and after it each has Corneria's flags and nothing else new."""
+    blank = make_save.save_file()
+    line = r"^Kept from this session: Corneria( \(medal\))?\.$"
+    host, client = menu_level(args, folder, {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt"})
+    deadline = time.monotonic() + args.level_seconds
+    try:
+        at_map = None
+        while True:
+            rows = log_rows(host) if host.sync_log.exists() else []
+            if at_map is None:
+                at_map = next((i for i, row in enumerate(rows) if int(row[1]) == MAP), None)
+            if at_map is not None and len(rows) >= at_map + SAVE_KEPT_MAP:
+                break
+            for game in (host, client):
+                expect(game.proc.poll() is None, f"{game.name} ended with code {game.proc.returncode} at {len(rows)}")
+            expect(at_map is not None or len(rows) < FLY_FRAMES, f"no map in {FLY_FRAMES} frames")
+            expect(time.monotonic() < deadline, f"no map after {args.level_seconds} s, at frame {len(rows)}")
+            time.sleep(2)
+        for game in (host, client):
+            game.read()
+            expect("kept" not in game.texts, f"{game.name}'s window says `{game.texts.get('kept')}` in the session")
+            expect((game.run / "default.sav").read_bytes() == blank,
+                   f"{game.name}'s default.sav changed while the session ran")
+        client.click("leave")
+        said = [client.wait_text("kept", line, 60).group(0)]
+        host.wait_text("message", r"Player 2 left, so the session is over", 60)
+        said.append(host.wait_text("kept", line, 60).group(0))
+        wait_for([host, client], "over", 60, "after leaving")
+        found = []
+        for game in (host, client):
+            now = (game.run / "default.sav").read_bytes()
+            expect(not make_save.check(now, game.name), f"{game.name}: {make_save.check(now, game.name)}")
+            new = [now[slot] & ~blank[slot] for slot in range(len(make_save.SLOTS))]
+            expect(new[CORNERIA_SLOT] & (PLANET_CLEAR | PLANET_PLAYED) == PLANET_CLEAR | PLANET_PLAYED
+                   and not any(bits for slot, bits in enumerate(new) if slot != CORNERIA_SLOT),
+                   f"{game.name}'s default.sav after the session: planets {make_save.planets(now)}")
+            expect(now == with_earned(blank, bytes(new)), f"{game.name}'s default.sav differs from a blank save in "
+                                                         f"more than the planets and the checksum")
+            found.append(f"{game.name} {make_save.planets(now)}")
+    finally:
+        host.close()
+        client.close()
+    return (f"through the real windows, Corneria to the map at {at_map} and {SAVE_KEPT_MAP} frames of it: the client's "
+            f"window says `{said[0]}`, the host's `{said[1]}` under `Player 2 left`; " + "; ".join(found))
 
 
 def sc_audio(args, folder):
@@ -7742,6 +7979,10 @@ SCENARIOS = {
     "map_saves": sc_map_saves,
     "map_saves_host_full": sc_map_saves_host_full,
     "map_saves_equal": sc_map_saves_equal,
+    "save_kept": sc_save_kept,
+    "save_kept_host_had": sc_save_kept_host_had,
+    "save_kept_none": sc_save_kept_none,
+    "save_kept_window": sc_save_kept_window,
     "save_own": sc_save_own,
     "audio": sc_audio,
     "release": sc_release,
@@ -7815,6 +8056,7 @@ LONG += ("ve1_pillars",)  # Venom 1 to its boss, 13000 frames (#276)
 LONG += ("escape_look",)  # five sessions in Andross' escape: the explosions hit every human (#282)
 LONG += ("inhale_four",)  # two sessions of four games at Andross' face (#330)
 LONG += ("resume_map", "resume_level")  # a flight of Corneria to the map and into the next level each (#262)
+LONG += ("save_kept", "save_kept_host_had", "save_kept_window")  # a flight of Corneria to the map each (#373)
 # #329: of the rule scenarios with more players the default run has the four-player ones of the three that are in it
 # with two (aim_four, macbeth_bombs_four, ma_turret_four: a third and a fourth player in one session each, 26, 104 and
 # 49 s with other runs beside them). The three-player ones and those of the long scenarios are by name.

@@ -40,8 +40,10 @@
 // after Play_Init. Until then gGameFrameCount still counts the screen the game came from, so that is where games can
 // agree. `save_session frame=N save=<hex>` holds this game's save in memory once it entered the session's (all 256
 // bytes, as the file holds them), `names frame=N names=a,b,c,d` with SF64_COOP_JOIN_NAME whenever the names change (-
-// for none, a space as _), `leaving frame=N` when SF64_COOP_JOIN_LEAVE_FILE turned up, and `save_after frame=N
-// save=<hex>` the save in memory once the session ended, however it ended.
+// for none, a space as _), `leaving frame=N` when SF64_COOP_JOIN_LEAVE_FILE turned up, and, once the session ended,
+// however it ended: `save_session_end frame=N save=<hex>` the session's copy as the session left it, `save_after
+// frame=N save=<hex>` the save in memory after it, and `kept frame=N line=<CoopSave_KeptLine, to the line's end>`
+// what the co-op window says was kept (decision 0017).
 
 #ifdef __cplusplus
 extern "C" {

@@ -1,7 +1,9 @@
 # 0017: What a session earns: keep nothing, or merge the planets a session cleared into each player's own save
 
-- Status: Accepted 2026-11-17 by the owner: K2, every player keeps the planet flags the session earned; cheat-earned medals count as in single player; rankings stay out (answers to questions 1 to 4). **Not built yet**, see the build issue. Written 2026-11-16 for #262's item "what a session earns is not kept"; **nothing is built**; it is
-  a rule question for the owner, who has not been asked yet. Questions at the end)
+- Status: Accepted 2026-11-17 by the owner: K2, every player keeps the planet flags the session earned; cheat-earned
+  medals count as in single player; rankings stay out (answers to questions 1 to 4). **Built in #373** (2026-11-17,
+  "As built" below). Written 2026-11-16 for #262's item "what a session earns is not kept" as a rule question for the
+  owner.
 - Date: 2026-11-16
 - Issue: #262 (block "Sessions"); option S3 of [0009](0009-vehicles-cutscenes-save.md), item 8
 - Changes, if accepted: one sentence of 0009 item 8 ("What a session earns is not kept, on any machine"). The rest of
@@ -94,7 +96,9 @@ the owner with what the code allows.
    their own already.
 5. **Saying so.** The co-op log's line at the end names the planets kept, in place of "what the session earned is not
    kept"; the co-op window gets one line ("Kept from this session: Corneria (medal), Meteo.").
-6. **Co-op off:** nothing changes; no code outside `src/port/coop/game/save.c` and its caller.
+6. **Co-op off:** nothing changes; no code outside `src/port/coop/game/save.c` and its caller. (As built: the line
+   of item 5 needs the co-op window to draw it, five lines in `src/port/coop/ui/menu_window.cpp`; the owner allowed
+   that on 2026-11-17. Nothing outside the co-op layer.)
 
 ### Test plan (when built)
 
@@ -102,8 +106,29 @@ On one Linux PC with real games, as `map_saves` does: a session of two with two 
 clear (pilots, as `survive_gaps_route`), then ends. Each `default.sav` afterwards equals the one from before the
 session but for Corneria's byte and the checksum, and Corneria's byte is the old one OR the session's new bits; a
 session that ends before the clear leaves both files byte for byte as they were; a host that had Corneria cleared and
-a client that had not: the client gets the clear, not the host's other planets. A unit test of the OR on made-up saves
-(`make_save.py`), and a mutant that copies the whole planet byte instead of the OR must fail it.
+a client that had not: **the client does not get the clear**, nor the host's other planets (corrected 2026-11-17 with
+the build, #373: this line said "the client gets the clear", which item 1 cannot give, see "As built"). A unit test
+of the OR on made-up saves (`make_save.py`), and a mutant that copies the whole planet byte instead of the OR must
+fail it.
+
+### As built (#373, 2026-11-17)
+
+- Item 1 is built as written: a flag is earned when the session's copy holds it at `CoopSave_Leave` and the copy the
+  session's first `CoopSave_Enter` put there did not. A level start that comes again in the session (a recovery,
+  `SESSION_SAVE` again) does not move that starting point.
+- **What follows from item 1, and is open for the owner:** a planet the host had cleared before the session is not
+  earned by anyone, because the game sets a flag that is already set (`src/overlays/ovl_menu/fox_map.c:1801-1830`)
+  and the session's copy looks the same before and after. So the clients of a host whose save has everything cleared
+  earn nothing, and a client can get a medal without the clear when the host had the clear and the session adds the
+  medal. The test plan's third case said otherwise; the owner chose item 1 as written on 2026-11-17 and the case was
+  corrected. Telling "set again by this session" from "the host had it" needs the level's end itself: a hook in
+  `fox_map.c` and `fox_hud.c`, an upstream edit, and a new record.
+- Of the earned flags a game keeps the ones its own save lacks; if there are none it writes nothing.
+- A game whose own save file cannot be read when the session ends writes nothing: the file is left as it is and
+  nothing is kept. (At boot the game would write `gDefaultSave` over such a file; the session's end does not.)
+- Tests: `tools/coop/save_merge_test.py` (the merge with the game's own `fox_save.c`, 15 cases, 12 mutants,
+  `whole_byte` among them) and `lockstep_test.py --only save_kept,save_kept_host_had,save_kept_none` (two real games);
+  `map_saves*` now check the earned flags too. Results in QA.md and NOTES.md, 2026-11-17.
 
 ## Consequences
 
@@ -112,7 +137,8 @@ a client that had not: the client gets the clear, not the host's other planets. 
   earn; it cannot clear one. The byte-for-byte check of the save tests has to allow exactly the earned bits.
 - A crash or a killed game in a session keeps nothing (the write is at the end), as today.
 - Rankings stay single player's on every PC.
-- `README.md` ("Save" row), `TWO_PC_TEST.md` and `save.h` say "not kept" today and change with the build.
+- `README.md` ("Save" row), `TWO_PC_TEST.md` and `save.h` said "not kept" and changed with the build (#373), with
+  `DESIGN.md` and `PROTOCOL.md`.
 
 ## Questions for the owner
 

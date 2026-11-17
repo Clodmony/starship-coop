@@ -267,7 +267,9 @@ save (S1 as proposed) and over a fixed all-cleared copy with nothing sent. What 
 - `Save_WriteData` writes nothing while the session runs (one `// COOP:` line in `src/sys/sys_joybus.c`); every end of
   a session, a failure or the host's leaving included, reads each game's own save back from its file. Every
   `default.sav` is byte for byte as before the session. What a session earns is not kept, on any machine; S3 (a merge)
-  can still come later.
+  can still come later. (It came: [0017](0017-what-a-session-earns.md), accepted 2026-11-17, changes this one
+  sentence. Each game adds the planet flags the session earned to its own save when the session ends, one write
+  after the session; during it nothing is written, as here.)
 - The progress is in the state hash (region `globals`), so a copy that drifted is a desync with `gSaveFile` named.
   That is the save hash at the session start, frame 0's hash being the first one compared.
 - `CoopLevelStart.cleared` (#191) is gone: the intro skip reads `gSaveFile` again, as upstream does.

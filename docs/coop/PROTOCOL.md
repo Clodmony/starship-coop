@@ -253,8 +253,11 @@ takes it in `src/port/coop/game/save.c`.
    (`gSaveFile.planet`, `gSaveFile.ranking`, `gSaveFile.padEE`), so a copy that drifted is a desync with its name.
 2. From then on no game writes its save file. Every `Save_Write` of the session runs on every game on the same frame,
    so the copies stay equal without another message.
-3. When the session ends, however it ends, each game reads its own save back from its file. What the session earned
-   is not kept.
+3. When the session ends, however it ends, each game reads its own save back from its file. Then it keeps what the
+   session earned ([decision 0017](decisions/0017-what-a-session-earns.md), K2): the planet flags the session's copy
+   holds at the end and did not hold when this game first took it, ORed into its own planet bytes, and one write of
+   its save file. No message: the copies are equal, so every game works out the same flags. A session that earned
+   nothing this game's save lacks writes nothing; the rankings and the bytes after them are dropped.
 
 What does not fit:
 
