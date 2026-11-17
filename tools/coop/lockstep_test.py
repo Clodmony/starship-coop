@@ -5015,12 +5015,14 @@ def lockstep_frames(game):
         return 0
 
 
-def resume_run(args, folder, clients=1, frozen=0, freeze_s=33, refuse=False, wait_after=300, timeout_ms=None):
+def resume_run(args, folder, clients=1, frozen=0, freeze_s=33, refuse=False, wait_after=300, timeout_ms=None,
+               mute=False):
     """Decision 0016 part A. A session of 1 + `clients` games in a level; client `frozen` stops dead (SIGSTOP) for
     `freeze_s` seconds, which is longer than the transport's time-out of 30 s (the host keeps its slot) and shorter than
     the wait for it, then goes on. It comes back with the session id into the slot it had, and the level goes on where it
     stood: every game's hash log is equal on every frame, to the end, and no level starts again, no session ends and no
-    desync is found. With `refuse` the client's game says it cannot go on: the level starts again for everyone."""
+    desync is found. With `refuse` the client's game says it cannot go on, with `mute` it never answers the host's
+    question: the level starts again for everyone."""
     expect(IS_LINUX, "needs SIGSTOP")
     folder.mkdir(parents=True, exist_ok=True)
     feed = folder / "feed.txt"
@@ -5028,6 +5030,9 @@ def resume_run(args, folder, clients=1, frozen=0, freeze_s=33, refuse=False, wai
     envs = [{} for _ in range(clients)]
     if refuse:
         envs[frozen] = {"SF64_COOP_TEST_RESUME_REFUSE": "1"}
+    if mute:
+        envs[frozen] = {"SF64_COOP_TEST_RESUME_MUTE": "1"}
+    refuse = refuse or mute  # either way the level starts again
     both = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(SURVIVE_FRAMES)}
     if timeout_ms is not None:
         both["SF64_COOP_JOIN_TIMEOUT_MS"] = str(timeout_ms)
@@ -5067,6 +5072,16 @@ def resume_run(args, folder, clients=1, frozen=0, freeze_s=33, refuse=False, wai
                    f"{game.name}: level starts {survive_starts(game)}")
         recover = join_test.said(host.report(), "recover")
         expect(recover and int(recover[0]["reason"]) == SURVIVE_REASONS["lost"], f"host: recover {recover}")
+        if mute:
+            asked = [line for line in own_lines(gone) if "not answered (SF64_COOP_TEST_RESUME_MUTE)" in line]
+            expect(len(asked) == 1, f"the client was asked to go on {len(asked)} times, want once")
+            failed = [line for line in repair_lines(host) if f"resume of player {frozen + 2} failed" in line]
+            expect(len(failed) == 1 and failed[0].endswith("no answer"), f"host: {failed}")
+            waited = resume_ask_ms(host, frozen + 2)
+            # The log's stamps are the wall clock, the wait is SDL's ticks: 100 ms of room below, 3 s above for a
+            # busy machine.
+            expect(RESUME_ANSWER_MS - 100 <= waited <= RESUME_ANSWER_MS + 3000,
+                   f"the host waited {waited} ms for the answer, want about {RESUME_ANSWER_MS}")
         return survive_compare(games, 2, SURVIVE_FRAMES)
     resumed = [v for v in join_test.said(host.report(), "resume")]
     expect(len(resumed) == 1 and resumed[0]["player"] == str(1 + frozen), f"the host did not resume player {frozen + 2}: {resumed}")
@@ -5147,6 +5162,247 @@ def sc_resume_refused(args, folder):
     level starts again for both from the host's state."""
     frames = resume_run(args, folder, refuse=True)
     return f"the client refused to go on, the level started again and both hash alike on {frames} frames"
+
+
+RESUME_ANSWER_MS = 5000  # COOP_SYNC_RESUME_MS, src/port/coop/sync/lockstep_game.h
+
+
+def own_lines(game):
+    """The lines of a game's own co-op log as text, of every session of logs in its folder in order: a client that came
+    back after a lost connection writes a second one (repair_lines() reads the one a game that stayed has)."""
+    lines = []
+    for _, files in sorted(coop_log.log_files(game.run).items()):
+        path = files.get(player_of(game))
+        if path is not None:
+            lines += [line.format() for line in coop_log.read_lines(path, player_of(game))]
+    return lines
+
+
+def resume_ask_ms(host, player):
+    """How long the host waited for a returned player's answer: from its co-op log's `asked whether its game can go on`
+    to `resume of player N failed`, in ms by the log's time stamps."""
+    path = coop_logs(host)[player_of(host)]
+    asked = failed = None
+    for line in coop_log.read_lines(path, player_of(host)):
+        text = line.format()
+        if f"player {player} came back: asked whether its game can go on" in text:
+            asked = line.time
+        elif f"resume of player {player} failed" in text and asked is not None and failed is None:
+            failed = line.time
+    expect(asked is not None and failed is not None, f"the host's log holds no question and failure for player {player}")
+    return round((failed - asked).total_seconds() * 1000)
+
+
+def sc_resume_silent(args, folder):
+    """Decision 0016 part A, the fallback nobody had run (#262): the client comes back into its slot, but the host's
+    question whether its game can go on is never answered (SF64_COOP_TEST_RESUME_MUTE). The host waits
+    COOP_SYNC_RESUME_MS, 5 s, says so, and the level starts again for both from the host's state."""
+    frames = resume_run(args, folder, freeze_s=14, timeout_ms=4000, mute=True)
+    return (f"the client came back and never answered the host's question; after 5 s without an answer the level "
+            f"started again and both hash alike on {frames} frames")
+
+
+def wait_stopped(game, seconds, what):
+    """Until a game has stopped itself (SIGSTOP on itself, CoopTestSwitches_FreezeNow): state T in /proc/<pid>/stat."""
+    deadline = time.monotonic() + seconds
+    while True:
+        expect(game.proc.poll() is None, f"{game.name} ended with code {game.proc.returncode} {what}")
+        try:
+            stat = Path(f"/proc/{game.proc.pid}/stat").read_text(encoding="utf-8", errors="replace")
+            if stat.rsplit(")", 1)[1].split()[0] == "T":
+                return
+        except (OSError, IndexError):
+            pass
+        expect(time.monotonic() < deadline, f"{game.name} did not stop after {seconds} s {what}")
+        time.sleep(0.2)
+
+
+def resume_place(args, folder, place, what):
+    """Decision 0016 part A away from a level's flight (#262). Pilots fly Corneria to the map and into the next level;
+    at `place` (lockstep_driver.h, SF64_COOP_LOCKSTEP_FREEZE_AT) the client stops dead for 14 s, with a transport time-out
+    of 4 s as `resume_early` has. It comes back into its slot and the session goes on where it stood: no level starts
+    again, the `route` lines are equal on both games at Corneria, the map and the next level, and the hash and lockstep
+    logs are equal on every frame up to SURVIVE_GAPS_TAIL frames into that level."""
+    expect(IS_LINUX, "needs SIGSTOP")
+    folder.mkdir(parents=True, exist_ok=True)
+    # No SF64_COOP_LOCKSTEP_CAMPAIGN_CHEATS, which `survive_gaps_route` has: it turns gInvincible on in the level after
+    # Corneria, on every game on the same frame, and a game that comes back is then refused: the host compares the
+    # settings the returning game holds now with its own of the moment it began to host (seen in the first run of
+    # `resume_level`, "Setting "Invincible" (gInvincible): host 0, joining player 1"). The pilots need no cheat for
+    # Corneria and the first frames of the next level.
+    env = {"SF64_COOP_LOCKSTEP_PILOT": "1", "SF64_COOP_PILOT_LOG": "pilot-log.txt", "SF64_COOP_LOCKSTEP_END": "900000",
+           "SF64_COOP_LOCKSTEP_ROUTE": "1", "SF64_COOP_JOIN_TIMEOUT_MS": "4000"}
+    games = session(args, folder, both=env, replay_frames=SURVIVE_GAPS_REPLAY, resume=True,
+                    client_envs=[{"SF64_COOP_LOCKSTEP_FREEZE_AT": f"1:{place}"}])
+    host, client = games
+
+    def next_level_flown():
+        after = [r for r in survive_gaps_routes(host, 1) if r["place"] == "L2"]
+        return bool(after) and all(survive_gaps_run_frames(game, 1) >= int(after[0]["frame"]) + SURVIVE_GAPS_TAIL
+                                   for game in games)
+
+    try:
+        wait_stopped(client, args.level_seconds, f"at {place} ({what})")
+        at = lockstep_frames(host)
+        time.sleep(14)
+        os.kill(client.proc.pid, signal.SIGCONT)
+        survive_gaps_watch(games, next_level_flown, args.level_seconds, f"after the thaw at {place}", again_max=0)
+        survive_no_end(games)
+        time.sleep(2)
+    finally:
+        os.kill(client.proc.pid, signal.SIGCONT)
+        for game in games:
+            game.close()
+    froze = join_test.said(client.sync(), "freeze_at")
+    expect(len(froze) == 1 and froze[0]["place"] == place.split(":")[0], f"the client did not stop at {place}: {froze}")
+    left = join_test.said(host.report(), "left")
+    expect(len(left) == 1 and left[0]["away"] == "1", f"host: the lost player's slot was not kept: {left}")
+    back = [v for v in join_test.said(client.report(), "joined") if v.get("rejoined") == "1"]
+    expect(len(back) == 1 and back[0]["player"] == "1", f"the client did not come back in its slot: {back}")
+    resumed = join_test.said(host.report(), "resume")
+    expect(len(resumed) == 1 and resumed[0]["player"] == "1", f"the host did not resume player 2: {resumed}")
+    for game in games:
+        expect(len(survive_starts(game)) == 1, f"{game.name}: level starts {survive_starts(game)}")
+        expect(not join_test.said(game.sync(), "again"), f"{game.name}: the level started again")
+        expect(not join_test.said(game.report(), "recover"), f"{game.name} was told to start again")
+    no_desync(games)
+    routes = survive_gaps_same_routes(games, 1, ["L1", "M1", "L2"])
+    frames = survive_gaps_compare(games, 1)
+    expect(frames >= int(routes[2]["frame"]) + SURVIVE_GAPS_TAIL - 5,
+           f"only {frames} frames to compare, the next level began at {routes[2]['frame']}")
+    return froze[0], at, routes, frames
+
+
+def sc_resume_map(args, folder):
+    """Decision 0016 part A, a loss while the map is up (#262, not tried by #267): the client stops dead
+    SURVIVE_GAPS_ON_MAP frames into the map after Corneria and comes back 14 s later. The map goes on where it stood, and
+    both games enter the next level together."""
+    froze, at, routes, frames = resume_place(args, folder, f"M1:{SURVIVE_GAPS_ON_MAP}", "the map after Corneria")
+    expect(int(froze["state"]) == MAP, f"the client did not stop on the map: {froze}")
+    return (f"the client stopped dead {SURVIVE_GAPS_ON_MAP} frames into the map (frame {froze['frame']}; the host stood "
+            f"at {at}) for 14 s and came back into its slot; the map went on, both entered level {routes[2]['level']} at "
+            f"frame {routes[2]['frame']}; equal on {frames} frames, the route lines equal at all 3 places, no level start")
+
+
+def sc_resume_level(args, folder):
+    """Decision 0016 part A, a loss as the level changes (#262, not tried by #267): the client stops dead on the second
+    frame of the level after the map, for 14 s, and comes back into that level."""
+    froze, at, routes, frames = resume_place(args, folder, "L2:2", "the second frame of the level after the map")
+    expect(froze["level"] == routes[2]["level"] and froze["level"] != "0", f"the client did not stop in the next level: {froze}")
+    return (f"the client stopped dead on frame 2 of level {froze['level']} (frame {froze['frame']}; the host stood at "
+            f"{at}) for 14 s and came back into its slot; equal on {frames} frames, the route lines equal at all 3 "
+            f"places, no level start")
+
+
+def resume_repair_run(args, folder, freeze_s, host_held_s=0.0):
+    """One session of `resume_repair`: the client stops dead at the host's repair offer for `freeze_s` seconds. With
+    `host_held_s` the host is stopped just before the client is thawed and thawed that much later, so the client's way
+    back has no answer for that long. Returns (frames of run 2 compared, the host's own log lines, the client's)."""
+    folder.mkdir(parents=True, exist_ok=True)
+    poke = JOIN_FRAME + 300
+    feed = folder / "feed.txt"
+    write_feed(feed, poke + 616, sway)
+    env = {"SF64_COOP_LOCKSTEP_FEED": str(feed), "SF64_COOP_LOCKSTEP_END": str(SURVIVE_FRAMES),
+           "SF64_COOP_JOIN_TIMEOUT_MS": "4000"}
+    flipped = {"SF64_COOP_LOCKSTEP_POKE": str(poke), "SF64_COOP_TEST_REPAIR_FREEZE": "1"}
+    games = session(args, folder, both=env, repair=True, resume=True, client_envs=[flipped])
+    host, client = games
+    try:
+        wait_stopped(client, 900, "at the repair offer")
+        time.sleep(freeze_s)
+        if host_held_s:
+            os.kill(host.proc.pid, signal.SIGSTOP)
+        os.kill(client.proc.pid, signal.SIGCONT)
+        if host_held_s:
+            time.sleep(host_held_s)
+            os.kill(host.proc.pid, signal.SIGCONT)
+        survive_wait(games, "again", 1, SURVIVE_AGAIN_SECONDS + 120, "after the thaw: the level did not start again")
+        survive_wait(games, "done", 2, 600, "in the level that started again")
+        survive_no_end(games)
+        time.sleep(2)
+    finally:
+        os.kill(client.proc.pid, signal.SIGCONT)
+        os.kill(host.proc.pid, signal.SIGCONT)
+        for game in games:
+            game.close()
+    ours, theirs = own_lines(host), own_lines(client)
+    offered = [line for line in ours if "Syncing them again at frame" in line]
+    expect(len(offered) == 1, f"host: {len(offered)} repair offers, want 1")
+    expect(any("stopped dead at the repair offer" in line for line in theirs),
+           "the client's log does not say it stopped at the offer")
+    expect(not any("The games are in step again" in line for line in ours + theirs),
+           "a repair was completed although the client was gone")
+    left = join_test.said(host.report(), "left")
+    expect(len(left) == 1 and left[0]["away"] == "1", f"host: the lost player's slot was not kept: {left}")
+    back = [v for v in join_test.said(client.report(), "joined") if v.get("rejoined") == "1"]
+    expect(len(back) == 1 and back[0]["player"] == "1", f"the client did not come back in its slot: {back}")
+    for game in games:
+        expect(survive_starts(game) == [(1, "Fox,Falco,-,-"), (2, "Fox,Falco,-,-")],
+               f"{game.name}: level starts {survive_starts(game)}")
+    return survive_compare(games, 2, SURVIVE_FRAMES), ours, theirs
+
+
+def sc_resume_repair(args, folder):
+    """Decisions 0016 A and B together, read but never run (#262): a player is lost while a repair is under way. A bit is
+    flipped on the client; when the host's repair offer arrives the client stops dead (SF64_COOP_TEST_REPAIR_FREEZE),
+    with a transport time-out of 4 s, so the host keeps its slot and stands before the barrier frame, which it cannot
+    reach without the client's input. Three sessions (RESUME_REPAIR_ONLY=back,late,raced runs some):
+    `back`: gone for 14 s. The client comes back while its repair is still open, so its game says it cannot go on where
+    it stands (CoopRepair_Busy), and the level starts again.
+    `late`: gone for 24 s, past the repair's own limit before the barrier (twice COOP_REPAIR_MS, 20 s) and inside the
+    30 s the host waits for a lost player: the repair gives up first, and the level starts again once the client is
+    back.
+    `raced`: the client is thawed after 15 s while the host is held (SIGSTOP) from just before that until 21.5 s after
+    the offer. The thawed client hears nothing, takes the link for lost 4 s later and is on its way back, with no answer
+    from the held host, when its own repair gives up at 20 s. That must be a wait for the host's level start: before the
+    fix of #262 the client's session ended there, and the host waited its 30 s for nobody. (`late` took that order by
+    itself in about one run of four: a thawed client hears of the loss from the host within a few ms, and its repair's
+    limit is due at the same moment.)
+    In all three no repair is completed, both games take level start 2 from the host's state and hash alike on its first
+    frames, and no session ends."""
+    expect(IS_LINUX, "needs SIGSTOP")
+    only = os.environ.get("RESUME_REPAIR_ONLY")  # a developer's shortcut, as RESYNC_ONLY
+    said = [f"bit flipped at {JOIN_FRAME + 300}, the client stopped dead at the host's repair offer."]
+    if not only or "back" in only.split(","):
+        frames, ours, theirs = resume_repair_run(args, folder / "back", 14)
+        failed = [line for line in ours if "resume of player 2 failed" in line]
+        expect(len(failed) == 1 and failed[0].endswith("it says so"), f"back: the host's resume lines: {failed}")
+        said_no = [line for line in theirs if "host asks to go on" in line]
+        expect(len(said_no) == 1 and said_no[0].endswith(": no"), f"back: the client's answer: {said_no}")
+        said.append(f"Gone 14 s: back with its repair still open, its game refused to go on, the level started again, "
+                    f"equal on {frames} frames.")
+    if not only or "late" in only.split(","):
+        frames, ours, theirs = resume_repair_run(args, folder / "late", 24)
+        gave_up = [line for line in ours if "repair failed" in line]
+        expect(len(gave_up) == 1, f"late: the host's repair did not give up by its own limit: "
+               f"{[line.split(' ', 5)[-1][:120] for line in ours if 'repair' in line or 'recover' in line]}")
+        way_back, own_end, _ = resume_repair_order(theirs)
+        order = ("the client was on its way back when its own repair gave up" if own_end is None or way_back < own_end
+                 else "the client's own repair gave up before it was on its way back")
+        said.append(f"Gone 24 s: the host's repair gave up first (`{gave_up[0].split('repair failed: ', 1)[-1][:90]}`), "
+                    f"the level started again once the client was back ({order}), equal on {frames} frames.")
+    if not only or "raced" in only.split(","):
+        frames, ours, theirs = resume_repair_run(args, folder / "raced", 15, host_held_s=6.5)
+        way_back, own_end, welcome = resume_repair_order(theirs)
+        expect(own_end is not None and way_back < own_end < welcome,
+               f"raced: the client's repair did not give up between the start of its way back and the host's answer "
+               f"(lines {way_back}, {own_end}, {welcome} of its log): the session did not get the order it is for")
+        expect(any("recover (reason 3)" in line for line in theirs[own_end:welcome]),
+               "raced: the client on its way back did not take its own recovery")
+        said.append(f"Thawed after 15 s with the host held until 21.5 s: the client took the link for lost, was on its "
+                    f"way back without an answer when its own repair gave up, waited, and the level started again once "
+                    f"the host had it back, equal on {frames} frames.")
+    return " ".join(said) + " No repair completed, no session end"
+
+
+def resume_repair_order(lines):
+    """Where a returning client's own co-op log has the start of its way back, its own repair's give-up (None if the
+    repair ended otherwise) and the host's answer, as line numbers."""
+    way_back = next((i for i, line in enumerate(lines) if "coming back to a session" in line), None)
+    own_end = next((i for i, line in enumerate(lines) if "repair failed" in line), None)
+    welcome = next((i for i, line in enumerate(lines) if "came back as player 2" in line), None)
+    expect(way_back is not None and welcome is not None, "the client's log does not show that it came back")
+    return way_back, own_end, welcome
 
 
 def sc_desync_three(args, folder):
@@ -7497,6 +7753,10 @@ SCENARIOS = {
     "resume_early": sc_resume_early,
     "resume_gone": sc_resume_gone,
     "resume_refused": sc_resume_refused,
+    "resume_silent": sc_resume_silent,
+    "resume_map": sc_resume_map,
+    "resume_level": sc_resume_level,
+    "resume_repair": sc_resume_repair,
     "resync_targets": sc_resync_targets,
     "resync_three": sc_resync_three,
     "resync_lag": sc_resync_lag,
@@ -7554,6 +7814,7 @@ LONG += ("sy_robot_pose", "granga_spread")  # the same rails; Corneria's Granga,
 LONG += ("ve1_pillars",)  # Venom 1 to its boss, 13000 frames (#276)
 LONG += ("escape_look",)  # five sessions in Andross' escape: the explosions hit every human (#282)
 LONG += ("inhale_four",)  # two sessions of four games at Andross' face (#330)
+LONG += ("resume_map", "resume_level")  # a flight of Corneria to the map and into the next level each (#262)
 # #329: of the rule scenarios with more players the default run has the four-player ones of the three that are in it
 # with two (aim_four, macbeth_bombs_four, ma_turret_four: a third and a fourth player in one session each, 26, 104 and
 # 49 s with other runs beside them). The three-player ones and those of the long scenarios are by name.

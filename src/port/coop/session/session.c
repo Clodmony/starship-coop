@@ -1172,6 +1172,17 @@ bool CoopSession_IsAway(const CoopSession* s, int32_t player) {
     return s->isHost && (player >= 1) && (player < COOP_SESSION_PLAYERS) && s->away[player].on;
 }
 
+// A client on its way back into its session: SESSION_REJOIN is out or about to go, the host's answer is not in yet. Its
+// game stands in the level it lost the connection in, so it can find that the level cannot go on (a repair that gave
+// up, a desync) before the host has it back. That is no end of the session: the host starts the level again once the
+// player is back, or asks it to go on and hears no (decisions 0014 and 0016). Refusing the wait here ended the session
+// of a player the host was still waiting for, whenever the game's own check ran after the reconnect had begun (#262,
+// `lockstep_test.py --only resume_repair`). Only a session made by CoopSession_Rejoin gets here before its welcome:
+// CoopSession_Recover has turned away one that is neither started nor a rejoin.
+static bool Client_ComingBack(const CoopSession* s) {
+    return s->client == CLIENT_CONNECTING || s->client == CLIENT_WAIT_ANSWER;
+}
+
 bool CoopSession_Recover(CoopSession* s, uint8_t reason, uint32_t nowMs) {
     if (!(s->started || s->rejoin) || reason < COOP_RECOVER_LOST || reason >= COOP_RECOVER_REASONS) {
         return false;
@@ -1184,7 +1195,7 @@ bool CoopSession_Recover(CoopSession* s, uint8_t reason, uint32_t nowMs) {
         Host_RecoverBegin(s, reason, 0xFF);
         return true;
     }
-    if (s->client != CLIENT_ACTIVE) {
+    if (s->client != CLIENT_ACTIVE && !Client_ComingBack(s)) {
         return false;
     }
     if (!s->awaiting) {

@@ -123,7 +123,14 @@ Option 4 stays for later.
    level starts again as in 0014. A player's slot is its player index in the running level, which is why another slot
    cannot resume: the first loss of two clients who then come back the other way round takes the level start.
 4. **The check goes on.** Hashes lost in the gap are frames unchecked (`desync.h:10-11`); nothing is resent. A repair
-   under way when a player is lost ends by its time limit (10 s) and the level starts again.
+   under way when a player is lost does not complete, and the level starts again. Changed 2026-11-16 (#262), after the
+   first run of it: the text said "ends by its time limit (10 s)", but that limit is the wait at the barrier frame,
+   which a host that lost a client before the barrier cannot reach. A client that is back before the repair's limit
+   ahead of the barrier (20 s, twice `COOP_REPAIR_MS`) says no to the host's question, because its repair is still
+   open; later the host's repair gives up on that limit and the level starts once the client is back
+   (`lockstep_test.py --only resume_repair`, NOTES.md 2026-11-16), or without it when the 30 s are over (read, not
+   run). A client whose own repair gives up while it is already on its way back waits for that level start; before
+   the fix of 2026-11-16 its session ended there (same entry).
 5. **Stall.** The host's check of a missing input (`Sync_Stalled`) leaves a player who is away alone, and one it has
    just asked to go on (its stall clock starts over when it asks): a first version of this asked a player to go on and
    dropped it again at once, from a clock that still held the wait.

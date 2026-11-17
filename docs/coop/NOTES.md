@@ -12049,6 +12049,182 @@ lockstep and the menu. Nothing ran on Windows, on two PCs, in Release, or with a
 `SYNC_RESUME` with no answer within 5 s (the timer is read, not exercised); a repair under way when a player is lost
 (read: it ends by its 10 s limit and the level starts again); a loss while the level changes (a map, a level start).
 
+### 2026-11-16, #262: the session items against what is built, and four drops nobody had run (no answer, the map, a level change, a repair under way)
+
+Identity: the game archives as shared for this run (the co-op log names ROM US 1.0, `76924CA9`; this worker did not
+read the ROM), Linux x86-64, GCC 16.2, Debug, OpenGL software renderer, no window, branch `issue/262-sessions-docs` on
+`issue/combined-test-6` (`80a8e8ee`; the build names itself `80a8e8ee5337-dirty`). Two real games on one PC over
+loopback, niced, one session at a time (`tools/coop/lockstep_test.py`, README row `resume*`). Nothing ran on Windows, on
+two PCs, in Release, with three or four games (but `resume_three`, as before), or with a person playing.
+
+**Observed: what #262's block "Sessions" asks for, read against the tree**
+
+| #262 asks for | Built as | Where, and the scenario that runs it |
+|---|---|---|
+| a re-sync at the next level start (more than one level start per session, a hello after the level start, the route a campaign builds) | decision 0014: the host sends its save and a level start with the next run number, a returning game says `SESSION_REJOIN` with the session id, and the level start carries the route | `Host_Restart` (`src/port/coop/session/session.c`), `CoopLevelStart` (`src/port/coop/game/level_start.c`); `survive_*`, `survive_gaps_route` |
+| a reconnect inside the input ring for a drop without a desync | decision 0016 part A: the slot is kept 30 s, `SYNC_RESUME` / `SYNC_RESUMED`, the lockstep link reopened | `Sync_OnResume`, `Sync_OnResumed` (`src/port/coop/sync/lockstep_game.c`); `resume*` |
+| a full state snapshot from the host | decision 0016 part B: the dump of the barrier frame written over the client's state | `src/port/coop/sync/repair_game.c`, `CoopStateHash_Restore`; `resync*` |
+| a random session id made by the host | decision 0014 item 5 | `src/port/coop/session/session_id.cpp` (`std::random_device`), in `SESSION_WELCOME`, echoed in `SESSION_REJOIN` |
+| what a session earns is not kept | not built, by decision 0009 item 8; `CoopSave_Leave` logs "what the session earned is not kept" | `src/port/coop/game/save.c:90`; decision 0017 (Proposed, this branch) puts the choice to the owner |
+
+So the first item needed no new game code. What it lacked was in the "Not tried" list of the resume's entry above
+(2026-11-15): no answer to `SYNC_RESUME` within 5 s, a repair under way when a player is lost, a loss while the level
+changes. Those are the runs below.
+
+**Observed: the new test switches** (test code only; none of them is read outside a test)
+
+- `SF64_COOP_LOCKSTEP_FREEZE_AT=<run>:<place>:<frames>` (`src/port/coop/test/lockstep_driver.c`): on that lockstep frame
+  of that place the game writes `freeze_at ...` to its report and sends itself SIGSTOP (`CoopTestSwitches_FreezeNow`,
+  `src/port/coop/test/switches.c`; nothing on Windows). The test sees state `T` in `/proc/<pid>/stat`, waits, and
+  thaws it with SIGCONT. A SIGSTOP from the test script lands within some hundred frames of where it was aimed; this
+  one lands on the frame.
+- `SF64_COOP_TEST_REPAIR_FREEZE=1` (`repair_game.c`, `CoopRepair_Receive`): a client stops the same way when the
+  host's repair offer arrives.
+- `SF64_COOP_TEST_RESUME_MUTE=1` (`lockstep_game.c`, `Sync_OnResume`): a client that came back does not answer the
+  host's question.
+
+**Observed: the runs** (each line is the scenario's own result line, shortened; all with a transport time-out of 4 s,
+`SF64_COOP_JOIN_TIMEOUT_MS=4000`, as `resume_early` has, and the client gone for 14 s unless it says otherwise)
+
+- `resume_silent`: `the client came back and never answered the host's question; after 5 s without an answer the
+  level started again and both hash alike on 600 frames`. The host's log: `player 2 came back: asked whether its game
+  can go on at frame 716` at 21:52:56.833, `resume of player 2 failed: no answer` at 21:53:01.834, 5001 ms later
+  (`COOP_SYNC_RESUME_MS` is 5000), then `recover (reason 1)` and level start 2.
+- `resume_map`: `the client stopped dead 120 frames into the map (frame 11560; the host stood at 11560) for 14 s and
+  came back into its slot; the map went on, both entered level 1 at frame 12294; equal on 13240 frames, the route
+  lines equal at all 3 places, no level start`. Lockstep runs on the map as in a level, and so does the resume.
+- `resume_level`: `the client stopped dead on frame 2 of level 1 (frame 12295; the host stood at 12298) for 14 s and
+  came back into its slot; equal on 13256 frames, the route lines equal at all 3 places, no level start`. Level 1 is
+  Meteo, entered from the map; the client stood three frames behind the host, inside the input delay.
+- `resume_repair`, gone 14 s (the session `back`): the host offers the repair (`The games parted at frame 2000. Syncing them again at frame
+  2063.`), stands at frame 2014, loses the link after 4 s and keeps the slot. The client comes back with its
+  repair still open: `host asks to go on at frame 2014 (mine 2013, run 1 of 1): no` (`CoopRepair_Busy`), the host logs
+  `resume of player 2 failed: it says so`, `recover (reason 1)`, and run 2 is equal on its first 600 frames.
+- `resume_repair`, gone 24 s (the session `late`): 20.0 s after the offer the host logs `repair failed: The repair did not get to its frame
+  in time, so the level starts again.` and `recover (reason 3)`, stops lockstep and waits for the player whose slot it
+  keeps; 4.1 s later `player 2 came back` and the level start of run 2 follows within 5 ms. The thawed client had
+  given up its own repair on the same limit. Run 2 equal on 600 frames. In neither case was a repair completed or a
+  session ended.
+
+**Observed: two things the runs found that are not in the game's rules**
+
+- **The first run of `resume_level` failed, and the cause was the test's own cheats.** With
+  `SF64_COOP_LOCKSTEP_CAMPAIGN_CHEATS=1` (as `survive_gaps_route` has) every game turns `gInvincible` on in the level
+  after Corneria, on the same lockstep frame. The client that came back in that level was refused: `Setting
+  "Invincible" (gInvincible): host 0, joining player 1.`, `The host refused this game.`, and its session ended. The
+  host compares a returning game's settings as they are at the return (the join driver reads them then,
+  `CoopIdentity_FromGame`, `src/port/coop/test/join_driver.c:384`; the menu does the same, `Menu_Rejoin`,
+  `src/port/coop/ui/menu.c:102`) with its own of the moment it began to host (`CoopSession_Host` copies the identity,
+  `join_driver.c:162`, `menu.c:158-159`; the comparison is `CoopIdentity_Compare`, `session.c:918`). `resume_map` did
+  not hit it: the cheat is set in a level only, and on the map after Corneria it
+  is still off. Without the test's cheats the scenario passes.
+- **Decision 0016 part A item 4 does not say what happens.** It says a repair under way when a player is lost "ends by
+  its time limit (10 s) and the level starts again". The level does start again, but the 10 s limit (`COOP_REPAIR_MS`,
+  `Hold_Host`) is the wait at the barrier frame, and a host that lost a client before the barrier never gets there: it
+  cannot run a frame without that client's input. What ends the repair is the limit before the barrier, 20 s
+  (`COOP_REPAIR_MS * 2`, `CoopRepair_Check`, `repair_game.c`), or the returning client's "no" if it is back before
+  that. The record's sentence is changed on this branch to say so.
+
+**Observed: a fault of the game that a rerun found, fixed on this branch**
+
+- The second run of `resume_repair`'s two sessions (after one that passed) failed in its second session, `late`: `FAILED resume_repair: no
+  `again` number 1 from host, client0 after 240 s after the thaw: the level did not start again`. The host's log: the
+  offer at 23:17:10.567, `repair failed: The repair did not get to its frame in time` and `recover (reason 3)` 20.0 s
+  later, then nothing until the 30 s for the lost player were over (`left away=0`, the session closed at
+  23:17:44.568). The client's join report: `rejoin frame=2224 character=Falco`, then `ended text=The repair did not
+  get to its frame in time, so the level starts again. The session is over, and the level goes on here alone.`
+- The cause is the order of two things in the thawed client. Both are due at once: its transport has heard nothing
+  for 24 s (time-out 4 s), and its repair is 24 s old (limit 20 s). In the runs that passed the repair's check ran
+  first: the session, still the old one and `CLIENT_ACTIVE`, took the recovery (`recover (reason 3)` in the client's
+  log), then the lost link was seen and the game came back for the level start. In the run that failed the lost link
+  was seen first: the join driver made a new session (`CoopSession_Rejoin`), which had sent `SESSION_REJOIN` and had
+  no welcome yet when the repair gave up; `CoopSession_Recover` refused a client that was not `CLIENT_ACTIVE`
+  (`src/port/coop/session/session.c`), so `Sync_Recover` ended the session (`Sync_Fail`, `lockstep_game.c`) of a
+  player the host was waiting for. The menu comes back the same way (`Menu_Rejoin`, `menu.c`).
+- The fix (`dae40f5e`): a session made by `CoopSession_Rejoin` that has no answer yet (`CLIENT_CONNECTING`,
+  `CLIENT_WAIT_ANSWER`) takes the request as a client in a level does: it waits for the host's level start,
+  `COOP_SESSION_RECOVER_MS` at most, and says so with a RECOVER event. The host, which is in its own recovery, starts
+  the level once the player is back; a host that is not asks the game to go on and hears no, as lockstep has stopped.
+  One whose way back has ended (refused, another session) still cannot.
+- `coop_session_test sim`, `client_rejoin`: the new steps (a recovery before the connection and before the welcome,
+  the welcome and the level start taken after it, none after the way back ended). `session_mutants.py --only
+  recover_coming_back_refused,recover_coming_back_not_connecting,recover_coming_back_not_waiting,recover_coming_back_after_its_end`:
+  `RESULT: all 4 breaks caught`; the first of them is the code as it was, and fails with `a client on its way back
+  could not wait for a recovery before it was connected`.
+- In real games the order had to be forced, as `late` takes it by chance only (2 of 8 runs here): the scenario's
+  third session, `raced`, thaws the client after 15 s while the host is held (SIGSTOP) until 21.5 s after the offer. A
+  thawed client hears of the loss from the host within a few ms; with the host held it hears nothing and takes the
+  link for lost after its 4 s. On a throwaway build with the refusal back in (`RESUME_REPAIR_ONLY=raced`): `FAILED
+  resume_repair: no `again` number 1 from host, client0 after 240 s after the thaw: the level did not start again`;
+  the client's log has `session ended: The connection timed out` 19.1 s after it stopped, its join report `rejoin
+  frame=2225`, then `ended text=The repair did not get to its frame in time, so the level starts again. The session is
+  over, and the level goes on here alone.`, and the host's `left away=0` and `ended`. On the fix: `ok resume_repair:
+  ... Thawed after 15 s with the host held until 21.5 s: the client took the link for lost, was on its way back
+  without an answer when its own repair gave up, waited, and the level started again once the host had it back, equal
+  on 600 frames.` The client's log there: `session ended: The connection timed out` at 00:10:37.829, `coming back to a
+  session` in the same ms, `repair failed` and `recover (reason 3)` at 00:10:38.735, `came back as player 2` and the
+  level start of run 2 at 00:10:40.448.
+- `late` on the fix took the bad order by itself once (the session of 23:59:42: `coming back to a session`, then
+  `repair failed` and `recover (reason 3)` in the same ms, `came back as player 2` 12 ms later, level start 2), and
+  passed. `resume_repair` then passed three more times, and after the fix the session scenarios again, one session
+  at a time: `resume_level,resume_map,resume_silent` 3/3,
+  `resume,resume_early,resume_refused,resume_gone,resume_three,left,host_left` 7/7,
+  `resync,resync_refused,steer,pause,stall,frozen,survive_desync,survive_three,survive_gaps_map_lost` 9/9.
+
+**Observed: where the changed sentences of the README's "How to play" come from** (the pass of this branch; the
+entry of 2026-11-10, #27, has the older ones)
+
+- The name field and its 8 characters: `src/port/coop/ui/menu_window.cpp:106-119`, `COOP_NAME_MAX`
+  (`src/port/coop/game/names.h:19`). `Hosting on port 46464, 1 of 4 players.`: `src/port/coop/ui/menu.c:511`,
+  `COOP_MENU_DEFAULT_PORT` (`menu.h:24`), `COOP_SESSION_PLAYERS` (`src/port/coop/session/session.h:41`).
+- The results that wait for every A, 30 s at most: `src/port/coop/game/score.h:72` (#252).
+- `Player 2 lost the connection. Waiting for it to come back (30 s).`: `menu.c:330` with `COOP_SESSION_RESUME_MS`
+  (`session.h:34`). `Player 2 is back. The level goes on.`: `Sync_OnResumed` (`src/port/coop/sync/lockstep_game.c`).
+  `The games parted at frame N. Syncing them again at frame M.` and `The games are in step again.`: `CoopRepair_Found`
+  and the end of the hold (`src/port/coop/sync/repair_game.c`). `The games parted. Starting the level again
+  together.`: `session.c:488`.
+- "On the map as in a level": `resume_map` above. The bosses named as going after the nearest human: the files that
+  call `CoopAim_*` (`git grep -c "CoopAim_" src/overlays`), and the issues the README links.
+- Which of the old list's known issues are gone: #213, #210, #202, #88, #140, #30, #209 and #129 are closed
+  (`gh issue view`, 2026-11-16) and each has commits in this tree (`git log --grep`). The pool that follows the host's
+  own count (#343) and Macbeth's bump (#346) are quoted from their issues, not read again here.
+- "More than 400 commits newer": `git rev-list --count 6becd73a..80a8e8ee` is 457; `6becd73a` is the build of the
+  hand-played session of 2026-11-09 (the entry of 2026-11-09, #199).
+
+**Observed: a trap of the test tool**
+
+- `lockstep_test.py --out <folder>` with a folder an earlier run used: `session()` waits for the host's `port` file,
+  finds the old one at once and sends the client to a port nobody listens on. The client's join report says `ended
+  text=The connection timed out`, the host sits at the title, and the scenario fails only after its 900 s wait for
+  `done`. Seen once here (a rerun of `resume_silent` into the same folder). The default, a new folder under `local/`,
+  does not have it. Not changed; the tools README says so.
+
+**Derived**
+
+- A session that resumes holds through the map and a level change as it does inside a level, for one client of two on
+  one PC with a stopped process. The cases of 0016 part A that end in the level start (no answer, a repair under way)
+  end there, with run 2 equal from its frame 0.
+- In play the refusal above needs a setting that changes the game to change on a game while a session runs. Then a
+  drop that the resume would have carried ends that player's session instead.
+- The fault above needs, in play, a desync that is being repaired when a player's connection goes, and that player
+  back between 20 and 30 s later: then some of the time (2 of 8 runs here) that player's session ended and the
+  other waited 30 s for nothing. The same refusal met any other recovery a returning game asked for between its
+  `SESSION_REJOIN` and the welcome, a round trip on a real link (8 ms in these runs).
+
+**Guess**
+
+- The F1 menu lets a player switch a cheat during a session (not read, not tried); if both do, the games part unless
+  they do it on the same frame, and a repair does not carry CVars.
+
+**Unknown / not tried**
+
+- Windows, two PCs, a real connection that is cut (a stopped process stands in for it), Release, three and four games
+  for the four new scenarios, a person.
+- A drop in the frames between the map and the level's first update (`PLAY_STANDBY`, `PLAY_INIT`: the driver's places
+  count only the map and `PLAY_UPDATE`), in a cutscene, in the level clear screen, or of the host.
+- A loss in the middle of the state's transfer (after the barrier, while the 97 parts cross), and a client lost while
+  another client's repair runs in a session of three.
+
 ## Prior work
 
 ### 2026-11-01, triage

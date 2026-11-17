@@ -274,6 +274,13 @@ static void Sync_OnResume(int peer, const uint8_t* data, uint16_t size) {
     }
     hostFrame = (uint32_t) data[1] | ((uint32_t) data[2] << 8) | ((uint32_t) data[3] << 16) | ((uint32_t) data[4] << 24);
     mine = sLockstep.frame;
+    if ((getenv("SF64_COOP_TEST_RESUME_MUTE") != NULL) && (getenv("SF64_COOP_TEST_RESUME_MUTE")[0] != '\0')) {
+        // Test only (#262): no answer reaches the host, which waits COOP_SYNC_RESUME_MS and starts the level again.
+        CoopLog_Write(COOP_LOG_LOCKSTEP, false,
+                      "host asks to go on at frame %u (mine %u): not answered (SF64_COOP_TEST_RESUME_MUTE)",
+                      (unsigned) hostFrame, (unsigned) mine);
+        return;
+    }
     ok = (sState == SYNC_RUNNING) && (data[0] == sRun) && !CoopRepair_Busy() && (getenv("SF64_COOP_TEST_RESUME_REFUSE") == NULL) &&
          ((mine > hostFrame ? mine - hostFrame : hostFrame - mine) <= COOP_LOCKSTEP_RING / 2);
     answer[0] = data[0];

@@ -41,6 +41,9 @@
 // And for the audio reset of a level start (#289):
 //   SF64_COOP_TEST_AUDIO_RESET_RUNS_ON=1  a level start does not play the sound ahead until no audio reset is running
 //                                     (CoopLevelStart_Enter), so a run can show what that is there for
+// And for the drops of a session (#262):
+//   SF64_COOP_LOCKSTEP_FREEZE_AT, SF64_COOP_TEST_REPAIR_FREEZE  this game stops dead at a place (lockstep_driver.h) or
+//                                     when the host's repair offer arrives (repair_game.c): CoopTestSwitches_FreezeNow
 // With none of them set, nothing changes.
 
 #ifdef __cplusplus
@@ -55,6 +58,10 @@ void CoopTestSwitches_Init(void);
 // Host: what a level start carries for the RNG, in the order of level_start.c, if SF64_COOP_TEST_START_SEEDS says so,
 // and for the radio, if SF64_COOP_TEST_START_NO_TITLE_RADIO does.
 void CoopTestSwitches_StartSeeds(int* values);
+// This game stops dead (SIGSTOP on itself), as a PC that hangs or a connection that is cut does: nothing is sent and
+// nothing is read until the test thaws it (SIGCONT). Only ever called behind a test switch. Not on Windows, where it
+// does nothing.
+void CoopTestSwitches_FreezeNow(void);
 
 #ifdef __cplusplus
 }
