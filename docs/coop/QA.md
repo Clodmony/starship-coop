@@ -12,7 +12,7 @@ Every PR states the QA level it reached and how. Levels follow Co-op Anything:
 `automated` needs at least two game clients sharing state. A run of one game is `none`, even when a script drove it and
 checked its state: the PR says what ran.
 
-Current project level: `automated`. Two real game clients in one session, on one PC, stay equal on every frame through all of Corneria (`python tools/coop/lockstep_test.py`), and, a level per session, from the start to the end of all 17 campaign levels (`python tools/coop/campaign.py`, #28; the route of 2026-11-11 in NOTES.md, with Bolse, Venom (Andross), Sector Y, Zoness and Area 6 finished after the pilot's changes of that day), and Andross' second part, which only Venom 2 leads to, from Venom 2 through the brain and the escape to the ending (`campaign.py --levels venom-2-andross`, #275, 2026-11-12). Not covered with real clients: a level that follows from the one before (each starts as a new game, no route state), a player who goes down (all but Corneria with `gInvincible`), two PCs, Windows, a real network, a Release build and more than two players. A full campaign was played by hand on two PCs on 2026-11-09 (issue #2); that record is not this one, and its level stays the owner's to enter.
+Current project level: `automated`. Two real game clients in one session, on one PC, stay equal on every frame through all of Corneria (`python tools/coop/lockstep_test.py`), and, a level per session, from the start to the end of all 17 campaign levels (`python tools/coop/campaign.py`, #28; the route of 2026-11-11 in NOTES.md, with Bolse, Venom (Andross), Sector Y, Zoness and Area 6 finished after the pilot's changes of that day), and Andross' second part, which only Venom 2 leads to, from Venom 2 through the brain and the escape to the ending (`campaign.py --levels venom-2-andross`, #275, 2026-11-12). With four games (`campaign.py --route all --players 4`, #28, 2026-11-16) all 18 levels of the route stay equal on every frame to their end; the tool counts 14, as in Titania, Aquas, Venom 2 and Macbeth two pilots share one spot on more than 5 % of the frames (#345). Not covered with real clients: a level that follows from the one before (each starts as a new game, no route state), a player who goes down (all but Corneria with `gInvincible`), two PCs, Windows, a real network and a Release build. A full campaign was played by hand on two PCs on 2026-11-09 (issue #2); that record is not this one, and its level stays the owner's to enter.
 
 ## Test identity
 
@@ -265,6 +265,25 @@ Running tests must never use or modify the owner's own `starship.cfg.json`, save
 ## Results
 
 Newest first. One block per run that matters (a milestone, a release, a QA level change).
+
+```
+date:       2026-11-17
+commit:     the #28 branch at 9f417515 (src/port/coop/test/pilot_aim.c: Andross' eyes after his last hand, a bomb into
+            his inhale) on issue/combined-test-6 80a8e8ee
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL software renderer; up to four games on one PC, niced, one session at a
+            time
+what ran:   campaign.py --route all --players 4; campaign.py --levels venom-2-andross --players 4 with five seeds
+            (default, 7,11,13,17,19,23, 101,...,606, 31,...,53, 59,...,79); --levels venom-andross,venom-2-andross
+            --players 2; --levels venom-andross --players 4; test_all.py --no-build --only checks,campaign-4,views
+            --lanes 1: PASS, 4/4 steps; lockstep_test.py --no-build --jobs 1: 74/74
+result:     all 18 levels of the route equal on every frame to their level complete with four players, no desync
+            report, Aquas (#366) included; the tool counts 14/18 as four levels break the one-spot rule of #345
+            (Titania, Aquas, Venom 2 at 5.7 %, Macbeth). venom-2-andross with four pilots finishes on all five seeds
+            (level frames 11050 to 14903; on 80a8e8ee 33142 on the default seed, and two of the seeds hit the 50000
+            cap with fix 1 alone). NOT run: Release, Windows, two PCs, a real network, a person, route state between
+            levels, --mortal, the mutation suites (no session, net or lockstep code changed). The QA level of the
+            project does not change: automated.
+```
 
 ```
 date:       2026-11-16

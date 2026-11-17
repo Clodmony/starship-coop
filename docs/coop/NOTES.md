@@ -1815,6 +1815,76 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-16, #28: why four pilots did not finish Venom 2 into Andross, and the full route with four players
+
+Read and run on `w16-issue28` (from `issue/combined-test-6` `80a8e8ee`). Identity: ROM US 1.0, Linux, GCC, Debug,
+OpenGL on a software renderer, no window; four game clients on one PC in lockstep over loopback through the join
+driver, a pilot on each, niced, one session at a time. "Base" is the Debug build of `80a8e8ee`, "fix 1" the one of
+`337d4794`, "fix 2" the one of `9f417515`. Only test code changed (`src/port/coop/test/pilot_aim.c`). Seeds are
+`campaign.py --seeds`: a `7,11,13,17,19,23`, b `101,202,303,404,505,606`, c `31,37,41,43,47,53`, d
+`59,61,67,71,73,79`, and the default `1111,...,6666`.
+
+**Observed: base** (`campaign.py --levels venom-2-andross --players 4`, the pilot log's Andross line every 60 frames:
+`hands=<swork[4]>,<swork[5]> eyes=<swork[6]> state=<state>`)
+
+- Equal on every frame to the end this time, but late: level complete at level frame 33142 (the 4-player run of
+  2026-11-15 on `7354b331` stopped at the cap, 50289 frames). The face lost his right hand at frame 2820
+  (`hands=-60,140`); his left hand then stayed at 110 from frame 3060 to 24300 while his states went 2, 5, 17 and
+  again, and every pilot logged `aim kind=0` (no target) in those states.
+- Where the left hand was: in state 2 about x -1400, y -650 (`at=.../-1378,-635,...`), the ships at x -420 to 590,
+  y 612. `CoopPilot_RailAim` takes a box only within `AIM_RAIL_REACH` (900) across and not under the ships' floor, and
+  `CoopPilotAim_Andross` offered that hand alone.
+- His eyes went from 60 to 10 by stray shots over 21000 frames; at frame 24360 they were at 0, he was in state 14, and
+  by 24420 the left hand was at 0, level complete following.
+
+**Observed: code** (`src/overlays/ovl_i6/fox_andross.c`, `src/engine/fox_play.c`)
+
+- Hits on the eyes (parts 0 and 1) take `swork[6]` down in a state under 11 or 12, and at 0 he groans into state 12 or
+  13 (`Andross_8018D2B0`); from 12, 13 or 14 the next state is 7 (`Andross_8018D9C0`). With both hands down only his
+  health counts, and only in a state under 12. States 3 and 5 end at once when their hand is down.
+- His inhale (state 17) pulls every flying human and swallows the first whose z reaches his mouth
+  (`CoopAim_AndrossSwallow`; state 15, then 16 spits it out). A bomb that the inhale brings to his mouth unset chokes
+  him instead (state 15 with `swork[8]` 2, then 18, `case 17`).
+- The ships' ceiling on this path is `pathHeight` 612 (`fox_play.c`, `Player_MoveArwingOnRails` clamps to it).
+
+**Changed**
+
+- Fix 1: `CoopPilotAim_Andross` offers his eyes after the hand still up, outside states 7 and 12 to 14; a pilot that
+  cannot reach the hand takes the next box of the table. Players 1 to 3 still bomb only a hand.
+- Fix 2: player 0 also bombs in his inhale, does not set that bomb off, and lets it go once he is `AIM_AHEAD_MIN` ahead
+  instead of 1200 (the inhale of seed a began with the ships 460 from his face and swallowed one 18 frames later).
+
+**Observed: fix 1** (four pilots)
+
+- Default seed: level complete at 14903, the left hand down at frame 3180. The full route `--route all --players 4`:
+  all 18 levels equal on every frame to their level complete, the tool's count 14 of 18 (pilots on one spot, below).
+- Seeds a and b: both at the cap (50552 and 50235 frames), equal on every frame. Seed a: his left hand at 90 and his
+  eyes at 60 for 40000 frames; every inhale swallowed a pilot, the spit-out sent the ships up to y 612, and the short
+  state 2 after it was over before they came down. Seed b: both hands down at 3180, then his health stayed at 50 from
+  frame 3300 on, the same swallow in every inhale.
+
+**Observed: fix 2**
+
+- Four pilots, `venom-2-andross`: seeds a, b, default, c, d: level complete at level frames 13538, 13947, 14903, 11050,
+  13885, each equal on every frame to the end. Seed b showed the choke: state 15, then 18 at 3420, then 32.
+- Two pilots: `venom-andross` level complete at 5030, `venom-2-andross` at 15837. Four: `venom-andross` at 4301.
+- The full route on fix 2, `--route all --players 4`: all 18 levels equal on every frame to their level complete, no
+  desync report, downs only in Corneria (`gInvincible` off: player 1 once). Aquas, which parted at frame 5573 on
+  `7354b331` (#366), reaches its end (level complete at 7180). The tool's count is 14 of 18: Titania (pairs on one spot
+  up to 5385 of 8923 frames), Aquas (up to 1892 of 6634), Venom 2 (231 of 4060, 5.7 %) and Macbeth (up to 8022 of 9648)
+  break `ONE_SPOT_SHARE`, the rule of #345; the same counts as on fix 1, and as on 2026-11-15 for Titania, Venom 2 and
+  Macbeth.
+
+**Derived**
+
+- Four pilots did not fail Venom 2 into Andross for a session reason: once one hand was down they had nothing in reach,
+  and in some flights every inhale swallowed one of them; the end then waited for stray hits. That the 2-player runs
+  finished and the 4-player run of 2026-11-15 did not is the luck of those hits (a guess, which base's 33142 frames
+  against a cap of 50000 support).
+
+**Unknown**
+
+- Whether the inhale bomb misses when the bomb slot is held by another player's bomb; no run showed it.
 ### 2026-11-16, #345: what put pilots 1 to 3 on one spot at Andross, and a place for every player of the escape's row
 
 Read and run on `issue/345-four-pilots` (from `issue/combined-test-6` `82a44d62`). Identity: ROM US 1.0, Linux, GCC,
