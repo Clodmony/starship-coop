@@ -268,6 +268,19 @@ Newest first. One block per run that matters (a milestone, a release, a QA level
 
 ```
 date:       2026-11-16
+commit:     issue #370 branch on issue/combined-test-6 80a8e8ee
+identity:   ROM US 1.0, Linux, GCC 16.2, Debug, OpenGL software renderer; two games on one PC, niced, one session
+what ran:   lockstep_test.py --only bot (play_with_bot.py's bot against a stand-in for the person: the real co-op
+            window, clicked by the menu driver, at real time); play_with_bot.py by hand with nobody hosting, stopped with
+            Ctrl+C; check.py
+result:     the bot retries while nobody hosts, is refused with the setting named when the host's config differs,
+            joins with --settings-from, and its pilot flies player 2: hashes and input logs equal on 2700 frames of
+            Corneria. In the level the bot took 9% of a core. NOT run: a person, --window, other levels with the bot,
+            the bot going down, Release, Windows, two PCs. The QA level of the project does not change.
+```
+
+```
+date:       2026-11-16
 commit:     issue/345-four-pilots (abd5e309; the escape runs on 7b2ce117, abd5e309 only wraps two lines) on
             issue/combined-test-6 82a44d62
 identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL software renderer; up to four games on one PC, niced, one session at a

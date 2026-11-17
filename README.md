@@ -71,7 +71,15 @@ desync check below decides ([decision 0010](docs/coop/decisions/0010-cross-platf
    by itself; then, as after a desync, the level starts again for everyone who is there, at the last checkpoint or
    from its start.
 
-### What the game does in a session
+### Alone on one PC: play with a bot
+
+`python tools/coop/play_with_bot.py` starts a second game, the bot, with no window and its own folder under
+`local/test-bot-<stamp>/`, and prints what to click: host from your own game's Co-op window (port 46464), the bot joins
+as player 2 (`BOT`, Falco), you click **Start the level**. In a level the test pilot flies it; in menus, on the map and
+in cutscenes it presses nothing. Run the bot from the same build as your game; if your game's settings differ from a fresh
+config, the handshake refuses the bot and names the setting: pass `--settings-from <the starship.cfg.json your game
+uses>` (read only). The pilot knows Corneria best and does not beat every boss. See `tools/coop/README.md` (#370).
+
 
 | What | Rule | Where it stands |
 |---|---|---|
