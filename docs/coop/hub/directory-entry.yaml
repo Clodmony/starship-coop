@@ -33,7 +33,7 @@
     and gold rings, and the host steers the route, cutscenes and radio. No release or download, you build from source
     with your own US ROM. When the host's ship goes down it is refilled in place for a life; a desync or a lost player
     starts the level again for everyone from the host's state (tested by scripts only, a real connection drop not
-    tried), and what a session earns is not saved. The project calls itself pre-alpha. License CC0 1.0.
+    tried), and the planet clears and medals a session earns are kept in each PC's own save. The project calls itself pre-alpha. License CC0 1.0.
   sources:
   - https://github.com/Clodmony/starship-coop
   - https://github.com/Clodmony/starship-coop#what-a-real-run-showed-observed

@@ -231,7 +231,7 @@ What a player will notice, as of 2026-11-11:
   level again for everyone from the host's state (from the host's last checkpoint, if it had one). The level that parted
   is lost. A lost player has 15 seconds to come back by itself. With nobody else left, after two such restarts within 300
   frames of the level start, or with a different build, the session still ends. Tested by scripts only.
-- What a session earns (clears, medals, rankings) is not kept on either PC.
+- What a session earns: the planet clears and medals are kept in each PC's own save when the session ends (decision 0017, K2); rankings and the ending-seen byte are not. Planets the host had cleared before the session are earned by nobody.
 - Macbeth's train end still goes after the host only (it is an actor; the sites are listed, not changed). The other
   bosses that aim or chase now go after the nearest human, Sector X's Spyborg and Titania's Goras included; scripts have
   tested each of those changes, Solar's Vulkain too, and nobody has played it by hand yet.

@@ -47,8 +47,15 @@ one happens, is caught, repaired and reported.
    the results stay up until both have pressed A, 30 seconds at most (#252).
 7. **Go on through the map into the next level.** The map reads the save, and every game plays on the host's progress
    (decision 0009, item 8): the host sends it once before the level starts, and no PC's save file is written during a
-   session. A session with a Windows host and a Linux joining player went through two maps on the evening of 2026-11-10. What the
-   session earns is not kept. Quit when you are done.
+   session. A session with a Windows host and a Linux joining player went through two maps on the evening of 2026-11-10.
+8. **End the session** (Leave, or the host closes it). Each game then adds what the session earned to its own save:
+   the planets it cleared and their medals, if the host's save did not have them before
+   ([decision 0017](decisions/0017-what-a-session-earns.md)). The co-op window says so in one line, for example
+   `Kept from this session: Corneria (medal), Meteo.`, and the co-op log has the same. No line means nothing new was
+   kept: the session ended before a level's clear, or the host had those planets cleared already (then nobody earns
+   them again), or your own save had them. Rankings are not kept. A game that crashes or is killed in a session
+   keeps nothing, so end the session before you quit. Tested by scripts on one Linux PC only (2026-11-17), not yet by
+   hand: please note what the line said on each PC.
 
 ## What is known not to work yet
 

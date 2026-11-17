@@ -128,6 +128,7 @@ def all_steps():
         Step("rand_order", PURE, ["rand_order_test.py"]),
         Step("handover", PURE, ["handover_test.py"]),
         Step("desync_dump", PURE, ["desync_dump_test.py"]),
+        Step("save-merge", PURE, ["save_merge_test.py"]),
         Step("net", PURE, ["net_test.py"], "build", "net"),
         Step("session", PURE, ["session_test.py"], "build", "net"),
         Step("steam", PURE, ["steam_test.py"], "build", "net"),

@@ -263,9 +263,13 @@ static void Session_Pump(void);
 // As the menu ends one (menu_game.c): lockstep first, then the handover while the others can still be reached (#189).
 // leaving: this player chose to go, as Leave in the menu.
 static void Session_EndAs(bool leaving) {
+    if (sEntered) {
+        Report_Save("save_session_end"); // the session's copy as the session leaves it
+    }
     CoopSyncGame_End();
     if (sEntered) {
-        Report_Save("save_after"); // this game's own again (CoopSave_Leave)
+        Report_Save("save_after"); // this game's own again, with what the session earned (CoopSave_Leave)
+        Report("kept frame=%u line=%s", (unsigned) sFrame, CoopSave_KeptLine());
     }
     CoopHandoverGame_Run(sSession, leaving);
     CoopSession_Close(sSession);

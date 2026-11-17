@@ -8605,6 +8605,99 @@ Unknown:
 - Whether a level start from the map against one from the level's scene left other state apart that a longer flight
   would show: run 2 of `late` is compared on its frames (`SURVIVE_FRAMES`) and `in_scene` on 900, both equal.
 
+### 2026-11-17, #373: what a session earns is kept (decision 0017, K2), and what the rule leaves out
+
+Identity: ROM US 1.0, branch `issue/373-k2-save-merge` at `fcf37a9b` on `issue/combined-test-6` (`1898ed4c`), Linux,
+GCC 16.2, Debug, OpenGL on a software renderer, no window; two games on one PC over loopback, niced, one session at a
+time. The unit test needs no game and no ROM.
+
+**Observed in the code**
+
+- The game sets a planet's flags in four places, each followed by `Save_Write`: the map after a level
+  (`src/overlays/ovl_menu/fox_map.c:1469-1479`, `Map_Setup_Play`: played, clear, and the medal when
+  `gLeveLClearStatus` is 2), the map at a game over (`fox_map.c:1536-1538`, `Map_Setup_GameOver`: played alone), the
+  results of Bolse and Area 6 (`src/engine/fox_hud.c:1301-1332`), and the main menu after the ending for Venom
+  (`src/overlays/ovl_menu/fox_option.c:440-459`).
+- `Map_PlanetSaveSlot_Setup` sets a flag only when it is 0 and returns whether it did (`fox_map.c:1800-1830`); the
+  other three places assign 1. A flag that was set before looks the same afterwards: the save holds no trace of a
+  level cleared again.
+- `Save_Write` returns `Save_WriteData`'s answer, true when the file was written (`src/engine/fox_save.c:142-149`,
+  `src/sys/sys_joybus.c:103-105`), not 0 for success as `Save_Read` does.
+- `Save_WriteEeprom` writes only the 8-byte blocks that differ from what was last read or written
+  (`src/sys/sys_save.c:41-53`), and `Save_ReadEeprom` sets that reference (`sys_save.c:69`).
+- `SESSION_SAVE` comes again with every level start of a recovery (`docs/coop/PROTOCOL.md`, "Session's save"), so
+  `CoopSave_Enter` runs more than once in a session; the co-op window's one message string is written by the end's
+  reason before the save code runs and cleared by `CoopMenu_Leave` after it (`src/port/coop/ui/menu.c:55-68`,
+  `:271-284`).
+- The cheat "Enable Expert Mode" (`gForceExpertMode`, `src/port/ui/ImguiUI.cpp:825`) sets all five flags of all 16
+  planets in memory whenever the main menu is set up (`fox_option.c:371-379`); the handshake compares it
+  (`src/port/coop/session/sim_cvars.c:26`).
+
+**Observed in runs**
+
+- `python tools/coop/save_merge_test.py`: PASS, built with ASan and UBSan, 15 cases, 12 of 12 mutants caught.
+  `whole_byte` (the session's planet byte copied in place of the OR) fails `client_medal`, `not_the_hosts`,
+  `unused_bits` and `expert`; `hosts_progress_kept` (the session's starting point dropped) fails `not_the_hosts`,
+  `host_had_it` and `ranking_and_clear`.
+- `lockstep_test.py --jobs 1 --only save_kept,save_kept_host_had,save_kept_none,save_kept_window,map_saves,
+  map_saves_host_full,map_saves_equal,save,save_own,leave,handover,menu`: 12/12 on `fcf37a9b`.
+  - `save_kept` (host's save: Meteo cleared; client's: Katina cleared, its own volumes; pilots fly Corneria to the
+    map, the client leaves 300 frames into it): equal on 11741 frames; neither `default.sav` changed until the leave;
+    the session earned Corneria `a0`; host `a0 .. 00 ..` -> Corneria `a0`, client Katina `a0` -> Katina and Corneria
+    `a0`, no Meteo; each file differs from the one before only in Corneria's byte and the checksum's low byte, in the
+    save and in its backup; both windows' line is `Kept from this session: Corneria.` and both co-op logs name it.
+  - `save_kept_host_had` (the host had Corneria and Meteo cleared, the client Katina): the session earned nothing, and
+    both files are byte for byte as before. The client flew Corneria to its clear and its save does not show it.
+  - `save_kept_none` (the session ends 600 frames into Corneria): both files byte for byte as before, the line empty.
+  - `save_kept_window` (the same flight started and left through the real co-op windows, blank saves): the client's
+    window, which left by itself, and the host's, under `Player 2 left, so the session is over`, both show
+    `Kept from this session: Corneria.`; both files have Corneria `a0` and nothing else new.
+  - `map_saves`: host blank -> Corneria `a0`, client (all cleared) byte for byte; `map_saves_host_full` and
+    `map_saves_equal`: nothing earned, all four files byte for byte.
+- The pilots did not earn Corneria's medal in any run (the session's copy gained `a0`, never `e0`), so a kept medal was
+  seen in the unit test only.
+- A mutant with real games: `save.c` without the session's starting point (`& ~sBegan[i]` removed), built and run:
+  `save_kept` and `save_kept_host_had` both FAILED, the client's save had got the host's Meteo (bytes 0, 254, 256, 510
+  differ from the expected file). The source was restored from the commit and built again.
+- `test_all.py --no-build --only checks,save-merge,menu,menu-asan,join,version`: PASS, 8/8 steps, 6m57s, on `fcf37a9b`.
+
+**Derived**
+
+- With the rule as decision 0017 item 1 has it (a flag is earned when the session's copy holds it at the end and did
+  not at the start), a planet the host had cleared before is earned by nobody, the host included: the clients of a
+  host whose save has everything cleared keep nothing from any session. `save_kept_host_had` and
+  `map_saves_host_full` show it with real games.
+- By the same rule a client can get a medal without the clear: the host had the clear and no medal, the session adds
+  the medal, and a client whose save lacks the planet gets `40` alone. Single player cannot make that byte (the medal
+  is set with the clear, `fox_map.c:1471-1476`). Not run with games; what reads the flags (`fox_play.c` the clear,
+  `fox_map.c` played, `fox_option.c:395-409` the medals for expert mode) takes each flag by itself.
+- Because the starting point is the first `CoopSave_Enter` of a session, a recovery's level start, which brings the
+  host's progress with what the session earned so far, does not lose it (unit case `recovery`; mutant
+  `began_taken_again`). A player who joins a running session late starts from the copy as it then is, and earns what
+  comes after.
+- The write after the session touches only the blocks that changed (the planet's and the checksum's), since the read
+  just before it sets the reference: the files of `save_kept` differ in exactly those bytes.
+- With the expert-mode cheat on (on every game, or the handshake refuses), a main menu set up while a session is on
+  sets every flag in the session's copy, and every player keeps all of them: as single player does with that cheat,
+  whose next `Save_Write` stores them (the owner's answer 3 to decision 0017).
+
+**Guess**
+
+- A session that is still on when the game comes back to the main menu after the ending earns Venom's flags there
+  (`fox_option.c:440-459`), and one that ended during the ending or the credits does not.
+
+**Unknown / not tried**
+
+- Whether a session is still on at that main menu; no scenario flies a session to the end of the credits and then
+  looks at the saves.
+- A medal kept by real games, expert mode in a session, a game over in a session (`played` alone), a session of three
+  or four, Windows, two PCs, Release, a person. The window's line with more than a few planets in it (it wraps as
+  text; the co-op log cuts a line at 512 bytes).
+- A save file that cannot be read at the session's end with a real game (unit case `broken_file` only), and a write
+  that fails.
+- Not built, and a gap of the tools, not a bug: no scenario ends a session by a desync or by the host's leaving and
+  then reads the saves; both ends go through the same `CoopSyncGame_End`.
+
 ### 2026-11-16, #262: the sign tests, the remembered beam slots and the textured lines, fixed in a session only
 
 Identity: `sf64.o2r` and `starship.o2r` as shared for this run (ROM US 1.0; this worker did not read the ROM), base

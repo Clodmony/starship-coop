@@ -17,6 +17,7 @@
 #include "menu_game.h"
 #include "port/coop/game/level_start.h"
 #include "port/coop/game/names.h"
+#include "port/coop/game/save.h"
 #include "port/coop/session/identity_game.h"
 #include "port/coop/session/session_id.h"
 #include "port/coop/test/menu_driver.h"
@@ -218,6 +219,11 @@ void MenuWindow::DrawElement() {
     if (view.message[0] != '\0') {
         UIWidgets::PaddedSeparator();
         Text("message", view.message);
+    }
+    // What the last session added to this game's own save (decision 0017), until the next session's level start.
+    if ((view.phase == COOP_MENU_IDLE) && (CoopSave_KeptLine()[0] != '\0')) {
+        UIWidgets::PaddedSeparator();
+        Text("kept", CoopSave_KeptLine());
     }
 }
 

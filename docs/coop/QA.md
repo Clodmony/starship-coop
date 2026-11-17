@@ -268,6 +268,30 @@ Newest first. One block per run that matters (a milestone, a release, a QA level
 
 ```
 date:       2026-11-17
+commit:     issue/373-k2-save-merge at fcf37a9b on issue/combined-test-6 1898ed4c: every player keeps the planet flags
+            a session earned (decision 0017, K2, #373)
+identity:   ROM US 1.0, Linux, GCC 16.2, Debug, OpenGL software renderer, no window; two games on one PC over
+            loopback, niced, one session at a time; save_merge_test.py has no game and no ROM
+what ran:   python tools/coop/save_merge_test.py: PASS, ASan and UBSan, 15 cases, 12 of 12 mutants caught (whole_byte:
+            the session's planet byte in place of the OR).
+            lockstep_test.py --jobs 1 --only save_kept,save_kept_host_had,save_kept_none,save_kept_window,map_saves,
+            map_saves_host_full,map_saves_equal,save,save_own,leave,handover,menu: 12/12.
+            save.c with the session's starting point removed, built: --only save_kept,save_kept_host_had 0/2 (the
+            client's save got the host's Meteo); restored and built again.
+            test_all.py --no-build --only checks,save-merge,menu,menu-asan,join,version: PASS, 8/8 steps, 6m57s.
+result:     automated. Two games with two different saves fly Corneria to its clear (equal on 11741 frames): each
+            default.sav afterwards is the one from before but for Corneria's byte (old OR a0) and the checksum, in the
+            save and its backup; the client's does not get the host's Meteo; no file changed while the session ran;
+            the co-op window (read from the real windows in save_kept_window) and the co-op log say `Kept from this
+            session: Corneria.` A session that ends 600 frames into Corneria leaves both files byte for byte. A host
+            that had Corneria cleared: nothing is earned, both files byte for byte, the client does not get the clear
+            (decision 0017 item 1 as written; open for the owner). Not covered: a medal with real games, expert mode,
+            a game over, three or four players, a session that ends by a desync or the host's leaving, Windows, two
+            PCs, Release, a person.
+```
+
+```
+date:       2026-11-17
 commit:     issue/262-sessions-docs (69b3b6bc) on issue/combined-test-6 80a8e8ee: four scenarios for the drops decision
             0016 part A had read and not run, and the fault one of them found, fixed in session.c (a client on its way
             back can wait for a recovery)
