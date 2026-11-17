@@ -8534,6 +8534,77 @@ player 0 loses 100.
 
 ## Determinism
 
+### 2026-11-17, #375: the scene-hold skew, a level start that one game enters from another scene parts the games at level frame 10
+
+**Name:** the *scene-hold skew*. `Game_ChangeScene` holds 2 frames when the scene changes and none when it does not, so
+a session level start reaches `Play_Init` 2 frames later on a game that came from another scene (the map, the title)
+than on a game still in the level's scene. The level start's audio reset begins on the level start's frame on both, so
+the voice player comes back 2 lockstep frames apart and the hash parts on `voicePlayerRunning`.
+
+Identity: ROM US 1.0 (`76924CA9`, as the co-op log names it; this worker did not read the ROM), base `1898ed4c` (the
+combined test build 6), Linux x86-64, GCC 16.2, Release (`build-release`) unless a line says Debug, OpenGL on a software
+renderer, no window, silent, two games over loopback on one PC, niced. "Speed" is `lockstep_test.py --speed`
+(`SF64_COOP_TEST_SPEED`); "load" is 8 busy loops at nice 19 beside the run, plus whatever else the PC ran (the load
+average is in each line of the run summaries, 6 to 45).
+
+Observed, the gate's failure (the run folder `<gate worktree>/local/test-lockstep-20261117-022345`, read only):
+
+- The failing session was `resume_repair`'s `late` (its folder holds `back` and `late`, no `raced`), and its games ran
+  at `test speed max` (`switches.c:133` in its `host.log`): the gate's Release lane, which `test_all.py` runs at no
+  frame limit (`tools/coop/test_all.py:453-454`). The 5 passing reruns of the issue ran at `test speed 8`.
+- Host's co-op log: the repair gives up at 20 s (`recover (reason 3)`, lockstep stopped at frame 2012); the host then
+  runs the level alone (PROTOCOL.md, Recovery) for the 4 s until the client, frozen for 24 s, is back. In those 4 s it
+  flew about 765 frames a second (path -12665 to -43299 in 1 s, speed 40 a frame), took its last three refills, went
+  down, `play -> game_over -> map`, and was on the map when `player 2 came back`. The level start of run 2 took it
+  `map -> play`. The client was still in Corneria, where it had stopped dead.
+- Run 2 parted at level frame 10: `globals: voicePlayerRunning differs in 1 of 1 bytes, first at +0: 01 vs 00` (host
+  01), `no repair of the desync at frame 10: too early in the level`, `recover (reason 3)`, run 3. Run 3 (both games
+  now in Corneria's scene) was equal to the end. Hence the third level start the check named.
+- In the passing reruns at speed 8 the host flew about 240 frames a second in the same 4 s and was still in Corneria
+  (one refill) when the client came back: both entered run 2 from Corneria's scene.
+- `Game_ChangeScene` (`src/engine/fox_game.c:140-162` on this branch): a new `gSceneId` sets a hold of 2 frames, during which
+  `Game_Update` runs no game logic (`fox_game.c:368`); the same scene holds none. `CoopLevelStart_Enter` asks for the
+  level's audio reset on its own frame (`src/port/coop/game/level_start.c`, `Map_LevelStart_AudioSpecSetup`), and the
+  voice player comes back a fixed number of frames after that (NOTES.md 2026-11-13, #289). The comment above that call
+  already said a game in the level's scene "is in step with the others only if they come from that scene too", and the
+  entry of #230 (2026-11-10, Derived) left the case as a follow-up.
+- Reproduced before the fix, `RESUME_REPAIR_ONLY=late lockstep_test.py --only resume_repair --speed max` on the base
+  build with load, 10 runs: 2 passed, 8 failed with the same three level starts. In all 8 failures the host entered run
+  2 from the map and the dump named `voicePlayerRunning`; in both passes it entered from Corneria (the load slowed it).
+- Deterministic, the new scenario `in_scene` (a client in its own Corneria by the test start when the host starts
+  Corneria from its title): on the base build it failed 2 of 2, at speed 8 and max, `the hash logs differ at level frame
+  10: globals`, `voicePlayerRunning ... 01 vs 00`.
+
+Derived:
+
+- The race is in the game's way into a level, not in the check: `resume_repair` asks for exactly two level starts, and
+  the third one was a real desync of the session's level start (caught by the desync check and healed by one more level
+  start). It shows only when the host runs out of lives in the gap, which needs a fast host: speed max, and a host not
+  slowed by load. Load made it rarer, not likelier.
+- Real play can reach it: after `SESSION_RECOVER` the host flies on alone for up to 30 s while a lost player comes back,
+  and at 60 frames a second it can run out of lives or finish the level and stand on the map; the lobby can also start a
+  level while a game is in that level's scene (#230). Before this fix the players then saw one more restart.
+- The fix: `CoopLevelStart_Enter` sets a flag that the next `Game_ChangeScene` takes (`CoopLevelStart_TakeSceneHold`,
+  a `// COOP:` call in `Game_ChangeScene`, `fox_game.c`), and the game holds its 2 frames also when the scene is the same. Every session
+  level start now takes the same frames to `Play_Init` wherever a game stood. A game whose scene changes holds as
+  before; outside a session's level start nothing changes. The check of `resume_repair` is unchanged.
+
+Verified after the fix:
+
+- `in_scene`: speed 8 and max, 2 of 2: same hash on 900 frames, no level start again.
+- `resume_repair` `late` at speed max with load, 10 runs: 10 passed; in 8 of them the host entered run 2 from the map
+  (the way that failed before).
+- The whole default `lockstep` step, `lockstep_test.py --jobs 4`: Release at speed max 78 of 78 (`in_scene` and all
+  three sessions of `resume_repair` among them), Debug at speed 8 78 of 78. `join_test.py` on Release 5 of 5.
+- `late` now says in its line where the host came from into run 2 (`the host came from the map` in a run at speed
+  max after the fix).
+
+Unknown:
+
+- Windows, two PCs, a real audio device: not run.
+- Whether a level start from the map against one from the level's scene left other state apart that a longer flight
+  would show: run 2 of `late` is compared on its frames (`SURVIVE_FRAMES`) and `in_scene` on 900, both equal.
+
 ### 2026-11-16, #262: the sign tests, the remembered beam slots and the textured lines, fixed in a session only
 
 Identity: `sf64.o2r` and `starship.o2r` as shared for this run (ROM US 1.0; this worker did not read the ROM), base
@@ -9781,7 +9852,8 @@ Derived:
 - One way in that real play can reach still leaves two games apart: one game in the level's scene when the session
   starts that level, the other from elsewhere. The lobby works in any state past the logo
   (`src/port/coop/ui/menu_game.c:27`). The way in is 2 frames shorter for the first, so the voice player starts 2
-  frames apart, and other state parts too (`rot.x` above). Not fixed here; a follow-up.
+  frames apart, and other state parts too (`rot.x` above). Not fixed here; a follow-up. [Fixed 2026-11-17, #375: every
+  session level start holds the 2 frames, see Determinism, the scene-hold skew.]
 - In co-op the hash now holds the voice clock in a level (`src/port/coop/sync/voice_clock.c`): a pair whose lines
   would end apart differs from the frames after the voice player starts, not at a radio step that may come much later.
 

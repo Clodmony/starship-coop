@@ -362,6 +362,16 @@ static void LevelStart_SettleAudio(void) {
     }
 }
 
+// Set by CoopLevelStart_Enter, taken by the next Game_ChangeScene (CoopLevelStart_TakeSceneHold).
+static bool sSceneHold = false;
+
+bool CoopLevelStart_TakeSceneHold(void) {
+    bool hold = sSceneHold;
+
+    sSceneHold = false;
+    return hold;
+}
+
 void CoopLevelStart_Enter(const CoopLevelStart* start) {
     size_t r;
     s32 i;
@@ -390,10 +400,13 @@ void CoopLevelStart_Enter(const CoopLevelStart* start) {
     // one already loaded resets nothing, and then the voice sequence runs on with the tempo where this game's own
     // history left it, so a radio line ends one frame apart on two games (#230). Going into Macbeth from the boot logo
     // or from Macbeth, for example: both use AUDIOSPEC_MA. After the reset the voice player starts over a fixed number
-    // of frames after this call. A game that is in the level's scene already gets to Play_Init 2 frames sooner
-    // (Game_ChangeScene loads no scene), so it is in step with the others only if they come from that scene too.
+    // of frames after this call. A game that is in the level's scene already would get to Play_Init 2 frames sooner
+    // (Game_ChangeScene holds only for a new scene), so it holds those 2 frames too: a host that ran on alone into its
+    // game over and the map while a lost client came back, and that client still in the level, parted at level frame
+    // 10 on the voice player (#375).
     CoopAudioTrace_Enter(start->level, start->run); // no-op unless SF64_COOP_AUDIO_TRACE is set (#289)
     LevelStart_SettleAudio();
     sAudioSpecId = AUDIOSPEC_24;
     Map_LevelStart_AudioSpecSetup((LevelId) start->level);
+    sSceneHold = true;
 }

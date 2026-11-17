@@ -79,6 +79,13 @@ void CoopLevelStart_AfterEntry(void);
 // sound was doing, which differs between two games (#289).
 void CoopLevelStart_Enter(const CoopLevelStart* start);
 
+// For Game_ChangeScene (src/engine/fox_game.c): true once after CoopLevelStart_Enter, and the game then holds its 2
+// frames of a scene change also when it is in the level's scene already. So every game takes as many frames from the
+// level start to Play_Init, wherever it was: a game on the map or at the title holds them for the new scene, and the
+// voice player, whose audio reset began on the level start's frame, comes back 2 lockstep frames apart otherwise
+// (#375, NOTES.md 2026-11-17). False outside a session's level start, so the game's own scene changes are upstream's.
+bool CoopLevelStart_TakeSceneHold(void);
+
 // Where a level start holds the first value of the game variable at `var` (one of the table in level_start.c), -1 if
 // it holds none. For the test switches, which set a value by its variable and not by a place that moves.
 int32_t CoopLevelStart_ValueIndex(const void* var);

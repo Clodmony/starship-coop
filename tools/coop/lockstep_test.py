@@ -75,6 +75,8 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   zero_seed a seed zeroed on both clients: no clock read, so they stay equal.
   reset     a client flew Corneria alone, took a hit on a wing and went back to the title through the reset (F4), in the
             same process: the session's level is equal from frame 0 on (#187).
+  in_scene  a client still in its own Corneria when the session starts Corneria from the host's title: both hold the 2
+            frames of a scene change, equal from frame 0 on (#375; before, level frame 10, the voice player).
   slow      one game takes much longer on some frames: the other one waits, and nothing differs.
   poke      a bit flipped on one client shows at exactly that frame, and nowhere before.
   lag       the clients talk through the chaos relay, with lag, jitter and a little loss.
@@ -4252,6 +4254,35 @@ def sc_reset(args, folder):
             f"session's level")
 
 
+IN_SCENE_CONNECT_FRAME = 400  # the client's frame to join at: in its own Corneria, past the test start's 40 title frames
+
+
+def sc_in_scene(args, folder):
+    """#375: a client that is in the level's scene when the session's level start comes, the host at its title. The
+    host holds Game_ChangeScene's 2 frames for the new scene, the client is in Corneria's scene already; before the fix
+    it got to Play_Init 2 frames sooner, its voice player came back 2 lockstep frames later than the host's, and the
+    games parted at level frame 10 in `globals` (voicePlayerRunning). The same way in as a host that ran on alone into
+    its game over and the map while a lost client came back still in the level (`resume_repair`'s `late` at no frame
+    limit). CoopLevelStart_Enter now holds the 2 frames on every game: equal from frame 0 on."""
+    client_env = {"SF64_COOP_TEST_START_LEVEL": "0", "SF64_COOP_TEST_START_SKIP_INTRO": "1",
+                  "SF64_COOP_TEST_START_TITLE_FRAMES": "40", "SF64_COOP_JOIN_CONNECT_FRAME": str(IN_SCENE_CONNECT_FRAME)}
+    host, client = run_short(args, folder, frames=RESET_FRAMES,
+                             host_env={"SF64_COOP_JOIN_START_FRAME": str(RESET_START_FRAME)}, client_env=client_env)
+    _, rows = hash_check.read_log(client.run / "state-hash.txt")
+    running = join_test.said(client.report(), "level_running")
+    expect(running, "the client never got to the session's level")
+    before = [row[1] for row in rows if row[0] < int(running[0]["frame"])]
+    # Its own Corneria runs on up to the session's level start, with no title between (the title is GS_TITLE).
+    alone = next((i for i, state in enumerate(reversed(before)) if state != replay_tool.GS_PLAY), len(before))
+    expect(alone >= IN_SCENE_CONNECT_FRAME // 2,
+           f"the client was in its own level for {alone} frames up to the session's level start, want it in the level")
+    frames = compare(host, client, RESET_FRAMES)
+    for game in (host, client):
+        expect(not join_test.said(game.report(), "recover"), f"{game.name} was told to start again")
+    return (f"a client in its own Corneria for {alone} frames up to the session's level start, the host from its title: "
+            f"same hash on {frames} frames of the session's level, no level start again")
+
+
 def sc_slow(args, folder):
     host, client = run_short(args, folder, client_env={"SF64_COOP_LOCKSTEP_SLOW": "40:150"})
     frames = compare(host, client, SHORT_FRAMES)
@@ -5379,8 +5410,12 @@ def sc_resume_repair(args, folder):
         way_back, own_end, _ = resume_repair_order(theirs)
         order = ("the client was on its way back when its own repair gave up" if own_end is None or way_back < own_end
                  else "the client's own repair gave up before it was on its way back")
+        # At no frame limit the host, alone in the 4 s between its repair's give-up and the client's return, often runs
+        # out of lives and stands on the map: the way into run 2 that parted it at level frame 10 before #375.
+        came = "the map" if any("game state map -> play" in line for line in ours) else "the level"
         said.append(f"Gone 24 s: the host's repair gave up first (`{gave_up[0].split('repair failed: ', 1)[-1][:90]}`), "
-                    f"the level started again once the client was back ({order}), equal on {frames} frames.")
+                    f"the level started again once the client was back ({order}; the host came from {came}), equal on "
+                    f"{frames} frames.")
     if not only or "raced" in only.split(","):
         frames, ours, theirs = resume_repair_run(args, folder / "raced", 15, host_held_s=6.5)
         way_back, own_end, welcome = resume_repair_order(theirs)
@@ -7718,6 +7753,7 @@ SCENARIOS = {
     "save": sc_save,
     "zero_seed": sc_zero_seed,
     "reset": sc_reset,
+    "in_scene": sc_in_scene,
     "slow": sc_slow,
     "lag": sc_lag,
     "delay": sc_delay,

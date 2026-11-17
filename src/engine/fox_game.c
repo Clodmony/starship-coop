@@ -8,6 +8,7 @@
 #include "port/mods/PortEnhancements.h"
 #include "port/coop/game/players.h" // COOP: the local player is drawn (#96)
 #include "port/coop/game/view.h"    // COOP
+#include "port/coop/game/level_start.h" // COOP: the scene hold of a level start (#375)
 
 f32 gNextVsViewScale;
 f32 gVsViewScale;
@@ -141,8 +142,9 @@ bool Game_ChangeScene(void) {
     static u8 sSceneSelect = SCENE_LOGO;
     static u8 sCurrentSceneId = SCENE_LOGO;
     static u8 sCurrentSetup = SCENE_LOGO;
+    bool coopHold = CoopLevelStart_TakeSceneHold(); // COOP: a session's level start holds as a new scene does (#375)
 
-    if (gSceneId != sCurrentSceneId) {
+    if ((gSceneId != sCurrentSceneId) || coopHold) { // COOP: was gSceneId != sCurrentSceneId
         sHoldTimer = 2;
         sCurrentSceneId = gSceneId;
     }
