@@ -95,6 +95,11 @@ static s32 CoopPilotAim_Gorgon(const Boss* b, s32* boxes) {
 
 // Andross (src/overlays/ovl_i6/fox_andross.c, Andross_8018D2B0): his hands, hitbox entries 2 and 3, take hits until
 // each has lost its 200 (swork[4], swork[5]); after both, only his eyes, entries 0 and 1, take hits.
+// With one hand down, his eyes come after the hand still up (#28, 4 players, 2026-11-16): once the right hand was down
+// his attacks went 2, 5, 17 over and over, the left hand resting some 1400 to -x and 650 under the path, out of every
+// pilot's reach, and it stayed at 110 for 16000 frames. Hits on his eyes (swork[6], in a state under 11 or 12) groan
+// him into state 12 or 13 and then 7, where the hands come up in reach (the hands lost most of their health there in
+// that run). The eyes are not offered in those states, so that the hand gets every shot then.
 static s32 CoopPilotAim_Andross(const Boss* b, s32* boxes) {
     s32 n = 0;
 
@@ -108,6 +113,10 @@ static s32 CoopPilotAim_Andross(const Boss* b, s32* boxes) {
     }
     if (b->swork[5] >= 0) {
         boxes[n++] = 3;
+    }
+    if ((n == 1) && (b->state != 7) && ((b->state < 12) || (b->state > 14))) {
+        boxes[n++] = 0;
+        boxes[n++] = 1;
     }
     return n;
 }
@@ -366,7 +375,11 @@ static bool CoopPilotAim_BombsAt(const Boss* b) {
     }
     switch (b->obj.id) {
         case OBJ_BOSS_AND_ANDROSS:
-            return (b->state >= 2) && (b->state <= 10);
+            // And in his inhale (state 17), a bomb that it pulls into his mouth unset chokes him (state 15 with
+            // swork[8] 2, then 18) and nobody is swallowed (#28, 2026-11-16: with four pilots a swallowed player was
+            // spat out on every inhale, the ships went up to the path's ceiling, pathHeight 612, and the short state 2
+            // after it, the only one in which his eyes took hits there, was over before they came down to them).
+            return ((b->state >= 2) && (b->state <= 10)) || (b->state == 17);
         case OBJ_BOSS_ZO_SARUMARINE:
             return (b->state == 3) || (b->state == 5);
         default:
@@ -405,12 +418,16 @@ bool CoopPilot_RailBomb(const Player* p, s32 i) {
         }
         if ((bomb->obj.status == SHOT_ACTIVE) && (bomb->obj.id == PLAYERSHOT_BOMB) && (bomb->unk_5C == 0) &&
             (bomb->sourceId == i)) {
-            // Where the bomb will be when the press reaches the game: 3 frames are some 540 units at its speed.
-            return (bomb->timer < 25) &&
+            // Where the bomb will be when the press reaches the game: 3 frames are some 540 units at its speed. A
+            // bomb in Andross' inhale is not set off: the inhale takes it to his mouth (Andross_AndAndross_Update).
+            return (bomb->timer < 25) && !((b->obj.id == OBJ_BOSS_AND_ANDROSS) && (b->state == 17)) &&
                    ((bomb->obj.pos.z + bomb->vel.z * CoopPilotAim_Delay()) < (b->obj.pos.z + 100.0f));
         }
+        // In his inhale at once: it can begin with the ships some 460 from his face, and swallow one 18 frames later
+        // (#28, four pilots, 2026-11-16), so a bomb that waits for 1200 never goes.
         if ((bomb->obj.status == SHOT_FREE) && (gBombCount[i] > 0) && (i == 0) &&
-            ((p->trueZpos - b->obj.pos.z) > 1200.0f)) {
+            ((p->trueZpos - b->obj.pos.z) >
+             (((b->obj.id == OBJ_BOSS_AND_ANDROSS) && (b->state == 17)) ? AIM_AHEAD_MIN : 1200.0f))) {
             return true;
         }
     }
@@ -433,8 +450,9 @@ bool CoopPilot_RailBomb(const Player* p, s32 i) {
             }
             return (t->box == 0) && (b->fwork[29] < 30.0f);
         case OBJ_BOSS_AND_ANDROSS:
-            // Lined up with a hand, the other players' bombs as well, as long as they last.
-            return ((b->swork[4] >= 0) || (b->swork[5] >= 0)) && (b->state >= 2) && (b->state <= 7) &&
+            // Lined up with a hand, the other players' bombs as well, as long as they last (a hand, not the eyes his
+            // table offers after one: #28).
+            return (t->box >= 2) && ((b->swork[4] >= 0) || (b->swork[5] >= 0)) && (b->state >= 2) && (b->state <= 7) &&
                    ((p->trueZpos - b->obj.pos.z) > 1200.0f);
         default:
             return false;
