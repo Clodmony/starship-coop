@@ -207,6 +207,11 @@ static void CoopPlayers_PlaceBesidePlayer0(s32 i) {
 // Player i joins for the first time in this Play_Init. Player_Setup is not run for it: besides the player struct it
 // resets level-wide state (radio, music, the level start screen, intro flags), which would disturb player 0. So the
 // per-player arrays that Player_Setup fills for its player index are copied from player 0 instead.
+//
+// Not gLaserStrength: Player_Setup does not fill it, it is what a player brings along from the level before, and each
+// player keeps its own (decision 0007 rule 14, #380). With the copy every player began every level with player 0's
+// upgrades and without its own. The places that take the upgrade away are CoopPlayers_SetDown and
+// CoopPlayers_SingleLasers.
 static void CoopPlayers_JoinFromPlayer0(s32 i) {
     CoopPlayers_PlaceBesidePlayer0(i);
 
@@ -228,7 +233,6 @@ static void CoopPlayers_JoinFromPlayer0(s32 i) {
     COPY_FROM_0(D_ctx_801779A8);
     COPY_FROM_0(gMuzzleFlashScale);
     COPY_FROM_0(gShieldAlpha);
-    COPY_FROM_0(gLaserStrength);
     COPY_FROM_0(gBombCount);
     COPY_FROM_0(gLifeCount);
 #undef COPY_FROM_0
@@ -469,6 +473,9 @@ int32_t CoopPlayers_RefillFox(Player* player) {
 static void CoopPlayers_SetDown(s32 i) {
     sSlot[i] = COOP_SLOT_DOWN;
     sReturnTimer[i] = COOP_RETURN_FRAMES;
+    // The upgrade goes with the ship (0007 rules 4 and 14), here and not only at the return: a player still down when
+    // the level ends comes back at the next Play_Init for free, where nothing else would take it.
+    gLaserStrength[i] = LASERS_SINGLE;
     gPlayer[i].draw = false;
     Audio_StopPlayerNoise(i);
 }
@@ -652,6 +659,17 @@ int32_t CoopPlayers_OnPlayerDown(Player* player) {
     CoopPlayers_SetDown(i);
     CoopTeam_OnPlayerDown(i);
     return 1;
+}
+
+void CoopPlayers_SingleLasers(void) {
+    s32 i;
+
+    if (!CoopPlayers_IsCoop()) {
+        return;
+    }
+    for (i = 1; i < COOP_PLAYERS_MAX; i++) {
+        gLaserStrength[i] = LASERS_SINGLE;
+    }
 }
 
 int32_t CoopPlayers_SkipLowHealthMsg(Player* player) {

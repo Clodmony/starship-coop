@@ -104,6 +104,16 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   map_saves_host_full the same with the host's save all cleared and the client's blank: the clear was the host's
             before, so it is not earned and the client's save does not get it.
   map_saves_equal the same with one save on both, all cleared.
+  own_lasers each player keeps its own laser strength from level to level (decision 0007 rule 14, #380): pilots fly
+            Corneria, player 0 takes a laser item, the map starts the next level, and when player 1 joins there player
+            0 still has twin lasers and player 1 a single one, on both games; before, a player joined every level with
+            a copy of player 0's. Long, by name.
+  own_lasers_other the other way round: player 1 holds hyper lasers before it joins the next level and keeps them
+            beside a player 0 on a single laser. Long, by name.
+  own_lasers_down a player 2-4 that goes down is single from that frame on, through its return, and player 0 keeps
+            its upgrade.
+  own_lasers_restart player 0 goes down in a level closed for the refill: the team's restart takes every player's
+            upgrade, as the original takes Fox's.
   save_kept what a session earns (decision 0017, K2, #373): two games with two different saves (the host's has Meteo,
             the client's Katina and its own sound settings) fly Corneria to its clear, and the session ends on the
             map. Each save file afterwards is the one from before but for Corneria's byte and the checksum, in the save
@@ -4191,6 +4201,163 @@ def sc_map_saves_equal(args, folder):
     return map_saves_run(args, folder, both, both, "both all cleared")
 
 
+OWN_LASERS_NEXT = 1500  # frames into the level after the map: player 1 joins once player 0 flies there, and some more
+OWN_LASERS_AFTER = 60  # frames after that join at which the lasers are read again
+TWIN, HYPER = 1, 2  # LASERS_TWIN, LASERS_HYPER, include/sf64player.h
+
+
+def lasers_story(game):
+    """From a game's trace: gLaserStrength of players 0 and 1 on Corneria's last frame, on the next level's first, on
+    the frame player 1 joins there and OWN_LASERS_AFTER frames later, with that level and how many frames into it the
+    join came."""
+    rows = player_trace.parse(game.run / "trace.txt")
+    first = [r for r in rows if r.level == 0]
+    later = rows[len(first):]
+    expect(first and later and later[0].level != 0, f"{game.name}: its trace does not go from Corneria into a next level")
+    later = [r for r in later if r.level == later[0].level]
+    joined = next((i for i, r in enumerate(later) if len(r.players) > 1 and not r.players[1].parked), None)
+    expect(joined is not None and joined + OWN_LASERS_AFTER < len(later),
+           f"{game.name}: player 1 did not join in {len(later)} frames of level {later[0].level} with "
+           f"{OWN_LASERS_AFTER} to spare (joined at {joined}), so this run shows nothing")
+    return {"level": later[0].level, "joined": joined, "end": first[-1].lasers[:2], "start": later[0].lasers[:2],
+            "join": later[joined].lasers[:2], "after": later[joined + OWN_LASERS_AFTER].lasers[:2]}
+
+
+def own_lasers_flight(args, folder, env):
+    """Pilots fly Corneria into the next level with env on both games. Returns what compare() and lasers_story() say:
+    the frames compared, the host, and the story, which both games must tell alike."""
+    host, client, frames = fly(args, folder, extra_env=env, next_level=OWN_LASERS_NEXT)
+    equal = compare(host, client, frames)
+    stories = [lasers_story(game) for game in (host, client)]
+    expect(stories[0] == stories[1], f"the two games tell two stories: host {stories[0]}, client {stories[1]}")
+    return equal, host, stories[0]
+
+
+def own_lasers_text(equal, host, story):
+    return (f"equal on {equal} frames, Corneria to the map at {host.at_map}, level {story['level']} at {host.at_next}; "
+            f"lasers of players 0 and 1 on both games: {story['end']} on Corneria's last frame, {story['start']} at "
+            f"the next level's start, {story['join']} when player 1 joins {story['joined']} frames into it, "
+            f"{story['after']} {OWN_LASERS_AFTER} frames later")
+
+
+def sc_own_lasers(args, folder):
+    """#380, decision 0007 rule 14: each player keeps its own laser strength from level to level; what the owner saw.
+    Two games with pilots fly Corneria; on frame LASER_AT player 0 (the host's Fox, "player 1" to a person) gets a
+    laser item put in its way (SF64_COOP_LOCKSTEP_ITEM) and takes it. The level is cleared, the map starts the next
+    level, player 1 joins there once player 0 flies, and on both games each player's gLaserStrength is what it was on
+    Corneria's last frame: twin for player 0, single for player 1. Before the fix player 1 joined every level with a
+    copy of player 0's (CoopPlayers_JoinFromPlayer0). Hashes and lockstep logs equal on every frame."""
+    equal, host, story = own_lasers_flight(args, folder, {"SF64_COOP_LOCKSTEP_ITEM": f"{LASER_AT}:0"})
+    placed = join_test.said(host.sync(), "item")
+    expect(placed and placed[0]["player"] == "0", "no laser item was put in player 0's way")
+    expect(story["end"] == [TWIN, 0],
+           f"the players ended Corneria with the lasers {story['end']}, not twin for player 0 (the item) and single for "
+           f"player 1, so this run shows nothing")
+    for at in ("start", "join", "after"):
+        expect(story[at] == story["end"],
+               f"lasers {story['end']} on Corneria's last frame, {story[at]} at `{at}` in level {story['level']} "
+               f"(start {story['start']}, player 1's join {story['join']} at frame {story['joined']}, "
+               f"{OWN_LASERS_AFTER} frames later {story['after']}): a player did not keep its own")
+    return own_lasers_text(equal, host, story)
+
+
+METEO = 1  # LEVEL_METEO: the level the map starts after Corneria's clear
+
+
+def sc_own_lasers_other(args, folder):
+    """#380, the other way round: an upgrade of player 1's own is not replaced by player 0's. The flight of own_lasers
+    without the item, so player 0 stays single; once the next level is the current one, on its first frame and long
+    before player 1 joins, player 1 is given hyper lasers (SF64_COOP_VIEW_POKE with @level: the pilot's player 1
+    breaks a wing in Corneria, so an upgrade given there would not last to the level's end). When it joins it still
+    has them and player 0 is still single, on both games. Before the fix the join set player 1 back to player 0's
+    single laser."""
+    env = {"SF64_COOP_VIEW_TRACE": "view-trace.txt", "SF64_COOP_VIEW_POKE": f"0:1:lasers:{HYPER}@{METEO}"}
+    equal, host, story = own_lasers_flight(args, folder, env)
+    expect(story["level"] == METEO and story["joined"] > 1,
+           f"the next level is {story['level']} and player 1 joined {story['joined']} frames into it: the poke waits "
+           f"for level {METEO} and has to land before the join, so this run shows nothing")
+    expect(story["end"] == [0, 0],
+           f"lasers {story['end']} on Corneria's last frame, want single for both, so this run shows nothing")
+    for at in ("start", "join", "after"):
+        expect(story[at] == [0, HYPER],
+               f"lasers {story[at]} at `{at}` in level {story['level']} (start {story['start']}, player 1's join "
+               f"{story['join']} at frame {story['joined']}, {OWN_LASERS_AFTER} frames later {story['after']}), want "
+               f"single for player 0 and the hyper lasers player 1 was given on the level's first frame")
+    return own_lasers_text(equal, host, story) + "; player 1 got its hyper lasers on that level's first frame"
+
+
+OWN_LASERS_PLAN = {"pool": JOIN_FRAME + 50, "downs": (JOIN_FRAME + 100,), "fox": JOIN_FRAME + 110, "life": None,
+                   "frames": SHORT_FRAMES, "jump": None}
+
+
+def own_lasers_rows(game):
+    """Corneria's trace rows with two players, in the order the game wrote them."""
+    return [r for r in player_trace.parse(game.run / "trace.txt") if r.level == 0 and len(r.players) > 1]
+
+
+def sc_own_lasers_down(args, folder):
+    """#380, decision 0007 rules 4 and 14: a player that goes down loses its laser upgrade, and nobody else does.
+    Player 0 is given twin lasers and player 1 hyper, the pool one life, and player 1 goes down. On both games player
+    1's gLaserStrength is single from the frame it is out, through the return, and player 0's stays twin. Before the
+    fix it stayed hyper until the return: a player still down at the level's end would have taken it along to the next
+    level's free return."""
+    plan = OWN_LASERS_PLAN
+    pool, down = plan["pool"], plan["downs"][0]
+    pokes = f"{pool}:0:lives:1,{pool}:0:lasers:{TWIN},{pool}:1:lasers:{HYPER},{down}:1:down:4"
+    host, client, _ = run_return(args, folder, plan, pokes)
+    frames = compare(host, client, plan["frames"])
+    said = []
+    for game in (host, client):
+        rows = own_lasers_rows(game)
+        by_frame = {r.frame: r for r in rows}
+        expect(down in by_frame and not by_frame[down].players[1].parked and by_frame[down].lasers[:2] == [TWIN, HYPER],
+               f"{game.name}: on frame {down}, before the down, the lasers are "
+               f"{by_frame[down].lasers if down in by_frame else None}, want twin and hyper with player 1 flying")
+        out = [r for r in rows if r.frame > down and r.players[1].parked]
+        expect(out and out[0].frame == down + 1, f"{game.name}: player 1 was not out from frame {down + 1}")
+        kept = [(r.frame, r.lasers[:2]) for r in rows if r.frame > down and r.lasers[:2] != [TWIN, 0]]
+        expect(not kept, f"{game.name}: lasers {kept[0][1] if kept else None} on frame {kept[0][0] if kept else None} "
+                         f"after player 1 went down at {down + 1}, want twin for player 0 and single for player 1 on "
+                         f"every frame from there")
+        back = next((r.frame for r in rows if r.frame > down + 1 and not r.players[1].parked), None)
+        expect(back is not None, f"{game.name}: player 1 never came back, so the return is not in this run")
+        said.append(f"{game.name}: [1, 2] on frame {down}, [1, 0] from {down + 1} (out) through the return at {back} "
+                    f"to frame {rows[-1].frame}")
+    return f"equal on {frames} frames; lasers of players 0 and 1: " + "; ".join(said)
+
+
+def sc_own_lasers_restart(args, folder):
+    """#380, decision 0007 rule 14: where the original takes Fox's upgrade away for a new start, every player's goes.
+    Player 0 is given twin lasers and player 1 hyper, then player 0 goes down in a level closed for the refill
+    (SF64_COOP_TEST_FOX_REFILL_OFF) with one life in the pool: the level restarts for the team, and on both games both
+    players are single from the restart on, player 1 through its join too. Player 1 never went down. Without the call
+    at the restart player 1 would join with its hyper lasers beside a Fox who lost his."""
+    plan = OWN_LASERS_PLAN
+    pool, fox = plan["pool"], plan["fox"]
+    pokes = f"{pool}:0:lives:1,{pool}:0:lasers:{TWIN},{pool}:1:lasers:{HYPER},{fox}:0:down:4"
+    host, client, _ = run_return(args, folder, plan, pokes, both={"SF64_COOP_TEST_FOX_REFILL_OFF": "1"})
+    frames = compare(host, client, plan["frames"])
+    said = []
+    for game in (host, client):
+        rows = own_lasers_rows(game)
+        restart = next((n for n in range(1, len(rows)) if rows[n].frame < rows[n - 1].frame), None)
+        expect(restart is not None, f"{game.name}: the level did not restart after player 0 went down")
+        before, after = rows[:restart], rows[restart:]
+        at_fox = next((r for r in before if r.frame == fox), None)
+        expect(at_fox is not None and at_fox.lasers[:2] == [TWIN, HYPER] and not at_fox.players[1].parked,
+               f"{game.name}: on frame {fox}, before player 0 went down, the lasers are "
+               f"{at_fox.lasers if at_fox else None}, want twin and hyper with player 1 flying")
+        joined = next((r for r in after if not r.players[1].parked), None)
+        expect(joined is not None and len([r for r in after if r.frame > joined.frame]) >= OWN_LASERS_AFTER,
+               f"{game.name}: player 1 did not join after the restart with {OWN_LASERS_AFTER} frames to spare")
+        kept = [(r.frame, r.lasers[:2]) for r in after if r.lasers[:2] != [0, 0]]
+        expect(not kept, f"{game.name}: lasers {kept[0][1] if kept else None} on frame {kept[0][0] if kept else None} "
+                         f"after the restart, want single for both on every frame")
+        said.append(f"{game.name}: [1, 2] on frame {fox}, the level restarted after frame {before[-1].frame}, [0, 0] "
+                    f"on all {len(after)} frames after it, player 1 joined on restart frame {joined.frame}")
+    return f"equal on {frames} frames; lasers of players 0 and 1: " + "; ".join(said)
+
+
 SAVE_KEPT_MAP = 300  # frames of the map after Corneria: Map_Setup_Play has set the flags and called Save_Write
 SAVE_KEPT_EARLY = 600  # lockstep frames of Corneria before the session that ends early
 
@@ -8015,6 +8182,10 @@ SCENARIOS = {
     "map_saves": sc_map_saves,
     "map_saves_host_full": sc_map_saves_host_full,
     "map_saves_equal": sc_map_saves_equal,
+    "own_lasers": sc_own_lasers,
+    "own_lasers_other": sc_own_lasers_other,
+    "own_lasers_down": sc_own_lasers_down,
+    "own_lasers_restart": sc_own_lasers_restart,
     "save_kept": sc_save_kept,
     "save_kept_host_had": sc_save_kept_host_had,
     "save_kept_none": sc_save_kept_none,
@@ -8093,6 +8264,7 @@ LONG += ("escape_look",)  # five sessions in Andross' escape: the explosions hit
 LONG += ("inhale_four",)  # two sessions of four games at Andross' face (#330)
 LONG += ("resume_map", "resume_level")  # a flight of Corneria to the map and into the next level each (#262)
 LONG += ("save_kept", "save_kept_host_had", "save_kept_window")  # a flight of Corneria to the map each (#373)
+LONG += ("own_lasers", "own_lasers_other")  # a flight of Corneria to the map and into the next level each (#380)
 # #329: of the rule scenarios with more players the default run has the four-player ones of the three that are in it
 # with two (aim_four, macbeth_bombs_four, ma_turret_four: a third and a fourth player in one session each, 26, 104 and
 # 49 s with other runs beside them). The three-player ones and those of the long scenarios are by name.

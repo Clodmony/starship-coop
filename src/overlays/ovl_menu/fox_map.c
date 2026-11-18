@@ -17,6 +17,7 @@
 #include "assets/ast_font_3d.h"
 #include "port/interpolation/FrameInterpolation.h"
 #include "port/mods/PortEnhancements.h"
+#include "port/coop/game/players.h" // COOP: every player's lasers at a retry (#380)
 
 extern bool gBackToMap;
 
@@ -3639,6 +3640,7 @@ void Map_RetryCourse(void) {
     }
 
     gLaserStrength[gPlayerNum] = 0;
+    CoopPlayers_SingleLasers(); // COOP: the retry is the team's (0007 rule 14, #380)
     gBombCount[gPlayerNum] = 3;
 
     if (sPlanets[sCurrentPlanetId].dest1 != PLANET_NONE) {

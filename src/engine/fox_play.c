@@ -4936,6 +4936,7 @@ void Player_Setup(Player* playerx) {
             gStarWolfTeamAlive[j] = gSavedStarWolfTeamAlive[j] = true;
         }
         gLaserStrength[gPlayerNum] = LASERS_SINGLE;
+        CoopPlayers_SingleLasers(); // COOP: players 2-4 start a new game single too (0007 rule 14, #380)
         gGoldRingCount[0] = gSavedGoldRingCount[0] = gTotalHits = 0;
         gLifeCount[gPlayerNum] = CoopScore_StartLives(); // COOP: was 2; 1 more per extra human (0007 rule 1, #14)
         gBombCount[gPlayerNum] = 3;
@@ -6188,6 +6189,7 @@ void Player_Update(Player* player) {
                                 }
                                 gBombCount[gPlayerNum] = 3;
                                 gLaserStrength[gPlayerNum] = LASERS_SINGLE;
+                                CoopPlayers_SingleLasers(); // COOP: the restart is the team's (0007 rule 14, #380)
                                 gLoadLevelObjects = true;
                                 gDrawMode = DRAW_NONE;
                             }

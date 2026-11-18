@@ -33,8 +33,10 @@
 //
 // SF64_COOP_VIEW_POKE changes the game on chosen frames, to give two players different numbers. Both clients of a test
 // get the same list, so they stay one game: <frame>:<player>:<what>:<value>,... with what one of shields, bombs, lives,
-// boost, hit (Player_ApplyDamage, direction 0), down (Player_Down follows) or guns (laserGunsYpos, -10 for the laser
-// guns fully out; the one value with a fraction, such as -9.5). Frames are gGameFrameCount, applied after that frame.
+// boost, hit (Player_ApplyDamage, direction 0), down (Player_Down follows), guns (laserGunsYpos, -10 for the laser
+// guns fully out; the one value with a fraction, such as -9.5) or lasers (gLaserStrength: 0 single, 1 twin, 2 hyper;
+// #380). Frames are gGameFrameCount, applied after that frame. With @<level> behind the value a poke waits for that
+// gCurrentLevel, so it can land in the level a session flies next: 100:1:lasers:2@1 is frame 100 of Meteo.
 //
 // SF64_COOP_TEST_NAMES=<name 0>,<name 1>,... gives the players these names, as a session would (names.h), with or
 // without a trace. An empty entry is no name.
