@@ -326,6 +326,9 @@ void Memora_DrawParts(MeMora* this, f32 xTrans, f32 yTrans, f32 zTrans, f32 xRot
                 this->lockOnTimers[TEAM_ID_FOX] = 0;
             }
         }
+        if (partIdx == 0) {
+            CoopView_PlaceLockMarks(this->lockOnTimers, this->info.targetOffset); // COOP: players 1 and up (#379)
+        }
     } else {
         RCP_SetupDL_60(gFogRed, gFogGreen, gFogBlue, gFogAlpha, gFogNear, gFogFar);
     }

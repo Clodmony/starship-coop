@@ -8000,12 +8000,12 @@ def lock_marks_run(args, folder, level, name, frames):
     """Each player charges, locks on and fires in turn (#379). Each game draws the lock-on mark of the player it looks
     through and of no other, on every frame that player holds a lock-on on something in front of its camera, and every
     new mark settles: scale and turn reach their rest within LOCK_SETTLE frames. Hashes equal on every frame."""
-    traces = {"host": folder / "host-view.txt", "client": folder / "client-view.txt"}
+    traces = {"host": folder / "host-view.txt", "client0": folder / "client0-view.txt"}
     host_env = {"SF64_COOP_VIEW_TRACE": str(traces["host"])}
     if level is not None:
         host_env["SF64_COOP_JOIN_LEVEL"] = str(level)
     host, client = run_short(args, folder, script=charge_in_turn, frames=frames, host_env=host_env,
-                             client_env={"SF64_COOP_VIEW_TRACE": str(traces["client"])})
+                             client_env={"SF64_COOP_VIEW_TRACE": str(traces["client0"])})
     equal = compare(host, client, frames)
     found = []
     for game, own in ((host, 0), (client, 1)):
