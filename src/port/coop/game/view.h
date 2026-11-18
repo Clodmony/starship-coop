@@ -72,6 +72,12 @@ void CoopView_FillColor(int32_t* red, int32_t* green, int32_t* blue);
 void CoopView_SeePlayer(const struct Player* player);
 void CoopView_DrawShieldBars(void);
 
+// The lock-on mark of players 1 and up (#379). gCamCount stays 1 in co-op, so the game's draw code places and draws
+// the mark of slot 0 only. PlaceLockMarks puts every other player's lock-on on the object being drawn into
+// gLockOnTargetViewPos, as the game does for slot 0: `targetOffset` up from the origin of gGfxMatrix, in the camera
+// drawn. A draw value only: nothing the simulation reads, and the lock-on runs down as before. Outside co-op nothing.
+void CoopView_PlaceLockMarks(const uint8_t* lockOnTimers, float targetOffset);
+
 // What still followed player 0 on every client (#140). All of it is for this client's eyes and ears; none of it writes
 // what the simulation reads.
 //
@@ -106,6 +112,11 @@ int32_t CoopView_TagBox(int32_t index, float* box, float* bar, int32_t* place);
 float CoopView_TagLift(int32_t index);
 // The last heat alarm settings of this frame, nonzero if any were set; clears them.
 int32_t CoopView_HeatAlarmSet(int32_t* shields, int32_t* heightParam);
+// Display_LockOnIndicator drew player `index`'s lock-on mark on this frame at `viewPos` (camera drawn), with the
+// settle animation at `scale` (3 on a new lock, down to 1) and `turn` degrees (300, down to 0). Take: nonzero when
+// it was drawn since the last call, with what it was drawn with; clears it (#379).
+void CoopView_NoteLockMark(int32_t index, const Vec3f* viewPos, float scale, float turn);
+int32_t CoopView_TakeLockMark(int32_t index, Vec3f* viewPos, float* scale, float* turn);
 // How many billboards were drawn facing this client's own eye in place of player 0's since the last call; billboards:
 // how many were drawn at all.
 int32_t CoopView_TakeTurned(int32_t* billboards);

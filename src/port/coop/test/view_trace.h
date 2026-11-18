@@ -28,6 +28,11 @@
 //                                       player 0's, of all drawn (#140)
 //   hudlives=<n>                        the lives number the HUD drew this frame (HUD_LivesCount2_Draw, #335), - for
 //                                       none
+//   marks=<player>:<x>,<y>,<z>,<scale>,<turn>;...  the lock-on marks drawn this frame (Display_LockOnIndicator, #379):
+//                                       place in the camera drawn, the settle animation's scale (3 on a new lock, 1
+//                                       settled) and turn in degrees (300 on a new lock, 0 settled); - for none
+//   locks=<n>,...                       per player, the active actors it holds a lock-on on (lockOnTimers)
+//   charge=<n>,...                      per player, gChargeTimers (20 and up: charged, the reticle turns red)
 //   sfx=<id>@<source>,...               sound requests of this frame, - for none. The source is d for the default
 //                                       source, p<i> for player i and o for anything else
 //

@@ -1716,8 +1716,8 @@ void Display_LockOnIndicator(void) {
     s32 j;
     f32 var_fs0;
 
-    for (i = 0; i < gCamCount; i++) {
-        // COOP: slot 0 is player 0's lock-on, which only its own client shows (#30)
+    for (i = 0; i < CoopPlayers_Count(); i++) { // COOP: was gCamCount; every player's mark (#379)
+        // COOP: a player's lock-on shows only on the client that looks through it (#30)
         if ((gLockOnTargetViewPos[i].z < 0.0f) && CoopPlayers_IsViewed(i)) {
             var_fs0 = VEC3F_MAG(&gLockOnTargetViewPos[i]);
             if (var_fs0 < 20000.0f) {
@@ -1747,10 +1747,12 @@ void Display_LockOnIndicator(void) {
                 gSPDisplayList(gMasterDisp++, D_1024F60);
                 Matrix_Pop(&gGfxMatrix);
                 FrameInterpolation_RecordCloseChild();
+                // COOP: what was drawn, for the view trace (#379)
+                CoopView_NoteLockMark(i, &gLockOnTargetViewPos[i], D_display_801615B8[i], D_display_801615A8[i]);
             }
         }
     }
-    for (j = 0; j < gCamCount; j++) {
+    for (j = 0; j < CoopPlayers_Count(); j++) { // COOP: was gCamCount (#379)
         gLockOnTargetViewPos[j].x = gLockOnTargetViewPos[j].y = 0.f;
         gLockOnTargetViewPos[j].z = 100.0f;
     }

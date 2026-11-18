@@ -77,6 +77,9 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
             same process: the session's level is equal from frame 0 on (#187).
   in_scene  a client still in its own Corneria when the session starts Corneria from the host's title: both hold the 2
             frames of a scene change, equal from frame 0 on (#375; before, level frame 10, the voice player).
+  lock_marks each player charges and fires the guided shot in turn on Corneria's rails (#379): each game draws the
+            lock-on mark of the player it looks through and no other, and every new mark settles on its target.
+  lock_marks_all_range the same on Katina, all-range.
   slow      one game takes much longer on some frames: the other one waits, and nothing differs.
   poke      a bit flipped on one client shows at exactly that frame, and nowhere before.
   lag       the clients talk through the chaos relay, with lag, jitter and a little loss.
@@ -7958,6 +7961,100 @@ def sc_hud_lives(args, folder):
     return "; ".join(found)
 
 
+# ---- #379: the lock-on mark of players 1 and up ----
+
+LOCK_HOLD, LOCK_GAP = 120, 20  # frames of A held to charge and lock on, then let go: the guided shot leaves
+LOCK_MIN_LOCKED = 20  # frames with a lock-on of each player at the least; a run had (see NOTES.md, #379)
+LOCK_SETTLE = 30  # frames from a new lock-on's first mark until it has settled: scale 3 -> 1 by at most 0.2 a frame,
+# turn 300 -> 0 by at most 20 (Display_LockOnIndicator, src/engine/fox_display.c), about 20 frames
+LOCK_SETTLED_SCALE, LOCK_SETTLED_TURN = 1.01, 1.0
+
+
+def charge_in_turn(frame, player):
+    """sway, but players 0 and 1 hold A to charge and lock on, half a cycle apart, and let go to fire the guided shot."""
+    _, x, y = sway(frame, player)
+    if frame < JOIN_FRAME:
+        return 0, 0, 0
+    phase = (frame - JOIN_FRAME + player * (LOCK_HOLD + LOCK_GAP) // 2) % (LOCK_HOLD + LOCK_GAP)
+    return (BUTTON_A if phase < LOCK_HOLD and player < 2 else 0), x, y
+
+
+def read_lock_trace(path):
+    """{frame: (view, {player: (x, y, z, scale, turn)}, locks, charge)} of a view trace's lock-on fields (#379)."""
+    rows = {}
+    for line in Path(path).read_text(encoding="utf-8", errors="replace").splitlines():
+        fields = dict(part.split("=", 1) for part in line.split() if "=" in part)
+        if not {"frame", "view", "marks", "locks", "charge"} <= fields.keys():
+            continue  # stopping the game can cut the last line
+        marks = {}
+        if fields["marks"] != "-":
+            for mark in fields["marks"].split(";"):
+                player, values = mark.split(":")
+                marks[int(player)] = tuple(float(v) for v in values.split(","))
+        rows[int(fields["frame"])] = (int(fields["view"]), marks, [int(n) for n in fields["locks"].split(",")],
+                                      [int(n) for n in fields["charge"].split(",")])
+    return rows
+
+
+def lock_marks_run(args, folder, level, name, frames):
+    """Each player charges, locks on and fires in turn (#379). Each game draws the lock-on mark of the player it looks
+    through and of no other, on every frame that player holds a lock-on on something in front of its camera, and every
+    new mark settles: scale and turn reach their rest within LOCK_SETTLE frames. Hashes equal on every frame."""
+    traces = {"host": folder / "host-view.txt", "client0": folder / "client0-view.txt"}
+    host_env = {"SF64_COOP_VIEW_TRACE": str(traces["host"])}
+    if level is not None:
+        host_env["SF64_COOP_JOIN_LEVEL"] = str(level)
+    host, client = run_short(args, folder, script=charge_in_turn, frames=frames, host_env=host_env,
+                             client_env={"SF64_COOP_VIEW_TRACE": str(traces["client0"])})
+    equal = compare(host, client, frames)
+    found = []
+    for game, own in ((host, 0), (client, 1)):
+        rows = read_lock_trace(traces[game.name])
+        flying = {f: r for f, r in rows.items() if r[0] == own}
+        expect(flying, f"{game.name}: never looked through player {own}")
+        locked = [f for f, r in flying.items() if r[2][own] > 0]
+        charged = sum(1 for r in flying.values() if r[3][own] >= 20)
+        expect(len(locked) >= LOCK_MIN_LOCKED, f"{game.name}: player {own} held a lock-on on {len(locked)} frames, "
+                                                f"want {LOCK_MIN_LOCKED} (charged on {charged})")
+        others = sorted({p for r in rows.values() for p in r[1] if p != r[0]})
+        expect(not others, f"{game.name}: drew the lock-on mark of player(s) {others}, which it does not look through")
+        drawn = sorted(f for f, r in flying.items() if own in r[1])
+        expect(drawn, f"{game.name}: player {own} held a lock-on on {len(locked)} frames ({charged} charged), and its "
+                      f"mark was never drawn")
+        # A new lock-on resets the mark to scale 3, turn 300; it then settles on its target.
+        starts = [f for f in drawn if flying[f][1][own][3] > 2.5 and flying[f][1][own][4] > 250.0]
+        expect(starts, f"{game.name}: player {own}'s mark drawn on {len(drawn)} frames, none of them a new lock-on")
+        unsettled = []
+        for start in starts:
+            after = [f for f in drawn if start <= f <= start + LOCK_SETTLE]
+            if after[-1] < start + LOCK_SETTLE:
+                continue  # the target died or left the view before it could settle
+            mark = flying[after[-1]][1][own]
+            if mark[3] > LOCK_SETTLED_SCALE or mark[4] > LOCK_SETTLED_TURN:
+                unsettled.append((start, mark[3], mark[4]))
+        expect(not unsettled, f"{game.name}: player {own}'s mark did not settle within {LOCK_SETTLE} frames of a new "
+                              f"lock-on: (frame, scale, turn) {unsettled[:3]}")
+        behind = [f for f in drawn if flying[f][1][own][2] >= 0.0]
+        expect(not behind, f"{game.name}: player {own}'s mark drawn behind the camera on frame {behind[:1]}")
+        found.append(f"{game.name}: player {own} locked on {len(locked)} frames, mark drawn on {len(drawn)}, "
+                     f"{len(starts)} new lock-ons settled")
+    return f"{name}, {equal} frames equal; " + "; ".join(found)
+
+
+LOCK_RAIL_FRAMES = JOIN_FRAME + 2000
+LOCK_ALL_RANGE_FRAMES = ALLRANGE_FRAMES
+
+
+def sc_lock_marks(args, folder):
+    """#379: lock_marks_run on Corneria's rails."""
+    return lock_marks_run(args, folder, None, "Corneria rails", LOCK_RAIL_FRAMES)
+
+
+def sc_lock_marks_all_range(args, folder):
+    """#379: lock_marks_run on Katina, all-range from the start."""
+    return lock_marks_run(args, folder, ALLRANGE_LEVEL, "Katina all-range", LOCK_ALL_RANGE_FRAMES)
+
+
 SCENARIOS = {
     "sim": sc_sim,
     "desync_sim": sc_desync_sim,
@@ -8075,6 +8172,8 @@ SCENARIOS = {
     "hud_lives": sc_hud_lives,
     "names_four": sc_names_four,
     "inhale_four": sc_inhale_four,
+    "lock_marks": sc_lock_marks,
+    "lock_marks_all_range": sc_lock_marks_all_range,
 }
 # #329: the rule scenarios with a third and a fourth player, `<name>_three` and `<name>_four`.
 RULES_WITH_PLAYERS = ("aim", "macbeth_bombs", "ma_turret", "sy_robot_spread", "sy_robot_pose", "granga_spread",

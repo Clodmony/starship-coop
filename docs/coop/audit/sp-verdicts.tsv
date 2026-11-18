@@ -34,7 +34,6 @@ src/engine/fox_display.c	Display_Update@gCamCount	setup	site	gCamCount != 1 draw
 src/engine/fox_display.c	Display_Update@gPlayer->	ok	read	debug numbers (csTimer, csState)
 src/engine/fox_display.c	Display_Update@gPlayer[0]	view	site	water, turret, Aquas lighting, starfield roll and face drawing keyed to player 0
 src/engine/fox_display.c	Display_Player_Update	setup	site	loops gCamCount players
-src/engine/fox_display.c	Display_LockOnIndicator	setup	site	loops gCamCount players
 src/engine/fox_display.c	Display_DrawHelpAlert	flow	read	goes by player 0 state; the arrow follows the camera drawn (#30)
 src/engine/fox_display.c	Display_ArwingWings	sim	site	draws wings with player 0 joint table for every Arwing drawn this way; wrong for player 2
 src/engine/camera_interp_skip.c	should_interpolate_perspective	view	read	port interpolation skip keyed to player 0 state
@@ -129,7 +128,7 @@ src/engine/fox_edisplay.c	ActorTeamArwing_Draw	view	site	team Arwing look copies
 src/engine/fox_edisplay.c	Object_SetShadowDL	view	site	player 0 state
 src/engine/fox_edisplay.c	Object_SetMatrix	view	site	billboard to player 0 camera
 src/engine/fox_edisplay.c	Actor_DrawAllRange@gPlayer[0]	view	site	all-range markers by player 0 state
-src/engine/fox_edisplay.c	Actor_DrawAllRange@gCamCount	setup	site	loops players for markers
+src/engine/fox_edisplay.c	Actor_DrawAllRange@gCamCount	setup	site	the lock-on release stays on slot 0; the markers loop every player (#379)
 src/engine/fox_edisplay.c	Item_Draw	setup	site	gCamCount == 1 as "not versus" for all-range item marker
 src/engine/fox_edisplay.c	Object_SetSfxSourceToPos	view	site	object sounds placed relative to player 0 camera (gCamCount != 1 skips: versus has no positional sound)
 src/engine/fox_edisplay.c	Object_UpdateSfxSource	view	site	gCamCount != 1 skips positional sound

@@ -1872,6 +1872,65 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-18, #379: the lock-on mark of players 1 and up was never placed or drawn
+
+Identity: ROM US 1.0, branch `issue/379-bot-reticle` on `issue/combined-test-6` (`2c7326e9`), fix at `edcf98fd`,
+Linux, GCC 16.2, Debug, OpenGL on a software renderer, no window; two games on one PC over loopback through the join
+driver, niced, one session at a time. "Before" is the build of `93bc6401` (the trace and the test, no fix).
+
+Observed, code:
+
+- `gCamCount` stays 1 in co-op (`src/port/coop/game/players.h:5-8`). Three draw sites that place or draw the red
+  lock-on mark loop over it or name slot 0 only: `Actor_DrawOnRails` places slot 0 alone
+  (`src/engine/fox_edisplay.c:1177-1183`), `Actor_DrawAllRange` loops `playerNum < gCamCount`
+  (`src/engine/fox_edisplay.c:1309`), `Display_LockOnIndicator` loops `i < gCamCount`
+  (`src/engine/fox_display.c:1719`); `Memora_DrawParts` places slot 0 alone (`src/engine/fox_enmy2.c:321-327`).
+- The lock-on itself is per player: a search shot sets `lockOnTimers[shot->sourceId]` and resets that player's
+  settle animation, `D_display_801615B8` to 3 and `D_display_801615A8` to 300 (`src/engine/fox_beam.c:1754-1762`);
+  `CoopPlayers_ReleaseLockOns` runs each player's down on its own A (`src/port/coop/game/players.c:627-643`). The
+  settle animation runs in the draw for `i == gPlayerNum` (`src/engine/fox_display.c:1736-1738`), and `gPlayerNum` is
+  `CoopPlayers_ViewIndex()` there (`Game_Draw`, `src/engine/fox_game.c:524`), so it was right once a mark was drawn.
+- The bot's pilot never charges: A one frame in four (`PILOT_FIRE_PERIOD`, `src/port/coop/test/pilot.c:19`). With
+  `gRapidFire` on, which `play_with_bot.py --settings-from` copies (`src/port/coop/session/sim_cvars.c:18`), held
+  means not pressed (`Player_UpdateLockOn`, `src/engine/fox_play.c:3334`), so such a bot charges three frames in four.
+  Not run with the bot.
+
+Observed, runs (`lockstep_test.py --only lock_marks,lock_marks_all_range`: both players charge 120 frames and let go
+20, half a cycle apart; the view trace now writes `marks=`, `locks=` and `charge=`):
+
+- Before: on Corneria's rails the client's player 1 held a lock-on on 491 frames, charged on 909, and its mark was
+  drawn on 0; on Katina 152 frames locked, mark on 0. The host's player 0: 594 frames locked, mark on 597 (rails),
+  145 and 145 (Katina). No game ever drew another player's mark.
+- After: player 1's mark on 464 of its 491 locked frames (rails) and 129 of 152 (Katina), 16 and 6 new lock-ons,
+  each settled (scale 1.01 or less, turn 1 degree or less) within 30 frames; only the client looking through player 1
+  draws it. Hashes equal on 3700 and 4000 frames.
+- Player positions, lock-on counts and charge timers in the host's trace are the same before and after on all 3752
+  common frames: the fix changes no simulation state.
+- Locked frames without a mark: player 1 27 (rails) and 23 (Katina), player 0 none. Marks of player 1 nearer than the
+  release depth (-200 on rails, -300 in all-range): 10 and 4, player 0 none.
+
+Derived:
+
+- The bug was the drawing: a second player's lock-on showed on no screen at all. Fixed by placing the marks of slots 1
+  and up in the camera drawn (`CoopView_PlaceLockMarks`, `src/port/coop/game/view.c`) and looping the indicator over
+  `CoopPlayers_Count()`. `gLockOnTargetViewPos` and the settle animation are read by the draw only (versus aside).
+- What is left is state: the release of a lock-on whose target came close to or passed the camera
+  (`fox_edisplay.c:1181`, `:1315`, `fox_enmy2.c:325`) runs for slot 0 only, judged from player 0's view (#96). A
+  lock-on of player 1 stays on a target behind its camera as long as A is held, and no new one starts meanwhile
+  (`Player_CanLockOn`, `src/engine/fox_play.c:3312`); on letting go, the guided shot goes for that target. Upstream
+  releases it there. Judging it from each player's own camera would need that camera's matrix on every client, as
+  `sReference` is for player 0; a rule for the simulation, left alone here.
+
+Unknown:
+
+- What the owner saw "on the owner's screen": a client shows no mark of another player, before or after. A bot
+  window (`play_with_bot.py --window`), or rapid fire, would fit; not asked or run.
+- The look of the mark on screen: the trace records where it was drawn and its animation, no picture was looked at.
+- `Actor_DrawAllRange` clears `lockOnTimers[gPlayerNum]` of an actor it did not draw (`fox_edisplay.c:1303`), and
+  `gPlayerNum` differs per client in the draw. In a session every actor with a draw function is drawn
+  (`CoopView_DrawAnyway`); one without, but with a target offset, would part the clients. Not seen, not searched.
+- Three or four players, Release, Windows, two PCs: not run.
+
 ### 2026-11-16, #28: why four pilots did not finish Venom 2 into Andross, and the full route with four players
 
 Read and run on `w16-issue28` (from `issue/combined-test-6` `80a8e8ee`). Identity: ROM US 1.0, Linux, GCC, Debug,
