@@ -8263,7 +8263,9 @@ def lock_release_run(args, folder, level, name, frames, depth):
     equal = compare(host, client, frames)
     found, kept = [], []
     for game, own in ((host, 0), (client, 1)):
-        rows = read_lock_trace(traces[game.name])
+        # The level's frames whose hashes were compared: a game plays on a little after `done`, each run another
+        # number of frames, and the trace's frame is the level's (gGameFrameCount, 0 on its first).
+        rows = {f: r for f, r in read_lock_trace(traces[game.name]).items() if f < frames}
         flying = {f: r for f, r in rows.items() if r[0] == own}
         expect(flying, f"{game.name}: never looked through player {own}")
         held = {f: r[4] for f, r in flying.items() if r[4] is not None}

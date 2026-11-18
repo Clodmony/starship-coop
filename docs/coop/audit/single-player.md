@@ -24,7 +24,7 @@ pattern without reading the code, so treat it as a guess.
 
 ## Summary
 
-1691 sites in 417 functions in 46 files.
+1690 sites in 417 functions in 46 files.
 A function whose sites have more than one verdict counts once per verdict in the functions column.
 
 | verdict | sites | functions | `gPlayer[0]` | `gPlayer->` | `gPlayer arg` | `gMainController` | `gCamCount` | `shooter` |
@@ -33,10 +33,10 @@ A function whose sites have more than one verdict counts once per verdict in the
 | view | 217 | 84 | 151 | 0 | 0 | 43 | 3 | 20 |
 | input | 13 | 9 | 0 | 0 | 0 | 8 | 0 | 5 |
 | flow | 510 | 104 | 468 | 0 | 3 | 3 | 0 | 36 |
-| setup | 51 | 33 | 1 | 0 | 1 | 0 | 49 | 0 |
+| setup | 50 | 32 | 1 | 0 | 1 | 0 | 48 | 0 |
 | ok | 200 | 86 | 18 | 2 | 16 | 87 | 8 | 69 |
 
-Basis per site: read 405, site 850, name 436.
+Basis per site: read 405, site 849, name 436.
 
 ## Sites
 
@@ -174,16 +174,15 @@ Basis per site: read 405, site 850, name 436.
 | `ActorTeamArwing_Draw` | 569:P0, 570:P0, 573:P0, 575:P0, 577:P0, 579:P0, 580:P0, 606:P0 | view | site | team Arwing look copies player 0 wing state and state |
 | `Object_SetShadowDL` | 736:P0 | view | site | player 0 state |
 | `Object_SetMatrix` | 963:P0 | view | site | billboard to player 0 camera |
-| `Actor_DrawAllRange` | 1240:P0, 1251:P0, 1287:P0 | view | site | all-range markers by player 0 state |
-| `Actor_DrawAllRange` | 1314:CC | setup | site | the lock-on release stays on slot 0; the markers loop every player (#379) |
-| `Item_Draw` | 1547:CC | setup | site | gCamCount == 1 as "not versus" for all-range item marker |
-| `Object_SetSfxSourceToPos` | 1655:CC, 1660:P0, 1661:P0 | view | site | object sounds placed relative to player 0 camera (gCamCount != 1 skips: versus has no positional sound) |
-| `Object_UpdateSfxSource` | 1678:CC | view | site | gCamCount != 1 skips positional sound |
-| `Object_SetSfxSourceToView` | 1690:CC | view | site | gCamCount != 1 skips positional sound |
-| `Display_SetSecondLight` | 1792:P0 | view | site | player 0 state |
-| `Object_DrawAll` | 1983:P0, 1984:P0 | view | site | player 0 state |
-| `Object_Draw` | 2103:P0 | view | site | water reflection by player 0 state |
-| `Effect_Draw` | 2120:P0 | view | site | water reflection by player 0 state |
+| `Actor_DrawAllRange` | 1241:P0, 1252:P0, 1288:P0 | view | site | all-range markers by player 0 state |
+| `Item_Draw` | 1548:CC | setup | site | gCamCount == 1 as "not versus" for all-range item marker |
+| `Object_SetSfxSourceToPos` | 1656:CC, 1661:P0, 1662:P0 | view | site | object sounds placed relative to player 0 camera (gCamCount != 1 skips: versus has no positional sound) |
+| `Object_UpdateSfxSource` | 1679:CC | view | site | gCamCount != 1 skips positional sound |
+| `Object_SetSfxSourceToView` | 1691:CC | view | site | gCamCount != 1 skips positional sound |
+| `Display_SetSecondLight` | 1793:P0 | view | site | player 0 state |
+| `Object_DrawAll` | 1984:P0, 1985:P0 | view | site | player 0 state |
+| `Object_Draw` | 2104:P0 | view | site | water reflection by player 0 state |
+| `Effect_Draw` | 2121:P0 | view | site | water reflection by player 0 state |
 
 ### `src/engine/fox_effect.c`
 
@@ -258,19 +257,19 @@ Basis per site: read 405, site 850, name 436.
 |---|---|---|---|---|
 | `MeteoBall_IsCloseToPlayer` | 132:P0 | sim | site | distance to player 0 |
 | `MeteoBall_Update` | 147:P0, 149:P0, 150:P0 | view | site | faces player 0 camera |
-| `CoMoleMissile_Update` | 441:P0 | sim | site | distance to player 0 |
-| `ActorDebris_Update` | 561:P0, 562:P0 | sim | site | debris placed relative to player 0 |
-| `func_enmy2_8006D0F4` | 893:P0 | sim | site | scenery search ahead of player 0 |
-| `ActorEvent_ProcessScript` | 1201:P0, 1261:P0, 1351:P0, 1360:P0 | sim | site | event scripts check player 0 state and position; radio only when player 0 active |
-| `ActorEvent_ProcessScript` | 1408:SH | ok | site | script damage writes DMG_SRC_100 |
-| `<file scope>` | 1739:SH, 1751:SH | ok | site | NPC shot setup: writes NPC ids |
-| `ActorEvent_ProcessActions` | 1865:P0, 1879:P0, 1930:P0, 1938:P0, 1945:P0, 1946:P0, 1947:P0, 1948:P0, 1951:P0, 1952:P0, 2011:P0 | sim | read | event actors aim at player 0 (temporarily jitters player 0 position to aim off) |
-| `ActorEvent_800701E0` | 2288:SH | flow | site | on-rails wingman line only for player 0's hit; WP-17 (#15) |
-| `ActorEvent_ProcessTriggers` | 2398:P0, 2458:P0, 2464:P0, 2470:P0, 2476:P0, 2482:P0, 2488:P0, 2494:P0, 2500:P0, 2506:P0, 2512:P0, 2518:P0, 2524:P0, 2530:P0, 2536:P0, 2542:P0, 2548:P0, 2554:P0, 2560:P0, 2566:P0, 2572:P0, 2578:P0, 2584:P0, 2590:P0, 2596:P0, 2602:P0, 2608:P0 | sim | read | event conditions read player 0 position, shields and speed; the laser levels read every active player since #201, the broken wing since #210 |
-| `ActorEvent_ProcessTriggers` | 2726:MC | input | site | C-right condition read from gMainController |
-| `ActorEvent_800720E8` | 2952:SH, 2953:SH | ok | site | tests NPC ids only (Bill) |
-| `ActorEvent_80072474` | 3044:P0 | sim | site | angle to player 0 |
-| `ActorEvent_Update` | 3076:P0, 3097:P0, 3160:P0, 3161:P0, 3162:P0, 3164:P0, 3165:P0, 3166:P0, 3224:P0, 3225:P0, 3226:P0, 3228:P0, 3229:P0, 3230:P0, 3493:P0 | sim | site | event actors aim at player 0 and set player 0 damage type; killed on player 0 level complete |
+| `CoMoleMissile_Update` | 442:P0 | sim | site | distance to player 0 |
+| `ActorDebris_Update` | 562:P0, 563:P0 | sim | site | debris placed relative to player 0 |
+| `func_enmy2_8006D0F4` | 894:P0 | sim | site | scenery search ahead of player 0 |
+| `ActorEvent_ProcessScript` | 1202:P0, 1262:P0, 1352:P0, 1361:P0 | sim | site | event scripts check player 0 state and position; radio only when player 0 active |
+| `ActorEvent_ProcessScript` | 1409:SH | ok | site | script damage writes DMG_SRC_100 |
+| `<file scope>` | 1740:SH, 1752:SH | ok | site | NPC shot setup: writes NPC ids |
+| `ActorEvent_ProcessActions` | 1866:P0, 1880:P0, 1931:P0, 1939:P0, 1946:P0, 1947:P0, 1948:P0, 1949:P0, 1952:P0, 1953:P0, 2012:P0 | sim | read | event actors aim at player 0 (temporarily jitters player 0 position to aim off) |
+| `ActorEvent_800701E0` | 2289:SH | flow | site | on-rails wingman line only for player 0's hit; WP-17 (#15) |
+| `ActorEvent_ProcessTriggers` | 2399:P0, 2459:P0, 2465:P0, 2471:P0, 2477:P0, 2483:P0, 2489:P0, 2495:P0, 2501:P0, 2507:P0, 2513:P0, 2519:P0, 2525:P0, 2531:P0, 2537:P0, 2543:P0, 2549:P0, 2555:P0, 2561:P0, 2567:P0, 2573:P0, 2579:P0, 2585:P0, 2591:P0, 2597:P0, 2603:P0, 2609:P0 | sim | read | event conditions read player 0 position, shields and speed; the laser levels read every active player since #201, the broken wing since #210 |
+| `ActorEvent_ProcessTriggers` | 2727:MC | input | site | C-right condition read from gMainController |
+| `ActorEvent_800720E8` | 2953:SH, 2954:SH | ok | site | tests NPC ids only (Bill) |
+| `ActorEvent_80072474` | 3045:P0 | sim | site | angle to player 0 |
+| `ActorEvent_Update` | 3077:P0, 3098:P0, 3161:P0, 3162:P0, 3163:P0, 3165:P0, 3166:P0, 3167:P0, 3225:P0, 3226:P0, 3227:P0, 3229:P0, 3230:P0, 3231:P0, 3494:P0 | sim | site | event actors aim at player 0 and set player 0 damage type; killed on player 0 level complete |
 
 ### `src/engine/fox_game.c`
 
@@ -322,19 +321,19 @@ Basis per site: read 405, site 850, name 436.
 | `Player_CanLockOn` | 3323:CC | setup | site | loops gCamCount players |
 | `Player_UpdateLockOn` | 3436:CC | setup | site | loops gCamCount players |
 | `Player_CheckBounds360` | 3702:CC | setup | read | gCamCount != 1 as versus flag: wraps the arena at 12000 |
-| `Player_Setup` | 4943:CC | setup | site | gCamCount == gPlayerNum + 1: HUD and hit counters reset only when the last player is set up |
-| `Player_UpdateTankJets` | 5484:CC, 5488:CC | setup | site | gCamCount == 1 as "not versus" for jet effects |
-| `Player_UpdateEffects` | 5530:CC | setup | site | loops gCamCount players |
-| `Player_Update` | 5911:MC, 5912:MC, 5913:MC | ok | read | with co-op off; in co-op CoopPlayers_SelectInput points at the player's own slot right after (WP-14) |
-| `Player_Update` | 6149:CC | setup | site | gCamCount == 4: down in versus goes to VS_STANDBY, else fade out and restart level |
-| `Player_Update` | 6159:P0, 6228:P0 | flow | site | death restart resets gPlayer[0].zPath and path progress; boost check reads player 0 state for every player |
-| `Camera_SetStarfieldPos` | 6657:P0, 6669:P0 | view | site | starfield from player 0 camera |
-| `Camera_SetupLights` | 6752:P0 | view | site | lights depend on player 0 state |
-| `Play_UpdateLevel` | 6882:P0, 6883:P0, 6884:P0, 6885:P0, 6886:P0, 6899:P0, 6900:P0, 6915:P0, 6924:P0, 6925:P0, 6950:P0, 6955:P0, 6958:P0, 6961:P0, 6964:P0, 6967:P0, 6970:P0, 6980:P0, 6982:P0, 6984:P0, 6985:P0, 6987:P0, 6988:P0, 6990:P0, 6997:P0, 7001:P0, 7003:P0, 7009:P0, 7019:P0, 7025:P0, 7026:P0 | flow | site | per-level triggers on player 0: level complete, warp zone, Solar heat damage to player 0 only, Venom 2 / Aquas checks |
-| `Play_UpdateLevel` | 6887:PA | flow | site | Camera_Update360 for player 0 as Venom 2 ends: level complete is one player's (WP-16) |
-| `Play_Main` | 7180:P0, 7181:P0, 7183:P0, 7184:P0, 7185:P0, 7221:P0, 7254:P0, 7255:P0 | flow | site | all-range z setup for player 0 only |
-| `Play_Main` | 7233:CC | setup | site | intro skip resets gCamCount to 1; its sound cleanup loop is on CoopPlayers_Count() since WP-10 |
-| `Play_Main` | 7254:MC | input | site | R while paused (toggles gShowReticles[0], no radio here) is read from gMainController only; Start (intro skip, pause, unpause) goes through CoopPlayers_PausePressed, any player in co-op (#20, #191); versus reads R per controller |
+| `Player_Setup` | 4944:CC | setup | site | gCamCount == gPlayerNum + 1: HUD and hit counters reset only when the last player is set up |
+| `Player_UpdateTankJets` | 5485:CC, 5489:CC | setup | site | gCamCount == 1 as "not versus" for jet effects |
+| `Player_UpdateEffects` | 5531:CC | setup | site | loops gCamCount players |
+| `Player_Update` | 5912:MC, 5913:MC, 5914:MC | ok | read | with co-op off; in co-op CoopPlayers_SelectInput points at the player's own slot right after (WP-14) |
+| `Player_Update` | 6150:CC | setup | site | gCamCount == 4: down in versus goes to VS_STANDBY, else fade out and restart level |
+| `Player_Update` | 6160:P0, 6230:P0 | flow | site | death restart resets gPlayer[0].zPath and path progress; boost check reads player 0 state for every player |
+| `Camera_SetStarfieldPos` | 6659:P0, 6671:P0 | view | site | starfield from player 0 camera |
+| `Camera_SetupLights` | 6754:P0 | view | site | lights depend on player 0 state |
+| `Play_UpdateLevel` | 6884:P0, 6885:P0, 6886:P0, 6887:P0, 6888:P0, 6901:P0, 6902:P0, 6917:P0, 6926:P0, 6927:P0, 6952:P0, 6957:P0, 6960:P0, 6963:P0, 6966:P0, 6969:P0, 6972:P0, 6982:P0, 6984:P0, 6986:P0, 6987:P0, 6989:P0, 6990:P0, 6992:P0, 6999:P0, 7003:P0, 7005:P0, 7011:P0, 7021:P0, 7027:P0, 7028:P0 | flow | site | per-level triggers on player 0: level complete, warp zone, Solar heat damage to player 0 only, Venom 2 / Aquas checks |
+| `Play_UpdateLevel` | 6889:PA | flow | site | Camera_Update360 for player 0 as Venom 2 ends: level complete is one player's (WP-16) |
+| `Play_Main` | 7182:P0, 7183:P0, 7185:P0, 7186:P0, 7187:P0, 7223:P0, 7256:P0, 7257:P0 | flow | site | all-range z setup for player 0 only |
+| `Play_Main` | 7235:CC | setup | site | intro skip resets gCamCount to 1; its sound cleanup loop is on CoopPlayers_Count() since WP-10 |
+| `Play_Main` | 7256:MC | input | site | R while paused (toggles gShowReticles[0], no radio here) is read from gMainController only; Start (intro skip, pause, unpause) goes through CoopPlayers_PausePressed, any player in co-op (#20, #191); versus reads R per controller |
 
 ### `src/engine/fox_radio.c`
 
@@ -705,14 +704,14 @@ Basis per site: read 405, site 850, name 436.
 
 | function | sites (line: pattern) | verdict | basis | note |
 |---|---|---|---|---|
-| `Map_Prologue_Update` | 2156:MC | ok | site | menu input from gMainController |
-| `Map_LylatCard_Update` | 2376:MC | ok | site | menu input from gMainController |
-| `Map_ZoomPlanet_Update` | 2541:MC, 2545:MC, 2549:MC | ok | site | menu input from gMainController |
-| `Map_GameOver_Update` | 3155:MC | ok | site | menu input from gMainController |
-| `Map_PathChange_Input` | 3596:MC, 3600:MC | ok | site | menu input from gMainController |
-| `Map_Input_CursorY` | 3778:MC, 3784:MC, 3786:MC | ok | site | menu input from gMainController |
-| `Map_LevelStart_Update` | 3960:MC, 3968:MC, 3973:MC | ok | site | menu input from gMainController |
-| `Map_Idle_Update` | 6756:MC, 6777:MC, 6793:MC, 6794:MC, 6836:MC, 6843:MC, 6850:MC, 6857:MC, 6864:MC, 6871:MC | ok | site | menu input from gMainController |
+| `Map_Prologue_Update` | 2157:MC | ok | site | menu input from gMainController |
+| `Map_LylatCard_Update` | 2377:MC | ok | site | menu input from gMainController |
+| `Map_ZoomPlanet_Update` | 2542:MC, 2546:MC, 2550:MC | ok | site | menu input from gMainController |
+| `Map_GameOver_Update` | 3156:MC | ok | site | menu input from gMainController |
+| `Map_PathChange_Input` | 3597:MC, 3601:MC | ok | site | menu input from gMainController |
+| `Map_Input_CursorY` | 3780:MC, 3786:MC, 3788:MC | ok | site | menu input from gMainController |
+| `Map_LevelStart_Update` | 3962:MC, 3970:MC, 3975:MC | ok | site | menu input from gMainController |
+| `Map_Idle_Update` | 6758:MC, 6779:MC, 6795:MC, 6796:MC, 6838:MC, 6845:MC, 6852:MC, 6859:MC, 6866:MC, 6873:MC | ok | site | menu input from gMainController |
 
 ### `src/overlays/ovl_menu/fox_option.c`
 
