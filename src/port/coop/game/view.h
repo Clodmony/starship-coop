@@ -10,7 +10,8 @@
 // must simulate the same game, so:
 // - every client runs the draw code of every object, seen or not (CoopView_DrawAnyway);
 // - what the simulation takes from a camera comes from the view of player 0, which every client has
-//   (CoopView_ToReference), never from the camera drawn;
+//   (CoopView_ToReference), never from the camera drawn; a lock-on is let go by the view of the player that holds
+//   it, which every client has as well (CoopView_LockOnZ, #382);
 // - gPlayerNum is the local player only inside Game_Draw (CoopView_EndDraw).
 // What a client shows and hears of its own player, and of the others (#30), is here too, and none of it writes anything
 // the simulation reads.
@@ -23,6 +24,7 @@ extern "C" {
 
 struct Player;
 struct Object;
+struct Actor;
 
 // Around Game_Draw, every frame. Begin gives every player the camera angles Display_Update would give it, End puts
 // them back after the camera drawn has changed its own, and points gPlayerNum at player 0 again.
@@ -37,8 +39,11 @@ void CoopView_EndHidden(void);
 // Where a point of the world is in the view of player 0, for a value the simulation reads.
 void CoopView_ToReference(const Vec3f* world, Vec3f* view);
 
-// The view depth a lock-on on the object at `pos` is judged by: `drawnZ`, from the camera drawn, outside co-op.
-float CoopView_LockOnZ(const Vec3f* pos, float drawnZ);
+// The view depth a lock-on of player `index` on the object at `pos` is judged by: how deep the object sits in that
+// player's own view, worked out on every client from the player's state (its camera as Display_Update would draw
+// it), so every game lets the lock-on go on the same frame whichever camera it draws (#96, #382; decision 0007 rule
+// 15). `drawnZ`, from the camera drawn, outside co-op.
+float CoopView_LockOnZ(int32_t index, const Vec3f* pos, float drawnZ);
 
 // Whether the object last given to CoopView_DrawAnyway is in the camera this client draws, for what only shows it.
 // Outside co-op `seen`, the game's own answer.
@@ -72,11 +77,14 @@ void CoopView_FillColor(int32_t* red, int32_t* green, int32_t* blue);
 void CoopView_SeePlayer(const struct Player* player);
 void CoopView_DrawShieldBars(void);
 
-// The lock-on mark of players 1 and up (#379). gCamCount stays 1 in co-op, so the game's draw code places and draws
-// the mark of slot 0 only. PlaceLockMarks puts every other player's lock-on on the object being drawn into
-// gLockOnTargetViewPos, as the game does for slot 0: `targetOffset` up from the origin of gGfxMatrix, in the camera
-// drawn. A draw value only: nothing the simulation reads, and the lock-on runs down as before. Outside co-op nothing.
-void CoopView_PlaceLockMarks(const uint8_t* lockOnTimers, float targetOffset);
+// The lock-ons of players 1 and up on the actor being drawn, where the game's rails draw code names slot 0 alone
+// (gCamCount stays 1 in co-op). Two things, as that code does for slot 0:
+// - the mark (#379): each lock-on's place goes into gLockOnTargetViewPos, the actor's target offset up from the
+//   origin of gGfxMatrix, in the camera drawn. A draw value only, nothing the simulation reads.
+// - the release (#382): a lock-on whose target is nearer than `nearZ` in the view of the player that holds it, or
+//   behind it, is let go (CoopView_LockOnZ). This is simulation state, and every client decides it alike.
+// Outside co-op nothing.
+void CoopView_OtherLockOns(struct Actor* actor, float nearZ);
 
 // What still followed player 0 on every client (#140). All of it is for this client's eyes and ears; none of it writes
 // what the simulation reads.

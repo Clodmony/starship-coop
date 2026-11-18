@@ -15,8 +15,9 @@ static f32 sCamYaw[COOP_PLAYERS_MAX];
 static f32 sCamPitch[COOP_PLAYERS_MAX];
 static bool sCamSet = false;
 
-// The view of player 0 this frame, the same on every client.
-static Matrix sReference;
+// The view of every player this frame, the same on every client: each is made from that player's own state, never
+// from the camera a client draws. [0] is the reference of #96; a lock-on is judged by its own player's (#382).
+static Matrix sReference[COOP_PLAYERS_MAX];
 
 static bool sHidden = false;
 static Gfx* sHiddenDisp;
@@ -126,7 +127,7 @@ static void CoopView_Camera(const Player* player, Vec3f* eye, Vec3f* at) {
     }
 }
 
-static void CoopView_SetReference(const Player* player, const Vec3f* eye, const Vec3f* at) {
+static void CoopView_SetReference(s32 index, const Player* player, const Vec3f* eye, const Vec3f* at) {
     Vec3f src = { 0.0f, 100.0f, 0.0f };
     Vec3f up;
 
@@ -134,7 +135,7 @@ static void CoopView_SetReference(const Player* player, const Vec3f* eye, const 
     Matrix_RotateX(gCalcMatrix, player->camPitch, MTXF_APPLY);
     Matrix_RotateZ(gCalcMatrix, -player->camRoll * M_DTOR, MTXF_APPLY);
     Matrix_MultVec3f(gCalcMatrix, &src, &up);
-    Matrix_LookAt(&sReference, eye->x, eye->y, eye->z, at->x, at->y, at->z, up.x, up.y, up.z, MTXF_NEW);
+    Matrix_LookAt(&sReference[index], eye->x, eye->y, eye->z, at->x, at->y, at->z, up.x, up.y, up.z, MTXF_NEW);
 }
 
 void CoopView_BeginDraw(void) {
@@ -153,9 +154,7 @@ void CoopView_BeginDraw(void) {
         gPlayer[i].camYaw = sCamYaw[i];
         gPlayer[i].camPitch = sCamPitch[i];
         gPlayer[i].arwing.drawFace = true; // Display_Update does this for player 0 only; every pilot shows
-        if (i == 0) {
-            CoopView_SetReference(&gPlayer[0], &eye, &at);
-        }
+        CoopView_SetReference(i, &gPlayer[i], &eye, &at);
         // Background_DrawGround clears this for the player drawn, src/engine/fox_bg.c.
         if ((gLevelMode == LEVELMODE_ALL_RANGE) || (gGroundType == 7)) {
             gPlayer[i].xPath = 0.0f;
@@ -207,20 +206,25 @@ void CoopView_EndHidden(void) {
 void CoopView_ToReference(const Vec3f* world, Vec3f* view) {
     Vec3f src = *world;
 
-    Matrix_MultVec3f(&sReference, &src, view);
+    Matrix_MultVec3f(&sReference[0], &src, view);
 }
 
-void CoopView_PlaceLockMarks(const uint8_t* lockOnTimers, float targetOffset) {
+void CoopView_OtherLockOns(Actor* actor, float nearZ) {
     Vec3f src = { 0.0f, 0.0f, 0.0f };
     s32 i;
 
     if (!CoopPlayers_IsCoop()) {
         return;
     }
-    src.y = targetOffset;
+    src.y = actor->info.targetOffset;
     for (i = 1; i < CoopPlayers_Count(); i++) {
-        if (lockOnTimers[i] != 0) {
+        if (actor->lockOnTimers[i] != 0) {
+            // the mark, in the camera drawn: for the draw alone (#379)
             Matrix_MultVec3f(gGfxMatrix, &src, &gLockOnTargetViewPos[i]);
+            // the release, in that player's own view: the simulation, the same on every client (#382)
+            if (CoopView_LockOnZ(i, &actor->obj.pos, 0.0f) > nearZ) {
+                actor->lockOnTimers[i] = 0;
+            }
         }
     }
 }
@@ -255,17 +259,17 @@ int32_t CoopView_TakeLockMark(int32_t index, Vec3f* viewPos, float* scale, float
     return drawn;
 }
 
-float CoopView_LockOnZ(const Vec3f* pos, float drawnZ) {
+float CoopView_LockOnZ(int32_t index, const Vec3f* pos, float drawnZ) {
     Vec3f world;
     Vec3f view;
 
-    if (!CoopPlayers_IsCoop()) {
+    if (!CoopPlayers_IsCoop() || (index < 0) || (index >= COOP_PLAYERS_MAX)) {
         return drawnZ;
     }
     world.x = pos->x;
     world.y = pos->y;
     world.z = pos->z + gPathProgress;
-    CoopView_ToReference(&world, &view);
+    Matrix_MultVec3f(&sReference[index], &world, &view);
     return view.z;
 }
 
