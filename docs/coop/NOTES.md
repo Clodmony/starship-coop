@@ -1931,6 +1931,108 @@ Unknown:
   (`CoopView_DrawAnyway`); one without, but with a target offset, would part the clients. Not seen, not searched.
 - Three or four players, Release, Windows, two PCs: not run.
 
+### 2026-11-18, #380: who holds which laser strength, and why player 2 got player 1's at every level
+
+The owner saw, in a game by hand with the bot, player 2 get all the laser upgrades of player 1 when a level ended.
+The owner's answer on the issue (2026-11-18): each player keeps its own laser strength across levels; a player that
+joins or returns starts single. Decision 0007 has it as rule 14. Lines are at `1011154c` unless they say `2c7326e9`.
+
+**Observed (code)**
+
+- `gLaserStrength[4]` (`src/engine/fox_context.c:275`) is one value per player index. A laser item raises the
+  collector's (`src/engine/fox_enmy.c:2276-2278`), a broken wing sets the owner's to single on its next
+  `Player_Shoot` (`src/engine/fox_play.c:3470-3473`).
+- The game sets it back to single for its own index only, `gPlayerNum`, which is 0 in co-op: a new game
+  (`Player_Setup`, the `gClearPlayerInfo` block, `src/engine/fox_play.c:4938`), the restart of a level
+  (`PLAYERSTATE_NEXT` in `Player_Update`, `:6191`; the fade of type 7 leads there, set when player 0 dies,
+  `src/engine/fox_demo.c:1600`, and at a retry from the pause menu, `src/engine/fox_hud.c:1617`), the map's retry of a
+  course (`Map_RetryCourse`, `src/overlays/ovl_menu/fox_map.c:3642`), and versus (`fox_play.c:2807`, `:4756`).
+  `Play_Init` and a change of level write nothing: upstream, Fox takes his lasers from level to level.
+- The level start table holds it as a row of four values, one per player: `X(gLaserStrength, s32)`
+  (`src/port/coop/game/level_start.c:82`) with `START_ROW`'s count `sizeof(var) / sizeof(type)` (`:118`). So the table
+  never gave player 0's value to anyone. It is also not on the way from one level to the next: the map starts the
+  next level itself, in lockstep; `CoopLevelStart_Enter` (`:383`) runs at a session's level start from the lobby or a
+  test and when a recovery starts a level again (`src/port/coop/ui/menu_game.c:174`), and at a level's entry the host
+  only takes the restart point (`src/port/coop/sync/lockstep_game.c:448-451`).
+- The copy was in `CoopPlayers_JoinFromPlayer0`: `COPY_FROM_0(gLaserStrength)`
+  (`src/port/coop/game/players.c:231` at `2c7326e9`). It runs for every player 2-4 once after each `Play_Init`, on the
+  first frame player 0 is `ACTIVE` in a section co-op players fly in (`CoopPlayers_SkipUpdate`, the `WAITING` case,
+  `players.c:519-521`). `CoopPlayers_RejoinFromPlayer0` (the cut to all-range, `:242`) does not touch it.
+  `SWAP_WITH_0(gLaserStrength)` (`:387`) is the lead swap of spike #183, behind its test switch only.
+- The same function still copies `gBombCount` from player 0 (`players.c:236`): a player joins every level with
+  player 0's bombs. Not changed here.
+- The port's cheat `gHyperLaser` writes player 0's slot only (`src/port/mods/PortEnhancements.c:141`).
+
+**Observed (runs; identity in `docs/coop/QA.md`, 2026-11-18)**
+
+- Before the fix (game code of `2c7326e9`, with the scenario `own_lasers` of this branch): two games, a pilot on each,
+  Corneria through the map into Meteo. The traces of both games agree on every one of 12415 rows, and
+  `lasers=` changes twice: `0,0` to `1,0` on Corneria frame 1901 (the laser item put in player 0's way on lockstep
+  frame 1900), and `1,0` to `1,1` on Meteo frame 853, the frame player 1 joins. Between them, on Corneria's last frame
+  (10832) and on Meteo frames 0 to 852, it is `1,0`. The hashes and lockstep logs were equal on the 13189 frames
+  compared: the two games made the same mistake.
+- After: `own_lasers` equal on 13189 frames, `1,0` on Corneria's last frame, at Meteo's start, at player 1's join
+  (frame 853) and 60 frames later. `own_lasers_other` (no item; player 1 given hyper lasers on Meteo's first frame)
+  equal on 13789 frames: `0,0` at Corneria's end, `0,2` at the start, the join and 60 frames later.
+  `own_lasers_down`: `1,2` on frame 1800, `1,0` from 1801, where player 1 is out, through its return at 1951 to the
+  end, equal on 2700 frames. `own_lasers_restart` (player 0 down with the refill closed, player 1 never down): `1,2`
+  on frame 1810, the level restarted after frame 1975, `0,0` on every frame after it, player 1 joined on the
+  restart's frame 1, equal on 2700 frames.
+- Three breaks, each built and run, each caught, sources restored after: the copy put back in the join (`own_lasers`
+  `1,1` at the join, `own_lasers_other` `0,0` at the join); no reset in `CoopPlayers_SetDown` (`own_lasers_down`:
+  `1,2` on frame 1801); no call at the restart (`own_lasers_restart`: `0,2` on the restart's frame 0).
+- `player_trace.py shots` on the fix with its old setup: `frames with two laser marks, players 1 and up upgraded: 0,
+  need 5`, FAIL. It had counted on the copy: `gHyperLaser` gave player 0 hyper lasers and the join passed them on.
+  With hyper lasers poked into players 1 and up (`30:<i>:lasers:2`): 96 such frames, PASS.
+- The pilot's player 1 does not keep an upgrade through Corneria: given hyper lasers on frame 1900 it was back on a
+  single laser on frame 4875 with shields 31, flying (not parked), and its shields read 0 on frames 5000 and 6000
+  and 255 on frame 7000. Level complete came on frame 7106 in that run and on 8598 in the run where player 1 was
+  single throughout.
+- A view poke that waits for a level (`0:1:lasers:2@1`, and `100:1:lasers:2@1` the same) landed before the first row
+  the player trace wrote for Meteo: `gGameFrameCount` is set to 0 by the map (`src/overlays/ovl_menu/fox_map.c:1283`)
+  and by `Play_Init` (`src/engine/fox_play.c:2882`), and the level is the current one for some frames before
+  `Play_Init`, with the map's count still standing (856 map frames in these runs).
+
+**Derived**
+
+- What the owner saw comes from one line. At each level's start player 2 took player 1's upgrades and lost its own;
+  "at a level's end" is where a person notices it, as the next level begins.
+- With the copy gone, the places that take an upgrade away are what makes "joins or returns starts single" true.
+  Built: `CoopPlayers_SetDown` sets the player single (`players.c:478`), so a return for a life (rule 4, which set it
+  already at the return, `:282`) and the free return at the next `Play_Init` (rule 5) both start single;
+  `LevelStart_Fill` gives players 2-4 a single laser in a level start from outside a level
+  (`level_start.c:184-185`), so a session's first level does not carry what the host's slots hold from a session
+  before; `CoopPlayers_SingleLasers` (`players.c:664`) sets players 2-4 single at the three places the game sets
+  player 0 back (three `// COOP:` lines: `fox_play.c:4939`, `:6192`, `fox_map.c:3643`).
+- The table stays one table: every value in it still comes from the host's game, and the one rule added to its
+  filling reads nothing but which kind of level start it is. A restart point (`CoopLevelStart_Entering`, `_Entered`,
+  `_AtCheckpoint`) carries each player's own strength as the host's game holds it, which lockstep keeps equal on
+  every game.
+- The new game, the restart and the retry are not in the owner's sentence. Before the fix all three left every player
+  single, through the copy of player 0's value; the calls keep that. Without them a player 2 would keep hyper lasers
+  through a restart that cost Fox his, and into a new game after a game over.
+- A person who takes over a slot between two level starts of one session gets what the slot holds: the game knows
+  slots, not people. At the session's first level start that is single; later it is what the last player in the slot
+  had when the restart point was taken.
+
+**Guess**
+
+- The bombs have the same fault as the lasers had (`COPY_FROM_0(gBombCount)`): player 2 would start every level with
+  player 1's bomb count. Not run.
+- Player 1's loss on frame 4875 is a broken wing (`Player_Shoot` is the one place that sets a flying player single);
+  the trace does not hold the wings.
+
+**Unknown / not tried**
+
+- The owner's word on the three derived cases (a new game, the team's restart, a retry) and on the bombs.
+- Not run: a new game inside a session (after a game over), the map's retry of a course, a level start from the lobby
+  with a host whose slots hold upgrades from an earlier session, a player still down at the level's end (its lasers
+  are single from the down on, which `own_lasers_down` shows inside a level; the join of the next level was not
+  flown with one), three and four games, all-range, Release, Windows, two PCs, a person.
+- The guns of a player that joins sit where player 0's are (`CoopPlayers_PlaceBesidePlayer0` copies the whole
+  player) and move to its own strength by 0.5 a frame in `Player_Shoot` (`fox_play.c:3475-3479`); nobody looked at
+  those 20 frames.
+
 ### 2026-11-16, #28: why four pilots did not finish Venom 2 into Andross, and the full route with four players
 
 Read and run on `w16-issue28` (from `issue/combined-test-6` `80a8e8ee`). Identity: ROM US 1.0, Linux, GCC, Debug,

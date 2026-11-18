@@ -32,17 +32,19 @@ typedef enum {
     VIEW_POKE_HIT,
     VIEW_POKE_DOWN,
     VIEW_POKE_GUNS,
+    VIEW_POKE_LASERS,
 } ViewPokeKind;
 
 typedef struct {
     s32 frame;
+    s32 level; // gCurrentLevel it waits for, -1 for any (#380)
     s32 player;
     ViewPokeKind kind;
     f32 value; // a whole number, but for guns, which can take a half step
     bool done;
 } ViewPoke;
 
-static const char* sPokeNames[] = { "shields", "bombs", "lives", "boost", "hit", "down", "guns" };
+static const char* sPokeNames[] = { "shields", "bombs", "lives", "boost", "hit", "down", "guns", "lasers" };
 
 static ViewPoke sPokes[VIEW_POKES_MAX];
 static s32 sPokeCount = 0;
@@ -78,6 +80,9 @@ static void CoopViewTrace_Poke(ViewPoke* poke) {
             // Where the laser guns of the Arwing are (-10 fully out, in steps of 0.5 as Player_Shoot moves them);
             // laserGunsXpos follows from it (#192).
             player->arwing.laserGunsYpos = poke->value;
+            break;
+        case VIEW_POKE_LASERS:
+            gLaserStrength[poke->player] = (LaserStrength) (s32) poke->value; // #380
             break;
     }
 }
@@ -273,7 +278,8 @@ static void CoopViewTrace_OnGamePostUpdate(IEvent* event) {
     }
 
     for (i = 0; i < sPokeCount; i++) {
-        if (!sPokes[i].done && (gGameFrameCount >= sPokes[i].frame)) {
+        if (!sPokes[i].done && (gGameFrameCount >= sPokes[i].frame) &&
+            ((sPokes[i].level < 0) || (sPokes[i].level == gCurrentLevel))) {
             sPokes[i].done = true;
             CoopViewTrace_Poke(&sPokes[i]);
         }
@@ -286,7 +292,8 @@ static void CoopViewTrace_ReadPokes(const char* text) {
         char what[16];
         u32 kind;
 
-        if (sscanf(text, "%d:%d:%15[a-z]:%f", &poke->frame, &poke->player, what, &poke->value) == 4) {
+        poke->level = -1;
+        if (sscanf(text, "%d:%d:%15[a-z]:%f@%d", &poke->frame, &poke->player, what, &poke->value, &poke->level) >= 4) {
             for (kind = 0; kind < ARRAY_COUNT(sPokeNames); kind++) {
                 if (strcmp(what, sPokeNames[kind]) == 0) {
                     poke->kind = (ViewPokeKind) kind;

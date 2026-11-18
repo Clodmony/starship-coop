@@ -282,6 +282,30 @@ result:     automated, for the lock-on mark of players 1 and up (#379). Red: pla
             on 3700 and 4000 frames; the simulation's trace the same as before on every common frame. The mark is
             checked from the trace (where it was drawn, scale, turn), no picture was looked at. Not run: three or
             four players, Release, Windows, two PCs, a person looking at the screen.
+
+commit:     issue/380-own-lasers on issue/combined-test-6 2c7326e9: each player keeps its own laser strength from
+            level to level (decision 0007 rule 14, #380). The fix is 1011154c, and the three breaks ran on it; the
+            other runs on the fix are on 222af48d, which differs from it in a comment and two READMEs.
+identity:   ROM US 1.0, Linux, GCC 16.2, Debug, OpenGL software renderer, no window; two games on one PC over
+            loopback through the join driver, lockstep, niced, one session at a time, frame limit 8
+what ran:   before (game code of 2c7326e9): lockstep_test.py --no-build --only own_lasers: 0/1, lasers [1, 0] on
+            Corneria's last frame, [1, 1] at player 1's join in level 1 (frame 853), on both games.
+            on the fix: lockstep_test.py --no-build --only own_lasers,own_lasers_other,own_lasers_down,
+            own_lasers_restart: 4/4. player_trace.py shots --players 2: PASS (with its old setup, which counted on
+            the copy: FAIL, 0 frames with two laser marks from an upgraded player 1, need 5).
+            three breaks, each built and run, sources restored and built again: the copy of player 0's value put
+            back in the join: own_lasers,own_lasers_other 0/2; no reset in CoopPlayers_SetDown: own_lasers_down 0/1;
+            no call at the restart: own_lasers_restart 0/1.
+            python tools/coop/build.py --quiet: build: OK.
+result:     automated. Pilots fly Corneria, player 0 takes a laser item, the map starts Meteo: on both games the
+            lasers of players 0 and 1 are [1, 0] on Corneria's last frame, at Meteo's start, when player 1 joins 853
+            frames into it and 60 frames later, equal on 13189 frames. The other way round (player 1 given hyper
+            lasers on Meteo's first frame, player 0 single): [0, 2] at the join and after, equal on 13789 frames. A
+            player 1 that goes down is single from that frame through its return, player 0 keeps twin (2700 frames).
+            Player 0 down with the refill closed: both single from the restart on (2700 frames).
+            Not run: test_all.py; the default lockstep run; a new game inside a session, the map's retry, a lobby
+            start after an earlier session, a player still down at the level's end; three and four games; all-range;
+            Release; Windows; two PCs; a person.
 ```
 
 ```
