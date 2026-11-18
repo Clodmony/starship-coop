@@ -1872,6 +1872,60 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-18, #384: who holds which bomb count, and why a joining player got player 0's
+
+#380 found that `CoopPlayers_JoinFromPlayer0` copied player 0's `gBombCount` to every player that joins. The owner's
+answer on the issue (2026-11-18): each player keeps its own bombs, the same rule as the lasers; a returning or
+lobby-start player gets the usual 3. Decision 0007 has it as rule 15. Lines are at `aa2d3312`.
+
+**Observed (code)**
+
+- `gBombCount[4]` (`src/engine/fox_context.c:364`) is one value per player index. A bomb fired takes one from the
+  shooter's (`Player_SmartBomb`, `src/engine/fox_play.c:3220-3227`; the lock-on bomb, `:3442-3445`), a bomb item adds
+  one to the collector's (`src/engine/fox_enmy.c:2256`), and the HUD caps every player's at 9
+  (`src/engine/fox_hud.c:3474-3478`).
+- The game gives 3 for its own index only, `gPlayerNum`, which is 0 in co-op: a new game (`Player_Setup`, the
+  `gClearPlayerInfo` block, `fox_play.c:4942`), the restart of a level (`PLAYERSTATE_NEXT`, `:6190`), the map's retry
+  (`Map_RetryCourse`, `src/overlays/ovl_menu/fox_map.c:3644`). Versus sets everyone's to 0 (`fox_play.c:2808`).
+  `Play_Init` and a change of level write nothing: upstream, Fox takes his bombs from level to level.
+- The level start table holds a row of four values, `X(gBombCount, s32)` (`src/port/coop/game/level_start.c:81`), so,
+  as for the lasers, the table never gave player 0's value to anyone; the copy was `COPY_FROM_0(gBombCount)` in
+  `CoopPlayers_JoinFromPlayer0` (`players.c:236` at `1ef5aeac`).
+- A return for a life already gave 3 (`CoopPlayers_ReturnFromDown`, `src/port/coop/game/players.c:283`), and so does
+  Fox's refill (`:468`).
+- Changed here: the join copies no bombs; `CoopPlayers_SetDown` gives 3 (`players.c:479`); `CoopPlayers_NewStart`
+  (was `CoopPlayers_SingleLasers`, `:665-675`) gives players 2-4 3 where the original gives player 0 3; the level start
+  from outside a level gives players 2-4 3 (`level_start.c:187-188`). The player trace writes `bombs=` per player
+  (`src/port/coop/test/player_trace.c:189-192`).
+
+**Observed (runs; identity in `docs/coop/QA.md`, 2026-11-18, #384)**
+
+- `own_bombs` (pilots, Corneria through the map into Meteo): player 1 joins Corneria with 3 bombs (`[3, 3]`), a poke on
+  Corneria frame 2000 gives `[5, 7]`, player 0 picks up a bomb item later (`[6, 7]` on Corneria's last frame), and
+  Meteo's start, player 1's join 853 frames into it and 60 frames later all show `[6, 7]`, the same on both games,
+  equal on 13789 frames.
+- With the copy put back (the code before this fix): `[6, 6]` at that join and after: player 1 lost its 7 for player
+  0's 6. Both games made the same mistake; the hashes would not have shown it.
+- `own_bombs_down`: `[5, 7]` on frame 1800, `[5, 3]` from 1801 (player 1 out) through its return at 1951. Without the
+  line in `CoopPlayers_SetDown`: `[5, 7]` on frame 1801.
+- `own_bombs_restart`: `[5, 7]` on frame 1810, `[3, 3]` on every frame after the restart. Without the line in
+  `CoopPlayers_NewStart`: `[3, 7]` on the restart's frame 0.
+
+**Derived**
+
+- That a player that goes down has 3 from that frame on (not from its return), and that a new game, the team's restart
+  and the retry give every player 3, follow from rule 14 and from what the copy did there before (it gave everyone
+  Fox's fresh 3). They are not the owner's words.
+
+**Unknown**
+
+- The line in the level start (`level_start.c:187`) has no test that fails without it: with it removed, `own_bombs`
+  still passes, as player 1 joins Corneria with 3 either way (guess: the host's slot already holds 3 from the new
+  game's `CoopPlayers_NewStart`, or from a test start; not traced). A test needs a lobby start after a session that
+  left a player 2-4 with another count. Not filed as an issue (AGENTS.md rule 12).
+- Not run: a new game inside a session, the map's retry, a player still down at a level's end, three and four games,
+  all-range, Release, Windows, two PCs.
+
 ### 2026-11-18, #379: the lock-on mark of players 1 and up was never placed or drawn
 
 Identity: ROM US 1.0, branch `issue/379-bot-reticle` on `issue/combined-test-6` (`2c7326e9`), fix at `edcf98fd`,

@@ -111,13 +111,14 @@ int32_t CoopPlayers_OnPlayerDown(struct Player* player);
 // on to Player_Down, as upstream. Reads and writes simulated state only, inside the player loop.
 int32_t CoopPlayers_RefillFox(struct Player* player);
 
-// Each player's laser strength is its own (decision 0007 rule 14, #380): a pickup raises the collector's, a broken
-// wing and a down take the owner's, and it goes along from level to level. Call this where the game sets player 0's
-// back to single for a new start, which it does for its own player index only: a new game (Player_Setup's
-// gClearPlayerInfo block), the restart after player 0 went down or a retry from the pause menu (PLAYERSTATE_NEXT in
-// Player_Update, the fade of type 7), the map's retry of a course (Map_RetryCourse). Players 2-4 start single there
-// too. Nothing outside co-op. Reads and writes simulated state only.
-void CoopPlayers_SingleLasers(void);
+// Each player's laser strength and bomb count are its own (decision 0007 rules 14 and 15, #380, #384): a pickup raises
+// the collector's, a broken wing and a down take the owner's upgrade, a bomb is the shooter's, and both go along from
+// level to level. Call this where the game sets player 0's back to a single laser and 3 bombs for a new start, which it
+// does for its own player index only: a new game (Player_Setup's gClearPlayerInfo block), the restart after player 0
+// went down or a retry from the pause menu (PLAYERSTATE_NEXT in Player_Update, the fade of type 7), the map's retry of
+// a course (Map_RetryCourse). Players 2-4 start single with 3 bombs there too. Nothing outside co-op. Reads and writes
+// simulated state only.
+void CoopPlayers_NewStart(void);
 
 // Test switch SF64_COOP_TEST_FOX_REFILL_OFF: nonzero closes every level for the refill.
 void CoopPlayers_SetFoxRefillOff(int32_t off);

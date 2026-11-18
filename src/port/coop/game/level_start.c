@@ -166,9 +166,10 @@ static void Row_Set(const StartRow* row, s32 i, int32_t value) {
 }
 
 // newLevel: the hit count of the level is 0, as Map_PlayLevel leaves it for a level the map starts, and players 2-4
-// have a single laser: a level started from outside one is where they join, and a player that joins starts single
-// (decision 0007 rule 14, #380), whatever this game's slots still hold from a session before. Every other level start
-// carries each player's own strength as it is. checkpoint: the level starts where this game's checkpoint is.
+// have a single laser and 3 bombs: a level started from outside one is where they join, and a player that joins starts
+// single with 3 bombs (decision 0007 rules 14 and 15, #380, #384), whatever this game's slots still hold from a session
+// before. Every other level start carries each player's own strength and bombs as they are. checkpoint: the level
+// starts where this game's checkpoint is.
 static void LevelStart_Fill(CoopLevelStart* out, uint8_t level, uint8_t phase, bool newLevel, bool checkpoint) {
     size_t r;
     s32 i;
@@ -183,6 +184,8 @@ static void LevelStart_Fill(CoopLevelStart* out, uint8_t level, uint8_t phase, b
                 out->values[n++] = 0;
             } else if (newLevel && (sRows[r].data == (void*) gLaserStrength) && (i > 0)) {
                 out->values[n++] = LASERS_SINGLE;
+            } else if (newLevel && (sRows[r].data == (void*) gBombCount) && (i > 0)) {
+                out->values[n++] = 3; // as Player_Setup gives player 0 at a new game
             } else {
                 out->values[n++] = Row_Get(&sRows[r], i);
             }

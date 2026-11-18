@@ -12,7 +12,7 @@
 //      <somersault>,<form> ...
 //   tframe=<test pad frame> pad0=<hold button>,<hold x>,<hold y>,<press button>,<press x>,<press y> ... pad3=...
 //   shots=<id>:<owner>:<timer>:<exploded>;...  locks=<actors locked by player 0>,...,<by player 3>
-//   lasers=<gLaserStrength per player>
+//   lasers=<gLaserStrength per player> bombs=<gBombCount per player>
 //   knock=<knockback.x>,<knockback.y>,<knockback.z>,<hitTimer>;... one per player
 //   [hits=<actor>:<aiType>:<dmgType>:<dmgSource>:<shooter>;...] [marks=<n>]
 //   [torpedo=<owner>:<homing>:<target>:<x>,<y>,<z>]
