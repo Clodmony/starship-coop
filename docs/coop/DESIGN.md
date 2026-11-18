@@ -135,7 +135,8 @@ Each needs a decision record before code depends on it. Proposals in brackets.
    yet open keeps the original restart). Fox down at pool 0 ends the run until a spike (#183) shows the lead role can
    pass to a survivor. A player's shot hurts another player in all-range. Each player's laser strength is its own
    and goes along from level to level; a player that joins or returns starts single, and a new game, the team's
-   restart and a retry take everyone's (0007 rule 14, #380).
+   restart and a retry take everyone's (0007 rule 14, #380). The bomb count is each player's own the same way; a
+   player that joins or returns has 3, and a new game, the restart and a retry give everyone 3 (0007 rule 15, #384).
 4. Route choices and warps: decided in [0008](decisions/0008-routes-and-score.md). Any human player can earn a route or
    a warp. Player 0, the host, steers at a split from its own position and alone decides on the map (go on, change path;
    retry is the host's too, by 0007).

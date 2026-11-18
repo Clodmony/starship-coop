@@ -208,10 +208,11 @@ static void CoopPlayers_PlaceBesidePlayer0(s32 i) {
 // resets level-wide state (radio, music, the level start screen, intro flags), which would disturb player 0. So the
 // per-player arrays that Player_Setup fills for its player index are copied from player 0 instead.
 //
-// Not gLaserStrength: Player_Setup does not fill it, it is what a player brings along from the level before, and each
-// player keeps its own (decision 0007 rule 14, #380). With the copy every player began every level with player 0's
-// upgrades and without its own. The places that take the upgrade away are CoopPlayers_SetDown and
-// CoopPlayers_SingleLasers.
+// Not gLaserStrength and not gBombCount: Player_Setup fills gBombCount only at a new game, and neither is what a level
+// start sets; both are what a player brings along from the level before, and each player keeps its own (decision 0007
+// rules 14 and 15, #380, #384). With the copy every player began every level with player 0's upgrades and bombs and
+// without its own. The places that set them back (a single laser, 3 bombs) are CoopPlayers_SetDown,
+// CoopPlayers_ReturnFromDown, CoopPlayers_NewStart and the level start from outside a level (level_start.c).
 static void CoopPlayers_JoinFromPlayer0(s32 i) {
     CoopPlayers_PlaceBesidePlayer0(i);
 
@@ -233,7 +234,6 @@ static void CoopPlayers_JoinFromPlayer0(s32 i) {
     COPY_FROM_0(D_ctx_801779A8);
     COPY_FROM_0(gMuzzleFlashScale);
     COPY_FROM_0(gShieldAlpha);
-    COPY_FROM_0(gBombCount);
     COPY_FROM_0(gLifeCount);
 #undef COPY_FROM_0
 }
@@ -473,9 +473,10 @@ int32_t CoopPlayers_RefillFox(Player* player) {
 static void CoopPlayers_SetDown(s32 i) {
     sSlot[i] = COOP_SLOT_DOWN;
     sReturnTimer[i] = COOP_RETURN_FRAMES;
-    // The upgrade goes with the ship (0007 rules 4 and 14), here and not only at the return: a player still down when
-    // the level ends comes back at the next Play_Init for free, where nothing else would take it.
+    // The upgrade and the bombs go with the ship (0007 rules 4, 14 and 15), here and not only at the return: a player
+    // still down when the level ends comes back at the next Play_Init for free, where nothing else would set them.
     gLaserStrength[i] = LASERS_SINGLE;
+    gBombCount[i] = 3;
     gPlayer[i].draw = false;
     Audio_StopPlayerNoise(i);
 }
@@ -661,7 +662,7 @@ int32_t CoopPlayers_OnPlayerDown(Player* player) {
     return 1;
 }
 
-void CoopPlayers_SingleLasers(void) {
+void CoopPlayers_NewStart(void) {
     s32 i;
 
     if (!CoopPlayers_IsCoop()) {
@@ -669,6 +670,7 @@ void CoopPlayers_SingleLasers(void) {
     }
     for (i = 1; i < COOP_PLAYERS_MAX; i++) {
         gLaserStrength[i] = LASERS_SINGLE;
+        gBombCount[i] = 3;
     }
 }
 

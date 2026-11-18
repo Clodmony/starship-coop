@@ -268,6 +268,14 @@ The owner went through the record item by item. What each answer changed, and wh
     `Play_Init` (rule 5), and Fox is single after a refill (rule 3). Where the original takes Fox's upgrade away for
     a new start, every player's goes: a new game, the restart after Fox went down or after a retry from the pause
     menu, and the map's retry of a course. The restart and the retry are the team's (rules 3 and 7).
+15. **Bombs (added 2026-11-18, the owner's answer on #384).** Each player's bomb count is its own, as rule 14 makes
+    the laser strength: a bomb fired is the shooter's, a bomb item raises the collector's, and a player brings its
+    count along from one level to the next: nobody starts a level with Fox's. A player that joins or returns gets the
+    usual 3: at the session's first level start players 2-4 have 3 whatever the host's game still holds, a player that
+    goes down has 3 from then on, so at a return for a life (rule 4) and at the free return of the next `Play_Init`
+    (rule 5), and Fox has 3 after a refill (rule 3). Where the original gives Fox 3 for a new start, every player gets
+    3: a new game, the restart after Fox went down or after a retry from the pause menu, and the map's retry of a
+    course.
 
 The two starting values, pool size and delay, are constants to tune by play.
 
@@ -305,6 +313,14 @@ The owner's answer of 2026-11-18: each player keeps its own across levels, and a
 single. That sentence is the owner's. The last two sentences of rule 14 (a new game, the team's restart and the retry
 take every player's upgrade) are derived, not the owner's words: they keep what the code did there before, where the
 copy of Fox's value gave everyone a single laser, and the owner can change them.
+
+**Update 2026-11-18 (rule 15, built and run; `docs/coop/NOTES.md`, 2026-11-18, #384).** #380 found that the join also
+copied player 0's `gBombCount` (`COPY_FROM_0(gBombCount)` in `CoopPlayers_JoinFromPlayer0`), so every player began
+every level with Fox's bombs. The owner's answer of 2026-11-18: each player keeps its own bombs, the same rule as the
+lasers; a returning or lobby-start player gets the usual 3. Those are the owner's words. That a player that goes down
+has 3 from that frame on rather than from its return, and that a new game, the team's restart and the retry give every
+player 3, are derived from rule 14 and from what the copy did there before (it gave everyone Fox's fresh 3); the owner
+can change them.
 
 ### Every client decides alike
 

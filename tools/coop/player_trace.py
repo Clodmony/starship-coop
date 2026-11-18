@@ -134,8 +134,8 @@ ARWING = 0
 
 # One player on one frame and one whole frame, as player_trace.c writes them.
 Slot = namedtuple("Slot", "state cs x y z parked draw zpath camdist xpath ypath width shields somersault form")
-Row = namedtuple("Row", "frame level mode players path pathvel scroll lowmsg radio_state radio_id lasers hits marks boost",
-                 defaults=((),))
+Row = namedtuple("Row", "frame level mode players path pathvel scroll lowmsg radio_state radio_id lasers hits marks boost "
+                 "bombs", defaults=((), ()))
 Hit = namedtuple("Hit", "actor ai type source shooter")
 
 # OSContPad.button
@@ -287,9 +287,10 @@ def parse_row(line):
     hits = [Hit(*(int(v) for v in h.split(":"))) for h in f["hits"].split(";")] if "hits" in f else []
     lasers = [int(v) for v in f.get("lasers", "0").split(",")]
     boost = tuple(float(v) for v in f["boost"].split(",")) if "boost" in f else ()
+    bombs = [int(v) for v in f["bombs"].split(",")] if "bombs" in f else []  # #384
     return Row(int(f["frame"]), int(f["level"]), int(f["mode"]), players, float(f["path"]), float(f["pathvel"]),
                float(f["scroll"]), int(f.get("lowmsg", 0)), radio[0], radio[1], lasers, hits, int(f.get("marks", 0)),
-               boost)
+               boost, bombs)
 
 
 def parse(path):
