@@ -268,6 +268,29 @@ Newest first. One block per run that matters (a milestone, a release, a QA level
 
 ```
 date:       2026-11-18
+commit:     issue/382-lockon-own-camera, fix 4fc1a01d, on issue/combined-test-6 1ef5aeac (the red on the build of
+            b94bf122, the trace's new field without the fix, with the scenarios of eafb670f; the wider steps on
+            02375786)
+identity:   ROM US 1.0, Linux, GCC 16.2, Debug, OpenGL on a software renderer, no window; two games on one PC over
+            loopback through the join driver, niced, one session at a time
+what ran:   python tools/coop/lockstep_test.py --no-build --jobs 2 --only lock_release,lock_release_all_range (red
+            before the fix, green on it); four breaks of the fix, each built and run the same way: the rails release
+            for slot 0 alone again 1/2 (lock_release fails), the all-range release for slot 0 alone again 1/2
+            (lock_release_all_range fails), every player judged from player 0's view 0/2, players 1 and up judged
+            from the camera each game draws 0/2 (both sessions part, desync reports at the first release);
+            python tools/coop/test_all.py --base-ref origin/issue/combined-test-6 --lanes 2 --only coop-off,views,
+            view-check,draw,hash-run-1,hash-run-2,determinism,full-level,campaign-4,shots,rails-2,rails-4,lockstep:
+            17/17 steps, lockstep 85/85 scenarios
+result:     automated, for the release of a lock-on by its own player's camera (#382, decision 0007 rule 15). Red:
+            player 1 kept a lock-on with its target nearer than the release depth in its own camera on 29 frames
+            (Corneria's rails, 13 of them behind it) and on 120 (Katina, 114 behind it); player 0 on none. Green:
+            none for either player; 3 lock-ons of player 1 ended at its camera on the rails and 1 on Katina, 4 of
+            player 0 on the rails as before; hashes equal on 3700 and 4000 frames. The depth is measured in each game
+            from the camera it drew, by the trace, not by the code under test. Co-op off: equal to a build of
+            1ef5aeac (coop-off). Not run: player 0 letting go in all-range (none of its targets came near on
+            Katina), Meteo's MeMora, three or four players with lock-ons, the rates and builds steps, Release,
+            Windows, two PCs, a person looking at the screen.
+
 commit:     issue/379-bot-reticle, fix edcf98fd, on issue/combined-test-6 2c7326e9 (the red on the build of 93bc6401,
             the trace without the fix)
 identity:   ROM US 1.0, Linux, GCC 16.2, Debug, OpenGL on a software renderer, no window; two games on one PC over

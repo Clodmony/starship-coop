@@ -1178,12 +1178,13 @@ void Actor_DrawOnRails(Actor* this) {
                 sp34.y += this->info.targetOffset;
                 Matrix_MultVec3f(gGfxMatrix, &sp34, &gLockOnTargetViewPos[TEAM_ID_FOX]);
                 // COOP: judged from the view of player 0 on every client (#96)
-                if (CoopView_LockOnZ(&this->obj.pos, gLockOnTargetViewPos[TEAM_ID_FOX].z) > -200.0f) {
+                if (CoopView_LockOnZ(TEAM_ID_FOX, &this->obj.pos, gLockOnTargetViewPos[TEAM_ID_FOX].z) > -200.0f) {
                     this->lockOnTimers[TEAM_ID_FOX] = 0;
                 }
             }
             if (gReflectY > 0) {
-                CoopView_PlaceLockMarks(this->lockOnTimers, this->info.targetOffset); // COOP: players 1 and up (#379)
+                // COOP: players 1 and up: the mark (#379), the release by that player's own view (#382)
+                CoopView_OtherLockOns(this, -200.0f);
             }
         }
     }
@@ -1310,9 +1311,9 @@ void Actor_DrawAllRange(Actor* this) {
         if (this->lockOnTimers[playerNum] != 0) {
             gLockOnTargetViewPos[playerNum] = sViewPos;
             gLockOnTargetViewPos[playerNum].y += this->info.targetOffset;
-            // COOP: judged from the view of player 0 on every client (#96), for slot 0 alone as before (#379)
-            if (((playerNum == gPlayerNum) || CoopPlayers_IsCoop()) && (playerNum < gCamCount) &&
-                (CoopView_LockOnZ(&this->obj.pos, gLockOnTargetViewPos[playerNum].z) > -300.0f)) {
+            // COOP: judged from that player's own view on every client (#96, #382)
+            if (((playerNum == gPlayerNum) || CoopPlayers_IsCoop()) &&
+                (CoopView_LockOnZ(playerNum, &this->obj.pos, gLockOnTargetViewPos[playerNum].z) > -300.0f)) {
                 this->lockOnTimers[playerNum] = 0;
             }
         }

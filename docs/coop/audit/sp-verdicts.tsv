@@ -128,7 +128,6 @@ src/engine/fox_edisplay.c	ActorTeamArwing_Draw	view	site	team Arwing look copies
 src/engine/fox_edisplay.c	Object_SetShadowDL	view	site	player 0 state
 src/engine/fox_edisplay.c	Object_SetMatrix	view	site	billboard to player 0 camera
 src/engine/fox_edisplay.c	Actor_DrawAllRange@gPlayer[0]	view	site	all-range markers by player 0 state
-src/engine/fox_edisplay.c	Actor_DrawAllRange@gCamCount	setup	site	the lock-on release stays on slot 0; the markers loop every player (#379)
 src/engine/fox_edisplay.c	Item_Draw	setup	site	gCamCount == 1 as "not versus" for all-range item marker
 src/engine/fox_edisplay.c	Object_SetSfxSourceToPos	view	site	object sounds placed relative to player 0 camera (gCamCount != 1 skips: versus has no positional sound)
 src/engine/fox_edisplay.c	Object_UpdateSfxSource	view	site	gCamCount != 1 skips positional sound

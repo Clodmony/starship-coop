@@ -322,12 +322,13 @@ void Memora_DrawParts(MeMora* this, f32 xTrans, f32 yTrans, f32 zTrans, f32 xRot
             src.y += this->info.targetOffset;
             Matrix_MultVec3f(gGfxMatrix, &src, &gLockOnTargetViewPos[TEAM_ID_FOX]);
             // COOP: judged from the view of player 0 on every client (#96)
-            if (CoopView_LockOnZ(&this->obj.pos, gLockOnTargetViewPos[TEAM_ID_FOX].z) > -500.0f) {
+            if (CoopView_LockOnZ(TEAM_ID_FOX, &this->obj.pos, gLockOnTargetViewPos[TEAM_ID_FOX].z) > -500.0f) {
                 this->lockOnTimers[TEAM_ID_FOX] = 0;
             }
         }
         if (partIdx == 0) {
-            CoopView_PlaceLockMarks(this->lockOnTimers, this->info.targetOffset); // COOP: players 1 and up (#379)
+            // COOP: players 1 and up: the mark (#379), the release by that player's own view (#382)
+            CoopView_OtherLockOns(this, -500.0f);
         }
     } else {
         RCP_SetupDL_60(gFogRed, gFogGreen, gFogBlue, gFogAlpha, gFogNear, gFogFar);

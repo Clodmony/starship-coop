@@ -1872,6 +1872,113 @@ Unknown:
 
 ## Engine and players
 
+### 2026-11-18, #382: a lock-on is let go by the camera of the player that holds it
+
+Identity: ROM US 1.0, branch `issue/382-lockon-own-camera` on `issue/combined-test-6` (`1ef5aeac`), fix at `4fc1a01d`,
+Linux, GCC 16.2, Debug, OpenGL on a software renderer, no window; two games on one PC over loopback through the join
+driver, niced, one session at a time. "Before" is the build of `b94bf122` (the trace's new field, no fix) with the
+scenarios of `eafb670f`. The owner's answer of 2026-11-18: a lock-on of player 1 and up is released by that player's
+own camera, as for player 0; decision 0007 has it as rule 15.
+
+Observed, code (lines as of this branch):
+
+- Three draw sites end a lock-on whose target is near the camera or behind it: `Actor_DrawOnRails` at a view depth
+  above -200 (`src/engine/fox_edisplay.c:1177-1183`), `Memora_DrawParts` above -500 (`src/engine/fox_enmy2.c:321-327`)
+  and `Actor_DrawAllRange` above -300 (`src/engine/fox_edisplay.c:1310-1320`). Upstream each takes the depth from the
+  camera being drawn; the two rails sites name slot 0, the all-range loop ran over `gCamCount` slots and judged the
+  slot of the camera drawn (`playerNum == gPlayerNum`).
+- In a session they ran for slot 0 alone, judged from player 0's view (`CoopView_LockOnZ`, #96, #379). The issue names
+  `CoopPlayers_ReleaseLockOns` (`src/port/coop/game/players.c:634`) as the way there; that function is the other
+  half, the rundown of a lock-on while its player's A is up, called from `Actor_Update`
+  (`src/engine/fox_enmy.c:2867`), and it ran for every player before.
+- `CoopView_BeginDraw` already worked out every player's camera before the draw, on every client, for the camera
+  angles (`src/port/coop/game/view.c:141-164`): eye and target point from `CoopView_Camera` (`:97-128`), which reads
+  the player's `cam.eye`, `cam.at`, `pos`, `trueZpos`, `zPath`, `yRot_114`, `xRot_120`, `alternateView`, `boostSpeed`
+  and `gGameFrameCount`, as `Display_Update` does for the camera drawn (`src/engine/fox_display.c:1880-1916`). It
+  kept a view matrix for player 0 only.
+- The fix: one view matrix per player (`sReference[COOP_PLAYERS_MAX]`, `view.c:20`, set for every player at `:157`),
+  `CoopView_LockOnZ` takes the player (`:262-274`), `CoopView_OtherLockOns` lets the lock-ons of players 1 and up go
+  at the two rails sites, where it already placed their marks (`:212-230`), and the all-range loop judges every slot
+  (`fox_edisplay.c:1315-1316`). Outside co-op `CoopView_LockOnZ` gives back the depth of the camera drawn, the loop
+  runs over `gCamCount` slots (`CoopPlayers_Count`, `players.c:119-124`) and `CoopView_OtherLockOns` does nothing.
+- The point judged is the actor's place (`obj.pos`, with `gPathProgress`), as for player 0 since #96; upstream's rails
+  site judges the point `info.targetOffset` above it, in the actor's own frame.
+
+Observed, the issue's Unknown, searched (`Actor_DrawAllRange` clears `lockOnTimers[gPlayerNum]` of an actor it did not
+draw, `fox_edisplay.c:1303-1305`, and `gPlayerNum` is the player a client looks through inside `Game_Draw`):
+
+- In a session `CoopView_DrawAnyway` sends every actor to its draw (`fox_edisplay.c:1224-1228`, `:1269-1273`), so
+  `sDrewActor` stays false only where `info.draw` is NULL in the branch for draw types other than 2 (`:1279`). The
+  branch for draw type 2 calls `info.draw` unchecked (`:1238`).
+- A lock-on starts only on an actor whose `info.targetOffset` is not 0 (`src/engine/fox_beam.c:1750-1754`; `:2163-2166`
+  only renews one that is there).
+- The seven actors without a draw function in the table all have a target offset of 0
+  (`src/engine/fox_edata_info.c:343`, `:358`, `:397`, `:398`, `:406`, `:407`, `:409`).
+- `info.draw` is written at run time in two places, each time to a function (`src/overlays/ovl_i4/fox_ka.c:821`,
+  `:2239`). `info.targetOffset` is set to something other than 0 at run time on event actors
+  (`src/engine/fox_enmy2.c:1170`, `:1224`; their draw is `ActorEvent_Draw`, `fox_edata_info.c:319`), on Titania's desert
+  crawler (`src/overlays/ovl_i5/fox_ti.c:1705`; `fox_edata_info.c:348`) and on Andross' actors 10 and 11
+  (`src/overlays/ovl_i6/fox_andross.c:1234-1235`), which are `OBJ_ACTOR_ALLRANGE` (`:581-600`). All have a draw
+  function. `Actor_Initialize` clears the whole actor, timers included (`src/engine/fox_enmy.c:182-190`).
+- The draw returns before all of this when a listener cancels `ObjectDrawPreSetupEvent` (`fox_edisplay.c:1201`). The
+  one listener is `CoopTeam_OnObjectDrawPreSetup` (`src/port/coop/game/team.c:597`); not read further here.
+
+Observed, runs (`lockstep_test.py --only lock_release,lock_release_all_range`: players 0 and 1 hold A for 400 frames
+and let go for 20, half a cycle apart, on Corneria's rails and on Katina; the view trace's new `lockz=` is the depth,
+in the camera the game drew, of the nearest target its own player still holds a lock-on on after the draw, worked
+out in the trace from `gPlayCamEye` and `gPlayCamAt`, `src/port/coop/test/view_trace.c`; counts are over the frames
+compared, 3700 and 4000):
+
+- Before, rails: player 1 held a lock-on on 505 frames, on 29 of them with its target nearer than 200 in its own
+  camera, on 13 of those behind it (as far as 332.1 behind); no lock-on of it ended at its camera. Player 0: 1115
+  frames, none nearer than 200 (nearest -203.9), 4 lock-ons ended at its camera (frames 1873, 1948, 3253, 3309).
+- Before, Katina: player 1 held a lock-on on 438 frames, on 120 with its target nearer than 300, on 114 behind it (as
+  far as 3989.8 behind). Player 0: 131 frames, its nearest target at -7796.3.
+- After, rails: player 1 476 frames, none nearer than 200 (nearest -208.9), 3 lock-ons ended at its camera (frames
+  1870, 3345, 3517). After, Katina: player 1 278 frames, none nearer than 300 (nearest -498.7), 1 ended at its camera
+  (frame 3430: its target came on at about 260 a frame, from -759.6 to -498.7, and the draw of the next frame let
+  go). Player 0's numbers are the same as before in both. Hashes equal on 3700 and 4000 frames.
+- The trace's own measure agrees with the game's for slot 0, which nothing here changed: no lock-on of player 0
+  outlived a draw past the depth, the nearest at -203.9 with the depth at -200.
+- Four breaks of the fix, each built and run with both scenarios: the rails release for slot 0 alone again (the
+  release taken out of `CoopView_OtherLockOns`): `lock_release` fails with the numbers of "before"; the all-range
+  release for slot 0 alone again (`playerNum < gCamCount` back): `lock_release_all_range` fails the same way; every
+  player judged from player 0's view: both fail (rails 3 frames, Katina 61, 60 of them behind); players 1 and up
+  judged from the camera each game draws: both sessions part at the first release, desync reports at frame 1870
+  (rails) and 3430 (Katina), region `actors`, and neither reaches its last frame.
+- `test_all.py --base-ref origin/issue/combined-test-6 --only coop-off,views,view-check,draw,hash-run-1,hash-run-2,
+  determinism,full-level,campaign-4,shots,rails-2,rails-4,lockstep` on `02375786`: 17/17 steps, `lockstep` 85/85
+  scenarios, `coop-off` equal to a build of `1ef5aeac`.
+
+Derived:
+
+- The clear of `lockOnTimers[gPlayerNum]` puts a 0 on a 0 in a session: no actor has both no draw function and a
+  target offset, so it cannot part the clients as the code stands. Left as upstream. An actor that gained a target
+  offset without a draw function would part them on its first lock-on, and the hash covers `lockOnTimers`, so the
+  desync check would name it.
+- The release is simulation state decided from state every client holds, so the hashes stay equal whichever camera a
+  game draws; the fourth break shows the check sees a release decided by the camera drawn.
+- A view of another player than the holder is not enough, on the rails either: with player 0's view for all, player 1
+  kept a lock-on 3 frames too long there.
+
+Unknown:
+
+- All-range, a target that leaves the camera's field: upstream also ends the lock-on of the camera's player when the
+  actor was not drawn (`fox_edisplay.c:1303-1305`: outside the view cone, behind, or too far). In a session that runs
+  for no player, Fox included, since #96 (every actor counts as seen), so a target that leaves the screen to the
+  side stays locked while A is held. Whether each player's own view should bring that back is a rule for the owner;
+  not built.
+- Player 0 in all-range: none of its targets came near on Katina (nearest -7796.3), so no run shows slot 0 letting
+  go there. It is the same loop and the same line as player 1's.
+- Meteo's MeMora (depth 500): not run. Three or four players with lock-ons: not run (`campaign-4` flies four pilots
+  on Fortuna, and the pilot never holds A). Release, Windows, two PCs: not run. No picture was looked at.
+- A player that is down, parked or in a cut: its view is made from what its `Player` holds then; no run looked at a
+  lock-on of such a player.
+
+Test tool, not an issue: `lock_marks` and `lock_marks_all_range` count over the whole trace, and a game plays on a
+few frames after the scenario's last one, each run another number, so their counts (not their verdict) can differ
+between two runs of one build. `lock_release*` cut the trace at the last frame compared.
+
 ### 2026-11-18, #379: the lock-on mark of players 1 and up was never placed or drawn
 
 Identity: ROM US 1.0, branch `issue/379-bot-reticle` on `issue/combined-test-6` (`2c7326e9`), fix at `edcf98fd`,
