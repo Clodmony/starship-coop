@@ -268,6 +268,29 @@ Newest first. One block per run that matters (a milestone, a release, a QA level
 
 ```
 date:       2026-11-18
+commit:     issue/384-own-bombs aa2d3312 on issue/combined-test-6 1ef5aeac: each player keeps its own bomb count from
+            level to level (decision 0007 rule 15, #384).
+identity:   ROM US 1.0, Linux, GCC 16.2, Debug, OpenGL software renderer, no window; two games on one PC over
+            loopback through the join driver, lockstep, niced, one session at a time, frame limit 8
+what ran:   on the fix: lockstep_test.py --no-build --only own_bombs_down,own_bombs_restart,own_lasers_down,
+            own_lasers_restart,own_bombs: 5/5.
+            four breaks, each built and run, sources restored and built again: the copy of player 0's count put back
+            in the join (the code before the fix): own_bombs 0/1, [6, 6] at player 1's join of Meteo; no 3 in
+            CoopPlayers_SetDown: own_bombs_down 0/1; no 3 in CoopPlayers_NewStart: own_bombs_restart 0/1; no 3 in
+            the level start from outside a level: own_bombs 1/1 (the break survives, see NOTES).
+            python tools/coop/build.py --quiet: build: OK.
+result:     automated. Pilots fly Corneria, player 1 joins with 3 bombs, a poke gives players 0 and 1 five and seven,
+            player 0 takes a bomb item: [6, 7] on Corneria's last frame, at Meteo's start, when player 1 joins 853
+            frames into it and 60 frames later, on both games, equal on 13789 frames. A player 1 that goes down has 3
+            from that frame through its return, player 0 keeps 5 (2700 frames). Player 0 down with the refill
+            closed: both 3 from the restart on (2700 frames).
+            Not run: test_all.py; the default lockstep run; a new game inside a session, the map's retry, a lobby
+            start after an earlier session, a player still down at the level's end; three and four games; all-range;
+            Release; Windows; two PCs; a person.
+```
+
+```
+date:       2026-11-18
 commit:     issue/379-bot-reticle, fix edcf98fd, on issue/combined-test-6 2c7326e9 (the red on the build of 93bc6401,
             the trace without the fix)
 identity:   ROM US 1.0, Linux, GCC 16.2, Debug, OpenGL on a software renderer, no window; two games on one PC over
