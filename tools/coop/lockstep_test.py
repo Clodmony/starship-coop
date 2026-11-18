@@ -80,6 +80,10 @@ pass: a client's input reaches the host only through lockstep, and `control` sho
   lock_marks each player charges and fires the guided shot in turn on Corneria's rails (#379): each game draws the
             lock-on mark of the player it looks through and no other, and every new mark settles on its target.
   lock_marks_all_range the same on Katina, all-range.
+  lock_release each player holds A and keeps its lock-on while the target comes past, on Corneria's rails (#382): a
+            lock-on ends when its target is nearer than 200 in the camera of the player that holds it, for player 2
+            as for player 1, on the same frame in both games.
+  lock_release_all_range the same on Katina, all-range, at 300.
   slow      one game takes much longer on some frames: the other one waits, and nothing differs.
   poke      a bit flipped on one client shows at exactly that frame, and nowhere before.
   lag       the clients talk through the chaos relay, with lag, jitter and a little loss.
@@ -8147,7 +8151,9 @@ def charge_in_turn(frame, player):
 
 
 def read_lock_trace(path):
-    """{frame: (view, {player: (x, y, z, scale, turn)}, locks, charge)} of a view trace's lock-on fields (#379)."""
+    """{frame: (view, {player: (x, y, z, scale, turn)}, locks, charge, lockz)} of a view trace's lock-on fields (#379;
+    lockz, #382: the depth of the nearest lock-on target of the player looked through in the camera drawn, None for
+    no lock-on)."""
     rows = {}
     for line in Path(path).read_text(encoding="utf-8", errors="replace").splitlines():
         fields = dict(part.split("=", 1) for part in line.split() if "=" in part)
@@ -8158,8 +8164,10 @@ def read_lock_trace(path):
             for mark in fields["marks"].split(";"):
                 player, values = mark.split(":")
                 marks[int(player)] = tuple(float(v) for v in values.split(","))
+        depth = fields.get("lockz", "-")  # #382
         rows[int(fields["frame"])] = (int(fields["view"]), marks, [int(n) for n in fields["locks"].split(",")],
-                                      [int(n) for n in fields["charge"].split(",")])
+                                      [int(n) for n in fields["charge"].split(",")],
+                                      None if depth == "-" else float(depth))
     return rows
 
 
@@ -8220,6 +8228,75 @@ def sc_lock_marks(args, folder):
 def sc_lock_marks_all_range(args, folder):
     """#379: lock_marks_run on Katina, all-range from the start."""
     return lock_marks_run(args, folder, ALLRANGE_LEVEL, "Katina all-range", LOCK_ALL_RANGE_FRAMES)
+
+
+# ---- #382: a lock-on is let go by the camera of the player that holds it ----
+
+RELEASE_HOLD, RELEASE_GAP = 400, 20  # A held long, so a lock-on lasts until its target comes past the player
+RELEASE_RAILS, RELEASE_ALL_RANGE = -200.0, -300.0  # the depth a lock-on ends at: Actor_DrawOnRails, Actor_DrawAllRange
+RELEASE_CLOSE = 400.0  # a target this near to that depth on one frame can be past it on the next: one closed at 30 a
+# frame on the rails and at 250 on Katina (NOTES.md, #382)
+
+
+def hold_in_turn(frame, player):
+    """charge_in_turn with A held for RELEASE_HOLD frames: a lock-on is kept while its target flies past."""
+    _, x, y = sway(frame, player)
+    if frame < JOIN_FRAME:
+        return 0, 0, 0
+    phase = (frame - JOIN_FRAME + player * (RELEASE_HOLD + RELEASE_GAP) // 2) % (RELEASE_HOLD + RELEASE_GAP)
+    return (BUTTON_A if phase < RELEASE_HOLD and player < 2 else 0), x, y
+
+
+def lock_release_run(args, folder, level, name, frames, depth):
+    """Each player holds A, locks on and keeps the lock-on while its target comes past (#382, decision 0007 rule 15).
+    A lock-on ends when its target is nearer than `depth` in the camera of the player that holds it, or behind it:
+    measured in each game from the camera it drew (the view trace's lockz, for the player it looks through), no
+    lock-on outlives a draw with its target past that depth, and player 1 had lock-ons end there (player 0's are
+    counted: on Katina none of its targets came near in this flight). Hashes equal on every frame, so both games let
+    go on the same frame."""
+    traces = {"host": folder / "host-view.txt", "client0": folder / "client0-view.txt"}
+    host_env = {"SF64_COOP_VIEW_TRACE": str(traces["host"])}
+    if level is not None:
+        host_env["SF64_COOP_JOIN_LEVEL"] = str(level)
+    host, client = run_short(args, folder, script=hold_in_turn, frames=frames, host_env=host_env,
+                             client_env={"SF64_COOP_VIEW_TRACE": str(traces["client0"])})
+    equal = compare(host, client, frames)
+    found, kept = [], []
+    for game, own in ((host, 0), (client, 1)):
+        rows = read_lock_trace(traces[game.name])
+        flying = {f: r for f, r in rows.items() if r[0] == own}
+        expect(flying, f"{game.name}: never looked through player {own}")
+        held = {f: r[4] for f, r in flying.items() if r[4] is not None}
+        expect(len(held) >= LOCK_MIN_LOCKED, f"{game.name}: player {own} held a lock-on on {len(held)} frames, want "
+                                              f"{LOCK_MIN_LOCKED}")
+        past = sorted(f for f, z in held.items() if z > depth)
+        behind = sum(1 for z in held.values() if z >= 0.0)
+        # Let go by the camera: the nearest target was about to pass the depth, and on the next frame the player holds
+        # one lock-on less.
+        ended = [f for f in sorted(flying) if held.get(f - 1, depth - RELEASE_CLOSE) > depth - RELEASE_CLOSE
+                 and flying[f][2][own] < flying[f - 1][2][own]]
+        if past:
+            kept.append(f"{game.name}: player {own} kept a lock-on on {len(past)} frames with its target nearer than "
+                        f"{-depth:.0f} in its own camera, on {behind} of them behind it (first frame {past[0]}, depth "
+                        f"{held[past[0]]:.1f}; deepest {max(held.values()):.1f})")
+        found.append((game, own, len(held), len(ended), max(held.values())))
+    expect(not kept, "; ".join(kept))
+    for game, own, held, ended, nearest in found:
+        expect(ended or own == 0, f"{game.name}: no lock-on of player {own} ended at its camera (held on {held} "
+                                  f"frames, nearest {nearest:.1f}): this flight shows nothing")
+    return f"{name}, {equal} frames equal; " + "; ".join(
+        f"{game.name}: player {own} held a lock-on on {held} frames, {ended} ended at its camera, none kept nearer "
+        f"than {-depth:.0f} (nearest {nearest:.1f})" for game, own, held, ended, nearest in found)
+
+
+def sc_lock_release(args, folder):
+    """#382: lock_release_run on Corneria's rails."""
+    return lock_release_run(args, folder, None, "Corneria rails", LOCK_RAIL_FRAMES, RELEASE_RAILS)
+
+
+def sc_lock_release_all_range(args, folder):
+    """#382: lock_release_run on Katina, all-range from the start."""
+    return lock_release_run(args, folder, ALLRANGE_LEVEL, "Katina all-range", LOCK_ALL_RANGE_FRAMES, RELEASE_ALL_RANGE)
 
 
 SCENARIOS = {
@@ -8345,6 +8422,8 @@ SCENARIOS = {
     "inhale_four": sc_inhale_four,
     "lock_marks": sc_lock_marks,
     "lock_marks_all_range": sc_lock_marks_all_range,
+    "lock_release": sc_lock_release,
+    "lock_release_all_range": sc_lock_release_all_range,
 }
 # #329: the rule scenarios with a third and a fourth player, `<name>_three` and `<name>_four`.
 RULES_WITH_PLAYERS = ("aim", "macbeth_bombs", "ma_turret", "sy_robot_spread", "sy_robot_pose", "granga_spread",
