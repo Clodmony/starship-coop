@@ -8234,8 +8234,6 @@ def sc_lock_marks_all_range(args, folder):
 
 RELEASE_HOLD, RELEASE_GAP = 400, 20  # A held long, so a lock-on lasts until its target comes past the player
 RELEASE_RAILS, RELEASE_ALL_RANGE = -200.0, -300.0  # the depth a lock-on ends at: Actor_DrawOnRails, Actor_DrawAllRange
-RELEASE_CLOSE = 400.0  # a target this near to that depth on one frame can be past it on the next: one closed at 30 a
-# frame on the rails and at 250 on Katina (NOTES.md, #382)
 
 
 def hold_in_turn(frame, player):
@@ -8251,9 +8249,10 @@ def lock_release_run(args, folder, level, name, frames, depth):
     """Each player holds A, locks on and keeps the lock-on while its target comes past (#382, decision 0007 rule 15).
     A lock-on ends when its target is nearer than `depth` in the camera of the player that holds it, or behind it:
     measured in each game from the camera it drew (the view trace's lockz, for the player it looks through), no
-    lock-on outlives a draw with its target past that depth, and player 1 had lock-ons end there (player 0's are
-    counted: on Katina none of its targets came near in this flight). Hashes equal on every frame, so both games let
-    go on the same frame."""
+    lock-on outlives a draw with its target past that depth, and player 1 had lock-ons end there: the player holds
+    one lock-on less on the very frame its nearest target, still beyond the depth on the frame before, would have
+    crossed it at the pace it came. Player 0's are counted (on Katina none of its targets came near in this flight).
+    Hashes equal on every frame, so both games let go on the same frame."""
     traces = {"host": folder / "host-view.txt", "client0": folder / "client0-view.txt"}
     host_env = {"SF64_COOP_VIEW_TRACE": str(traces["host"])}
     if level is not None:
@@ -8273,10 +8272,11 @@ def lock_release_run(args, folder, level, name, frames, depth):
                                               f"{LOCK_MIN_LOCKED}")
         past = sorted(f for f, z in held.items() if z > depth)
         behind = sum(1 for z in held.values() if z >= 0.0)
-        # Let go by the camera: the nearest target was about to pass the depth, and on the next frame the player holds
-        # one lock-on less.
-        ended = [f for f in sorted(flying) if held.get(f - 1, depth - RELEASE_CLOSE) > depth - RELEASE_CLOSE
-                 and flying[f][2][own] < flying[f - 1][2][own]]
+        # Let go by the camera: the nearest target was still beyond the depth and coming closer at a pace that takes it
+        # past the depth on this frame, and on this frame the player holds one lock-on less. A lock-on that ends for
+        # another reason (A let go, the target shot or gone) does not look like that but by chance.
+        ended = [f for f in sorted(flying) if f - 1 in held and f - 2 in held and held[f - 1] <= depth
+                 and 2 * held[f - 1] - held[f - 2] > depth and flying[f][2][own] < flying[f - 1][2][own]]
         if past:
             kept.append(f"{game.name}: player {own} kept a lock-on on {len(past)} frames with its target nearer than "
                         f"{-depth:.0f} in its own camera, on {behind} of them behind it (first frame {past[0]}, depth "

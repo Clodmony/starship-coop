@@ -268,6 +268,11 @@ The owner went through the record item by item. What each answer changed, and wh
     `Play_Init` (rule 5), and Fox is single after a refill (rule 3). Where the original takes Fox's upgrade away for
     a new start, every player's goes: a new game, the restart after Fox went down or after a retry from the pause
     menu, and the map's retry of a course. The restart and the retry are the team's (rules 3 and 7).
+15. **Lock-on (added 2026-11-18, the owner's answer on #382).** A lock-on is let go by the camera of the player that
+    holds it, for players 2-4 as for Fox. When its target comes nearer to that player's camera than the game's own
+    depth for it (200 on rails, 500 for Meteo's MeMora, 300 in all-range), or is behind it, the lock-on ends: the
+    player can lock on again, and a guided shot no longer turns back for that target. Every game works that camera
+    out from the player's state, never from the camera it draws, so all of them let go on the same frame.
 
 The two starting values, pool size and delay, are constants to tune by play.
 
@@ -306,6 +311,15 @@ single. That sentence is the owner's. The last two sentences of rule 14 (a new g
 take every player's upgrade) are derived, not the owner's words: they keep what the code did there before, where the
 copy of Fox's value gave everyone a single laser, and the owner can change them.
 
+**Update 2026-11-18 (rule 15, built and run; `docs/coop/NOTES.md`, 2026-11-18, #382).** Found by #379: the game ends a
+lock-on whose target came near its player's camera or passed it, and in a session that ran for slot 0 alone, judged
+from player 0's view (#96). Player 2 kept a lock-on on a target behind it for as long as A was held, could start no
+new one, and its guided shot went back for that target. The owner's answer of 2026-11-18: a lock-on of players 2-4 is
+let go by that player's own camera, as Fox's is. That sentence is the owner's; the depths are the game's own. Not
+part of the answer, and unchanged: in all-range the original also ends a lock-on whose target leaves the camera's
+field (the actor is not drawn), and a session has done that for no player, Fox included, since #96, where every
+actor counts as seen.
+
 ### Every client decides alike
 
 - The rule reads simulated state only: `gLifeCount[0]`, the player slots, the return counter, `gPlayer[0].state`, and
@@ -329,6 +343,10 @@ copy of Fox's value gave everyone a single laser, and the owner can change them.
   open, which is one table in the code and not a setting a client can change. It runs at the point inside the player
   loop where `Player_Down` would be called, so it is in game frames and in no draw path.
 - Rule 11 reads shots and player positions, all simulated, in the shot update that every client runs.
+- Rule 15 reads a view of each player that every game makes before its draw from that player's simulated state: the
+  eye and the target point of its camera, its place on the path and its roll (`CoopView_BeginDraw`,
+  `src/port/coop/game/view.c`). It never reads the camera a game draws, `gPlayerNum` or `CoopPlayers_ViewIndex()`.
+  The release sits in the actor draw code, which every game runs for every actor, in view or not (#96).
 - No new network message: the rule runs from inputs that already travel, so `docs/coop/PROTOCOL.md` does not change.
 - Decision 0002 is lockstep (Accepted 2026-11-07), so there is no host-side copy of the rule and no snapshot.
 
