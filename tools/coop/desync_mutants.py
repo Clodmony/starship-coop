@@ -70,6 +70,14 @@ BREAKS = [
     ("unused_link_taken", "if ((peer < 0) || (peer >= COOP_NET_MAX_PEERS) || !d->links[peer].open) {",
      "if ((peer < 0) || (peer >= COOP_NET_MAX_PEERS)) {", SIM),
     ("pending_full_silent", "        d->unchecked += l->pending[0].count - l->pending[0].next;\n", "", SIM),
+    # Decision 0016: what a repair leaves behind
+    ("resync_floor_not_set", "    d->floor = frame;\n", "", SIM),
+    ("resync_pending_compared", "            if (frame >= d->floor) {\n                Compare(", "            if (true) {\n                Compare(",
+     SIM),
+    ("resync_old_desync_found", "    if (frame < d->floor) {\n        return true; // of a desync that a repair has dealt with since\n    }\n",
+     "", SIM),
+    ("resync_found_kept", "void CoopDesync_Resync(CoopDesync* d, uint32_t frame) {\n    d->found = false;\n",
+     "void CoopDesync_Resync(CoopDesync* d, uint32_t frame) {\n", SIM),
 ]
 
 

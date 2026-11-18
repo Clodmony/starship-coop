@@ -50,6 +50,8 @@ static u16 sBank[COOP_PLAYERS_MAX];    // the trigger held to bank into a turn i
 static s32 sBankOff[COOP_PLAYERS_MAX]; // frames since a bank was let go
 static PilotBox sBoxes[PILOT_BOX_MAX];
 static s32 sBoxCount;
+static f32 sLane[COOP_PLAYERS_MAX]; // SF64_COOP_PILOT_LANES (pilot.h): a Landmaster's own lane, for sLanes players
+static s32 sLanes = 0;
 
 static void CoopPilot_AddBox(f32 x, f32 y, f32 halfX, f32 halfY) {
     if (sBoxCount < PILOT_BOX_MAX) {
@@ -180,6 +182,38 @@ static bool CoopPilot_IsClear(f32 x, f32 y) {
     return true;
 }
 
+// With three or four players, whether a spot is where a player before player i flies, or the spot it took on this
+// frame (#345). Two ships do not collide, and two pilots that took the same clear spot flew the same line frame for
+// frame, as their sticks were the same: in Meteo players 1, 2 and 3 held one spot for 900 frames. Such a spot costs
+// more, and the later player takes the next. The spot taken counts too: Andross' inhale left players 1, 2 and 3 of four
+// on one point at y 36, under the lowest row of spots (y 60), where no player's place was within 20 of a spot, and all
+// three took the same one for 150 frames.
+#define PILOT_TAKEN_COST 400.0f
+
+static f32 sSpotX[COOP_PLAYERS_MAX];
+static f32 sSpotY[COOP_PLAYERS_MAX];
+static u32 sSpotFrame[COOP_PLAYERS_MAX]; // the frame sSpotX and sSpotY were taken on, +1 (0: never)
+
+static bool CoopPilot_Taken(s32 i, f32 x, f32 y) {
+    s32 j;
+
+    if (CoopPlayers_Count() <= 2) {
+        return false;
+    }
+    for (j = 0; j < i; j++) {
+        if (CoopPlayers_IsParked(j) || (gPlayer[j].state != PLAYERSTATE_ACTIVE)) {
+            continue;
+        }
+        if ((fabsf(gPlayer[j].pos.x - x) < 40.0f) && (fabsf(gPlayer[j].pos.y - y) < 20.0f)) {
+            return true;
+        }
+        if ((sSpotFrame[j] == gGameFrameCount + 1) && (fabsf(sSpotX[j] - x) < 1.0f) && (fabsf(sSpotY[j] - y) < 1.0f)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // On rails the stick sets rot, and rot sets the speed across the path. Each player keeps to its own side and sways, as
 // a shot goes where a ship was. Of the spots across the path that are clear of what is ahead, it takes the one nearest
 // to where it is and where it wants to be.
@@ -201,7 +235,8 @@ static void CoopPilot_FlyRails(const Player* p, s32 i, PilotPad* pad) {
 
             if (CoopPilot_IsClear(spotX, spotY)) {
                 f32 cost = fabsf(spotX - p->pos.x) + fabsf(spotY - p->pos.y) +
-                           (fabsf(spotX - wantX) + fabsf(spotY - wantY)) * wantWeight;
+                           (fabsf(spotX - wantX) + fabsf(spotY - wantY)) * wantWeight +
+                           (CoopPilot_Taken(i, spotX, spotY) ? PILOT_TAKEN_COST : 0.0f);
 
                 if (cost < best) {
                     best = cost;
@@ -211,6 +246,9 @@ static void CoopPilot_FlyRails(const Player* p, s32 i, PilotPad* pad) {
             }
         }
     }
+    sSpotX[i] = targetX;
+    sSpotY[i] = targetY;
+    sSpotFrame[i] = gGameFrameCount + 1;
     pad->x = (targetX - p->pos.x) * 0.25f - p->vel.x * 2.0f;
     pad->y = -((targetY - p->pos.y) * 0.25f - p->vel.y * 2.0f);
     if ((gGameFrameCount % PILOT_FIRE_PERIOD) == 0) {
@@ -449,6 +487,29 @@ static s32 CoopPilot_ClearSteps(const Player* p, f32 spotX, bool hover) {
     return step;
 }
 
+// Box n's half size across and up (#345), as the hitbox lists it, not turned with the object. Markers are skipped.
+// Returns false past the list's end.
+bool CoopPilot_BoxHalf(const f32* data, s32 n, f32* halfX, f32* halfY) {
+    s32 count = (s32) *data++;
+    s32 i;
+
+    for (i = 0; i < count; i++, data += 6) {
+        if (data[0] == HITBOX_ROTATED) {
+            data += 4;
+        } else if (data[0] >= HITBOX_SHADOW) {
+            data++;
+        }
+        if (i == n) {
+            const Hitbox* box = (const Hitbox*) data;
+
+            *halfX = box->x.size;
+            *halfY = box->y.size;
+            return true;
+        }
+    }
+    return false;
+}
+
 static s32 sAimPart = -1;
 static Vec3f sAimAt;
 extern s16 D_i5_801BE320[35]; // fox_ma.c
@@ -528,6 +589,21 @@ static bool CoopPilot_MacbethBossTarget(const Player* p, Vec3f* at) {
     return false;
 }
 
+// Where SF64_COOP_PILOT_LANES holds: a boss in gBosses[0], or Macbeth's train end (actor 207) once it leaves the train.
+static bool CoopPilot_LaneFight(void) {
+    s32 k;
+
+    if (gBosses[0].obj.status == OBJ_ACTIVE) {
+        return true;
+    }
+    for (k = 0; (gCurrentLevel == LEVEL_MACBETH) && (k < ARRAY_COUNT(gActors)); k++) {
+        if ((gActors[k].obj.status == OBJ_ACTIVE) && (gActors[k].obj.id == OBJ_ACTOR_207) && (gActors[k].state >= 1)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Goras, Titania's boss (Titania_TiGoras_Update): its hitbox is rebuilt each frame (aTiGorasHitbox, plain boxes, no
 // markers), and box n is part D_i5_801B7904[n]. From state 7 to 13 a beam hit on a part with a number in
 // D_i5_801BAA78 (1 to 4) takes that part's health, swork[8 + number]; once all four are gone and the health bar shows,
@@ -546,7 +622,10 @@ static bool CoopPilot_GorasTarget(const Player* p, Vec3f* at) {
         (boss->state < 7) || (boss->state >= 14)) {
         return false;
     }
-    count = MIN((s32) *data++, ARRAY_COUNT(D_i5_801B7904));
+    // Not `MIN(*data++, ...)`: the macro names its argument twice, so the count came from the float after it and
+    // every box was read one float on, past both tables (#262).
+    count = (s32) *data++;
+    count = MIN(count, (s32) ARRAY_COUNT(D_i5_801B7904));
     for (n = 0; n < count; n++, data += 6) {
         s32 part = D_i5_801B7904[n];
         s32 number = (part < ARRAY_COUNT(D_i5_801BAA78)) ? D_i5_801BAA78[part] : 0;
@@ -587,7 +666,10 @@ static void CoopPilot_Drive(const Player* p, s32 i, PilotPad* pad) {
     s32 h;
     f32 x;
 
-    if (CoopPilot_GorasTarget(p, &aim) || CoopPilot_MacbethBossTarget(p, &aim)) {
+    if ((i < sLanes) && CoopPilot_LaneFight()) {
+        wantX = p->xPath + sLane[i] * edge; // its own lane (SF64_COOP_PILOT_LANES), whatever is ahead but hazards
+        wantWeight = 1.0f;
+    } else if (CoopPilot_GorasTarget(p, &aim) || CoopPilot_MacbethBossTarget(p, &aim)) {
         aiming = true;
         wantX = aim.x;
         wantWeight = 1.5f;
@@ -1162,8 +1244,20 @@ int CoopPilot_IsOn(void) {
 
 void CoopPilot_Init(void) {
     const char* log = getenv("SF64_COOP_PILOT_LOG");
+    const char* lanes = getenv("SF64_COOP_PILOT_LANES");
 
     sOn = 1;
+    sLanes = 0;
+    while ((lanes != NULL) && (lanes[0] != '\0') && (sLanes < COOP_PLAYERS_MAX)) {
+        char* end;
+
+        sLane[sLanes] = fmaxf(-1.0f, fminf(1.0f, strtol(lanes, &end, 10) / 100.0f)); // percent: no locale
+        if (end == lanes) {
+            break;
+        }
+        sLanes++;
+        lanes = (*end == ',') ? end + 1 : NULL;
+    }
     if ((log != NULL) && (log[0] != '\0')) {
         sLog = fopen(log, "w");
     }

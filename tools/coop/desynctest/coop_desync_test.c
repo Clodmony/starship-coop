@@ -521,6 +521,73 @@ static void sc_malformed(void) {
     Check(CoopDesync_Done(host, sNow), "the host is done at once", 0, 0);
 }
 
+static void sc_resync(void) {
+    uint8_t message[COOP_DESYNC_MESSAGE_SIZE];
+    uint32_t before;
+
+    Scenario("resync: a repair at frame 1000 forgets the desync of frame 777, and the check goes on from there");
+    Reset(2, 60, 3);
+    sNodes[1].pokeFrame = 777;
+    sNodes[1].pokeRegion = 3;
+    Run(1000);
+    Expect_Found(0, 777, 0, 1, 1, 1u << 3);
+    Expect_Found(1, 777, 0, 1, 0, 1u << 3);
+    // The repair: the client has the host's state again, and both start over from frame 1000.
+    sNodes[1].pokeFrame = NO_POKE;
+    CoopDesync_Resync(&sNodes[0].desync, 1000);
+    CoopDesync_Resync(&sNodes[1].desync, 1000);
+    sNodes[0].doneMs = sNodes[1].doneMs = 0;
+    before = sNodes[0].desync.checked;
+    Run(2500);
+    Check(!sNodes[0].desync.found && !sNodes[1].desync.found, "a desync was found again after the repair", 0,
+          sNodes[0].desync.frame);
+    Check(sNodes[0].desync.checked >= before + 1000, "the host went on checking", sNodes[0].desync.checked, before);
+    Check(sNodes[1].desync.checked >= 1000, "the client went on checking", sNodes[1].desync.checked, 0);
+    Check((sNodes[0].doneMs == 0) && (sNodes[1].doneMs == 0), "done after the repair", 0, 0);
+    // A batch of hashes for frames before the repair that was still on its way is not compared; one of frames after it is.
+    {
+        uint8_t batch[COOP_DESYNC_HASH_HEADER + 8 * 10];
+        int k;
+
+        // A second repair, at frame 2480, so that the frames before it are still in the ring.
+        CoopDesync_Resync(&sNodes[0].desync, 2480);
+        memset(batch, 0xA5, sizeof(batch));
+        batch[0] = (uint8_t) (2460 & 0xFF);
+        batch[1] = (uint8_t) (2460 >> 8);
+        batch[2] = batch[3] = 0;
+        batch[4] = 10;
+        Check(CoopDesync_Receive(&sNodes[0].desync, 0, COOP_MSG_SYNC_HASH, batch, sizeof(batch), sNow),
+              "an old SYNC_HASH was refused", 0, 0);
+        Check(!sNodes[0].desync.found, "a batch of frames before the repair found a desync", 0, sNodes[0].desync.frame);
+        batch[0] = (uint8_t) (2490 & 0xFF); // the node ran to 2500, and its ring holds the last 64 frames
+        batch[1] = (uint8_t) (2490 >> 8);
+        for (k = 0; k < 10; k++) {
+            batch[COOP_DESYNC_HASH_HEADER + 8 * k] = (uint8_t) k;
+        }
+        Check(CoopDesync_Receive(&sNodes[0].desync, 0, COOP_MSG_SYNC_HASH, batch, sizeof(batch), sNow),
+              "a new SYNC_HASH was refused", 0, 0);
+        Check(sNodes[0].desync.found && (sNodes[0].desync.frame == 2490), "a batch of frames after the repair found nothing",
+              0, sNodes[0].desync.frame);
+    }
+    // A SYNC_DESYNC of the desync that was repaired, still on its way when the repair happened, is let through and
+    // ignored; one of a frame after the repair is a desync.
+    memset(message, 0, sizeof(message));
+    message[4] = 0; // sender: the host
+    message[5] = 0; // the pair
+    message[6] = 1;
+    message[0] = (uint8_t) (777 & 0xFF);
+    message[1] = (uint8_t) (777 >> 8);
+    Check(CoopDesync_Receive(&sNodes[1].desync, 0, COOP_MSG_SYNC_DESYNC, message, sizeof(message), sNow),
+          "an old SYNC_DESYNC was refused", 0, 0);
+    Check(!sNodes[1].desync.found, "an old SYNC_DESYNC found a desync", 0, sNodes[1].desync.frame);
+    message[0] = (uint8_t) (2000 & 0xFF);
+    message[1] = (uint8_t) (2000 >> 8);
+    Check(CoopDesync_Receive(&sNodes[1].desync, 0, COOP_MSG_SYNC_DESYNC, message, sizeof(message), sNow),
+          "a new SYNC_DESYNC was refused", 0, 0);
+    Check(sNodes[1].desync.found && (sNodes[1].desync.frame == 2000), "a SYNC_DESYNC after the repair found nothing", 0,
+          sNodes[1].desync.frame);
+}
+
 int main(void) {
     sc_clean();
     sc_poke();
@@ -535,6 +602,7 @@ int main(void) {
     sc_too_old();
     sc_pending_full();
     sc_malformed();
+    sc_resync();
     printf("desync sim: %u checks, %u failed\n", (unsigned) sChecks, (unsigned) sFailures);
     return (sFailures == 0) ? 0 : 1;
 }

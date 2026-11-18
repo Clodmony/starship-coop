@@ -22,6 +22,19 @@ void CoopInput_ClearSources(void) {
     sLocalSource = NULL;
 }
 
+void CoopInput_ClearSource(const CoopInputSource* source) {
+    int32_t i;
+
+    for (i = 0; i < COOP_PLAYERS_MAX; i++) {
+        if (sSources[i] == source) {
+            sSources[i] = NULL;
+        }
+    }
+    if (sLocalSource == source) {
+        sLocalSource = NULL;
+    }
+}
+
 // hold and press are port 0, fresh from Controller_UpdateInput. Hold and the sticks of press can be trusted, as both
 // come from the hardware read. The buttons of press cannot: Controller_UpdateInput compares with what the slot held at
 // the end of the last frame, and that was a stream if player 0 is not local (NOTES.md, 2026-11-06, #68).

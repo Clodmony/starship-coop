@@ -8,8 +8,9 @@ Plays one replay per section twice, with SF64_COOP_TEST_LOCAL_INDEX 0 and 1: two
 starts straight in Corneria, before its intro (replay.py, Start). Input by rule flies both players (player_trace.py),
 and buttons and pokes give them different numbers, so a client that shows the wrong player shows the wrong number. Each
 game writes a view trace (src/port/coop/test/view_trace.h) and a state hash log. The trace says what the client holds to
-show, not what reached the screen: the HUD numbers without a value of their own (lives, the boost gauge) and the look of
-everything are for a picture, see docs/coop/QA.md.
+show, not what reached the screen: the boost gauge and the look of everything are for a picture, see docs/coop/QA.md.
+The lives number is the one HUD number the trace takes from the draw itself (hudlives, #335); lockstep_test.py's
+hud_lives checks it.
 
 Rules, on the frames they talk about:
 
@@ -60,6 +61,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import hash_check  # noqa: E402
 import player_trace  # noqa: E402
 import replay as replay_tool  # noqa: E402
+from run_folder import make_run_folder  # noqa: E402
 
 BUTTON_B = 0x4000
 BUTTON_START = 0x1000
@@ -126,7 +128,7 @@ TIMEOUT = 1500
 Client = namedtuple("Client", "index rows by_frame")
 Slot = namedtuple("Slot", "state parked shields bombs lives alternate sfx pos")
 Row = namedtuple("Row", "frame mode local view eye at shield bombs cockpit fill flash bars players noise paused sfx "
-                       "seen guns tags reticles turned heat")
+                       "seen guns tags reticles turned heat hudlives")
 
 
 def floats(text):
@@ -151,10 +153,12 @@ def parse_row(line):
     reticles = tuple(int(v) != 0 for v in f["reticles"].split(",")) if "reticles" in f else None
     turned = tuple(int(v) for v in f["turned"].split("/")) if "turned" in f else None
     heat = None if "heat" not in f else () if f["heat"] == "-" else tuple(int(v) for v in f["heat"].split(","))
+    # #335: the lives number the HUD drew, -1 for none drawn; None from a build before it.
+    hudlives = None if "hudlives" not in f else -1 if f["hudlives"] == "-" else int(f["hudlives"])
     return Row(int(f["frame"]), int(f["mode"]), int(f["local"]), int(f["view"]), floats(f["eye"]), floats(f["at"]), float(f["shield"]),
                int(f["bombs"]), int(f["cockpit"]) != 0, tuple(int(v) for v in f["fill"].split(",")), int(f["flash"]),
                bars, players, tuple(int(v) for v in f["noise"].split(",")), int(f["pause"]) != 0, sfx,
-               tuple(int(v) != 0 for v in f["seen"].split(",")), guns, tags, reticles, turned, heat)
+               tuple(int(v) != 0 for v in f["seen"].split(",")), guns, tags, reticles, turned, heat, hudlives)
 
 
 def read_trace(index, path):
@@ -530,7 +534,8 @@ def pokes(section):
 def play_section(section, exe, args):
     """Play one section with each local index. Returns a list of failures."""
     frames, l_at = SECTIONS[section]
-    replay = replay_tool.ROOT / "local" / f"test-view-{section}.sfcr"
+    # A folder of its own, so that two runs at once do not write one file (#121)
+    replay = make_run_folder(replay_tool.ROOT / "local", f"test-view-{section}-") / "input.sfcr"
     player_trace.write_rail_replay(replay, frames, l_at, extra=extra_buttons if section == "rails" else None,
                                    start=START)
     cvars = {"gCoopDebugPlayerCount": 2, "gInvincible": 1}

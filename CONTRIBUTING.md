@@ -100,12 +100,13 @@ Tests run in two tiers, so that the long run happens once per batch of PRs and n
   steps for the area you touched: `python tools/coop/test_all.py --only <steps>`, with the steps from the table
   "Which steps for which change" in [tools/coop/README.md](tools/coop/README.md). Nothing more is expected on a
   branch; a full run there is your choice, not a rule.
-- **Before a merge, once per batch:** `python tools/coop/test_all.py --base-exe <a build of coop>` runs every test in
-  lanes, unattended, and must end in `RESULT: PASS`; `--config Release` does the same on a Release build. It runs on
-  a **batch branch**: `coop` with every PR about to merge merged in (the first was `issue/combined-test`, six issues,
-  2026-11-09). One passing run covers all of them, as long as `coop` after the merges has the same tree
-  (`git diff coop <batch branch>` prints nothing) and no covered PR was pushed to after the run. A PR pushed to later
-  needs a new batch run or a full run of its own. A failed batch is bisected: drop a PR, run again.
+- **Before a merge, once per batch:** `python tools/coop/test_all.py --base-exe <a build of coop>` (or `--base-ref
+  origin/coop`, which builds it itself beside the other steps) runs every test in lanes, unattended, and must end in
+  `RESULT: PASS`; `--config Release` does the same on a Release build. It runs on a **batch branch**: `coop` with
+  every PR about to merge merged in (the first was `issue/combined-test`, six issues, 2026-11-09). One passing run
+  covers all of them, as long as `coop` after the merges has the same tree (`git diff coop <batch branch>` prints
+  nothing) and no covered PR was pushed to after the run. A PR pushed to later needs a new batch run or a full run of
+  its own. A failed batch is bisected: drop a PR, run again.
 
 Say in the PR what ran and what did not, and name the commit it ran on. The game shows its build id at the right end
 of the menu bar (F1).

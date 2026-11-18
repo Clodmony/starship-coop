@@ -3,6 +3,7 @@
 
     python tools/coop/package.py --config Release    # after build.py; prints package: OK <name>
     python tools/coop/package.py --scan <folder>     # only the scan, for example on a downloaded artifact
+    python tools/coop/package.py --config Release --release-tag v0.1.0-coop-alpha1   # the README says it is a release
 
 The name is starship-coop-<id>-<os>-x64 in <build dir>/package/. <id> comes from coop/coop_build_id.h in the build
 folder, the id the game shows and the handshake compares (tools/coop/cmake/coop_build_id.cmake), so a name and a game
@@ -64,17 +65,28 @@ ROM_HEADERS = [re.compile(re.escape(swapped(ROM_START, order)) + b".{28}" + re.e
 BAD_START = (b"PK\x03\x04", b"MPQ\x1a", *(swapped(ROM_START, order) for order in ROM_ORDERS))
 
 README = """Starship Co-op, build {build_id}, {system} x64
+{kind}
 
-A test build from the project's CI, not a release. The game shows this id at the right end of the menu bar (press F1).
-To play together, everyone needs the same id.
+To play together, everyone needs the same build id. The game shows it at the right end of the menu bar (press F1); a
+player whose build differs is refused with a message.
 
 There is no ROM and no sf64.o2r in this folder. starship.o2r holds the port's shaders and HUD textures, packed from the
 repository's port/ folder; keep it next to the game, which does not start without it. You need:
 
-- Your own Star Fox 64 ROM, US 1.0 or 1.1. On the first start the game asks for it and makes sf64.o2r from it.
+- Your own Star Fox 64 ROM, US 1.0 or 1.1, the same version as the other player. On the first start the game asks for it
+  and makes sf64.o2r from it.
+- A way through the network: the host's UDP port 46464 must be reachable (the same network, a forwarded port, or a
+  virtual private network). In the menu bar's Co-op window one player hosts and the other joins: see the README of the
+  project, "Host and join".
 {extra}"""
+KIND_TEST = "A test build from the project's CI, not a release."
+KIND_RELEASE = (
+    "Release {tag}. It is cut from the project's tested branch; the release page says which tests it passed and what is\n"
+    "known not to work. A tag with alpha, beta or rc in its name is a pre-release."
+)
 EXTRA = {
-    "linux": """- chmod +x Starship: a download from Actions loses the executable flag.
+    "linux": """- chmod +x Starship if it will not start: an artifact download from Actions loses the executable flag (the
+  release's .tar.gz keeps it).
 - The libraries of Ubuntu 24.04: this build is linked against them. See .github/workflows/coop-build.yml for the list.
 """,
     "windows": "",
@@ -145,6 +157,7 @@ def main():
     p.add_argument("--build-dir", type=Path, help="default: build/x64 on Windows, build-cmake elsewhere")
     p.add_argument("--out", type=Path, help="make the package in this folder (default: <build dir>/package)")
     p.add_argument("--scan", type=Path, metavar="FOLDER", help="scan this folder and stop")
+    p.add_argument("--release-tag", metavar="TAG", help="the README says this is release TAG, not a test build (#358)")
     args = p.parse_args()
 
     if args.scan:
@@ -182,7 +195,8 @@ def main():
     if (build_dir / "gamecontrollerdb.txt").exists():
         shutil.copy2(build_dir / "gamecontrollerdb.txt", folder / "gamecontrollerdb.txt")
     (folder / PORT_ARCHIVE).write_bytes(port_archive())
-    text = README.format(build_id=build_id, system=platform.system(), extra=EXTRA[system])
+    kind = KIND_RELEASE.format(tag=args.release_tag) if args.release_tag else KIND_TEST
+    text = README.format(build_id=build_id, system=platform.system(), kind=kind, extra=EXTRA[system])
     (folder / "README.txt").write_text(text, encoding="utf-8")
 
     problems = scan(folder)

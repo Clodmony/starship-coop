@@ -260,6 +260,14 @@ The owner went through the record item by item. What each answer changed, and wh
     survivor into slot 0 and remap what remembers a slot number. Issue #183 holds the spike, and it starts after a first
     level has opened under rule 12. If it works, rule 6 stands as the owner stated it. If it does not, rule 6 keeps its
     interim form, and the ghost build (option 3, first variant) is the other candidate for a later record.
+14. **Laser strength (added 2026-11-18, the owner's answer on #380).** Each player's laser strength is its own. A
+    pickup raises the collector's (the owner's rule on #201), a broken wing takes the owner's, and a player brings its
+    own along from one level to the next: nobody starts a level with Fox's. A player that joins or returns starts
+    single: at the session's first level start players 2-4 are single whatever the host's game still holds, a player
+    that goes down is single from then on, so at a return for a life (rule 4) and at the free return of the next
+    `Play_Init` (rule 5), and Fox is single after a refill (rule 3). Where the original takes Fox's upgrade away for
+    a new start, every player's goes: a new game, the restart after Fox went down or after a retry from the pause
+    menu, and the map's retry of a course. The restart and the retry are the team's (rules 3 and 7).
 
 The two starting values, pool size and delay, are constants to tune by play.
 
@@ -275,6 +283,28 @@ the levels it was run on, hash-equal; it is not a rule, and rule 6 keeps its int
 proven by two-client runs with equal hashes (`docs/coop/NOTES.md`, "Fox goes down"), but the list of the ways Fox can go
 down is written for Corneria only. A level that shows trouble in play is taken out of the table in
 `CoopPlayers_FoxRefillOpen` (one line); the owner also kept the spike of rule 13 in the code behind its test switch.
+
+**Update 2026-11-14 (rule 1, built and run; `docs/coop/NOTES.md`, 2026-11-14, #14).** The start value is built
+(`CoopScore_StartLives`, `src/port/coop/game/score.c`, called from `Player_Setup` where the game wrote 2): 3, 4 and 5 in
+sessions of two, three and four clients, equal on every frame. The other three writes of 2 are unchanged; each is
+followed by that one at the next level. The cap of 99 is the game's own.
+The owner's answer of 2026-11-14 on a join or a leave between two levels of a route: rule 1 is the start only. The pool counts
+the players of the session once, when the game's life count is set at the first level (and again if that level starts again); a
+player who joins later adds no life and a player who leaves takes none away. Nothing to build for it.
+
+**Update 2026-11-14 (what the screen shows, #335, #336; `docs/coop/NOTES.md`, 2026-11-14).** Every client's HUD now
+draws the pool as its lives number, also one that looks through player 2 to 4 (`src/engine/fox_hud.c:3706` read that
+player's own slot, which only a join or a return writes), run with two and four clients (`lockstep_test.py --only
+hud_lives`). The other lives numbers of the HUD, and the map's, already read slot 0 in a session, where `gPlayerNum` is 0
+outside the player loop. No session shows the map before its first level, so #336's 2 on the map is never a session's.
+
+**Update 2026-11-18 (rule 14, built and run; `docs/coop/NOTES.md`, 2026-11-18, #380).** The owner saw player 2 get
+player 1's laser upgrades at a level's end. A player joined every level with a copy of player 0's `gLaserStrength`
+(`CoopPlayers_JoinFromPlayer0`, `src/port/coop/game/players.c`); the level start table always carried all four values.
+The owner's answer of 2026-11-18: each player keeps its own across levels, and a player that joins or returns starts
+single. That sentence is the owner's. The last two sentences of rule 14 (a new game, the team's restart and the retry
+take every player's upgrade) are derived, not the owner's words: they keep what the code did there before, where the
+copy of Fox's value gave everyone a single laser, and the owner can change them.
 
 ### Every client decides alike
 

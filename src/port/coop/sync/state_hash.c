@@ -30,6 +30,7 @@
 
 #include "state_hash.h"
 
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -122,6 +123,7 @@ static u32 sFrame = 0;
 static s64 sPokeFrame = -1;
 static s32 sPokePlayer = -1;
 static s64 sProbePeriod = 0;
+static u32 sSlotsPeriod = VIEW_LOG_PERIOD; // SF64_COOP_HASH_SLOTS_EVERY: frames between two "# slots" lines (#284)
 
 static void Fnv(uint64_t* h, const void* data, size_t size) {
     const u8* p = (const u8*) data;
@@ -133,8 +135,132 @@ static void Fnv(uint64_t* h, const void* data, size_t size) {
     }
 }
 
-// Every hashed value or element goes through here, so a dump holds exactly the bytes the hash saw (WP-23).
-static void HashNamed(uint64_t* h, const char* name, int32_t index, const void* data, size_t size) {
+// What a hashed value is written back as when a repair restores it (decision 0016). The same traversal that hashes
+// the state restores it, so a variable that is hashed cannot be left out of a restore.
+typedef enum {
+    K_NONE, // no way to write it: it has to be equal already
+    K_RAW,  // the bytes are the variable
+    K_PLAYER,
+    K_ACTOR,
+    K_BOSS,
+    K_EFFECT,
+    K_ITEM,
+    K_SCENERY,
+    K_SPRITE,
+    K_SCENERY360,
+    K_SHOT,
+    K_SLOT,
+    K_RETURN_TIMER,
+} RestoreKind;
+
+// The stream of a dump (desync_dump.h) as a list of chunks, while CoopStateHash_Restore runs.
+typedef struct {
+    const uint8_t* name;
+    uint8_t nameLen;
+    int32_t index;
+    uint32_t size;
+    const uint8_t* bytes;
+    bool used;
+} RestoreChunk;
+
+#define RESTORE_WHY 192
+#define RESTORE_NAMES 6
+
+static struct {
+    bool active;
+    bool failed;
+    bool dry; // first pass: everything is checked on a copy, nothing is written
+    char why[RESTORE_WHY];
+    RestoreChunk* chunks;
+    uint32_t count;
+    uint32_t cursor;
+    uint32_t written;
+    char names[RESTORE_NAMES][40];
+} sRestore;
+
+static void Restore_Fail(const char* format, const char* name, int32_t index) {
+    if (!sRestore.failed) {
+        sRestore.failed = true;
+        snprintf(sRestore.why, sizeof(sRestore.why), format, name, (int) index);
+    }
+}
+
+static bool Restore_Word(uint64_t value, uintptr_t* out);
+static void Restore_Write(RestoreKind kind, void* dest, const uint8_t* in, size_t size, const char* name, int32_t index);
+
+// The chunk of the stream with this name and index. Chunks come in the order they were hashed, so the one after the
+// last found is tried first.
+static RestoreChunk* Restore_Find(const char* name, int32_t index) {
+    size_t len = strlen(name);
+    uint32_t n;
+
+    for (n = 0; n < sRestore.count; n++) {
+        RestoreChunk* c = &sRestore.chunks[(sRestore.cursor + n) % sRestore.count];
+
+        if (!c->used && (c->index == index) && (c->nameLen == len) && (memcmp(c->name, name, len) == 0)) {
+            sRestore.cursor = (uint32_t) ((c - sRestore.chunks) + 1) % sRestore.count;
+            return c;
+        }
+    }
+    return NULL;
+}
+
+// A value of the traversal while restoring: equal already, or written from the stream.
+static void Restore_One(const char* name, int32_t index, const void* data, size_t size, void* dest, RestoreKind kind) {
+    RestoreChunk* c;
+
+    if (sRestore.failed) {
+        return;
+    }
+    c = Restore_Find(name, index);
+    if (c == NULL) {
+        Restore_Fail("this game has %s[%d], the stream does not", name, index);
+        return;
+    }
+    c->used = true;
+    if (c->size != size) {
+        Restore_Fail("%s[%d] is another size in the stream", name, index);
+        return;
+    }
+    if (memcmp(data, c->bytes, size) == 0) {
+        return;
+    }
+    if ((dest == NULL) && (kind != K_SLOT) && (kind != K_RETURN_TIMER)) {
+        Restore_Fail("%s[%d] differs and cannot be written", name, index);
+        return;
+    }
+    if (sRestore.written < RESTORE_NAMES) {
+        snprintf(sRestore.names[sRestore.written], sizeof(sRestore.names[0]), "%s[%d]", name, (int) index);
+    }
+    sRestore.written++;
+    if (sRestore.dry) {
+        // The same write on a copy, so that a stream that does not fit changes nothing here.
+        if (dest != NULL) {
+            void* copy = malloc(size);
+
+            if (copy == NULL) {
+                Restore_Fail("no memory to check %s[%d]", name, index);
+                return;
+            }
+            memcpy(copy, dest, size);
+            Restore_Write(kind, copy, c->bytes, size, name, index);
+            free(copy);
+        } else if (size != sizeof(int32_t)) {
+            Restore_Fail("%s[%d] is not one number", name, index);
+        }
+        return;
+    }
+    Restore_Write(kind, dest, c->bytes, size, name, index);
+}
+
+// Every hashed value or element goes through here, so a dump holds exactly the bytes the hash saw (WP-23). `dest` is
+// the variable it came from and `kind` how to write one back, for a repair; with neither, a restore only checks it.
+static void HashNamedTo(uint64_t* h, const char* name, int32_t index, const void* data, size_t size, void* dest,
+                        RestoreKind kind) {
+    if (sRestore.active) {
+        Restore_One(name, index, data, size, dest, kind);
+        return;
+    }
     Fnv(h, data, size);
     if (sDump != NULL) {
         CoopStateDump* d = sDump;
@@ -154,7 +280,13 @@ static void HashNamed(uint64_t* h, const char* name, int32_t index, const void* 
     }
 }
 
-#define HASH_VAR(h, var) HashNamed((h), #var, -1, &(var), sizeof(var))
+static void HashNamed(uint64_t* h, const char* name, int32_t index, const void* data, size_t size) {
+    HashNamedTo(h, name, index, data, size, NULL, K_NONE);
+}
+
+// What says which level and part this is: a repair never writes it, the games have to be there already.
+#define HASH_VAR_EQUAL(h, var) HashNamed((h), #var, -1, &(var), sizeof(var))
+#define HASH_VAR(h, var) HashNamedTo((h), #var, -1, &(var), sizeof(var), &(var), K_RAW)
 
 // One value per team member, beyond gTeamShields, that the simulation reads. WP-17 puts human players in these slots.
 // Only the slots from `first` up to `end` are read as a team member's: gTeamDamage drains for Falco to Peppy
@@ -286,7 +418,7 @@ static void HashPerPlayer(uint64_t* h, const char* name, const void* array, size
         abort();
     }
     for (i = 0; i < COOP_PLAYERS_MAX; i++, value += size) {
-        HashNamed(h, name, i, PlayerValuesCount(i) ? value : sEmpty, size);
+        HashNamedTo(h, name, i, PlayerValuesCount(i) ? value : sEmpty, size, PlayerValuesCount(i) ? (void*) value : NULL, K_RAW);
     }
 }
 
@@ -304,7 +436,7 @@ static void HashPlayers(uint64_t* h) {
         copy.sfx.srcPos = NULL;
         copy.sfx.srcVel = NULL;
         ClearPlayerViewState(&copy);
-        HashNamed(h, "gPlayer", i, &copy, sizeof(copy));
+        HashNamedTo(h, "gPlayer", i, &copy, sizeof(copy), &gPlayer[i], K_PLAYER);
     }
 }
 
@@ -317,11 +449,11 @@ static void HashPlayerArrays(uint64_t* h) {
     }
     for (i = 0; i < CoopPlayers_Count(); i++) {
         slot = CoopPlayers_SlotState(i);
-        HashNamed(h, "slot", i, &slot, sizeof(slot));
+        HashNamedTo(h, "slot", i, &slot, sizeof(slot), NULL, K_SLOT);
     }
     for (i = 0; i < CoopPlayers_Count(); i++) {
         slot = CoopPlayers_ReturnTimer(i); // how long a downed player still waits (decision 0007 rule 4, #14)
-        HashNamed(h, "returnTimer", i, &slot, sizeof(slot));
+        HashNamedTo(h, "returnTimer", i, &slot, sizeof(slot), NULL, K_RETURN_TIMER);
     }
 }
 
@@ -331,7 +463,7 @@ static void HashKeptTargets(uint64_t* h) {
     int32_t count;
     const int8_t* kept = CoopAim_KeptSlots(&count);
 
-    HashNamed(h, "keptTarget", 0, kept, (size_t) count);
+    HashNamedTo(h, "keptTarget", 0, kept, (size_t) count, (void*) kept, K_RAW);
 }
 
 static void HashTeamArrays(uint64_t* h) {
@@ -342,7 +474,8 @@ static void HashTeamArrays(uint64_t* h) {
 
     for (i = 0; i < ARRAY_COUNT(sTeamArrays); i++) {
         team = &sTeamArrays[i];
-        HashNamed(h, team->name, team->first, &team->array[team->first], (team->end - team->first) * sizeof(s32));
+        HashNamedTo(h, team->name, team->first, &team->array[team->first], (team->end - team->first) * sizeof(s32),
+                    &team->array[team->first], K_RAW);
     }
     // Who flies each scene of a human-flown wingman in this level (decision 0012, src/port/coop/game/team.h).
     choices = CoopTeam_Choices(&count);
@@ -365,24 +498,24 @@ static void HashActors(uint64_t* h) {
         for (k = 0; k < ARRAY_COUNT(copy.iwork); k++) {
             copy.iwork[k] = (uintptr_t) NormalizeWord(copy.iwork[k]);
         }
-        HashNamed(h, "gActors", i, &copy, sizeof(copy));
+        HashNamedTo(h, "gActors", i, &copy, sizeof(copy), &gActors[i], K_ACTOR);
     }
 }
 
 // Objects whose only pointers are in ObjectInfo.
-#define HASH_INFO_ARRAY(h, Type, array, count)                 \
+#define HASH_INFO_ARRAY(h, Type, array, count, kind)           \
     do {                                                       \
         Type copy_;                                            \
         s32 i_;                                                \
         for (i_ = 0; i_ < (count); i_++) {                     \
             copy_ = (array)[i_];                               \
             ClearInfoPointers(&copy_.info);                    \
-            HashNamed((h), #array, i_, &copy_, sizeof(copy_)); \
+            HashNamedTo((h), #array, i_, &copy_, sizeof(copy_), &(array)[i_], (kind)); \
         }                                                      \
     } while (0)
 
 // The same, for objects that also have a sound position.
-#define HASH_SOUND_ARRAY(h, Type, array, count)                \
+#define HASH_SOUND_ARRAY(h, Type, array, count, kind)          \
     do {                                                       \
         Type copy_;                                            \
         s32 i_;                                                \
@@ -390,7 +523,7 @@ static void HashActors(uint64_t* h) {
             copy_ = (array)[i_];                               \
             ClearInfoPointers(&copy_.info);                    \
             ClearViewState(copy_.sfxSource);                   \
-            HashNamed((h), #array, i_, &copy_, sizeof(copy_)); \
+            HashNamedTo((h), #array, i_, &copy_, sizeof(copy_), &(array)[i_], (kind)); \
         }                                                      \
     } while (0)
 
@@ -403,7 +536,7 @@ static void HashEffects(uint64_t* h) {
         ClearInfoPointers(&copy.info);
         copy.unk_74 = NULL;
         ClearViewState(copy.sfxSource);
-        HashNamed(h, "gEffects", i, &copy, sizeof(copy));
+        HashNamedTo(h, "gEffects", i, &copy, sizeof(copy), &gEffects[i], K_EFFECT);
     }
 }
 
@@ -420,7 +553,7 @@ static void HashScenery360(uint64_t* h) {
         if (CoopPlayers_IsCoop() && (copy.obj.status == OBJ_FREE)) {
             memset(&copy, 0, sizeof(copy));
         }
-        HashNamed(h, "gScenery360", i, &copy, sizeof(copy));
+        HashNamedTo(h, "gScenery360", i, &copy, sizeof(copy), &gScenery360[i], K_SCENERY360);
     }
 }
 
@@ -436,7 +569,7 @@ static void HashItems(uint64_t* h) {
         if (CoopPlayers_IsCoop() && (copy.obj.id == OBJ_ITEM_METEO_WARP)) {
             copy.obj.rot.y = 0.0f;
         }
-        HashNamed(h, "gItems", i, &copy, sizeof(copy));
+        HashNamedTo(h, "gItems", i, &copy, sizeof(copy), &gItems[i], K_ITEM);
     }
 }
 
@@ -447,7 +580,7 @@ static void HashShots(uint64_t* h) {
     for (i = 0; i < ARRAY_COUNT(gPlayerShots); i++) {
         copy = gPlayerShots[i];
         ClearViewState(copy.sfxSource);
-        HashNamed(h, "gPlayerShots", i, &copy, sizeof(copy));
+        HashNamedTo(h, "gPlayerShots", i, &copy, sizeof(copy), &gPlayerShots[i], K_SHOT);
     }
 }
 
@@ -479,17 +612,18 @@ static void HashSave(uint64_t* h) {
     int32_t i;
 
     for (i = 0; i < count; i++) {
-        HashNamed(h, ranges[i].name, -1, gSaveFile.save.raw + ranges[i].offset, ranges[i].size);
+        HashNamedTo(h, ranges[i].name, -1, gSaveFile.save.raw + ranges[i].offset, ranges[i].size,
+                    gSaveFile.save.raw + ranges[i].offset, K_RAW);
     }
 }
 
 static void HashGlobals(uint64_t* h) {
-    HASH_VAR(h, gGameState);
+    HASH_VAR_EQUAL(h, gGameState);
     HASH_VAR(h, gNextGameStateTimer);
-    HASH_VAR(h, gPlayState);
-    HASH_VAR(h, gLevelMode);
-    HASH_VAR(h, gCamCount);
-    HASH_VAR(h, gCurrentLevel);
+    HASH_VAR_EQUAL(h, gPlayState);
+    HASH_VAR_EQUAL(h, gLevelMode);
+    HASH_VAR_EQUAL(h, gCamCount);
+    HASH_VAR_EQUAL(h, gCurrentLevel);
     HASH_VAR(h, gLevelPhase);
     HASH_VAR(h, gLevelType);
     HASH_VAR(h, gMissionStatus);
@@ -520,6 +654,237 @@ static void HashGlobals(uint64_t* h) {
     }
 }
 
+// ---- Restore (decision 0016): the repair of a desync writes the host's state back through the same traversal ----
+
+// The inverse of NormalizeWord: a value that names a place in a hashed array becomes the address of that place here.
+// False for what NormalizeWord cannot have made (a stream from another PC is untrusted: a number above 32 bits that is not
+// a negative one and names no array, an offset that is not the start of an element) and for the marker of a pointer that
+// points anywhere else, which nothing here can rebuild.
+static const size_t sRangeElement[RANGE_COUNT] = {
+    sizeof(Player), sizeof(Actor), sizeof(Boss),       sizeof(Effect),     sizeof(Item),
+    sizeof(Scenery), sizeof(Sprite), sizeof(Scenery360), sizeof(PlayerShot),
+};
+
+static bool Restore_Word(uint64_t value, uintptr_t* out) {
+    uint64_t tag = value >> 56;
+
+    if (value == FOREIGN_POINTER) {
+        return false;
+    }
+    if ((tag >= 1) && (tag <= RANGE_COUNT)) {
+        uint64_t offset = value & 0x00FFFFFFFFFFFFFFULL;
+
+        if ((sRanges[tag - 1].size == 0) || (offset >= sRanges[tag - 1].size) ||
+            ((offset % sRangeElement[tag - 1]) != 0)) {
+            return false;
+        }
+        *out = sRanges[tag - 1].base + (uintptr_t) offset;
+        return true;
+    }
+    if ((value > 0xFFFFFFFFULL) && ((value >> 32) != 0xFFFFFFFFULL)) {
+        return false;
+    }
+    *out = (uintptr_t) value;
+    return true;
+}
+
+// What ClearInfoPointers took out. An object that is in use here and keeps its id keeps its own pointers; a free slot of
+// this game, or an object with another id, gets what the game sets for that id (the hash holds the id, and says the
+// pointers follow from it; SYNC_REPAIRED carries a fingerprint of what they stand for, since 91 places set them after
+// Object_SetInfo). An object that is free in the stream keeps what this game has.
+static void Restore_Info(ObjectInfo* now, const ObjectInfo* before, s16 idNow, s16 idBefore, u8 statusNow,
+                         u8 statusBefore) {
+    if ((statusNow == OBJ_FREE) || ((u32) idNow >= OBJ_ID_MAX) ||
+        ((idNow == idBefore) && (statusBefore != OBJ_FREE))) {
+        now->draw = before->draw;
+        now->action = before->action;
+        now->hitbox = before->hitbox;
+    } else {
+        ObjectInfo made;
+
+        Object_SetInfo(&made, (u32) idNow);
+        now->draw = made.draw;
+        now->action = made.action;
+        now->hitbox = made.hitbox;
+    }
+}
+
+#define RESTORE_VIEW(now, before) memcpy((now)->sfxSource, (before)->sfxSource, sizeof((now)->sfxSource))
+
+static void Restore_Write(RestoreKind kind, void* dest, const uint8_t* in, size_t size, const char* name,
+                          int32_t index) {
+    int32_t value;
+
+    switch (kind) {
+        case K_RAW:
+            memcpy(dest, in, size);
+            return;
+        case K_SLOT:
+        case K_RETURN_TIMER:
+            if (size != sizeof(value)) {
+                Restore_Fail("%s[%d] is not one number", name, index);
+                return;
+            }
+            memcpy(&value, in, sizeof(value));
+            if (kind == K_SLOT) {
+                CoopPlayers_SetSlotState(index, value);
+            } else {
+                CoopPlayers_SetReturnTimer(index, value);
+            }
+            return;
+        case K_PLAYER: {
+            Player* p = (Player*) dest;
+            Player before;
+
+            if (size != sizeof(Player)) {
+                break;
+            }
+            before = *p;
+            memcpy(p, in, sizeof(Player));
+            memcpy(p->sfxSource, before.sfxSource, sizeof(p->sfxSource));
+            memcpy(p->sfxVel, before.sfxVel, sizeof(p->sfxVel));
+            p->sfx = before.sfx;
+            p->shadowing = before.shadowing;
+            p->arwing.unk_28 = before.arwing.unk_28;
+            p->arwing.upperRightFlapYrot = before.arwing.upperRightFlapYrot;
+            p->arwing.bottomRightFlapYrot = before.arwing.bottomRightFlapYrot;
+            p->arwing.upperLeftFlapYrot = before.arwing.upperLeftFlapYrot;
+            p->arwing.bottomLeftFlapYrot = before.arwing.bottomLeftFlapYrot;
+            return;
+        }
+        case K_ACTOR: {
+            Actor* a = (Actor*) dest;
+            Actor before;
+            s32 k;
+
+            if (size != sizeof(Actor)) {
+                break;
+            }
+            before = *a;
+            memcpy(a, in, sizeof(Actor));
+            for (k = 0; k < ARRAY_COUNT(a->iwork); k++) {
+                uintptr_t word;
+
+                if (!Restore_Word((uint64_t) a->iwork[k], &word)) {
+                    Restore_Fail("%s[%d] holds a pointer outside the hashed arrays", name, index);
+                    return;
+                }
+                a->iwork[k] = word;
+            }
+            Restore_Info(&a->info, &before.info, a->obj.id, before.obj.id, a->obj.status, before.obj.status);
+            RESTORE_VIEW(a, &before);
+            if (a->obj.id == OBJ_ACTOR_SX_SLIPPY) {
+                a->obj.rot.x = (before.obj.id == OBJ_ACTOR_SX_SLIPPY) ? before.obj.rot.x : 0.0f;
+                a->obj.rot.y = (before.obj.id == OBJ_ACTOR_SX_SLIPPY) ? before.obj.rot.y : 0.0f;
+            }
+            return;
+        }
+        case K_BOSS: {
+            Boss* b = (Boss*) dest;
+            Boss before;
+
+            if (size != sizeof(Boss)) {
+                break;
+            }
+            before = *b;
+            memcpy(b, in, sizeof(Boss));
+            Restore_Info(&b->info, &before.info, b->obj.id, before.obj.id, b->obj.status, before.obj.status);
+            RESTORE_VIEW(b, &before);
+            return;
+        }
+        case K_EFFECT: {
+            Effect* e = (Effect*) dest;
+            Effect before;
+
+            if (size != sizeof(Effect)) {
+                break;
+            }
+            before = *e;
+            memcpy(e, in, sizeof(Effect));
+            Restore_Info(&e->info, &before.info, e->obj.id, before.obj.id, e->obj.status, before.obj.status);
+            RESTORE_VIEW(e, &before);
+            // A display list only effect 394 reads; it cannot be made from the id.
+            if (((e->obj.id == before.obj.id) && (before.obj.status != OBJ_FREE)) || (e->obj.status == OBJ_FREE)) {
+                e->unk_74 = before.unk_74;
+            } else if (e->obj.id == OBJ_EFFECT_394) {
+                Restore_Fail("%s[%d] is an effect that has to be created, not copied", name, index);
+                return;
+            } else {
+                e->unk_74 = NULL;
+            }
+            return;
+        }
+        case K_ITEM: {
+            Item* it = (Item*) dest;
+            Item before;
+
+            if (size != sizeof(Item)) {
+                break;
+            }
+            before = *it;
+            memcpy(it, in, sizeof(Item));
+            Restore_Info(&it->info, &before.info, it->obj.id, before.obj.id, it->obj.status, before.obj.status);
+            RESTORE_VIEW(it, &before);
+            if (it->obj.id == OBJ_ITEM_METEO_WARP) {
+                it->obj.rot.y = (before.obj.id == OBJ_ITEM_METEO_WARP) ? before.obj.rot.y : 0.0f;
+            }
+            return;
+        }
+        case K_SCENERY: {
+            Scenery* sc = (Scenery*) dest;
+            Scenery before;
+
+            if (size != sizeof(Scenery)) {
+                break;
+            }
+            before = *sc;
+            memcpy(sc, in, sizeof(Scenery));
+            Restore_Info(&sc->info, &before.info, sc->obj.id, before.obj.id, sc->obj.status, before.obj.status);
+            RESTORE_VIEW(sc, &before);
+            return;
+        }
+        case K_SPRITE: {
+            Sprite* sp = (Sprite*) dest;
+            Sprite before;
+
+            if (size != sizeof(Sprite)) {
+                break;
+            }
+            before = *sp;
+            memcpy(sp, in, sizeof(Sprite));
+            Restore_Info(&sp->info, &before.info, sp->obj.id, before.obj.id, sp->obj.status, before.obj.status);
+            return;
+        }
+        case K_SCENERY360: {
+            Scenery360* sc = (Scenery360*) dest;
+            Scenery360 before;
+
+            if (size != sizeof(Scenery360)) {
+                break;
+            }
+            before = *sc;
+            memcpy(sc, in, sizeof(Scenery360));
+            Restore_Info(&sc->info, &before.info, sc->obj.id, before.obj.id, sc->obj.status, before.obj.status);
+            return;
+        }
+        case K_SHOT: {
+            PlayerShot* sh = (PlayerShot*) dest;
+            PlayerShot before;
+
+            if (size != sizeof(PlayerShot)) {
+                break;
+            }
+            before = *sh;
+            memcpy(sh, in, sizeof(PlayerShot));
+            RESTORE_VIEW(sh, &before);
+            return;
+        }
+        case K_NONE:
+            break;
+    }
+    Restore_Fail("%s[%d] cannot be written here", name, index);
+}
+
 static void Compute(CoopStateHash* out) {
     uint64_t* r = out->region;
     s32 i;
@@ -534,11 +899,11 @@ static void Compute(CoopStateHash* out) {
         HashPlayerArrays(&r[COOP_HASH_PLAYERS]);
     }
     HashActors(&r[COOP_HASH_ACTORS]);
-    HASH_SOUND_ARRAY(&r[COOP_HASH_BOSSES], Boss, gBosses, ARRAY_COUNT(gBosses));
+    HASH_SOUND_ARRAY(&r[COOP_HASH_BOSSES], Boss, gBosses, ARRAY_COUNT(gBosses), K_BOSS);
     HashEffects(&r[COOP_HASH_EFFECTS]);
     HashItems(&r[COOP_HASH_ITEMS]);
-    HASH_SOUND_ARRAY(&r[COOP_HASH_SCENERY], Scenery, gScenery, ARRAY_COUNT(gScenery));
-    HASH_INFO_ARRAY(&r[COOP_HASH_SPRITES], Sprite, gSprites, ARRAY_COUNT(gSprites));
+    HASH_SOUND_ARRAY(&r[COOP_HASH_SCENERY], Scenery, gScenery, ARRAY_COUNT(gScenery), K_SCENERY);
+    HASH_INFO_ARRAY(&r[COOP_HASH_SPRITES], Sprite, gSprites, ARRAY_COUNT(gSprites), K_SPRITE);
     if (Scenery360Valid()) {
         HashScenery360(&r[COOP_HASH_SCENERY360]);
     }
@@ -565,6 +930,181 @@ static void Compute(CoopStateHash* out) {
 
 void CoopStateHash_Compute(CoopStateHash* out) {
     Compute(out);
+}
+
+static uint32_t Get32(const uint8_t* p) {
+    return (uint32_t) p[0] | ((uint32_t) p[1] << 8) | ((uint32_t) p[2] << 16) | ((uint32_t) p[3] << 24);
+}
+
+// Reads the chunks of a stream (desync_dump.h, "the stream") into sRestore. What a peer sent is untrusted, so every
+// length is checked before it is read. False if it does not parse.
+static bool Restore_Parse(const uint8_t* stream, size_t size) {
+    size_t pos;
+    uint32_t pass;
+
+    for (pass = 0; pass < 2; pass++) {
+        uint32_t count = 0;
+
+        pos = 0;
+        while (pos < size) {
+            uint8_t nameLen;
+            uint32_t chunkSize;
+            RestoreChunk* c = (pass == 1) ? &sRestore.chunks[count] : NULL;
+
+            if ((size - pos) < 2) {
+                return false;
+            }
+            nameLen = stream[pos + 1];
+            if ((nameLen == 0) || (nameLen >= 96) || ((size - pos) < (size_t) 2 + nameLen + 8)) {
+                return false;
+            }
+            chunkSize = Get32(stream + pos + 2 + nameLen + 4);
+            if ((size - pos - 2 - nameLen - 8) < chunkSize) {
+                return false;
+            }
+            if (c != NULL) {
+                c->name = stream + pos + 2;
+                c->nameLen = nameLen;
+                c->index = (int32_t) Get32(stream + pos + 2 + nameLen);
+                c->size = chunkSize;
+                c->bytes = stream + pos + 2 + nameLen + 8;
+                c->used = false;
+            }
+            pos += (size_t) 2 + nameLen + 8 + chunkSize;
+            count++;
+            if (count > 4 * COOP_STATE_DUMP_CHUNKS) {
+                return false;
+            }
+        }
+        if (pass == 0) {
+            if (count == 0) {
+                return false;
+            }
+            sRestore.chunks = (RestoreChunk*) calloc(count, sizeof(RestoreChunk));
+            if (sRestore.chunks == NULL) {
+                return false;
+            }
+            sRestore.count = count;
+        }
+    }
+    return true;
+}
+
+bool CoopStateHash_Restore(const uint8_t* stream, size_t size, char* why, size_t cap, uint32_t* written) {
+    CoopStateHash scratch;
+    uint32_t n;
+    bool ok;
+
+    memset(&sRestore, 0, sizeof(sRestore));
+    if (!Restore_Parse(stream, size)) {
+        free(sRestore.chunks);
+        memset(&sRestore, 0, sizeof(sRestore));
+        snprintf(why, cap, "the state of the host could not be read");
+        return false;
+    }
+    // Check first, write second: a refusal changes nothing.
+    sRestore.active = true;
+    sRestore.dry = true;
+    Compute(&scratch);
+    for (n = 0; (n < sRestore.count) && !sRestore.failed; n++) {
+        if (!sRestore.chunks[n].used) {
+            char name[96];
+            uint8_t k;
+
+            for (k = 0; k < sRestore.chunks[n].nameLen; k++) { // a name from another PC: printable bytes only
+                uint8_t c = sRestore.chunks[n].name[k];
+
+                name[k] = ((c >= 0x20) && (c < 0x7F)) ? (char) c : '?';
+            }
+            name[sRestore.chunks[n].nameLen] = '\0';
+            Restore_Fail("the stream has %s[%d], this game does not", name, sRestore.chunks[n].index);
+        }
+    }
+    if (!sRestore.failed) {
+        for (n = 0; n < sRestore.count; n++) {
+            sRestore.chunks[n].used = false;
+        }
+        sRestore.cursor = 0;
+        sRestore.written = 0;
+        sRestore.dry = false;
+        Compute(&scratch);
+    }
+    sRestore.active = false;
+    ok = !sRestore.failed;
+    if (written != NULL) {
+        *written = sRestore.written;
+    }
+    if (!ok) {
+        snprintf(why, cap, "%s", sRestore.why);
+    } else if (cap > 0) {
+        why[0] = '\0';
+        if (sRestore.written > 0) {
+            size_t used = 0;
+
+            for (n = 0; (n < sRestore.written) && (n < RESTORE_NAMES) && (used + 40 < cap); n++) {
+                used += (size_t) snprintf(why + used, cap - used, "%s%s", (n > 0) ? " " : "", sRestore.names[n]);
+            }
+        }
+    }
+    free(sRestore.chunks);
+    memset(&sRestore, 0, sizeof(sRestore));
+    return ok;
+}
+
+// What the pointers the hash clears stand for, as a number (decision 0016): for every object in use its id, whether
+// `action`, `draw` and `hitbox` are what the game sets for that id, and the boxes the hitbox points at. A repair writes
+// objects without those pointers, so this is how a wrong one is seen: the clients send it with the hash after a repair and
+// the host compares. No addresses go in, so two PCs agree.
+static void Print_Object(uint64_t* h, const ObjectInfo* info, s16 id, u8 status) {
+    ObjectInfo made;
+    u32 flags = 0;
+    s32 count = 0;
+
+    if (status == OBJ_FREE) {
+        return;
+    }
+    Fnv(h, &id, sizeof(id));
+    if ((u32) id < OBJ_ID_MAX) {
+        Object_SetInfo(&made, (u32) id);
+        flags = ((info->action == made.action) ? 1u : 0u) | ((info->draw == made.draw) ? 2u : 0u) |
+                ((info->hitbox == made.hitbox) ? 4u : 0u);
+    }
+    Fnv(h, &flags, sizeof(flags));
+    if (info->hitbox != NULL) {
+        count = (s32) info->hitbox[0];
+        if ((count < 0) || (count > 32)) {
+            count = -1;
+        }
+    } else {
+        count = -2;
+    }
+    Fnv(h, &count, sizeof(count));
+    if (count > 0) {
+        Fnv(h, info->hitbox, sizeof(f32) * (size_t) (1 + 6 * count));
+    }
+}
+
+#define PRINT_ARRAY(h, array, count)                                                      \
+    do {                                                                                  \
+        s32 i_;                                                                           \
+        for (i_ = 0; i_ < (count); i_++) {                                                \
+            Print_Object((h), &(array)[i_].info, (array)[i_].obj.id, (array)[i_].obj.status); \
+        }                                                                                 \
+    } while (0)
+
+uint64_t CoopStateHash_PointerPrint(void) {
+    uint64_t h = FNV_OFFSET;
+
+    PRINT_ARRAY(&h, gActors, ARRAY_COUNT(gActors));
+    PRINT_ARRAY(&h, gBosses, ARRAY_COUNT(gBosses));
+    PRINT_ARRAY(&h, gEffects, ARRAY_COUNT(gEffects));
+    PRINT_ARRAY(&h, gItems, ARRAY_COUNT(gItems));
+    PRINT_ARRAY(&h, gScenery, ARRAY_COUNT(gScenery));
+    PRINT_ARRAY(&h, gSprites, ARRAY_COUNT(gSprites));
+    if (Scenery360Valid()) {
+        PRINT_ARRAY(&h, gScenery360, SCENERY360_COUNT);
+    }
+    return h;
 }
 
 size_t CoopStateHash_DumpBytes(void) {
@@ -603,11 +1143,76 @@ const char* CoopStateHash_RegionName(CoopHashRegion region) {
 // Test only: flip the lowest bit of the first byte of one value. By default that is the last actor's fwork[29]: the
 // last actor slot is rarely in use, so the change usually stays in memory and the hash stays different from that frame
 // on. With SF64_COOP_HASH_POKE_PLAYER it is that player's pos.x, a difference the game itself then goes on with.
+// SF64_COOP_HASH_POKE_TARGET: what the poke flips when it is not an actor or a player, to give each way a repair writes
+// a value back (decision 0016) a flipped bit of its own. A slot of an array that a level rarely uses (the last, or for effects, which spawn from both ends, the middle), so the
+// bit stays; or a value nothing recomputes.
+static const char* sPokeTarget = NULL;
+
+static u8* PokeTarget(const char* name, char* target, size_t cap) {
+    u8* p = NULL;
+    const char* what = NULL;
+
+    if (strcmp(name, "live") == 0) {
+        // An actor that is in use, so that what the repair does with its pointers shows (Restore_Info).
+        s32 i;
+
+        for (i = 0; i < ARRAY_COUNT(gActors); i++) {
+            if (gActors[i].obj.status == OBJ_ACTIVE) {
+                p = (u8*) &gActors[i].fwork[29];
+                break;
+            }
+        }
+        what = "gActors[first active].fwork[29]";
+    } else if (strcmp(name, "effect") == 0) {
+        p = (u8*) &gEffects[ARRAY_COUNT(gEffects) / 2].unk_60.x;
+        what = "gEffects[mid].unk_60.x";
+    } else if (strcmp(name, "item") == 0) {
+        p = (u8*) &gItems[ARRAY_COUNT(gItems) - 1].unk_50;
+        what = "gItems[last].unk_50";
+    } else if (strcmp(name, "boss") == 0) {
+        p = (u8*) &gBosses[ARRAY_COUNT(gBosses) - 1].fwork[29];
+        what = "gBosses[last].fwork[29]";
+    } else if (strcmp(name, "scenery") == 0) {
+        p = (u8*) &gScenery[ARRAY_COUNT(gScenery) - 1].vel.x;
+        what = "gScenery[last].vel.x";
+    } else if (strcmp(name, "sprite") == 0) {
+        p = (u8*) &gSprites[ARRAY_COUNT(gSprites) - 1].obj.pos.x;
+        what = "gSprites[last].obj.pos.x";
+    } else if (strcmp(name, "shot") == 0) {
+        p = (u8*) &gPlayerShots[ARRAY_COUNT(gPlayerShots) - 1].obj.pos.x;
+        what = "gPlayerShots[last].obj.pos.x";
+    } else if (strcmp(name, "rng") == 0) {
+        p = (u8*) &sRandSeed2;
+        what = "sRandSeed2";
+    } else if (strcmp(name, "global") == 0) {
+        p = (u8*) &gGoldRingCount[0];
+        what = "gGoldRingCount[0]";
+    } else if (strcmp(name, "perplayer") == 0) {
+        p = (u8*) &gLaserStrength[1];
+        what = "gLaserStrength[1]";
+    } else if (strcmp(name, "team") == 0) {
+        p = (u8*) &gTeamDamage[TEAM_ID_FALCO];
+        what = "gTeamDamage[TEAM_ID_FALCO]";
+    } else if (strcmp(name, "life") == 0) {
+        p = (u8*) &gLifeCount[1];
+        what = "gLifeCount[1]";
+    }
+    if (what != NULL) {
+        snprintf(target, cap, "%s", what);
+    }
+    return p;
+}
+
 static void Poke(void) {
     char target[32];
     u8* p;
 
-    if (sPokePlayer < 0) {
+    if ((sPokeTarget != NULL) && (sPokePlayer < 0)) {
+        p = PokeTarget(sPokeTarget, target, sizeof(target));
+        if (p == NULL) {
+            return;
+        }
+    } else if (sPokePlayer < 0) {
         p = (u8*) &gActors[ARRAY_COUNT(gActors) - 1].fwork[29];
         snprintf(target, sizeof(target), "gActors[%d].fwork[29]", (s32) ARRAY_COUNT(gActors) - 1);
     } else if ((gGameState == GSTATE_PLAY) && (gPlayer != NULL) && (sPokePlayer < CoopPlayers_Count())) {
@@ -766,6 +1371,54 @@ static void Probe(void) {
 static s32 sRadioPrev = 0;
 static s32 sRadioChanges = 0;
 
+// Test only: the frame each effect slot's object was set up, for the "# ages" line (#284). An effect that nothing ends
+// grows old; a burst, or a set that an effect keeps renewing (smoke, fire), does not, however many slots it holds.
+#define EFFECT_OLD_FRAMES 900 // an effect this many frames old (30 seconds of play) counts as old
+static u32 sEffectBorn[ARRAY_COUNT(gEffects)];
+static s32 sEffectId[ARRAY_COUNT(gEffects)]; // the id the slot held when last looked at, -1 while free
+
+static void CoopStateHash_OnObjectInit(ObjectInitEvent* event) {
+    ptrdiff_t k;
+
+    if (event->type != OBJECT_TYPE_EFFECT) {
+        return;
+    }
+    k = (Effect*) event->object - gEffects;
+    if ((k >= 0) && (k < (ptrdiff_t) ARRAY_COUNT(gEffects))) {
+        sEffectBorn[k] = sFrame;
+        sEffectId[k] = gEffects[k].obj.id;
+    }
+}
+
+// Every frame of a level: a free slot forgets its object, and an object the slot was not seen to set up (an effect set
+// up straight into OBJ_ACTIVE, or another id) is born now. *old gets how many are EFFECT_OLD_FRAMES old or more,
+// *oldestId and *oldestAge the id and age of the oldest.
+static void Effects_Age(s32* old, s32* oldestId, u32* oldestAge) {
+    s32 k;
+
+    *old = 0;
+    *oldestId = -1;
+    *oldestAge = 0;
+    for (k = 0; k < ARRAY_COUNT(gEffects); k++) {
+        u32 age;
+
+        if (gEffects[k].obj.status == OBJ_FREE) {
+            sEffectId[k] = -1;
+            continue;
+        }
+        if (sEffectId[k] != gEffects[k].obj.id) {
+            sEffectId[k] = gEffects[k].obj.id;
+            sEffectBorn[k] = sFrame;
+        }
+        age = sFrame - sEffectBorn[k];
+        *old += age >= EFFECT_OLD_FRAMES;
+        if (age > *oldestAge) {
+            *oldestAge = age;
+            *oldestId = gEffects[k].obj.id;
+        }
+    }
+}
+
 // Slots of an object array that are not free. Every object type starts with an Obj, whose status is its first byte.
 static s32 CountUsed(const void* array, size_t size, size_t count) {
     s32 used = 0;
@@ -811,7 +1464,7 @@ static void CoopStateHash_OnGamePreUpdate(IEvent* event) {
     // in co-op any more (#96), so tools/coop/hash_check.py views reads this to see whether any array piles up or fills
     // (#129). With co-op off too, to have single player to compare with.
     // Which effects hold the slots: id:count for every effect id in use (Effect.obj.id).
-    if ((gGameState == GSTATE_PLAY) && ((sFrame % VIEW_LOG_PERIOD) == 0)) {
+    if ((gGameState == GSTATE_PLAY) && ((sFrame % sSlotsPeriod) == 0)) {
         s32 counts[512] = { 0 };
         s32 k;
 
@@ -835,7 +1488,17 @@ static void CoopStateHash_OnGamePreUpdate(IEvent* event) {
         sRadioChanges += (gRadioState != sRadioPrev);
         sRadioPrev = gRadioState;
     }
-    if ((gGameState == GSTATE_PLAY) && ((sFrame % VIEW_LOG_PERIOD) == 0)) {
+    if (gGameState == GSTATE_PLAY) {
+        s32 old;
+        s32 oldestId;
+        u32 oldestAge;
+
+        Effects_Age(&old, &oldestId, &oldestAge);
+        if ((sFrame % VIEW_LOG_PERIOD) == 0) {
+            fprintf(sLog, "# ages frame=%u old=%d oldest=%d:%u\n", sFrame, old, oldestId, oldestAge);
+        }
+    }
+    if ((gGameState == GSTATE_PLAY) && ((sFrame % sSlotsPeriod) == 0)) {
         fprintf(sLog, "# slots frame=%u effects=%d/%d actors=%d/%d shots=%d/%d items=%d/%d radio=%d\n", sFrame,
                 CountUsed(gEffects, sizeof(gEffects[0]), ARRAY_COUNT(gEffects)), (s32) ARRAY_COUNT(gEffects),
                 CountUsed(gActors, sizeof(gActors[0]), ARRAY_COUNT(gActors)), (s32) ARRAY_COUNT(gActors),
@@ -934,6 +1597,7 @@ void CoopStateHash_Init(void) {
     const char* poke = getenv("SF64_COOP_HASH_POKE");
     const char* pokePlayer = getenv("SF64_COOP_HASH_POKE_PLAYER");
     const char* probe = getenv("SF64_COOP_HASH_PROBE");
+    const char* slots = getenv("SF64_COOP_HASH_SLOTS_EVERY");
     s32 i;
 
     if ((logPath == NULL) || (logPath[0] == '\0')) {
@@ -949,8 +1613,14 @@ void CoopStateHash_Init(void) {
     if ((pokePlayer != NULL) && (pokePlayer[0] != '\0')) {
         sPokePlayer = strtol(pokePlayer, NULL, 10);
     }
+    if ((getenv("SF64_COOP_HASH_POKE_TARGET") != NULL) && (getenv("SF64_COOP_HASH_POKE_TARGET")[0] != '\0')) {
+        sPokeTarget = getenv("SF64_COOP_HASH_POKE_TARGET");
+    }
     if ((probe != NULL) && (probe[0] != '\0')) {
         sProbePeriod = strtoll(probe, NULL, 10);
+    }
+    if ((slots != NULL) && (strtol(slots, NULL, 10) > 0)) {
+        sSlotsPeriod = (u32) strtol(slots, NULL, 10);
     }
 
     fprintf(sLog, "# starship-coop state hash v1 (src/port/coop/sync/state_hash.c)\n");
@@ -960,7 +1630,11 @@ void CoopStateHash_Init(void) {
     }
     fputc('\n', sLog);
 
+    for (i = 0; i < ARRAY_COUNT(sEffectId); i++) {
+        sEffectId[i] = -1;
+    }
     REGISTER_LISTENER(GamePreUpdateEvent, CoopStateHash_OnGamePreUpdate, EVENT_PRIORITY_NORMAL);
+    REGISTER_LISTENER(ObjectInitEvent, CoopStateHash_OnObjectInit, EVENT_PRIORITY_NORMAL); // the "# ages" line
     atexit(CoopStateHash_OnExit);
 #ifdef HASH_CRASH_END
     sLogFd = fileno(sLog);

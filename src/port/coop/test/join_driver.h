@@ -10,7 +10,14 @@
 //   SF64_COOP_JOIN_PICKS=<a,b>       client: characters to ask for, the next one after each refusal
 //   SF64_COOP_JOIN_CLIENTS=<n>       host: try to start once this many clients have joined (default 1)
 //   SF64_COOP_JOIN_LEVEL=<n>         host: the LevelId to start (default 0, Corneria)
+//   SF64_COOP_JOIN_PHASE=<n>         host: its gLevelPhase (default 0; 1 is Andross' second part, #267)
+//   SF64_COOP_JOIN_CHECKPOINT=<n>    host: the level begins at the all-range checkpoint n, as the game's own restart
+//                                    there after a death does (#282): with level 9 and phase 1, 1 is Andross' escape
 //   SF64_COOP_JOIN_START_FRAME=<n>   host: not before this frame, counted as in the state hash log
+//   SF64_COOP_JOIN_CONNECT_FRAME=<n> host or client: open the session not before this frame, counted the same way, so
+//                                    that a game's title frames before the join do not depend on its speed (#287)
+//   SF64_COOP_JOIN_CONNECT_TITLE=<n> the same, and only once the title screen has shown n frames in a row: a frame
+//                                    count cannot say a game is back at the title when the boot logo waits on the clock
 //   SF64_COOP_JOIN_POKE_TEAM=1       host: test only, gives the values no level start clears something to carry
 //   SF64_COOP_JOIN_KEEP_OWN=1        client: test only, goes to the level but keeps its own values and save, as a
 //                                    control
@@ -33,8 +40,10 @@
 // after Play_Init. Until then gGameFrameCount still counts the screen the game came from, so that is where games can
 // agree. `save_session frame=N save=<hex>` holds this game's save in memory once it entered the session's (all 256
 // bytes, as the file holds them), `names frame=N names=a,b,c,d` with SF64_COOP_JOIN_NAME whenever the names change (-
-// for none, a space as _), `leaving frame=N` when SF64_COOP_JOIN_LEAVE_FILE turned up, and `save_after frame=N
-// save=<hex>` the save in memory once the session ended, however it ended.
+// for none, a space as _), `leaving frame=N` when SF64_COOP_JOIN_LEAVE_FILE turned up, and, once the session ended,
+// however it ended: `save_session_end frame=N save=<hex>` the session's copy as the session left it, `save_after
+// frame=N save=<hex>` the save in memory after it, and `kept frame=N line=<CoopSave_KeptLine, to the line's end>`
+// what the co-op window says was kept (decision 0017).
 
 #ifdef __cplusplus
 extern "C" {

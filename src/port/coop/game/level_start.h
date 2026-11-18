@@ -58,6 +58,12 @@ void CoopLevelStart_Entered(CoopLevelStart* out);
 // Andross), with the hits and each player's own hits saved there.
 bool CoopLevelStart_AtCheckpoint(CoopLevelStart* out);
 
+// Test only (SF64_COOP_JOIN_CHECKPOINT, src/port/coop/test/join_driver.h, #282): `out`, made by
+// CoopLevelStart_FromGame, begins at the all-range checkpoint `checkpoint` instead of the level's start, as the game's
+// own restart there after a death does (in Andross' second part, 1 is the escape: Andross_801961AC). Every other
+// checkpoint value stays 0.
+void CoopLevelStart_SetAllRangeCheckpoint(CoopLevelStart* out, int32_t checkpoint);
+
 // Call first thing of every frame. A level start that begins at a checkpoint puts the checkpoint in place here, one
 // frame after CoopLevelStart_Enter: entering a level clears it (Play_Setup, src/engine/fox_play.c:530), and the level's
 // first setup, a few frames later, reads it. Nothing outside that one frame.
@@ -67,7 +73,26 @@ void CoopLevelStart_AfterEntry(void);
 // GamePreUpdateEvent listener or anywhere else outside Game_Update, so that nothing runs between the values and the
 // level. The players of the roster stay in the level until CoopPlayers_SetRoster(NULL). The audio heap is reset on the
 // way in, also when the level's audio spec is the one loaded, so every game's sound thread starts over there (#230).
+// Before that the sound is played ahead on this frame until no audio reset is running and 16 frames more have passed:
+// the game takes a new reset up only when the running one is done, and one that just ended still has commands on
+// their way, so the voice player would come back a number of frames after the level start that follows what the
+// sound was doing, which differs between two games (#289).
 void CoopLevelStart_Enter(const CoopLevelStart* start);
+
+// For Game_ChangeScene (src/engine/fox_game.c): true once after CoopLevelStart_Enter, and the game then holds its 2
+// frames of a scene change also when it is in the level's scene already. So every game takes as many frames from the
+// level start to Play_Init, wherever it was: a game on the map or at the title holds them for the new scene, and the
+// voice player, whose audio reset began on the level start's frame, comes back 2 lockstep frames apart otherwise
+// (#375, NOTES.md 2026-11-17). False outside a session's level start, so the game's own scene changes are upstream's.
+bool CoopLevelStart_TakeSceneHold(void);
+
+// Where a level start holds the first value of the game variable at `var` (one of the table in level_start.c), -1 if
+// it holds none. For the test switches, which set a value by its variable and not by a place that moves.
+int32_t CoopLevelStart_ValueIndex(const void* var);
+
+// Test only, SF64_COOP_TEST_AUDIO_RESET_RUNS_ON (src/port/coop/test/switches.h): CoopLevelStart_Enter does not play
+// the sound ahead, so a run can show what that is there for (#289).
+void CoopLevelStart_SetResetRunsOn(bool runsOn);
 
 #ifdef __cplusplus
 }

@@ -8,6 +8,7 @@
 #include "port/mods/PortEnhancements.h"
 #include "port/coop/game/players.h" // COOP: the local player is drawn (#96)
 #include "port/coop/game/view.h"    // COOP
+#include "port/coop/game/level_start.h" // COOP: the scene hold of a level start (#375)
 
 f32 gNextVsViewScale;
 f32 gVsViewScale;
@@ -141,8 +142,9 @@ bool Game_ChangeScene(void) {
     static u8 sSceneSelect = SCENE_LOGO;
     static u8 sCurrentSceneId = SCENE_LOGO;
     static u8 sCurrentSetup = SCENE_LOGO;
+    bool coopHold = CoopLevelStart_TakeSceneHold(); // COOP: a session's level start holds as a new scene does (#375)
 
-    if (gSceneId != sCurrentSceneId) {
+    if ((gSceneId != sCurrentSceneId) || coopHold) { // COOP: was gSceneId != sCurrentSceneId
         sHoldTimer = 2;
         sCurrentSceneId = gSceneId;
     }
@@ -610,9 +612,15 @@ void Game_Update(void) {
         Wipe_Draw(WIPE_CIRCULAR, gCircleWipeFrame);
 
         if (!partialFill) {
+            // COOP: the colour this client draws the fill in; the game's own outside co-op (#303)
+            s32 coopFillRed = gFillScreenRed;
+            s32 coopFillGreen = gFillScreenGreen;
+            s32 coopFillBlue = gFillScreenBlue;
+
+            CoopView_FillColor(&coopFillRed, &coopFillGreen, &coopFillBlue); // COOP
             Graphics_FillRectangle(&gMasterDisp, OTRGetRectDimensionFromLeftEdge(0), 0,
-                                   OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH), SCREEN_HEIGHT, gFillScreenRed,
-                                   gFillScreenGreen, gFillScreenBlue, gFillScreenAlpha);
+                                   OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH), SCREEN_HEIGHT, coopFillRed,
+                                   coopFillGreen, coopFillBlue, gFillScreenAlpha); // COOP: was gFillScreenRed, ..
         }
         CoopView_DrawHitFlash(); // COOP: a hit shows on the client of the player hit (#30)
         Audio_dummy_80016A50();

@@ -64,10 +64,13 @@ f32 D_i4_8019F26C[] = { 50.0f, -50.0f, -100.0f };
 f32 D_i4_8019F278[] = { 100.0f, 500.0f, 260.0f };
 f32 D_i4_8019F284[] = { -600.0f, 60.0f, 120.0f };
 f32 D_i4_8019F290[] = { 60.0f, 262.0f, 285.0f };
-f32 D_i4_8019F29C[] = { 252.0f, -1000.0f, 0.0f, 1000.0f };
-f32 D_i4_8019F2AC[] = { 0.0f, 1000.0f, 1000.0f, 1000.0f };
-f32 D_i4_8019F2BC[] = { 1000.0f, 0.0f, 1000.0, -500.0f };
-f32 D_i4_8019F2CC[] = { -1000.0f, 180.0f, 180.0f, 180.0f };
+// COOP: the four tables below were 4 long. Katina_SFTeamFleeUpdate reads entry idx + 1, so Peppy (idx 3) reads entry
+// 4: on the N64 the first float of the next table, which is the fifth value here. The port read whatever its compiler
+// put behind each table (#262). In every mode.
+f32 D_i4_8019F29C[] = { 252.0f, -1000.0f, 0.0f, 1000.0f, 0.0f };
+f32 D_i4_8019F2AC[] = { 0.0f, 1000.0f, 1000.0f, 1000.0f, 1000.0f };
+f32 D_i4_8019F2BC[] = { 1000.0f, 0.0f, 1000.0, -500.0f, -1000.0f };
+f32 D_i4_8019F2CC[] = { -1000.0f, 180.0f, 180.0f, 180.0f, 180.0f };
 f32 D_i4_8019F2DC[] = { 180.0f, 0.0f, 0.0f, 0.0f, 0.0f };
 s32 D_i4_8019F2F0[] = {
     100000, 100000, 100000, 100000, 1, 16, 15, 8, 3, 7, 12, 2, 5, 14, 9, 4, 10, 13, 6, 11,

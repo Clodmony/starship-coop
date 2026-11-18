@@ -453,6 +453,38 @@ static void Sc_Malformed(void) {
     Check(!CoopLockstep_Receive(&sNodes[1].lockstep, 0, m, n, 0), "a client taking a player that cannot be", 0, 0);
 }
 
+// Decision 0016 part A: one player's connection is lost for a long time (everything in flight is gone, nobody runs on
+// without its input), a new one stands, both ends reopen their link, and the frames go on with the right inputs, on
+// every client, to the end. The ring never holds more than the delay and a block, so nothing it lacks is gone.
+static void Sc_Reopen(void) {
+    static const Network net = { 20, 10, 2, 1 };
+    int players;
+
+    for (players = 2; players <= 4; players++) {
+        uint32_t before;
+        int lost = players - 1;
+
+        World_Reset(players, &net, 40u + (uint32_t) players);
+        Check(World_Run(400, COOP_LOCKSTEP_INPUT_DELAY, 200000), "the frames were not reached", sLastFrame, sNow);
+        sNodes[lost].dead = true;
+        before = sNow;
+        while (sNow < before + 12000) { // longer than COOP_LOCKSTEP_STALL_MS
+            sLastFrame = World_Step(COOP_LOCKSTEP_INPUT_DELAY);
+        }
+        Check(sNodes[0].lockstep.frame <= 400 + COOP_LOCKSTEP_INPUT_DELAY + 2, "the host ran on without the lost player",
+              sNodes[0].lockstep.frame, 0);
+        Check(CoopLockstep_StalledOn(&sNodes[0].lockstep, sNow) == lost, "the host does not see who it waits for",
+              (uint32_t) CoopLockstep_StalledOn(&sNodes[0].lockstep, sNow), (uint32_t) lost);
+        sNodes[lost].dead = false;
+        CoopLockstep_Reopen(&sNodes[0].lockstep, lost - 1);
+        CoopLockstep_Reopen(&sNodes[lost].lockstep, 0);
+        CoopLockstep_Reopen(&sNodes[0].lockstep, 7); // a link that is not there is left alone
+        Check(World_Run(1400, COOP_LOCKSTEP_INPUT_DELAY, sNow + 200000), "no frames after the connection came back",
+              sLastFrame, sNow);
+        Check(CoopLockstep_StalledOn(&sNodes[0].lockstep, sNow) < 0, "a stall after the connection came back", 0, sNow);
+    }
+}
+
 typedef struct {
     const char* name;
     void (*run)(void);
@@ -462,6 +494,7 @@ static const Scenario sScenarios[] = {
     { "clean", Sc_Clean }, { "lossy", Sc_Lossy },          { "hell", Sc_Hell },
     { "slow", Sc_Slow },   { "late_start", Sc_LateStart }, { "never_starts", Sc_NeverStarts },
     { "stall", Sc_Stall }, { "delays", Sc_Delays },        { "malformed", Sc_Malformed },
+    { "reopen", Sc_Reopen },
 };
 
 int main(int argc, char** argv) {

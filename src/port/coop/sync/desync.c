@@ -58,6 +58,23 @@ void CoopDesync_Start(CoopDesync* d, const CoopDesyncConfig* config) {
     }
 }
 
+void CoopDesync_Resync(CoopDesync* d, uint32_t frame) {
+    d->found = false;
+    d->sent = false;
+    d->answered = false;
+    d->haveTheirTotal = false;
+    d->theirTotal = 0;
+    d->theirPlayer = -1;
+    d->theirFrame = 0;
+    d->frame = 0;
+    d->foundFrom = 0;
+    d->foundMs = 0;
+    d->pair[0] = d->pair[1] = 0;
+    memset(&d->mine, 0, sizeof(d->mine));
+    memset(&d->theirs, 0, sizeof(d->theirs));
+    d->floor = frame;
+}
+
 const CoopDesyncEntry* CoopDesync_Entry(const CoopDesync* d, uint32_t frame) {
     const CoopDesyncEntry* e = &d->ring[frame % COOP_DESYNC_RING];
 
@@ -157,7 +174,9 @@ static void Pending_Check(CoopDesync* d, int link, uint32_t nowMs) {
             if (frame >= d->frames) {
                 return; // not run yet: the peer is ahead, by the input delay at most
             }
-            Compare(d, Link_Player(d, link), frame, b->totals[b->next], nowMs);
+            if (frame >= d->floor) {
+                Compare(d, Link_Player(d, link), frame, b->totals[b->next], nowMs);
+            }
             b->next++;
         }
         l->pendingCount--;
@@ -248,6 +267,9 @@ static bool Receive_Desync(CoopDesync* d, int peer, const uint8_t* data, uint16_
     // A client speaks for itself, and the host for itself: the pair is who differed, the sender who saw it.
     if ((sender != Link_Player(d, peer)) || !Is_Present(d, a) || !Is_Present(d, b) || (a == b)) {
         return false;
+    }
+    if (frame < d->floor) {
+        return true; // of a desync that a repair has dealt with since
     }
     memset(&theirs, 0, sizeof(theirs));
     theirs.held = (data[7] & 1) != 0;

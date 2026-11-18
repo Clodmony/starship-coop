@@ -378,25 +378,36 @@ void CoopDesyncGame_ReceiveDump(int peer, const uint8_t* data, uint16_t size, ui
     Dump_Compare();
 }
 
+uint32_t CoopDesyncGame_FoundFrame(void) {
+    return sDesync.frame;
+}
+
+void CoopDesyncGame_Resync(uint32_t frame) {
+    CoopDesync_Resync(&sDesync, frame);
+    sReported = false;
+    sFoundSaid = false;
+    sOn = true;
+}
+
 bool CoopDesyncGame_Check(uint32_t nowMs, char* text, size_t cap) {
     char regions[160];
-    char name[32];
+    char buffer[48];
+    const char* place;
 
     if (!sOn || !CoopDesync_Done(&sDesync, nowMs)) {
         return false;
     }
     Report_Write();
     CoopDesyncReport_Regions(&sDesync, regions, sizeof(regions));
-    CoopLog_Write(COOP_LOG_DESYNC, false, "desync at frame %u, %s (%s): players %d and %d differ in %s; report: %s",
-                  (unsigned) sDesync.frame, CoopDesyncReport_LevelName(sDesync.mine.state[1], name, sizeof(name)),
-                  CoopDesyncReport_ModeName(sDesync.mine.state[2]), (int) sDesync.pair[0] + 1,
-                  (int) sDesync.pair[1] + 1, regions, (sReportPath[0] != '\0') ? sReportPath : "none");
+    // The place, not the level: on the map the level byte is the last level flown (#276).
+    place = CoopDesyncReport_PlaceName(sDesync.mine.state, buffer, sizeof(buffer));
+    CoopLog_Write(COOP_LOG_DESYNC, false, "desync at frame %u, %s: players %d and %d differ in %s; report: %s",
+                  (unsigned) sDesync.frame, place, (int) sDesync.pair[0] + 1, (int) sDesync.pair[1] + 1, regions,
+                  (sReportPath[0] != '\0') ? sReportPath : "none");
     snprintf(text, cap,
-             "The games went out of step at frame %u of %s (%s): player %d's game and player %d's game differ in %s. "
-             "%s%s",
-             (unsigned) sDesync.frame, CoopDesyncReport_LevelName(sDesync.mine.state[1], name, sizeof(name)),
-             CoopDesyncReport_ModeName(sDesync.mine.state[2]), (int) sDesync.pair[0] + 1, (int) sDesync.pair[1] + 1,
-             regions, (sReportPath[0] != '\0') ? "A report for the developers is in " : "No report could be written",
+             "The games went out of step at frame %u of %s: player %d's game and player %d's game differ in %s. %s%s",
+             (unsigned) sDesync.frame, place, (int) sDesync.pair[0] + 1, (int) sDesync.pair[1] + 1, regions,
+             (sReportPath[0] != '\0') ? "A report for the developers is in " : "No report could be written",
              sReportPath);
     Dump_Begin(nowMs);
     sOn = false; // one report per lockstep run
@@ -442,6 +453,14 @@ void CoopDesyncGame_Begin(const CoopDesyncGameLink* link, int32_t self, bool hos
 void CoopDesyncGame_Frame(uint32_t frame, uint32_t nowMs) {
     (void) frame;
     (void) nowMs;
+}
+
+void CoopDesyncGame_Resync(uint32_t frame) {
+    (void) frame;
+}
+
+uint32_t CoopDesyncGame_FoundFrame(void) {
+    return 0;
 }
 
 bool CoopDesyncGame_Receive(int peer, uint16_t msgId, const uint8_t* data, uint16_t size, uint32_t nowMs) {

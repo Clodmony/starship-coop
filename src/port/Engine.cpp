@@ -57,6 +57,7 @@
 #include "port/coop/game/vehicles.h"      // COOP: one Landmaster per player (#16)
 #include "port/coop/game/aim.h"           // COOP: whom bosses and dogfighters follow (#213)
 #include "port/coop/game/team.h"          // COOP: a human-flown wingman's all-range body (#15)
+#include "port/coop/game/score.h"         // COOP: the level clear screen waits for every human (#252)
 
 #include <Fast3D/interpreter.h>
 #include <filesystem>
@@ -334,6 +335,7 @@ void GameEngine::Create() {
     CoopVehicles_Init(); // COOP: does nothing for player 0 or outside co-op (#16)
     CoopAim_Init();      // COOP: a new boss or actor picks its own target; nothing outside co-op (#213)
     CoopTeam_Init();     // COOP: does nothing outside a co-op all-range level (#15)
+    CoopScore_Init();    // COOP: the level clear screen waits for every human's A; nothing outside co-op (#252)
 }
 
 void GameEngine::Destroy() {

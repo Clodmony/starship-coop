@@ -154,7 +154,10 @@ static s32 sHeldShields[COOP_PLAYERS_MAX]; // 0: not held
 static void CoopTrace_OnGamePostUpdate(IEvent* event) {
     s32 i;
 
-    if ((sTraceFile == NULL) || (gGameState != GSTATE_PLAY) || (gPlayer == NULL)) {
+    // Only while gPlayer holds this level's players: entering a level (PLAY_STANDBY, then PLAY_INIT) it still points
+    // into memory Game_SetGameState freed (src/engine/fox_game.c:95-118), where the sanitizer sweep read a bool of 157
+    // (#276, NOTES.md 2026-11-12).
+    if ((sTraceFile == NULL) || (gGameState != GSTATE_PLAY) || (gPlayState < PLAY_UPDATE) || (gPlayer == NULL)) {
         return;
     }
     fprintf(sTraceFile, "frame=%d level=%d mode=%d players=%d path=%.3f pathvel=%.3f scroll=%.3f", gGameFrameCount,

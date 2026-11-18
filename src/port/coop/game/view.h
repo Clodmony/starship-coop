@@ -52,12 +52,31 @@ void CoopView_ToDrawnCamera(const Vec3f* pos, float* sfxSrc);
 // client shares: Game_Update calls this after the screen fill.
 void CoopView_DrawHitFlash(void);
 
+// The flash of Macbeth's train car 7 (#303, the owner's answer of 2026-11-13: per client). Upstream the blast turns the
+// fill white, and red when player 0 is in it (Macbeth_MaTrainCar7_Update, state 1). The fill is one fade every game
+// of a session holds alike and stays as the game writes it; what differs is the colour a client draws it in: red on
+// the client whose own player (the one it looks through) is in the blast, white on the others, with the game's alpha.
+// MacbethBlast is called by the simulation on the blast's frame with a bit for each player in the blast; it writes
+// only what FillColor reads. FillColor is called by Game_Update with the fill's colour right before it draws the
+// fill, and changes it while that flash fades: until the fill's alpha is 0, its colour is no longer the blast's
+// white or red, or its alpha rises again (another flash). Nothing the simulation reads is written, and outside co-op
+// neither does anything.
+void CoopView_MacbethBlast(int32_t inBlast);
+void CoopView_FillColor(int32_t* red, int32_t* green, int32_t* blue);
+
 // A bar with the shields of every other player, over its Arwing, and above the bar its name (#257, #258, names.h). See
 // takes each player while gGfxMatrix holds the camera drawn, Draw comes after that matrix is popped, as
 // Display_ActorMarks does. A client marks every other player that flies in front of its camera, Fox included, never the
-// one it looks through; nothing off screen.
+// one it looks through; nothing off screen. Where two names would cover each other, the name of the ship further
+// away goes up, just above the nearer one's (#332).
 void CoopView_SeePlayer(const struct Player* player);
 void CoopView_DrawShieldBars(void);
+
+// The lock-on mark of players 1 and up (#379). gCamCount stays 1 in co-op, so the game's draw code places and draws
+// the mark of slot 0 only. PlaceLockMarks puts every other player's lock-on on the object being drawn into
+// gLockOnTargetViewPos, as the game does for slot 0: `targetOffset` up from the origin of gGfxMatrix, in the camera
+// drawn. A draw value only: nothing the simulation reads, and the lock-on runs down as before. Outside co-op nothing.
+void CoopView_PlaceLockMarks(const uint8_t* lockOnTimers, float targetOffset);
 
 // What still followed player 0 on every client (#140). All of it is for this client's eyes and ears; none of it writes
 // what the simulation reads.
@@ -78,11 +97,26 @@ float CoopView_DrawnRotY(const struct Object* obj, int32_t facade, int32_t* flip
 // Test only, for src/port/coop/test/view_trace.c. The alpha of the red of a hit on this client's screen, and the shield
 // bar drawn on player `index` this frame, as a fraction, negative for none.
 int32_t CoopView_HitFlashAlpha(void);
+// The full screen fill as this client drew it on this frame: red, green, blue, alpha (#303).
+void CoopView_DrawnFill(int32_t* rgba);
 float CoopView_ShieldBar(int32_t index);
 // Nonzero when player `index`'s name was drawn this frame; what it says is CoopNames_Label.
 int32_t CoopView_TagShown(int32_t index);
+// Where player `index`'s name (shadow included) and its shield bar were drawn this frame, on a 320x240 screen (the
+// N64's, which a 4:3 window scales; a wider window adds room at the sides): left, top, right, bottom each. Nonzero when
+// they were drawn (#332). place[0] and place[1]: the places of the bar and of the name among all the bars and names
+// this frame drew, the first being 0, so that of two on one spot the later one is on top (#342).
+int32_t CoopView_TagBox(int32_t index, float* box, float* bar, int32_t* place);
+// How far player `index`'s name went up this frame so as not to cover a nearer ship's name, in pixels of that screen
+// (#332); 0 when it was not drawn.
+float CoopView_TagLift(int32_t index);
 // The last heat alarm settings of this frame, nonzero if any were set; clears them.
 int32_t CoopView_HeatAlarmSet(int32_t* shields, int32_t* heightParam);
+// Display_LockOnIndicator drew player `index`'s lock-on mark on this frame at `viewPos` (camera drawn), with the
+// settle animation at `scale` (3 on a new lock, down to 1) and `turn` degrees (300, down to 0). Take: nonzero when
+// it was drawn since the last call, with what it was drawn with; clears it (#379).
+void CoopView_NoteLockMark(int32_t index, const Vec3f* viewPos, float scale, float turn);
+int32_t CoopView_TakeLockMark(int32_t index, Vec3f* viewPos, float* scale, float* turn);
 // How many billboards were drawn facing this client's own eye in place of player 0's since the last call; billboards:
 // how many were drawn at all.
 int32_t CoopView_TakeTurned(int32_t* billboards);

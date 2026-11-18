@@ -55,6 +55,14 @@ on:
       - 'tools/coop/chaos/**'
       - '.github/workflows/coop-build.yml'
   workflow_dispatch:
+  # The release workflow (release.yml) builds through this file, so a release is built by the steps that tested the code (#358).
+  workflow_call:
+    inputs:
+      release_tag:
+        description: 'The tag of a release; the package README then says it is that release, not a test build'
+        type: string
+        required: false
+        default: ''
 
 concurrency:
   group: coop-build-${{ github.ref }}
@@ -71,7 +79,7 @@ jobs:
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           submodules: recursive
       - name: Install dependencies
@@ -80,7 +88,7 @@ jobs:
           sudo apt-get install -y gcc g++ git cmake ninja-build lsb-release libsdl2-dev libpng-dev libsdl2-net-dev \
             libzip-dev zipcmp zipmerge ziptool nlohmann-json3-dev libtinyxml2-dev libspdlog-dev \
             libopengl-dev libglew-dev libogg-dev libvorbis-dev
-      - uses: hendrikmuhs/ccache-action@v1.2
+      - uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639 # v1.2
         with:
           key: coop-linux
       - name: Build
@@ -96,9 +104,9 @@ jobs:
       # Upload only what passed the tests of this build; the name holds the id the game shows (#26).
       - name: Package
         id: package
-        run: python3 tools/coop/package.py --config Release
+        run: python3 tools/coop/package.py --config Release ${{ inputs.release_tag && format('--release-tag {0}', inputs.release_tag) || '' }}
       - name: Upload build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ steps.package.outputs.name }}
           path: ${{ steps.package.outputs.path }}
@@ -111,7 +119,7 @@ jobs:
     name: Co-op build (Windows)
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           submodules: recursive
       - name: Build
@@ -123,9 +131,9 @@ jobs:
       # Upload only what passed the tests of this build; the name holds the id the game shows (#26).
       - name: Package
         id: package
-        run: python tools/coop/package.py --config Release
+        run: python tools/coop/package.py --config Release ${{ inputs.release_tag && format('--release-tag {0}', inputs.release_tag) || '' }}
       - name: Upload build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ steps.package.outputs.name }}
           path: ${{ steps.package.outputs.path }}

@@ -42,12 +42,13 @@ def fake_build(name, header=True):
     return build
 
 
-def run_package(build, outputs=None):
+def run_package(build, outputs=None, extra=()):
     env = {key: value for key, value in os.environ.items() if key != "GITHUB_OUTPUT"}
     if outputs:
         env["GITHUB_OUTPUT"] = str(outputs)
     return subprocess.run([sys.executable, str(ROOT / "tools" / "coop" / "package.py"), "--config", "Release",
-                           "--build-dir", str(build)], capture_output=True, text=True, encoding="utf-8", env=env)
+                           "--build-dir", str(build), *extra], capture_output=True, text=True, encoding="utf-8",
+                          env=env)
 
 
 def packaged():
@@ -96,6 +97,30 @@ def clean():
 def no_id():
     result = run_package(fake_build("no-id", header=False))
     return None if result.returncode != 0 and "coop_build_id.h" in result.stdout + result.stderr else "ran without an id"
+
+
+def readme_of(extra):
+    build = fake_build(f"build-{len(list(WORK.iterdir()))}")
+    result = run_package(build, extra=extra)
+    if result.returncode != 0:
+        return None, result.stdout + result.stderr
+    folder = build / "package" / f"starship-coop-{BUILD_ID}-{SYSTEM}-x64"
+    return (folder / "README.txt").read_text(encoding="utf-8"), ""
+
+
+def release_readme():
+    """--release-tag (#358): the README says which release it is, and that it is no test build; without it, the old text."""
+    text, error = readme_of(["--release-tag", "v0.1.0-coop-alpha1"])
+    if text is None:
+        return f"package failed with --release-tag: {error}"
+    if "Release v0.1.0-coop-alpha1" not in text or "not a release" in text or "test build" in text:
+        return "the README of a release does not say it is that release"
+    if BUILD_ID not in text or "46464" not in text:
+        return "the README lacks the build id or the port"
+    text, error = readme_of([])
+    if text is None or "A test build" not in text or "Release v" in text:
+        return f"without --release-tag the README must stay the test build's: {error or text[:80]!r}"
+    return None
 
 
 def caught(path, data, expect):
@@ -180,6 +205,7 @@ def other_port_files():
 SCENARIOS = {
     "clean": clean,
     "no-id": no_id,
+    "release-readme": release_readme,
     "scan-clean": scan_clean,
     "archive-holds-port": archive_holds_port,
     "archive-repeats": archive_repeats,

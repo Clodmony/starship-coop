@@ -111,6 +111,14 @@ int32_t CoopPlayers_OnPlayerDown(struct Player* player);
 // on to Player_Down, as upstream. Reads and writes simulated state only, inside the player loop.
 int32_t CoopPlayers_RefillFox(struct Player* player);
 
+// Each player's laser strength is its own (decision 0007 rule 14, #380): a pickup raises the collector's, a broken
+// wing and a down take the owner's, and it goes along from level to level. Call this where the game sets player 0's
+// back to single for a new start, which it does for its own player index only: a new game (Player_Setup's
+// gClearPlayerInfo block), the restart after player 0 went down or a retry from the pause menu (PLAYERSTATE_NEXT in
+// Player_Update, the fade of type 7), the map's retry of a course (Map_RetryCourse). Players 2-4 start single there
+// too. Nothing outside co-op. Reads and writes simulated state only.
+void CoopPlayers_SingleLasers(void);
+
 // Test switch SF64_COOP_TEST_FOX_REFILL_OFF: nonzero closes every level for the refill.
 void CoopPlayers_SetFoxRefillOff(int32_t off);
 
@@ -179,6 +187,11 @@ void CoopPlayers_SetSlotState(int32_t index, int32_t state);
 
 // Nonzero while player `index` is out after going down and has not come back (decision 0007 rule 4). It is parked then.
 int32_t CoopPlayers_IsDown(int32_t index);
+
+// Nonzero while player `index` has no human in this session: its roster seat is empty (a session of three on a
+// four-player count, or a player who left before the level began). Such a slot never joins and has no pad to wait for.
+// Simulation state. (#252: the level clear screen does not wait for it.)
+int32_t CoopPlayers_IsOut(int32_t index);
 
 // Game frames until player `index`, down, may come back (decision 0007 rule 4); 0 when none are left or it is not down.
 // Simulation state, for the state hash.

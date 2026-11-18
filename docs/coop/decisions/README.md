@@ -24,3 +24,6 @@ One file per architecture decision: `NNNN-short-title.md`, numbered in order. Co
 | [0012](0012-taken-wingman-scenes.md) | A wingman a human flies is not shown twice: the scene goes to a free computer wingman, else Katt or Bill | Accepted (changes 0006 C1 for on-rails scenes) |
 | [0013](0013-rescue-lines.md) | A borrowed rescue keeps its radio: the substitute's own help and thanks lines | Accepted (changes 0012 rule 5 for the scenes in its table) |
 | [0014](0014-the-session-survives.md) | The session survives a lost player or a desync: the level starts again from the host's state | Proposed (the owner's answers of 2026-11-11 are its rules; the text waits for the owner) |
+| [0015](0015-level-start-settles-the-sound.md) | A session's level start plays the sound ahead until no audio reset is running | Accepted (2026-11-13) |
+| [0016](0016-resume-and-repair.md) | The session resumes after a short drop and repairs a desync in place | Proposed (2026-11-15; waits for the owner) |
+| [0017](0017-what-a-session-earns.md) | What a session earns: keep nothing, or merge the planets a session cleared into each player's own save | Accepted (2026-11-17, K2; built in #373) |

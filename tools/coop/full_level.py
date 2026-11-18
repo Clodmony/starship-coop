@@ -50,6 +50,7 @@ GS_MAP, GS_PLAY = 4, 7
 LEVEL_CORNERIA = 0
 DOWN, LEVEL_COMPLETE, START_360 = 4, 7, 9
 ACTIVE = player_trace.ACTIVE
+EFFECT_SLOTS = 100  # gEffects, include/sf64context.h
 
 # Corneria from level start to the map took 11200 frames, and the menus 3100. The rest is room for a longer boss fight.
 RULE_FRAMES = 16000
@@ -119,6 +120,24 @@ def print_players(trace, players):
               f"shields at level complete {end if end is not None else 'not reached'}")
 
 
+def print_effects_peak(log):
+    """--slots-every (#284): the sample with the most effect slots in use in the level, and what holds them."""
+    samples = []
+    for line in Path(log).read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith("# effects "):
+            parts = line.split()
+            kinds = sorted(((int(k), int(n)) for k, n in (kv.split(":") for kv in parts[3:])), key=lambda kn: -kn[1])
+            samples.append((sum(n for _, n in kinds), int(parts[2].split("=")[1]), kinds))
+    if not samples:
+        print("full_level: no effect samples in the pilot's log")
+        return
+    used, frame, kinds = max(samples, key=lambda s: (s[0], -s[1]))
+    full = sum(1 for s in samples if s[0] >= EFFECT_SLOTS)
+    print(f"full_level: effects peak {used}/{EFFECT_SLOTS} first at frame {frame} "
+          f"({' '.join(f'{k}x{n}' for k, n in kinds)}); {full} of {len(samples)} samples at "
+          f"{EFFECT_SLOTS}")
+
+
 def config_for(players):
     return {"CVars": {"gCoopDebugPlayerCount": players}} if players != 1 else None
 
@@ -135,9 +154,13 @@ def fly(args, exe, work):
     trace = work / "trace.txt"
     env = {"SF64_COOP_PILOT": str(flown), "SF64_COOP_PILOT_LOG": str(work / "pilot-log.txt"),
            "SF64_COOP_TRACE": str(trace)}
+    if args.slots_every:
+        env["SF64_COOP_HASH_SLOTS_EVERY"] = str(args.slots_every)
     print(f"full_level: pilot, {args.frames} frames at most, {args.players} players")
     values, _, rows = hash_check.play(rule_replay(work, args.frames), exe, args.timeout, "full-pilot", env_extra=env,
                                       config=config_for(args.players), start=replay_tool.MENUS)
+    if args.slots_every and values:
+        print_effects_peak(values["log"])
     problem = rows and hash_check.whole_path_problem(rows, WHOLE_PATH)
     if problem:
         print(f"full_level: FAIL, the pilot's game {problem}")
@@ -243,6 +266,9 @@ def main():
     p.add_argument("--frames", type=int, default=RULE_FRAMES, help=f"most frames to fly (default {RULE_FRAMES})")
     p.add_argument("--replay", help="skip the pilot: a replay this tool wrote, for runs A, B and C")
     p.add_argument("--by-rule", action="store_true", help="input by rule, no pilot; fails unless the level is finished")
+    p.add_argument("--slots-every", type=int, metavar="N",
+                   help="the pilot's game samples its effect slots every N frames (SF64_COOP_HASH_SLOTS_EVERY), and the "
+                        "sample with the most in use is printed (#284)")
     p.add_argument("--exe", help="Starship executable (default: newest build found)")
     p.add_argument("--timeout", type=float, default=1800, help="per run: give up after this many seconds")
     args = p.parse_args()

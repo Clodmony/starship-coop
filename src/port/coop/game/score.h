@@ -31,6 +31,20 @@ int32_t CoopScore_HumanShot(int32_t sourceId);
 // The gLifeCount slot a life gained by player `slot` goes to: the pool, slot 0, in co-op; `slot` otherwise.
 int32_t CoopScore_LifeSlot(int32_t slot);
 
+// The lives a new game starts with, for the write in Player_Setup that runs when gClearPlayerInfo is set (the first
+// level after the title, after a game over or the ending, and training). Decision 0007 rule 1: the pool starts at 2
+// plus 1 for each human after the first, so 3 for two, 4 for three, 5 for four. A human is a player of this level
+// whose seat in the roster is taken (not CoopPlayers_IsOut); without a roster (the debug CVar) every player counts.
+// Simulation state: the count is fixed at Play_Init from the roster every game took with the level start. Co-op off
+// and versus: 2, the original's.
+int32_t CoopScore_StartLives(void);
+
+// Test only, for src/port/coop/test/view_trace.c (#335). HUD_LivesCount2_Draw, the lives number of the HUD in flight
+// and of the level clear screen, notes the number it draws; Take gives the last one noted since the previous call, -1
+// for none, and forgets it. Nothing the simulation reads, and not in the state hash. Co-op off: nothing is noted.
+void CoopScore_NoteLivesDrawn(int32_t lives);
+int32_t CoopScore_TakeLivesDrawn(void);
+
 // Hits per player, for display only (#252, decision 0008 4d on top of 4b). In co-op a human's kill also adds its hits
 // to gPlayerScores[that player], next to the team's gHitCount, where the game knows the shooter: an actor's dmgSource
 // or a PlayerShot's sourceId. Hits with no shooter (chain blasts, scripted kills, bosses) count for the team only, so
@@ -50,9 +64,20 @@ void CoopScore_LevelInit(void);
 int32_t CoopScore_SavedHits(int32_t player);
 void CoopScore_SetSavedHits(int32_t player, int32_t hits);
 
-// The status screen (pause and level clear): one row per human, the character's face and that player's own hits,
-// right of the team's "enemies down". Nothing outside co-op or with one player.
+// The status screen (pause and level clear): a window at the top right with a title and one row per human, the
+// character's face, name and that player's own hits. On the level clear screen also "OK" for each human who has
+// pressed A, and "PRESS A" while the scene holds. Nothing outside co-op or with one player.
 void CoopScore_DrawStatus(void);
+
+// The results hold: in a co-op session the level clear status screen stays until every human has pressed A or B, 30 s
+// at most (see score.c for the frames). Registers a PlayUpdateEvent listener that holds the scene; call once at boot.
+void CoopScore_Init(void);
+
+// Nonzero while the scene holds for the results. Simulation state: the same frames on every game of a session.
+int32_t CoopScore_ResultsHolding(void);
+
+// Nonzero once player `index` has pressed A or B on the level clear screen shown now.
+int32_t CoopScore_ResultsReady(int32_t index);
 
 #ifdef __cplusplus
 }

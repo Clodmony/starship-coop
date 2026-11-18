@@ -61,6 +61,13 @@ static s32 sRingsPlayer;
 static s32 sRingsShields;
 static s32 sRingsActiveFrames = 0;
 
+// Whether gPlayer holds this level's players. A level entered from the map or another level is GSTATE_PLAY with
+// PLAY_STANDBY for a few frames after Game_SetGameState freed the memory gPlayer points into (src/engine/fox_game.c:
+// 95-118), and Play_Init sets gPlayer again only on its way to PLAY_UPDATE (#121, as log_game.c's Players_Readable).
+static bool CoopTeamTrace_PlayersReadable(void) {
+    return (gGameState == GSTATE_PLAY) && (gPlayState >= PLAY_UPDATE) && (gPlayer != NULL);
+}
+
 static void CoopTeamTrace_Read(TeamTraceLine* line) {
     s32 i;
 
@@ -69,7 +76,7 @@ static void CoopTeamTrace_Read(TeamTraceLine* line) {
     line->level = gCurrentLevel;
     line->phase = gLevelPhase;
     line->playState = gPlayState;
-    line->playerState = ((gGameState == GSTATE_PLAY) && (gPlayer != NULL)) ? (s32) gPlayer[0].state : -1;
+    line->playerState = CoopTeamTrace_PlayersReadable() ? (s32) gPlayer[0].state : -1;
     line->mission = gMissionStatus;
     for (i = 0; i < 3; i++) {
         line->team[i] = gTeamShields[TEAM_ID_FALCO + i];
@@ -141,7 +148,7 @@ static void CoopTeamTrace_Write(const TeamTraceLine* l) {
 }
 
 static void CoopTeamTrace_UpdatePoke(void) {
-    if (!sPokeWaiting || (gGameState != GSTATE_PLAY) || (gCurrentLevel != sPokeLevel) || (gPlayer == NULL) ||
+    if (!sPokeWaiting || !CoopTeamTrace_PlayersReadable() || (gCurrentLevel != sPokeLevel) ||
         (gPlayer[0].state != PLAYERSTATE_ACTIVE)) {
         return;
     }
@@ -159,7 +166,7 @@ static void CoopTeamTrace_UpdatePoke(void) {
 }
 
 static void CoopTeamTrace_UpdateDown(void) {
-    if (!sDownWaiting || (gGameState != GSTATE_PLAY) || (gCurrentLevel != sDownLevel) || (gPlayer == NULL) ||
+    if (!sDownWaiting || !CoopTeamTrace_PlayersReadable() || (gCurrentLevel != sDownLevel) ||
         (gPlayer[0].state != PLAYERSTATE_ACTIVE) || (sDownPlayer >= CoopPlayers_Count())) {
         return;
     }
@@ -177,7 +184,7 @@ static void CoopTeamTrace_UpdateDown(void) {
 }
 
 static void CoopTeamTrace_UpdateRings(void) {
-    if (!sRingsWaiting || (gGameState != GSTATE_PLAY) || (gCurrentLevel != sRingsLevel) || (gPlayer == NULL) ||
+    if (!sRingsWaiting || !CoopTeamTrace_PlayersReadable() || (gCurrentLevel != sRingsLevel) ||
         (gPlayer[0].state != PLAYERSTATE_ACTIVE) || (sRingsPlayer >= CoopPlayers_Count())) {
         return;
     }

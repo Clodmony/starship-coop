@@ -1,6 +1,7 @@
 // What the pilot aims at outside Corneria (#181). See pilot_aim.h.
 
 #include "pilot_aim.h"
+#include "pilot_andross.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -94,6 +95,11 @@ static s32 CoopPilotAim_Gorgon(const Boss* b, s32* boxes) {
 
 // Andross (src/overlays/ovl_i6/fox_andross.c, Andross_8018D2B0): his hands, hitbox entries 2 and 3, take hits until
 // each has lost its 200 (swork[4], swork[5]); after both, only his eyes, entries 0 and 1, take hits.
+// With one hand down, his eyes come after the hand still up (#28, 4 players, 2026-11-16): once the right hand was down
+// his attacks went 2, 5, 17 over and over, the left hand resting some 1400 to -x and 650 under the path, out of every
+// pilot's reach, and it stayed at 110 for 16000 frames. Hits on his eyes (swork[6], in a state under 11 or 12) groan
+// him into state 12 or 13 and then 7, where the hands come up in reach (the hands lost most of their health there in
+// that run). The eyes are not offered in those states, so that the hand gets every shot then.
 static s32 CoopPilotAim_Andross(const Boss* b, s32* boxes) {
     s32 n = 0;
 
@@ -107,6 +113,10 @@ static s32 CoopPilotAim_Andross(const Boss* b, s32* boxes) {
     }
     if (b->swork[5] >= 0) {
         boxes[n++] = 3;
+    }
+    if ((n == 1) && (b->state != 7) && ((b->state < 12) || (b->state > 14))) {
+        boxes[n++] = 0;
+        boxes[n++] = 1;
     }
     return n;
 }
@@ -131,13 +141,55 @@ static s32 CoopPilotAim_BolseCore(const Boss* b, s32* boxes) {
     return (count > 0) ? count : -1;
 }
 
+// Katina's Saucerer (src/overlays/ovl_i4/fox_ka.c, Katina_BossHandleDamage): a hit on box 0 to 3 takes the health of
+// hatch 0 to 3 (swork[10] to swork[13], 100 each) while it has some; boxes 4 to 7 take the core's (swork[14], 400) once
+// it is lowered, in a state over 10. The core comes down when the four hatches are gone or its timer runs out
+// (Katina_KaSaucerer_Update), charges, and its laser ends the level as a mission failed (SAUCERER_CS_ROTATE, player 0
+// in level complete with csState 100) unless the core falls first (SAUCERER_DEFEAT, MISSION_ACCOMPLISHED). With the
+// generic cycle the pilot never got the core down (#181). It is left alone before its fight (states 0 to 5): it comes
+// in only once it is out of player 0's view (D_edisplay_801615D0.y, src/engine/fox_edisplay.c, which stays player 0's
+// in co-op, #96), and a pilot flying at it from afar held it in standby for 24000 frames.
+static s32 CoopPilotAim_Saucerer(const Boss* b, s32* boxes) {
+    s32 n = 0;
+    s32 k;
+
+    if (b->state < 6) {
+        return -1;
+    }
+    if (b->state > 10) {
+        if (b->swork[14] <= 0) {
+            return -1;
+        }
+        for (k = 4; k < 8; k++) {
+            boxes[n++] = k;
+        }
+        return n;
+    }
+    for (k = 0; k < 4; k++) {
+        if (b->swork[10 + k] > 0) {
+            boxes[n++] = k;
+        }
+    }
+    return (n > 0) ? n : -1;
+}
+
+// Katina's front line base (OBJ_BOSS_KA_FLBASE) is the team's own, the one the Saucerer's laser aims at: a boss slot
+// with boxes, which the generic pick took for its nearest boss for most of a Katina flight (pilot log: boss 0, id 317).
+static s32 CoopPilotAim_Never(const Boss* b, s32* boxes) {
+    (void) b;
+    (void) boxes;
+    return -1;
+}
+
 static const struct {
     s32 id;
     s32 (*boxes)(const Boss* b, s32* boxes);
 } sBossBoxes[] = {
-    { OBJ_BOSS_A6_GORGON, CoopPilotAim_Gorgon },
-    { OBJ_BOSS_AND_ANDROSS, CoopPilotAim_Andross },
-    { OBJ_BOSS_BO_BASE_CORE, CoopPilotAim_BolseCore },
+    { OBJ_BOSS_A6_GORGON, CoopPilotAim_Gorgon },       // Area 6
+    { OBJ_BOSS_AND_ANDROSS, CoopPilotAim_Andross },    // Venom (Andross)
+    { OBJ_BOSS_BO_BASE_CORE, CoopPilotAim_BolseCore }, // Bolse
+    { OBJ_BOSS_KA_SAUCERER, CoopPilotAim_Saucerer },   // Katina
+    { OBJ_BOSS_KA_FLBASE, CoopPilotAim_Never },        // Katina, the team's base
 };
 
 static s32 CoopPilotAim_Table(const Boss* b, s32* boxes) {
@@ -186,6 +238,53 @@ static bool CoopPilotAim_Leads(const Boss* b, s32 k, s32 i) {
     return (k < count) && (kept[k] == i);
 }
 
+// The first box player i tries of a boss with `count` boxes to try. With a table each player keeps its own (`table`);
+// in the generic cycle every box takes a turn, the players spread over them. With two players as before #345; with
+// three or four, i * count / players, as "i * ((count + 1) / 2)" put players 0 and 2, and 1 and 3, on one box.
+static s32 CoopPilotAim_FirstBox(s32 i, s32 count, bool table) {
+    s32 players = CoopPlayers_Count();
+
+    if (table) {
+        return i % count;
+    }
+    if (players > 2) {
+        return (s32) ((gGameFrameCount / AIM_DWELL) + (u32) ((i * count) / players)) % count;
+    }
+    return (s32) ((gGameFrameCount / AIM_DWELL) + (u32) (i * ((count + 1) / 2))) % count;
+}
+
+// With three or four players, how many players before player i start on the same box (#345). Two ships do not
+// collide, and two pilots lined up with one box flew one line frame for frame (#330: players 1 and 3 of four at
+// Andross on 2448 of 6237 frames). The second on a box takes it half way to its right edge, the third half way to its
+// left, the fourth half way up. Two players fly as before #345.
+static s32 CoopPilotAim_Sharers(s32 i, s32 count, bool table) {
+    s32 first = CoopPilotAim_FirstBox(i, count, table);
+    s32 rank = 0;
+    s32 j;
+
+    if (CoopPlayers_Count() <= 2) {
+        return 0;
+    }
+    for (j = 0; j < i; j++) {
+        if (CoopPilotAim_FirstBox(j, count, table) == first) {
+            rank++;
+        }
+    }
+    return rank;
+}
+
+static void CoopPilotAim_ShareBox(const Boss* b, s32 box, s32 rank, Vec3f* at) {
+    static const f32 sAcross[4] = { 0.0f, 0.5f, -0.5f, 0.0f };
+    static const f32 sUp[4] = { 0.0f, 0.0f, 0.0f, 0.5f };
+    f32 halfX;
+    f32 halfY;
+
+    if ((rank > 0) && (rank < 4) && CoopPilot_BoxHalf(b->info.hitbox, box, &halfX, &halfY)) {
+        at->x += sAcross[rank] * halfX;
+        at->y += sUp[rank] * halfY;
+    }
+}
+
 // Where the box player i lined up with last frame was, to lead a box that moves (2026-11-11): Andross' hands swing
 // and punch, and a shot that goes where a hand was takes about 15 frames to get there.
 static s32 sRailKey[COOP_PLAYERS_MAX];
@@ -199,6 +298,8 @@ bool CoopPilot_RailAim(const Player* p, s32 i, f32* x, f32* y) {
         s32 table[AIM_BOXES_MAX];
         s32 count;
         s32 first;
+        s32 rank;
+        bool isTable;
         s32 n;
 
         if (!CoopPilotAim_BossUp(b) || ((p->trueZpos - b->obj.pos.z) < AIM_AHEAD_MIN) ||
@@ -218,11 +319,9 @@ bool CoopPilot_RailAim(const Player* p, s32 i, f32* x, f32* y) {
         // Every box of the generic cycle takes a turn, as some of them do not count. The boxes of a table all count:
         // there each player keeps its own, as a swap every AIM_DWELL frames sent both across the path and back
         // (Andross' two hands, 2026-11-11).
-        if (CoopPilotAim_Table(b, table) > 0) {
-            first = i % count;
-        } else {
-            first = (s32) ((gGameFrameCount / AIM_DWELL) + (u32) (i * ((count + 1) / 2))) % count;
-        }
+        isTable = CoopPilotAim_Table(b, table) > 0;
+        first = CoopPilotAim_FirstBox(i, count, isTable);
+        rank = CoopPilotAim_Sharers(i, count, isTable);
         for (n = 0; n < count; n++) {
             s32 box = CoopPilotAim_Box(b, first + n, &count);
             s32 key = k * 256 + box;
@@ -237,6 +336,7 @@ bool CoopPilot_RailAim(const Player* p, s32 i, f32* x, f32* y) {
                  ((p->yPath + p->pathFloor) > (gGroundHeight + 50.0f)))) {
                 f32 flight = (p->trueZpos - at.z) / AIM_SHOT_SPEED;
 
+                CoopPilotAim_ShareBox(b, box, rank, &at);
                 *x = at.x;
                 *y = at.y;
                 if ((sRailKey[i] == key) && (sRailFrame[i] + 1 == gGameFrameCount)) {
@@ -275,7 +375,11 @@ static bool CoopPilotAim_BombsAt(const Boss* b) {
     }
     switch (b->obj.id) {
         case OBJ_BOSS_AND_ANDROSS:
-            return (b->state >= 2) && (b->state <= 10);
+            // And in his inhale (state 17), a bomb that it pulls into his mouth unset chokes him (state 15 with
+            // swork[8] 2, then 18) and nobody is swallowed (#28, 2026-11-16: with four pilots a swallowed player was
+            // spat out on every inhale, the ships went up to the path's ceiling, pathHeight 612, and the short state 2
+            // after it, the only one in which his eyes took hits there, was over before they came down to them).
+            return ((b->state >= 2) && (b->state <= 10)) || (b->state == 17);
         case OBJ_BOSS_ZO_SARUMARINE:
             return (b->state == 3) || (b->state == 5);
         default:
@@ -314,12 +418,16 @@ bool CoopPilot_RailBomb(const Player* p, s32 i) {
         }
         if ((bomb->obj.status == SHOT_ACTIVE) && (bomb->obj.id == PLAYERSHOT_BOMB) && (bomb->unk_5C == 0) &&
             (bomb->sourceId == i)) {
-            // Where the bomb will be when the press reaches the game: 3 frames are some 540 units at its speed.
-            return (bomb->timer < 25) &&
+            // Where the bomb will be when the press reaches the game: 3 frames are some 540 units at its speed. A
+            // bomb in Andross' inhale is not set off: the inhale takes it to his mouth (Andross_AndAndross_Update).
+            return (bomb->timer < 25) && !((b->obj.id == OBJ_BOSS_AND_ANDROSS) && (b->state == 17)) &&
                    ((bomb->obj.pos.z + bomb->vel.z * CoopPilotAim_Delay()) < (b->obj.pos.z + 100.0f));
         }
+        // In his inhale at once: it can begin with the ships some 460 from his face, and swallow one 18 frames later
+        // (#28, four pilots, 2026-11-16), so a bomb that waits for 1200 never goes.
         if ((bomb->obj.status == SHOT_FREE) && (gBombCount[i] > 0) && (i == 0) &&
-            ((p->trueZpos - b->obj.pos.z) > 1200.0f)) {
+            ((p->trueZpos - b->obj.pos.z) >
+             (((b->obj.id == OBJ_BOSS_AND_ANDROSS) && (b->state == 17)) ? AIM_AHEAD_MIN : 1200.0f))) {
             return true;
         }
     }
@@ -342,8 +450,9 @@ bool CoopPilot_RailBomb(const Player* p, s32 i) {
             }
             return (t->box == 0) && (b->fwork[29] < 30.0f);
         case OBJ_BOSS_AND_ANDROSS:
-            // Lined up with a hand, the other players' bombs as well, as long as they last.
-            return ((b->swork[4] >= 0) || (b->swork[5] >= 0)) && (b->state >= 2) && (b->state <= 7) &&
+            // Lined up with a hand, the other players' bombs as well, as long as they last (a hand, not the eyes his
+            // table offers after one: #28).
+            return (t->box >= 2) && ((b->swork[4] >= 0) || (b->swork[5] >= 0)) && (b->state >= 2) && (b->state <= 7) &&
                    ((p->trueZpos - b->obj.pos.z) > 1200.0f);
         default:
             return false;
@@ -459,6 +568,10 @@ void CoopPilot_FlyAllRangeAim(const Player* p, s32 i, PilotPad* pad) {
     f32 flight;
     f32 breakOff;
 
+    if (w8AndPilot_Escape(p, i, pad)) { // Andross' escape: its route, not a foe (pilot_andross.c, #275)
+        t->kind = AIM_NONE;
+        return;
+    }
     if ((sAimFrames[i] <= 0) || !CoopPilotAim_Refresh(t)) {
         if (!CoopPilotAim_Pick(p, i, t)) {
             // Nothing to shoot: stay in the arena.
@@ -523,6 +636,10 @@ static void CoopPilotAim_NoteBoss(FILE* log, const Boss* b) {
                     b->swork[1], b->swork[2], b->swork[3], b->swork[4], b->swork[5], b->swork[6], b->swork[7],
                     b->swork[36]);
             break;
+        case OBJ_BOSS_KA_SAUCERER:
+            fprintf(log, "frame=%d saucerer state=%d hatches=%d,%d,%d,%d core=%d timer=%d\n", gGameFrameCount, b->state,
+                    b->swork[10], b->swork[11], b->swork[12], b->swork[13], b->swork[14], b->swork[16]);
+            break;
         case OBJ_BOSS_ZO_SARUMARINE:
             fprintf(log, "frame=%d sarumarine parts=%d,%d,%d,%d,%d,%d bombs=%d,%d\n", gGameFrameCount, sZoSwork[8],
                     sZoSwork[9], sZoSwork[10], sZoSwork[11], sZoSwork[12], sZoSwork[13], gBombCount[0], gBombCount[1]);
@@ -536,6 +653,7 @@ void CoopPilot_NoteAim(FILE* log, const Player* p, s32 i) {
     const AimTarget* t = &sAim[i];
     s32 k;
 
+    w8AndPilot_Note(log, p, i); // pilot_andross.c, #275
     if ((log == NULL) || ((gGameFrameCount % 60) != 0) || (p->state != PLAYERSTATE_ACTIVE)) {
         return;
     }

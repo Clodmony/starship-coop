@@ -1,4 +1,5 @@
 #include "global.h"
+#include "port/coop/game/fixes.h" // COOP: a line is cleared when it is taken, in a session (#262)
 #include "assets/ast_arwing.h"
 #include "assets/ast_training.h"
 #include "assets/ast_corneria.h"
@@ -324,6 +325,9 @@ void Memora_DrawParts(MeMora* this, f32 xTrans, f32 yTrans, f32 zTrans, f32 xRot
             if (CoopView_LockOnZ(&this->obj.pos, gLockOnTargetViewPos[TEAM_ID_FOX].z) > -500.0f) {
                 this->lockOnTimers[TEAM_ID_FOX] = 0;
             }
+        }
+        if (partIdx == 0) {
+            CoopView_PlaceLockMarks(this->lockOnTimers, this->info.targetOffset); // COOP: players 1 and up (#379)
         }
     } else {
         RCP_SetupDL_60(gFogRed, gFogGreen, gFogBlue, gFogAlpha, gFogNear, gFogFar);
@@ -1413,6 +1417,7 @@ void ActorEvent_ProcessScript(ActorEvent* this) {
             this->iwork[7] = 1;
             for (i = 0; i < ARRAY_COUNT(gTexturedLines); i++) {
                 if (gTexturedLines[i].mode == 0) {
+                    CoopFixes_TakeLine(i); // COOP: in a session a free line starts from zeros (#262)
                     gTexturedLines[i].mode = 1;
                     gTexturedLines[i].xyScale = 3.0f;
                     gTexturedLines[i].posAA.x = this->obj.pos.x - this->vel.x;

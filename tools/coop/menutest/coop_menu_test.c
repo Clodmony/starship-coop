@@ -326,6 +326,26 @@ static const CoopMenuBackend sSurviveBackend = { Sim_Host,       Sim_Connect, Si
                                                  Sync_Waiting,   NULL,        NULL,          Session_Id,
                                                  Game_Recover };
 
+// Decision 0016 part A: a game that resumes, and what the host's game was asked to resume.
+static int sResumeCalls;
+static int sResumePeer;
+static bool sResumeAnswer;
+
+static bool Game_ResumeOn(void) {
+    return true;
+}
+
+static bool Game_Resume(int peer) {
+    sResumeCalls++;
+    sResumePeer = peer;
+    return sResumeAnswer;
+}
+
+static const CoopMenuBackend sResumeBackend = { Sim_Host,       Sim_Connect, Sim_Port,      Id_Test,
+                                                Level_FromGame, Level_Enter, Session_Ended, Sync_Message,
+                                                Sync_Waiting,   NULL,        NULL,          Session_Id,
+                                                Game_Recover,   Game_ResumeOn, Game_Resume };
+
 static void Sim_Reset(uint32_t latencyMs) {
     int n;
 
@@ -1459,6 +1479,72 @@ static void Test_Survive(void) {
     Menus_Close();
 }
 
+// A connection that drops for longer than the time-out in a game that resumes: the host keeps the slot and starts nothing
+// again, the client's game keeps its lockstep standing while it comes back, and the host's game is asked to go on.
+static void Test_Resume(void) {
+    const CoopMenuView* v;
+    int i;
+
+    sScenario = "resume";
+    Menus_Init(20);
+    for (i = 0; i < MENUS; i++) {
+        CoopMenu_Init(&sMenus[i], &sResumeBackend);
+    }
+    sResumeCalls = 0;
+    sResumeAnswer = true;
+    Start_Host();
+    Join(A);
+    Pick(A, FALCO);
+    EXPECT(CoopMenu_Start(HOST), "Start did nothing");
+    Run(500);
+    sNet.cut = true;
+    Run(COOP_MENU_TIMEOUT_MS + 1000);
+    v = View(HOST);
+    EXPECT(v->phase == COOP_MENU_HOSTING && sSessionsEnded == 0, "the host ended its session over a lost connection");
+    Expect_Has(v->message, "Player 2 lost the connection. Waiting for it to come back (30 s).", "the host is not told");
+    Expect_Has(v->players[1].text, "Falco", "the lost player's character was not kept");
+    EXPECT(sRecovers[0] == 0 && sRecovers[1] == 0 && sEnters[0] == 1, "something stopped or started again at the loss");
+    v = View(A);
+    EXPECT(v->phase == COOP_MENU_CONNECTING, "the client did not try to come back");
+    Expect_Has(v->message, "The connection to the host was lost. Trying to come back", "the client is not told");
+    sNet.cut = false;
+    Run(1500);
+    v = View(A);
+    EXPECT(v->phase == COOP_MENU_JOINED && sSessionsEnded == 0, "the client did not get back in");
+    Expect_Has(v->status, "as player 2", "the client is not the player it was");
+    EXPECT(sResumeCalls == 1 && sResumePeer == 0, "the host's game was not asked to go on, once");
+    EXPECT(sRecovers[0] == 0 && sRecovers[1] == 0 && sEnters[0] == 1 && sEnters[1] == 1,
+           "a game stopped lockstep, or the level started again, though the player came back into it");
+    Expect_Has(View(HOST)->message, "Player 2 is back", "the host is not told that the player is back");
+    // An outage of twice the time-out: the first try to come back reaches nobody and ends, and the client tries again
+    // while the host keeps the slot (30 s), instead of giving up after one.
+    sNet.cut = true;
+    Run(2 * COOP_MENU_TIMEOUT_MS + 2000);
+    EXPECT(View(A)->phase == COOP_MENU_CONNECTING && sSessionsEnded == 0, "the client gave up after one try");
+    sNet.cut = false;
+    Run(2500);
+    EXPECT(View(A)->phase == COOP_MENU_JOINED && sSessionsEnded == 0 && sResumeCalls == 2,
+           "the client did not get back in on its second try");
+    // A game that cannot go on where it was: the level starts again, from the host's state.
+    sResumeAnswer = false;
+    sNet.cut = true;
+    Run(COOP_MENU_TIMEOUT_MS + 1000);
+    sNet.cut = false;
+    Run(2500);
+    EXPECT(sResumeCalls == 3 && sEnters[0] == 2 && sEnters[1] == 2 && sSessionsEnded == 0,
+           "the level did not start again when the game could not go on");
+    Expect_Has(View(A)->message, "could not go on where it was", "the client is told of a player nobody is");
+    // The wait ends: nobody is left, and the session is over, as before.
+    sNet.cut = true;
+    Run(COOP_MENU_TIMEOUT_MS + 1000);
+    Run(COOP_SESSION_RESUME_MS);
+    v = View(HOST);
+    EXPECT(v->phase == COOP_MENU_IDLE, "the host still waits");
+    Expect_Has(v->message, "Player 2 left, so the session is over", "the host is not told");
+    sNet.cut = false;
+    Menus_Close();
+}
+
 static int Run_Sim(void) {
     Test_Idle();
     Test_BadInput();
@@ -1486,6 +1572,7 @@ static int Run_Sim(void) {
     Test_LevelEnds();
     Test_PlayerNames();
     Test_Survive();
+    Test_Resume();
     printf("PASS: 25 scenarios\n");
     return 0;
 }

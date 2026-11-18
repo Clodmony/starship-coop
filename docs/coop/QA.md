@@ -12,7 +12,7 @@ Every PR states the QA level it reached and how. Levels follow Co-op Anything:
 `automated` needs at least two game clients sharing state. A run of one game is `none`, even when a script drove it and
 checked its state: the PR says what ran.
 
-Current project level: `automated`. Two real game clients in one session, on one PC, stay equal on every frame through all of Corneria (`python tools/coop/lockstep_test.py`), and, a level per session, from the start to the end of 12 of the 17 campaign levels (`python tools/coop/campaign.py`, #28): Corneria, Meteo, Fortuna, Sector X, Titania, Venom 1, Aquas, Sector Z, Venom 2, Katina, Solar, Macbeth. Not covered with real clients: the ends of Bolse, Venom (Andross), Sector Y, Zoness, Area 6 (the pilot does not beat their bosses; every frame it flew was equal), a level that follows from the one before (each starts as a new game, no route state), a player who goes down (all but Corneria with `gInvincible`), two PCs, Windows, a real network, a Release build and more than two players. A full campaign was played by hand on two PCs on 2026-11-09 (issue #2); that record is not this one, and its level stays the owner's to enter.
+Current project level: `automated`. Two real game clients in one session, on one PC, stay equal on every frame through all of Corneria (`python tools/coop/lockstep_test.py`), and, a level per session, from the start to the end of all 17 campaign levels (`python tools/coop/campaign.py`, #28; the route of 2026-11-11 in NOTES.md, with Bolse, Venom (Andross), Sector Y, Zoness and Area 6 finished after the pilot's changes of that day), and Andross' second part, which only Venom 2 leads to, from Venom 2 through the brain and the escape to the ending (`campaign.py --levels venom-2-andross`, #275, 2026-11-12). With four games (`campaign.py --route all --players 4`, #28, 2026-11-16) all 18 levels of the route stay equal on every frame to their end; the tool counts 14, as in Titania, Aquas, Venom 2 and Macbeth two pilots share one spot on more than 5 % of the frames (#345). Not covered with real clients: a level that follows from the one before (each starts as a new game, no route state), a player who goes down (all but Corneria with `gInvincible`), two PCs, Windows, a real network and a Release build. A full campaign was played by hand on two PCs on 2026-11-09 (issue #2); that record is not this one, and its level stays the owner's to enter.
 
 ## Test identity
 
@@ -74,11 +74,15 @@ number of clients, transport.
    through the rest of each level: the boss and the end. Per level, one game with 2 players and `gInvincible` starts past
    the intro, and a pilot that reads game state (`src/port/coop/test/pilot.h`, `pilot_aim.h`) flies every player to level
    complete and on to the map or whatever comes next, and writes a replay; the two clients then play it and must `PASS`
-   every checkpoint, hash alike on every frame and equal the pilot's game. Every campaign level, the vehicle levels and
-   level 4 by default, or `--level`; `--mortal` leaves `gInvincible` off. The summary gives per level the result, the
+   every checkpoint, hash alike on every frame and equal the pilot's game. Every campaign level and the vehicle levels
+   by default, or `--level`; level 4 only when `--level level-4` names it, as no menu offers it and two clients differ
+   from its first frame (#307); `--mortal` leaves `gInvincible` off. The summary gives per level the result, the
    frames, the frame of level complete and the downs per player; a level the pilot does not finish says so, with the
-   frames that were compared. Like `views` this is one game per run, so it says nothing about two clients over a
-   network: that is `lockstep_test.py`.
+   frames that were compared, and so does one that ends without its boss's death (`FAILED_ENDS`: Katina's base hit by
+   the Saucerer's laser). `venom-2-andross` flies Venom 2 on into Andross' second part, the brain and the escape (#181).
+   Like `views` this is one game per run, so it says nothing about two clients over a network: that is
+   `lockstep_test.py`, and `campaign.py`, whose two clients also run at the high and low audio sample counts and 6
+   frames of boot apart (#181).
    `python tools/coop/hash_check.py builds --debug <exe> --release <exe>` (unattended, exit code 0 on `PASS`) plays the
    same two sections on two Release runs and a Debug run of one commit, and all three must hash alike on every frame.
    `python tools/coop/hash_check.py rates --exe <exe>` (unattended, exit code 0 on `PASS`) does the same across
@@ -155,6 +159,28 @@ number of clients, transport.
    each of those fails without.
    `python tools/coop/test_all.py` (#147, unattended) runs every test here in lanes, on a Debug build or with
    `--config Release` on a Release build in a folder of its own. Exit code 0 only when every step ran and passed.
+   Two games that meet over sockets play at 8 times real time (`replay.MEETING_SPEED`), and a client opens its session on
+   its own frame 100 (`replay.CLIENT_JOIN_FRAME`, #287): a client whose level start comes in its first 21 frames parts from
+   the host at level frame 4 to 9 (22 of 23 runs; from frame 22 on 0 of 50), which a Release build at no frame limit did
+   until then, as it plays 1100 frames a second and more. `COOP_TOOLS_MEETING_SPEED=max` runs the `lockstep` step on
+   Release in 5m49s against 13m57s (46 of 48 scenarios; `save_own` is intermittent there and `log` is on the clock).
+   `save_own` was the audio reset of a level start (#289, decision 0015) and passes 10 of 10 there since; a control run
+   turns that off with `COOP_TOOLS_AUDIO_RESET_RUNS_ON=1`, and `COOP_TOOLS_AUDIO_TRACE=1` makes every test game write
+   `audio-trace.txt` in its folder (`src/port/coop/test/audio_trace.h`). NOTES.md, 2026-11-13, #289.
+   `join` and `menu` stay at 8: their replays are counted in frames and their ping is on the clock. NOTES.md, 2026-11-13.
+   A full `test_all.py` run takes 23m26s since #290 (41m37s before): `lockstep` 4 scenarios at a time, the mutation suites in
+   a second checkout beside the rest, the `rates` steps with their 5 games at once. NOTES.md, 2026-11-13, #290.
+   `python tools/coop/test_all.py --mixed` takes 18m04s (two runs, 56 of 56 steps ok, `coop-off` not run, against 23m47s
+   for the same tree on Debug): it builds Debug and Release and plays every step that starts the game on Release, except
+   `wingman`, `exit-test`, `builds` and `coop-off`, and the unit tests and loopback tools run in a lane of their own beside
+   the others. On Debug alone the lanes do not help (24m46s): the machine is the limit there. A full `menu` failed in
+   2 of 2 runs of the old lanes (`game_leave`, a 40 s timer on a loaded machine) and passed in 4 of 4 of these.
+   NOTES.md, 2026-11-13, #290 (second part). It was no timer: the games parted at level frame 0 of the restart and the
+   client's wait was measured from the wrong time (NOTES.md, 2026-11-13, #293).
+   Since the third part `exit-test` plays 4 games at a time (376 s to about
+   100 s; 672 of 672 games in 14 runs beside other test runs), the Release build of `--mixed` skips the repository checks Debug's ran (93 s to 65 s), and
+   `--base-ref <git ref>` makes `coop-off` build its base itself, so a full run can have it: equal on all 5800 frames
+   against `origin/coop` and against the commit before. A whole run with these was not measured here.
 3. **Two clients on one machine.** Two Starship processes with their own config, save and log folders (never the
    owner's), connected over loopback, both fed replays. `python tools/coop/join_test.py` (WP-24, unattended, exit code
    0 only when everything passed) takes two or three games from the lobby into a level through the scripted flow in
@@ -187,7 +213,10 @@ number of clients, transport.
    score, lasers, team shields and medals start as for a new game. A level passes when the two games are equal on
    every frame, hash log and input log, from its first frame to the map or whatever follows its level complete, with no
    desync report, and player 0 reached level complete. One summary at the end: per level the result, the frames
-   compared, the frame of level complete and the downs per player. `--lock <file>` holds an flock for each level's
+   compared, the frame of level complete and the downs per player. `venom-2-andross` (#275) is Venom 2 and the level
+   its clear jumps into, Andross' second part: the brain, then the escape through a maze to the trigger at its exit
+   and the ending; the escape's start, a level complete of its own, does not count. A game over ends a level's run.
+   `--lock <file>` holds an flock for each level's
    session, so other tests on the PC take turns. This is not the hand-played campaign of 2026-11-09 (issue #2), the
    only `verified-playthrough`: no level here follows from the one before.
 4. **Network conditions (WP-27).** Lag, loss and reordering between the clients with a chaos relay, as in the hub's
@@ -236,6 +265,667 @@ Running tests must never use or modify the owner's own `starship.cfg.json`, save
 ## Results
 
 Newest first. One block per run that matters (a milestone, a release, a QA level change).
+
+```
+date:       2026-11-18
+commit:     issue/379-bot-reticle, fix edcf98fd, on issue/combined-test-6 2c7326e9 (the red on the build of 93bc6401,
+            the trace without the fix)
+identity:   ROM US 1.0, Linux, GCC 16.2, Debug, OpenGL on a software renderer, no window; two games on one PC over
+            loopback through the join driver, niced, one session at a time
+what ran:   python tools/coop/lockstep_test.py --no-build --jobs 2 --only lock_marks,lock_marks_all_range (red on
+            93bc6401, green on edcf98fd); four mutants of the fix, each built and run the same way: the whole fix
+            reverted 0/2, the rails placement removed 1/2 (lock_marks fails), the all-range loop back on gCamCount
+            1/2 (lock_marks_all_range fails), the indicator loop back on gCamCount 0/2
+result:     automated, for the lock-on mark of players 1 and up (#379). Red: player 1 held a lock-on on 491 frames
+            (rails) and 152 (Katina), and its mark was never drawn on its own client. Green: drawn on 464 and 129,
+            every new lock-on settled within 30 frames, only on the client that looks through player 1; hashes equal
+            on 3700 and 4000 frames; the simulation's trace the same as before on every common frame. The mark is
+            checked from the trace (where it was drawn, scale, turn), no picture was looked at. Not run: three or
+            four players, Release, Windows, two PCs, a person looking at the screen.
+
+commit:     issue/380-own-lasers on issue/combined-test-6 2c7326e9: each player keeps its own laser strength from
+            level to level (decision 0007 rule 14, #380). The fix is 1011154c, and the three breaks ran on it; the
+            other runs on the fix are on 222af48d, which differs from it in a comment and two READMEs.
+identity:   ROM US 1.0, Linux, GCC 16.2, Debug, OpenGL software renderer, no window; two games on one PC over
+            loopback through the join driver, lockstep, niced, one session at a time, frame limit 8
+what ran:   before (game code of 2c7326e9): lockstep_test.py --no-build --only own_lasers: 0/1, lasers [1, 0] on
+            Corneria's last frame, [1, 1] at player 1's join in level 1 (frame 853), on both games.
+            on the fix: lockstep_test.py --no-build --only own_lasers,own_lasers_other,own_lasers_down,
+            own_lasers_restart: 4/4. player_trace.py shots --players 2: PASS (with its old setup, which counted on
+            the copy: FAIL, 0 frames with two laser marks from an upgraded player 1, need 5).
+            three breaks, each built and run, sources restored and built again: the copy of player 0's value put
+            back in the join: own_lasers,own_lasers_other 0/2; no reset in CoopPlayers_SetDown: own_lasers_down 0/1;
+            no call at the restart: own_lasers_restart 0/1.
+            python tools/coop/build.py --quiet: build: OK.
+result:     automated. Pilots fly Corneria, player 0 takes a laser item, the map starts Meteo: on both games the
+            lasers of players 0 and 1 are [1, 0] on Corneria's last frame, at Meteo's start, when player 1 joins 853
+            frames into it and 60 frames later, equal on 13189 frames. The other way round (player 1 given hyper
+            lasers on Meteo's first frame, player 0 single): [0, 2] at the join and after, equal on 13789 frames. A
+            player 1 that goes down is single from that frame through its return, player 0 keeps twin (2700 frames).
+            Player 0 down with the refill closed: both single from the restart on (2700 frames).
+            Not run: test_all.py; the default lockstep run; a new game inside a session, the map's retry, a lobby
+            start after an earlier session, a player still down at the level's end; three and four games; all-range;
+            Release; Windows; two PCs; a person.
+```
+
+```
+date:       2026-11-17
+commit:     issue/373-k2-save-merge at fcf37a9b on issue/combined-test-6 1898ed4c: every player keeps the planet flags
+            a session earned (decision 0017, K2, #373)
+identity:   ROM US 1.0, Linux, GCC 16.2, Debug, OpenGL software renderer, no window; two games on one PC over
+            loopback, niced, one session at a time; save_merge_test.py has no game and no ROM
+what ran:   python tools/coop/save_merge_test.py: PASS, ASan and UBSan, 15 cases, 12 of 12 mutants caught (whole_byte:
+            the session's planet byte in place of the OR).
+            lockstep_test.py --jobs 1 --only save_kept,save_kept_host_had,save_kept_none,save_kept_window,map_saves,
+            map_saves_host_full,map_saves_equal,save,save_own,leave,handover,menu: 12/12.
+            save.c with the session's starting point removed, built: --only save_kept,save_kept_host_had 0/2 (the
+            client's save got the host's Meteo); restored and built again.
+            test_all.py --no-build --only checks,save-merge,menu,menu-asan,join,version: PASS, 8/8 steps, 6m57s.
+result:     automated. Two games with two different saves fly Corneria to its clear (equal on 11741 frames): each
+            default.sav afterwards is the one from before but for Corneria's byte (old OR a0) and the checksum, in the
+            save and its backup; the client's does not get the host's Meteo; no file changed while the session ran;
+            the co-op window (read from the real windows in save_kept_window) and the co-op log say `Kept from this
+            session: Corneria.` A session that ends 600 frames into Corneria leaves both files byte for byte. A host
+            that had Corneria cleared: nothing is earned, both files byte for byte, the client does not get the clear
+            (decision 0017 item 1 as written; open for the owner). Not covered: a medal with real games, expert mode,
+            a game over, three or four players, a session that ends by a desync or the host's leaving, Windows, two
+            PCs, Release, a person.
+```
+
+```
+date:       2026-11-17
+commit:     issue/262-sessions-docs (69b3b6bc) on issue/combined-test-6 80a8e8ee: four scenarios for the drops decision
+            0016 part A had read and not run, and the fault one of them found, fixed in session.c (a client on its way
+            back can wait for a recovery)
+identity:   ROM US 1.0, Linux, GCC 16.2, Debug, OpenGL software renderer; two games on one PC (three in resume_three
+            and survive_three), niced, one session at a time
+what ran:   lockstep_test.py --jobs 1 --only resume_repair (three sessions): ok on the fix; RESUME_REPAIR_ONLY=raced on a
+            throwaway build with the old refusal: FAILED, the level did not start again. On the fix (dae40f5e):
+            --only resume_level,resume_map,resume_silent 3/3; --only sim,desync_sim 2/2; --only
+            resume,resume_early,resume_refused,resume_gone,resume_three,left,host_left 7/7; --only
+            resync,resync_refused,steer,pause,stall,frozen,survive_desync,survive_three,survive_gaps_map_lost 9/9;
+            session_mutants.py --only recover_coming_back_*: all 4 breaks caught.
+            On 69b3b6bc: test_all.py --lanes 1 --base-exe <a build of 80a8e8ee> --only
+            checks,session,session-asan,session-mutants,session-mutants-asan,menu,menu-asan,join,coop-off,
+            replay-test,hash-run-2,desync_dump: PASS, 16/16 steps, 13m21s (session-mutants: all 462 breaks caught).
+            Before the fix, on 269cd7cd: test_all.py --lanes 1 --only
+            checks,coop-off,replay-test,exit-test,hash-run-2,join,menu,session,desync_dump: PASS, 12/12 steps
+result:     a client that stops dead 120 frames into the map, or on the second frame of the level after it, for 14 s
+            comes back into its slot and the session goes on: equal on 13240 and 13256 frames, the route equal, no
+            level start. No answer to the host's question: the level starts again after 5 s. A client lost at the
+            repair offer: back after 14 s its game says no, back after 24 s the host's repair has given up (20 s
+            before the barrier, not the 10 s at it: decision 0016 A.4 corrected); the level starts again, no repair
+            completes, no session ends. Fault found and fixed: a client whose own repair gave up while it was on its
+            way back ended its session (2 of 8 runs of that session by chance; forced by the session `raced`).
+            Found, not changed: a returning game is refused when a setting that changes the game changed during the
+            session (NOTES.md, 2026-11-16). NOT run: Windows, two PCs, a real connection that is cut (a stopped
+            process stands in), Release, three and four games for the new scenarios, the lockstep step as a whole,
+            lockstep-mutants and desync-mutants, a person. The QA level of the project does not change.
+```
+
+```
+date:       2026-11-16
+commit:     issue #370 branch on issue/combined-test-6 80a8e8ee
+identity:   ROM US 1.0, Linux, GCC 16.2, Debug, OpenGL software renderer; two games on one PC, niced, one session
+what ran:   lockstep_test.py --only bot (play_with_bot.py's bot against a stand-in for the person: the real co-op
+            window, clicked by the menu driver, at real time); play_with_bot.py by hand with nobody hosting, stopped with
+            Ctrl+C; check.py
+result:     the bot retries while nobody hosts, is refused with the setting named when the host's config differs,
+            joins with --settings-from, and its pilot flies player 2: hashes and input logs equal on 2700 frames of
+            Corneria. In the level the bot took 9% of a core. NOT run: a person, --window, other levels with the bot,
+            the bot going down, Release, Windows, two PCs. The QA level of the project does not change.
+
+commit:     the #28 branch at 9f417515 (src/port/coop/test/pilot_aim.c: Andross' eyes after his last hand, a bomb into
+            his inhale) on issue/combined-test-6 80a8e8ee
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL software renderer; up to four games on one PC, niced, one session at a
+            time
+what ran:   campaign.py --route all --players 4; campaign.py --levels venom-2-andross --players 4 with five seeds
+            (default, 7,11,13,17,19,23, 101,...,606, 31,...,53, 59,...,79); --levels venom-andross,venom-2-andross
+            --players 2; --levels venom-andross --players 4; test_all.py --no-build --only checks,campaign-4,views
+            --lanes 1: PASS, 4/4 steps; lockstep_test.py --no-build --jobs 1: 74/74
+result:     all 18 levels of the route equal on every frame to their level complete with four players, no desync
+            report, Aquas (#366) included; the tool counts 14/18 as four levels break the one-spot rule of #345
+            (Titania, Aquas, Venom 2 at 5.7 %, Macbeth). venom-2-andross with four pilots finishes on all five seeds
+            (level frames 11050 to 14903; on 80a8e8ee 33142 on the default seed, and two of the seeds hit the 50000
+            cap with fix 1 alone). NOT run: Release, Windows, two PCs, a real network, a person, route state between
+            levels, --mortal, the mutation suites (no session, net or lockstep code changed). The QA level of the
+            project does not change: automated.
+```
+
+```
+date:       2026-11-16
+commit:     issue/345-four-pilots (abd5e309; the escape runs on 7b2ce117, abd5e309 only wraps two lines) on
+            issue/combined-test-6 82a44d62
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL software renderer; up to four games on one PC, niced, one session at a
+            time
+what ran:   campaign.py --players 4 --levels venom-andross (base 82a44d62 and 1a70bf21); --players 3 --levels
+            venom-andross (base), --levels meteo (abd5e309); lockstep_test.py --only escape_look_three and
+            escape_look_four --levels cases_inv (each step of the pilot's room, see NOTES 2026-11-16); test_all.py
+            --no-build --only checks,campaign-4 --lanes 1: PASS, 3/3 steps; lockstep_test.py --no-build --jobs 1: 72/74,
+            the two others (sim, desync_sim) lacked their programs and pass after building them: 2/2
+result:     Venom/Andross with four pilots: frames on one spot per pair 237, 435, 314 on base, at most 9 after (the 5%
+            rule passes); escape_look with three and four games runs a case on every player of the pilots' row, each in
+            reach, no two pilots in one another, hashes and probe logs equal. NOT run: the other escape sessions
+            (cases_noinv, route_*), the other rails levels with three or four, Release, Windows, two PCs, a person. The
+            QA level of the project does not change.
+```
+
+```
+date:       2026-11-15
+commit:     issue/267-resume (the resume after a drop, decision 0016 part A, Proposed) on issue/267-repair
+identity:   ROM US 1.0, Linux, GCC 16.2, Debug, OpenGL software renderer
+what ran:   lockstep_test.py --only resume,resume_early,resume_three,resume_refused,resume_gone; coop_session_test sim
+            (host_resume), coop_lockstep_test (reopen), coop_menu_test sim (resume); session_mutants.py 456/456,
+            lockstep_mutants.py 23/23; test_all.py --mixed --base-ref origin/issue/combined-test-6 on 7ab59440:
+            PASS, 61/61 steps, 17m24s
+result:     a client stopped for 33 s (past the transport time-out and the host's 10 s without input) comes back into
+            its slot and the level goes on where it stood: equal on every frame, no level start. In another slot, with
+            a no, or when the wait of 30 s is over, the level starts again. NOT run: Windows, two PCs, a real connection
+            that drops (a stopped process stands in), Release, a person. The QA level of the project does not change.
+```
+
+```
+date:       2026-11-15
+commit:     issue/267-repair (the repair of a desync in place, decision 0016, Proposed) on 07d9207b
+identity:   ROM US 1.0, Linux, GCC 16.2, Debug, OpenGL software renderer
+what ran:   lockstep_test.py --only resync,resync_targets,resync_three,resync_twice,resync_refused,resync_near,resync_lag;
+            --only sim,desync_sim,desync,survive_desync,survive_three,desync_three,handover (the scenarios that look at
+            the level start, now with SF64_COOP_TEST_NO_REPAIR=1); desync_mutants.py; check.py
+result:     the scripted runs of two to four games on one PC pass: a flipped bit of each kind of value is written back at
+            a barrier frame and the hash logs are equal from there to the end of the level run, with no level start; the
+            refusal and the second desync within 300 frames take the level start; desync_mutants.py 29 of 29 caught.
+            test_all.py --mixed --base-ref origin/issue/combined-test-6 on 30525d40 (the repair with the fixes of a
+            second model's review): PASS, 61/61 steps, 19m10s. NOT run: Windows, two PCs, a person. The QA level of the
+            project does not change.
+```
+
+```
+date:       2026-11-15
+commit:     issue/combined-test-6, the merge of issue/357-needle-origin (PR #361) into 7cf293dc
+identity:   ROM US 1.0, Linux, GCC; no game started for this record
+what ran:   git merge --no-ff --no-commit (no conflict: NOTES.md and the tools README merged by git);
+            python tools/coop/check.py; python tools/coop/needle_search.py --help
+result:     research only: a NOTES entry (2026-11-15, #357) and the search tool needle_search.py, which reads a ROM from an
+            argument and holds no game data. No game code changed, so the gate on 0bc99fc4 (59 of 59, 20m33s) holds.
+            The worker's headline (1,609 listed textures, best correlation 0.953, control passed) was rerun by the
+            coordinator on a scratch ROM copy, since deleted; the 12-minute --raw stage was not rerun.
+```
+
+```
+date:       2026-11-15
+commit:     issue/combined-test-6, the merge of issue/358-release-workflow (PR #359) into the merge of PR #360
+identity:   ROM US 1.0, Linux, GCC; no game started for this record
+what ran:   git merge --no-ff --no-commit; one conflict, in the step list of tools/coop/test_all.py (injection-scan from
+            #360 and release-check from #359 added at the same line, both kept); python tools/coop/check.py;
+            package_test.py (35 of 35), release_check_test.py (14 of 14), injection_scan_test.py (9 of 9),
+            lockstep_rules_test.py; both workflow files parse as YAML
+result:     the release workflow (.github/workflows/release.yml, a workflow_call trigger in coop-build.yml, actions
+            pinned by commit hash), tools/coop/release_check.py, package.py --release-tag, the notes template and the
+            Releases section of MAINTAINING.md. Nothing of it has run on GitHub. No game code changed, so the gate on
+            0bc99fc4 (59 of 59) holds for the game; the new steps run in the next gate.
+```
+
+```
+date:       2026-11-15
+commit:     issue/combined-test-6, the merge of docs/untrusted-content (PR #360) into dee185b8
+identity:   ROM US 1.0, Linux, GCC; no game started for this record
+what ran:   git merge --no-ff --no-commit (no conflict); git diff --cached docs/untrusted-content (empty);
+            python tools/coop/check.py; python tools/coop/injection_scan_test.py (9 scenarios)
+result:     AGENTS.md rule 13, the injection tripwire (tools/coop/injection_scan.py and its test, the step
+            injection-scan) and the "Agent safety" section of MAINTAINING.md. No game code changed, so the gate on
+            0bc99fc4 (59 of 59, 20m33s) holds for the game; the new step runs in the next gate.
+```
+
+```
+date:       2026-11-15
+commit:     issue/combined-test-6, the merge of docs/followup-rule (PR #356) into 0bc99fc4
+identity:   ROM US 1.0, Linux, GCC; no game started for this record
+what ran:   git merge --no-ff --no-commit (no conflict); git diff --cached docs/followup-rule (empty);
+            python tools/coop/check.py
+result:     documentation only: AGENTS.md ground rule 12 (follow-up issues only for a game bug, a rule question for
+            the owner, or a real-hardware task). No code changed, so the gate on 0bc99fc4 (59 of 59, 20m33s) holds for
+            this head.
+```
+
+```
+date:       2026-11-14
+commit:     issue/combined-test-6, the merge of issue/345-pilot-places (PR #349) into the merge of PR #348
+identity:   ROM US 1.0, Linux, GCC; no game started for this record
+what ran:   git merge --no-ff --no-commit; conflicts in docs/coop/NOTES.md (both entries kept), tools/coop/README.md
+            (one row changed by both PRs, merged word by word) and tools/coop/lockstep_rules_test.py (the list of
+            tests: test_aim from #348 and test_places from #349); no duplicate top-level function in
+            lockstep_test.py, lockstep_rules_test.py or campaign.py; python tools/coop/check.py;
+            python tools/coop/lockstep_rules_test.py
+result:     the two PRs touch different C and tool code, the conflicts were in docs and the list of rule tests only.
+            The runs of PR #349 are its own record (checks, lockstep 61 of 61, campaign-4, replay-test, hash-run-1,
+            coop-off; escape_look_three rerun by the coordinator); the full gate on this merged head is the next
+            step and its result is in the comment on PR #285.
+```
+
+```
+date:       2026-11-14
+commit:     issue/combined-test-6, the merge of issue/345-turret-aim-trace (PR #348) into f18733f5
+identity:   ROM US 1.0, Linux, GCC; no game started for this record
+what ran:   git merge --no-ff --no-commit (no conflict); git diff --cached issue/345-turret-aim-trace (empty);
+            python tools/coop/check.py; python tools/coop/lockstep_rules_test.py
+result:     the merged tree, before this record, is the tree of issue/345-turret-aim-trace at 59150e01, so its runs
+            hold for it: the worker's record in PR #348 (aim_four and ma_turret_four, 2 of 2, rerun by the
+            coordinator; checks, lockstep 61 of 61, replay-test, hash-run-1, coop-off, lockstep-mutants 22 of 22). The
+            full gate runs on the head after PR #349 is merged as well; the last one is the record for f18733f5
+            (59 of 59, 18m44s).
+```
+
+```
+date:       2026-11-14
+commit:     issue/combined-test-6, the merge of issue/342-bars-before-names (PR #347) into ce17520d
+identity:   ROM US 1.0, Linux, GCC; no game started for this record
+what ran:   git merge --no-ff --no-commit (no conflict); git diff --cached issue/342-bars-before-names (empty);
+            python tools/coop/check.py; python tools/coop/lockstep_rules_test.py
+result:     the merged tree, before this record, is the tree of issue/342-bars-before-names at 87cef76c, so its runs
+            hold for it: the record of #342 above (names_four red then green; 11 of 11 steps and rates-rails,
+            rates-all-range 3 of 3 on the C sources d118f78f). The full gate was not rerun on this head; the last one
+            is the record for ce17520d (59 of 59).
+```
+
+```
+date:       2026-11-14
+commit:     issue/342-bars-before-names, C sources as built d118f78f (the later commits change docs and tools), on
+            issue/combined-test-6 ce17520d (the red on the build of 74187b4b, the probe without the fix)
+identity:   ROM US 1.0, Linux, GCC, OpenGL on a software renderer, no window; 4 game clients on one PC, UDP over
+            loopback, through the join driver; Debug (Release for builds)
+what ran:   python tools/coop/lockstep_test.py --no-build --only names_four (red on 74187b4b, green on d118f78f);
+            python tools/coop/test_all.py --no-build --only checks,views,view-check,draw,builds,coop-off,lockstep,
+            hash-run-2,replay-test and --only rates-rails,rates-all-range on d118f78f, --base-exe <Debug build of
+            ce17520d>; python tools/coop/lockstep_rules_test.py
+result:     automated, for the draw order of the other ships' shield bars and names (#342). Red: a bar drawn after a
+            name it lies on, 492 times in the four games' traces. Green: none, hashes equal on 1580 frames, a bar
+            lies on a name on the same frames as before (99 to 232 per game). 11 of 11 steps ok in 10m40s (lockstep
+            61 of 61 scenarios, view-check, views, draw, builds, coop-off, hash-run-2, replay-test, checks) and 3 of
+            3 ok in 12m11s (rates-rails, rates-all-range). The order is the trace's record of the display list; no
+            picture of the screen was looked at. Not run: three clients, Windows, two PCs, a person looking at the
+            screen.
+```
+
+```
+date:       2026-11-14
+commit:     issue/335-hud-lives, on issue/combined-test-6 ade4c08e (the red on the build of 4b035734, the probe
+            without the fix)
+identity:   ROM US 1.0, Linux, GCC, OpenGL on a software renderer, no window; 2 and 4 game clients on one PC, UDP
+            over loopback, through the join driver; Debug
+what ran:   python tools/coop/lockstep_test.py --no-build --only hud_lives (red on 4b035734, green on 145cd696);
+            python tools/coop/test_all.py --no-build --only checks,view-check,coop-off --base-exe <build of
+            ade4c08e> and --only hash-run-1,hash-run-2,replay-test on 145cd696; --only checks,lockstep on 668a48cc
+result:     automated, for the lives number each client's HUD draws (#335). Red: a client looking through player 1,
+            2 or 3 drew its own slot (2 for a pool of 1 with two games; 4 or 5 for a pool of 3 or 4 with four).
+            Green: every game draws the pool on every frame, two and four games, also with the port's beta boost
+            gauge, equal on 2150 frames. lockstep 57 of 57 scenarios, view-check, hash-run-1 and -2, replay-test,
+            the checks and coop-off (co-op off hashes as ade4c08e does) pass. Not run: three clients, Release,
+            Windows, two PCs, split screen, a person looking at the screen.
+```
+
+```
+date:       2026-11-14
+commit:     issue/329-rules-four, C sources as built d32fc9dc (the later commits change tools and docs), on
+            issue/combined-test-6 ade4c08e
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2, 3 and 4 game clients on one
+            PC, UDP over loopback, through the join driver
+what ran:   python tools/coop/lockstep_test.py --no-build --jobs 3 --only <name>, <name>_three, <name>_four for aim,
+            macbeth_bombs, ma_turret, sy_robot_spread, sy_robot_pose, granga_spread and escape_look (all five
+            sessions of escape_look each); python tools/coop/test_all.py --no-build --only
+            checks,lockstep,hash-run-2,coop-off --base-exe <Debug build of ade4c08e> (twice, the first without the
+            last two) and --only lockstep-mutants,replay-test,hash-run-1; python tools/coop/lockstep_rules_test.py
+result:     automated, for the rules of #193, #272, #280, #281, #282, #302 and #303 with a third and a fourth player.
+            All 21 scenarios pass, every game of a session equal on every frame (4000 to 10063 frames). Per rule and
+            player: NOTES.md, 2026-11-14, #329. lockstep 59 of 59 scenarios in 6m25s and in 6m05s (aim_four,
+            macbeth_bombs_four and ma_turret_four are new in it: 26, 84 and 49 s of 1356 scenario seconds in the first
+            run, 26, 54 and 32 s of 1272 in the second, four at a time: 30 to 45 s of the step), every lockstep
+            break caught, replay-test, hash-run-1, hash-run-2 and coop-off (co-op off hashes as ade4c08e does) pass,
+            the rule checks' own test passes (rows broken for a third or fourth player fail). Each new scenario was red first for a reason of its own making (the tanks not 250
+            apart, a probe without a place for its object, a trace that could not tell two players apart), none for
+            a rule. Not shown: a turret's first shot at player 2 of four tanks; the escape's explosion for a player
+            inside the pilots' row (player 1 of three, players 1 and 2 of four); the boss scenarios and the score
+            probes with three or four players. Not run: Release, Windows and MSVC, two PCs, a person playing.
+```
+
+```
+date:       2026-11-14
+commit:     issue/14-lives-pool-start, on issue/combined-test-6 58b019c1 (the red on 58b019c1's own build)
+identity:   ROM US 1.0, Linux, GCC, OpenGL on a software renderer, no window; 2, 3 and 4 game clients on one PC, UDP
+            over loopback, through the join driver; Debug, and Release for the campaign run
+what ran:   python tools/coop/lockstep_test.py --no-build --only pool_start (on 58b019c1's build, red, and on the
+            branch); python tools/coop/test_all.py --no-build --only
+            checks,lockstep,replay-test,hash-run-1,hash-run-2,coop-off --base-exe <build of 58b019c1>;
+            lockstep_test.py --no-build --only survive_gaps_four; python tools/coop/campaign.py --players 4 --levels
+            aquas --mortal on Release
+result:     automated, for the pool's start value (decision 0007 rule 1). Red on 58b019c1: pool 2 with two, three and
+            four players. Branch: pool 3, 4 and 5 from the first frame player 0 flies, every game of a session
+            equal on 2000 frames. lockstep 56 of 56 scenarios, replay-test, hash-run-1 and -2, the checks and
+            coop-off (co-op off hashes as 58b019c1 does) pass. A restart of the first level for three and for two
+            games began with 4 and 3. Four clients without gInvincible in Aquas: game over at frame 7558, equal on
+            the 6945 frames flown (5965 and 4946 with a pool of 2), so the level is still not finished that way.
+            Not run: a route past the first level, a player joining or leaving between levels, the lobby's own
+            start (menu_test.py), the number a HUD draws, Windows, two PCs, a person playing.
+date:       2026-11-14
+commit:     issue/322-players-campaign: campaign runs on the game code of issue/combined-test-6 8c342fbf with the
+            tool of 5ea0a5e5; #324's fix 1be6625b (test code under src/port/coop/test and game/input.c), its red on
+            8c342fbf's build
+identity:   ROM US 1.0, Linux, GCC, OpenGL on a software renderer, no window; 3 or 4 game clients on one PC, UDP over
+            loopback, through the join driver, a pilot on each; Corneria and Titania of the first table on Debug,
+            every other campaign run on Release; test runs of other branches on the PC at the same time
+what ran:   python tools/coop/campaign.py --players 3 --levels <level>, for corneria, titania, macbeth, aquas, meteo;
+            --players 4 --levels <level> for each of the 18 entries of the route `all`; --players 4 --mortal for
+            macbeth, aquas, titania, meteo, sector-y; one level per run. python tools/coop/lockstep_test.py --no-build
+            --only replay_ends (Debug: on 8c342fbf's build and on 1be6625b; Release with
+            COOP_TOOLS_MEETING_SPEED=max, 3 runs); --only survive_gaps_four on Release with
+            COOP_TOOLS_MEETING_SPEED=max, 3 runs, two scenarios at a time; --only survive_three,survive_gaps_four on
+            Debug; python tools/coop/test_all.py --no-build --only lockstep (on 1be6625b), then --only
+            hash-run-1,hash-run-2,input,replay-test; python tools/coop/check.py
+result:     automated, for the levels and frames listed, each flown once with the default seeds. Four clients: equal
+            on every frame to the end on all 18 entries, 214950 frames in all (corneria 9859, titania 11853, macbeth
+            13111, aquas 9237, meteo 19723, sector-x 11536, fortuna 7500, sector-y 9606, katina 13188, bolse 10667,
+            area-6 14999, solar 10324, zoness 12426, sector-z 7507, venom-1 10497, venom-andross 7506, venom-2 5184,
+            venom-2-andross 30227), every player flying in each. Three clients: equal to the end on corneria 9742,
+            titania 11709, macbeth 11886, aquas 9718, meteo 19378. Four clients without gInvincible: equal on the
+            frames flown, macbeth 9404, aquas 4946 and meteo 6790 to a game over, titania 11695 and sector-y 9622 to
+            level complete; all four players lost shields in each. #324: replay_ends fails on 8c342fbf (`the hash
+            logs differ at level frame 1698: players, globals`) and passes on 1be6625b (2700 frames equal; Debug, and
+            3 of 3 on Release); survive_gaps_four 3 of 3 on Release at no frame limit (it failed 1 of 12 there
+            before, by #324's count, so 3 runs do not prove the fix; the red and green of replay_ends do, for the
+            cause they show). lockstep 53 of 53 scenarios, hash-run-1 and -2, input, replay-test and the checks pass.
+            Not run: three clients on 13 entries of the route, other seeds, any single rule (an aim, a hit) with a
+            third or fourth player, the picture with three other ships, three or four PCs, Windows, a person
+            playing; co-op off against the base (no upstream file changed).
+date:       2026-11-13
+commit:     issue/302-303-304-macbeth-shogun, C sources as built 2d65e62d (#302's rule change: the nearest human in
+            the window); red: the commit before it, e9dea93a (the first rule's code with the new test)
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 game clients on one PC, UDP over
+            loopback, through the join driver; test runs of other branches on the PC at the same time
+what ran:   python tools/coop/lockstep_test.py --no-build --only ma_turret (on 2d65e62d, and with --exe <build of
+            e9dea93a>); python tools/coop/test_all.py --no-build --lanes 2 --base-exe <build of 684b6568> --only
+            lockstep,checks, then --only hash-run-1,hash-run-2,replay-test,coop-off; python tools/coop/hash_check.py
+            base --base <build of 684b6568> --level macbeth --frames 4000; one tool at a time in the checkout
+result:     automated. A ready turret of a Macbeth train car holds its fire on 0 frames while a human is well inside
+            its window (76 on the first rule's code, 68 of them with player 1 alone in it); with one human alone in
+            the window 149 yaw steps go to that one's direction and 0 to the other's (11 and 151); with nobody in it
+            73 to the nearer one's, 0 to the other's; 3 of 12 salvos start with player 1 alone in the window. Hashes
+            equal on 4500 frames. lockstep 52 of 52 scenarios (aim and macbeth_bombs among them), checks, hash-run-1
+            and -2, replay-test pass; co-op off equal to the build of 684b6568 on Corneria (5800 frames) and in
+            Macbeth (5684 frames). Not run: three or four players, two PCs, Windows, Release, a person driving.
+date:       2026-11-13
+commit:     issue/302-303-304-macbeth-shogun, C sources as built 48cd67cd (later commits docs and the checks of one
+            scenario), on issue/combined-test-6 684b6568; red build: the game code of 684b6568 with this branch's
+            test code (b2beb6fa)
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 game clients on one PC, UDP over
+            loopback, through the join driver; test runs of other branches on the PC at the same time
+what ran:   python tools/coop/lockstep_test.py --no-build --only ma_turret, --only macbeth_bombs, --only shogun_bonus,
+            one at a time, on this branch and with --exe <red build>; python tools/coop/test_all.py --no-build --only
+            <steps> --lanes 2 --base-exe <build of 684b6568> for hash-run-1,hash-run-2; coop-off,view-check;
+            replay-test; lockstep,checks; python tools/coop/hash_check.py base --base <build of 684b6568> --level
+            macbeth --frames 4000, and --level sector-y --frames 3000
+result:     automated. Macbeth's turrets (#302): with player 1 the nearer to a train car, 284 yaw steps of its turret
+            go to player 1's direction and 58 to player 0's (0 and 235 on the red build); 3 of 11 salvos start with
+            player 1 alone in the window (0 of 11). Car 7's flash (#303): a blast on player 1 is red on player 1's
+            client and white on player 0's on 30 of 30 frames, a blast on player 0 the other way round, the fill
+            the games hold equal (red build: white on both for player 1, red on both for player 0). Sector Y (#304):
+            player 1's laser as the last hit pays the team 4 hits for a small Shogun and 11 for the last, as player
+            0's does; Falco's pays 0 (red build: 0 and 0 for player 1). Hashes equal on every frame of every run;
+            co-op off equal to the build of 684b6568 on Corneria (5800 frames), in Macbeth (hash_check.py base
+            --level macbeth, 5684 frames) and in Sector Y's rails (4684 frames, before the Shoguns); the lockstep
+            step 52 of 52 scenarios; view-check, replay-test, hash-run-1 and -2 pass. Not run: the Shoguns' death
+            with one player against the base, a blast or a Shogun's last hit that a player makes in play (probes
+            place them), three or four players, two PCs, Windows, Release, a person playing, a picture of the flash.
+date:       2026-11-13
+commit:     issue/280-281-hazards-aim, C sources as built 15ebf002 (later commits docs only), on issue/combined-test-6
+            d726f9dd; red build: the game code of d726f9dd with this branch's test code (0fd87a2f)
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 game clients on one PC, UDP over
+            loopback, through the join driver; up to 3 test runs of other branches on the PC at the same time
+what ran:   python tools/coop/lockstep_test.py --no-build --jobs 2 --only macbeth_bombs,sy_robot_pose,granga_spread,
+            sy_robot_spread,aim (this branch); --only macbeth_bombs,sy_robot_pose,granga_spread --exe <red build>;
+            python tools/coop/test_all.py --no-build --only coop-off,hash-run-1,hash-run-2,rails-2 --base-exe <build
+            of d726f9dd>; check.py and sp_audit.py --check (in build.py)
+result:     automated. Macbeth (#280): a turret's shot and the blast of train car 7, placed on one tank at a time by
+            the probe, hit player 1 2 of 2 times each, and a forced barrel roll of player 1 deflects the shot 2 of 2
+            (0 of 2 each on the red build); player 0 2 of 2 on both builds; the bomb and beam cases of #272 2 of 2;
+            never the other tank. Sector Y (#281): with player 1 the nearer, 587 angle steps of a robot's head and gun
+            go to player 1's direction and 5 to player 0's (0 and 556 on the red build). Corneria (#281): 116 plasma
+            shots of the Granga, none straight at a human, all within the spread of the nearest (7 straight at the
+            human the spread did not move on the red build). Hashes equal on every frame of every run; sy_robot_spread
+            and aim unchanged; co-op off equal to the build of d726f9dd on Corneria (5 of 5 steps). Not run: Macbeth,
+            Sector Y and the Granga fight with one player against the base, a turret's own shot or a car a player
+            blows up hitting player 1, the robot's body yaw, three or four players, two PCs, Windows, Release, a
+            person playing.
+commit:     issue/181-coverage (#181, #232, #284) on issue/combined-test-6 d726f9dd; the game code is the base's but
+            for test code (pilot_aim.c's Katina entries, SF64_COOP_HASH_SLOTS_EVERY)
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; views --pilot one game per run
+            (local index 0 and 1, 6 frames of boot apart, high and low audio sample counts), campaign.py and
+            lockstep_test.py two real clients over loopback in lockstep, a pilot on each, the same differences
+what ran:   hash_check.py views --pilot on every level (groups per run); campaign.py --levels venom-2-andross,
+            titania, sector-y, zoness, macbeth, bolse, area-6, katina (aquas: not within a hold); lockstep_test.py --only vehicle_end --levels
+            titania; full_level.py --players 1 and 2 --slots-every 1
+result:     automated. views --pilot equal on every frame to the end on all 17 campaign levels, Katina now through the
+            Saucerer's defeat (its laser end fails the tools now: red on the base's pilot, green with the new one);
+            venom-2-andross equal on the 60014 frames flown (the one-game pilot does not finish it). Two real clients
+            with the audio and boot differences: venom-2-andross to the ending (37303 frames, the brain and the
+            escape), Titania, Sector Y, Zoness, Macbeth, Bolse, Area 6 equal to the end; Katina equal but ended at the
+            laser. vehicle_end Titania ok (level complete at 9399: Goras' 8 dying sites run). Level 4 differs from its
+            first frame (voice clock, no audio heap reset; no menu reaches it). The burst at Granga's death fills the
+            effect array with co-op off too. Not run: --mortal, Windows, two PCs, test_all.py.
+commit:     issue/282-escape-hits b251f40b (bb6cc7e0 the red test), on issue/282-escape-look aeae394e
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 game clients per session on one PC,
+            UDP over loopback, through the join driver
+what ran:   python tools/coop/lockstep_test.py --only escape_look (on bb6cc7e0, red, and on b251f40b); --only aim;
+            campaign.py --levels venom-2-andross; hash_check.py base --base <build of aeae394e>; test_all.py --no-build
+            --only coop-off --base-exe <build of aeae394e>; check.py
+result:     automated. #282, the owner's choice A: the explosions of Andross' escape hit every human. An explosion 450
+            from player 1 (player 0 at least 510 away) sets its shields to 0 with a hit, takes it down on the next
+            frame and it comes back beside player 0 150 frames later with 255 shields for a life of the pool, while
+            player 0 flies on untouched; 550 away nobody is hurt; the exit's trigger does nothing for player 1; an
+            explosion on player 0 leaves player 1 unhurt; the same with gInvincible on. Both games equal on every
+            frame of all five sessions (7060 to 7080 frames). On the red commit the scenario fails: "an explosion in
+            reach of player 1 did not take it down". aim ok (4000 frames). Venom 2 into Andross equal on all 37361
+            frames to the ending, level complete at level frame 25439, downs 0, 0. Co-op off equal to the base on all
+            5800 frames. Not run: Windows and MSVC, Release, two PCs, three or four players, a person flying into an
+            explosion, the rest of test_all.py (the coordinator's gate runs it on the merged tree).
+```
+
+```
+date:       2026-11-13
+commit:     issue/282-escape-look, C sources as built 5722fd4f (1775a400 adds docs), on issue/combined-test-6 d726f9dd
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 game clients per session on one PC,
+            UDP over loopback, through the join driver
+what ran:   python tools/coop/lockstep_test.py --only escape_look (on this branch, and on a build of d726f9dd's C code);
+            campaign.py --levels venom-2-andross; test_all.py --no-build --only checks,join; --only
+            replay-test,exit-test,hash-run-2; --only lockstep,coop-off --base-exe <build of d726f9dd's C code>
+result:     automated, as an observation (#282, no rule changed). Five sessions start at Andross' escape
+            (SF64_COOP_JOIN_CHECKPOINT) and stay equal on every frame: an explosion or the exit's trigger 450 from
+            player 1 for 60 updates leaves it untouched and ends nothing; the explosion on player 0 takes it down and
+            kills it with gInvincible on or off; James' route stays over 3000 from every explosion in all three mazes
+            (NOTES.md, 2026-11-13, #282). On the base the scenario fails "no escape". Venom 2 into Andross equal on all
+            37267 frames to the ending. Steps ok: checks, join, replay-test, exit-test, hash-run-2, lockstep (52/52),
+            coop-off (equal to the base on all 5800 frames). Not run: Windows and MSVC, Release, two PCs, three or four
+            players, a person flying into an explosion.
+```
+
+```
+date:       2026-11-13
+commit:     issue/combined-test-6 (PR #285) with #288, #291 and #292 merged in: the C sources are those of 7e4385cc (#288
+            changed the test join driver; #291 and #292 changed test tools and docs only); the runs are of 0b9dc392, the
+            merged tree has the docs commit 3ceacfac after it, on 07c03c1f (coop)
+identity:   ROM US 1.0, Linux, GCC 16.2, Debug and Release, OpenGL on a software renderer, no window; 2 or 3 game clients
+            on one PC, UDP over loopback, normal priority, 4 game lanes
+what ran:   python tools/coop/test_all.py --mixed (builds both configs), twice; the default (Debug) once; --mixed with the
+            first rule of #292 once, on 47723983 (NOTES.md, 2026-11-13, #290 second part)
+result:     automated. --mixed: 56 of 56 steps ok in 18m04s, both runs (builds, determinism, both rates steps, lockstep with
+            results_hole, menu, join, net, session, steam, all seven mutant suites, replay-test, rails-2, rails-4,
+            full-level, views, exit-test and wingman on Debug, and the check that no tracked file changed). Default
+            Debug: 55 of 55 in 24m46s. coop-off was not run (no base build). The gate recorded below (52 of 53, on e8f038c6)
+            is not of this head; these runs are. On 90594a98 with the old lanes menu's game_leave failed in 2 of 2 full runs
+            (#293). Not run: Windows and MSVC, two PCs, a real connection that drops.
+```
+
+```
+date:       2026-11-12
+commit:     issue/combined-test-6 (PR #285): C sources as built 04af2b4d, the gate on its head e8f038c6 (the commits after
+            04af2b4d change docs only), on 07c03c1f (coop)
+identity:   ROM US 1.0, Linux, GCC, Debug (the Release build is the one the `builds` step compares), OpenGL on a software
+            renderer, no window; 2 or 3 game clients on one PC, UDP over loopback
+what ran:   python tools/coop/test_all.py --no-build --base-exe <build of 07c03c1f> --lanes 2 (53 steps, 42 minutes);
+            before it, one scenario per run on 04af2b4d: lockstep_test.py --only macbeth_bombs, sy_robot_spread,
+            other_bosses --levels macbeth, survive_gaps_checkpoints --levels andross, aim, bosses --levels andross;
+            campaign.py --levels venom-2-andross; hash_check.py base --base <build of 07c03c1f>; then results_hole alone
+            (see result)
+result:     automated. 52 of 53 steps passed, among them coop-off (equal to the build of 07c03c1f), builds (Release
+            against Debug), determinism, both rates steps, rails-2, rails-4, full-level, views, replay-test, the session,
+            net, lockstep, desync and steam mutant suites (every break caught), and the check that no tracked
+            file changed. The one failure is the `lockstep` step's scenario results_hole (#259): "seats: the one who left
+            is player 3, the other 2". It is intermittent and also fails on the build of #259 alone: alternating, 6 of 8
+            runs passed on each build (7 of 12 on this tree and 10 of 13 on #259 alone over all runs); the other 50
+            lockstep scenarios passed (issue #286). The Andross end is reached with equal hashes (36998 frames), and
+            survive_gaps_checkpoints --levels andross flies on to the ending (5339 frames). Not run: Windows and MSVC,
+            two PCs, a real connection that drops, three or four players beyond the scenarios of #270, a person playing.
+```
+
+```
+date:       2026-11-12
+commit:     issue/272-macbeth-bombs, C sources as built c121da89 (later commits docs only), on 07c03c1f (coop)
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 game clients on one PC,
+            UDP over loopback, through the join driver
+what ran:   python tools/coop/lockstep_test.py --only macbeth_bombs (on this branch, on the test commit c670ff0c
+            alone, and on 07c03c1f); --only vehicles --levels macbeth; --only vehicle_end --levels macbeth;
+            --only aim; python tools/coop/test_all.py --no-build --only coop-off,effects,effects-allrange,rails-2,
+            rails-4,shots,lowhealth-rails,lowhealth-allrange,full-level,wingman,hash-run-1,hash-run-2,draw,exit-test,
+            replay-test; determinism.py --only no-draw; check.py; sp_audit.py --check
+result:     automated. Macbeth's bomb fire and state-16 beams, placed on one tank at a time by a probe, hit player 1
+            3 of 3 times each (0 of 3 on the test commit without the fix), player 0 3 of 3 (the control), never the
+            other tank; hashes and probe logs equal on every frame. Macbeth to level complete with two pilots and
+            the other runs unchanged; co-op off equal to 07c03c1f on Corneria and, by a scratch script, in Macbeth.
+            Not run: the train's end's own bombs and beams hitting player 1 in a fight, two PCs, Windows, Release,
+            three or four players, a person driving it.
+```
+
+```
+date:       2026-11-12
+commit:     issue/220-macbeth-end, C sources as built ebfdd215 (later commits docs only), on wave7-base 07c03c1f (coop)
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 game clients on one PC,
+            UDP over loopback, through the join driver, a pilot on each
+what ran:   python tools/coop/lockstep_test.py --only other_bosses --levels macbeth; --only w7macbeth_ram;
+            --only vehicle_end --levels macbeth; --only vehicles; --only fox_refill_levels --levels macbeth;
+            --only fox_refill_long --levels macbeth; --only other_bosses --levels <each of the other eight>;
+            --only vehicle_end --levels titania (one per run); python tools/coop/campaign.py --levels macbeth;
+            python tools/coop/hash_check.py base --base <build of 33bd5fe6>; check.py; sp_audit.py --check
+result:     automated. Macbeth's train end goes to and faces the tank that was the nearer when each of its states
+            started (906 and 396 frames toward player 1 when it was the nearer, 0 toward player 0; a build of this
+            branch with fox_ma.c at wave7-base fails the same run). Its ram at the end of the track takes player 0
+            down once and is not refilled under it (34 refills before the fix). Macbeth with two pilots to level
+            complete, equal on every frame; the other bosses, vehicles, the refill tests and co-op off unchanged.
+            Not run: two PCs, Windows, Release, three or four players, a person driving it.
+```
+
+```
+date:       2026-11-12
+commit:     issue/273-sy-robot-spread, build 103b864c717c, on coop 07c03c1f; red build 70e49d5caebf (the base's game
+            code with this branch's aim trace); reference build 07c03c1f822d
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 game clients on one PC, UDP over
+            loopback, through the join driver, gInvincible on both
+what ran:   python tools/coop/lockstep_test.py --only sy_robot_spread (branch, red build, reference build), aim, steer,
+            other_bosses --levels shogun (one scenario per run); test_all.py --only checks,draw,exit-test,coop-off
+            --base-exe <07c03c1f>, then --only wingman, then --only shots,effects,effects-allrange,lowhealth-rails,
+            lowhealth-allrange; Sector Y with one player from its level start against 07c03c1f (a scratch script with
+            hash_check.py's play and compare, no tool does it)
+result:     automated. Sector Y's robots spread their shots around the human they aim at (#273): equal on all 9500
+            frames, 23 robot shots, the 10 plain ones at the nearest human (within 0.00), the 13 spread ones within 150
+            in x and y of it, 11 around player 1 with a root mean square of 100. The red build fails: 11 of 11 spread
+            shots with player 1 the nearer fly straight at it, and one with player 0 the nearer went to player 1. Co-op
+            off equal to 07c03c1f on Corneria (5800 frames) and on Sector Y (9510 frames). The test_all.py steps:
+            all ok. Not run: the steps that start three or more games at once (full-level, hash-run-1, hash-run-2,
+            rails-2, rails-4, replay-test, determinism) and the rest of the default lockstep run, two PCs, Windows, a
+            Release build, more than two players.
+```
+
+```
+date:       2026-11-12
+commit:     issue/267-survive-gaps, code 4f162f64 (the C of the branch), on wave7-base 07c03c1f (coop)
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window; 2 to 4 game clients on one PC,
+            UDP over loopback, through the join driver; pilots on both clients (gInvincible but in Corneria, as
+            campaign.py) or a feed
+what ran:   python tools/coop/lockstep_test.py --only survive_gaps_route, survive_gaps_map, survive_gaps_map_lost,
+            survive_gaps_venom_jump, survive_gaps_four, and survive_gaps_checkpoints --levels <one level> for katina,
+            bolse, andross and corneria, meteo, sector_x, area_6, sector_y, venom_1, solar, zoness, macbeth, titania,
+            aquas (each @ring: the level's own ring put where player 2 flies), one scenario or level per run;
+            regression: survive_desync, survive_three, survive_checkpoint, survive_checkpoint_allrange,
+            survive_next_level, stall, frozen, save_own, vehicles --levels macbeth; join_test.py; check.py
+result:     automated. Decision 0014 beyond Corneria and three players. A level that started again (Corneria; Meteo
+            with the route it carried) flown to its end, the map and the next level: equal on every frame, the same
+            route and save on both games at every level and map. A desync and a lost player on the map: the level
+            the team last entered starts again from its own level start, the map's changes dropped, equal on 600
+            frames. A restart at the game's own checkpoint in 13 levels (11 rails rings, Katina, Bolse), each flown
+            on to the level's end equal on every frame; in Andross' second part the restart at the brain held for
+            4872 frames, but the pilots ran out of lives there, so its end was not reached. A restart in Venom 2's
+            second part from the point Venom 1's jump leaves, flown on into Andross. Four players: one lost, the
+            level started again for three; a second lost, again for two. Fault found and fixed: a restart at
+            Macbeth's checkpoint parted again 34 frames in (the tank's state and Macbeth's rail survived the level
+            start); seen on ebe1afbb, gone on 4f162f64. Not run: two PCs, Windows, a real connection drop, a Release
+            build, what a player sees and hears.
+```
+
+```
+date:       2026-11-12
+commit:     issue/275-andross-pilot at 3cd90834 (build 3cd90834ee4f; pilot_andross.c, campaign.py) on 07c03c1f
+            (coop); the failure on the reference build of 07c03c1f
+identity:   ROM US 1.0, Linux, GCC, Debug, OpenGL on a software renderer, no window, 2 clients per run over loopback
+            through the join driver, lockstep, a pilot on each client, gInvincible and gInfiniteBombs on both
+what ran:   python tools/coop/campaign.py --levels venom-2-andross --lock <file>, also with --seeds
+            17,71,170,710,1700,7100; --levels corneria,venom-andross; the same session from Venom 2 with 10 more sets of
+            start seeds; lockstep_test.py --only full and --only bosses --levels andross; test_all.py --no-build --only
+            checks,replay-test,exit-test,hash-run-2,full-level; #270's survive_gaps_checkpoints --levels andross on a
+            scratch merge of #270 and this branch
+result:     automated. Andross' second part, after Venom 2 (the face, the brain, the escape) to the ending: equal on
+            every frame, 36461 frames compared, level complete at the escape's exit at level frame 25439, downs 0, 0;
+            with the other seeds 33146 and 23281; each of the 10 seed sets to the ending, equal; all three of the
+            escape's mazes flown. #270's scenario with this branch: run 2 to the ending, equal on 4313 frames. On
+            the reference build the same session ends in a game over: an escape explosion sets player 0's shields to
+            0 whatever gInvincible says (src/overlays/ovl_i6/fox_andross.c:751), and the old pilot flew into one.
+            Corneria and Venom/Andross' first part as on 2026-11-11 (10601 and 7581 frames, equal); full, bosses:
+            ok; test_all: 6/6. Not run: two PCs, Windows, Release, --mortal, other_bosses, vehicle_end.
+```
+
+```
+date:       2026-11-13
+commit:     issue/145-stray-reads: 8000bb37 (Aquas) and e9e130f1 (audio) on d726f9dd (issue/combined-test-6)
+identity:   ROM US 1.0 (the archives shared for the run), Linux, GCC 16.2.1, Debug, plain and with AddressSanitizer
+            and UBSan (build-asan), OpenGL on a software renderer, no window; one game per run, no session; the
+            sweep with 2 players by gCoopDebugPlayerCount, three games at a time on a PC other runs shared
+what ran:   python tools/coop/w7asan_sweep.py baseline and sweep (17 levels in nine pieces, 206785 frames) on the
+            sanitizer build of the fix, baseline and Aquas on that of the base; hash_check.py base; a pilot flight
+            of Aquas on the base build and on the fix, compared with hash_check.py diff; test_all.py --no-build
+            --only determinism and --only hash-run-1,hash-run-2,replay-test
+result:     QA level none (one game per run). Before: UBSan's bounds report in aADPCMdecImpl in every run (the
+            sanitizer clamp of audio_synthesis.c), a float cast at fox_aq.c:4254 in Aquas, and, the clamp taken
+            out, a heap read past a sample in aLoadBufferImpl. After: w7asan: PASS, 17 of 17 levels to level
+            complete, 0 reports that fail the run (7, 9 and 24 known or listed), none of the three. Co-op off equal
+            to the build of d726f9dd on 5800 frames; Aquas equal on 9424 frames; determinism 2/2, the hash and
+            replay steps 4/4. Not run: Windows, MSVC, ARM, Release, two clients, the full test_all.py.
+            docs/coop/NOTES.md, 2026-11-13, #145, #232, #276.
+```
+
+```
+date:       2026-11-12
+commit:     issue/262-stray-reads: the sweep on the game code of wave7-base (07c03c1f), the runs after the fixes on
+            a7e3f2c2
+identity:   ROM US 1.0, Linux, GCC, Debug with AddressSanitizer and UBSan (build-asan), OpenGL on a software
+            renderer, no window; one game per run, 2 players by gCoopDebugPlayerCount, no transport; each level
+            started past its intro, gInvincible but in Corneria, gInfiniteBombs in Zoness and at Andross
+what ran:   python tools/coop/w7asan_sweep.py baseline; python tools/coop/w7asan_sweep.py sweep (17 levels, 229304
+            frames, 71 minutes), and the same again after the fixes
+result:     QA level none (one game per run). Before: 17 AddressSanitizer and 18 UBSan bounds reports in 71 distinct
+            lines, 17 of them not known as harmless: six places that read or wrote outside an array (the map's
+            mission bar, Aquas' jellyfish, Venom 1's Golemech, Katina's team at the end, Macbeth's texture scroll,
+            which ended that game at frame 4494, and the test pilot at Goras). After: w7asan: PASS, 17 of 17 levels
+            to level complete, 0 reports that fail the run (7, 10 and 28 known or listed). Two clients on the plain build of a7e3f2c2 (automated): eels,
+            vehicle_end macbeth, aquas and titania, campaign.py venom-1 and katina, each equal on every frame; co-op
+            off equal to the reference build on 5800 frames. Not run: Windows, MSVC, a Release build, a session
+            under the sanitizers, test_all.py. docs/coop/NOTES.md, 2026-11-12, the sanitizer sweep.
+```
 
 ```
 date:       2026-11-11

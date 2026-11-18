@@ -11,6 +11,7 @@
 #include "port/coop/game/save.h"
 #include "port/coop/net/protocol.h"
 #include "port/coop/sync/handover_game.h"
+#include "port/coop/sync/lockstep.h"
 #include "port/coop/sync/lockstep_game.h"
 #include "port/coop/test/menu_driver.h"
 #include "port/coop/test/switches.h"
@@ -112,6 +113,9 @@ static bool Link_Recover(int32_t reason, int32_t player, const char* text) {
     if (reason == COOP_SYNC_RECOVER_STALL) {
         return (sMenu->phase == COOP_MENU_HOSTING) && CoopSession_Kick(sMenu->session, player - 1, now);
     }
+    if (reason == COOP_SYNC_RECOVER_RESUME) {
+        return CoopSession_Recover(sMenu->session, COOP_RECOVER_LOST, now);
+    }
     return CoopSession_Recover(sMenu->session, COOP_RECOVER_DESYNC, now);
 }
 
@@ -139,7 +143,31 @@ static void Link_Identity(int peer, char* out, size_t cap) {
     }
 }
 
-static const CoopSyncLink sLink = { Link_Send, Link_Pump, Link_Fail, Link_Identity, Link_Recover, Link_Entering };
+// The games parted and are put in step again (decision 0016): the co-op window says so. The co-op log has it already.
+static void Link_Notice(const char* text) {
+    if (sMenu != NULL) {
+        snprintf(sMenu->message, sizeof(sMenu->message), "%s", text);
+    }
+}
+
+// Host: is this player's connection lost with its slot kept (decision 0016 part A)?
+static bool Link_Away(int32_t player) {
+    return (sMenu->session != NULL) && CoopSession_IsAway(sMenu->session, player);
+}
+
+_Static_assert(SYNC_CLIENT_STALL_MS > COOP_LOCKSTEP_STALL_MS + COOP_SESSION_RESUME_MS + COOP_SYNC_RESUME_MS + 10000,
+               "a client that did not drop has to wait longer than the host does for a player who did");
+
+bool CoopMenuGame_ResumeOn(void) {
+    return CoopSyncGame_ResumeOn();
+}
+
+bool CoopMenuGame_Resume(int peer) {
+    return CoopSyncGame_ResumeClient(peer);
+}
+
+static const CoopSyncLink sLink = { Link_Send,    Link_Pump,     Link_Fail,   Link_Identity,
+                                    Link_Recover, Link_Entering, Link_Notice, Link_Away };
 
 void CoopMenuGame_EnterLevel(const CoopLevelStart* start) {
     CoopSave_Enter(start->save); // the host's progress for the session, until CoopSyncGame_End (decision 0009 item 8)

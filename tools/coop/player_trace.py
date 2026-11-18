@@ -54,8 +54,10 @@ player does: the rule leaves out a player that follows player 0 (#214), so they 
 gInvincible: flying by rule, player 0 is shot down half way through the section.
 
 `shots` is the test for #86. It plays one replay by rule into Corneria's all-range section (see write_shot_replay: pad 0
-does not fire, the other pads sweep and fire) with gHyperLaser, so every player starts with upgraded lasers, and with
-SF64_COOP_TRACE_STEER, because a replay cannot aim at a wingman. Then it checks the trace:
+does not fire, the other pads sweep and fire) with gHyperLaser, which is player 0's, and with hyper lasers given to
+every other player before it joins (SF64_COOP_VIEW_POKE: since #380 a player joins with its own laser strength, not
+with a copy of player 0's), so every player starts with upgraded lasers, and with SF64_COOP_TRACE_STEER, because a
+replay cannot aim at a wingman. Then it checks the trace:
 
   - at least --min-hits shots of players 1 and up hit a wingman while the radio was free; none of those hits holds an
     enemy's dmgSource or starts an enemy-hit line,
@@ -231,6 +233,9 @@ def play(args):
         env["SF64_COOP_HASH_LOG"] = str(run_dir / "state-hash.txt")
     if getattr(args, "effect_probe", False):
         env["SF64_COOP_EFFECT_PROBE"] = str(run_dir / "effects.txt")
+    if getattr(args, "pokes", None):
+        env["SF64_COOP_VIEW_TRACE"] = str(run_dir / "view-trace.txt")  # the pokes come with the view trace
+        env["SF64_COOP_VIEW_POKE"] = args.pokes
     print(f"player_trace: run folder {run_dir}")
     start = time.monotonic()
     proc = subprocess.Popen([str(exe)], cwd=run_dir, env=env)
@@ -814,6 +819,9 @@ def shots(args):
     args.replay = str(replay)
     args.no_checkpoints = True
     args.cvar = args.cvar + ["gDebugJumpToAllRange=1", "gInvincible=1", "gHyperLaser=1"]
+    # gHyperLaser is player 0's alone; the others get theirs a second into the level, after the new game's setup has
+    # set everyone single, and keep it whether they have joined by then or not.
+    args.pokes = ",".join(f"30:{i}:lasers:2" for i in range(1, args.players))
     trace = play(args)
     if trace is None:
         print("player_trace: FAIL")

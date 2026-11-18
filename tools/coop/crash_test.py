@@ -16,7 +16,9 @@ as its --exe. It writes the report a passing game writes, and a replay file when
   stays   waits to be stopped, as a real game does (and gives up after STAY_SECONDS).
 The stand-in folder holds empty .o2r files, so the tools find their data next to the --exe.
 
-Prints one line per scenario and "crash_test: PASS" or "crash_test: FAIL", exit code 0 or 1.
+Prints one line per scenario and "crash_test: PASS" or "crash_test: FAIL", exit code 0 or 1. Everything lands under
+local/test-*: the bench and the run folders the tools make for the stand-in are deleted when all scenarios pass and kept
+for reading when one fails (#308); check.py runs this after every build.
 """
 import argparse
 import os
@@ -27,7 +29,7 @@ from collections import namedtuple
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from run_folder import make_run_folder  # noqa: E402
+from run_folder import OwnedFolders, make_run_folder  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 TOOLS = ROOT / "tools" / "coop"
@@ -123,6 +125,7 @@ def main():
     if unknown:
         sys.exit(f"crash_test: unknown scenario(s) {', '.join(unknown)}; known: {', '.join(SCENARIOS)}")
 
+    owned = OwnedFolders(ROOT / "local")  # the bench, and every run folder the tools make for the stand-in
     bench = make_run_folder(ROOT / "local", "test-crash-")
     exe = make_stand_in(bench)
     print(f"crash_test: bench {bench}")
@@ -132,6 +135,11 @@ def main():
         print(f"crash_test: {name}: {'FAIL: ' + '; '.join(failures) if failures else 'PASS'}")
         failed += bool(failures)
     print(f"crash_test: {len(chosen) - failed}/{len(chosen)} scenarios pass")
+    if failed:
+        print(f"crash_test: bench and run folders kept: {', '.join(path.name for path in owned.made())}")
+        owned.close()
+    else:
+        owned.delete()
     print("crash_test: FAIL" if failed else "crash_test: PASS")
     return 1 if failed else 0
 

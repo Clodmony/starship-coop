@@ -9,6 +9,7 @@
 
 #include "global.h"
 #include "port/coop/game/players.h"
+#include "port/coop/game/score.h"
 #include "port/coop/sync/lockstep_game.h"
 #include "port/hooks/Events.h"
 
@@ -20,8 +21,19 @@
 #define PROBE_DROP_LASERS_AT 14 // gDropHitCountItem: the next kill in all-range drops lasers (Actor_Despawn)
 #define PROBE_STEP 20           // frames between two pokes of one kind
 #define PROBE_SECOND 60         // frame of the second poke of `lives` and `wing`
+#define PROBE_SY_WATCH 150      // frames a Shogun's death is watched: its bonus comes 40 (a small one) or 120 in
+#define PROBE_SY_LAND 6         // frames a shot has to land in
+#define PROBE_SY_TRIES 5        // shots at one Shogun before the probe gives up
 
-typedef enum ProbeKind { PROBE_NONE, PROBE_KILL, PROBE_LIVES, PROBE_WING, PROBE_SAUCERER } ProbeKind;
+typedef enum ProbeKind {
+    PROBE_NONE,
+    PROBE_KILL,
+    PROBE_LIVES,
+    PROBE_WING,
+    PROBE_SAUCERER,
+    PROBE_RESULTS,
+    PROBE_SHOGUN
+} ProbeKind;
 
 static FILE* sReport = NULL;
 static ProbeKind sKind = PROBE_NONE;
@@ -136,6 +148,42 @@ static void Kill_Place(s32 frame, s32 dmgSource) {
     sKillDrop = gDropHitCountItem;
     sKillLasers = Probe_LaserItems();
     Report_Players(frame);
+}
+
+#define PROBE_RESULTS_AFTER 30 // frames the screen stays on after the hold, then the probe turns it off
+
+static s32 sResultsSeen = 0; // holding + 2 * the ready mask, as last reported (nothing yet: 0)
+static s32 sResultsOffAt = -1;
+
+// The level clear status screen out of a level's end (#252): on <frame> it is turned on as a level's cutscene does, and
+// PROBE_RESULTS_AFTER frames after the hold is over turned off again.
+static void Results_Update(s32 frame) {
+    s32 seen;
+    s32 i;
+
+    if (frame == sFrame) {
+        gShowLevelClearStatusScreen = true;
+        Report("results frame=%d on=1", (int) frame);
+    }
+    if (frame < sFrame) {
+        return;
+    }
+    seen = CoopScore_ResultsHolding() ? 1 : 0;
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        seen |= (CoopScore_ResultsReady(i) ? 2 : 0) << i;
+    }
+    if (seen != sResultsSeen) {
+        Report("results frame=%d holding=%d ready=%d,%d,%d", (int) frame, (int) (seen & 1), (int) ((seen >> 1) & 1),
+               (int) ((seen >> 2) & 1), (int) ((seen >> 3) & 1));
+        if ((sResultsSeen & 1) && !(seen & 1)) {
+            sResultsOffAt = frame + PROBE_RESULTS_AFTER;
+        }
+        sResultsSeen = seen;
+    }
+    if (frame == sResultsOffAt) {
+        gShowLevelClearStatusScreen = false;
+        Report("results frame=%d on=0", (int) frame);
+    }
 }
 
 static void Kill_Update(s32 frame) {
@@ -355,6 +403,81 @@ static void Saucerer_Update(s32 frame) {
     }
 }
 
+// shogun (#304): the three Shoguns of Sector Y, each shot down by one laser: the first small one (gBosses[1]) by
+// `player`, the second (gBosses[2]) by Falco, the last (gBosses[0]) by `player` again. The shot is a real one inside
+// the Shogun's hitbox, so PlayerShot_CollisionCheck writes its source (swork[19]) and the Shogun's own code takes the
+// damage; only the Shogun's health is set to 1 first, so that one laser is its last hit.
+static s32 sShogunStage = 0; // which Shogun is next: 0 and 1 the small ones, 2 the last, 3 none
+static s32 sShogunShot = -1; // the frame of the last shot
+static s32 sShogunTries = 0; // shots at this Shogun so far
+static s32 sShogunDown = -1; // the frame this Shogun's health was first seen at 0
+static s32 sShogunHits = 0;  // gHitCount as last reported
+static s32 sShogunScores[2] = { 0, 0 };
+
+static void Shogun_Update(s32 frame) {
+    static const s32 slots[3] = { 1, 2, 0 };
+    Boss* boss;
+    s32 source;
+
+    if ((gCurrentLevel != LEVEL_SECTOR_Y) || (sShogunStage >= 3)) {
+        return;
+    }
+    boss = &gBosses[slots[sShogunStage]];
+    source = (sShogunStage == 1) ? (NPC_SHOT_ID + AI360_FALCO) : sPlayer;
+    if (sShogunDown >= 0) {
+        // Down: every change of the team's count and of the two players' own until the watch ends.
+        if ((gHitCount != sShogunHits) || (gPlayerScores[0] != sShogunScores[0]) ||
+            (gPlayerScores[1] != sShogunScores[1])) {
+            Report("bonus frame=%d boss=%d source=%d hits=%d,%d own=%d,%d", (int) frame, (int) slots[sShogunStage],
+                   (int) boss->swork[19], (int) sShogunHits, (int) gHitCount, (int) gPlayerScores[0],
+                   (int) gPlayerScores[1]);
+            sShogunHits = gHitCount;
+            sShogunScores[0] = gPlayerScores[0];
+            sShogunScores[1] = gPlayerScores[1];
+        }
+        if (frame >= sShogunDown + PROBE_SY_WATCH) {
+            Report("watched frame=%d boss=%d hits=%d", (int) frame, (int) slots[sShogunStage], (int) gHitCount);
+            sShogunDown = -1;
+            sShogunShot = -1;
+            sShogunTries = 0;
+            sShogunStage++;
+        }
+        return;
+    }
+    if ((boss->obj.status != OBJ_ACTIVE) || (boss->obj.id != OBJ_BOSS_SY_SHOGUN)) {
+        return;
+    }
+    if ((sShogunShot >= 0) && (boss->health <= 0)) {
+        sShogunDown = frame;
+        sShogunHits = gHitCount;
+        sShogunScores[0] = gPlayerScores[0];
+        sShogunScores[1] = gPlayerScores[1];
+        Report("down frame=%d boss=%d source=%d hits=%d own=%d,%d", (int) frame, (int) slots[sShogunStage],
+               (int) boss->swork[19], (int) gHitCount, (int) gPlayerScores[0], (int) gPlayerScores[1]);
+        return;
+    }
+    // Player 1 has to fly too when the laser is player 0's: the two sessions of a test are then the same but for it.
+    if ((frame < sFrame) || !Probe_BothFly() || CoopPlayers_IsParked(1) ||
+        ((gPlayer[1].state != PLAYERSTATE_ACTIVE) && (gPlayer[1].state != PLAYERSTATE_U_TURN)) || (boss->health <= 0) ||
+        (boss->timer_05A != 0) || (boss->info.hitbox == NULL) || ((s32) boss->info.hitbox[0] < 1) ||
+        ((sShogunShot >= 0) && (frame < sShogunShot + PROBE_SY_LAND))) {
+        return;
+    }
+    if (sShogunTries >= PROBE_SY_TRIES) {
+        Report("error boss %d took no hit in %d shots", (int) slots[sShogunStage], (int) sShogunTries);
+        sShogunStage = 3;
+        return;
+    }
+    if (sShogunTries == 0) {
+        Report_Players(frame);
+    }
+    boss->health = 1;
+    boss->swork[25] = 1; // a hit on part 0 counts (SectorY_SyShogun_Update reflects it otherwise)
+    sShogunShot = frame;
+    sShogunTries++;
+    Saucerer_Shoot(frame, boss, source, 0);
+}
+
 static void CoopScoreProbe_OnGamePreUpdate(IEvent* event) {
     s32 frame = CoopSyncGame_Frame();
 
@@ -380,6 +503,12 @@ static void CoopScoreProbe_OnGamePreUpdate(IEvent* event) {
         case PROBE_SAUCERER:
             Saucerer_Update(frame);
             break;
+        case PROBE_RESULTS:
+            Results_Update(frame);
+            break;
+        case PROBE_SHOGUN:
+            Shogun_Update(frame);
+            break;
         case PROBE_NONE:
             break;
     }
@@ -387,7 +516,7 @@ static void CoopScoreProbe_OnGamePreUpdate(IEvent* event) {
 }
 
 void CoopScoreProbe_Init(void) {
-    static const char* names[] = { "", "kill", "lives", "wing", "saucerer" };
+    static const char* names[] = { "", "kill", "lives", "wing", "saucerer", "results", "shogun" };
     const char* probe = getenv("SF64_COOP_SCORE_PROBE");
     const char* report = getenv("SF64_COOP_SCORE_REPORT");
     const char* colon;

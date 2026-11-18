@@ -6,8 +6,10 @@
 #include <string.h>
 
 #include "global.h"
+#include "sf64audio_provisional.h"
 #include "port/coop/game/score.h"
 #include "port/coop/log/coop_log.h"
+#include "port/coop/test/audio_trace.h"
 
 // src/sys/sys_math.c
 extern s32 sRandSeed1;
@@ -22,6 +24,27 @@ void Map_LevelStart_AudioSpecSetup(LevelId level);
 
 // src/audio/audio_general.c: the audio spec the game last asked for
 extern u8 sAudioSpecId;
+// The game thread's side of an audio reset and its audio update (src/audio/audio_general.c), the sound thread's
+// update (src/audio/audio_thread.c) and the samples it renders per update (src/port/Engine.cpp).
+extern u8 sAudioResetStatus;
+extern unsigned short samples_low;
+void Audio_Update(void);
+void AudioThread_CreateNextAudioBuffer(s16* samples, u32 num_samples);
+
+// src/engine/fox_tank.c: the Landmaster's state outside the Player struct
+extern u8 D_800C9F00;
+extern u8 D_800C9F04;
+extern u8 D_800C9F08;
+extern f32 D_800C9F10;
+extern s32 D_800C9F14;
+extern f32 D_800C9F20;
+extern f32 D_800C9F24;
+extern f32 D_800C9F28;
+extern Vec3f D_tank_800C9F2C;
+extern u8 D_800C9F3C;
+
+// src/overlays/ovl_i5/fox_ma.c: Macbeth's rail under the tank
+extern f32 D_MA_801BE250[40];
 
 // What a level reads and level init does not set, so what a game brings along from before. The order is the wire order
 // (PROTOCOL.md): a change here is a new COOP_PROTOCOL_VERSION.
@@ -142,8 +165,10 @@ static void Row_Set(const StartRow* row, s32 i, int32_t value) {
     }
 }
 
-// newLevel: the hit count of the level is 0, as Map_PlayLevel leaves it for a level the map starts. checkpoint: the
-// level starts where this game's checkpoint is.
+// newLevel: the hit count of the level is 0, as Map_PlayLevel leaves it for a level the map starts, and players 2-4
+// have a single laser: a level started from outside one is where they join, and a player that joins starts single
+// (decision 0007 rule 14, #380), whatever this game's slots still hold from a session before. Every other level start
+// carries each player's own strength as it is. checkpoint: the level starts where this game's checkpoint is.
 static void LevelStart_Fill(CoopLevelStart* out, uint8_t level, uint8_t phase, bool newLevel, bool checkpoint) {
     size_t r;
     s32 i;
@@ -154,7 +179,13 @@ static void LevelStart_Fill(CoopLevelStart* out, uint8_t level, uint8_t phase, b
     out->phase = phase;
     for (r = 0; r < ARRAY_COUNT(sRows); r++) {
         for (i = 0; i < sRows[r].count; i++) {
-            out->values[n++] = (newLevel && (sRows[r].data == (void*) &gHitCount)) ? 0 : Row_Get(&sRows[r], i);
+            if (newLevel && (sRows[r].data == (void*) &gHitCount)) {
+                out->values[n++] = 0;
+            } else if (newLevel && (sRows[r].data == (void*) gLaserStrength) && (i > 0)) {
+                out->values[n++] = LASERS_SINGLE;
+            } else {
+                out->values[n++] = Row_Get(&sRows[r], i);
+            }
         }
     }
     out->values[n++] = checkpoint;
@@ -190,6 +221,20 @@ bool CoopLevelStart_AtCheckpoint(CoopLevelStart* out) {
     }
     LevelStart_Fill(out, (uint8_t) gCurrentLevel, (uint8_t) gLevelPhase, false, true);
     return true;
+}
+
+void CoopLevelStart_SetAllRangeCheckpoint(CoopLevelStart* out, int32_t checkpoint) {
+    size_t r;
+    s32 n = CHECKPOINT_FLAG + 1;
+
+    out->values[CHECKPOINT_FLAG] = 1;
+    for (r = 0; r < ARRAY_COUNT(sCheckpointRows); r++) {
+        if (sCheckpointRows[r].data == (void*) &gAllRangeCheckpoint) {
+            out->values[n] = checkpoint;
+            return;
+        }
+        n += sCheckpointRows[r].count;
+    }
 }
 
 // A level start that begins at a checkpoint: its checkpoint values wait here from CoopLevelStart_Enter to the next
@@ -244,6 +289,95 @@ static void LevelStart_ClearSetupValues(void) {
     memset(gShieldAlpha, 0, sizeof(gShieldAlpha));
     gObjectLoadIndex = 0;
     gPathVelZ = 0.0f;
+    // The Landmaster's state outside the Player struct, and Macbeth's rail under it: no level setup clears them
+    // (Macbeth_InitLevel sets 3 of the 40 rail values, src/overlays/ovl_i5/fox_ma.c:378), so a level that starts again
+    // went on from where each game's own last frames left them. The games that part stop on different frames, and in
+    // Macbeth they parted again 34 frames after a restart at its checkpoint, in gPlayer[0].rot.x (#267).
+    D_800C9F00 = D_800C9F04 = D_800C9F08 = D_800C9F3C = 0;
+    D_800C9F10 = D_800C9F20 = D_800C9F24 = D_800C9F28 = 0.0f;
+    D_800C9F14 = 0;
+    D_tank_800C9F2C.x = D_tank_800C9F2C.y = D_tank_800C9F2C.z = 0.0f;
+    memset(D_MA_801BE250, 0, sizeof(D_MA_801BE250));
+}
+
+int32_t CoopLevelStart_ValueIndex(const void* var) {
+    size_t r;
+    int32_t n = 0;
+
+    for (r = 0; r < ARRAY_COUNT(sRows); r++) {
+        if (sRows[r].data == var) {
+            return n;
+        }
+        n += sRows[r].count;
+    }
+    return -1;
+}
+
+// Test only: SF64_COOP_TEST_AUDIO_RESET_RUNS_ON.
+static bool sResetRunsOn = false;
+
+void CoopLevelStart_SetResetRunsOn(bool runsOn) {
+    sResetRunsOn = runsOn;
+}
+
+// The frames of sound that a level start plays ahead once no audio reset is running, and the most it plays in all: a
+// reset takes 5 steps with 24 updates of fading between them (AudioHeap_ResetStep, src/audio/audio_heap.c), two
+// updates a frame.
+#define SETTLE_FRAMES 16
+#define SETTLE_FRAMES_MAX 96
+
+// The sound is played ahead here, on the frame of a level start, until no audio reset is running and SETTLE_FRAMES
+// more have passed: the game's audio update and the sound thread's updates, as a frame runs them, with what they
+// render dropped.
+//
+// Why: the level's own reset, asked for below, has to take the same number of frames on every game, as the voice
+// player comes back at its end and the state hash holds its clock (#230). It does not when the sound is busy:
+//  - The game hands the sound thread a new reset only when the running one is done (Audio_Update processes no
+//    sequence command before Audio_HandleReset says ready, src/audio/audio_general.c), so the level's reset begins
+//    when the old one ends, a number of frames after this call that follows how far the old one had got.
+//  - A reset that ended a frame or two ago still has commands on their way to the sound thread, and the voice player
+//    then comes back one frame later than on a game where it ended earlier.
+// Two games are not at the same point of that. A level that starts again after a player left or the games parted
+// follows the level start before it by a few frames, each game by its own count, and a first level start can come
+// during the reset of the title screen. The games then parted at level frame 0 or soon after (#289, #293). Upstream
+// has the idea for some spec changes (AUDIORESET_BLOCK in Audio_HandleReset), which the port turned off.
+//
+// The sound thread itself is idle meanwhile: it works between StartAudioFrame and EndAudioFrame (push_frame,
+// src/port/Game.cpp), and a level start comes from a session tick, before the game's update or while a frame waits
+// for input.
+static void LevelStart_SettleAudio(void) {
+    static s16 sDropped[1024 * MAX_NUM_AUDIO_CHANNELS];
+    s32 updates = (gVIsPerFrame > 0) ? gVIsPerFrame : 1; // as GameEngine::HandleAudioThread, src/port/Engine.cpp
+    s32 frames = 0;
+    s32 quiet = 0;
+    s32 i;
+
+    if (sResetRunsOn) {
+        return;
+    }
+    while ((quiet < SETTLE_FRAMES) && (frames < SETTLE_FRAMES_MAX)) {
+        Audio_Update();
+        for (i = 0; i < updates; i++) {
+            AudioThread_CreateNextAudioBuffer(sDropped, samples_low);
+        }
+        quiet = ((sAudioResetStatus == AUDIORESET_READY) && (gAudioResetStep == 0)) ? quiet + 1 : 0;
+        frames++;
+    }
+    if (frames > SETTLE_FRAMES) {
+        CoopLog_Write(COOP_LOG_SESSION, false,
+                      "level start: an audio reset was running, %d frames of sound played ahead%s", (int) frames,
+                      (quiet < SETTLE_FRAMES) ? ", and it is still running" : "");
+    }
+}
+
+// Set by CoopLevelStart_Enter, taken by the next Game_ChangeScene (CoopLevelStart_TakeSceneHold).
+static bool sSceneHold = false;
+
+bool CoopLevelStart_TakeSceneHold(void) {
+    bool hold = sSceneHold;
+
+    sSceneHold = false;
+    return hold;
 }
 
 void CoopLevelStart_Enter(const CoopLevelStart* start) {
@@ -274,8 +408,13 @@ void CoopLevelStart_Enter(const CoopLevelStart* start) {
     // one already loaded resets nothing, and then the voice sequence runs on with the tempo where this game's own
     // history left it, so a radio line ends one frame apart on two games (#230). Going into Macbeth from the boot logo
     // or from Macbeth, for example: both use AUDIOSPEC_MA. After the reset the voice player starts over a fixed number
-    // of frames after this call. A game that is in the level's scene already gets to Play_Init 2 frames sooner
-    // (Game_ChangeScene loads no scene), so it is in step with the others only if they come from that scene too.
+    // of frames after this call. A game that is in the level's scene already would get to Play_Init 2 frames sooner
+    // (Game_ChangeScene holds only for a new scene), so it holds those 2 frames too: a host that ran on alone into its
+    // game over and the map while a lost client came back, and that client still in the level, parted at level frame
+    // 10 on the voice player (#375).
+    CoopAudioTrace_Enter(start->level, start->run); // no-op unless SF64_COOP_AUDIO_TRACE is set (#289)
+    LevelStart_SettleAudio();
     sAudioSpecId = AUDIOSPEC_24;
     Map_LevelStart_AudioSpecSetup((LevelId) start->level);
+    sSceneHold = true;
 }

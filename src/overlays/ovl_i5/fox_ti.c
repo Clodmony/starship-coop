@@ -5,6 +5,7 @@
  */
 
 #include "global.h"
+#include "port/coop/game/fixes.h" // COOP: a line is cleared when it is taken, in a session (#262)
 #include "assets/ast_bg_planet.h"
 #include "assets/ast_titania.h"
 #include "assets/ast_7_ti_1.h"
@@ -1967,6 +1968,7 @@ void Titania_TiDelphorHead_Update(TiDelphorHead* this) {
     if (this->iwork[2] == 0) {
         index = this->iwork[3] - 1;
 
+        CoopFixes_TakeLine(index); // COOP: in a session a free line starts from zeros (#262)
         gTexturedLines[index].mode = 101;
         gTexturedLines[index].posAA.x = this->obj.pos.x + this->fwork[0];
         gTexturedLines[index].posAA.y = this->obj.pos.y + this->fwork[1];
@@ -4646,6 +4648,9 @@ void Titania_80193DF0(TiGoras* this) {
                     if (D_i5_801BBEF0[9 + i] == 0) {
                         for (j = 0; j < ARRAY_COUNT(gTexturedLines); j++) {
                             if (gTexturedLines[j].mode == 0) {
+                                // COOP: in a session the line starts from zeros (#262). Goras fills it in its draw,
+                                // so for this frame's update it was a line that hurts where its last user left it
+                                CoopFixes_TakeLine(j);
                                 gTexturedLines[j].mode = 1;
                                 D_i5_801BBEF0[9 + i] = j + 1;
                                 break;

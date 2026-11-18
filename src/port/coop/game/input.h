@@ -51,6 +51,10 @@ void CoopInput_SetLocalSource(const CoopInputSource* source);
 // Back to the start: no sources, the local player on the local controller.
 void CoopInput_ClearSources(void);
 
+// Takes `source` out wherever it is set, a player's or the local one, and leaves every other source where it is: for a
+// source that ends while another layer may have put its own in since (#324: a replay that runs out in a session).
+void CoopInput_ClearSource(const CoopInputSource* source);
+
 // Fills the slots for this frame. `hold` and `press` are the four slots as Controller_UpdateInput left them, `count` is
 // the number of players and `local` the local player's index.
 void CoopInput_Route(int32_t count, int32_t local, OSContPad* hold, OSContPad* press);

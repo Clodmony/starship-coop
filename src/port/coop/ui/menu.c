@@ -68,6 +68,11 @@ static void Menu_EndSession(CoopMenu* m, bool leaving) {
     m->backend->sessionEnded();
 }
 
+// Decision 0016 part A is on for this game.
+static bool Menu_Resumes(const CoopMenu* m) {
+    return (m->backend->resumeOn != NULL) && m->backend->resumeOn();
+}
+
 // The connection to the host went in a level, without the host saying that the session is over: go back to it on a new
 // connection, as the player this game was (the session survives). True if that is under way; the session's events
 // say how it ends. Once per loss: a session that came back and is lost again before its level start ends.
@@ -76,7 +81,11 @@ static bool Menu_Rejoin(CoopMenu* m, CoopSessionEnd end) {
     CoopTransport* t;
     uint64_t id;
 
-    if (m->phase != COOP_MENU_JOINED || !m->levelStarted || m->rejoining || m->character == 0 ||
+    // A try that reached nobody is made again while the host still keeps the slot (decision 0016 part A).
+    bool again = m->rejoining && Menu_Resumes(m) && (end == COOP_SESSION_END_TIMEOUT) &&
+                 ((uint32_t) (m->nowMs - m->lostAt) < COOP_SESSION_RESUME_MS);
+
+    if ((m->phase != COOP_MENU_JOINED && !again) || !m->levelStarted || (m->rejoining && !again) || m->character == 0 ||
         (end != COOP_SESSION_END_TIMEOUT && end != COOP_SESSION_END_CLOSED)) {
         return false;
     }
@@ -102,11 +111,16 @@ static bool Menu_Rejoin(CoopMenu* m, CoopSessionEnd end) {
         return true;
     }
     m->phase = COOP_MENU_CONNECTING;
+    if (!m->rejoining) {
+        m->lostAt = m->nowMs;
+        m->lostEnd = end;
+    }
     m->rejoining = true;
-    m->lostEnd = end;
     m->recovering = true;
     m->eyes = true;
-    if (m->backend->recover != NULL) {
+    // A game that resumes keeps its lockstep standing, waiting for the host's input, so that it can go on where it was if
+    // the host takes it back; the RECOVER event stops it if the level has to start again.
+    if ((m->backend->recover != NULL) && !Menu_Resumes(m)) {
         m->backend->recover();
     }
     Menu_Say(m, "The connection to the host was lost. Trying to come back to the session.");
@@ -151,6 +165,7 @@ bool CoopMenu_Host(CoopMenu* m, const char* portText) {
     if (m->backend->sessionId != NULL) {
         CoopSession_SetId(m->session, m->backend->sessionId());
     }
+    CoopSession_SetResume(m->session, Menu_Resumes(m));
     m->phase = COOP_MENU_HOSTING;
     m->self = 0;
     return true;
@@ -286,6 +301,17 @@ static void Menu_OnEvent(CoopMenu* m, const CoopSessionEvent* ev) {
                 m->phase = COOP_MENU_JOINED;
                 m->self = ev->playerIndex;
                 Menu_Say(m, "%s", ev->text);
+                if (m->rejoining && Menu_Resumes(m)) {
+                    // Back in the session: the host says whether the level goes on (SYNC_RESUME) or starts again
+                    // (RECOVER, which sets this again). Another loss before either is a new loss.
+                    m->recovering = false;
+                    m->rejoining = false;
+                }
+            } else if (ev->rejoined && ev->resume && (m->backend->resume != NULL)) {
+                Menu_Say(m, "Player %d is back.", ev->playerIndex + 1);
+                if (!m->backend->resume(ev->peer)) {
+                    CoopSession_Recover(m->session, COOP_RECOVER_LOST, m->nowMs);
+                }
             } else {
                 Menu_Say(m, "Player %d joined.\n%s", ev->playerIndex + 1, ev->text);
             }
@@ -300,6 +326,10 @@ static void Menu_OnEvent(CoopMenu* m, const CoopSessionEvent* ev) {
         case COOP_SESSION_EV_LEFT:
             if (m->levelStarted && CoopSession_Recovering(m->session)) {
                 // The level starts again for whoever is there: the RECOVER event says so, and what the player reads.
+            } else if (m->levelStarted && ev->away && Menu_Resumes(m)) {
+                Menu_Say(m, "Player %d lost the connection. Waiting for it to come back (%d s).", ev->peer + 2,
+                         (int) (COOP_SESSION_RESUME_MS / 1000));
+                m->eyes = true;
             } else if (m->levelStarted) {
                 char text[COOP_SESSION_TEXT];
 

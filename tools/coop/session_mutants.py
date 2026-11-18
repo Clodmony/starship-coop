@@ -120,10 +120,10 @@ MESSAGE_SIZE = "                    ev->size = net.size;\n"
 MESSAGE_DATA = "                    ev->data = net.data;"
 REJOIN_ID = "} else if (!s->started || s->id == 0 || SessionId_Read(net->data) != s->id) {"
 AWAY = "bool away = s->started && end == COOP_SESSION_END_TIMEOUT && s->id != 0;"
-AWAY_OVER = "if (s->away[i].on && nowMs - s->away[i].since >= COOP_SESSION_REJOIN_MS) {"
+AWAY_OVER = "if (s->away[i].on && nowMs - s->away[i].since >= Session_RejoinMs(s)) {"
 RESTART_RUN = "s->level.run = (run != 0) ? run : 1;"
-RECOVER_CALL = "if (!s->started || reason < COOP_RECOVER_LOST || reason >= COOP_RECOVER_REASONS) {"
-RECOVER_GATE = "if (s->client == CLIENT_ACTIVE && s->started && net.msgId == COOP_MSG_SESSION_RECOVER) {"
+RECOVER_CALL = "if (!(s->started || s->rejoin) || reason < COOP_RECOVER_LOST || reason >= COOP_RECOVER_REASONS) {"
+RECOVER_GATE = "if (s->client == CLIENT_ACTIVE && (s->started || s->rejoin) && net.msgId == COOP_MSG_SESSION_RECOVER) {"
 RECOVER_READ = ("if (net->size != 2 || net->data[0] < COOP_RECOVER_LOST || net->data[0] >= COOP_RECOVER_REASONS ||")
 AWAIT_OVER = "if (s->awaiting && nowMs - s->awaitSince >= COOP_SESSION_RECOVER_MS) {"
 SIM = ["sim"]
@@ -419,8 +419,8 @@ BREAKS = [
     ("left_keeps_character", "s->roster.character[peer + 1] = COOP_CHARACTER_NO_PLAYER;\n", "", SIM),
     ("left_wrong_slot", "s->roster.character[peer + 1] = COOP_CHARACTER_NO_PLAYER;",
      "s->roster.character[peer] = COOP_CHARACTER_NO_PLAYER;", SIM),
-    ("left_no_roster", "        Host_RosterChanged(s);\n    }\n    if (s->started) {\n        if (Host_JoinedCount(s) > 0",
-     "    }\n    if (s->started) {\n        if (Host_JoinedCount(s) > 0", SIM),
+    ("left_no_roster", "        Host_RosterChanged(s);\n    }\n    if (s->started) {\n        if (away && s->resume) {",
+     "    }\n    if (s->started) {\n        if (away && s->resume) {", SIM),
     ("joined_not_in_roster", "s->roster.character[peer + 1] = COOP_CHARACTER_UNPICKED;\n", "", SIM),
     ("joined_wrong_slot", "s->roster.character[peer + 1] = COOP_CHARACTER_UNPICKED;",
      "s->roster.character[peer] = COOP_CHARACTER_UNPICKED;", SIM),
@@ -659,8 +659,8 @@ BREAKS = [
      "s->peers[slot - 1].state = PEER_FREE;", SIM),
     ("rejoin_stale_still_peer", "s->t->ops->disconnect(s->t, slot - 1);\n            s->peers[slot - 1].state = PEER_FREE;",
      "s->t->ops->disconnect(s->t, slot - 1);", SIM),
-    ("rejoin_stale_unsaid", "Host_OweEvent(s, &left);\n            Host_RecoverBegin(s, COOP_RECOVER_LOST, (uint8_t) slot);",
-     "Host_RecoverBegin(s, COOP_RECOVER_LOST, (uint8_t) slot);", SIM),
+    ("rejoin_stale_unsaid", "Host_OweEvent(s, &left);\n            if (!s->resume) {",
+     "if (!s->resume) {", SIM),
     ("rejoin_slot_not_moved", "s->roster.character[target] = character;\n        s->roster.character[slot] = other;",
      "s->roster.character[target] = character;", SIM),
     ("rejoin_away_not_moved", "s->away[slot] = kept;\n", "", SIM),
@@ -679,17 +679,17 @@ BREAKS = [
     ("away_flag_lost", "ev->away = away;\n", "", SIM),
     ("away_wait_off_by_one", AWAY_OVER, AWAY_OVER.replace(">=", ">"), SIM),
     ("away_wait_clock_wrap", AWAY_OVER,
-     "if (s->away[i].on && nowMs >= s->away[i].since + COOP_SESSION_REJOIN_MS) {", SIM),
+     "if (s->away[i].on && nowMs >= s->away[i].since + Session_RejoinMs(s)) {", SIM),
     ("away_wait_forever", AWAY_OVER, "if (0) {", SIM),
     ("away_over_keeps_character", "s->away[i].on = false;\n            s->roster.character[i] = COOP_CHARACTER_NO_PLAYER;",
      "s->away[i].on = false;", SIM),
     ("away_over_still_recovering", "s->recovering = Host_JoinedCount(s) > 0 || Host_AnyAway(s);", "s->recovering = true;", SIM),
-    ("away_over_wrong_peer", "Event_Init(ev, COOP_SESSION_EV_LEFT, i - 1);", "Event_Init(ev, COOP_SESSION_EV_LEFT, i);",
+    ("away_over_wrong_peer", "            Event_Init(ev, COOP_SESSION_EV_LEFT, i - 1);", "            Event_Init(ev, COOP_SESSION_EV_LEFT, i);",
      SIM),
     ("away_handshake_not_waited", "if (s->peers[i].state == PEER_WAIT_HELLO) {\n            return false;",
      "if (0) {\n            return false;", SIM),
-    ("recover_alone", "        if (Host_JoinedCount(s) > 0 || Host_AnyAway(s)) {", "        if (1) {", SIM),
-    ("recover_never_on_left", "        if (Host_JoinedCount(s) > 0 || Host_AnyAway(s)) {", "        if (0) {", SIM),
+    ("recover_alone", "        } else if (Host_JoinedCount(s) > 0 || Host_AnyAway(s)) {", "        } else if (1) {", SIM),
+    ("recover_never_on_left", "        } else if (Host_JoinedCount(s) > 0 || Host_AnyAway(s)) {", "        } else if (0) {", SIM),
     ("recover_reason_always_left", "Host_RecoverBegin(s, away ? COOP_RECOVER_LOST : COOP_RECOVER_LEFT, (uint8_t) (peer + 1));",
      "Host_RecoverBegin(s, COOP_RECOVER_LEFT, (uint8_t) (peer + 1));", SIM),
     ("recover_wrong_player", "Host_RecoverBegin(s, away ? COOP_RECOVER_LOST : COOP_RECOVER_LEFT, (uint8_t) (peer + 1));",
@@ -730,7 +730,8 @@ BREAKS = [
     ("kick_keeps_character", "s->roster.character[slot] = COOP_CHARACTER_NO_PLAYER;\n", "", SIM),
     ("kick_unsaid", "left.away = away;\n    Host_OweEvent(s, &left);", "left.away = away;", SIM),
     ("kick_no_recovery", "Host_RecoverBegin(s, away ? COOP_RECOVER_LOST : COOP_RECOVER_LEFT, (uint8_t) slot);\n", "", SIM),
-    ("recover_call_before_level", RECOVER_CALL, RECOVER_CALL.replace("!s->started || ", ""), SIM),
+    ("recover_call_before_level", RECOVER_CALL, RECOVER_CALL.replace("!(s->started || s->rejoin) || ", ""), SIM),
+    ("recover_call_rejoined_out", RECOVER_CALL, RECOVER_CALL.replace("(s->started || s->rejoin)", "s->started"), SIM),
     ("recover_call_reason_0", RECOVER_CALL, RECOVER_CALL.replace("reason < COOP_RECOVER_LOST || ", ""), SIM),
     ("recover_call_reason_high", RECOVER_CALL, RECOVER_CALL.replace(" || reason >= COOP_RECOVER_REASONS", ""), SIM),
     ("recover_call_host_alone", "        if (Host_JoinedCount(s) == 0 && !Host_AnyAway(s)) {\n            return false;",
@@ -751,7 +752,8 @@ BREAKS = [
     ("recover_text_no_wait", "(int) player + 1, COOP_SESSION_REJOIN_MS / 1000);", "(int) player + 1, 0);", SIM),
     ("recover_text_left_as_parted", "        case COOP_RECOVER_LEFT:\n            snprintf(", "        case 99:\n            snprintf(",
      SIM),
-    ("client_recover_before_level", RECOVER_GATE, RECOVER_GATE.replace("s->started && ", ""), SIM),
+    ("client_recover_before_level", RECOVER_GATE, RECOVER_GATE.replace("(s->started || s->rejoin) && ", ""), SIM),
+    ("client_recover_rejoined_out", RECOVER_GATE, RECOVER_GATE.replace("(s->started || s->rejoin)", "s->started"), SIM),
     ("client_recover_off", RECOVER_GATE, "if (0) {", SIM),
     ("client_recover_any_size", RECOVER_READ, RECOVER_READ.replace("net->size != 2 || ", "net->size < 2 || "), SIM),
     ("client_recover_reason_0", RECOVER_READ, RECOVER_READ.replace("net->data[0] < COOP_RECOVER_LOST || ", ""), SIM),
@@ -783,6 +785,46 @@ BREAKS = [
      'return "";', SIM),
     ("end_text_other_session_missing",
      'return "The host runs another session now, so this game cannot come back to its own.";', 'return "";', SIM),
+    # The session's clock never runs backwards (#293): a call from inside a tick comes with a later time than the tick.
+    ("clock_recover_not_held", "    nowMs = Session_Clock(s, nowMs);\n    if (s->isHost) {", "    if (s->isHost) {", SIM),
+    ("clock_kick_not_held", "    nowMs = Session_Clock(s, nowMs);\n    away = s->id != 0;", "    away = s->id != 0;", SIM),
+    ("clock_poll_runs_back", "    nowMs = Session_Clock(s, nowMs);\n    CoopLog_Pump(", "    s->nowMs = nowMs;\n    CoopLog_Pump(",
+     SIM),
+    ("clock_first_time_lost", "if (!s->clockSet || (int32_t) (nowMs - s->nowMs) > 0) {",
+     "if ((int32_t) (nowMs - s->nowMs) > 0) {", SIM),
+    # Decision 0016 part A: a session that resumes
+    ("resume_never_on", "    s->resume = s->isHost && on;\n", "    s->resume = false;\n", SIM),
+    ("resume_window_old", "return s->resume ? COOP_SESSION_RESUME_MS : COOP_SESSION_REJOIN_MS;", "return COOP_SESSION_REJOIN_MS;", SIM),
+    ("resume_left_recovers", "        if (away && s->resume) {\n            // Nothing starts again", "        if (false) {\n            // Nothing starts again",
+     SIM),
+    ("resume_kick_recovers", "    if (!(away && s->resume)) { // a session that resumes", "    if (true) { // a session that resumes", SIM),
+    ("resume_expiry_never", "    if (!s->resume || s->recovering) {\n        return false;\n    }\n    for", "    if (true) {\n        return false;\n    }\n    for", SIM),
+    ("resume_expiry_early", "if (!s->away[i].on || (nowMs - s->away[i].since) < Session_RejoinMs(s)) {",
+     "if (!s->away[i].on || (nowMs - s->away[i].since + 1) < Session_RejoinMs(s)) {", SIM),
+    ("resume_expiry_late", "if (!s->away[i].on || (nowMs - s->away[i].since) < Session_RejoinMs(s)) {",
+     "if (!s->away[i].on || (nowMs - s->away[i].since) <= Session_RejoinMs(s)) {", SIM),
+    ("resume_expiry_alone", "        if (Host_JoinedCount(s) > 0 || Host_AnyAway(s)) {\n            Host_RecoverBegin(s, COOP_RECOVER_GONE", "        if (1) {\n            Host_RecoverBegin(s, COOP_RECOVER_GONE", SIM),
+    ("resume_expiry_never_recovers", "        if (Host_JoinedCount(s) > 0 || Host_AnyAway(s)) {\n            Host_RecoverBegin(s, COOP_RECOVER_GONE", "        if (0) {\n            Host_RecoverBegin(s, COOP_RECOVER_GONE", SIM),
+    ("resume_gone_is_lost", "Host_RecoverBegin(s, COOP_RECOVER_GONE, (uint8_t) i);", "Host_RecoverBegin(s, COOP_RECOVER_LOST, (uint8_t) i);", SIM),
+    # #262: a client on its way back can wait for a recovery (a repair that gave up while its connection was gone).
+    ("recover_coming_back_refused", "if (s->client != CLIENT_ACTIVE && !Client_ComingBack(s)) {",
+     "if (s->client != CLIENT_ACTIVE) {", SIM),
+    ("recover_coming_back_not_connecting", "return s->client == CLIENT_CONNECTING || s->client == CLIENT_WAIT_ANSWER;",
+     "return s->client == CLIENT_WAIT_ANSWER;", SIM),
+    ("recover_coming_back_not_waiting", "return s->client == CLIENT_CONNECTING || s->client == CLIENT_WAIT_ANSWER;",
+     "return s->client == CLIENT_CONNECTING;", SIM),
+    ("recover_coming_back_after_its_end", "return s->client == CLIENT_CONNECTING || s->client == CLIENT_WAIT_ANSWER;",
+     "return s->client != CLIENT_ACTIVE;", SIM),
+    ("resume_gone_keeps_roster", "        s->away[i].on = false;\n        s->roster.character[i] = COOP_CHARACTER_NO_PLAYER;\n        Host_RosterChanged(s);\n        if (Host_JoinedCount(s) > 0 || Host_AnyAway(s)) {\n            Host_RecoverBegin(s, COOP_RECOVER_GONE",
+     "        s->away[i].on = false;\n        Host_RosterChanged(s);\n        if (Host_JoinedCount(s) > 0 || Host_AnyAway(s)) {\n            Host_RecoverBegin(s, COOP_RECOVER_GONE", SIM),
+    ("resume_gone_wrong_peer", "        Event_Init(ev, COOP_SESSION_EV_LEFT, i - 1);\n        ev->end", "        Event_Init(ev, COOP_SESSION_EV_LEFT, i);\n        ev->end", SIM),
+    ("resume_other_slot_resumes", "q.resume = s->resume && !s->recovering && (slot == target);", "q.resume = s->resume && !s->recovering;", SIM),
+    ("resume_other_slot_no_recover", "    if (s->resume && !s->recovering && !q.resume) {", "    if (false) {", SIM),
+    ("resume_old_connection_recovers", "            if (!s->resume) {\n                Host_RecoverBegin(s, COOP_RECOVER_LOST, (uint8_t) slot);\n            }",
+     "            Host_RecoverBegin(s, COOP_RECOVER_LOST, (uint8_t) slot);", SIM),
+    ("resume_not_away", "&& s->away[player].on;", "&& false;", SIM),
+    ("resume_flag_stale", "            ev->resume = q->resume;\n", "            ev->resume = true;\n", SIM),
+    ("recover_gone_text", "\"Player %d did not come back. Starting the level again together.\"", "\"The games parted. Starting the level again together.\"", SIM),
 ]
 
 # Texts the sanitizer breaks use more than once.

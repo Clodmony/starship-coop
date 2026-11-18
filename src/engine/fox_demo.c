@@ -5,6 +5,7 @@
  */
 
 #include "global.h"
+#include "port/coop/game/fixes.h" // COOP: Fortuna's explosion fades out in a session (#262)
 #include "assets/ast_aquas.h"
 #include "assets/ast_great_fox.h"
 #include "assets/ast_enmy_space.h"
@@ -2400,7 +2401,10 @@ void ActorCutscene_Update(ActorCutscene* this) {
                                 }
 
                                 this->iwork[0] -= 2;
-                                if (this->iwork[0] < 0) {
+                                // COOP: was this->iwork[0] < 0, never true on the port's unsigned iwork (s32 on the
+                                // N64): the glow's alpha ran through its low byte again and the light went to its
+                                // brightest. In a session it ends at 0 as on the N64; outside co-op as upstream (#262)
+                                if (CoopFixes_IworkNegative(this->iwork[0])) {
                                     this->iwork[0] = 0;
                                     this->scale = 0.0f;
                                 }

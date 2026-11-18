@@ -9,6 +9,7 @@
 #include "port/hooks/Events.h"
 #include "port/coop/game/names.h"
 #include "port/coop/game/players.h"
+#include "port/coop/game/score.h"
 #include "port/coop/game/view.h"
 
 // What the HUD and the draw code keep for themselves.
@@ -31,17 +32,19 @@ typedef enum {
     VIEW_POKE_HIT,
     VIEW_POKE_DOWN,
     VIEW_POKE_GUNS,
+    VIEW_POKE_LASERS,
 } ViewPokeKind;
 
 typedef struct {
     s32 frame;
+    s32 level; // gCurrentLevel it waits for, -1 for any (#380)
     s32 player;
     ViewPokeKind kind;
     f32 value; // a whole number, but for guns, which can take a half step
     bool done;
 } ViewPoke;
 
-static const char* sPokeNames[] = { "shields", "bombs", "lives", "boost", "hit", "down", "guns" };
+static const char* sPokeNames[] = { "shields", "bombs", "lives", "boost", "hit", "down", "guns", "lasers" };
 
 static ViewPoke sPokes[VIEW_POKES_MAX];
 static s32 sPokeCount = 0;
@@ -68,7 +71,8 @@ static void CoopViewTrace_Poke(ViewPoke* poke) {
             Player_ApplyDamage(player, 0, (s32) poke->value);
             break;
         case VIEW_POKE_DOWN:
-            // What Player_Update wants before it calls Player_Down; gInvincible keeps the timer from being set by a hit.
+            // What Player_Update wants before it calls Player_Down; gInvincible keeps the timer from being set by a
+            // hit.
             player->shields = 0;
             player->radioDamageTimer = (s32) poke->value;
             break;
@@ -76,6 +80,9 @@ static void CoopViewTrace_Poke(ViewPoke* poke) {
             // Where the laser guns of the Arwing are (-10 fully out, in steps of 0.5 as Player_Shoot moves them);
             // laserGunsXpos follows from it (#192).
             player->arwing.laserGunsYpos = poke->value;
+            break;
+        case VIEW_POKE_LASERS:
+            gLaserStrength[poke->player] = (LaserStrength) (s32) poke->value; // #380
             break;
     }
 }
@@ -128,9 +135,64 @@ static void CoopViewTrace_WriteTags(void) {
     if (tags == 0) {
         fputc('-', sFile);
     }
+    // #332: where each of those names and its bar were drawn, on a 320x240 screen: left/top/right/bottom of the name,
+    // then of the bar, then how far the name was lifted clear of a nearer one; #342: then the place of the bar and the
+    // place of the name among what the frame drew, the first being 0
+    tags = 0;
+    fputs(" tagbox=", sFile);
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        float box[4];
+        float bar[4];
+        int32_t place[2];
+
+        if (CoopView_TagBox(i, box, bar, place)) {
+            fprintf(sFile, "%s%d:%.1f/%.1f/%.1f/%.1f/%.1f/%.1f/%.1f/%.1f/%.1f/%d/%d", (tags++ == 0) ? "" : ",", i,
+                    box[0], box[1], box[2], box[3], bar[0], bar[1], bar[2], bar[3], CoopView_TagLift(i), (int) place[0],
+                    (int) place[1]);
+        }
+    }
+    if (tags == 0) {
+        fputc('-', sFile);
+    }
+}
+
+// The lock-on marks this client drew, and the lock-ons and charge they come from (#379).
+static void CoopViewTrace_WriteLocks(void) {
+    s32 count = 0;
+    s32 i;
+    s32 j;
+
+    fputs(" marks=", sFile);
+    for (i = 0; i < COOP_PLAYERS_MAX; i++) {
+        Vec3f pos;
+        f32 scale;
+        f32 turn;
+
+        if (CoopView_TakeLockMark(i, &pos, &scale, &turn)) {
+            fprintf(sFile, "%s%d:%.1f,%.1f,%.1f,%.3f,%.1f", (count++ == 0) ? "" : ";", i, pos.x, pos.y, pos.z, scale,
+                    turn);
+        }
+    }
+    if (count == 0) {
+        fputc('-', sFile);
+    }
+    fputs(" locks=", sFile);
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        s32 locks = 0;
+
+        for (j = 0; j < ARRAY_COUNT(gActors); j++) {
+            locks += (gActors[j].obj.status == OBJ_ACTIVE) && (gActors[j].lockOnTimers[i] != 0);
+        }
+        fprintf(sFile, "%s%d", (i == 0) ? "" : ",", locks);
+    }
+    fputs(" charge=", sFile);
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        fprintf(sFile, "%s%d", (i == 0) ? "" : ",", gChargeTimers[i]);
+    }
 }
 
 static void CoopViewTrace_OnGamePostUpdate(IEvent* event) {
+    int32_t drawn[4];
     s32 bars = 0;
     s32 i;
 
@@ -146,6 +208,8 @@ static void CoopViewTrace_OnGamePostUpdate(IEvent* event) {
     fprintf(sFile, " shield=%.4f bombs=%d cockpit=%d fill=%d,%d,%d,%d flash=%d", D_801617AC, sHudBombCount,
             sDrawCockpit, gFillScreenRed, gFillScreenGreen, gFillScreenBlue, gFillScreenAlpha,
             CoopView_HitFlashAlpha());
+    CoopView_DrawnFill(drawn);
+    fprintf(sFile, " drawn=%d,%d,%d,%d", (int) drawn[0], (int) drawn[1], (int) drawn[2], (int) drawn[3]);
     fputs(" bars=", sFile);
     for (i = 0; i < CoopPlayers_Count(); i++) {
         if (CoopView_ShieldBar(i) >= 0.0f) {
@@ -197,6 +261,16 @@ static void CoopViewTrace_OnGamePostUpdate(IEvent* event) {
 
         fprintf(sFile, " turned=%d/%d", turned, billboards);
     }
+    {
+        int32_t lives = CoopScore_TakeLivesDrawn();
+
+        if (lives >= 0) {
+            fprintf(sFile, " hudlives=%d", lives);
+        } else {
+            fputs(" hudlives=-", sFile);
+        }
+    }
+    CoopViewTrace_WriteLocks();
     CoopViewTrace_WriteSfx();
     fputc('\n', sFile);
     if ((gGameFrameCount % 60) == 0) {
@@ -204,7 +278,8 @@ static void CoopViewTrace_OnGamePostUpdate(IEvent* event) {
     }
 
     for (i = 0; i < sPokeCount; i++) {
-        if (!sPokes[i].done && (gGameFrameCount >= sPokes[i].frame)) {
+        if (!sPokes[i].done && (gGameFrameCount >= sPokes[i].frame) &&
+            ((sPokes[i].level < 0) || (sPokes[i].level == gCurrentLevel))) {
             sPokes[i].done = true;
             CoopViewTrace_Poke(&sPokes[i]);
         }
@@ -217,7 +292,8 @@ static void CoopViewTrace_ReadPokes(const char* text) {
         char what[16];
         u32 kind;
 
-        if (sscanf(text, "%d:%d:%15[a-z]:%f", &poke->frame, &poke->player, what, &poke->value) == 4) {
+        poke->level = -1;
+        if (sscanf(text, "%d:%d:%15[a-z]:%f@%d", &poke->frame, &poke->player, what, &poke->value, &poke->level) >= 4) {
             for (kind = 0; kind < ARRAY_COUNT(sPokeNames); kind++) {
                 if (strcmp(what, sPokeNames[kind]) == 0) {
                     poke->kind = (ViewPokeKind) kind;

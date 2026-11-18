@@ -104,7 +104,9 @@ static void CoopReplay_TakeCheckpoint(ReplayCheckpoint* cp) {
     cp->level = gCurrentLevel;
     cp->playState = gPlayState;
     cp->playerState = -1;
-    if ((gGameState == GSTATE_PLAY) && (gPlayer != NULL)) {
+    // Not while a level is being entered (PLAY_STANDBY, PLAY_INIT): gPlayer still points into memory that
+    // Game_SetGameState freed (src/engine/fox_game.c:95-118), and a checkpoint entering Meteo held junk (#121, #142).
+    if ((gGameState == GSTATE_PLAY) && (gPlayState >= PLAY_UPDATE) && (gPlayer != NULL)) {
         cp->playerState = gPlayer[0].state;
         cp->pos[0] = gPlayer[0].pos.x;
         cp->pos[1] = gPlayer[0].pos.y;
@@ -197,7 +199,10 @@ static void CoopReplay_FinishPlayback(const char* failure) {
         fclose(sPilotFile);
         sPilotFile = NULL;
     }
-    CoopInput_ClearSources();
+    // Only the replay's own: a session's lockstep took the input over when its level began, and a replay file that
+    // runs out in that level must leave it there (#324). The game then flew its own player from its own pad with no
+    // input delay, and the session parted.
+    CoopInput_ClearSource(&sReplaySource);
     if (failure != NULL) {
         result = failure;
     } else if (sFirstMismatch >= 0) {
