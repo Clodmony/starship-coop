@@ -267,6 +267,24 @@ Running tests must never use or modify the owner's own `starship.cfg.json`, save
 Newest first. One block per run that matters (a milestone, a release, a QA level change).
 
 ```
+date:       2026-11-18
+commit:     issue/379-bot-reticle, fix edcf98fd, on issue/combined-test-6 2c7326e9 (the red on the build of 93bc6401,
+            the trace without the fix)
+identity:   ROM US 1.0, Linux, GCC 16.2, Debug, OpenGL on a software renderer, no window; two games on one PC over
+            loopback through the join driver, niced, one session at a time
+what ran:   python tools/coop/lockstep_test.py --no-build --jobs 2 --only lock_marks,lock_marks_all_range (red on
+            93bc6401, green on edcf98fd); four mutants of the fix, each built and run the same way: the whole fix
+            reverted 0/2, the rails placement removed 1/2 (lock_marks fails), the all-range loop back on gCamCount
+            1/2 (lock_marks_all_range fails), the indicator loop back on gCamCount 0/2
+result:     automated, for the lock-on mark of players 1 and up (#379). Red: player 1 held a lock-on on 491 frames
+            (rails) and 152 (Katina), and its mark was never drawn on its own client. Green: drawn on 464 and 129,
+            every new lock-on settled within 30 frames, only on the client that looks through player 1; hashes equal
+            on 3700 and 4000 frames; the simulation's trace the same as before on every common frame. The mark is
+            checked from the trace (where it was drawn, scale, turn), no picture was looked at. Not run: three or
+            four players, Release, Windows, two PCs, a person looking at the screen.
+```
+
+```
 date:       2026-11-17
 commit:     issue/373-k2-save-merge at fcf37a9b on issue/combined-test-6 1898ed4c: every player keeps the planet flags
             a session earned (decision 0017, K2, #373)
