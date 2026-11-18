@@ -156,6 +156,39 @@ static void CoopViewTrace_WriteTags(void) {
     }
 }
 
+// How deep in the camera this client drew the nearest target sits that the player it looks through still holds a
+// lock-on on after the draw (#382): negative in front of the camera, 0 and up behind it. Worked out here from the eye
+// and the target point the draw left (gPlayCamEye, gPlayCamAt), not through the view module's matrices, so that the
+// trace judges the release of a lock-on by itself. The depth of a point does not depend on the camera's roll.
+static void CoopViewTrace_WriteLockDepth(void) {
+    s32 view = CoopPlayers_ViewIndex();
+    Vec3f look = { gPlayCamAt.x - gPlayCamEye.x, gPlayCamAt.y - gPlayCamEye.y, gPlayCamAt.z - gPlayCamEye.z };
+    f32 length = VEC3F_MAG(&look);
+    f32 nearest = 0.0f;
+    s32 locks = 0;
+    s32 j;
+
+    for (j = 0; (j < ARRAY_COUNT(gActors)) && (length > 0.0f); j++) {
+        const Actor* actor = &gActors[j];
+        f32 depth;
+
+        if ((actor->obj.status != OBJ_ACTIVE) || (actor->lockOnTimers[view] == 0)) {
+            continue;
+        }
+        depth = -((actor->obj.pos.x - gPlayCamEye.x) * look.x + (actor->obj.pos.y - gPlayCamEye.y) * look.y +
+                  (actor->obj.pos.z + gPathProgress - gPlayCamEye.z) * look.z) /
+                length;
+        if ((locks++ == 0) || (depth > nearest)) {
+            nearest = depth;
+        }
+    }
+    if (locks == 0) {
+        fputs(" lockz=-", sFile);
+    } else {
+        fprintf(sFile, " lockz=%.1f", nearest);
+    }
+}
+
 // The lock-on marks this client drew, and the lock-ons and charge they come from (#379).
 static void CoopViewTrace_WriteLocks(void) {
     s32 count = 0;
@@ -189,6 +222,7 @@ static void CoopViewTrace_WriteLocks(void) {
     for (i = 0; i < CoopPlayers_Count(); i++) {
         fprintf(sFile, "%s%d", (i == 0) ? "" : ",", gChargeTimers[i]);
     }
+    CoopViewTrace_WriteLockDepth();
 }
 
 static void CoopViewTrace_OnGamePostUpdate(IEvent* event) {

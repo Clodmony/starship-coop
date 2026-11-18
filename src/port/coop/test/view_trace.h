@@ -33,6 +33,9 @@
 //                                       settled) and turn in degrees (300 on a new lock, 0 settled); - for none
 //   locks=<n>,...                       per player, the active actors it holds a lock-on on (lockOnTimers)
 //   charge=<n>,...                      per player, gChargeTimers (20 and up: charged, the reticle turns red)
+//   lockz=<depth>                       how deep in the camera drawn the nearest target sits that the player looked
+//                                       through still holds a lock-on on after the draw (#382): negative in front of
+//                                       the camera, 0 and up behind it; - for no lock-on
 //   sfx=<id>@<source>,...               sound requests of this frame, - for none. The source is d for the default
 //                                       source, p<i> for player i and o for anything else
 //
