@@ -1747,6 +1747,8 @@ void Display_LockOnIndicator(void) {
                 gSPDisplayList(gMasterDisp++, D_1024F60);
                 Matrix_Pop(&gGfxMatrix);
                 FrameInterpolation_RecordCloseChild();
+                // COOP: what was drawn, for the view trace (#379)
+                CoopView_NoteLockMark(i, &gLockOnTargetViewPos[i], D_display_801615B8[i], D_display_801615A8[i]);
             }
         }
     }

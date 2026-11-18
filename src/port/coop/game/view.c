@@ -210,6 +210,51 @@ void CoopView_ToReference(const Vec3f* world, Vec3f* view) {
     Matrix_MultVec3f(&sReference, &src, view);
 }
 
+void CoopView_PlaceLockMarks(const uint8_t* lockOnTimers, float targetOffset) {
+    Vec3f src = { 0.0f, 0.0f, 0.0f };
+    s32 i;
+
+    if (!CoopPlayers_IsCoop()) {
+        return;
+    }
+    src.y = targetOffset;
+    for (i = 1; i < CoopPlayers_Count(); i++) {
+        if (lockOnTimers[i] != 0) {
+            Matrix_MultVec3f(gGfxMatrix, &src, &gLockOnTargetViewPos[i]);
+        }
+    }
+}
+
+static struct {
+    s32 drawn;
+    Vec3f pos;
+    f32 scale;
+    f32 turn;
+} sLockMarks[COOP_PLAYERS_MAX];
+
+void CoopView_NoteLockMark(int32_t index, const Vec3f* viewPos, float scale, float turn) {
+    if ((index >= 0) && (index < COOP_PLAYERS_MAX)) {
+        sLockMarks[index].drawn = true;
+        sLockMarks[index].pos = *viewPos;
+        sLockMarks[index].scale = scale;
+        sLockMarks[index].turn = turn;
+    }
+}
+
+int32_t CoopView_TakeLockMark(int32_t index, Vec3f* viewPos, float* scale, float* turn) {
+    s32 drawn;
+
+    if ((index < 0) || (index >= COOP_PLAYERS_MAX)) {
+        return 0;
+    }
+    drawn = sLockMarks[index].drawn;
+    *viewPos = sLockMarks[index].pos;
+    *scale = sLockMarks[index].scale;
+    *turn = sLockMarks[index].turn;
+    sLockMarks[index].drawn = false;
+    return drawn;
+}
+
 float CoopView_LockOnZ(const Vec3f* pos, float drawnZ) {
     Vec3f world;
     Vec3f view;

@@ -151,6 +151,41 @@ static void CoopViewTrace_WriteTags(void) {
     }
 }
 
+// The lock-on marks this client drew, and the lock-ons and charge they come from (#379).
+static void CoopViewTrace_WriteLocks(void) {
+    s32 count = 0;
+    s32 i;
+    s32 j;
+
+    fputs(" marks=", sFile);
+    for (i = 0; i < COOP_PLAYERS_MAX; i++) {
+        Vec3f pos;
+        f32 scale;
+        f32 turn;
+
+        if (CoopView_TakeLockMark(i, &pos, &scale, &turn)) {
+            fprintf(sFile, "%s%d:%.1f,%.1f,%.1f,%.3f,%.1f", (count++ == 0) ? "" : ";", i, pos.x, pos.y, pos.z, scale,
+                    turn);
+        }
+    }
+    if (count == 0) {
+        fputc('-', sFile);
+    }
+    fputs(" locks=", sFile);
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        s32 locks = 0;
+
+        for (j = 0; j < ARRAY_COUNT(gActors); j++) {
+            locks += (gActors[j].obj.status == OBJ_ACTIVE) && (gActors[j].lockOnTimers[i] != 0);
+        }
+        fprintf(sFile, "%s%d", (i == 0) ? "" : ",", locks);
+    }
+    fputs(" charge=", sFile);
+    for (i = 0; i < CoopPlayers_Count(); i++) {
+        fprintf(sFile, "%s%d", (i == 0) ? "" : ",", gChargeTimers[i]);
+    }
+}
+
 static void CoopViewTrace_OnGamePostUpdate(IEvent* event) {
     int32_t drawn[4];
     s32 bars = 0;
@@ -230,6 +265,7 @@ static void CoopViewTrace_OnGamePostUpdate(IEvent* event) {
             fputs(" hudlives=-", sFile);
         }
     }
+    CoopViewTrace_WriteLocks();
     CoopViewTrace_WriteSfx();
     fputc('\n', sFile);
     if ((gGameFrameCount % 60) == 0) {
